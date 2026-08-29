@@ -11,12 +11,13 @@ import gridEn from '../locales/en/grid.json';
 import objectsEn from '../locales/en/objects.json';
 import browserEn from '../locales/en/browser.json';
 import scannerEn from '../locales/en/scanner.json';
-import safeModeEn from '../locales/en/safe_mode.json';
 import collectionsEn from '../locales/en/collections.json';
 import settingsEn from '../locales/en/settings.json';
 import folderGridEn from '../locales/en/folder_grid.json';
 import previewEn from '../locales/en/preview.json';
 import layoutEn from '../locales/en/layout.json';
+import matchWizardEn from '../locales/en/match_wizard.json';
+import modInboxEn from '../locales/en/mod_inbox.json';
 
 import commonId from '../locales/id/common.json';
 import welcomeId from '../locales/id/welcome.json';
@@ -26,12 +27,13 @@ import gridId from '../locales/id/grid.json';
 import objectsId from '../locales/id/objects.json';
 import browserId from '../locales/id/browser.json';
 import scannerId from '../locales/id/scanner.json';
-import safeModeId from '../locales/id/safe_mode.json';
 import collectionsId from '../locales/id/collections.json';
 import settingsId from '../locales/id/settings.json';
 import folderGridId from '../locales/id/folder_grid.json';
 import previewId from '../locales/id/preview.json';
 import layoutId from '../locales/id/layout.json';
+import matchWizardId from '../locales/id/match_wizard.json';
+import modInboxId from '../locales/id/mod_inbox.json';
 
 import commonZh from '../locales/zh/common.json';
 import welcomeZh from '../locales/zh/welcome.json';
@@ -41,12 +43,13 @@ import gridZh from '../locales/zh/grid.json';
 import objectsZh from '../locales/zh/objects.json';
 import browserZh from '../locales/zh/browser.json';
 import scannerZh from '../locales/zh/scanner.json';
-import safeModeZh from '../locales/zh/safe_mode.json';
 import collectionsZh from '../locales/zh/collections.json';
 import settingsZh from '../locales/zh/settings.json';
 import folderGridZh from '../locales/zh/folder_grid.json';
 import previewZh from '../locales/zh/preview.json';
 import layoutZh from '../locales/zh/layout.json';
+import matchWizardZh from '../locales/zh/match_wizard.json';
+import modInboxZh from '../locales/zh/mod_inbox.json';
 
 const resources = {
   en: {
@@ -58,12 +61,13 @@ const resources = {
     objects: objectsEn,
     browser: browserEn,
     scanner: scannerEn,
-    safe_mode: safeModeEn,
     collections: collectionsEn,
     settings: settingsEn,
     folder_grid: folderGridEn,
     preview: previewEn,
     layout: layoutEn,
+    match_wizard: matchWizardEn,
+    mod_inbox: modInboxEn,
   },
   id: {
     common: commonId,
@@ -74,12 +78,13 @@ const resources = {
     objects: objectsId,
     browser: browserId,
     scanner: scannerId,
-    safe_mode: safeModeId,
     collections: collectionsId,
     settings: settingsId,
     folder_grid: folderGridId,
     preview: previewId,
     layout: layoutId,
+    match_wizard: matchWizardId,
+    mod_inbox: modInboxId,
   },
   zh: {
     common: commonZh,
@@ -90,12 +95,13 @@ const resources = {
     objects: objectsZh,
     browser: browserZh,
     scanner: scannerZh,
-    safe_mode: safeModeZh,
     collections: collectionsZh,
     settings: settingsZh,
     folder_grid: folderGridZh,
     preview: previewZh,
     layout: layoutZh,
+    match_wizard: matchWizardZh,
+    mod_inbox: modInboxZh,
   },
 };
 
@@ -119,11 +125,12 @@ i18n
       'objects',
       'browser',
       'scanner',
-      'safe_mode',
       'collections',
       'settings',
       'folder_grid',
       'preview',
+      'match_wizard',
+      'mod_inbox',
     ],
     defaultNS: 'common',
   });
@@ -138,11 +145,12 @@ export const namespaces = [
   'objects',
   'browser',
   'scanner',
-  'safe_mode',
   'collections',
   'settings',
   'folder_grid',
   'preview',
+  'match_wizard',
+  'mod_inbox',
 ] as const;
 
 export default i18n;

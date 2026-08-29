@@ -4,6 +4,7 @@ import { moveModsToObjectAndRefresh } from './sharedOperations';
 const moveModsToObject = vi.fn();
 const applyRuntimeEffects = vi.fn();
 const applyRuntimeMutationResult = vi.fn();
+const notifyCommittedMutationSyncWarning = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
   sparse: (value: unknown) => value,
@@ -21,6 +22,11 @@ vi.mock('../../workspace-runtime/actions/sharedRuntimeResultMapper', () => ({
 }));
 
 vi.mock('../../../hooks/folderCache', () => ({}));
+
+vi.mock('../../../lib/committedMutationWarning', () => ({
+  notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
+    notifyCommittedMutationSyncWarning(...args),
+}));
 
 describe('shared mod runtime operations', () => {
   beforeEach(() => {
@@ -55,5 +61,53 @@ describe('shared mod runtime operations', () => {
     });
     expect(applyRuntimeEffects).toHaveBeenCalledTimes(1);
     expect(applyRuntimeMutationResult).toHaveBeenCalledWith({} as never, 'workspaceStructure');
+  });
+
+  it('publishes a refresh for successful moves before surfacing a partial failure', async () => {
+    const partialFailure = new Error('Target folder is locked');
+    const queryClient = {} as never;
+    moveModsToObject.mockResolvedValueOnce({
+      success: ['Mods/Kaeya/mod-a'],
+      successes: ['Mods/Kaeya/mod-a'],
+      failures: [{ path: 'Mods/Diluc/mod-b', error: partialFailure }],
+      path_rewrites: [{ old_path: 'Mods/Diluc/mod-a', new_path: 'Mods/Kaeya/mod-a' }],
+    });
+
+    await expect(
+      moveModsToObjectAndRefresh({
+        queryClient,
+        gameId: 'game-1',
+        folderPaths: ['Mods/Diluc/mod-a', 'Mods/Diluc/mod-b'],
+        targetObjectId: 'object-2',
+        targetSubpath: null,
+        status: 'disabled',
+      }),
+    ).rejects.toBe(partialFailure);
+
+    expect(applyRuntimeEffects).toHaveBeenCalledTimes(1);
+    expect(applyRuntimeMutationResult).toHaveBeenCalledWith(queryClient, 'workspaceStructure');
+  });
+
+  it('publishes successful move effects before presenting projection lag', async () => {
+    moveModsToObject.mockResolvedValueOnce({
+      success: ['Mods/Kaeya/mod-a'],
+      failures: [],
+      path_rewrites: [{ old_path: 'Mods/Diluc/mod-a', new_path: 'Mods/Kaeya/mod-a' }],
+      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+    });
+
+    await moveModsToObjectAndRefresh({
+      queryClient: {} as never,
+      gameId: 'game-1',
+      folderPaths: ['Mods/Diluc/mod-a'],
+      targetObjectId: 'object-2',
+      targetSubpath: null,
+      status: 'disabled',
+    });
+
+    expect(applyRuntimeMutationResult).toHaveBeenCalled();
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_warning: expect.any(Object) }),
+    );
   });
 });

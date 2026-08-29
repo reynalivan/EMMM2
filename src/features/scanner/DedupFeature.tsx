@@ -6,10 +6,12 @@ export interface DedupScanProgress {
   totalFolders: number;
   scannedFolders: number;
   currentFolder: string;
+  error: string;
 }
 
 export interface DedupFeatureProps extends DedupScanProgress {
   activeFilter?: 'all' | 'high' | 'medium' | 'low';
+  gameId: string;
 }
 
 // ponytail: presentational only. The scan state lives in the page that owns the
@@ -20,11 +22,19 @@ export default function DedupFeature({
   totalFolders,
   scannedFolders,
   currentFolder,
+  error,
+  gameId,
 }: DedupFeatureProps) {
   const { t } = useTranslation();
 
   return (
     <div className="flex flex-col gap-6">
+      {error && (
+        <div className="alert alert-error" role="alert">
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Progress Overlay / Indicator */}
       {isScanning && (
         <div className="p-6 rounded-2xl bg-base-200/50 border border-base-content/10 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -54,7 +64,7 @@ export default function DedupFeature({
       )}
 
       {/* Duplicate Report Component renders below */}
-      {!isScanning && <DuplicateReport activeFilter={activeFilter} />}
+      {!isScanning && <DuplicateReport activeFilter={activeFilter} gameId={gameId} />}
     </div>
   );
 }

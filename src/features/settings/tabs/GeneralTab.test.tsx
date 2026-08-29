@@ -14,12 +14,8 @@ vi.mock('../../../hooks/useSettings', () => ({
       language: 'en',
       games: [],
       active_game_id: null,
-      safe_mode: {
-        enabled: true,
-        pin_hash: null,
-        recovery_code_hash: null,
+      safety: {
         keywords: [],
-        force_exclusive_mode: false,
       },
       ai: {
         enabled: false,

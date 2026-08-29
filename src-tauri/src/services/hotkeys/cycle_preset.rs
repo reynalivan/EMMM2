@@ -40,18 +40,12 @@ pub(super) async fn execute_cycle_preset(
         .active_game()
         .ok_or_else(|| AppError::Internal("No active game selected".to_string()))?;
     let game_id = game.id.as_str();
-    let safe_mode_enabled = settings.safe_mode.enabled;
 
-    let collections = crate::services::collection_service::list_collections(
-        pool_state.inner(),
-        game_id,
-        crate::domain::corridor::Corridor::from_is_safe(safe_mode_enabled),
-    )
-    .await?;
+    let collections =
+        crate::services::collection_service::list_collections(pool_state.inner(), game_id).await?;
 
     if collections.is_empty() {
         let status = StatusFields {
-            safe_mode: safe_mode_enabled,
             preset_name: Some("No presets configured".to_string()),
             ..Default::default()
         };
@@ -63,10 +57,10 @@ pub(super) async fn execute_cycle_preset(
         .iter()
         .map(|collection| collection.name.clone())
         .collect();
-    let corridor =
-        crate::repo::corridor_repo::get(pool_state.inner(), game_id, safe_mode_enabled).await?;
-
-    let current_collection_id = corridor.and_then(|c| c.active_collection_id);
+    let current_collection_id =
+        crate::repo::collection_runtime_repo::get(pool_state.inner(), game_id)
+            .await?
+            .and_then(|runtime| runtime.active_collection_id);
 
     let current_name = current_collection_id.and_then(|id| {
         collections
@@ -82,28 +76,42 @@ pub(super) async fn execute_cycle_preset(
         .find(|collection| collection.name == target_name)
         .ok_or_else(|| AppError::Internal(format!("Target preset '{target_name}' not found")))?;
 
-    let _lock = op_lock.inner().acquire().await?;
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight(
+        app,
+        pool_state.inner(),
+        game_id,
+    )
+    .await?;
+    let disk_reconcile = require::<
+        crate::services::disk_reconcile::orchestrator::DiskReconcileState,
+    >(app, "DiskReconcileState")?;
+    let mutation_lease = disk_reconcile
+        .acquire_mutation_lease(game_id, op_lock.inner())
+        .await?;
 
     let apply_result = crate::services::collection_service::apply_collection(
         crate::services::collection_service::ApplyCollectionRequest {
             pool: pool_state.inner(),
             game_id,
             collection_id: &target.id,
-            is_safe: safe_mode_enabled,
+            capture_last_changes: true,
             mods_path: game.mod_path.clone(),
             suppressor: watcher_state.suppressor.clone(),
             ignore_missing: true,
             settings: settings.clone(),
-            reconcile_lock: require::<
-                crate::services::disk_reconcile::orchestrator::DiskReconcileState,
-            >(app, "DiskReconcileState")
-            .ok()
-            .map(|reconcile| reconcile.game_lock(game_id)),
         },
     )
     .await?;
 
-    let planner = actions::plan_cycle_preset(&target.name, safe_mode_enabled);
+    drop(mutation_lease);
+    crate::services::disk_reconcile::emit::run_full_internal_disk_reconcile(
+        app,
+        pool_state.inner(),
+        game_id,
+    )
+    .await?;
+
+    let planner = actions::plan_cycle_preset(&target.name);
 
     write_runtime_status(
         pool_state.inner(),

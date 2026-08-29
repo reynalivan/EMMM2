@@ -218,25 +218,30 @@ fn the_stored_mod_path_has_no_silent_path_conversion() {
 
 /// One owner settles a mutation.
 ///
-/// The runtime projection is a read-model: a mutation that returns without
-/// refreshing it leaves the grid, the counts and the in-game overlay
-/// describing a library that no longer exists. `finalize_mutation` owns the
-/// refresh and the side effects that read it, in that order — the pair used
-/// to be spelled out at each mutation site, every copy discarding both
-/// results with `let _ =`.
+/// The runtime projection is a read-model: DB-only object mutations update it
+/// in the same transaction so a projection failure cannot commit half a
+/// mutation. Disk mutations remain owned by reconcile.
 ///
 /// The listed files are the projection maintaining itself (a cold-projection
 /// self-heal and two whole-library rebuilds), not mutations forgetting to.
 #[test]
-fn only_the_finalizer_refreshes_the_projection() {
+fn projection_refresh_has_explicit_owners() {
     let allowed = [
-        "runtime_effects.rs", // the finalizer
+        "objects\\matching.rs", // canonical match + projection transaction
+        "objects/matching.rs",
+        "objects\\mutate.rs", // object/category + projection transaction
+        "objects/mutate.rs",
+        "objects\\classification.rs", // classification + child mods + projection transaction
+        "objects/classification.rs",
         // Reads, not mutations: these ask the projection to catch up with
         // rows it has not built yet, or rebuild it wholesale.
         "objects\\query.rs", // self-heal when the projection is cold
         "objects/query.rs",
         "post_apply.rs", // whole-library rebuild after an apply
         "reconcile.rs",  // whole-library rebuild after disk reconcile
+        // A selected conflict group must update its projection in the same
+        // transaction while unrelated groups keep generic reconcile blocked.
+        "folder_conflict_resolution.rs",
     ];
     let mut found = violations(
         "src/services",
@@ -258,7 +263,7 @@ fn only_the_finalizer_refreshes_the_projection() {
         .collect();
     assert!(
         found.is_empty(),
-        "return a MutationOutcome and let finalize_mutation settle it:\n{}",
+        "projection refresh must stay transactionally owned by DB mutation or reconcile:\n{}",
         found.join("\n")
     );
 }
@@ -297,27 +302,9 @@ fn commands_never_flatten_service_errors() {
     );
 }
 
-/// The Safe Mode corridor is a privacy gate. It is derived server-side
-/// (`ConfigService::current_corridor`) — a command that accepts it as an IPC
-/// parameter reintroduces a spoofable gate.
-#[test]
-fn commands_never_take_corridor_flags() {
-    let found = violations(
-        "src/commands",
-        &["safe_mode: bool", "is_safe: bool", "is_safe: Option<bool>"],
-    );
-    assert!(
-        found.is_empty(),
-        "corridor flags must not be command parameters; derive via \
-         ConfigService::current_corridor() instead:\n{}",
-        found.join("\n")
-    );
-}
-
 /// `mods.status` / `objects.status` and the stored folder paths are a
-/// projection of the filesystem — disk reconcile is their single writer
-/// (with the explicit deep-match scan commit as the one other disk-derived
-/// pass). A service that calls a status-writing repo function directly
+/// projection of the filesystem — disk reconcile is their single writer.
+/// A service that calls a status-writing repo function directly
 /// reintroduces the dual-writer drift this architecture removed: enable /
 /// disable is a rename on disk plus a scoped reconcile, never a direct
 /// UPDATE.
@@ -338,9 +325,6 @@ fn status_is_written_by_disk_reconcile_only() {
         "repo/object_repo",
         // The single writer.
         "disk_reconcile",
-        // Disk-derived like reconcile: the explicit deep-match scan commit.
-        r"scanner\sync\commit",
-        "scanner/sync/commit",
     ];
     let found: Vec<String> = violations("src", &writer_fns)
         .into_iter()
@@ -350,6 +334,40 @@ fn status_is_written_by_disk_reconcile_only() {
         found.is_empty(),
         "status/path projection columns are written by disk reconcile only; \
          mutate the filesystem and enqueue a scoped reconcile instead:\n{}",
+        found.join("\n")
+    );
+}
+
+/// Commands that already validated concrete filesystem targets must scope the
+/// conflict preflight to those targets. A game-wide preflight here makes an
+/// unrelated naming conflict freeze every otherwise-safe mod operation.
+#[test]
+fn targeted_mod_commands_use_path_scoped_mutation_preflight() {
+    let command_files = [
+        "src/commands/folder_grid/mod.rs",
+        "src/commands/duplicates/dup_resolve_cmds.rs",
+        "src/commands/mods/mod_meta_cmds.rs",
+        "src/commands/mods/mod_thumbnail_cmds.rs",
+        "src/commands/mods/preview_cmds.rs",
+        "src/commands/mods/trash_cmds.rs",
+        "src/commands/objects/object_cmds.rs",
+    ];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found = Vec::new();
+    for relative_path in command_files {
+        let path = root.join(relative_path);
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for (index, line) in source.lines().enumerate() {
+            if line.contains("::ensure_mutation_preflight(") {
+                found.push(format!("{}:{}: {}", path.display(), index + 1, line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        found.is_empty(),
+        "targeted mod commands must use ensure_mutation_preflight_for_paths:\n{}",
         found.join("\n")
     );
 }

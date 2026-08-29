@@ -14,6 +14,30 @@ fn test_default_schema_has_four_categories() {
     assert!(schema.filters.is_empty());
 }
 
+#[test]
+fn schema_uses_canonical_categories_with_game_specific_labels_and_subcategories() {
+    let schema = default_schema();
+    assert_eq!(schema.match_extensions, vec!["ini", "dds", "buf", "ib"]);
+    assert_eq!(schema.categories[0].name, "Character");
+    assert!(schema.categories[0].subcategories.is_empty());
+
+    let resource_dir = std::path::Path::new("resources");
+    let srmi = load_schema(resource_dir, 1);
+    assert_eq!(srmi.categories[1].name, "Weapon");
+    assert_eq!(srmi.categories[1].label.as_deref(), Some("Light Cone"));
+
+    let wwmi = load_schema(resource_dir, 2);
+    assert_eq!(wwmi.categories[0].label.as_deref(), Some("Resonator"));
+    assert_eq!(wwmi.categories[3].name, "Other");
+    assert_eq!(wwmi.categories[3].subcategories, vec!["Echo"]);
+
+    let zzmi = load_schema(resource_dir, 3);
+    assert_eq!(zzmi.categories[1].name, "Weapon");
+    assert_eq!(zzmi.categories[1].label.as_deref(), Some("W-Engine"));
+    assert_eq!(zzmi.categories[3].name, "Other");
+    assert_eq!(zzmi.categories[3].subcategories, vec!["Bangboo"]);
+}
+
 // Covers: NC-3.4-02 (Schema file missing → fallback)
 #[test]
 fn test_load_schema_missing_file_returns_default() {

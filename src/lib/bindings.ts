@@ -11,16 +11,17 @@
  */
 
 import { commands as gen } from './bindings.gen';
-import type { Result } from './bindings.gen';
+import type { DiskReconcileReason, Result } from './bindings.gen';
 
 // Re-export the generated types that callers historically imported from this
 // module, so `import type { X } from '../lib/bindings'` keeps working.
 export type {
-  ApplyObjectMatchInput,
+  AppSettings,
+  ApplyGameModsDirectoryRequest,
+  ApplyGameModsDirectoryResult,
   ConfigStatus,
   CreateCollectionMode,
   CustomTheme,
-  DeepmatchPreviewForObjectsInput,
   DiskReconcileChangeCounts,
   DiskReconcileChangeSummary,
   DiskReconcilePathKind,
@@ -28,21 +29,65 @@ export type {
   DiskReconcileReason,
   DiskReconcileResult,
   DiskReconcileStatus,
+  FolderConflictRename,
+  FolderConflictSummary,
+  FolderNameConflictCandidate,
+  FolderNameConflictGroup,
+  GameModsDirectoryCandidateSummary,
+  GameModsDirectoryClassification,
+  GameModsDirectoryInspection,
   GameObject,
   IniDocument,
   IniFileEntry,
   IniLineUpdate,
   IniVariable,
+  ImportBatch,
+  ImportBatchReport,
+  ImportDecision,
+  ImportFlow,
+  ImportItem,
+  ImportItemStatus,
+  ImportSourceKind,
   KeyBinding,
-  MatchedDbEntry,
   MoveModsToObjectInput,
+  ModInboxEntry,
+  ModInboxEntryKind,
+  ModInboxLayout,
+  ModInboxRootState,
+  ModInboxSnapshot,
   PipelineTask,
+  ProcessedModInboxDestination,
+  ProcessedModInboxSource,
   RandomModProposal,
+  RenameConfirmationGroup,
+  RenameConfirmationKind,
+  RenameConfirmationReason,
+  RenameConfirmationResolution,
+  RenameConfirmationResolutionAction,
+  StableCategory,
+  TargetMode,
   TaskStatus,
   ThemeConfig,
   ThemeMetadata,
   WorkspaceMoveTarget,
 } from './bindings.gen';
+
+// Disk reconcile progress is an event payload rather than an IPC command
+// signature, so tauri-specta does not place it in bindings.gen.ts.
+export type DiskReconcilePhase =
+  'DiscoveringRoots' | 'ScanningRoots' | 'Projecting' | 'Finalizing' | 'Completed' | 'Failed';
+
+export type DiskReconcileProgress = {
+  game_id: string;
+  run_id: string;
+  reason: DiskReconcileReason;
+  phase: DiskReconcilePhase;
+  completed_units: number;
+  total_units: number | null;
+  current_root: string | null;
+  elapsed_ms: number;
+  eta_ms: number | null;
+};
 
 type OkOf<T> = Extract<T, { status: 'ok' }>;
 

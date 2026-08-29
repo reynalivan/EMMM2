@@ -35,6 +35,7 @@ interface FolderListRowProps {
   onEnableOnlyThis?: (folder: ModFolder) => void;
   onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
+  hasFolderNameConflict?: boolean;
   isSwitchPending?: boolean;
   /** A switch for this folder is in flight (spinner), as opposed to merely disabled. */
   isSwitchBusy?: boolean;
@@ -64,6 +65,7 @@ function FolderListRowInner({
   onEnableOnlyThis,
   onSyncWithDb,
   hasConflict = false,
+  hasFolderNameConflict = false,
   isSwitchPending = false,
   isSwitchBusy = false,
   mutationsDisabled = false,
@@ -111,7 +113,7 @@ function FolderListRowInner({
     onOpenMoveDialog: mutationsDisabled ? undefined : onOpenMoveDialog,
     onToggleSafe: mutationsDisabled ? undefined : () => onToggleSafe?.(item),
     onSyncWithDb: onSyncWithDb && !mutationsDisabled ? () => onSyncWithDb(item) : undefined,
-    onOpenExplorer: contextActions.openExplorer,
+    onOpenExplorer: hasFolderNameConflict ? undefined : contextActions.openExplorer,
     onPasteThumbnail: mutationsDisabled ? undefined : contextActions.pasteThumbnailFromClipboard,
     onImportThumbnail: mutationsDisabled ? undefined : contextActions.importThumbnail,
   });
@@ -236,8 +238,18 @@ function FolderListRowInner({
             </div>
           )}
 
+          {hasFolderNameConflict && (
+            <div
+              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-warning/20 text-warning rounded-md shrink-0"
+              title={t('card.name_conflict_title')}
+            >
+              <AlertTriangle size={10} />
+              <span className="text-[9px] font-bold">{t('card.name_conflict')}</span>
+            </div>
+          )}
+
           {/* Conflict badge */}
-          {hasConflict && (
+          {hasConflict && !hasFolderNameConflict && (
             <div
               className="flex items-center gap-0.5 px-1.5 py-0.5 bg-warning/20 text-warning rounded-md shrink-0"
               title={t('card.hash_conflict_title')}
@@ -248,7 +260,7 @@ function FolderListRowInner({
           )}
 
           {/* Corrupt badge */}
-          {!hasConflict && item.warnings.length > 0 && (
+          {!hasConflict && !hasFolderNameConflict && item.warnings.length > 0 && (
             <div
               className="flex items-center gap-0.5 px-1.5 py-0.5 bg-error/20 text-error rounded-md shrink-0"
               title={primaryWarningText || item.warnings.join('\n') || t('card.corrupt_ini_title')}

@@ -5,7 +5,7 @@ use crate::common::path_key::{canonical_name_key, names_equal_by_key, path_file_
 use crate::domain::errors::AppError;
 use crate::services::explorer::types::ConflictMember;
 
-use super::scan::{find_disabled_ancestor, scan_fs_folders};
+use super::scan::{find_disabled_ancestor, scan_fs_folders, scan_fs_folders_shallow};
 
 /// Case-insensitive child lookup: some volumes resolve paths case-sensitively
 /// even when the filesystem claims otherwise.
@@ -51,12 +51,22 @@ pub async fn list_mod_folders_inner(
     mods_path: String,
     sub_path: Option<String>,
 ) -> Result<crate::services::explorer::types::FolderGridResponse, AppError> {
-    tokio::task::spawn_blocking(move || list_mod_folders_blocking(mods_path, sub_path)).await?
+    tokio::task::spawn_blocking(move || list_mod_folders_blocking(mods_path, sub_path, false))
+        .await?
+}
+
+pub async fn list_mod_folders_inner_shallow(
+    mods_path: String,
+    sub_path: Option<String>,
+) -> Result<crate::services::explorer::types::FolderGridResponse, AppError> {
+    tokio::task::spawn_blocking(move || list_mod_folders_blocking(mods_path, sub_path, true))
+        .await?
 }
 
 fn list_mod_folders_blocking(
     mods_path: String,
     sub_path: Option<String>,
+    shallow: bool,
 ) -> Result<crate::services::explorer::types::FolderGridResponse, AppError> {
     let mut base = Path::new(&mods_path).to_path_buf();
     let mut is_root_disabled = false;
@@ -143,7 +153,11 @@ fn list_mod_folders_blocking(
 
     log::info!("Scanning filesystem for mods at {}", target.display());
 
-    let mut folders = scan_fs_folders(&target, sub_path.as_deref())?;
+    let mut folders = if shallow {
+        scan_fs_folders_shallow(&target)?
+    } else {
+        scan_fs_folders(&target, sub_path.as_deref())?
+    };
 
     log::info!(
         "Listed {} mod folders from {} (sub: {:?})",
@@ -266,8 +280,15 @@ fn list_mod_folders_blocking(
         }
     }
 
-    let (self_node_type, self_classification_reasons, _) =
-        crate::common::classifier::classify_folder(&target);
+    let (self_node_type, self_classification_reasons, _) = if shallow {
+        (
+            crate::common::classifier::NodeType::ContainerFolder,
+            Vec::new(),
+            Vec::new(),
+        )
+    } else {
+        crate::common::classifier::classify_folder(&target)
+    };
     let self_is_mod = self_node_type == crate::common::classifier::NodeType::FlatModRoot
         || self_node_type == crate::common::classifier::NodeType::ModPackRoot
         || self_node_type == crate::common::classifier::NodeType::VariantContainer;

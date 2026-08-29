@@ -1,6 +1,6 @@
 # Status Gap dan Remediation 3DMigoto EMMM2NEW
 
-> Status per 2026-08-11. Dokumen ini hanya melacak gap, penyelesaian, bukti, dan pekerjaan validasi. Panduan teknis utama berada di [`3dmigoto_context_knowledge.md`](./3dmigoto_context_knowledge.md).
+> Status diperbarui 2026-08-28. Dokumen ini hanya melacak gap, penyelesaian, bukti, dan pekerjaan validasi. Panduan teknis utama berada di [`3dmigoto_context_knowledge.md`](./3dmigoto_context_knowledge.md).
 
 ## Ringkasan
 
@@ -9,52 +9,65 @@
 - Gap kode berstatus unresolved: **0**.
 - Validasi runtime manual yang masih disarankan: smoke test visual pada package/game nyata.
 - Capability yang belum tersedia: EFMI KeyViewer, karena text API resmi belum terverifikasi.
-- Kegagalan test di luar scope: DAL ratchet pada `services/collection_service/crud.rs`.
+- Full build worktree saat audit 2026-08-28 tertahan oleh contract test object/workspace yang belum selaras (`safe_mode`, `hasPin`, dan signature lama); bukan oleh conflict scanner.
 
 ## Status fase
 
-| Fase | Cakupan | Status |
-|---|---|---|
-| T1 | Runtime path dan `DISABLED*` contract | Selesai |
-| T2 | Recursive INI discovery | Selesai |
-| T3 | `[Hunting] reload_fixes` discovery/replay | Selesai |
-| T4 | Effective-enabled projection | Selesai |
-| T5 | Lossless INI reader | Selesai |
-| T6 | Stale-safe recoverable writer | Selesai |
-| T7 | Portable deterministic KeyViewer | Selesai |
-| T8 | Archive classification dan conflict evidence | Selesai |
-| T9 | Switch recovery dan runtime-status UX | Selesai |
-| T10 | Full verification dan dokumentasi | Selesai |
+| Fase | Cakupan                                      | Status  |
+| ---- | -------------------------------------------- | ------- |
+| T1   | Runtime path dan `DISABLED*` contract        | Selesai |
+| T2   | Recursive INI discovery                      | Selesai |
+| T3   | `[Hunting] reload_fixes` discovery/replay    | Selesai |
+| T4   | Effective-enabled projection                 | Selesai |
+| T5   | Lossless INI reader                          | Selesai |
+| T6   | Stale-safe recoverable writer                | Selesai |
+| T7   | Portable deterministic KeyViewer             | Selesai |
+| T8   | Archive classification dan conflict evidence | Selesai |
+| T9   | Switch recovery dan runtime-status UX        | Selesai |
+| T10  | Full verification dan dokumentasi            | Selesai |
 
 ## Matriks gap
 
-| ID | Masalah awal | Status | Bukti utama |
-|---|---|---|---|
-| INI-01 | INI hanya ditemukan satu level | Resolved | Recursive deterministic walker dipakai editor dan KeyViewer |
-| INI-02 | Shift-JIS ditulis ulang sebagai UTF-8 | Resolved | Encoding/BOM asal dipertahankan; unrepresentable write ditolak |
-| INI-03 | Mixed newline dan final newline hilang | Resolved | Terminator disimpan per baris |
-| INI-04 | Qualified variable dan repeated key/back hilang | Resolved | Ordered structured indices di atas raw lines |
-| INI-05 | Section case/error discovery tidak konsisten | Resolved | Case-insensitive identity dan entry error propagation |
-| INI-06 | Mod Include/Key/CommandList/ShaderRegex ditolak | Resolved | Runtime section family classifier + fixtures |
-| WRT-01 | Stale editor dapat menimpa external edit | Resolved | BLAKE3 source fingerprint check |
-| WRT-02 | Windows replace dapat meninggalkan target hilang | Resolved | Recovery rename dan auto-restore |
-| WRT-03 | Fixed temp/concurrent write/satu backup | Resolved | OperationLock, unique temp, tiga backup generations |
-| KV-01 | Reload dicari dari `[Key*]` fiktif | Resolved | Parser `[Hunting] reload_fixes` |
-| KV-02 | Grammar replay tidak cocok dengan `no_* VK_*` | Resolved | Whitespace/`+`, VK, positive modifier, negative constraint parser |
-| KV-03 | Lokasi `d3dx.ini` hanya dekat game exe | Resolved | Parent configured Mods, lalu executable fallback |
-| KV-04 | Overlay hardcode legacy GIMI help API | Resolved | `GIMIv8`/`SRMIv1`/`WWMIv1`/`ZZMIv1` renderer |
-| KV-05 | Resource path KeyViewer bercampur root/config-relative | Resolved in code | Semua path relatif terhadap `.emmm_data/KeyViewer.ini` |
-| KV-06 | Raw DB status mengabaikan disabled ancestor | Resolved | Effective-enabled predicate pada seluruh path component |
-| KV-07 | Shader64 diperlakukan sebagai resource32 | Resolved | KeyViewer hanya TextureOverride 8-hex; typed conflict scope untuk shader |
-| KV-08 | Duplicate score dan sentinel ambigu | Resolved | Dedupe, threshold konservatif, unique-sentinel requirement |
-| KV-09 | Artifact error/cleanup/dead fallback tersembunyi | Resolved | Staging, recoverable swap, propagated degraded warning |
-| KV-10 | Conflict report tanpa applicability/provenance | Resolved | Kind, source, namespace, condition, priority, index, stage, certainty |
-| SW-01 | Semantik `DISABLED` berbeda frontend/backend/runtime | Resolved | Case-insensitive `DISABLED*` predicate bersama |
-| SW-02 | Default F6/F8 bertabrakan dengan package | Resolved | Default `Ctrl+F6`/`Ctrl+F8` dan reserved-key warning |
-| SW-03 | Rollback tidak lengkap dapat membuat DB drift | Resolved | Full reconcile + recovery warnings |
-| SW-04 | Disk applied disamakan dengan runtime loaded | Resolved | Explicit `ReloadRequired`; reload sukses hanya setelah key replay |
+| ID     | Masalah awal                                           | Status           | Bukti utama                                                                                        |
+| ------ | ------------------------------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------- |
+| INI-01 | INI hanya ditemukan satu level                         | Resolved         | Recursive deterministic walker dipakai editor dan KeyViewer                                        |
+| INI-02 | Shift-JIS ditulis ulang sebagai UTF-8                  | Resolved         | Encoding/BOM asal dipertahankan; unrepresentable write ditolak                                     |
+| INI-03 | Mixed newline dan final newline hilang                 | Resolved         | Terminator disimpan per baris                                                                      |
+| INI-04 | Qualified variable dan repeated key/back hilang        | Resolved         | Ordered structured indices di atas raw lines                                                       |
+| INI-05 | Section case/error discovery tidak konsisten           | Resolved         | Case-insensitive identity dan entry error propagation                                              |
+| INI-06 | Mod Include/Key/CommandList/ShaderRegex ditolak        | Resolved         | Runtime section family classifier + fixtures                                                       |
+| WRT-01 | Stale editor dapat menimpa external edit               | Resolved         | BLAKE3 source fingerprint check                                                                    |
+| WRT-02 | Windows replace dapat meninggalkan target hilang       | Resolved         | Recovery rename dan auto-restore                                                                   |
+| WRT-03 | Fixed temp/concurrent write/satu backup                | Resolved         | OperationLock, unique temp, tiga backup generations                                                |
+| KV-01  | Reload dicari dari `[Key*]` fiktif                     | Resolved         | Parser `[Hunting] reload_fixes`                                                                    |
+| KV-02  | Grammar replay tidak cocok dengan `no_* VK_*`          | Resolved         | Whitespace/`+`, VK, positive modifier, negative constraint parser                                  |
+| KV-03  | Lokasi `d3dx.ini` hanya dekat game exe                 | Resolved         | Parent configured Mods, lalu executable fallback                                                   |
+| KV-04  | Overlay hardcode legacy GIMI help API                  | Resolved         | `GIMIv8`/`SRMIv1`/`WWMIv1`/`ZZMIv1` renderer                                                       |
+| KV-05  | Resource path KeyViewer bercampur root/config-relative | Resolved in code | Semua path relatif terhadap `.emmm_data/KeyViewer.ini`                                             |
+| KV-06  | Raw DB status mengabaikan disabled ancestor            | Resolved         | Effective-enabled predicate pada seluruh path component                                            |
+| KV-07  | Shader64 diperlakukan sebagai resource32               | Resolved         | KeyViewer hanya TextureOverride 8-hex; typed conflict scope untuk shader                           |
+| KV-08  | Duplicate score dan sentinel ambigu                    | Resolved         | Dedupe, threshold konservatif, unique-sentinel requirement                                         |
+| KV-09  | Artifact error/cleanup/dead fallback tersembunyi       | Resolved         | Staging, recoverable swap, propagated degraded warning                                             |
+| KV-10  | Conflict report tanpa applicability/provenance         | Resolved         | Kind, source, namespace, condition, `match_priority`, index, stage, certainty ditampilkan di modal |
+| SW-01  | Semantik `DISABLED` berbeda frontend/backend/runtime   | Resolved         | Case-insensitive `DISABLED*` predicate bersama                                                     |
+| SW-02  | Default F6/F8 bertabrakan dengan package               | Resolved         | Default `Ctrl+F6`/`Ctrl+F8` dan reserved-key warning                                               |
+| SW-03  | Rollback tidak lengkap dapat membuat DB drift          | Resolved         | Full reconcile + recovery warnings                                                                 |
+| SW-04  | Disk applied disamakan dengan runtime loaded           | Resolved         | Explicit `ReloadRequired`; reload sukses hanya setelah key replay                                  |
 
-## Bukti verifikasi terakhir
+## Audit follow-up 2026-08-28
+
+- Active-conflict discovery kini recursive tanpa fixed depth untuk INI dan ShaderFixes.
+- Traversal memangkas setiap descendant `DISABLED*`, tidak mengikuti symlink, dan mengabaikan `desktop.ini`.
+- TextureOverride hanya menerima hash 8-hex, ShaderOverride dan replacement 16-hex; parser membaca key resmi `match_priority`.
+- Save INI, import, serta watcher `runtime_file_changed` menginvalidasi active-conflict query.
+- Dismissal notice terikat pada signature batch; conflict baru tidak diwarisi sebagai dismissed.
+- Notice/modal menyebut konflik mod aktif dan membedakan resource hash, shader hash, serta shader replacement.
+- Conflict modal menyediakan guided whole-mod resolution dengan global decisions, impact review, bulk disable, dan partial-failure retry.
+- Storage Optimizer memakai terminal mod root sebagai logical ownership boundary, sehingga child/subvariant dari merged mod tidak lagi menjadi kandidat mandiri.
+- Partial DDS hashes hanya menyaring kandidat; exact duplicate memerlukan full BLAKE3 seluruh manifest. Similarity non-exact tidak lagi digabung transitif atau menerima aksi destruktif.
+- Dedup report disimpan per game, memiliki terminal `Failed`, dan resolver memverifikasi ulang kedua folder sebelum Trash/Hardlink.
+
+## Bukti verifikasi baseline 2026-08-11
 
 - Rust library: 647 passed, 1 ignored.
 - Targeted Rust suites untuk INI, KeyViewer, hotkeys, conflict, archive, dan rollback: passed.
@@ -75,4 +88,7 @@ Ini bukan gap implementasi tersisa, tetapi boundary yang tidak dapat dibuktikan 
 
 - [`history/202608100001-3dmigoto-gap-remediation.md`](./history/202608100001-3dmigoto-gap-remediation.md)
 - [`history/202608110001-3dmigoto-doc-separation.md`](./history/202608110001-3dmigoto-doc-separation.md)
+- [`history/202608280002-shader-conflict-active-notice.md`](./history/202608280002-shader-conflict-active-notice.md)
+- [`history/202608280003-guided-conflict-resolution.md`](./history/202608280003-guided-conflict-resolution.md)
+- [`history/202608280005-storage-optimizer-dedup-safety.md`](./history/202608280005-storage-optimizer-dedup-safety.md)
 - [`../tasks/todo.md`](../tasks/todo.md)

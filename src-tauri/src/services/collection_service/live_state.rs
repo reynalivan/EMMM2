@@ -5,7 +5,8 @@ use crate::domain::collection::{CollectionMod, CollectionObject};
 use crate::domain::errors::CollectionError;
 use crate::repo::collection_repo;
 use crate::services::collection_preview_tree::resolve_preview_terminal_metadata;
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
+use std::collections::HashMap;
 
 fn is_object_enabled(path_key: Option<&str>) -> bool {
     let Some(path_key) = path_key else {
@@ -18,25 +19,9 @@ fn is_object_enabled(path_key: Option<&str>) -> bool {
         .any(is_disabled_folder)
 }
 
-pub(crate) async fn load_live_corridor_state(
-    pool: &SqlitePool,
-    game_id: &str,
-    is_safe: bool,
-) -> Result<(Vec<CollectionMod>, Vec<CollectionObject>), CollectionError> {
-    load_live_state(pool, game_id, Some(is_safe)).await
-}
-
 pub(crate) async fn load_live_runtime_state(
     pool: &SqlitePool,
     game_id: &str,
-) -> Result<(Vec<CollectionMod>, Vec<CollectionObject>), CollectionError> {
-    load_live_state(pool, game_id, None).await
-}
-
-async fn load_live_state(
-    pool: &SqlitePool,
-    game_id: &str,
-    is_safe: Option<bool>,
 ) -> Result<(Vec<CollectionMod>, Vec<CollectionObject>), CollectionError> {
     let mods_path = load_game_mods_path(pool, game_id).await?;
     let current_objects = collection_repo::get_live_objects(pool, game_id).await?;
@@ -47,8 +32,7 @@ async fn load_live_state(
             ..object
         })
         .collect();
-    let current_mod_rows =
-        collection_repo::get_live_active_mod_rows(pool, game_id, is_safe).await?;
+    let current_mod_rows = collection_repo::get_live_active_mod_rows(pool, game_id).await?;
 
     let mut current_mods = Vec::with_capacity(current_mod_rows.len());
     for row in current_mod_rows {
@@ -57,6 +41,8 @@ async fn load_live_state(
         let mod_path_key = row.mod_path_key;
         let object_id = row.object_id;
         let display_name = row.display_name;
+        let is_safe = row.is_safe;
+        let safety_source = row.safety_source;
         let preview_object = current_objects
             .iter()
             .find(|object| object.object_id == object_id);
@@ -72,6 +58,8 @@ async fn load_live_state(
             node_type: None,
             warnings: Vec::new(),
             is_enabled: true,
+            is_safe,
+            safety_source: safety_source.clone(),
         };
         let preview_metadata =
             resolve_preview_terminal_metadata(preview_object, &preview_seed, mods_path.as_deref());
@@ -88,13 +76,15 @@ async fn load_live_state(
             node_type: preview_metadata.node_type,
             warnings: preview_metadata.warnings,
             is_enabled: true,
+            is_safe,
+            safety_source,
         });
     }
 
     Ok((current_mods, current_objects))
 }
 
-pub(super) async fn live_runtime_is_safe(
+pub(crate) async fn live_runtime_is_safe(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<bool, CollectionError> {
@@ -103,9 +93,88 @@ pub(super) async fn live_runtime_is_safe(
     Ok(unsafe_count == 0)
 }
 
-pub(super) async fn load_game_mods_path(
+pub(crate) async fn load_game_mods_path(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Option<String>, CollectionError> {
     Ok(crate::repo::game_repo::get_configured_mods_path(pool, game_id).await?)
+}
+
+pub(crate) struct LiveRuntimeSummary {
+    pub active_mod_count: usize,
+    pub object_count: usize,
+    pub enabled_object_count: usize,
+    pub is_safe: bool,
+    pub is_safety_classified: bool,
+}
+
+pub(crate) async fn load_live_runtime_summary_tx(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+) -> Result<LiveRuntimeSummary, CollectionError> {
+    let objects = collection_repo::get_live_objects_tx(conn, game_id).await?;
+    let active_mods = collection_repo::get_live_active_mod_rows_tx(conn, game_id).await?;
+    let is_safety_classified = active_mods.iter().all(|member| {
+        member
+            .safety_source
+            .as_deref()
+            .is_some_and(|source| source != crate::common::safety_constants::SAFETY_SOURCE_UNKNOWN)
+    });
+
+    Ok(LiveRuntimeSummary {
+        active_mod_count: active_mods.len(),
+        object_count: objects.len(),
+        enabled_object_count: objects
+            .iter()
+            .filter(|object| is_object_enabled(object.path_key.as_deref()))
+            .count(),
+        is_safe: active_mods.iter().all(|member| member.is_safe),
+        is_safety_classified,
+    })
+}
+
+pub(crate) async fn live_runtime_matches_collection_tx(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+    collection_id: &str,
+) -> Result<bool, CollectionError> {
+    let live_mods = collection_repo::get_live_active_mod_rows_tx(conn, game_id).await?;
+    let collection_members =
+        collection_repo::get_runtime_collection_membership_tx(conn, collection_id).await?;
+    let live_mod_paths = live_mods
+        .iter()
+        .map(|member| member.mod_path_key.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let collection_mod_paths = collection_members
+        .mod_path_keys
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    if live_mod_paths != collection_mod_paths {
+        return Ok(false);
+    }
+
+    let live_objects = collection_repo::get_live_objects_tx(conn, game_id).await?;
+    let live_object_states = live_objects
+        .into_iter()
+        .filter_map(|object| {
+            object
+                .path_key
+                .map(|path_key| (path_key.clone(), is_object_enabled(Some(path_key.as_str()))))
+        })
+        .collect::<HashMap<_, _>>();
+    let collection_object_states = collection_members
+        .object_states
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
+    Ok(live_object_states == collection_object_states)
+}
+
+pub(crate) async fn missing_collection_member_count_tx(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+    collection_id: &str,
+) -> Result<usize, CollectionError> {
+    crate::repo::collection_repo::count_missing_mods_tx(conn, game_id, collection_id).await
 }

@@ -77,3 +77,30 @@ pub async fn batch_set_pinned(
     tx.commit().await?;
     Ok(())
 }
+
+pub async fn batch_set_safety(
+    pool: &SqlitePool,
+    game_id: &str,
+    paths: &[String],
+    safe: bool,
+) -> Result<(), sqlx::Error> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let mods_path = get_game_mod_path(pool, game_id).await?;
+    let mut tx = pool.begin().await?;
+    for path in paths {
+        sqlx::query(
+            "UPDATE mods SET is_safe = ?, safety_source = ? WHERE folder_path_key = ? AND game_id = ?",
+        )
+        .bind(safe)
+        .bind(crate::common::safety_constants::SAFETY_SOURCE_MANUAL)
+        .bind(folder_path_key(path, mods_path.as_deref()))
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}

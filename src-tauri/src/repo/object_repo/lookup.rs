@@ -31,11 +31,7 @@ pub async fn get_runtime_descriptors(
 pub async fn get_category_counts(
     pool: &SqlitePool,
     game_id: &str,
-    _safe_mode: bool,
 ) -> Result<Vec<CategoryCount>, sqlx::Error> {
-    // Phase 1 fix: always count ALL objects regardless of safe mode.
-    // Category badges should show total counts; individual object counts
-    // are zeroed for unsafe objects at the object level.
     let mut qb: QueryBuilder<Sqlite> =
         QueryBuilder::new("SELECT object_type, COUNT(*) as count FROM objects WHERE game_id = ");
     qb.push_bind(game_id);
@@ -68,7 +64,7 @@ pub async fn get_rows_for_reconcile(
     game_id: &str,
 ) -> Result<Vec<ReconcileObjectRow>, sqlx::Error> {
     sqlx::query_as::<_, ReconcileObjectRow>(
-        "SELECT id, folder_path, folder_path_key, status, object_type FROM objects WHERE game_id = ?",
+        "SELECT id, name, folder_path, folder_path_key, status, object_type, filesystem_identity FROM objects WHERE game_id = ?",
     )
     .bind(game_id)
     .fetch_all(&mut *conn)
@@ -91,6 +87,16 @@ pub async fn get_game_id(pool: &SqlitePool, id: &str) -> Result<Option<String>, 
     sqlx::query_scalar("SELECT game_id FROM objects WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
+        .await
+}
+
+pub async fn get_game_id_conn(
+    conn: &mut sqlx::SqliteConnection,
+    id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT game_id FROM objects WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *conn)
         .await
 }
 

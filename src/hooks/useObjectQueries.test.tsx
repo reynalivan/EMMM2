@@ -3,7 +3,6 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { objectKeys, runObjectBatchMutation } from './objectQueryCache';
 import { useCategoryCounts } from './useObjectQueries';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useSafeMode } from './settingsQuery';
 import React from 'react';
 import type { ObjectSummary } from '../types/object';
 
@@ -15,13 +14,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 vi.mock('../lib/services/objectService', () => ({
-  // The corridor is derived server-side now, so the service call carries no
-  // safeMode argument; each test queues the per-corridor responses it expects.
+  // Safety filtering is view-only, so the service call carries no filter
+  // argument; each test queues the complete responses it expects.
   getCategoryCounts: vi.fn(),
-}));
-
-vi.mock('./settingsQuery', () => ({
-  useSafeMode: vi.fn(),
 }));
 
 vi.mock('./useActiveGame', () => ({
@@ -37,36 +32,20 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 );
 
-describe('useCategoryCounts (TC-30 Privacy & Safe Mode)', () => {
+describe('useCategoryCounts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryClient.clear();
   });
 
-  // TC-30-003: Verify object list counts decrement appropriately when entering safe mode.
-  it('TC-30-003: Fetches filtered counts based on safeMode state', async () => {
-    // 1. Render hook with safeMode = false
-    vi.mocked(useSafeMode).mockReturnValue(false);
+  it('fetches unfiltered category counts', async () => {
     const { getCategoryCounts } = await import('../lib/services/objectService');
-    vi.mocked(getCategoryCounts)
-      .mockResolvedValueOnce([{ object_type: 'Character', count: 10 }])
-      .mockResolvedValueOnce([{ object_type: 'Character', count: 5 }]);
+    vi.mocked(getCategoryCounts).mockResolvedValueOnce([{ object_type: 'Character', count: 10 }]);
 
-    const { result, rerender } = renderHook(() => useCategoryCounts(), { wrapper });
+    const { result } = renderHook(() => useCategoryCounts(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([{ object_type: 'Character', count: 10 }]);
-
-    // 2. Enable safeMode (simulating a settings save that turns Safe Mode on)
-    vi.mocked(useSafeMode).mockReturnValue(true);
-
-    // Clear query client to force refetch or rely on different query keys
-    queryClient.clear();
-    rerender();
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    // The mock backend returns 5 when safeMode is true, simulating exact DB subtraction
-    expect(result.current.data).toEqual([{ object_type: 'Character', count: 5 }]);
   });
 
   it('runObjectBatchMutation leaves caches untouched when the mutation fails', async () => {

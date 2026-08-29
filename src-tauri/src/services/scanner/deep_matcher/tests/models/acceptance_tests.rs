@@ -13,6 +13,7 @@ fn db_entry(name: &str, tags: &[&str], object_type: &str) -> DbEntry {
         name: name.to_string(),
         tags: tags.iter().map(|tag| tag.to_string()).collect(),
         object_type: object_type.to_string(),
+        entry_kind: Default::default(),
         custom_skins: vec![],
         thumbnail_path: None,
         metadata: None,

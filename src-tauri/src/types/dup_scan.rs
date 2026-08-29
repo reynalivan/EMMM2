@@ -58,6 +58,16 @@ pub enum DupScanEvent {
         #[specta(type = f64)]
         total_folders: usize,
     },
+    /// Emitted when a scan cannot complete because of an error.
+    #[serde(rename_all = "camelCase")]
+    Failed {
+        scan_id: String,
+        #[specta(type = f64)]
+        processed_folders: usize,
+        #[specta(type = f64)]
+        total_folders: usize,
+        message: String,
+    },
 }
 
 /// Scan report root.
@@ -114,4 +124,23 @@ pub struct DupScanSignal {
     pub key: String,
     pub detail: String,
     pub score: u8,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DupScanEvent;
+
+    #[test]
+    fn failed_event_serializes_as_a_distinct_terminal_state() {
+        let event = DupScanEvent::Failed {
+            scan_id: "scan-1".to_string(),
+            processed_folders: 3,
+            total_folders: 10,
+            message: "read failed".to_string(),
+        };
+
+        let json = serde_json::to_value(event).unwrap();
+        assert_eq!(json["event"], "failed");
+        assert_eq!(json["data"]["message"], "read failed");
+    }
 }

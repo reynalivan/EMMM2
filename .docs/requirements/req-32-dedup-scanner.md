@@ -3,12 +3,12 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Mod management frequently results in accumulating duplicate heavy assets (`.dds`, `.vb`, `.ib`) across different folder structures or imports, silently devouring disk space.
-- **Proposed Solution**: A parallel BLAKE3 hashing scanner employing a Multi-Signal Matching Algorithm (evaluating structure, partial-hashing for large files, and content identity). Generates a Duplicate Comparison Report UI where users resolve conflicts using NTFS Hardlinks (space reclaiming without breaking mods) or Trash (soft delete).
+- **Proposed Solution**: A two-pass BLAKE3 scanner that treats each terminal mod root as one logical unit. Partial hashes reduce candidates, full hashes prove exact identity, and only exact copies receive destructive resolution controls.
 - **Success Criteria**:
   - Scanning 1,000 files (avg 10MB) completes in ≤ 15s using `rayon` multi-threading (CPU scales to 80-90%).
   - Multi-Signal matching uses 1KB + 1KB partial sampling for files > 5MB, achieving a 100x speed increase for massive textures.
   - Partial scans can be safely cancelled within ≤ 1s.
-  - Variant-Awareness: The scanner automatically excludes comparisons between sibling mods in the same `VariantContainer` or `ModPackRoot`.
+  - Variant-Awareness: A merged/orchestrated root and all owned descendants are one candidate. Child subvariants are never compared as independent mods.
   - Persistent Whitelist: Ignored pairs are stored in the database and can be recovered via the UI.
   - Dedicated UI: A full-screen management interface at `/storage-optimizer`.
 
@@ -32,6 +32,13 @@ As a user, I want the system to aggressively identify actual duplicates through 
 
 ---
 
+#### Logical ownership and exactness contract
+
+- A terminal `ModPackRoot`, `VariantContainer`, or flat mod root owns every descendant DB row. Nested or disabled child INIs do not create extra candidates.
+- A same-name, same-head/tail, or same-target shader/resource relation without an identical full manifest is not an exact duplicate.
+- Every regular content file participates in exact verification. OS noise and dot-prefixed internal staging directories are excluded consistently.
+- Similarity edges are pairwise evidence only; they cannot transitively promote a group to exact identity.
+
 #### US-32.2: Conflict Resolution Interface (Report Table)
 
 As a user, I want to review duplicates side-by-side and choose bulk resolutions, so that clearing space is rapid and safe.
@@ -46,21 +53,33 @@ As a user, I want to review duplicates side-by-side and choose bulk resolutions,
 
 ---
 
+#### Report lifecycle contract
+
+- A completed report is persisted and loaded per `game_id`. Starting, failing, or cancelling another scan does not replace the last successful report.
+- `Started`, `Finished`, `Cancelled`, and `Failed` are distinct lifecycle outcomes. The UI refreshes its report only after `Finished`.
+- Keep/Delete/Hardlink controls require verified 100% identity. Non-exact relationships remain review/ignore-only.
+
 #### US-32.3: Safe Deletion & Trashing
 
 As a user, I want the delete resolution to act as a soft-delete, so I can restore a folder if compiling breaks the mod.
 
 | ID        | Type        | Criteria                                                                                                                                                            |
 | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-32.3.1 | ✅ Positive | Given the "Replace" or "Delete" option, the deleted folder is moved directly to the custom `./app_data/trash/` location (Epic 22 rule), never permanently destroyed |
+| AC-32.3.1 | ✅ Positive | Given the "Replace" or "Delete" option, the removed folder is sent through the recoverable recycle/trash service, never permanently destroyed |
 | AC-32.3.2 | ⚠️ Edge     | Given the resolution affects multiple paths inside an object grid, TanStack query `['mods', gameId]` invalidates to refresh the app's overall memory sizes          |
 
 ---
 
+#### Resolution safety contract
+
+- Before Keep/Delete/Hardlink, the resolver recomputes full path-aware manifests for both folders.
+- If either folder changed after scanning, both folders are preserved and the request is reported as failed.
+- Removal uses the recoverable recycle/trash service. Hardlink replacement stages the original file and restores it on failure.
+
 ### Non-Goals
 
 - No automatic background deduplication — always an explicit user-run action.
-- Hardlinking restricted specifically against standard portable metadata files (`info.json` or `.ini` text lines are skipped if sizes < 512KB).
+- OS-generated noise files and dot-prefixed internal directories are excluded from hardlink replacement; ordinary mod metadata remains part of identity verification.
 - Cross-game deduplication is completely ignored (scoped only to the current `game_id`).
 
 ---
@@ -70,21 +89,13 @@ As a user, I want the delete resolution to act as a soft-delete, so I can restor
 ### Architecture Overview
 
 ```rust
-// Parallel Hashing Pipeline
-fn calculate_folder_signature(folder_path: &Path) -> Vec<FileSignature> {
-    let files = walkdir::WalkDir::new(folder_path)...;
-    files.into_par_iter().map(|path| {
-        let size = file.metadata().len();
-        let mut hasher = blake3::Hasher::new();
-        if size > 5_000_000 {
-            // Partial Sampling (1KB head + 1KB tail) for heavy textures
-            hasher.update(&read_head(&file, 1024));
-            hasher.update(&read_tail(&file, 1024));
-        } else {
-            hasher.update_reader(&mut file); // Full hash
-        }
-        FileSignature { hash, size, rel_path }
-    }).collect()
+fn scan_exact_duplicates(mods_root: &Path) -> Vec<DuplicateGroup> {
+    let logical_units = scan_terminal_mod_roots(mods_root);
+    let candidates = score_partial_snapshots(&logical_units);
+    let verified = candidates
+        .into_par_iter()
+        .filter_map(full_manifest_match);
+    group_identical_manifests(verified)
 }
 
 // Database Schema (Whitelist / Ignore Management)
@@ -105,15 +116,16 @@ CREATE TABLE duplicate_whitelist (
 | Component     | Detail                                                                                              |
 | ------------- | --------------------------------------------------------------------------------------------------- |
 | Parallelism   | Uses `rayon::prelude::*` for heavy IO/CPU workload scaling out to all logic cores.                  |
-| Hardlinks     | `fs::hard_link(keep_path, target_path)`. Fails safely on `EXDEV` (cross-device).                    |
-| Trash Service | Epic 22 Trash Service handles standard deletions safely to `/app_data/trash/`.                      |
+| Hardlinks     | Full manifests are revalidated immediately before per-file replacement; failed replacement restores the staged original. |
+| Trash Service | Recoverable recycle/trash service handles folder removal after exact revalidation.                                      |
 | Whitelist IR  | `get_ignored_pairs` and `remove_ignored_pair` commands provide recovery for whitelisted duplicates. |
-| Report DB     | UI pulls paginated tables off SQLite `duplicate_reports` ensuring heavy scans remain dismissible.   |
+| Report DB     | Latest completed report is stored transactionally in existing `dedup_jobs`, `dedup_groups`, and `dedup_group_members`, scoped per game. |
 
 ### Security & Privacy
 
 - **Safe Recovery**: File removals execute soft delete procedures exclusively.
 - **Operation Guarantee**: Scan reads are lock-free and robust against `EACCESS`. Writes require global `OperationLock` + `WatcherSuppression` arrays during actual application loop to halt mid-way anomalies or recursive refresh triggers.
+- **Stale-input rejection**: Folder paths supplied by the UI are not proof. The resolver requires path-aware, full-BLAKE3 manifest equality immediately before Keep/Delete/Hardlink.
 
 ---
 

@@ -106,4 +106,12 @@ pub struct ExtractionResult {
     pub error: Option<String>,
     pub aborted: bool,
     pub collisions: Vec<crate::services::scanner::core::types::CollisionInfo>,
+    pub sync_warning: Option<crate::services::disk_reconcile::types::CommittedMutationSyncWarning>,
+}
+
+/// Read-only import staging outcome. The source archive is never moved or deleted.
+#[derive(Debug, Clone)]
+pub struct StagedArchive {
+    pub mod_roots: Vec<std::path::PathBuf>,
+    pub files_extracted: usize,
 }

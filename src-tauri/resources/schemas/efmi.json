@@ -63,6 +63,7 @@
       ]
     }
   ],
+  "match_extensions": ["ini", "dds", "buf", "ib"],
   "stopwords": [
     "mod",
     "mods",

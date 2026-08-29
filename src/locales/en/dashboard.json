@@ -10,12 +10,12 @@
   },
   "header": {
     "title": "Dashboard",
-    "subtitle": "Overview of your mod ecosystem",
-    "refresh": "Refresh"
+    "subtitle": "Overview of your mod ecosystem"
   },
   "actions": {
     "quick_play": "Quick Play",
     "mods_manager": "Mods Manager",
+    "mod_inbox": "Mod Inbox",
     "storage_optimizer": "Storage Optimizer",
     "collections": "Collections",
     "settings": "Settings",

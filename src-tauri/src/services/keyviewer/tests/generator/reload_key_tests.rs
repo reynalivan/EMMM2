@@ -133,6 +133,7 @@ fn resolves_package_config_before_executable_fallback() {
         name: "Game".into(),
         game_type: GameType::GIMI,
         mod_path: package_root.join("Mods"),
+        ready_to_move_path: None,
         game_exe: game_root.join("game.exe"),
         loader_exe: None,
         launch_args: None,

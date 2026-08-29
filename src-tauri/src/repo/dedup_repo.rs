@@ -1,5 +1,123 @@
 use crate::domain::conflicts::WhitelistEntry;
+use crate::domain::errors::ScannerError;
+use crate::types::dup_scan::{DupScanGroup, DupScanReport};
 use sqlx::SqlitePool;
+
+pub async fn persist_completed_report(
+    pool: &SqlitePool,
+    report: &DupScanReport,
+) -> Result<(), ScannerError> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("DELETE FROM dedup_jobs WHERE game_id = ?")
+        .bind(&report.game_id)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query(
+        "INSERT INTO dedup_jobs (id, game_id, status, completed_at) \
+         VALUES (?, ?, 'completed', CURRENT_TIMESTAMP)",
+    )
+    .bind(&report.scan_id)
+    .bind(&report.game_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    for group in &report.groups {
+        let group_json = serde_json::to_string(group)?;
+        sqlx::query(
+            "INSERT INTO dedup_groups (id, job_id, reasons_json, resolution_status) \
+             VALUES (?, ?, ?, 'pending')",
+        )
+        .bind(&group.group_id)
+        .bind(&report.scan_id)
+        .bind(group_json)
+        .execute(&mut *transaction)
+        .await?;
+
+        for (index, member) in group.members.iter().enumerate() {
+            let Some(mod_id) = member.mod_id.as_deref() else {
+                continue;
+            };
+            sqlx::query(
+                "INSERT INTO dedup_group_members \
+                 (id, group_id, folder_id, signals_json, is_primary) \
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(uuid::Uuid::new_v4().to_string())
+            .bind(&group.group_id)
+            .bind(mod_id)
+            .bind(serde_json::to_string(member)?)
+            .bind(index == 0)
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+
+    transaction.commit().await?;
+    Ok(())
+}
+
+pub async fn load_latest_completed_report(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Option<DupScanReport>, ScannerError> {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT jobs.id, games.mods_path \
+         FROM dedup_jobs jobs \
+         JOIN games ON games.id = jobs.game_id \
+         WHERE jobs.game_id = ? AND jobs.status = 'completed' \
+         ORDER BY jobs.completed_at DESC, jobs.started_at DESC LIMIT 1",
+    )
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some((scan_id, root_path)) = row else {
+        return Ok(None);
+    };
+
+    let group_rows: Vec<String> = sqlx::query_scalar(
+        "SELECT reasons_json FROM dedup_groups \
+         WHERE job_id = ? AND resolution_status = 'pending' ORDER BY created_at, id",
+    )
+    .bind(&scan_id)
+    .fetch_all(pool)
+    .await?;
+    let groups: Vec<DupScanGroup> = group_rows
+        .into_iter()
+        .map(|json| serde_json::from_str(&json))
+        .collect::<Result<_, _>>()?;
+    let total_members = groups.iter().map(|group| group.members.len()).sum();
+
+    Ok(Some(DupScanReport {
+        scan_id,
+        game_id: game_id.to_string(),
+        root_path,
+        total_groups: groups.len(),
+        total_members,
+        groups,
+    }))
+}
+
+pub async fn load_pending_group(
+    pool: &SqlitePool,
+    game_id: &str,
+    group_id: &str,
+) -> Result<Option<DupScanGroup>, ScannerError> {
+    let group_json: Option<String> = sqlx::query_scalar(
+        "SELECT groups.reasons_json \
+         FROM dedup_groups groups \
+         JOIN dedup_jobs jobs ON jobs.id = groups.job_id \
+         WHERE groups.id = ? AND jobs.game_id = ? \
+           AND jobs.status = 'completed' AND groups.resolution_status = 'pending'",
+    )
+    .bind(group_id)
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await?;
+
+    group_json
+        .map(|json| serde_json::from_str(&json).map_err(ScannerError::from))
+        .transpose()
+}
 
 pub async fn get_duplicate_whitelist_pairs(
     pool: &SqlitePool,

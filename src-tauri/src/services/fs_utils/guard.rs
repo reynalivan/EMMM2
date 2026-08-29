@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 pub struct ValidatedPath {
     canonical: PathBuf,
     original: String,
+    owner_game_id: String,
 }
 
 impl ValidatedPath {
@@ -22,6 +23,11 @@ impl ValidatedPath {
     /// this; callers that touch the filesystem deref to the canonical form.
     pub fn original(&self) -> &str {
         &self.original
+    }
+
+    /// Game whose canonical mods root contains this path.
+    pub fn owner_game_id(&self) -> &str {
+        &self.owner_game_id
     }
 
     pub fn into_path_buf(self) -> PathBuf {
@@ -58,7 +64,7 @@ pub fn validate_path(
     candidate_path: &str,
 ) -> Result<ValidatedPath, AppError> {
     let canonical_root = canonical_mods_root(config, game_id)?;
-    validate_against_root(&canonical_root, candidate_path)
+    validate_against_root(&canonical_root, game_id, candidate_path)
 }
 
 /// Batch form of [`validate_path`]: the mods root is resolved and
@@ -72,8 +78,26 @@ pub fn validate_paths(
     let canonical_root = canonical_mods_root(config, game_id)?;
     candidate_paths
         .iter()
-        .map(|candidate| validate_against_root(&canonical_root, candidate))
+        .map(|candidate| validate_against_root(&canonical_root, game_id, candidate))
         .collect()
+}
+
+/// Validates an exact configured mods root for commands that bind a long-lived
+/// scanner or watcher to a game. Child paths are valid mutation targets but
+/// must never become the source root for another game's projection.
+pub fn validate_mods_root(
+    config: &ConfigService,
+    game_id: &str,
+    candidate_path: &str,
+) -> Result<PathBuf, AppError> {
+    let configured_root = canonical_mods_root(config, game_id)?;
+    let candidate_root = canonicalize_for_guard(Path::new(candidate_path))?;
+    if candidate_root != configured_root {
+        return Err(AppError::Security(
+            "Path does not match the configured game mods directory".to_string(),
+        ));
+    }
+    Ok(configured_root)
 }
 
 fn canonical_mods_root(config: &ConfigService, game_id: &str) -> Result<PathBuf, AppError> {
@@ -97,6 +121,7 @@ fn canonical_mods_root(config: &ConfigService, game_id: &str) -> Result<PathBuf,
 
 fn validate_against_root(
     canonical_root: &Path,
+    game_id: &str,
     candidate_path: &str,
 ) -> Result<ValidatedPath, AppError> {
     let candidate = Path::new(candidate_path);
@@ -117,6 +142,7 @@ fn validate_against_root(
     Ok(ValidatedPath {
         canonical: canonical_candidate,
         original: candidate_path.to_string(),
+        owner_game_id: game_id.to_string(),
     })
 }
 
@@ -129,7 +155,7 @@ pub fn validate_dir_in_configured_roots(
     candidate_path: &str,
 ) -> Result<ValidatedPath, AppError> {
     let canonical_candidate = canonicalize_for_guard(Path::new(candidate_path))?;
-    containment_in_any_root(config, canonical_candidate)
+    containment_in_any_root(config, canonical_candidate, candidate_path)
 }
 
 /// Like [`validate_dir_in_configured_roots`], but for a directory that may not
@@ -177,14 +203,17 @@ pub fn validate_future_dir_in_configured_roots(
         canonical.push(segment);
     }
 
-    containment_in_any_root(config, canonical)
+    containment_in_any_root(config, canonical, candidate_path)
 }
 
 fn containment_in_any_root(
     config: &ConfigService,
     canonical_candidate: PathBuf,
+    original: &str,
 ) -> Result<ValidatedPath, AppError> {
     let settings = config.get_settings();
+    let mut owner: Option<(usize, String)> = None;
+    let mut owner_is_ambiguous = false;
     for game in &settings.games {
         if game.mod_path.as_os_str().is_empty() {
             continue;
@@ -195,11 +224,35 @@ fn containment_in_any_root(
         };
 
         if canonical_candidate.starts_with(&canonical_root) {
-            return Ok(ValidatedPath {
-                original: canonical_candidate.to_string_lossy().to_string(),
-                canonical: canonical_candidate,
-            });
+            let depth = canonical_root.components().count();
+            match owner.as_ref() {
+                Some((current_depth, current_game_id))
+                    if depth == *current_depth && current_game_id != &game.id =>
+                {
+                    owner_is_ambiguous = true;
+                }
+                Some((current_depth, _)) if depth <= *current_depth => {}
+                _ => {
+                    owner = Some((depth, game.id.clone()));
+                    owner_is_ambiguous = false;
+                }
+            }
         }
+    }
+
+    if owner_is_ambiguous {
+        return Err(AppError::Security(
+            "Security Violation: Target belongs to multiple configured mods directories"
+                .to_string(),
+        ));
+    }
+
+    if let Some((_, owner_game_id)) = owner {
+        return Ok(ValidatedPath {
+            original: original.to_string(),
+            canonical: canonical_candidate,
+            owner_game_id,
+        });
     }
 
     Err(AppError::Security(

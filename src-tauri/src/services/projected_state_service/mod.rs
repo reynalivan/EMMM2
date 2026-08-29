@@ -107,6 +107,7 @@ pub fn build_projected_state(
                 if existing.thumbnail_hint.is_none() {
                     existing.thumbnail_hint = metadata.preview_path.clone();
                 }
+                merge_root_safety(existing, member);
             })
             .or_insert_with(|| ProjectedActiveRoot {
                 object_id: member.object_id.clone(),
@@ -117,6 +118,8 @@ pub fn build_projected_state(
                 thumbnail_hint: metadata.preview_path.clone(),
                 warnings: metadata.warnings.clone(),
                 is_missing,
+                is_safe: member.is_safe,
+                safety_source: member.safety_source.clone(),
             });
     }
 
@@ -164,6 +167,22 @@ pub fn build_projected_state(
             active_root_count,
             missing_root_count,
         },
+    }
+}
+
+fn merge_root_safety(root: &mut ProjectedActiveRoot, member: &CollectionMod) {
+    let member_is_classified = member
+        .safety_source
+        .as_deref()
+        .is_some_and(|source| source != crate::common::safety_constants::SAFETY_SOURCE_UNKNOWN);
+    let root_is_classified = root
+        .safety_source
+        .as_deref()
+        .is_some_and(|source| source != crate::common::safety_constants::SAFETY_SOURCE_UNKNOWN);
+
+    if member_is_classified && (!member.is_safe || !root_is_classified) {
+        root.is_safe = member.is_safe;
+        root.safety_source.clone_from(&member.safety_source);
     }
 }
 

@@ -58,6 +58,7 @@ vi.mock('../../../hooks/useFolderMutations', () => ({
     isPending: false,
   }),
   useUpdateModInfo: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
+  useToggleModSafe: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
   useActiveConflicts: () => ({ data: [] }),
 }));
 
@@ -179,6 +180,9 @@ const mockObject: ObjectSummary = {
   created_at: '2025-01-01T00:00:00Z',
   mod_count: 5,
   enabled_count: 2,
+  safe_mod_count: 5,
+  unsafe_mod_count: 0,
+  unclassified_mod_count: 0,
   thumbnail_path: null,
   is_pinned: false,
   is_auto_sync: false,

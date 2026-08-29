@@ -30,7 +30,7 @@
 > `cargo clippy` polos exit 0 walau ada warning. Harus `-D warnings`. Ini kelas
 > cacat yang sama dengan `git diff` yang mengabaikan file untracked (Fase 7).
 >
-> SISA >350 baris (di luar scope fase mana pun, untuk pekerjaan lanjutan):
+> Sisa modul besar yang perlu ditinjau kohesinya (di luar scope fase mana pun, untuk pekerjaan lanjutan):
 > `projected_state_service` 630, `runtime_mutation_engine` 627,
 > `workspace_switch_service` 510, `disk_reconcile/rename_healer` 464,
 > `hotkeys/manager` 440, plus beberapa file test besar.
@@ -104,7 +104,7 @@
 > `QueryBuilder` mentah pindah dari `deepmatch_scanner_cmds` ke
 > `repo/mod_repo/listing.rs::get_folder_paths_by_object_ids`. Test: cargo **585**,
 > vitest **740**.
-> Sisa >350 di scanner (ditunda, bukan target Fase 6): `dedup/scanner.rs` 440,
+> Sisa modul besar di scanner (ditunda, bukan target Fase 6): `dedup/scanner.rs` 440,
 > `dedup/signals.rs` 433, `content/tokenizer.rs` 354.
 >
 > PERLU DIVERIFIKASI (belum ditelusuri tuntas):
@@ -166,7 +166,7 @@
 > `workspace_cmds.rs` 521 → **41** (orkestrasi ke `services/workspace_switch_service.rs`,
 > 347 baris prod) + kebocoran tipe Tauri `State` di `enable_only_this_service` ditutup;
 > `core_ops` 634 / `bulk` 480 / `object_switch` 437 / `trash` 407 → direktori submodul,
-> semua ≤350. Sisa file Rust prod >350 tinggal 21, semuanya milik fase berikutnya.
+> submodul dibentuk berdasarkan tanggung jawab. Sisa 21 file Rust produksi adalah milik fase berikutnya.
 > FE: `useWorkspaceSwitchActions` 511→312, `useSharedObjectActions` 412→309,
 > `useWorkspaceViewModel` 391→163 (logic murni ke `workspaceSwitchOps.ts`,
 > `selectionReconciliation.ts`, `sharedObjectActionsState.ts`); `useObjHandlers*`
@@ -238,7 +238,7 @@
 >
 > Hasil Fase 0: specta codegen aktif (`src/lib/bindings.gen.ts` = sumber type tunggal,
 > `src/types/*` jadi re-export tipis; drift guard: cargo test regenerate + CI
-> `git diff --exit-code`); max-lines warn 350 + clippy advisory di CI; 20
+> `git diff --exit-code`); review kohesi modul + clippy advisory di CI; 20
 > characterization test Rust (disk_reconcile, runtime_mutation_engine,
 > projected_state_service) + 15 smoke test useAppStore; 6 bug drift runtime NYATA
 > diperbaiki (SyncResult/WhitelistEntry/ExtractionResult/ArchiveEntryInfo camelCase,
@@ -262,8 +262,8 @@
 
 | Fitur | LOC | Grade | Masalah utama |
 |---|---|---|---|
-| object-list | 9509 | D | 48 file flat, 6 file >350, coupling terberat |
-| workspace-runtime | 3197 | D | hub 10 fitur, 4 file >350, state nyangkut di god-store |
+| object-list | 9509 | D | 48 file flat, 6 modul besar, coupling terberat |
+| workspace-runtime | 3197 | D | hub 10 fitur, 4 modul besar, state nyangkut di god-store |
 | folder-grid | 5026 | C | 27 file flat, coupling berat |
 | preview | 4009 | C | 5 file "mengakali" limit (301–313), coupling 4 arah |
 | scanner | 3147 | C | overlap ScanReview dengan object-list |
@@ -284,7 +284,7 @@
 |---|---|---|---|
 | repo/ | ~4900 | D | object_repo 1621, mod_repo 938, collection_repo 756; impor terbalik ke services; 7 repo tanpa test |
 | commands/ | ~5700 | C | bypass repo/sqlx langsung di 6+ file; business logic di collections/cmds |
-| services/ | ~24000 | C | 20+ file >350; disk_reconcile & runtime engine tanpa test |
+| services/ | ~24000 | C | 20+ modul besar; disk_reconcile & runtime engine tanpa test |
 | types/ | 149 | C+ | CommandError duplikat → hapus |
 | pipeline/ | 626 | B | bersih, tapi tanpa test |
 | database/ | 190 | B | vestigial → lebur ke repo (Fase 9) |
@@ -295,7 +295,7 @@
 ### Fase 0 — Safety Net ✅ (sesi ini)
 1. Roadmap ini ditulis ke `.docs/`.
 2. Specta codegen aktif: export ke `src/lib/bindings.gen.ts`; `bindings.ts` jadi shim re-export; type manual tergantikan dihapus; guard "generated up-to-date" di cargo test.
-3. `max-lines` warn 350 di eslint; `cargo clippy` non-blocking di CI.
+3. Review kohesi modul; `cargo clippy` non-blocking di CI.
 4. Characterization test: `disk_reconcile` (orchestrator/projection_writer/rename_healer), `runtime_mutation_engine`, `projected_state_service`, smoke test `useAppStore`.
 
 ### Fase 1 — Fondasi lintas-lapisan
@@ -323,7 +323,7 @@
 - FE: pecah `ApplyCollectionModal` 383.
 
 ### Fase 6 — scanner, file-watcher, duplicates
-- BE: raw sqlx di `deepmatch_scanner_cmds` → repo; pecah deep_matcher >350 (`mechanical_rerank` 506, `gamebanana` 454, `full_pipeline` 442) & `sync/commit` 484; refactor `disk_reconcile`, bersihkan 12 unwrap.
+- BE: raw sqlx di `deepmatch_scanner_cmds` → repo; pecah deep_matcher berdasarkan kohesi (`mechanical_rerank` 506, `gamebanana` 454, `full_pipeline` 442) & `sync/commit` 484; refactor `disk_reconcile`, bersihkan 12 unwrap.
 - FE: konsolidasi overlap ScanReview (lanjutan Fase 3).
 
 ### Fase 7 — browser + downloads

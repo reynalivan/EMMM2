@@ -24,7 +24,7 @@ export const objectKeys = {
 
 export interface ObjectListRefreshOptions {
   includeFolders?: boolean;
-  includeCorridor?: boolean;
+  includeRuntime?: boolean;
   includeCollections?: boolean;
   includeDashboard?: boolean;
   refetchType?: QueryRefetchType;
@@ -33,8 +33,8 @@ export interface ObjectListRefreshOptions {
 export function buildObjectListRefreshDescriptor(options: ObjectListRefreshOptions = {}) {
   const events: RuntimeRefreshEvent[] = ['workspaceChanged'];
 
-  if (options.includeCorridor) {
-    events.push('corridorChanged');
+  if (options.includeRuntime) {
+    events.push('runtimeStateChanged');
   }
   if (options.includeCollections) {
     events.push('collectionsChanged');

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -60,6 +60,26 @@ pub fn detect_conflicts(ini_files: &[(PathBuf, PathBuf)]) -> Vec<ConflictInfo> {
         .map(|(mod_root, _)| mod_root.clone())
         .collect();
     detect_conflicts_with_roots(ini_files, &mod_roots)
+}
+
+/// Discover INI files that GIMI can load from one enabled mod root.
+///
+/// The runtime recursively includes mod content but excludes every descendant
+/// directory whose name starts with `DISABLED`. Keeping this policy beside the
+/// ShaderFixes traversal prevents the two conflict sources from drifting.
+pub fn discover_runtime_ini_files(mod_root: &Path) -> Vec<PathBuf> {
+    runtime_entries(mod_root)
+        .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| !entry.file_name().eq_ignore_ascii_case("desktop.ini"))
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"))
+        })
+        .map(|entry| entry.into_path())
+        .collect()
 }
 
 /// Variant used when a mod contains only a legacy ShaderFixes replacement.
@@ -148,7 +168,12 @@ fn build_conflict(entries: Vec<HashEntry>) -> Option<ConflictInfo> {
         section_name: first.evidence.section_name.clone(),
         is_active: mod_paths.iter().filter(|path| path_is_active(path)).count() >= 2,
         kind: first.kind,
-        certainty: if evidence.iter().any(|item| item.condition.is_some()) {
+        // Resource overrides can carry draw/resource match constraints that
+        // this evidence parser does not evaluate, so a shared hash alone is
+        // never strong enough to call their overlap definite.
+        certainty: if first.kind == ConflictKind::ResourceHash
+            || evidence.iter().any(|item| item.condition.is_some())
+        {
             ConflictCertainty::Potential
         } else {
             ConflictCertainty::Definite
@@ -224,13 +249,16 @@ impl SectionEvidence {
     }
 
     fn observe(&mut self, line: &str) {
-        if let Some(value) = property(line, "hash").and_then(normalize_hash) {
+        if let Some(value) =
+            property(line, "hash").and_then(|value| normalize_hash(value, self.kind))
+        {
             self.hashes.push(value);
         }
         if let Some(value) = property(line, "condition") {
             self.condition = Some(value.to_string());
         }
-        self.priority = property(line, "priority")
+        self.priority = property(line, "match_priority")
+            .or_else(|| property(line, "priority"))
             .and_then(|value| value.parse().ok())
             .or(self.priority);
         self.match_first_index = property(line, "match_first_index")
@@ -285,9 +313,13 @@ fn property<'a>(line: &'a str, expected: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
-fn normalize_hash(value: &str) -> Option<String> {
+fn normalize_hash(value: &str, kind: ConflictKind) -> Option<String> {
     let value = value.trim();
-    (!value.is_empty() && value.chars().all(|character| character.is_ascii_hexdigit()))
+    let expected_length = match kind {
+        ConflictKind::ResourceHash => 8,
+        ConflictKind::ShaderHash | ConflictKind::ShaderReplacement => 16,
+    };
+    (value.len() == expected_length && value.chars().all(|character| character.is_ascii_hexdigit()))
         .then(|| value.to_ascii_lowercase())
 }
 
@@ -302,14 +334,24 @@ fn parse_u32(value: &str) -> Option<u32> {
 }
 
 fn scan_shader_replacements(mod_root: &Path) -> Vec<HashEntry> {
-    WalkDir::new(mod_root)
-        .max_depth(8)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
+    runtime_entries(mod_root)
         .filter(|entry| entry.file_type().is_file())
         .filter_map(|entry| replacement_entry(entry.path(), mod_root))
         .collect()
+}
+
+fn runtime_entries(mod_root: &Path) -> impl Iterator<Item = DirEntry> + '_ {
+    WalkDir::new(mod_root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(move |entry| {
+            entry.path() == mod_root
+                || !entry.file_type().is_dir()
+                || !crate::common::normalizer::is_disabled_folder(
+                    &entry.file_name().to_string_lossy(),
+                )
+        })
+        .filter_map(Result::ok)
 }
 
 fn replacement_entry(path: &Path, mod_root: &Path) -> Option<HashEntry> {

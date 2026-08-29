@@ -11,6 +11,18 @@ pub async fn get_matched_entry_key_by_id(
         .await
 }
 
+pub async fn has_matched_entry_key<'c, E>(executor: E, id: &str) -> Result<bool, sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM objects WHERE id = ? AND matched_entry_key IS NOT NULL)",
+    )
+    .bind(id)
+    .fetch_one(executor)
+    .await
+}
+
 pub async fn get_matched_entry_keys_by_game(
     pool: &SqlitePool,
     game_id: &str,

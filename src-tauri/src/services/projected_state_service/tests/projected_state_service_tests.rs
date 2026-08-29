@@ -31,6 +31,8 @@ fn make_member(
         node_type: Some(node_type.to_string()),
         warnings: Vec::new(),
         is_enabled,
+        is_safe: true,
+        safety_source: Some("manual".to_string()),
     }
 }
 
@@ -44,6 +46,8 @@ fn make_root(object_id: &str, root_key: &str, is_missing: bool) -> ProjectedActi
         thumbnail_hint: None,
         warnings: Vec::new(),
         is_missing,
+        is_safe: true,
+        safety_source: Some("manual".to_string()),
     }
 }
 

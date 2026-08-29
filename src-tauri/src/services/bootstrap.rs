@@ -5,7 +5,7 @@
 //! `lib.rs` keeps the `.manage()` / plugin / command registration and calls these
 //! in the same order.
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::repo;
 use crate::services;
@@ -157,6 +157,15 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
     let pool = app.state::<sqlx::SqlitePool>().inner().clone();
 
     block_on(async {
+        match repo::task_repo::reclaim_interrupted_apply_tasks(&pool).await {
+            Ok(reclaimed) if reclaimed > 0 => {
+                log::info!("startup: reclaimed {reclaimed} interrupted collection apply task(s)");
+            }
+            Ok(_) => {}
+            Err(error) => {
+                log::warn!("startup: interrupted collection apply reclaim failed: {error}");
+            }
+        }
         match repo::task_repo::purge_old_tasks(&pool).await {
             Ok(purged) if purged > 0 => {
                 log::info!("startup: purged {purged} old task log(s) before boot reconcile");
@@ -168,27 +177,77 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         }
 
         recover_interrupted_transfers(&pool).await;
+        match repo::import_batch_repo::recover_interrupted_batch_states(&pool).await {
+            Ok(recovered) if recovered > 0 => {
+                log::info!("startup: made {recovered} interrupted import state(s) resumable");
+            }
+            Ok(_) => {}
+            Err(error) => log::warn!("startup: import batch recovery failed: {error}"),
+        }
+        match repo::import_batch_repo::list_terminal_batch_ids_for_staging_cleanup(&pool).await {
+            Ok(batch_ids) => match app.path().app_data_dir() {
+                Ok(app_data) => {
+                    let staging_root = app_data.join("import-staging");
+                    for batch_id in batch_ids {
+                        if let Err(error) = services::import_batch::staging::cleanup_batch_staging(
+                            &staging_root,
+                            &batch_id,
+                        ) {
+                            log::warn!(
+                                "startup: batch staging cleanup failed for {batch_id}: {error}"
+                            );
+                        }
+                    }
+                }
+                Err(error) => log::warn!("startup: app data path unavailable: {error}"),
+            },
+            Err(error) => log::warn!("startup: terminal batch cleanup lookup failed: {error}"),
+        }
+        match services::browser::import_service::cleanup_old_terminal_staging(&pool, &app, 20).await
+        {
+            Ok(count) if count > 0 => {
+                log::info!("startup: removed {count} stale import staging director(ies)");
+            }
+            Ok(_) => {}
+            Err(error) => log::warn!("startup: import staging cleanup failed: {error}"),
+        }
+    });
+
+    let startup_game = app
+        .state::<services::config::ConfigService>()
+        .with_settings(|settings| settings.active_game().cloned())
+        .filter(|game| !game.mod_path.as_os_str().is_empty());
+    let startup_recovery_generation = startup_game.as_ref().map(|game| {
+        app.state::<services::disk_reconcile::orchestrator::DiskReconcileState>()
+            .mark_initial_recovery_pending(&game.id)
     });
 
     spawn(async move {
-        let config = app.state::<services::config::ConfigService>();
-        let Some(game) = config.with_settings(|settings| settings.active_game().cloned()) else {
+        let Some(game) = startup_game else {
             return;
         };
-        if game.mod_path.as_os_str().is_empty() {
-            return;
-        }
-
+        let recovery_generation = startup_recovery_generation
+            .expect("startup game and recovery generation are created together");
+        let config = app.state::<services::config::ConfigService>();
         let watcher_state = app.state::<services::scanner::watcher::WatcherState>();
         let disk_reconcile_state =
             app.state::<services::disk_reconcile::orchestrator::DiskReconcileState>();
+        let operation_lock = app.state::<services::fs_utils::operation_lock::OperationLock>();
 
-        if let Err(error) = services::disk_reconcile::orchestrator::reconcile_disk_state(
+        let reconcile_result = services::disk_reconcile::orchestrator::reconcile_disk_state(
             services::disk_reconcile::orchestrator::DiskReconcileContext {
                 pool: &pool,
                 config: config.inner(),
                 state: disk_reconcile_state.inner(),
                 watcher_suppressor: watcher_state.suppressor.clone(),
+                operation_lock: operation_lock.inner(),
+                progress_reporter: Some(std::sync::Arc::new(
+                    services::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
+                        app.clone(),
+                        game.id.clone(),
+                        services::disk_reconcile::types::DiskReconcileReason::StartupBoot,
+                    ),
+                )),
             },
             services::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
                 game.id.clone(),
@@ -197,13 +256,39 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 true,
             ),
         )
-        .await
-        {
-            log::warn!(
-                "Startup Disk Reconcile failed for '{}': {}",
-                game.name,
-                error
-            );
+        .await;
+        let recovery_outcome = match reconcile_result {
+            Ok(result) => {
+                services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(Box::new(
+                    result,
+                ))
+            }
+            Err(error) => {
+                log::warn!(
+                    "Startup Disk Reconcile failed for '{}': {}",
+                    game.name,
+                    error
+                );
+                services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                    error.to_string(),
+                )
+            }
+        };
+        let completed_result = match &recovery_outcome {
+            services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(result) => {
+                Some((**result).clone())
+            }
+            services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(_) => None,
+        };
+        disk_reconcile_state.finish_initial_recovery(
+            &game.id,
+            recovery_generation,
+            recovery_outcome,
+        );
+        if let Some(result) = completed_result {
+            if let Err(error) = app.emit("disk_reconcile:result", result) {
+                log::warn!("Could not emit startup disk reconcile result: {error}");
+            }
         }
     });
 }

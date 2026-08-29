@@ -7,6 +7,7 @@ fn test_db() -> MasterDb {
             name: "Raiden Shogun".to_string(),
             tags: vec!["raiden".to_string(), "electro".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
                 name: "Wish".to_string(),
                 aliases: vec!["raidenwish".to_string()],
@@ -24,6 +25,7 @@ fn test_db() -> MasterDb {
             name: "Ayaka".to_string(),
             tags: vec!["cryo".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![],
             thumbnail_path: None,
             metadata: None,
@@ -33,6 +35,7 @@ fn test_db() -> MasterDb {
             name: "Nahida".to_string(),
             tags: vec!["dendro".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![],
             thumbnail_path: None,
             metadata: None,

@@ -1,8 +1,40 @@
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use sqlx::{QueryBuilder, Sqlite};
 
 use crate::common::path_key::{canonical_name_key, folder_path_key};
 use crate::domain::models::ItemStatus;
 use crate::domain::objects::UpdateObjectInput;
+
+pub async fn set_filesystem_identity_tx(
+    conn: &mut sqlx::SqliteConnection,
+    object_id: &str,
+    filesystem_identity: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE objects SET filesystem_identity = ? WHERE id = ?")
+        .bind(filesystem_identity)
+        .bind(object_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_object_path_exact_tx(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    old_path: &str,
+    new_path: &str,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE objects SET folder_path = ?, folder_path_key = ? \
+         WHERE game_id = ? AND folder_path = ?",
+    )
+    .bind(new_path)
+    .bind(folder_path_key(new_path, None))
+    .bind(game_id)
+    .bind(old_path)
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
 
 pub async fn update_object_folder_path<'c, E>(
     executor: E,
@@ -110,15 +142,80 @@ where
     Ok(())
 }
 
+pub async fn update_object_type_for_game<'c, E>(
+    executor: E,
+    game_id: &str,
+    object_id: &str,
+    object_type: &str,
+) -> Result<u64, sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    let result = sqlx::query("UPDATE objects SET object_type = ? WHERE game_id = ? AND id = ?")
+        .bind(object_type)
+        .bind(game_id)
+        .bind(object_id)
+        .execute(executor)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn update_object_disk_identity_by_id<'c, E>(
+    executor: E,
+    object_id: &str,
+    name: &str,
+    folder_path: &str,
+    status: ItemStatus,
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "UPDATE objects
+         SET name = ?, name_key = ?, folder_path = ?, folder_path_key = ?, status = ?
+         WHERE id = ?",
+    )
+    .bind(name)
+    .bind(canonical_name_key(name))
+    .bind(folder_path)
+    .bind(folder_path_key(folder_path, None))
+    .bind(status as i64)
+    .bind(object_id)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+pub async fn stage_object_identity_tx(
+    conn: &mut sqlx::SqliteConnection,
+    object_id: &str,
+    stage_path: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE objects SET name = ?, name_key = ?, folder_path = ?, folder_path_key = ? WHERE id = ?",
+    )
+    .bind(stage_path)
+    .bind(canonical_name_key(stage_path))
+    .bind(stage_path)
+    .bind(folder_path_key(stage_path, None))
+    .bind(object_id)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// JSON sentinels persisted when a value fails to serialize.
 const EMPTY_JSON_OBJECT: &str = "{}";
 const EMPTY_JSON_ARRAY: &str = "[]";
 
-pub async fn update_object(
-    pool: &SqlitePool,
+pub async fn update_object<'c, E>(
+    executor: E,
     id: &str,
     updates: &UpdateObjectInput,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE objects SET ");
     // `separated` owns the comma, so each field is one line and cannot get the
     // punctuation wrong; `wrote_any` is all that is left of the old `is_first`
@@ -184,6 +281,6 @@ pub async fn update_object(
     qb.push(" WHERE id = ");
     qb.push_bind(id);
 
-    qb.build().execute(pool).await?;
+    qb.build().execute(executor).await?;
     Ok(())
 }

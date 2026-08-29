@@ -5,6 +5,7 @@ import i18next from 'i18next';
 import { useAppStore } from '../../stores/useAppStore';
 import type { GameConfig } from '../../types/game';
 import { commands, type DiskReconcileReason, type DiskReconcileResult } from '../../lib/bindings';
+import { formatAppError } from '../../lib/appError';
 import { publishDiskReconcileRefresh } from './reconcileRefresh';
 import {
   buildDiskReconcilePathRewrites,
@@ -14,54 +15,71 @@ import {
 import { maybeShowExternalChangeToast } from './reconcileToast';
 import { applyWorkspacePathRewrites } from '../workspace-runtime/optimistic/workspaceViewModelRewrite';
 import { toast } from '../../stores/useToastStore';
+import {
+  openFolderConflictManagerDialog,
+  openRenameConfirmationDialog,
+} from '../workspace-runtime/state/workspaceDialogs';
+import { useWatcherLifecycle } from './watcherLifecycle';
+import { workspaceKeys } from '../workspace-runtime/useWorkspaceViewModel';
+import { useDiskReconcileProgress } from './reconcileProgress';
+import { isDuplicateWatcherError, type WatchErrorPayload } from './watcherError';
 
-interface WatchErrorPayload {
-  type: string;
-  error: string;
-  path?: string | null;
-}
+export { useWatcherLifecycle } from './watcherLifecycle';
 
 const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
+const AUTO_OPEN_REPORT_MAX_GAMES = 32;
+const RUNTIME_WARNING_DEDUPE_MS = 3_000;
+const autoOpenedConflictReportByGame = new Map<string, string>();
+const autoOpenedRenameReportByGame = new Map<string, string>();
+const lastRuntimeWarningByGame = new Map<string, { key: string; at: number }>();
+
+function setBoundedMapEntry<K, V>(map: Map<K, V>, key: K, value: V, maxEntries: number) {
+  if (map.has(key)) {
+    map.delete(key);
+  }
+  while (map.size >= maxEntries) {
+    const oldestKey = map.keys().next().value as K | undefined;
+    if (oldestKey === undefined) {
+      break;
+    }
+    map.delete(oldestKey);
+  }
+  map.set(key, value);
+}
+
+function maybeShowRuntimeEffectsWarning(result: DiskReconcileResult) {
+  const warning = result.warnings.find((entry) => entry.kind === 'RuntimeEffectsPending');
+  if (!warning) {
+    return;
+  }
+
+  const now = Date.now();
+  const warningKey = `${warning.kind}:${warning.message}`;
+  const previous = lastRuntimeWarningByGame.get(result.game_id);
+  if (previous?.key === warningKey && now - previous.at < RUNTIME_WARNING_DEDUPE_MS) {
+    return;
+  }
+
+  setBoundedMapEntry(
+    lastRuntimeWarningByGame,
+    result.game_id,
+    { key: warningKey, at: now },
+    AUTO_OPEN_REPORT_MAX_GAMES,
+  );
+  const fallback = `Disk changes were applied, but runtime refresh is still pending: ${warning.message}`;
+  toast.warning(
+    i18next.t('common:reconcile.runtime_effects_pending', {
+      error: warning.message,
+      defaultValue: fallback,
+    }) || fallback,
+  );
+}
 
 interface QueuedDiskReconcileRefresh {
   reason: DiskReconcileReason;
   forceFull: boolean;
   skipSyncCheck: boolean;
-}
-
-export function useWatcherLifecycle(activeGame: GameConfig | null) {
-  // Recovery: when the mods folder disappears the watcher dies with it.
-  // Re-running the effect once the source is available again restarts it.
-  const diskSourceUnavailable = useAppStore((state) =>
-    Boolean(activeGame?.id && state.diskReconcileByGame[activeGame.id]?.unavailable),
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const init = async () => {
-      await commands.stopWatcher().catch(() => {});
-      if (cancelled) {
-        return;
-      }
-
-      if (!activeGame?.mod_path || !activeGame?.id || diskSourceUnavailable) {
-        return;
-      }
-
-      await commands.startWatcher(activeGame.mod_path, activeGame.id).catch((error: unknown) => {
-        console.error('[DiskReconcile] Failed to start watcher:', error);
-      });
-    };
-
-    void init();
-
-    return () => {
-      cancelled = true;
-      commands.stopWatcher().catch(() => {});
-    };
-  }, [activeGame?.id, activeGame?.mod_path, diskSourceUnavailable]);
 }
 
 export function applyDiskReconcileResult(
@@ -72,6 +90,8 @@ export function applyDiskReconcileResult(
   // Disk Reconcile owns filesystem truth and global runtime refresh for disk-backed changes.
   const appStore = useAppStore.getState();
   if (result.status === 'SourceUnavailable') {
+    appStore.setFolderConflicts(result.game_id, []);
+    appStore.setRenameConfirmations(result.game_id, []);
     appStore.setDiskSourceUnavailable(
       result.game_id,
       result.error_message ?? 'Mods folder is unavailable',
@@ -79,8 +99,77 @@ export function applyDiskReconcileResult(
     return;
   }
 
+  maybeShowRuntimeEffectsWarning(result);
+
+  const hasFolderConflicts = result.status === 'AppliedWithFolderConflicts';
+  if (hasFolderConflicts) {
+    appStore.setDiskSourceUnavailable(result.game_id, null);
+    appStore.setFolderConflicts(result.game_id, result.folder_conflicts);
+    appStore.setRenameConfirmations(result.game_id, []);
+    const reportKey = result.folder_conflicts
+      .map((group) => {
+        const candidates = group.candidates
+          .map((candidate) => `${candidate.path}:${candidate.is_enabled}`)
+          .sort()
+          .join(',');
+        return `${group.group_id}:${candidates}`;
+      })
+      .sort()
+      .join('|');
+    if (autoOpenedConflictReportByGame.get(result.game_id) !== reportKey) {
+      setBoundedMapEntry(
+        autoOpenedConflictReportByGame,
+        result.game_id,
+        reportKey,
+        AUTO_OPEN_REPORT_MAX_GAMES,
+      );
+      if (activeGame?.id === result.game_id) {
+        openFolderConflictManagerDialog();
+      }
+    }
+  }
+
+  if (result.status === 'NeedsRenameConfirmation') {
+    appStore.setDiskSourceUnavailable(result.game_id, null);
+    appStore.setFolderConflicts(result.game_id, []);
+    appStore.setRenameConfirmations(result.game_id, result.rename_confirmations);
+    const reportKey = result.rename_confirmations
+      .map(
+        (group) =>
+          `${group.group_id}:${group.previous_paths.slice().sort().join(',')}:${group.current_paths.slice().sort().join(',')}`,
+      )
+      .sort()
+      .join('|');
+    if (autoOpenedRenameReportByGame.get(result.game_id) !== reportKey) {
+      setBoundedMapEntry(
+        autoOpenedRenameReportByGame,
+        result.game_id,
+        reportKey,
+        AUTO_OPEN_REPORT_MAX_GAMES,
+      );
+      if (activeGame?.id === result.game_id) {
+        openRenameConfirmationDialog();
+      }
+    }
+    return;
+  }
+
   appStore.setDiskSourceUnavailable(result.game_id, null);
+  if (!hasFolderConflicts) {
+    appStore.setFolderConflicts(result.game_id, []);
+  }
+  appStore.setRenameConfirmations(result.game_id, []);
+  if (!hasFolderConflicts) {
+    autoOpenedConflictReportByGame.delete(result.game_id);
+  }
+  autoOpenedRenameReportByGame.delete(result.game_id);
   appStore.setDiskReconcileTimestamp(result.game_id, Date.now());
+  if (result.reason === 'StartupBoot') {
+    void queryClient.invalidateQueries({
+      queryKey: workspaceKeys.all,
+      refetchType: 'active',
+    });
+  }
   applyWorkspacePathRewrites(buildDiskReconcilePathRewrites(result, activeGame), 'disk_reconcile');
   clearStaleSelections(result, activeGame);
   publishDiskReconcileRefresh(queryClient, result, isPreviewAffected(result, activeGame));
@@ -95,6 +184,7 @@ export function useDiskReconcileCoordinator(
   const workspaceView = useAppStore((state) => state.workspaceView);
   const diskReconcileByGame = useAppStore((state) => state.diskReconcileByGame);
   const markDiskReconcilePending = useAppStore((state) => state.markDiskReconcilePending);
+  const setDiskReconcileProgress = useAppStore((state) => state.setDiskReconcileProgress);
   const inFlightRef = useRef(false);
   const queuedRefreshRef = useRef<QueuedDiskReconcileRefresh | null>(null);
   const lastModsViewSyncKeyRef = useRef<string | null>(null);
@@ -104,12 +194,26 @@ export function useDiskReconcileCoordinator(
   const lastActiveGameIdRef = useRef<string | null>(activeGame?.id ?? null);
 
   useWatcherLifecycle(activeGame);
+  useDiskReconcileProgress(activeGame?.id ?? null);
 
   const markGameHydrated = useCallback((gameId: string) => {
     hydratedModsViewByGameRef.current[gameId] = true;
     requiresFullReconcileByGameRef.current[gameId] = false;
     lastWindowBlurAtRef.current = 0;
   }, []);
+
+  const recordReconcileOutcome = useCallback(
+    (result: DiskReconcileResult) => {
+      if (result.status === 'Applied' || result.status === 'AppliedWithFolderConflicts') {
+        markGameHydrated(result.game_id);
+        return;
+      }
+
+      hydratedModsViewByGameRef.current[result.game_id] = false;
+      requiresFullReconcileByGameRef.current[result.game_id] = true;
+    },
+    [markGameHydrated],
+  );
 
   const shouldSync = useCallback(
     (gameId: string, forceFull: boolean) => {
@@ -178,9 +282,15 @@ export function useDiskReconcileCoordinator(
             currentRefresh.forceFull,
           );
           applyDiskReconcileResult(result, queryClient, activeGame);
-          markGameHydrated(gameId);
+          recordReconcileOutcome(result);
         } catch (error) {
           console.error('[DiskReconcile] Refresh failed:', error);
+          requiresFullReconcileByGameRef.current[gameId] = true;
+          setDiskReconcileProgress(gameId, null);
+          markDiskReconcilePending(gameId, true);
+          toast.warning(
+            i18next.t('grid:banners.disk_sync_failed', { error: formatAppError(error) }),
+          );
         } finally {
           inFlightRef.current = false;
           nextRefresh = queuedRefreshRef.current;
@@ -188,7 +298,14 @@ export function useDiskReconcileCoordinator(
         }
       }
     },
-    [activeGame, markDiskReconcilePending, markGameHydrated, queryClient, shouldSync],
+    [
+      activeGame,
+      markDiskReconcilePending,
+      queryClient,
+      recordReconcileOutcome,
+      setDiskReconcileProgress,
+      shouldSync,
+    ],
   );
 
   useEffect(() => {
@@ -238,13 +355,13 @@ export function useDiskReconcileCoordinator(
       }
 
       applyDiskReconcileResult(event.payload, queryClient, activeGame);
-      markGameHydrated(activeGame.id);
+      recordReconcileOutcome(event.payload);
     });
 
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [activeGame?.id, activeGame, markGameHydrated, queryClient]);
+  }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome]);
 
   useEffect(() => {
     if (!activeGame?.id) {
@@ -253,11 +370,16 @@ export function useDiskReconcileCoordinator(
 
     const gameId = activeGame.id;
     const unlistenPromise = listen<WatchErrorPayload>('mod_watch:event', (event) => {
-      if (event.payload.type !== 'Error') {
+      if (event.payload.type !== 'Error' || event.payload.game_id !== gameId) {
         return;
       }
 
       console.error('[Watcher] error:', event.payload.error, event.payload.path);
+      const now = Date.now();
+      if (isDuplicateWatcherError(event.payload, now)) {
+        markDiskReconcilePending(gameId, true);
+        return;
+      }
       toast.warning(i18next.t('common:watcher.error', { error: event.payload.error }));
       // Mark state dirty so the next TTL sync repairs anything missed.
       markDiskReconcilePending(gameId, true);

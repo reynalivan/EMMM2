@@ -4,7 +4,7 @@ use crate::services::scanner::dedup::scanner::DedupScanStatus;
 use crate::types::dup_scan::{DupScanEvent, DupScanReport};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -12,7 +12,6 @@ use tauri::State;
 pub struct DupScanState {
     pub(crate) is_running: Arc<AtomicBool>,
     pub(crate) cancel_flag: Arc<AtomicBool>,
-    pub(crate) last_report: Arc<Mutex<Option<DupScanReport>>>,
 }
 
 impl DupScanState {
@@ -20,7 +19,6 @@ impl DupScanState {
         Self {
             is_running: Arc::new(AtomicBool::new(false)),
             cancel_flag: Arc::new(AtomicBool::new(false)),
-            last_report: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -37,10 +35,6 @@ impl DupScanState {
 
     pub fn cancel(&self) {
         self.cancel_flag.store(true, Ordering::SeqCst);
-    }
-
-    pub fn load_report(&self) -> Option<DupScanReport> {
-        self.last_report.lock().ok().and_then(|guard| guard.clone())
     }
 }
 
@@ -77,7 +71,6 @@ pub async fn dup_scan_start(
     let scan_id = dup_scan_build_scan_id();
     let cancel_flag = Arc::clone(&state.cancel_flag);
     let running_flag = Arc::clone(&state.is_running);
-    let report_store = Arc::clone(&state.last_report);
     let mods_root_for_task = mods_root.clone();
     let game_id_for_task = game_id.clone();
     let db_for_task = db.inner().clone();
@@ -88,12 +81,14 @@ pub async fn dup_scan_start(
         let candidates = match walker::scan_mod_folders(Path::new(&mods_root_for_task)) {
             Ok(items) => items,
             Err(error) => {
-                let _ = on_event.send(DupScanEvent::Cancelled {
+                let message = error.to_string();
+                let _ = on_event.send(DupScanEvent::Failed {
                     scan_id,
                     processed_folders: 0,
                     total_folders: 0,
+                    message: message.clone(),
                 });
-                log::warn!("Failed to enumerate mods for duplicate scan: {error}");
+                log::warn!("Failed to enumerate mods for duplicate scan: {message}");
                 return;
             }
         };
@@ -118,12 +113,14 @@ pub async fn dup_scan_start(
         {
             Ok(data) => data,
             Err(error) => {
-                let _ = on_event.send(DupScanEvent::Cancelled {
+                let message = error.to_string();
+                let _ = on_event.send(DupScanEvent::Failed {
                     scan_id,
                     processed_folders: 0,
                     total_folders,
+                    message: message.clone(),
                 });
-                log::warn!("Duplicate scan failed: {error}");
+                log::warn!("Duplicate scan failed: {message}");
                 return;
             }
         };
@@ -147,25 +144,37 @@ pub async fn dup_scan_start(
                     percent: 100,
                 });
 
-                for group in &outcome.groups {
+                let mut groups = outcome.groups;
+                for group in &mut groups {
+                    group.group_id = format!("{}:{}", scan_id, group.group_id);
+                }
+                for group in &groups {
                     let _ = on_event.send(DupScanEvent::Match {
                         scan_id: scan_id.clone(),
                         group: group.clone(),
                     });
                 }
 
-                let total_members = outcome.groups.iter().map(|group| group.members.len()).sum();
+                let total_members = groups.iter().map(|group| group.members.len()).sum();
                 let report = DupScanReport {
                     scan_id: scan_id.clone(),
                     game_id: game_id_for_task,
                     root_path: mods_root_for_task,
-                    total_groups: outcome.groups.len(),
+                    total_groups: groups.len(),
                     total_members,
-                    groups: outcome.groups,
+                    groups,
                 };
 
-                if let Ok(mut guard) = report_store.lock() {
-                    *guard = Some(report.clone());
+                if let Err(error) =
+                    crate::repo::dedup_repo::persist_completed_report(&db_for_task, &report).await
+                {
+                    let _ = on_event.send(DupScanEvent::Failed {
+                        scan_id,
+                        processed_folders: final_total,
+                        total_folders: final_total,
+                        message: error.to_string(),
+                    });
+                    return;
                 }
 
                 let _ = on_event.send(DupScanEvent::Finished {
@@ -190,24 +199,10 @@ pub async fn dup_scan_cancel(state: State<'_, DupScanState>) -> Result<(), AppEr
 #[tauri::command]
 #[specta::specta]
 pub async fn dup_scan_get_report(
-    state: State<'_, DupScanState>,
-    config: State<'_, crate::services::config::ConfigService>,
-    pin: Option<String>,
+    game_id: String,
+    db: State<'_, sqlx::SqlitePool>,
 ) -> Result<Option<DupScanReport>, AppError> {
-    let mut report = match state.load_report() {
-        Some(r) => r,
-        None => return Ok(None),
-    };
-
-    // A valid PIN widens the corridor for this response only; otherwise the
-    // unsafe groups stay hidden while Safe Mode is on.
-    if config.corridor_with_elevation(pin.as_deref()).is_safe() {
-        report.groups.retain(|g| !g.is_unsafe);
-        report.total_groups = report.groups.len();
-        report.total_members = report.groups.iter().map(|g| g.members.len()).sum();
-    }
-
-    Ok(Some(report))
+    Ok(crate::repo::dedup_repo::load_latest_completed_report(db.inner(), &game_id).await?)
 }
 
 fn dup_scan_build_scan_id() -> String {

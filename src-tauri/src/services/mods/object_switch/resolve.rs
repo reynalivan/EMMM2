@@ -98,6 +98,7 @@ async fn heal_object_root_path(
         let mut tx = pool.begin().await?;
         crate::services::collection_service::handle_object_renamed_tx(
             &mut tx,
+            game_id,
             old_folder_path,
             new_folder_path,
         )

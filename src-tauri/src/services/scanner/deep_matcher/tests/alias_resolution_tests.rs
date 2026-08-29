@@ -11,6 +11,7 @@ fn build_test_db() -> MasterDb {
             name: "Raiden Shogun".to_string(),
             tags: vec!["electro".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
                 name: "Wish".to_string(),
                 aliases: vec!["raidenwish".to_string(), "raidenshogun".to_string()],
@@ -25,6 +26,7 @@ fn build_test_db() -> MasterDb {
             name: "Hu Tao".to_string(),
             tags: vec!["pyro".to_string(), "polearm".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
                 name: "Default".to_string(),
                 aliases: vec!["hutao".to_string(), "director".to_string()],
@@ -39,6 +41,7 @@ fn build_test_db() -> MasterDb {
             name: "Traveler (Anemo)".to_string(),
             tags: vec!["anemo".to_string(), "sword".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![
                 CustomSkin {
                     name: "Lumine".to_string(),
@@ -61,6 +64,7 @@ fn build_test_db() -> MasterDb {
             name: "Traveler (Geo)".to_string(),
             tags: vec!["geo".to_string(), "sword".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![
                 CustomSkin {
                     name: "Lumine".to_string(),

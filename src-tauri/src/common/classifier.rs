@@ -8,6 +8,7 @@
 //!
 //! # Covers: navigablefoldergrid.md §5
 
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -54,6 +55,69 @@ struct FolderScan {
     has_assets: bool,
 }
 
+/// An inspection failure that cannot be treated as an empty/non-mod folder
+/// while building an authoritative disk projection.
+#[derive(Debug)]
+pub enum ClassificationError {
+    ReadDirectory {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    ReadDirectoryEntry {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    ReadEntryMetadata {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    ReadIni {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    InvalidIniEncoding {
+        path: PathBuf,
+    },
+}
+
+impl fmt::Display for ClassificationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ReadDirectory { path, source } => {
+                write!(
+                    formatter,
+                    "Failed to read directory '{}': {source}",
+                    path.display()
+                )
+            }
+            Self::ReadDirectoryEntry { path, source } => write!(
+                formatter,
+                "Failed to read a directory entry in '{}': {source}",
+                path.display()
+            ),
+            Self::ReadEntryMetadata { path, source } => write!(
+                formatter,
+                "Failed to inspect directory entry '{}': {source}",
+                path.display()
+            ),
+            Self::ReadIni { path, source } => {
+                write!(
+                    formatter,
+                    "Failed to read INI file '{}': {source}",
+                    path.display()
+                )
+            }
+            Self::InvalidIniEncoding { path } => write!(
+                formatter,
+                "Unsupported INI encoding in '{}'; use UTF-8 or Shift-JIS",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ClassificationError {}
+
 fn scan_folder(path: &Path) -> Option<FolderScan> {
     let entries = fs::read_dir(path).ok()?;
 
@@ -96,6 +160,55 @@ fn scan_folder(path: &Path) -> Option<FolderScan> {
     Some(scan)
 }
 
+fn scan_folder_strict(path: &Path) -> Result<FolderScan, ClassificationError> {
+    let entries = fs::read_dir(path).map_err(|source| ClassificationError::ReadDirectory {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut scan = FolderScan {
+        ini_files: Vec::new(),
+        child_dirs: Vec::new(),
+        has_assets: false,
+    };
+
+    for entry in entries {
+        let entry = entry.map_err(|source| ClassificationError::ReadDirectoryEntry {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let entry_path = entry.path();
+        let file_type =
+            entry
+                .file_type()
+                .map_err(|source| ClassificationError::ReadEntryMetadata {
+                    path: entry_path.clone(),
+                    source,
+                })?;
+        if file_type.is_dir() {
+            let fname = path_file_name_lossy(&entry_path).unwrap_or_default();
+            if !fname.starts_with('.') {
+                scan.child_dirs.push(entry_path);
+            }
+        } else if file_type.is_file() {
+            let ext = entry_path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if ext == "ini" {
+                let fname = path_file_name_lossy(&entry_path).unwrap_or_default();
+                if !names_equal_by_key(&fname, "desktop.ini") {
+                    scan.ini_files.push(entry_path);
+                }
+            } else if !scan.has_assets && MOD_ASSET_EXTENSIONS.contains(&ext.as_str()) {
+                scan.has_assets = true;
+            }
+        }
+    }
+
+    Ok(scan)
+}
+
 /// What a single `.ini` file inside a mod folder contributes to classification.
 struct IniScan {
     is_mod: bool,
@@ -117,9 +230,10 @@ fn scan_ini_file(path: &Path) -> IniScan {
         return scan;
     }
 
-    let Ok(content) = fs::read_to_string(path) else {
+    let Ok(bytes) = fs::read(path) else {
         return scan;
     };
+    let (content, _, _) = crate::services::ini::document::decode_ini_bytes(&bytes);
 
     let (is_mod, referenced_subs) = scan_ini_content(&content);
     scan.is_mod = is_mod;
@@ -127,19 +241,75 @@ fn scan_ini_file(path: &Path) -> IniScan {
     scan
 }
 
+fn scan_ini_file_strict(path: &Path) -> Result<IniScan, ClassificationError> {
+    if fs::metadata(path)
+        .map_err(|source| ClassificationError::ReadIni {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .len()
+        == 0
+    {
+        return Ok(IniScan {
+            is_mod: true,
+            is_corrupt: true,
+            referenced_subs: Vec::new(),
+        });
+    }
+
+    let bytes = fs::read(path).map_err(|source| ClassificationError::ReadIni {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let (content, _, clean) = crate::services::ini::document::decode_ini_bytes(&bytes);
+    if !clean {
+        return Err(ClassificationError::InvalidIniEncoding {
+            path: path.to_path_buf(),
+        });
+    }
+    let (is_mod, referenced_subs) = scan_ini_content(&content);
+    Ok(IniScan {
+        is_mod,
+        is_corrupt: false,
+        referenced_subs,
+    })
+}
+
+fn scan_folder_for_mode(
+    path: &Path,
+    strict: bool,
+) -> Result<Option<FolderScan>, ClassificationError> {
+    if strict {
+        scan_folder_strict(path).map(Some)
+    } else {
+        Ok(scan_folder(path))
+    }
+}
+
+fn scan_ini_file_for_mode(path: &Path, strict: bool) -> Result<IniScan, ClassificationError> {
+    if strict {
+        scan_ini_file_strict(path)
+    } else {
+        Ok(scan_ini_file(path))
+    }
+}
+
 /// Returns the node type, a list of diagnostic reasons, and a list of warnings.
-pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
+fn classify_folder_with_mode(
+    path: &Path,
+    strict: bool,
+) -> Result<(NodeType, Vec<String>, Vec<String>), ClassificationError> {
     if !path.is_dir() {
-        return (NodeType::ContainerFolder, vec![], vec![]);
+        return Ok((NodeType::ContainerFolder, vec![], vec![]));
     }
 
     let Some(FolderScan {
         ini_files,
         child_dirs,
         has_assets,
-    }) = scan_folder(path)
+    }) = scan_folder_for_mode(path, strict)?
     else {
-        return (NodeType::ContainerFolder, vec![], vec![]);
+        return Ok((NodeType::ContainerFolder, vec![], vec![]));
     };
 
     // Scan ini files for mod sections and referenced subfolders
@@ -150,7 +320,7 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
 
     for ini_path in &ini_files {
         let fname = path_file_name_lossy(ini_path).unwrap_or_default();
-        let scan = scan_ini_file(ini_path);
+        let scan = scan_ini_file_for_mode(ini_path, strict)?;
 
         if scan.is_corrupt {
             has_mod_ini = true;
@@ -177,11 +347,16 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
     // it when a root ini makes the answer reachable, and stop at the threshold
     // the check below compares against.
     let child_dirs_with_ini = if has_mod_ini {
-        child_dirs
-            .iter()
-            .filter(|dir| has_any_mod_ini(dir))
-            .take(VARIANT_CONTAINER_MIN_CHILDREN)
-            .count()
+        let mut count = 0;
+        for dir in &child_dirs {
+            if has_any_mod_ini_for_mode(dir, strict)? {
+                count += 1;
+                if count == VARIANT_CONTAINER_MIN_CHILDREN {
+                    break;
+                }
+            }
+        }
+        count
     } else {
         0
     };
@@ -196,19 +371,19 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
         reasons.push(format!(
             "{child_dirs_with_ini} child dirs with mod ini -> VariantContainer"
         ));
-        return (NodeType::VariantContainer, reasons, warnings);
+        return Ok((NodeType::VariantContainer, reasons, warnings));
     }
 
     // 1. ModPackRoot explicit check (Has INI and Assets)
     if has_mod_ini && has_assets {
         reasons.push("Has mod ini and mod assets -> ModPackRoot".into());
-        return (NodeType::ModPackRoot, reasons, warnings);
+        return Ok((NodeType::ModPackRoot, reasons, warnings));
     }
 
     // 3. Fallback for non-Mod folders
     if !has_mod_ini {
         reasons.push("No root mod ini and not enough variant subfolders -> ContainerFolder".into());
-        return (NodeType::ContainerFolder, reasons, warnings);
+        return Ok((NodeType::ContainerFolder, reasons, warnings));
     }
 
     // 4. Meaningful children check for FlatModRoot (Requires Mod INI)
@@ -223,20 +398,38 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
         reasons.push(
             "No meaningful subfolders (all children are internal/assets) -> FlatModRoot".into(),
         );
-        return (NodeType::FlatModRoot, reasons, warnings);
+        return Ok((NodeType::FlatModRoot, reasons, warnings));
     }
 
     // 5. Fallback ModPackRoot (Has Mod INI but no assets, yet has meaningful subfolders)
     reasons.push("Fallback -> ModPackRoot (no assets, but has ini and meaningful folders)".into());
-    (NodeType::ModPackRoot, reasons, warnings)
+    Ok((NodeType::ModPackRoot, reasons, warnings))
 }
 
-/// Quick check: does a directory contain at least one valid mod ini file?
-/// Used for variant-container detection (called on child dirs only when needed).
-fn has_any_mod_ini(path: &Path) -> bool {
-    scan_folder(path)
-        .map(|scan| scan.ini_files.iter().any(|p| scan_ini_file(p).is_mod))
-        .unwrap_or(false)
+/// Returns a best-effort folder classification for non-authoritative UI discovery.
+/// Read and decode failures intentionally remain non-fatal here.
+pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
+    classify_folder_with_mode(path, false).unwrap_or((NodeType::ContainerFolder, vec![], vec![]))
+}
+
+/// Returns an authoritative classification for reconcile and source inspection.
+/// Filesystem and lossy decoding failures are returned to the caller.
+pub fn classify_folder_strict(
+    path: &Path,
+) -> Result<(NodeType, Vec<String>, Vec<String>), ClassificationError> {
+    classify_folder_with_mode(path, true)
+}
+
+fn has_any_mod_ini_for_mode(path: &Path, strict: bool) -> Result<bool, ClassificationError> {
+    let Some(scan) = scan_folder_for_mode(path, strict)? else {
+        return Ok(false);
+    };
+    for ini_path in &scan.ini_files {
+        if scan_ini_file_for_mode(ini_path, strict)?.is_mod {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Scan INI content for mod section headers and `filename=` references.

@@ -1,6 +1,6 @@
 /**
  * useObjectListVirtualizer — virtualizer, sticky header, and Object Mode
- * data-shaping logic extracted from useObjectListLogic to keep it under 350 lines.
+ * data-shaping logic extracted from useObjectListLogic to keep it cohesive.
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';

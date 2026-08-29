@@ -8,12 +8,10 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::services::game::schema_loader;
-use crate::services::scanner::core::types;
-use crate::services::scanner::core::walker::{FolderContent, ModCandidate};
 use crate::services::scanner::deep_matcher::analysis::content::{
     IniTokenizationConfig, PreparedTokenFilters,
 };
-use crate::services::scanner::deep_matcher::{self, DbEntry, MasterDb, StagedMatchResult};
+use crate::services::scanner::deep_matcher::{DbEntry, EntryKind, MasterDb};
 
 /// Load and parse the MasterDB JSON for a given game type from `resource_dir`.
 pub fn load_master_db_json(resource_dir: &Path, game_type: i32) -> Result<String, ScannerError> {
@@ -102,110 +100,6 @@ pub fn resolve_entry_thumbnails(entries: &mut [Value], resource_dir: &Path) {
     }
 }
 
-/// Matched DB entry returned to frontend with resolved absolute thumbnail path.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
-pub struct MatchedDbEntry {
-    pub name: String,
-    pub matched_entry_key: Option<String>,
-    pub matched_alias_name: Option<String>,
-    pub object_type: String,
-    pub tags: Vec<String>,
-    pub metadata: Option<Value>,
-    pub thumbnail_path: Option<String>,
-    pub match_level: String,
-    pub match_confidence: String,
-    pub match_detail: String,
-}
-
-pub fn match_object_with_staged_pipeline(db: &MasterDb, object_name: &str) -> StagedMatchResult {
-    let candidate = ModCandidate {
-        path: std::path::PathBuf::from(object_name),
-        raw_name: object_name.to_string(),
-        display_name: object_name.to_string(),
-        is_disabled: false,
-    };
-    let content = FolderContent {
-        subfolder_names: Vec::new(),
-        files: Vec::new(),
-        ini_files: Vec::new(),
-    };
-    let ini_filters = IniTokenizationConfig::default().prepare();
-
-    deep_matcher::match_folder_phased(
-        &candidate,
-        db,
-        &content,
-        &ini_filters,
-        &crate::services::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig::default(),
-    )
-}
-
-pub fn resolve_thumbnail_path(resource_dir: &Path, entry: &DbEntry) -> Option<String> {
-    let rel_path = entry.thumbnail_path.as_ref()?;
-    let abs_path = resource_dir.join(rel_path);
-
-    if !abs_path.exists() {
-        log::warn!(
-            "Thumbnail not found for {}: {}",
-            entry.name,
-            abs_path.display()
-        );
-        return None;
-    }
-
-    abs_path.to_str().map(|path| path.to_string())
-}
-
-pub fn build_matched_db_entry_from_staged(
-    resource_dir: &Path,
-    db: &MasterDb,
-    match_result: &StagedMatchResult,
-) -> Option<MatchedDbEntry> {
-    let candidate = types::staged_primary_candidate(match_result)?;
-    let entry = db.entries.get(candidate.entry_id)?;
-
-    Some(MatchedDbEntry {
-        name: entry.name.clone(),
-        matched_entry_key: Some(
-            crate::services::scanner::sync::helpers::canonical_entry_key(&entry.name),
-        ),
-        matched_alias_name: Some(entry.name.clone()),
-        object_type: entry.object_type.clone(),
-        tags: entry.tags.clone(),
-        metadata: entry.metadata.clone(),
-        thumbnail_path: resolve_thumbnail_path(resource_dir, entry),
-        match_level: types::match_status_label(&match_result.status).to_string(),
-        match_confidence: types::staged_confidence_label(match_result).to_string(),
-        match_detail: types::staged_match_detail(match_result),
-    })
-}
-
-pub fn match_object_with_db_service(
-    resource_dir: &Path,
-    game_type: i32,
-    object_name: &str,
-) -> Result<Option<MatchedDbEntry>, ScannerError> {
-    let canonical = schema_loader::normalize_game_type(game_type);
-    let db_path = resource_dir
-        .join("databases")
-        .join(format!("{}.json", canonical));
-
-    if !db_path.exists() {
-        return Ok(None);
-    }
-
-    let json = std::fs::read_to_string(&db_path)?;
-
-    let db = MasterDb::from_json(&json)?;
-
-    let match_result = match_object_with_staged_pipeline(&db, object_name);
-    Ok(build_matched_db_entry_from_staged(
-        resource_dir,
-        &db,
-        &match_result,
-    ))
-}
-
 #[derive(Debug, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct SearchResultEntry {
     pub item: DbEntry,
@@ -283,8 +177,11 @@ pub fn search_master_db_service(
     let fuzzy_threshold = 0.2;
 
     for entry in &db.entries {
+        if entry.entry_kind == EntryKind::Taxonomy {
+            continue;
+        }
         if let Some(ref t) = type_filter {
-            if query_lower.is_empty() && entry.object_type.to_lowercase() != *t {
+            if entry.object_type.to_lowercase() != *t {
                 continue;
             }
         }
@@ -306,6 +203,15 @@ pub fn search_master_db_service(
                 .iter()
                 .any(|alias| alias.to_lowercase().contains(&query_lower));
         }
+        if !is_direct_match {
+            is_direct_match = entry.custom_skins.iter().any(|skin| {
+                skin.name.to_lowercase().contains(&query_lower)
+                    || skin
+                        .aliases
+                        .iter()
+                        .any(|alias| alias.to_lowercase().contains(&query_lower))
+            });
+        }
 
         let score = if is_direct_match {
             1.0
@@ -317,6 +223,12 @@ pub fn search_master_db_service(
                 let alias_score = fuzzy_score(&query_lower, alias);
                 if alias_score > max_score {
                     max_score = alias_score;
+                }
+            }
+            for skin in &entry.custom_skins {
+                max_score = max_score.max(fuzzy_score(&query_lower, &skin.name));
+                for alias in &skin.aliases {
+                    max_score = max_score.max(fuzzy_score(&query_lower, alias));
                 }
             }
             max_score
@@ -342,3 +254,7 @@ pub fn search_master_db_service(
 
 mod cache;
 pub use cache::{get_cached, MasterDbCache};
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

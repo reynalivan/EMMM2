@@ -32,6 +32,10 @@ pub fn collect_changed_paths(events: &[ModWatchEvent]) -> Vec<String> {
                 changed_paths.push(from.clone());
                 changed_paths.push(to.clone());
             }
+            ModWatchEvent::RenameResolution { from, to, .. } => {
+                changed_paths.extend(from.iter().cloned());
+                changed_paths.extend(to.iter().cloned());
+            }
             ModWatchEvent::Error(_) => {}
         }
     }
@@ -45,10 +49,17 @@ pub fn collect_rename_hints(mods_path: &Path, events: &[ModWatchEvent]) -> Watch
 
     for event in events {
         let (from, to) = match event {
-            ModWatchEvent::Renamed { from, to } => (from, to),
+            ModWatchEvent::Renamed { from, to }
+            | ModWatchEvent::RenameResolution {
+                from: Some(from),
+                to: Some(to),
+                apply_as_rename: true,
+                ..
+            } => (from, to),
             ModWatchEvent::Created(_)
             | ModWatchEvent::Removed(_)
             | ModWatchEvent::Modified(_)
+            | ModWatchEvent::RenameResolution { .. }
             | ModWatchEvent::Error(_) => continue,
         };
 
@@ -67,7 +78,7 @@ pub fn collect_rename_hints(mods_path: &Path, events: &[ModWatchEvent]) -> Watch
             continue;
         }
 
-        if from_depth == 2 && to_depth == 2 {
+        if from_depth >= 2 && to_depth >= 2 {
             mod_renames.insert((relative_from, relative_to));
         }
     }

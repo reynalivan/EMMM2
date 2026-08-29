@@ -44,6 +44,7 @@ export function usePreviewPanelState() {
   const { t } = useTranslation(['preview', 'common']);
   const {
     activePath,
+    folderNameConflict,
     selectedFolder,
     previewSummary,
     resolvedTitle,
@@ -279,6 +280,7 @@ export function usePreviewPanelState() {
 
   return {
     activePath,
+    folderNameConflict,
     selectedFolder,
     previewSummary,
     resolvedTitle,

@@ -13,10 +13,8 @@ async fn test_epic4_full_maintenance_flow() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     let mods_dir = root.join("Mods");
-    let trash_dir = root.join("Trash");
 
     fs::create_dir(&mods_dir).unwrap();
-    fs::create_dir(&trash_dir).unwrap();
 
     // Create an initial mod: "Raiden"
     let mod_path = mods_dir.join("Raiden");
@@ -70,35 +68,9 @@ async fn test_epic4_full_maintenance_flow() {
     // Step 3: Delete to Trash
     // NOTE: calling service directly as command requires AppHandle
     // -------------------------------------------------------------------------
-    let trash_meta =
-        trash::move_to_trash(&disabled_path, &trash_dir, Some("game_id_test".to_string()))
-            .expect("Move to trash should succeed");
+    trash::move_to_trash(&disabled_path).expect("Move to trash should succeed");
 
     assert!(!disabled_path.exists(), "File should be gone from mods dir");
-    assert!(
-        trash_dir.join(&trash_meta.id).exists(),
-        "File should be in trash dir"
-    );
 
     println!("Step 3 (Delete) Passed");
-
-    // -------------------------------------------------------------------------
-    // Step 4: Restore from Trash
-    // -------------------------------------------------------------------------
-    let restored_path_str =
-        trash::restore_from_trash(&trash_meta.id, &trash_dir, trash_meta.game_id.as_ref())
-            .expect("Restore should succeed");
-
-    let restored_path = std::path::PathBuf::from(restored_path_str);
-    assert_eq!(
-        restored_path, disabled_path,
-        "Should restore to the Disabled path (state preserved)"
-    );
-    assert!(disabled_path.exists(), "Restored file should exist");
-    assert!(
-        !trash_dir.join(&trash_meta.id).exists(),
-        "Trash entry should be gone"
-    );
-
-    println!("Step 4 (Restore) Passed");
 }

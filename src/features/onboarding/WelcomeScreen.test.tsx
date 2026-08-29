@@ -1,8 +1,9 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import WelcomeScreen from './WelcomeScreen';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import { listen } from '@tauri-apps/api/event';
 import { GameType, type GameConfig } from '../../types/game';
 
 // Mock Tauri dependencies
@@ -179,5 +180,58 @@ describe('WelcomeScreen (TC-03)', () => {
     await waitFor(() => {
       expect(screen.getByText('Welcome to EMMM')).toBeInTheDocument();
     });
+  });
+
+  it('shows determinate onboarding indexing progress while a game reconcile is running', async () => {
+    let progressHandler: ((event: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      if (event === 'disk_reconcile:progress') {
+        progressHandler = handler as unknown as (event: { payload: unknown }) => void;
+      }
+      return () => undefined;
+    });
+    let unblock: () => void = () => {};
+    const reconcile = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    (invoke as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(undefined)
+      .mockReturnValueOnce(reconcile);
+
+    render(<WelcomeScreen onComplete={mockOnComplete} />);
+    fireEvent.click(screen.getByText('Add Game Manually'));
+    fireEvent.click(screen.getByText('Finish'));
+    await screen.findByTestId('result-screen');
+    fireEvent.click(screen.getByText('Result Continue'));
+
+    expect(await screen.findByRole('progressbar', { name: /indexing progress/i })).toHaveAttribute(
+      'aria-valuenow',
+      '0',
+    );
+    expect(screen.getByText(/0%/)).toBeInTheDocument();
+
+    await waitFor(() => expect(progressHandler).toBeDefined());
+    act(() => {
+      progressHandler?.({
+        payload: {
+          game_id: 'new-game',
+          run_id: 'new-game-1',
+          reason: 'OnboardingCompleted',
+          phase: 'ScanningRoots',
+          completed_units: 4,
+          total_units: 10,
+          current_root: 'Alice',
+          elapsed_ms: 1_000,
+          eta_ms: 1_500,
+        },
+      });
+    });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '4');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '10');
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText(/40%/)).toBeInTheDocument();
+
+    unblock();
+    await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());
   });
 });

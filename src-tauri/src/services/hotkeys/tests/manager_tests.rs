@@ -66,7 +66,7 @@ fn dispatch_when_disabled_returns_none() {
     let manager = HotkeyManager::new(&config);
 
     // Any action should return None when disabled.
-    let result = manager.dispatch_action(HotkeyAction::NextPreset, false, None, &[]);
+    let result = manager.dispatch_action(HotkeyAction::NextPreset, None, &[]);
     assert!(result.is_none());
 }
 
@@ -89,7 +89,7 @@ fn dispatch_preset_cycle_with_presets() {
 
     let presets = vec!["Alpha".to_string(), "Beta".to_string(), "Gamma".to_string()];
 
-    let result = manager.dispatch_action(HotkeyAction::NextPreset, false, Some("Alpha"), &presets);
+    let result = manager.dispatch_action(HotkeyAction::NextPreset, Some("Alpha"), &presets);
 
     assert!(result.is_some());
 }
@@ -101,7 +101,7 @@ fn dispatch_preset_cycle_no_presets_returns_noop() {
 
     manager.set_enabled_for_test(true);
 
-    let result = manager.dispatch_action(HotkeyAction::NextPreset, false, None, &[]);
+    let result = manager.dispatch_action(HotkeyAction::NextPreset, None, &[]);
 
     assert!(result.is_some());
     let res = result.unwrap();

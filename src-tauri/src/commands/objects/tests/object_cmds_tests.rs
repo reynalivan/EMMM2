@@ -30,6 +30,25 @@ async fn setup_test_db() -> (TempDir, SqlitePool, String) {
     (tmp, pool, game_id)
 }
 
+async fn reconcile_test_disk(pool: &SqlitePool, game_id: &str, mods_path: &std::path::Path) {
+    crate::services::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::services::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+            pool,
+            game_id,
+            mods_path,
+            safe_mode_keywords: &[],
+            reason: &crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            changed_paths: &[],
+            force_full: true,
+            watcher_events: None,
+            path_hints: &[],
+            progress_reporter: None,
+        },
+    )
+    .await
+    .expect("disk projection");
+}
+
 #[tokio::test]
 async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
     let (tmp, pool, game_id) = setup_test_db().await;
@@ -84,7 +103,7 @@ async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
 }
 
 #[tokio::test]
-async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
+async fn test_get_objects_returns_the_full_unfiltered_object_list() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
 
     // Insert an unsafe object manually into DB
@@ -105,40 +124,15 @@ async fn test_get_objects_safe_mode_filtering() -> CommandResult<()> {
     .await
     .unwrap();
 
-    // 1. Fetch with safe_mode=false (should return 1)
-    let filter_unfiltered = ObjectFilter {
+    let filter = ObjectFilter {
         game_id: game_id.clone(),
         ..Default::default()
     };
-    let results_unfiltered = get_objects_cmd_inner(filter_unfiltered, &pool)
-        .await?
-        .objects;
+    let results_unfiltered = get_objects_cmd_inner(filter, &pool).await?.objects;
     assert_eq!(
         results_unfiltered.len(),
         1,
-        "Unsafe object should be returned when safe_mode=false"
-    );
-
-    // 2. Fetch with safe_mode=true — Phase 1: ALL objects returned, unsafe ones get zeroed counts
-    let filter_safe = ObjectFilter {
-        game_id: game_id.clone(),
-        safe_mode: true,
-        ..Default::default()
-    };
-    let results_safe = get_objects_cmd_inner(filter_safe, &pool).await?.objects;
-    assert_eq!(
-        results_safe.len(),
-        1,
-        "Phase 1: Unsafe object IS returned in safe mode (with zeroed counts)"
-    );
-    let unsafe_obj = &results_safe[0];
-    assert_eq!(
-        unsafe_obj.mod_count, 0,
-        "Phase 1: mod_count must be zeroed for unsafe objects in safe mode"
-    );
-    assert_eq!(
-        unsafe_obj.enabled_count, 0,
-        "Phase 1: enabled_count must be zeroed for unsafe objects in safe mode"
+        "Safety classification is a frontend filter and must not hide objects"
     );
 
     Ok(())
@@ -244,8 +238,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
 #[tokio::test]
 async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
-    let trash_dir = _tmp.path().join("trash");
-    fs::create_dir(&trash_dir).unwrap();
+    let mods_path = _tmp.path().join("Mods");
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
@@ -302,7 +295,6 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
         &pool,
         empty_obj_id,
         false,
-        &trash_dir,
         &watcher_state,
         &op_guard,
     )
@@ -317,7 +309,6 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
         &pool,
         full_obj_id,
         true,
-        &trash_dir,
         &watcher_state,
         &op_guard,
     )
@@ -326,6 +317,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
         res_full.is_ok(),
         "Deleting object with mods should succeed via cascade delete"
     );
+    reconcile_test_disk(&pool, &game_id, &mods_path).await;
 
     // Verify the mod row was also removed
     let mod_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE object_id = ?")
@@ -339,57 +331,88 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
 }
 
 #[tokio::test]
-async fn test_apply_object_match_cmd() -> CommandResult<()> {
+async fn committed_object_mutation_stages_runtime_effects_when_finalization_fails(
+) -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
-
-    let obj_id = "test_obj_match";
-    let mods_path = _tmp.path().join("Mods");
-    std::fs::create_dir_all(mods_path.join("test_obj_match_folder")).unwrap();
-
+    let state = crate::services::disk_reconcile::orchestrator::DiskReconcileState::new();
     insert_test_object(
         &pool,
         &TestObjectFixture {
-            id: obj_id,
+            id: "object-runtime-effects",
             game_id: &game_id,
-            name: "PhysicalName",
-            folder_path: "test_obj_match_folder",
+            name: "Alice",
+            folder_path: "Alice",
             object_type: "Other",
         },
     )
-    .await
-    .unwrap();
+    .await?;
 
-    apply_object_match_cmd_inner(
-        &ApplyObjectMatchInput {
-            game_id: game_id.clone(),
-            object_id: Some(obj_id.to_string()),
-            folder_path: None,
-            matched_entry_key: Some("kazuha".to_string()),
-            matched_alias_name: Some("Kazuha".to_string()),
-            matched_confidence: Some(0.91),
-            matched_reason: Some("Manual deep match".to_string()),
-            matched_source: Some("manual_match".to_string()),
-        },
+    crate::services::objects::mutate::set_object_and_mods_category(
         &pool,
+        &game_id,
+        "object-runtime-effects",
+        "Character",
     )
     .await?;
 
-    let row = sqlx::query_as::<_, (String, String, String, String)>(
-        "SELECT name, matched_entry_key, matched_alias_name, matched_source
-         FROM objects
-         WHERE id = ?",
+    let settlement = crate::services::app::runtime_effects::settle_committed_runtime_effects_with(
+        &state,
+        &game_id,
+        crate::services::disk_reconcile::types::PendingRuntimeEffects {
+            collections_dirty: true,
+            overlay_refresh: true,
+        },
+        || async {
+            Err(crate::domain::errors::AppError::Io(
+                "injected effect failure".to_string(),
+            ))
+        },
     )
-    .bind(obj_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    .await;
 
-    assert_eq!(row.0, "PhysicalName");
-    assert_eq!(row.1, "kazuha");
-    assert_eq!(row.2, "Kazuha");
-    assert_eq!(row.3, "manual_match");
+    let category: String =
+        sqlx::query_scalar("SELECT object_type FROM objects WHERE id = 'object-runtime-effects'")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(category, "Character");
+    assert_eq!(
+        settlement.pending_runtime_effects,
+        crate::services::disk_reconcile::types::PendingRuntimeEffects {
+            collections_dirty: true,
+            overlay_refresh: true,
+        }
+    );
+    assert!(settlement.warning.is_some());
+    assert_eq!(settlement.effect_attempts, 2);
+    assert_eq!(
+        state.stage_runtime_effects(
+            &game_id,
+            crate::services::disk_reconcile::types::PendingRuntimeEffects::default(),
+        ),
+        settlement.pending_runtime_effects,
+        "the existing reconcile state retains the failed post-commit intent"
+    );
 
     Ok(())
+}
+
+#[test]
+fn object_command_results_distinguish_committed_mutation_from_sync_warning() {
+    let warning = crate::services::disk_reconcile::types::CommittedMutationSyncWarning {
+        kind: crate::services::disk_reconcile::types::CommittedMutationSyncWarningKind::ReconcileFailed,
+        message: "projection pending".to_string(),
+    };
+    let created = CreateObjectResult {
+        id: "object-1".to_string(),
+        sync_warning: Some(warning.clone()),
+    };
+    let deleted = crate::services::disk_reconcile::types::CommittedMutationResult {
+        sync_warning: Some(warning),
+    };
+
+    assert_eq!(created.id, "object-1");
+    assert!(created.sync_warning.is_some());
+    assert!(deleted.sync_warning.is_some());
 }
 
 #[tokio::test]
@@ -543,7 +566,6 @@ async fn test_object_counts_use_terminal_preview_semantics() -> CommandResult<()
 
     let filter = ObjectFilter {
         game_id,
-        safe_mode: true,
         ..Default::default()
     };
     let objects = get_objects_cmd_inner(filter, &pool).await?.objects;

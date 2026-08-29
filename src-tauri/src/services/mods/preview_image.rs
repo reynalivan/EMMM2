@@ -139,9 +139,10 @@ pub fn save_preview_image(
     let mut encoded = Vec::new();
     resized.write_to(&mut Cursor::new(&mut encoded), ImageFormat::WebP)?;
 
-    fs::write(&target_path, encoded)?;
+    crate::services::fs_utils::atomic_file::atomic_write(&target_path, &encoded)?;
 
     ThumbnailCache::invalidate(&target_path);
+    ThumbnailCache::invalidate_folder(&mod_root.to_string_lossy());
     Ok(target_path)
 }
 

@@ -20,9 +20,7 @@ pub enum PreviewTreeNodeKind {
 #[serde(rename_all = "snake_case")]
 pub enum MemberKind {
     Mod,
-    Nested,
     Object,
-    Root,
 }
 
 /// Full collection row from the `collections` table.
@@ -33,12 +31,10 @@ pub struct Collection {
     pub name: String,
     pub name_key: String,
     pub is_safe: bool,
-    pub is_unsaved: bool,
-    pub is_last_unsaved: bool,
-    pub last_active: bool,
+    /// Derived from `collection_runtime_state.draft_collection_id`; never persisted on this row.
+    pub is_draft: bool,
     pub snapshot_json: Option<String>,
     pub signature: Option<String>,
-    pub root_count: i32,
     pub display_mod_count: i32,
     pub created_at: String,
     pub updated_at: String,
@@ -50,8 +46,8 @@ pub struct CollectionSummary {
     pub id: String,
     pub name: String,
     pub is_safe: bool,
-    pub is_unsaved: bool,
-    pub is_active: bool, // Derived from corridor_state
+    pub is_safety_classified: bool,
+    pub is_active: bool,
     pub signature: Option<String>,
     pub updated_at: String,
     pub mod_count: i32,
@@ -77,6 +73,8 @@ pub struct ProjectedActiveRoot {
     pub thumbnail_hint: Option<String>,
     pub warnings: Vec<String>,
     pub is_missing: bool,
+    pub is_safe: bool,
+    pub safety_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -112,6 +110,8 @@ pub struct CollectionMod {
     pub node_type: Option<String>,
     pub warnings: Vec<String>,
     pub is_enabled: bool,
+    pub is_safe: bool,
+    pub safety_source: Option<String>,
 }
 
 /// A single object member of a collection (from `collection_objects`).
@@ -123,25 +123,6 @@ pub struct CollectionObject {
     pub is_enabled: bool,
     pub display_name: Option<String>,
     pub path_key: Option<String>,
-}
-
-/// A root entry (from `collection_roots`).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
-pub struct CollectionRoot {
-    pub kind: MemberKind,
-    pub collection_id: String,
-    pub root_path: String,
-    pub root_path_key: String,
-    pub display_name: String,
-    pub display_name_key: String,
-    pub object_id: Option<String>,
-    pub object_name: Option<String>,
-    pub object_type: Option<String>,
-    pub root_kind: String,
-    pub is_safe: bool,
-    pub is_enabled: bool,
-    pub thumbnail_hint: Option<String>,
-    pub corridor_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -181,10 +162,10 @@ pub struct ApplyResult {
     pub mods_disabled: usize,
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
-    pub final_mode: Option<String>,
     pub partial_apply: bool,
     pub skipped_missing_paths: Vec<String>,
     pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
+    pub sync_warning: Option<crate::services::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
@@ -218,7 +199,16 @@ impl CollectionReferenceImpact {
                 self.missing_paths.push(path);
             }
         }
-        self.rewritten_paths.extend(next.rewritten_paths);
+        for rewrite in next.rewritten_paths {
+            let from_key = crate::common::path_key::folder_path_key(&rewrite.from, None);
+            let to_key = crate::common::path_key::folder_path_key(&rewrite.to, None);
+            if !self.rewritten_paths.iter().any(|existing| {
+                crate::common::path_key::folder_path_key(&existing.from, None) == from_key
+                    && crate::common::path_key::folder_path_key(&existing.to, None) == to_key
+            }) {
+                self.rewritten_paths.push(rewrite);
+            }
+        }
         self.affected_collection_count = self.affected_collection_names.len();
     }
 }
@@ -262,7 +252,6 @@ pub struct ApplyPreview {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct ApplyProgressSnapshot {
     pub game_id: String,
-    pub is_safe: bool,
     pub phase: String,
     #[specta(type = f64)]
     pub completed: usize,
@@ -271,6 +260,5 @@ pub struct ApplyProgressSnapshot {
     pub current_item: Option<String>,
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
-    pub final_mode: Option<String>,
     pub success: bool,
 }

@@ -4,30 +4,39 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../lib/bindings';
+import type { AppSettings, GameModsDirectoryInspection } from '../../../lib/bindings';
 import { formatAppError } from '../../../lib/appError';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { useSettings } from '../../../hooks/useSettings';
+import { settingsKeys } from '../../../hooks/settingsQuery';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import { applyDiskReconcileResult } from '../../file-watcher/hooks';
+import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';
+import { useWorkspaceRuntimeSelector } from '../../workspace-runtime/state/workspaceStoreBridge';
 
 export default function WorkspaceSourceUnavailableDialog() {
   const { t } = useTranslation(['grid', 'common']);
   const { activeGame } = useActiveGame();
-  const { settings, saveSettingsAsync } = useSettings();
+  const { settings } = useSettings();
   const queryClient = useQueryClient();
+  const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
   const unavailableMessage = useAppStore((state) =>
     activeGame?.id ? state.diskReconcileByGame[activeGame.id]?.unavailable : null,
   );
   const [pathMissing, setPathMissing] = useState(false);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [inspection, setInspection] = useState<GameModsDirectoryInspection | null>(null);
+  const [differentConfirmation, setDifferentConfirmation] = useState('');
   const sourceKey = activeGame ? `${activeGame.id}:${activeGame.mod_path}` : null;
 
   useEffect(() => {
     let cancelled = false;
     setPathMissing(false);
     setDismissedKey(null);
+    setInspection(null);
+    setDifferentConfirmation('');
     if (!activeGame?.mod_path) {
       return;
     }
@@ -82,13 +91,18 @@ export default function WorkspaceSourceUnavailableDialog() {
     setBusy(true);
     try {
       const resolved = await commands.resolveGameFolder(selected);
-      const games = settings.games.map((game) =>
-        game.id === activeGame.id ? { ...game, mod_path: resolved.mods_path } : game,
+      const nextInspection = await commands.inspectGameModsDirectory(
+        activeGame.id,
+        resolved.mods_path,
       );
-      await saveSettingsAsync({ ...settings, games });
-      await reconcile(resolved.mods_path);
-      setPathMissing(false);
-      toast.success(t('grid:banners.source_relocated'));
+      setInspection(nextInspection);
+      setDifferentConfirmation('');
+      if (
+        nextInspection.summary.classification === 'Matching' ||
+        nextInspection.summary.classification === 'NewLibrary'
+      ) {
+        await applyCandidate(nextInspection, false, null);
+      }
     } catch (error) {
       toast.error(t('grid:banners.source_action_failed', { error: formatAppError(error) }));
     } finally {
@@ -96,9 +110,47 @@ export default function WorkspaceSourceUnavailableDialog() {
     }
   };
 
-  const openDialog = Boolean(
-    sourceKey && dismissedKey !== sourceKey && (pathMissing || unavailableMessage),
-  );
+  const applyCandidate = async (
+    candidate: GameModsDirectoryInspection,
+    confirmEmpty: boolean,
+    confirmationGameName: string | null,
+  ) => {
+    if (!activeGame) return;
+    const result = await commands.applyGameModsDirectory({
+      game_id: activeGame.id,
+      candidate_path: candidate.candidate_path,
+      expected_fingerprint: candidate.fingerprint,
+      confirm_empty: confirmEmpty,
+      different_confirmation_game_name: confirmationGameName,
+    });
+    const refreshedSettings = await commands.getSettings();
+    queryClient.setQueryData<AppSettings>(settingsKeys.all, refreshedSettings);
+    applyDiskReconcileResult(result.reconcile, queryClient, result.game);
+    if (dialogState.kind === 'sourceRecovery') closeWorkspaceDialog('sourceRecovery');
+    setInspection(null);
+    setPathMissing(false);
+    toast.success(t('grid:banners.source_relocated'));
+  };
+
+  const handleConfirmedApply = async () => {
+    if (!inspection || busy) return;
+    setBusy(true);
+    try {
+      await applyCandidate(
+        inspection,
+        inspection.summary.classification === 'Empty',
+        inspection.summary.classification === 'Different' ? differentConfirmation : null,
+      );
+    } catch (error) {
+      toast.error(t('grid:banners.source_action_failed', { error: formatAppError(error) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openDialog =
+    dialogState.kind === 'sourceRecovery' ||
+    Boolean(sourceKey && dismissedKey !== sourceKey && (pathMissing || unavailableMessage));
   if (!openDialog || !activeGame) return null;
 
   return (
@@ -116,6 +168,47 @@ export default function WorkspaceSourceUnavailableDialog() {
             <code className="mt-3 block break-all rounded bg-base-200 p-2 text-xs">
               {activeGame.mod_path}
             </code>
+            {inspection && (
+              <div className="mt-4 rounded-lg border border-base-content/15 bg-base-200/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">
+                    {t(`grid:banners.source_classification_${inspection.summary.classification}`)}
+                  </span>
+                  <span className="badge badge-sm badge-outline">
+                    {t('grid:banners.source_candidate_counts', {
+                      objects: inspection.summary.candidate_object_count,
+                      mods: inspection.summary.candidate_mod_count,
+                    })}
+                  </span>
+                </div>
+                <code className="mt-2 block break-all text-xs text-base-content/70">
+                  {inspection.candidate_path}
+                </code>
+                {inspection.summary.classification === 'Empty' && (
+                  <p className="mt-3 text-sm text-warning" role="alert">
+                    {t('grid:banners.source_empty_warning')}
+                  </p>
+                )}
+                {inspection.summary.classification === 'Different' && (
+                  <div className="mt-3">
+                    <p className="text-sm text-error" role="alert">
+                      {t('grid:banners.source_different_warning')}
+                    </p>
+                    <label className="form-control mt-3">
+                      <span className="label-text text-xs">
+                        {t('grid:banners.source_type_game_name', { name: activeGame.name })}
+                      </span>
+                      <input
+                        className="input input-bordered input-sm mt-1 w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        value={differentConfirmation}
+                        onChange={(event) => setDifferentConfirmation(event.target.value)}
+                        autoComplete="off"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="modal-action">
@@ -123,7 +216,10 @@ export default function WorkspaceSourceUnavailableDialog() {
             type="button"
             className="btn btn-ghost"
             disabled={busy}
-            onClick={() => setDismissedKey(sourceKey)}
+            onClick={() => {
+              setDismissedKey(sourceKey);
+              if (dialogState.kind === 'sourceRecovery') closeWorkspaceDialog('sourceRecovery');
+            }}
           >
             {t('grid:banners.source_later_btn')}
           </button>
@@ -145,6 +241,26 @@ export default function WorkspaceSourceUnavailableDialog() {
             <FolderSearch size={15} />
             {t('grid:banners.source_locate_btn')}
           </button>
+          {inspection?.summary.classification === 'Empty' && (
+            <button
+              type="button"
+              className="btn btn-warning"
+              disabled={busy}
+              onClick={handleConfirmedApply}
+            >
+              {t('grid:banners.source_confirm_empty_btn')}
+            </button>
+          )}
+          {inspection?.summary.classification === 'Different' && (
+            <button
+              type="button"
+              className="btn btn-error"
+              disabled={busy || differentConfirmation.trim() !== activeGame.name}
+              onClick={handleConfirmedApply}
+            >
+              {t('grid:banners.source_confirm_different_btn')}
+            </button>
+          )}
         </div>
       </div>
     </dialog>

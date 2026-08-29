@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createObject, updateObject, validateObjectName } from './objectService';
+import { createObject, deleteObject, updateObject, validateObjectName } from './objectService';
 
 const createObjectCmd = vi.fn();
 const updateObjectCmd = vi.fn();
 const getObject = vi.fn();
+const deleteObjectCmd = vi.fn();
+const notifyCommittedMutationSyncWarning = vi.fn();
 
 vi.mock('../bindings', () => ({
   sparse: (value: unknown) => value,
@@ -11,7 +13,13 @@ vi.mock('../bindings', () => ({
     createObjectCmd: (...args: unknown[]) => createObjectCmd(...args),
     updateObjectCmd: (...args: unknown[]) => updateObjectCmd(...args),
     getObject: (...args: unknown[]) => getObject(...args),
+    deleteObjectCmd: (...args: unknown[]) => deleteObjectCmd(...args),
   },
+}));
+
+vi.mock('../committedMutationWarning', () => ({
+  notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
+    notifyCommittedMutationSyncWarning(...args),
 }));
 
 /**
@@ -119,7 +127,10 @@ describe('create/update read-back', () => {
   });
 
   it('returns the row read back after creating', async () => {
-    createObjectCmd.mockResolvedValue('obj-1');
+    createObjectCmd.mockResolvedValue({
+      id: 'obj-1',
+      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+    });
     getObject.mockResolvedValue({ id: 'obj-1', name: 'Ayaka' });
 
     await expect(createObject({ name: 'Ayaka' } as never)).resolves.toEqual({
@@ -127,10 +138,13 @@ describe('create/update read-back', () => {
       name: 'Ayaka',
     });
     expect(getObject).toHaveBeenCalledWith('obj-1');
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_warning: expect.any(Object) }),
+    );
   });
 
   it('throws when the created row cannot be read back', async () => {
-    createObjectCmd.mockResolvedValue('obj-1');
+    createObjectCmd.mockResolvedValue({ id: 'obj-1', sync_warning: null });
     getObject.mockResolvedValue(null);
 
     await expect(createObject({ name: 'Ayaka' } as never)).rejects.toThrow('obj-1');
@@ -141,6 +155,18 @@ describe('create/update read-back', () => {
     getObject.mockResolvedValue(null);
 
     await expect(updateObject('obj-2', {})).rejects.toThrow('obj-2');
+  });
+
+  it('reports projection lag after an object was already deleted', async () => {
+    deleteObjectCmd.mockResolvedValue({
+      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+    });
+
+    await deleteObject('obj-2', true);
+
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_warning: expect.any(Object) }),
+    );
   });
 
   it('rejects an invalid rename before touching the backend', async () => {

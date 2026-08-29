@@ -4,9 +4,14 @@ use crate::services::mods::trash;
 use crate::services::scanner::watcher::{SuppressionGuard, WatcherSuppressor};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::fs;
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+mod hardlink;
+
+#[cfg(test)]
+pub(crate) use hardlink::replace_file_with_hardlink_using;
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -63,7 +68,6 @@ pub async fn resolve_batch<F>(
     db: &SqlitePool,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     watcher_suppressor: &Arc<WatcherSuppressor>,
-    trash_dir: &Path,
     mut on_progress: F,
 ) -> Result<ResolutionSummary, AppError>
 where
@@ -76,11 +80,6 @@ where
             failed: 0,
             errors: Vec::new(),
         });
-    }
-
-    if !trash_dir.exists() {
-        fs::create_dir_all(trash_dir)
-            .map_err(|error| AppError::Io(format!("Failed to create trash directory: {error}")))?;
     }
 
     let _suppression_guard = SuppressionGuard::new(watcher_suppressor);
@@ -98,7 +97,7 @@ where
             action: request.action.clone(),
         });
 
-        let outcome = resolve_one(request, &game_id, db, trash_dir).await;
+        let outcome = resolve_one(request, &game_id, db).await;
         match outcome {
             Ok(()) => {
                 successful += 1;
@@ -127,16 +126,19 @@ async fn resolve_one(
     request: &ResolutionRequest,
     game_id: &str,
     db: &SqlitePool,
-    trash_dir: &Path,
 ) -> Result<(), ScannerError> {
+    authorize_request(request, game_id, db).await?;
+
     match request.action {
         ResolutionAction::KeepA => {
-            move_folder_to_trash(&request.folder_b, game_id, trash_dir)?;
+            verify_full_folder_match(&request.folder_a, &request.folder_b)?;
+            move_folder_to_trash(&request.folder_b)?;
             set_group_status(db, &request.group_id, "resolved").await?;
             Ok(())
         }
         ResolutionAction::KeepB => {
-            move_folder_to_trash(&request.folder_a, game_id, trash_dir)?;
+            verify_full_folder_match(&request.folder_a, &request.folder_b)?;
+            move_folder_to_trash(&request.folder_a)?;
             set_group_status(db, &request.group_id, "resolved").await?;
             Ok(())
         }
@@ -146,92 +148,138 @@ async fn resolve_one(
             Ok(())
         }
         ResolutionAction::Hardlink => {
-            apply_hardlinks(&request.folder_a, &request.folder_b)?;
+            verify_full_folder_match(&request.folder_a, &request.folder_b)?;
+            hardlink::apply_hardlinks(&request.folder_a, &request.folder_b)?;
             set_group_status(db, &request.group_id, "resolved").await?;
             Ok(())
         }
     }
 }
 
-fn apply_hardlinks(keep_folder: &str, target_folder: &str) -> Result<(), ScannerError> {
-    let keep_path = Path::new(keep_folder);
-    let target_path = Path::new(target_folder);
-
-    if !keep_path.exists() || !target_path.exists() {
+async fn authorize_request(
+    request: &ResolutionRequest,
+    game_id: &str,
+    db: &SqlitePool,
+) -> Result<(), ScannerError> {
+    let requested_paths = canonical_request_paths(request)?;
+    let group = crate::repo::dedup_repo::load_pending_group(db, game_id, &request.group_id)
+        .await?
+        .ok_or_else(|| {
+            ScannerError::Validation(format!(
+                "Duplicate group is missing, stale, or already resolved: {}",
+                request.group_id
+            ))
+        })?;
+    let member_paths = group_member_paths(&group)?;
+    if !member_paths.contains(&requested_paths.0) || !member_paths.contains(&requested_paths.1) {
         return Err(ScannerError::Validation(
-            "One or both folders do not exist for hardlinking".to_string(),
+            "Resolution paths are not members of the persisted duplicate group".to_string(),
         ));
     }
-
-    let mut success_count = 0;
-    let walker = walkdir::WalkDir::new(target_path).into_iter();
-
-    for entry in walker.filter_map(|e| e.ok()) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-
-        let rel_path = match entry.path().strip_prefix(target_path) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        let src_file = keep_path.join(rel_path);
-
-        if src_file.exists() && src_file.is_file() {
-            let src_meta = match fs::metadata(&src_file) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            let tgt_meta = match fs::metadata(entry.path()) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-
-            // Only hardlink if file sizes match (basic safeguard)
-            if src_meta.len() == tgt_meta.len() {
-                if let Err(e) =
-                    crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(entry.path())
-                {
-                    log::warn!(
-                        "Failed to move target file to the Recycle Bin for hardlinking: {e}"
-                    );
-                    continue;
-                }
-
-                if let Err(e) = fs::hard_link(&src_file, entry.path()) {
-                    log::warn!(
-                        "Failed to create hardlink from {:?} to {:?}: {}",
-                        src_file,
-                        entry.path(),
-                        e
-                    );
-                    continue;
-                }
-
-                success_count += 1;
-            }
-        }
+    if !matches!(request.action, ResolutionAction::Ignore) && group.confidence_score != 100 {
+        return Err(ScannerError::Validation(
+            "Destructive resolution requires a fully verified exact duplicate group".to_string(),
+        ));
     }
-
-    log::info!(
-        "Created {} hardlinks from {} to {}",
-        success_count,
-        keep_folder,
-        target_folder
-    );
     Ok(())
 }
 
-fn move_folder_to_trash(
-    folder_path: &str,
-    game_id: &str,
-    trash_dir: &Path,
-) -> Result<(), ScannerError> {
+fn canonical_request_paths(
+    request: &ResolutionRequest,
+) -> Result<(PathBuf, PathBuf), ScannerError> {
+    let left = canonical_folder_path(&request.folder_a)?;
+    let right = canonical_folder_path(&request.folder_b)?;
+    if left == right {
+        return Err(ScannerError::Validation(
+            "Duplicate resolution requires two distinct physical folders".to_string(),
+        ));
+    }
+    Ok((left, right))
+}
+
+fn group_member_paths(
+    group: &crate::types::dup_scan::DupScanGroup,
+) -> Result<Vec<PathBuf>, ScannerError> {
+    group
+        .members
+        .iter()
+        .map(|member| canonical_folder_path(&member.folder_path))
+        .collect()
+}
+
+fn canonical_folder_path(folder_path: &str) -> Result<PathBuf, ScannerError> {
+    std::fs::canonicalize(folder_path).map_err(|error| {
+        ScannerError::Io(format!(
+            "failed to resolve duplicate folder '{folder_path}': {error}"
+        ))
+    })
+}
+
+fn verify_full_folder_match(left: &str, right: &str) -> Result<(), ScannerError> {
+    let left_manifest = full_folder_manifest(Path::new(left))?;
+    let right_manifest = full_folder_manifest(Path::new(right))?;
+
+    if left_manifest != right_manifest {
+        return Err(ScannerError::Validation(
+            "Folders are not full-content duplicates; rescan before resolving".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn full_folder_manifest(folder: &Path) -> Result<BTreeMap<String, (u64, String)>, ScannerError> {
+    if !folder.is_dir() {
+        return Err(ScannerError::Validation(format!(
+            "Duplicate folder does not exist: {}",
+            folder.display()
+        )));
+    }
+
+    let mut manifest = BTreeMap::new();
+    for item in walkdir::WalkDir::new(folder)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| {
+            entry.depth() == 0
+                || (!entry.file_type().is_dir()
+                    || !entry.file_name().to_string_lossy().starts_with('.'))
+        })
+    {
+        let entry = item.map_err(|error| ScannerError::Io(error.to_string()))?;
+        if entry.depth() == 0 || entry.file_type().is_dir() {
+            continue;
+        }
+        if super::snapshot::is_ignored_file_name(entry.file_name()) {
+            continue;
+        }
+        if !entry.file_type().is_file() {
+            return Err(ScannerError::Validation(format!(
+                "Unsupported link or special file in duplicate folder: {}",
+                entry.path().display()
+            )));
+        }
+
+        let relative = entry
+            .path()
+            .strip_prefix(folder)
+            .map_err(|error| ScannerError::Io(error.to_string()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let size = entry
+            .metadata()
+            .map_err(|error| ScannerError::Io(error.to_string()))?
+            .len();
+        let hash = super::hashing::full_blake3_hash(entry.path())?;
+        manifest.insert(relative, (size, hash));
+    }
+
+    Ok(manifest)
+}
+
+fn move_folder_to_trash(folder_path: &str) -> Result<(), ScannerError> {
     let source_path = Path::new(folder_path);
-    trash::move_to_trash(source_path, trash_dir, Some(game_id.to_string()))
-        .map(|_| ())
-        .map_err(|error| ScannerError::Io(error.to_string()))
+    trash::move_to_trash(source_path).map_err(|error| ScannerError::Io(error.to_string()))
 }
 
 async fn persist_whitelist_pair(
@@ -281,11 +329,9 @@ async fn set_group_status(
         crate::repo::dedup_repo::update_group_status(db, group_id, status, set_resolved_at).await?;
 
     if rows_affected == 0 {
-        log::warn!(
-            "No dedup_groups row updated for group_id='{}' and status='{}'",
-            group_id,
-            status
-        );
+        return Err(ScannerError::Validation(format!(
+            "Duplicate group is missing or stale: {group_id}"
+        )));
     }
 
     Ok(())

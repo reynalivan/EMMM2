@@ -37,6 +37,7 @@ vi.mock('../../../hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutate: vi.fn() }),
   useBulkDelete: () => ({ mutate: vi.fn() }),
   useBulkUpdateInfo: () => ({ mutate: vi.fn() }),
+  useBulkSafety: () => ({ mutate: vi.fn() }),
   useBulkFavorite: () => ({ mutate: vi.fn() }),
   useBulkPin: () => ({ mutate: vi.fn() }),
 }));

@@ -5,7 +5,7 @@ use crate::services::scanner::dedup::resolver::{
     ResolutionProgress, ResolutionRequest, ResolutionSummary,
 };
 use crate::services::scanner::watcher::WatcherState;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
 #[specta::specta]
@@ -26,23 +26,32 @@ pub async fn dup_resolve_batch(
         .flat_map(|request| [request.folder_a.clone(), request.folder_b.clone()])
         .collect();
     crate::services::fs_utils::guard::validate_paths(&config, &game_id, &all_folders)?;
-
-    let app_data_dir = app.path().app_data_dir().map_err(|error| {
-        AppError::Internal(format!("Failed to get app data directory: {error}"))
-    })?;
-    let trash_dir = crate::services::mods::trash::trash_dir_under(&app_data_dir);
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        db.inner(),
+        &game_id,
+        Some(&all_folders),
+    )
+    .await?;
 
     let op_guard = op_lock.acquire().await?;
-    crate::services::scanner::dedup::resolver::resolve_batch(
+    let result = crate::services::scanner::dedup::resolver::resolve_batch(
         requests,
-        game_id,
+        game_id.clone(),
         db.inner(),
         &op_guard,
         &watcher_state.suppressor,
-        &trash_dir,
         |progress: ResolutionProgress| {
             let _ = app.emit("dup-resolve-progress", &progress);
         },
     )
-    .await
+    .await?;
+    drop(op_guard);
+    crate::services::disk_reconcile::emit::run_full_internal_disk_reconcile(
+        &app,
+        db.inner(),
+        &game_id,
+    )
+    .await?;
+    Ok(result)
 }

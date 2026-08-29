@@ -15,6 +15,4 @@ commands.allow = [
     "browser_clear_old_downloads",
     "browser_import_selected",
     "browser_list_import_queue",
-    "browser_confirm_import",
-    "browser_cancel_import",
 ]

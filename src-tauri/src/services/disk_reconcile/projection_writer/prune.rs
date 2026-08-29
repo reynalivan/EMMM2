@@ -11,17 +11,29 @@ use super::index::DbIndex;
 use super::keys::root_key_for_folder_path;
 use super::state::ProjectionWriteState;
 
+pub(super) struct PruneScope<'a> {
+    pub scope_root_keys: &'a HashSet<String>,
+    pub force_full: bool,
+    pub protected_object_keys: &'a HashSet<String>,
+    pub protected_mod_keys: &'a HashSet<String>,
+}
+
 pub(super) async fn prune_missing_objects(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     index: &DbIndex,
-    scope_root_keys: &HashSet<String>,
-    force_full: bool,
+    scope: &PruneScope<'_>,
     state: &mut ProjectionWriteState<'_>,
 ) -> Result<(), AppError> {
     for db_object in &index.objects {
-        let in_scope = force_full || scope_root_keys.contains(&db_object.folder_path_key);
-        if !in_scope || state.seen_object_keys.contains(&db_object.folder_path_key) {
+        let in_scope =
+            scope.force_full || scope.scope_root_keys.contains(&db_object.folder_path_key);
+        if !in_scope
+            || scope
+                .protected_object_keys
+                .contains(&db_object.folder_path_key)
+            || state.seen_object_keys.contains(&db_object.folder_path_key)
+        {
             continue;
         }
 
@@ -47,18 +59,20 @@ pub(super) async fn prune_missing_objects(
 
 pub(super) async fn prune_missing_mods(
     conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
     mods_path: &Path,
     index: &DbIndex,
-    scope_root_keys: &HashSet<String>,
-    force_full: bool,
+    scope: &PruneScope<'_>,
     state: &mut ProjectionWriteState<'_>,
 ) -> Result<(), AppError> {
     for db_mod in &index.mods {
         let Some(db_root_key) = root_key_for_folder_path(&db_mod.folder_path) else {
             continue;
         };
-        let in_scope = force_full || scope_root_keys.contains(&db_root_key);
+        let in_scope = scope.force_full || scope.scope_root_keys.contains(&db_root_key);
         if !in_scope
+            || scope.protected_object_keys.contains(&db_root_key)
+            || scope.protected_mod_keys.contains(&db_mod.folder_path_key)
             || state.seen_mod_keys.contains(&db_mod.folder_path_key)
             || state.deleted_object_keys.contains(&db_root_key)
         {
@@ -71,6 +85,7 @@ pub(super) async fn prune_missing_mods(
 
         let impact = crate::services::collection_service::handle_mod_missing_tx(
             &mut *conn,
+            game_id,
             &db_mod.folder_path,
         )
         .await?;

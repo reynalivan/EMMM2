@@ -60,23 +60,18 @@ pub struct DashboardPayload {
 }
 
 /// Fetch all dashboard data in a single service call.
-/// `safe_mode`: when true, stats/charts exclude mods with `is_safe = 0`.
-pub async fn get_dashboard_payload(
-    pool: &sqlx::SqlitePool,
-    corridor: crate::domain::corridor::Corridor,
-) -> Result<DashboardPayload, AppError> {
-    let safe_mode = corridor.is_safe();
+pub async fn get_dashboard_payload(pool: &sqlx::SqlitePool) -> Result<DashboardPayload, AppError> {
     use crate::repo::dashboard_repo;
 
-    let stats = dashboard_repo::fetch_global_stats(pool, safe_mode).await?;
+    let stats = dashboard_repo::fetch_global_stats(pool).await?;
 
     // Independent reads. Serially they cost four extra round trips; WAL
     // readers do not block each other, so the pool can serve them at once.
     let (duplicate_waste_bytes, category_distribution, game_distribution, recent_mods) = tokio::try_join!(
         async { dashboard_repo::fetch_duplicate_waste(pool).await },
-        async { dashboard_repo::fetch_category_distribution(pool, safe_mode).await },
-        async { dashboard_repo::fetch_game_distribution(pool, safe_mode).await },
-        async { dashboard_repo::fetch_recent_mods(pool, safe_mode, 5).await },
+        async { dashboard_repo::fetch_category_distribution(pool).await },
+        async { dashboard_repo::fetch_game_distribution(pool).await },
+        async { dashboard_repo::fetch_recent_mods(pool, 5).await },
     )?;
 
     Ok(DashboardPayload {

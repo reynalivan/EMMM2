@@ -16,6 +16,7 @@ interface FolderCardContextMenuProps {
   onNavigate?: (folderName: string) => void;
   onToggleSafe?: () => void;
   onSyncWithDb?: () => void;
+  hasFolderNameConflict?: boolean;
 }
 
 export default function FolderCardContextMenu({
@@ -29,6 +30,7 @@ export default function FolderCardContextMenu({
   onNavigate,
   onToggleSafe,
   onSyncWithDb,
+  hasFolderNameConflict = false,
 }: FolderCardContextMenuProps) {
   const contextActions = useModContextMenuActions(folder);
   const items = useModContextMenuItems({
@@ -42,7 +44,7 @@ export default function FolderCardContextMenu({
     onOpenMoveDialog,
     onNavigateModPack: onNavigate,
     onSyncWithDb,
-    onOpenExplorer: contextActions.openExplorer,
+    onOpenExplorer: hasFolderNameConflict ? undefined : contextActions.openExplorer,
     onPasteThumbnail: contextActions.pasteThumbnailFromClipboard,
     onImportThumbnail: contextActions.importThumbnail,
   });

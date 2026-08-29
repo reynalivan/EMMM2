@@ -1,5 +1,4 @@
 use crate::domain::errors::AppError;
-use crate::repo::game_repo;
 use crate::services::config::ConfigService;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::bulk;
@@ -32,6 +31,18 @@ impl BulkCancelState {
     }
 }
 
+fn apply_committed_reconcile(
+    result: &mut bulk::BulkResult,
+    settlement: crate::services::disk_reconcile::emit::CommittedReconcileSettlement,
+) {
+    if let Some(reconcile) = settlement.reconcile {
+        result
+            .collection_impact
+            .merge(reconcile.collection_reference_impact);
+    }
+    result.sync_warning = settlement.sync_warning;
+}
+
 /// Stop the running bulk toggle/delete after the item in flight. Work already
 /// done stays done — the trailing reconcile still converges the DB.
 #[specta::specta]
@@ -57,18 +68,30 @@ pub async fn bulk_toggle_mods(
 ) -> Result<bulk::BulkResult, AppError> {
     // Security validation for all paths
     crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
-
-    let _lock = op_lock.acquire().await?;
-    bulk::bulk_toggle(
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
-        &state,
         &game_id,
-        paths,
-        enable,
-        cancel_state.begin(),
+        Some(&paths),
     )
-    .await
+    .await?;
+
+    let lock = op_lock.acquire().await?;
+    let mut result = bulk::bulk_toggle(&app, &state, paths, enable, cancel_state.begin()).await?;
+    drop(lock);
+    if !result.success.is_empty() {
+        let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+            crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+                &app,
+                pool.inner(),
+                &game_id,
+                result.success.clone(),
+            )
+            .await,
+        );
+        apply_committed_reconcile(&mut result, settlement);
+    }
+    Ok(result)
 }
 
 #[specta::specta]
@@ -88,49 +111,76 @@ pub async fn bulk_delete_mods(
     // inside, and the game whose index rows may be pruned. Optional, it let a
     // caller skip containment entirely.
     crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
-
-    let _lock = op_lock.acquire().await?;
-    bulk::bulk_delete(
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
-        &config,
         pool.inner(),
-        &state,
-        paths,
         &game_id,
-        cancel_state.begin(),
+        Some(&paths),
     )
-    .await
+    .await?;
+
+    let lock = op_lock.acquire().await?;
+    let mut result = bulk::bulk_delete(&app, &state, paths, cancel_state.begin()).await?;
+    drop(lock);
+    if !result.success.is_empty() {
+        let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+            crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+                &app,
+                pool.inner(),
+                &game_id,
+                result.success.clone(),
+            )
+            .await,
+        );
+        apply_committed_reconcile(&mut result, settlement);
+    }
+    Ok(result)
 }
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri boundary: injected states plus the bulk payload.
 pub async fn bulk_update_info(
+    app: AppHandle,
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
+    watcher: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     paths: Vec<String>,
     update: info_json::ModInfoUpdate,
 ) -> Result<bulk::BulkResult, AppError> {
-    let _lock = op_lock.acquire().await?;
+    if update.is_safe.is_some() {
+        return Err(AppError::Validation(
+            "Safety changes must use bulk_set_mod_safety".to_string(),
+        ));
+    }
     let validated = crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&paths),
+    )
+    .await?;
+    let lock = op_lock.acquire().await?;
+    let suppression = watcher
+        .suppressor
+        .suppress_paths(validated.iter().map(AsRef::<std::path::Path>::as_ref));
     let mut result = bulk::bulk_update_info(&validated, update).await?;
-
-    if let Some(mods_path) = game_repo::get_mod_path(pool.inner(), &game_id).await? {
-        let post_ctx = crate::services::app::post_apply::PostApplyContext {
-            game_id: game_id.clone(),
-            pool: pool.inner().clone(),
-            is_safe: config.get_settings().safe_mode.enabled,
-            mods_path: mods_path.into(),
-            hotkeys: config.with_settings(|settings| settings.hotkeys.clone()),
-            status_fields: None,
-        };
-        if let Err(error) = crate::services::app::post_apply::run_post_apply_tasks(post_ctx).await {
-            result.failures.push(bulk::BulkActionError {
-                path: ".emmm_data".to_string(),
-                error,
-            });
-        }
+    drop(suppression);
+    drop(lock);
+    if !result.success.is_empty() {
+        let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+            crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+                &app,
+                pool.inner(),
+                &game_id,
+                result.success.clone(),
+            )
+            .await,
+        );
+        apply_committed_reconcile(&mut result, settlement);
     }
 
     Ok(result)
@@ -138,30 +188,140 @@ pub async fn bulk_update_info(
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri boundary: injected states plus the bulk payload.
+pub async fn bulk_set_mod_safety(
+    app: AppHandle,
+    config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    watcher: State<'_, WatcherState>,
+    op_lock: State<'_, OperationLock>,
+    game_id: String,
+    paths: Vec<String>,
+    safe: bool,
+) -> Result<bulk::BulkResult, AppError> {
+    let validated = crate::services::fs_utils::guard::validate_paths(&config, &game_id, &paths)?;
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&paths),
+    )
+    .await?;
+
+    let lock = op_lock.acquire().await?;
+    let resolved = bulk::resolve_safety_targets(pool.inner(), &game_id, &validated).await?;
+    let suppression = watcher.suppressor.suppress_paths(
+        resolved
+            .targets
+            .iter()
+            .map(|target| std::path::Path::new(&target.disk_path)),
+    );
+    let mut result = bulk::bulk_set_safety(pool.inner(), &game_id, resolved, safe).await?;
+    drop(suppression);
+    drop(lock);
+
+    if !result.success.is_empty() {
+        let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+            crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+                &app,
+                pool.inner(),
+                &game_id,
+                result.success.clone(),
+            )
+            .await,
+        );
+        apply_committed_reconcile(&mut result, settlement);
+    }
+    Ok(result)
+}
+
+#[specta::specta]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri boundary: injected states plus the bulk payload.
 pub async fn bulk_toggle_favorite(
+    app: AppHandle,
+    config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    watcher: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     folder_paths: Vec<String>,
     favorite: bool,
 ) -> Result<bulk::BulkResult, AppError> {
-    // Writes info.json inside folders a concurrent toggle/delete may be renaming.
-    let _lock = op_lock.acquire().await?;
-    bulk::bulk_toggle_favorite(&pool, game_id, folder_paths, favorite).await
+    let validated =
+        crate::services::fs_utils::guard::validate_paths(&config, &game_id, &folder_paths)?;
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&folder_paths),
+    )
+    .await?;
+    let lock = op_lock.acquire().await?;
+    let suppression = watcher
+        .suppressor
+        .suppress_paths(validated.iter().map(AsRef::<std::path::Path>::as_ref));
+    let mut result =
+        bulk::bulk_toggle_favorite(&pool, game_id.clone(), folder_paths, favorite).await?;
+    drop(suppression);
+    drop(lock);
+    if !result.success.is_empty() {
+        let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+            crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+                &app,
+                pool.inner(),
+                &game_id,
+                result.success.clone(),
+            )
+            .await,
+        );
+        apply_committed_reconcile(&mut result, settlement);
+    }
+    Ok(result)
 }
 
 #[specta::specta]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri boundary: injected states plus the bulk payload.
 pub async fn bulk_pin_mods(
+    app: AppHandle,
+    config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
+    watcher: State<'_, WatcherState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     folder_paths: Vec<String>,
     pin: bool,
 ) -> Result<bulk::BulkResult, AppError> {
-    // Paths are resolved against the mods root a concurrent toggle/delete may be moving.
-    let _lock = op_lock.acquire().await?;
-    bulk::bulk_pin(&pool, game_id, folder_paths, pin).await
+    let validated =
+        crate::services::fs_utils::guard::validate_paths(&config, &game_id, &folder_paths)?;
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&folder_paths),
+    )
+    .await?;
+    let lock = op_lock.acquire().await?;
+    let suppression = watcher
+        .suppressor
+        .suppress_paths(validated.iter().map(AsRef::<std::path::Path>::as_ref));
+    let mut result = bulk::bulk_pin(&pool, game_id.clone(), folder_paths, pin).await?;
+    drop(suppression);
+    drop(lock);
+    if !result.success.is_empty() {
+        let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+            crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+                &app,
+                pool.inner(),
+                &game_id,
+                result.success.clone(),
+            )
+            .await,
+        );
+        apply_committed_reconcile(&mut result, settlement);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]

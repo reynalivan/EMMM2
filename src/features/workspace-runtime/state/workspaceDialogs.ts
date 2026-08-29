@@ -1,15 +1,25 @@
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
-import type {
-  WorkspaceFileInUseDialogData,
-  WorkspaceDialogState,
-  WorkspaceRenameConflict,
-} from './workspaceState';
+import type { WorkspaceFileInUseDialogData, WorkspaceDialogState } from './workspaceState';
 import { dispatchWorkspaceRuntimeEvent } from './workspaceStoreBridge';
 
-export function openWorkspaceConflictDialog(conflict: WorkspaceRenameConflict): void {
+export function openFolderConflictManagerDialog(): void {
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_OPENED',
-    dialog: { kind: 'conflict', conflict },
+    dialog: { kind: 'folderConflicts' },
+  });
+}
+
+export function openRenameConfirmationDialog(): void {
+  dispatchWorkspaceRuntimeEvent({
+    type: 'DIALOG_OPENED',
+    dialog: { kind: 'renameConfirmations' },
+  });
+}
+
+export function openWorkspaceSourceRecoveryDialog(): void {
+  dispatchWorkspaceRuntimeEvent({
+    type: 'DIALOG_OPENED',
+    dialog: { kind: 'sourceRecovery' },
   });
 }
 

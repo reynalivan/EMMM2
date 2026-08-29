@@ -6,7 +6,6 @@ import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import FolderCardContextMenu from './FolderCardContextMenu';
 import BulkContextMenu from './BulkContextMenu';
-import { useSafeMode } from '../../../hooks/settingsQuery';
 import { WorkspaceSwitchControl } from '../../workspace-runtime/components/WorkspaceSwitchControl';
 import { WorkspaceSwitchLabel } from '../../workspace-runtime/components/WorkspaceSwitchLabel';
 import { useFolderNodeView } from '../hooks/useFolderNodeView';
@@ -40,6 +39,7 @@ interface FolderCardProps {
   onToggleSafe?: (folder: ModFolder) => void;
   onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
+  hasFolderNameConflict?: boolean;
   /** True when an ancestor folder in the current path has DISABLED prefix */
   isLockedByParent?: boolean;
   /** Called when user tries to toggle while locked — opens Enable Parent dialog */
@@ -78,6 +78,7 @@ function FolderCardInner({
   onToggleSafe,
   onSyncWithDb,
   hasConflict = false,
+  hasFolderNameConflict = false,
   isLockedByParent = false,
   onRequestEnableParent,
   isSwitchPending = false,
@@ -154,16 +155,12 @@ function FolderCardInner({
   };
 
   const handleDoubleClick = () => {
-    if (folder.is_directory && folder.can_navigate) {
+    if (!hasFolderNameConflict && folder.is_directory && folder.can_navigate) {
       onNavigate(folder.folder_name);
     }
   };
 
-  const hasNamingConflict = !!folder.conflict_state;
-
-  // Leak guard only: main workspace grid should already be corridor-filtered by the backend.
-  const safeMode = useSafeMode();
-  const isHiddenByMask = safeMode && !folder.is_safe;
+  const hasNamingConflict = hasFolderNameConflict || !!folder.conflict_state;
 
   return (
     <ContextMenu
@@ -185,7 +182,8 @@ function FolderCardInner({
               onEnableOnlyThis && !mutationsDisabled ? () => onEnableOnlyThis(folder) : undefined
             }
             onOpenMoveDialog={mutationsDisabled ? undefined : onOpenMoveDialog}
-            onNavigate={onNavigate}
+            onNavigate={hasFolderNameConflict ? undefined : onNavigate}
+            hasFolderNameConflict={hasFolderNameConflict}
             onToggleSafe={mutationsDisabled ? undefined : () => onToggleSafe?.(folder)}
             onSyncWithDb={
               onSyncWithDb && !mutationsDisabled ? () => onSyncWithDb(folder) : undefined
@@ -231,7 +229,7 @@ function FolderCardInner({
           imgLoaded={imgLoaded}
           imgError={imgError}
           isSelected={isSelected}
-          isHiddenByMask={isHiddenByMask}
+          isHiddenByMask={false}
           isLockedByParent={isLockedByParent}
           isSwitchChecked={switchPolicy.checked}
           hasConflict={hasConflict}
@@ -253,9 +251,8 @@ function FolderCardInner({
           <h3
             className={`font-medium text-sm truncate leading-tight select-none transition-colors
               ${isActive || isSelected ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'}
-              ${!switchPolicy.checked ? 'line-through text-base-content/70' : ''}
-              ${isHiddenByMask ? 'blur-xs text-base-content/40' : ''}`}
-            title={isHiddenByMask ? t('card.hidden_mod_title') : folder.name}
+              ${!switchPolicy.checked ? 'line-through text-base-content/70' : ''}`}
+            title={folder.name}
           >
             {isRenaming ? (
               <input
@@ -268,8 +265,6 @@ function FolderCardInner({
                 onClick={(e) => e.stopPropagation()}
                 onBlur={() => onRenameCancel?.()}
               />
-            ) : isHiddenByMask ? (
-              t('card.hidden_mod')
             ) : (
               folder.name
             )}

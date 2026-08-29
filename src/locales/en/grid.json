@@ -4,14 +4,12 @@
     "search_placeholder": "Search mods...",
     "item_count_one": "{{count}} item",
     "item_count_other": "{{count}} items",
-    "refresh_title": "Refresh",
     "view_grid": "Grid view",
     "view_list": "List view"
   },
   "banners": {
-    "conflict_detected_one": "{{count}} naming conflict detected",
-    "conflict_detected_other": "{{count}} naming conflicts detected",
-    "resolve_btn": "Resolve",
+    "disk_syncing": "Syncing mods with disk. Editing is temporarily unavailable.",
+    "disk_sync_failed": "Mods sync failed: {{error}}",
     "flat_mod_title": "Active Mod Directory",
     "flat_mod_desc": "This folder is a direct mod root (flat structure). You can enable/disable it as a single unit.",
     "disable_mod": "Disable Mod",
@@ -29,7 +27,17 @@
     "source_dialog_title": "Mods folder not found",
     "source_dialog_message": "The saved Mods folder is unavailable. Locate it to continue loading your mod data.",
     "source_later_btn": "Later",
-    "source_action_failed": "Could not reach the mods folder: {{error}}"
+    "source_action_failed": "Could not reach the mods folder: {{error}}",
+    "source_classification_Matching": "Matching library found",
+    "source_classification_NewLibrary": "New mod library found",
+    "source_classification_Empty": "Empty folder",
+    "source_classification_Different": "Different mod library",
+    "source_candidate_counts": "{{objects}} objects · {{mods}} mods",
+    "source_empty_warning": "This folder is empty. Confirm to use it as a new mod library; the current database snapshot will be reconciled to an empty disk.",
+    "source_different_warning": "This folder contains a different mod library. Applying it will make the database follow this folder's contents.",
+    "source_type_game_name": "Type {{name}} to confirm",
+    "source_confirm_empty_btn": "Use empty folder",
+    "source_confirm_different_btn": "Replace library"
   },
   "empty": {
     "no_match": "No mods match your search.",
@@ -68,8 +76,6 @@
     "conflict": "Conflict",
     "name_conflict_title": "Naming conflict: both enabled and disabled versions exist",
     "name_conflict": "Name Conflict",
-    "hidden_mod": "[Hidden Mod]",
-    "hidden_mod_title": "Hidden due to Safe Mode",
     "status_enabled": "Enabled",
     "status_disabled": "Disabled",
     "dir_label": "DIR",
@@ -91,7 +97,6 @@
     "confirm": "Enable \"{{name}}\""
   },
   "context": {
-    "refresh": "Refresh",
     "select_all": "Select All",
     "open_explorer": "Open in Explorer",
     "rename": "Rename",
@@ -148,7 +153,9 @@
       "favorited": "Favorited",
       "unfavorited": "Unfavorited",
       "pinned": "Pinned",
-      "unpinned": "Unpinned"
+      "unpinned": "Unpinned",
+      "marked_safe": "Marked safe",
+      "marked_unsafe": "Marked unsafe"
     },
     "failure_actions": {
       "toggle": "toggle",
@@ -156,7 +163,8 @@
       "update": "update",
       "favorite": "update favorite status for",
       "pin": "update pin status for",
-      "import": "import"
+      "import": "import",
+      "safety": "change safety classification for"
     }
   },
   "status": {

@@ -1,7 +1,7 @@
 //! Projected-state loading and signature computation for a collection.
 
 use crate::domain::collection::{
-    Collection, CollectionMod, CollectionObject, CollectionRoot, ProjectedCollectionState,
+    Collection, CollectionMod, CollectionObject, ProjectedCollectionState,
 };
 use crate::domain::errors::CollectionError;
 use crate::repo::collection_repo;
@@ -17,9 +17,7 @@ pub(crate) async fn load_projected_collection_state(
         if let Some(snapshot_json) = collection.snapshot_json.as_deref() {
             if let Some(snapshot) = projected_state_service::parse_snapshot_json(snapshot_json) {
                 let active_root_count = snapshot.summary.active_root_count as i32;
-                if collection.root_count != active_root_count
-                    || collection.display_mod_count != active_root_count
-                {
+                if collection.display_mod_count != active_root_count {
                     collection_repo::update_display_counts(pool, &collection.id, active_root_count)
                         .await?;
                 }
@@ -50,12 +48,11 @@ pub(crate) async fn load_projected_collection_state(
     Ok(snapshot)
 }
 
-/// Persist a collection's members plus everything derived from its projected
-/// state (roots, signature, snapshot JSON, display count) in one transaction.
+/// Persist canonical members plus the derived projected snapshot, signature,
+/// and lightweight list count in one transaction.
 pub(crate) async fn persist_projected_state<'a, A>(
     conn: A,
     collection_id: &str,
-    is_safe: bool,
     mods: &[CollectionMod],
     objects: &[CollectionObject],
     state: &ProjectedCollectionState,
@@ -63,41 +60,91 @@ pub(crate) async fn persist_projected_state<'a, A>(
 where
     A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
 {
-    let roots = projected_state_service::roots_from_projected_state(collection_id, is_safe, state);
-    let signature = projected_state_service::signature_for_projected_state(state);
-    let snapshot_json = projected_state_service::serialize_snapshot_json(state);
+    persist_projected_state_inner(conn, collection_id, mods, objects, state, true).await
+}
 
+pub(crate) async fn persist_projected_state_tx(
+    conn: &mut sqlx::SqliteConnection,
+    collection_id: &str,
+    mods: &[CollectionMod],
+    objects: &[CollectionObject],
+    state: &ProjectedCollectionState,
+) -> Result<(), CollectionError> {
+    persist_projected_state_tx_inner(conn, collection_id, mods, objects, state, true).await
+}
+
+pub(crate) async fn refresh_projected_state_preserving_signature<'a, A>(
+    conn: A,
+    collection_id: &str,
+    mods: &[CollectionMod],
+    objects: &[CollectionObject],
+    state: &ProjectedCollectionState,
+) -> Result<(), CollectionError>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
+    persist_projected_state_inner(conn, collection_id, mods, objects, state, false).await
+}
+
+async fn persist_projected_state_inner<'a, A>(
+    conn: A,
+    collection_id: &str,
+    mods: &[CollectionMod],
+    objects: &[CollectionObject],
+    state: &ProjectedCollectionState,
+    update_signature: bool,
+) -> Result<(), CollectionError>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Sqlite>,
+{
     let mut tx = conn.begin().await?;
-    collection_repo::replace_all_state_tx(
+    persist_projected_state_tx_inner(
         &mut tx,
-        collection_repo::CollectionStateSnapshot {
-            collection_id,
-            mods,
-            objects,
-            roots: &roots,
-            signature: Some(&signature),
-            snapshot_json: snapshot_json.as_deref(),
-            display_mod_count: state.summary.active_root_count as i32,
-        },
+        collection_id,
+        mods,
+        objects,
+        state,
+        update_signature,
     )
     .await?;
     tx.commit().await?;
     Ok(())
 }
 
+async fn persist_projected_state_tx_inner(
+    conn: &mut sqlx::SqliteConnection,
+    collection_id: &str,
+    mods: &[CollectionMod],
+    objects: &[CollectionObject],
+    state: &ProjectedCollectionState,
+    update_signature: bool,
+) -> Result<(), CollectionError> {
+    let signature = projected_state_service::signature_for_projected_state(state);
+    let snapshot_json = projected_state_service::serialize_snapshot_json(state);
+
+    collection_repo::replace_all_state_tx(
+        conn,
+        collection_repo::CollectionStateSnapshot {
+            collection_id,
+            mods,
+            objects,
+            signature: Some(&signature),
+            update_signature,
+            snapshot_json: snapshot_json.as_deref(),
+            display_mod_count: state.summary.active_root_count as i32,
+        },
+    )
+    .await?;
+    Ok(())
+}
+
 pub(crate) fn collection_members_from_projected_state(
     collection_id: &str,
-    is_safe: bool,
     state: &ProjectedCollectionState,
-) -> (
-    Vec<CollectionMod>,
-    Vec<CollectionObject>,
-    Vec<CollectionRoot>,
-) {
+) -> (Vec<CollectionMod>, Vec<CollectionObject>) {
     let mods = projected_state_service::mods_from_projected_state(collection_id, state);
     let objects = projected_state_service::objects_from_projected_state(collection_id, state);
-    let roots = projected_state_service::roots_from_projected_state(collection_id, is_safe, state);
-    (mods, objects, roots)
+    (mods, objects)
 }
 
 pub fn compute_signature(mods: &[CollectionMod], objects: &[CollectionObject]) -> String {

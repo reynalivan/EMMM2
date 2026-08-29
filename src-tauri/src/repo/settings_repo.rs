@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::{Executor, Sqlite, SqlitePool};
 use std::collections::HashMap;
 
 // ── KV Settings ─────────────────────────────────────────────
@@ -13,11 +13,26 @@ pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>,
 }
 
 /// Upsert a single setting (INSERT OR REPLACE).
-pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), sqlx::Error> {
+pub async fn set_setting<'e, E>(executor: E, key: &str, value: &str) -> Result<(), sqlx::Error>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
     sqlx::query("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)")
         .bind(key)
         .bind(value)
-        .execute(pool)
+        .execute(executor)
+        .await?;
+    Ok(())
+}
+
+/// Remove an optional setting so a cleared value does not reappear after restart.
+pub async fn delete_setting<'e, E>(executor: E, key: &str) -> Result<(), sqlx::Error>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
+    sqlx::query("DELETE FROM app_settings WHERE key = ?")
+        .bind(key)
+        .execute(executor)
         .await?;
     Ok(())
 }
@@ -36,71 +51,79 @@ pub async fn get_all_settings(pool: &SqlitePool) -> Result<HashMap<String, Strin
 /// Delete all user data from every table, restoring the app to fresh-install state.
 /// Tables are cleared in FK-safe order within a single transaction.
 pub async fn reset_all_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    reset_all_data_with_revision(pool, None).await
+}
+
+/// Reset all data and optionally seed the next settings CAS generation in the
+/// same transaction, preventing pre-reset snapshots from becoming valid again.
+pub async fn reset_all_data_with_revision(
+    pool: &SqlitePool,
+    settings_revision: Option<u64>,
+) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     // Disable foreign keys temporarily for the reset transaction
-    let _ = sqlx::query("PRAGMA foreign_keys = OFF")
+    sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *tx)
-        .await;
-
-    // Defensive safeguard against orphaned references to deprecated table (Phase 19 fix)
-    let _ = sqlx::query("DROP VIEW IF EXISTS collection_signatures")
-        .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DROP TABLE IF EXISTS collection_signatures")
-        .execute(&mut *tx)
-        .await;
+        .await?;
 
     // Child tables first (FK dependencies)
-    let _ = sqlx::query("DELETE FROM collection_mods")
+    sqlx::query("DELETE FROM collection_mods")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM collection_objects")
+        .await?;
+    sqlx::query("DELETE FROM collection_objects")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM collection_roots")
+        .await?;
+    sqlx::query("DELETE FROM object_runtime_projection")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM collection_nested_items")
+        .await?;
+    sqlx::query("DELETE FROM dedup_group_members")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM corridor_state")
+        .await?;
+    sqlx::query("DELETE FROM dedup_groups")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM object_runtime_projection")
+        .await?;
+    sqlx::query("DELETE FROM dedup_jobs")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM dedup_group_members")
+        .await?;
+    sqlx::query("DELETE FROM duplicate_whitelist")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM dedup_groups")
+        .await?;
+    let has_legacy_scan_results: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scan_results')",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if has_legacy_scan_results {
+        sqlx::query("DELETE FROM scan_results")
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("DELETE FROM mods").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM objects").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM collection_runtime_state")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM dedup_jobs")
+        .await?;
+    sqlx::query("DELETE FROM collections")
         .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM duplicate_whitelist")
-        .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM scan_results")
-        .execute(&mut *tx)
-        .await;
-    let _ = sqlx::query("DELETE FROM mods").execute(&mut *tx).await;
-    let _ = sqlx::query("DELETE FROM objects").execute(&mut *tx).await;
-    let _ = sqlx::query("DELETE FROM collections")
-        .execute(&mut *tx)
-        .await;
+        .await?;
 
     // Root tables
-    let _ = sqlx::query("DELETE FROM games").execute(&mut *tx).await;
-    let _ = sqlx::query("DELETE FROM app_settings")
+    sqlx::query("DELETE FROM games").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM app_settings")
         .execute(&mut *tx)
-        .await;
+        .await?;
+    if let Some(revision) = settings_revision {
+        sqlx::query("INSERT INTO app_settings (key, value) VALUES ('settings_revision', ?)")
+            .bind(revision.to_string())
+            .execute(&mut *tx)
+            .await?;
+    }
 
     // Restore foreign keys
-    let _ = sqlx::query("PRAGMA foreign_keys = ON")
+    sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&mut *tx)
-        .await;
+        .await?;
 
     tx.commit().await?;
     Ok(())

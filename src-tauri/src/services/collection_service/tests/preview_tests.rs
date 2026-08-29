@@ -15,25 +15,18 @@ async fn preview_apply_blocks_when_mods_root_is_unavailable() {
             .await
             .expect("create collection");
 
-    let result = preview_apply(
-        &ctx.pool,
-        "game-1",
-        &collection.id,
-        crate::domain::corridor::Corridor::from_is_safe(true),
-        Some(&mods_path),
-    )
-    .await;
+    let result = preview_apply(&ctx.pool, "game-1", &collection.id, Some(&mods_path)).await;
 
     match result {
-        Err(CollectionError::Corridor(crate::domain::errors::CorridorError::NoModsPath {
-            game_id,
-        })) => assert_eq!(game_id, "game-1"),
+        Err(CollectionError::RuntimeState(
+            crate::domain::errors::RuntimeStateError::NoModsPath { game_id },
+        )) => assert_eq!(game_id, "game-1"),
         other => panic!("expected source unavailable NoModsPath error, got {other:?}"),
     }
 }
 
 #[tokio::test]
-async fn preview_apply_rejects_cross_corridor_request() {
+async fn preview_apply_allows_collection_regardless_of_safety_classification() {
     let ctx = init_test_db().await;
     seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
 
@@ -42,20 +35,9 @@ async fn preview_apply_rejects_cross_corridor_request() {
             .await
             .expect("create collection");
 
-    // Previewing an UNSAFE collection from the SAFE corridor must be rejected.
-    let result = preview_apply(
-        &ctx.pool,
-        "game-1",
-        &collection.id,
-        crate::domain::corridor::Corridor::from_is_safe(true),
-        None,
-    )
-    .await;
+    let result = preview_apply(&ctx.pool, "game-1", &collection.id, None).await;
 
-    assert!(
-        matches!(result, Err(CollectionError::Validation(_))),
-        "cross-corridor preview must be rejected, got {result:?}"
-    );
+    assert!(result.is_ok(), "safety is view metadata, got {result:?}");
 }
 
 #[tokio::test]

@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
 
+const VALID_MOD_INI: &str = "[TextureOverrideBody]\nhash = 12345678\n";
+
 async fn setup_scan_db() -> sqlx::SqlitePool {
     let pool = crate::test_utils::init_test_db().await.pool;
     crate::test_utils::insert_test_game(
@@ -44,8 +46,8 @@ impl<'a> Registered<'a> {
         }
     }
 
-    /// A mod the library flags as unsafe. A duplicate group inherits the flag
-    /// from any member, which is what keeps Safe Mode from surfacing it.
+    /// A mod the library classifies as unsafe. A duplicate group inherits the
+    /// flag from any member so filtered views remain accurate.
     fn marked_unsafe(id: &'a str, name: &'a str, folder: &'a std::path::Path) -> Self {
         Self {
             id,
@@ -103,8 +105,8 @@ async fn test_tc_9_1_01_exact_hash_duplicate_has_100_confidence() {
 
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
-    fs::write(first.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
-    fs::write(second.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+    fs::write(first.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(second.join("mod.ini"), VALID_MOD_INI).unwrap();
     fs::write(first.join("texture.dds"), b"same-content").unwrap();
     fs::write(second.join("texture.dds"), b"same-content").unwrap();
 
@@ -390,7 +392,7 @@ async fn test_ec_9_01_multi_copy_grouping_clusters_all_in_one_group() {
     for i in 1..=10 {
         let folder = mods_root.join(format!("YaeMiko{}", i));
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("mod.ini"), ";identical\n$swapvar=999\n").unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
         fs::write(folder.join("texture.dds"), b"identical-content").unwrap();
 
         register_mods(
@@ -517,8 +519,8 @@ filename = VariantB/tex.dds
     fs::create_dir_all(&variant_b).unwrap();
 
     // Identical content to force a 100% duplicate match if they weren't filtered!
-    fs::write(variant_a.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
-    fs::write(variant_b.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+    fs::write(variant_a.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(variant_b.join("mod.ini"), VALID_MOD_INI).unwrap();
     fs::write(variant_a.join("texture.dds"), b"identical-content").unwrap();
     fs::write(variant_b.join("texture.dds"), b"identical-content").unwrap();
 
@@ -564,8 +566,8 @@ async fn test_di_9_02_blake3_hash_algorithm_is_used() {
 
     // Exact same content - should produce high confidence match
     let content = b"test-content-for-blake3-verification";
-    fs::write(folder_a.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
-    fs::write(folder_b.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+    fs::write(folder_a.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(folder_b.join("mod.ini"), VALID_MOD_INI).unwrap();
     fs::write(folder_a.join("data.bin"), content).unwrap();
     fs::write(folder_b.join("data.bin"), content).unwrap();
 
@@ -624,7 +626,7 @@ async fn test_deduper_ignores_symlinks() {
 
     let first_mod = mods_root.join("BaseMod");
     fs::create_dir_all(&first_mod).unwrap();
-    fs::write(first_mod.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+    fs::write(first_mod.join("mod.ini"), VALID_MOD_INI).unwrap();
     fs::write(first_mod.join("texture.dds"), b"normal_data").unwrap();
 
     // Create a symlink inside BaseMod pointing to external_dir
@@ -662,9 +664,8 @@ async fn test_deduper_ignores_symlinks() {
     );
 }
 
-// Safe Mode is a privacy gate, and a duplicate group is a place a mod can be
-// surfaced without going through the object list. The group inherits the flag
-// from any member, so one unsafe half is enough to mark the pair.
+// The group inherits classification from every member, so one unsafe half is
+// enough to mark the pair for view filtering.
 #[tokio::test]
 async fn a_duplicate_group_is_unsafe_when_any_member_is() {
     let pool = setup_scan_db().await;
@@ -676,7 +677,7 @@ async fn a_duplicate_group_is_unsafe_when_any_member_is() {
 
     for folder in [&first, &second] {
         fs::create_dir_all(folder).unwrap();
-        fs::write(folder.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
         fs::write(folder.join("texture.dds"), b"identical-bytes").unwrap();
     }
 
@@ -721,7 +722,7 @@ async fn a_duplicate_group_of_safe_mods_stays_safe() {
 
     for folder in [&first, &second] {
         fs::create_dir_all(folder).unwrap();
-        fs::write(folder.join("mod.ini"), ";header\n$swapvar=1\n").unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
         fs::write(folder.join("texture.dds"), b"identical-bytes").unwrap();
     }
 
@@ -746,4 +747,247 @@ async fn a_duplicate_group_of_safe_mods_stays_safe() {
         .expect("identical folders must form a group");
     assert!(!group.is_unsafe);
     assert!(group.members.iter().all(|member| member.is_safe));
+}
+
+#[tokio::test]
+async fn merged_mod_children_count_as_one_logical_scan_unit() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let merged_root = mods_root.join("AlbedoMerged");
+    let first_variant = merged_root.join("VariantA");
+    let second_variant = merged_root.join("VariantB");
+
+    fs::create_dir_all(&first_variant).unwrap();
+    fs::create_dir_all(&second_variant).unwrap();
+    fs::write(
+        merged_root.join("merged.ini"),
+        r#"[TextureOverrideAlbedo]
+hash = 12345678
+run = CommandListAlbedo
+
+[CommandListAlbedo]
+if $swapvar == 0
+vb0 = ResourceAlbedoA
+else
+vb0 = ResourceAlbedoB
+endif
+
+[ResourceAlbedoA]
+filename = VariantA/body.buf
+
+[ResourceAlbedoB]
+filename = VariantB/body.buf
+"#,
+    )
+    .unwrap();
+    fs::write(
+        first_variant.join("DISABLED ModA.ini"),
+        "[TextureOverrideA]\nhash = 12345678\n",
+    )
+    .unwrap();
+    fs::write(
+        second_variant.join("DISABLED ModB.ini"),
+        "[TextureOverrideB]\nhash = 12345678\n",
+    )
+    .unwrap();
+    fs::write(first_variant.join("body.buf"), b"variant-a").unwrap();
+    fs::write(second_variant.join("body.buf"), b"variant-b").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("merged-root", "AlbedoMerged", &merged_root),
+            Registered::safe("variant-a", "VariantA", &first_variant),
+            Registered::safe("variant-b", "VariantB", &second_variant),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        outcome.total_folders, 1,
+        "merged root owns its child variants and must be scanned once"
+    );
+    assert!(outcome.groups.is_empty());
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn differently_cased_db_path_does_not_duplicate_one_physical_mod() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let only_mod = mods_root.join("OnlyMod");
+
+    fs::create_dir_all(&only_mod).unwrap();
+    fs::write(
+        only_mod.join("mod.ini"),
+        "[TextureOverrideBody]\nhash = 12345678\n",
+    )
+    .unwrap();
+    fs::write(only_mod.join("body.dds"), b"content").unwrap();
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[Registered::safe("only-mod", "OnlyMod", &only_mod)],
+    )
+    .await;
+    sqlx::query("UPDATE mods SET folder_path = 'onlymod' WHERE id = 'only-mod'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.total_folders, 1);
+    assert!(outcome.groups.is_empty());
+}
+
+#[tokio::test]
+async fn matching_texture_samples_do_not_claim_full_hash_identity() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("LargeTextureA");
+    let second = mods_root.join("LargeTextureB");
+
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    let ini = "[TextureOverrideBody]\nhash = 12345678\n";
+    fs::write(first.join("mod.ini"), ini).unwrap();
+    fs::write(second.join("mod.ini"), ini).unwrap();
+
+    let size = 5 * 1024 * 1024 + 4096;
+    let first_texture = vec![b'a'; size];
+    let mut second_texture = first_texture.clone();
+    second_texture[size / 2] = b'b';
+    fs::write(first.join("body.dds"), first_texture).unwrap();
+    fs::write(second.join("body.dds"), second_texture).unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("large-a", "LargeTextureA", &first),
+            Registered::safe("large-b", "LargeTextureB", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert!(
+        outcome
+            .groups
+            .iter()
+            .all(|group| group.confidence_score < 100),
+        "a 1KB head/tail sample match is not full-content identity"
+    );
+}
+
+#[tokio::test]
+async fn different_non_asset_files_prevent_exact_folder_identity() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("CompleteCopyA");
+    let second = mods_root.join("CompleteCopyB");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(
+            folder.join("mod.ini"),
+            "[TextureOverrideBody]\nhash = 12345678\n",
+        )
+        .unwrap();
+        fs::write(folder.join("body.dds"), b"same-texture").unwrap();
+    }
+    fs::write(first.join("README.txt"), b"first release").unwrap();
+    fs::write(second.join("README.txt"), b"second release").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("complete-a", "CompleteCopyA", &first),
+            Registered::safe("complete-b", "CompleteCopyB", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert!(
+        outcome
+            .groups
+            .iter()
+            .all(|group| group.confidence_score < 100),
+        "every regular file contributes to exact folder identity"
+    );
+}
+
+#[tokio::test]
+async fn system_noise_files_do_not_break_exact_identity() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("NoiseCopyA");
+    let second = mods_root.join("NoiseCopyB");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(
+            folder.join("mod.ini"),
+            "[TextureOverrideBody]\nhash = 12345678\n",
+        )
+        .unwrap();
+        fs::write(folder.join("body.dds"), b"same-texture").unwrap();
+    }
+    fs::write(first.join("desktop.ini"), b"machine-a").unwrap();
+    fs::write(second.join("desktop.ini"), b"machine-b").unwrap();
+    fs::write(first.join("thumbs.db"), b"cache-a").unwrap();
+    fs::write(second.join("thumbs.db"), b"cache-b").unwrap();
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("noise-a", "NoiseCopyA", &first),
+            Registered::safe("noise-b", "NoiseCopyB", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert!(
+        outcome
+            .groups
+            .iter()
+            .any(|group| group.confidence_score == 100),
+        "OS cache files are excluded from exact content identity"
+    );
 }

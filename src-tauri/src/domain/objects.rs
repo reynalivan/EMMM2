@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use crate::domain::models::ItemStatus;
 
-/// `Default` is the unfiltered, safe-mode-off query. Callers spell out only
+/// `Default` is the unfiltered query. Callers spell out only
 /// the axes they actually constrain — the full seven-field literal was written
 /// out at twenty sites.
 #[derive(Clone, Default, Serialize, Deserialize, specta::Type)]
@@ -19,11 +19,6 @@ pub struct ObjectFilter {
     pub game_id: String,
     pub search_query: Option<String>,
     pub object_type: Option<String>,
-    /// Derived server-side (`ConfigService::current_corridor`) at the command
-    /// boundary. Serde/specta-skipped so the corridor cannot arrive over IPC.
-    #[serde(skip)]
-    #[specta(skip)]
-    pub safe_mode: bool,
     pub meta_filters: Option<HashMap<String, Vec<String>>>,
     pub sort_by: Option<String>,
     pub status_filter: Option<ItemStatus>,
@@ -60,6 +55,12 @@ pub struct ObjectSummary {
     pub mod_count: i64,
     #[specta(type = f64)]
     pub enabled_count: i64,
+    #[specta(type = f64)]
+    pub safe_mod_count: i64,
+    #[specta(type = f64)]
+    pub unsafe_mod_count: i64,
+    #[specta(type = f64)]
+    pub unclassified_mod_count: i64,
     pub is_object_disabled: bool,
     pub has_naming_conflict: bool,
     pub active_mod_paths: Option<String>,

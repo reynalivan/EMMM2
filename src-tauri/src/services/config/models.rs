@@ -9,6 +9,9 @@ pub struct GameConfig {
     pub name: String,
     pub game_type: crate::domain::models::GameType,
     pub mod_path: PathBuf,
+    /// Optional per-game ReadyToMove inbox. When absent, the OS Downloads default is used.
+    #[serde(default)]
+    pub ready_to_move_path: Option<PathBuf>,
     pub game_exe: PathBuf,
     pub loader_exe: Option<PathBuf>,
     pub launch_args: Option<String>,
@@ -18,27 +21,14 @@ pub struct GameConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
-pub struct SafeModeConfig {
-    pub enabled: bool,
-    pub pin_hash: Option<String>,
-    pub recovery_code_hash: Option<String>,
+pub struct SafetyConfig {
     pub keywords: Vec<String>,
-    pub force_exclusive_mode: bool,
-    pub failed_attempts: Option<u8>,
-    #[specta(type = Option<f64>)]
-    pub lockout_until_ts: Option<u64>,
 }
 
-impl Default for SafeModeConfig {
+impl Default for SafetyConfig {
     fn default() -> Self {
         Self {
-            enabled: true, // Default to Safe Mode ON for privacy
-            pin_hash: None,
-            recovery_code_hash: None,
             keywords: vec!["nsfw".into(), "nude".into(), "18+".into()],
-            force_exclusive_mode: true,
-            failed_attempts: None,
-            lockout_until_ts: None,
         }
     }
 }
@@ -52,11 +42,15 @@ pub struct AiConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
 pub struct AppSettings {
+    /// Optimistic-concurrency token for whole-settings IPC saves.
+    #[serde(default)]
+    #[specta(type = f64)]
+    pub revision: u64,
     pub theme: String, // "dark", "light", "system"
     pub language: String,
     pub games: Vec<GameConfig>,
     pub active_game_id: Option<String>,
-    pub safe_mode: SafeModeConfig,
+    pub safety: SafetyConfig,
     pub ai: AiConfig,
     pub auto_close_launcher: bool,
     #[serde(default)]
@@ -77,11 +71,12 @@ impl AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            revision: 0,
             theme: "dark".into(),
             language: "en".into(),
             games: Vec::new(),
             active_game_id: None,
-            safe_mode: SafeModeConfig::default(),
+            safety: SafetyConfig::default(),
             ai: AiConfig::default(),
             auto_close_launcher: false,
             hotkeys: HotkeyConfig::default(),
@@ -96,6 +91,7 @@ pub fn game_row_to_config(row: game_repo::GameRow) -> GameConfig {
         name: row.name,
         game_type: row.game_type,
         mod_path: PathBuf::from(row.mods_path.unwrap_or_else(|| row.path.clone())),
+        ready_to_move_path: row.ready_to_move_path.map(PathBuf::from),
         game_exe: PathBuf::from(row.game_exe.unwrap_or(row.path)),
         loader_exe: row.loader_exe.or(row.launcher_path).map(PathBuf::from),
         launch_args: row.launch_args,
@@ -110,6 +106,10 @@ pub fn config_to_game_row(config: &GameConfig) -> game_repo::GameRow {
         game_type: config.game_type,
         path: config.game_exe.to_string_lossy().to_string(),
         mods_path: Some(config.mod_path.to_string_lossy().to_string()),
+        ready_to_move_path: config
+            .ready_to_move_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
         game_exe: Some(config.game_exe.to_string_lossy().to_string()),
         launcher_path: config
             .loader_exe

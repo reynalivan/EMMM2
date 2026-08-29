@@ -13,7 +13,7 @@ describe('DuplicateTable', () => {
   const mockGroups: DupScanGroup[] = [
     {
       groupId: 'group-1',
-      confidenceScore: 95,
+      confidenceScore: 100,
       matchReason: 'Perfect hash match',
       signals: [{ key: 'hash', detail: 'BLAKE3 collision', score: 100 }],
       isUnsafe: false,
@@ -23,7 +23,7 @@ describe('DuplicateTable', () => {
           displayName: 'Mod A - Original',
           totalSizeBytes: 2048,
           fileCount: 10,
-          confidenceScore: 95,
+          confidenceScore: 100,
           signals: [],
           modId: null,
           version: 1,
@@ -34,7 +34,7 @@ describe('DuplicateTable', () => {
           displayName: 'Mod B - Duplicate',
           totalSizeBytes: 2048,
           fileCount: 10,
-          confidenceScore: 95,
+          confidenceScore: 100,
           signals: [],
           modId: null,
           version: 1,
@@ -127,8 +127,8 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      // Group 1: 95% confidence should have success badge
-      expect(screen.getByText('95%')).toBeInTheDocument();
+      // Group 1: 100% full-hash confidence should have success badge
+      expect(screen.getByText('100%')).toBeInTheDocument();
       // Group 2: 85% confidence should have warning badge
       expect(screen.getByText('85%')).toBeInTheDocument();
     });
@@ -208,6 +208,22 @@ describe('DuplicateTable', () => {
 
       expect(screen.getByText('Keep A: Mod A - Original')).toBeInTheDocument();
       expect(screen.getByText('Keep B: Mod B - Duplicate')).toBeInTheDocument();
+    });
+
+    it('does not offer keep actions for an inexact group', () => {
+      const onSelectionChange = vi.fn();
+
+      render(
+        <DuplicateTable
+          groups={mockGroups.slice(1)}
+          selections={new Map()}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+
+      expect(screen.queryByText('Keep A: Mod C')).not.toBeInTheDocument();
+      expect(screen.queryByText('Keep B: Mod D')).not.toBeInTheDocument();
+      expect(screen.getByText(/Ignore/)).toBeInTheDocument();
     });
   });
 

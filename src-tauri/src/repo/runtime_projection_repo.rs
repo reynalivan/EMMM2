@@ -8,25 +8,23 @@ use sqlx::SqlitePool;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-use crate::common::corridor_constants::{CORRIDOR_SOURCE_MANUAL, CORRIDOR_SOURCE_UNKNOWN};
+use crate::common::safety_constants::SAFETY_SOURCE_UNKNOWN;
 
-/// A mod belongs to a corridor when it is classified into that corridor, or
-/// when its classification is manual or unknown — those are visible in both.
-///
-/// `is_safe` is the corridor being counted: 1 for safe, 0 for unsafe.
-fn corridor_visible(is_safe: u8) -> String {
+/// Counts only explicitly classified mods. Unknown mods remain visible in All
+/// and are intentionally absent from both Safe and Unsafe filters.
+fn classification_matches(is_safe: u8) -> String {
     format!(
         "COALESCE(m.is_safe, 1) = {is_safe}
-            OR COALESCE(m.corridor_source, '{CORRIDOR_SOURCE_UNKNOWN}') \
-IN ('{CORRIDOR_SOURCE_MANUAL}', '{CORRIDOR_SOURCE_UNKNOWN}')"
+            AND COALESCE(m.safety_source, '{SAFETY_SOURCE_UNKNOWN}') \
+!= '{SAFETY_SOURCE_UNKNOWN}'"
     )
 }
 
-/// Built once: the corridor predicate appeared six times as inline SQL with the
+/// Built once: the classification predicate appeared six times as inline SQL with the
 /// source names hardcoded, so a change to the rule had to land in six places.
 static INSERT_PROJECTION_SQL: LazyLock<String> = LazyLock::new(|| {
-    let safe_visible = corridor_visible(1);
-    let unsafe_visible = corridor_visible(0);
+    let safe_visible = classification_matches(1);
+    let unsafe_visible = classification_matches(0);
     format!(
         r#"
 INSERT INTO object_runtime_projection (
@@ -113,15 +111,23 @@ WHERE o.game_id = ?
 
 pub async fn rebuild_game_projection(pool: &SqlitePool, game_id: &str) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
+    rebuild_game_projection_tx(&mut tx, game_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn rebuild_game_projection_tx(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM object_runtime_projection WHERE game_id = ?")
         .bind(game_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     sqlx::query(&INSERT_PROJECTION_SQL)
         .bind(game_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-    tx.commit().await?;
     Ok(())
 }
 
@@ -159,6 +165,21 @@ pub async fn refresh_projection_for_object_ids(
     }
     tx.commit().await?;
 
+    Ok(())
+}
+
+pub async fn refresh_projection_for_object_ids_tx(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    object_ids: impl IntoIterator<Item = String>,
+) -> Result<(), sqlx::Error> {
+    let unique_ids = object_ids
+        .into_iter()
+        .filter(|value| !value.trim().is_empty())
+        .collect::<HashSet<_>>();
+    for object_id in unique_ids {
+        refresh_object_projection_tx(conn, game_id, &object_id).await?;
+    }
     Ok(())
 }
 

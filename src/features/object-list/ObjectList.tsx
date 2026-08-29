@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useObjectListLogic } from './hooks/useObjectListLogic';
 import { useFileDrop } from '../../hooks/useFileDrop';
 import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
@@ -60,7 +60,7 @@ export default function ObjectList() {
     scrollToSelected,
   } = virtualizer;
 
-  const { archiveModal, bulkTagModal, setBulkTagModal } = modals;
+  const { bulkTagModal, setBulkTagModal } = modals;
 
   const {
     handleDeleteObject,
@@ -76,17 +76,13 @@ export default function ObjectList() {
     handleSyncWithDb,
     handleDropOnItem,
     handleDropAutoOrganize,
-    handleArchivesInteractively,
-    handleArchiveExtractSubmit,
-    handleArchiveExtractSkip,
-    handleStopExtraction,
     handleBulkDelete,
     handleBulkPin,
     handleBulkEnable,
     handleBulkDisable,
     handleBulkAddTags,
     handleBulkRemoveTags,
-    handleBulkAutoRecognize,
+    handleBulkClassifyAndMatch,
     handleBulkFavorite,
     handleBulkSafe,
   } = handlers;
@@ -105,8 +101,6 @@ export default function ObjectList() {
     activeDropZone,
     hoveredItemId,
     tooltipTop,
-    dropValidation,
-    setDropValidation,
     onDrop,
     handleDragOver,
     handleDragStateChange,
@@ -136,37 +130,10 @@ export default function ObjectList() {
     threshold: 50,
   });
 
-  // Shared by "Move Anyway" (warning state) and "Skip Validation" (validating
-  // state) — mutually exclusive buttons that both mean "drop on the target".
-  const handleProceedWithDrop = useCallback(() => {
-    if (!dropValidation) return;
-    const { targetId, paths } = dropValidation;
-    setDropValidation(null);
-    handleDropOnItem(targetId, paths);
-  }, [dropValidation, handleDropOnItem, setDropValidation]);
-
-  const handleConfirmMoveToSuggested = useCallback(() => {
-    if (!dropValidation?.suggestedId) return;
-    const { suggestedId, paths } = dropValidation;
-    setDropValidation(null);
-    handleDropOnItem(suggestedId, paths);
-  }, [dropValidation, handleDropOnItem, setDropValidation]);
-
-  const handleCancelDrop = useCallback(() => {
-    setDropValidation(null);
-  }, [setDropValidation]);
-
-  const handleRefresh = useCallback(async () => {
-    if (activeGame) {
-      await handleBackgroundSync();
-    }
-  }, [activeGame, handleBackgroundSync]);
-
   useObjectListEffects({
     activeGameId,
     handleBackgroundSync,
     handleDropAutoOrganize,
-    handleArchivesInteractively,
   });
 
   const isEmpty = !isLoading && !isError && objects.length === 0;
@@ -202,7 +169,7 @@ export default function ObjectList() {
     handleBulkPin,
     handleBulkEnable,
     handleBulkDisable,
-    handleBulkAutoRecognize,
+    handleBulkClassifyAndMatch,
     handleBulkFavorite,
     handleBulkSafe,
   });
@@ -239,7 +206,6 @@ export default function ObjectList() {
           onSortChange={setSortBy}
           isSyncing={isSyncing}
           onSync={handleSync}
-          onRefresh={handleRefresh}
           onCreateNew={() => setCreateModalOpen(true)}
           showFilterPanel={showFilterPanel}
           categoryFilters={categoryFilters}
@@ -255,7 +221,7 @@ export default function ObjectList() {
         />
       </div>
 
-      <ObjectListConflictBanner conflictObjects={conflictObjects} activeGame={activeGame} />
+      <ObjectListConflictBanner conflictObjects={conflictObjects} />
 
       <ObjectListStates
         isLoading={isLoading}
@@ -309,8 +275,6 @@ export default function ObjectList() {
       />
 
       <ObjectListPrimaryModals
-        activeGame={activeGame}
-        objects={objects}
         modals={modals}
         handlers={handlers}
         createModalOpen={createModalOpen}
@@ -324,16 +288,7 @@ export default function ObjectList() {
       />
 
       <ObjectListAuxiliaryModals
-        dropValidation={dropValidation}
-        onMoveAnyway={handleProceedWithDrop}
-        onMoveToSuggested={handleConfirmMoveToSuggested}
-        onCancelDrop={handleCancelDrop}
-        onSkipValidation={handleProceedWithDrop}
-        archiveModal={archiveModal}
         objects={objects}
-        onArchiveExtractSubmit={handleArchiveExtractSubmit}
-        onArchiveExtractSkip={handleArchiveExtractSkip}
-        onStopExtraction={handleStopExtraction}
         bulkTagModal={bulkTagModal}
         selectedIds={bulkSelect.selectedIds}
         onBulkAddTags={handleBulkAddTags}

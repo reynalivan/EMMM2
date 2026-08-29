@@ -120,6 +120,75 @@ fn a_nested_ini_still_counts_as_a_conflict() {
 }
 
 #[test]
+fn an_ini_beyond_the_old_depth_limit_still_counts_as_a_conflict() {
+    let temp = TempDir::new().expect("tempdir");
+    let mods_root = temp.path();
+
+    let mod_a = mods_root.join("ModA");
+    fs::create_dir_all(&mod_a).expect("mod dir");
+    fs::write(
+        mod_a.join("mod.ini"),
+        "[TextureOverrideShared]\nhash = abcdef12\n",
+    )
+    .expect("mod ini");
+
+    let deep = mods_root
+        .join("ModB")
+        .join("variants")
+        .join("seasonal")
+        .join("blue")
+        .join("files");
+    fs::create_dir_all(&deep).expect("deep dir");
+    fs::write(
+        deep.join("deep.ini"),
+        "[TextureOverrideShared]\nhash = abcdef12\n",
+    )
+    .expect("deep ini");
+
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
+
+    assert!(
+        !conflicts_for_enabled_paths(mods_root, &stored).is_empty(),
+        "GIMI recursively includes INIs below the previous depth-three limit"
+    );
+}
+
+#[test]
+fn an_ini_inside_a_nested_disabled_folder_does_not_conflict() {
+    let temp = TempDir::new().expect("tempdir");
+    let mods_root = temp.path();
+
+    let mod_a = mods_root.join("ModA");
+    fs::create_dir_all(&mod_a).expect("mod dir");
+    fs::write(
+        mod_a.join("mod.ini"),
+        "[TextureOverrideShared]\nhash = abcdef12\n",
+    )
+    .expect("mod ini");
+
+    let disabled = mods_root.join("ModB").join("DISABLED Old Variant");
+    fs::create_dir_all(&disabled).expect("disabled variant");
+    fs::write(
+        disabled.join("old.ini"),
+        "[TextureOverrideShared]\nhash = abcdef12\n",
+    )
+    .expect("disabled ini");
+
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
+
+    assert!(
+        conflicts_for_enabled_paths(mods_root, &stored).is_empty(),
+        "GIMI exclude_recursive = DISABLED* must prune nested disabled variants"
+    );
+}
+
+#[test]
 fn unrelated_mods_do_not_conflict() {
     let temp = TempDir::new().expect("tempdir");
     let mods_root = temp.path();
@@ -166,4 +235,65 @@ fn shaderfixes_only_mods_are_included() {
         conflicts[0].kind,
         crate::services::scanner::conflict::ConflictKind::ShaderReplacement
     );
+}
+
+#[test]
+fn shader_replacement_inside_a_nested_disabled_folder_does_not_conflict() {
+    let temp = TempDir::new().expect("tempdir");
+    let mods_root = temp.path();
+    let filename = "0123456789abcdef-ps_replace.txt";
+
+    let active = mods_root.join("ModA").join("ShaderFixes");
+    fs::create_dir_all(&active).expect("active shader fixes");
+    fs::write(active.join(filename), "active").expect("active replacement");
+
+    let disabled = mods_root
+        .join("ModB")
+        .join("disabled legacy")
+        .join("ShaderFixes");
+    fs::create_dir_all(&disabled).expect("disabled shader fixes");
+    fs::write(disabled.join(filename), "disabled").expect("disabled replacement");
+
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
+
+    assert!(
+        conflicts_for_enabled_paths(mods_root, &stored).is_empty(),
+        "disabled descendants must not contribute ShaderFixes replacements"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn update_thumbnail_rejects_non_image_source_without_creating_a_file() {
+    use crate::services::config::{ConfigService, GameConfig};
+    use crate::services::fs_utils::guard::validate_path;
+
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path().join("Mods");
+    let mod_dir = mods_root.join("ModA");
+    fs::create_dir_all(&mod_dir).unwrap();
+    let source = temp.path().join("not-an-image.png");
+    fs::write(&source, b"plain text").unwrap();
+
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let config = ConfigService::new_for_test_async(pool).await;
+    let mut settings = config.get_settings();
+    settings.games.push(GameConfig {
+        id: "game-1".to_string(),
+        name: "Test Game".to_string(),
+        game_type: crate::domain::models::GameType::GIMI,
+        mod_path: mods_root,
+        ready_to_move_path: None,
+        game_exe: temp.path().join("game.exe"),
+        loader_exe: None,
+        launch_args: None,
+        warnings: Vec::new(),
+    });
+    config.save_settings(settings).unwrap();
+    let validated = validate_path(&config, "game-1", &mod_dir.to_string_lossy()).unwrap();
+
+    assert!(super::update_mod_thumbnail(&validated, &source.to_string_lossy()).is_err());
+    assert!(!mod_dir.join("not-an-image.png").exists());
 }

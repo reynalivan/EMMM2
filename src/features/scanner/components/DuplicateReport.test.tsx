@@ -26,16 +26,6 @@ vi.mock('../../../stores/useToastStore', () => ({
   },
 }));
 
-vi.mock('../../../hooks/useSettings', () => ({
-  useSettings: () => ({
-    settings: {
-      safe_mode: {
-        enabled: false,
-      },
-    },
-  }),
-}));
-
 // Mock child components
 vi.mock('./DuplicateTable', () => ({
   default: ({

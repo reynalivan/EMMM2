@@ -24,6 +24,10 @@ export function buildResolutionRequests(
     const members = group.members.map((member) => member.folderPath);
 
     if (selection.type === 'Keep') {
+      if (group.confidenceScore !== 100) {
+        continue;
+      }
+
       const kept = selection.targetPath;
       if (!members.includes(kept)) {
         continue;

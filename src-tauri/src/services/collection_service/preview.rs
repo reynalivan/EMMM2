@@ -18,14 +18,14 @@ pub async fn get_collection_preview(
     require_game_match(&collection, game_id)?;
 
     let projected_state = load_projected_collection_state(pool, &collection, mods_path).await?;
-    let corridor_snapshot = crate::services::corridor_service::get_corridor_state(
-        pool,
-        &collection.game_id,
-        crate::domain::corridor::Corridor::from_is_safe(collection.is_safe),
-    )
-    .await
-    .map_err(CollectionError::Corridor)?;
-    let active_id = corridor_snapshot.active_collection_id.as_deref();
+    let runtime_snapshot =
+        crate::services::collection_runtime_service::get_collection_runtime_state(
+            pool,
+            &collection.game_id,
+        )
+        .await
+        .map_err(CollectionError::RuntimeState)?;
+    let active_id = runtime_snapshot.active_collection_id.as_deref();
 
     let tree_nodes =
         projected_state_service::build_preview_tree_from_projected_state(&projected_state);
@@ -41,24 +41,16 @@ pub async fn preview_apply(
     pool: &SqlitePool,
     game_id: &str,
     collection_id: &str,
-    corridor: crate::domain::corridor::Corridor,
     mods_path: Option<&str>,
 ) -> Result<ApplyPreview, CollectionError> {
-    let is_safe = corridor.is_safe();
     let collection = require_collection(pool, collection_id).await?;
     require_game_match(&collection, game_id)?;
-    if collection.is_safe != is_safe {
-        return Err(CollectionError::Validation(format!(
-            "Collection '{}' belongs to the opposite corridor",
-            collection_id
-        )));
-    }
     if mods_path.is_some_and(|path| {
         let root = std::path::Path::new(path);
         !root.exists() || !root.is_dir()
     }) {
-        return Err(CollectionError::Corridor(
-            crate::domain::errors::CorridorError::NoModsPath {
+        return Err(CollectionError::RuntimeState(
+            crate::domain::errors::RuntimeStateError::NoModsPath {
                 game_id: game_id.to_string(),
             },
         ));

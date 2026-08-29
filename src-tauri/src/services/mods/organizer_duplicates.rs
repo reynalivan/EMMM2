@@ -9,7 +9,7 @@ pub async fn disable_target_duplicates(
     new_rel: &str,
     base_path: &Path,
     target_obj_path: &Path,
-    path_rewrites: &mut Vec<crate::domain::workspace::WorkspacePathRewrite>,
+    path_hints: &mut Vec<super::organizer_move::OrganizerMovePathHint>,
 ) -> Result<(), AppError> {
     use crate::common::normalizer::is_disabled_folder;
 
@@ -40,18 +40,10 @@ pub async fn disable_target_duplicates(
             .unwrap_or(&sibling_disabled_path)
             .to_string_lossy()
             .to_string();
-        // Path-only: status derives from the DISABLED prefix via the caller's
-        // scoped reconcile (single writer).
-        crate::repo::mod_repo::update_mod_path_by_old_path_in_game(
-            pool,
-            game_id,
-            sibling_rel.as_stored(),
-            &sibling_new_rel,
-        )
-        .await?;
-        path_rewrites.push(crate::domain::workspace::WorkspacePathRewrite {
+        path_hints.push(super::organizer_move::OrganizerMovePathHint {
             old_path: sibling_rel.into_stored(),
             new_path: sibling_new_rel,
+            target_object_id: target_object_id.to_string(),
         });
     }
 

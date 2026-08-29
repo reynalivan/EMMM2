@@ -224,8 +224,7 @@ impl HotkeyManager {
             return;
         }
 
-        let safe_mode = settings.safe_mode.enabled;
-        if let Some(result) = self.dispatch_action(action, safe_mode, None, &[]) {
+        if let Some(result) = self.dispatch_action(action, None, &[]) {
             log::info!("Hotkey {:?} → {}", action, result.summary);
         }
     }
@@ -236,7 +235,6 @@ impl HotkeyManager {
     pub fn dispatch_action(
         &self,
         action: HotkeyAction,
-        safe_mode: bool,
         current_preset: Option<&str>,
         available_presets: &[String],
     ) -> Option<ActionResult> {
@@ -252,13 +250,13 @@ impl HotkeyManager {
         let result = match preset_cycle_direction(action) {
             Some(direction) => {
                 match actions::resolve_next_preset(available_presets, current_preset, direction) {
-                    Some(target) => actions::plan_cycle_preset(&target, safe_mode),
-                    None => actions::plan_noop(action, "No presets available", safe_mode),
+                    Some(target) => actions::plan_cycle_preset(&target),
+                    None => actions::plan_noop(action, "No presets available"),
                 }
             }
             // Overlay toggle is handled directly by 3DMigoto INI, and variant
             // cycling has no backend executor yet — both only report status.
-            None => actions::plan_noop(action, noop_reason(action), safe_mode),
+            None => actions::plan_noop(action, noop_reason(action)),
         };
 
         self.release();

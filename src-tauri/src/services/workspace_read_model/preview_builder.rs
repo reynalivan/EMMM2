@@ -70,7 +70,6 @@ fn resolve_self_mod(
     mods_path: &str,
     explorer_sub_path: Option<&str>,
     explorer: &WorkspaceExplorer,
-    safe_mode: bool,
 ) -> Option<SelfMod> {
     if !explorer.self_is_mod {
         return None;
@@ -79,10 +78,6 @@ fn resolve_self_mod(
     let sub_path = explorer_sub_path?;
     let self_path = Path::new(mods_path).join(sub_path);
     let folder = build_mod_folder_from_path(&self_path, explorer_sub_path)?;
-    if folder.is_safe != safe_mode {
-        return None;
-    }
-
     Some(SelfMod {
         path: self_path.to_string_lossy().to_string(),
         folder,
@@ -227,9 +222,8 @@ pub(crate) fn build_preview(
     explorer_sub_path: Option<&str>,
     mods_path: &str,
     selected_mod_path: Option<&str>,
-    safe_mode: bool,
 ) -> WorkspacePreview {
-    let self_mod = resolve_self_mod(mods_path, explorer_sub_path, explorer, safe_mode);
+    let self_mod = resolve_self_mod(mods_path, explorer_sub_path, explorer);
     let selected_path = resolve_preview_target_path(
         selected_mod_path,
         self_mod.as_ref().map(|value| value.path.as_str()),
@@ -261,7 +255,7 @@ pub(crate) fn build_preview(
     }
 }
 
-pub(crate) fn clear_preview_selection_for_corridor_mismatch(
+pub(crate) fn clear_preview_selection_for_missing_path(
     resolved_selection: &mut ResolvedWorkspaceSelection,
     preview: &WorkspacePreview,
 ) {
@@ -275,5 +269,5 @@ pub(crate) fn clear_preview_selection_for_corridor_mismatch(
     resolved_selection.selected_mod_path = None;
     resolved_selection.reconciliation_status = WorkspaceSelectionReconciliationStatus::Cleared;
     resolved_selection.reconciliation_reason =
-        Some(WorkspaceSelectionReconciliationReason::CorridorMismatch);
+        Some(WorkspaceSelectionReconciliationReason::MissingModPath);
 }

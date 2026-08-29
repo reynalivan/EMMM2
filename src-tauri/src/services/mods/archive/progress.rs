@@ -33,5 +33,6 @@ pub(super) fn aborted_result(archive_name: String, files_extracted: usize) -> Ex
         error: None,
         aborted: true,
         collisions: Vec::new(),
+        sync_warning: None,
     }
 }

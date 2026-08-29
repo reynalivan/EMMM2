@@ -142,35 +142,3 @@ pub async fn browser_list_import_queue(
 ) -> Result<Vec<import_service::ImportJobDto>, AppError> {
     Ok(import_service::list_jobs(db.inner()).await?)
 }
-
-/// Confirm a `needs_review` import job — provide game, category, and optional object.
-#[tauri::command]
-#[specta::specta]
-pub async fn browser_confirm_import(
-    job_id: String,
-    game_id: String,
-    category: String,
-    object_id: Option<String>,
-    db: State<'_, SqlitePool>,
-    app: AppHandle,
-) -> Result<(), AppError> {
-    Ok(import_service::confirm_review(
-        db.inner(),
-        &app,
-        &job_id,
-        &game_id,
-        &category,
-        object_id.as_deref(),
-    )
-    .await?)
-}
-
-/// Skip / cancel a specific import job and remove its staging folder.
-#[tauri::command]
-#[specta::specta]
-pub async fn browser_cancel_import(
-    job_id: String,
-    db: State<'_, SqlitePool>,
-) -> Result<(), AppError> {
-    Ok(import_service::cancel_job(db.inner(), &job_id).await?)
-}

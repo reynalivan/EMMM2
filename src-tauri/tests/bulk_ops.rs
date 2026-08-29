@@ -94,6 +94,7 @@ mod tests {
                 game_type: GameType::GIMI,
                 path: root.to_string_lossy().to_string(),
                 mods_path: Some(root.to_string_lossy().to_string()),
+                ready_to_move_path: None,
                 game_exe: None,
                 launcher_path: None,
                 loader_exe: None,
@@ -130,7 +131,7 @@ mod tests {
             .expect("Read 1")
             .expect("Info 1");
         assert!(info1.tags.contains(&"Tag1".to_string()));
-        assert!(info1.is_safe); // Mapped from safe_mode
+        assert!(info1.is_safe);
 
         // Verify ModB
         let info2 = info_json::read_info_json(&mod2)

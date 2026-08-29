@@ -4,6 +4,7 @@ import { act, cleanup, renderHook, waitFor } from '../../../testing/test-utils';
 import { usePreviewPanelState } from './usePreviewPanelState';
 import * as usePreviewDataModule from './usePreviewData';
 import * as workspaceViewModelModule from '../../workspace-runtime/useWorkspaceViewModel';
+import { useAppStore } from '../../../stores/useAppStore';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -24,6 +25,8 @@ vi.mock('../../../stores/useAppStore', () => {
     workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
     workspaceDialogState: { kind: 'none' },
     dispatchWorkspaceRuntime: vi.fn(),
+    activeGameId: 'GIMI',
+    folderConflictsByGame: {} as Record<string, unknown[]>,
   };
 
   return {
@@ -142,6 +145,12 @@ function setupDefaultMocks() {
 describe('usePreviewPanelState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    const appState = useAppStore.getState() as unknown as {
+      activeGameId: string;
+      folderConflictsByGame: Record<string, unknown[]>;
+    };
+    appState.activeGameId = 'GIMI';
+    appState.folderConflictsByGame = {};
     setupDefaultMocks();
   });
 
@@ -229,6 +238,53 @@ describe('usePreviewPanelState', () => {
 
     expect(result.current.activePath).toBe(selectedPath);
     vi.useRealTimers();
+  });
+
+  it('keeps a selected conflict path but suppresses all preview detail queries', () => {
+    const selectedPath = 'E:/Mods/Alice/Blue';
+    const group = {
+      group_id: 'alice-blue',
+      identity: 'alice/blue',
+      display_name: 'Blue',
+      candidates: [
+        {
+          path: selectedPath,
+          folder_name: 'Blue',
+          base_name: 'Blue',
+          is_enabled: true,
+        },
+        {
+          path: 'E:/Mods/Alice/DISABLED Blue',
+          folder_name: 'DISABLED Blue',
+          base_name: 'Blue',
+          is_enabled: false,
+        },
+      ],
+    };
+    const appState = useAppStore.getState() as unknown as {
+      folderConflictsByGame: Record<string, unknown[]>;
+    };
+    appState.folderConflictsByGame = { GIMI: [group] };
+    (workspaceViewModelModule.useWorkspaceViewModel as any).mockReturnValue({
+      data: {
+        preview: {
+          selected_path: selectedPath,
+          selected_node: null,
+          display_title: 'Blue',
+          display_subtitle: null,
+          mod_info_summary: null,
+          warning_summary: { state: 'none', messages: [] },
+        },
+      },
+    });
+
+    const { result } = renderHook(() => usePreviewPanelState());
+
+    expect(result.current.activePath).toBe(selectedPath);
+    expect(result.current.folderNameConflict).toEqual(group);
+    expect(usePreviewDataModule.useModIniFiles).toHaveBeenCalledWith(null);
+    expect(usePreviewDataModule.usePreviewImages).toHaveBeenCalledWith(null);
+    expect(usePreviewDataModule.useAllModIniDocuments).toHaveBeenCalledWith(null, []);
   });
 
   // Covers: TC-6.1-01 (Title and description sync from workspace preview summary)

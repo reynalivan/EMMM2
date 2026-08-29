@@ -65,8 +65,7 @@ function formatStructuredPayload(error: StructuredError): string | null {
   switch (error.type) {
     case 'App':
     case 'Collection':
-    case 'Corridor':
-    case 'Pin':
+    case 'RuntimeState':
     case 'Metadata': {
       const nested = normalizeStructuredError(error.payload);
       return nested ? formatStructuredPayload(nested) : null;
@@ -88,16 +87,12 @@ function formatStructuredPayload(error: StructuredError): string | null {
         : 'Runtime path not found';
     case 'DuplicateName':
       return typeof error.payload === 'object' && error.payload
-        ? `Collection name '${String((error.payload as Record<string, unknown>).name ?? '')}' already exists in this corridor`
-        : 'Collection name already exists in this corridor';
+        ? `Collection name '${String((error.payload as Record<string, unknown>).name ?? '')}' already exists for this game`
+        : 'Collection name already exists for this game';
     case 'MissingMods':
       return typeof error.payload === 'object' && error.payload
         ? `Missing mods on disk: ${String((error.payload as Record<string, unknown>).count ?? 0)} mod(s) not found`
         : 'Missing mods on disk';
-    case 'NoUndoAvailable':
-      return 'No undo state is available for this corridor';
-    case 'CannotModifyUndoSnapshot':
-      return 'Undo snapshots are no longer supported';
     case 'NoModsPath':
       return typeof error.payload === 'object' && error.payload
         ? `Game '${String((error.payload as Record<string, unknown>).game_id ?? '')}' has no mods path configured`
@@ -106,10 +101,6 @@ function formatStructuredPayload(error: StructuredError): string | null {
       return typeof error.payload === 'object' && error.payload
         ? `Game '${String((error.payload as Record<string, unknown>).game_id ?? '')}' not found`
         : 'Game not found';
-    case 'CorridorMismatch':
-      return typeof error.payload === 'object' && error.payload
-        ? `Cannot apply ${(error.payload as Record<string, unknown>).collection_mode ?? 'this'} collection while in ${(error.payload as Record<string, unknown>).current_mode ?? 'current'} corridor`
-        : 'Collection corridor does not match current mode';
     case 'RenameFailed':
       return typeof error.payload === 'object' && error.payload
         ? `Rename failed for '${String((error.payload as Record<string, unknown>).path ?? '')}': ${String((error.payload as Record<string, unknown>).error ?? '')}`

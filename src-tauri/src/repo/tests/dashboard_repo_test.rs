@@ -170,9 +170,7 @@ async fn test_stats_accuracy() {
     )
     .await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool, false)
-        .await
-        .unwrap();
+    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(stats.total_mods, 5);
     assert_eq!(stats.enabled_mods, 3);
     assert_eq!(stats.disabled_mods, 2);
@@ -180,10 +178,10 @@ async fn test_stats_accuracy() {
     assert_eq!(stats.total_games, 2);
 }
 
-// ── TC-13.4-01: Safe Mode Filter ────────────────────────────────────────
+// ── TC-13.4-01: Safety classification filter ────────────────────────────
 
 #[tokio::test]
-async fn test_safe_mode_filter() {
+async fn test_dashboard_includes_all_safety_classifications() {
     let pool = setup_pool().await;
     seed_game(&pool, "g1", "Genshin").await;
 
@@ -211,15 +209,10 @@ async fn test_safe_mode_filter() {
     )
     .await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool, true)
-        .await
-        .unwrap();
-    assert_eq!(
-        stats.total_mods, 1,
-        "Safe mode should filter out unsafe mods"
-    );
-    assert_eq!(stats.enabled_mods, 1);
-    assert_eq!(stats.total_size_bytes, 1000);
+    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
+    assert_eq!(stats.total_mods, 2);
+    assert_eq!(stats.enabled_mods, 2);
+    assert_eq!(stats.total_size_bytes, 3000);
 }
 
 // ── NC-13.1-02: Zero Data (Empty DB) ────────────────────────────────────
@@ -228,9 +221,7 @@ async fn test_safe_mode_filter() {
 async fn test_zero_data_empty_db() {
     let pool = setup_pool().await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool, false)
-        .await
-        .unwrap();
+    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(stats.total_mods, 0);
     assert_eq!(stats.enabled_mods, 0);
     assert_eq!(stats.disabled_mods, 0);
@@ -289,7 +280,7 @@ async fn test_category_distribution() {
     )
     .await;
 
-    let dist = dashboard_repo::fetch_category_distribution(&pool, false)
+    let dist = dashboard_repo::fetch_category_distribution(&pool)
         .await
         .unwrap();
     assert_eq!(
@@ -342,7 +333,7 @@ async fn test_game_distribution() {
     )
     .await;
 
-    let dist = dashboard_repo::fetch_game_distribution(&pool, false)
+    let dist = dashboard_repo::fetch_game_distribution(&pool)
         .await
         .unwrap();
     assert_eq!(dist.len(), 2);
@@ -370,9 +361,7 @@ async fn test_negative_size_clamped() {
     )
     .await;
 
-    let stats = dashboard_repo::fetch_global_stats(&pool, false)
-        .await
-        .unwrap();
+    let stats = dashboard_repo::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(
         stats.total_size_bytes, 0,
         "Negative size should be clamped to 0"
@@ -401,8 +390,6 @@ async fn test_recent_mods_limit() {
         .await;
     }
 
-    let recents = dashboard_repo::fetch_recent_mods(&pool, false, 5)
-        .await
-        .unwrap();
+    let recents = dashboard_repo::fetch_recent_mods(&pool, 5).await.unwrap();
     assert_eq!(recents.len(), 5, "Should return at most 5 recent mods");
 }

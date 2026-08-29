@@ -43,8 +43,15 @@ type Tab = (typeof TABS)[number]['id'];
 export default function SettingsPage() {
   const { t } = useTranslation(['settings', 'common']);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
+  const requestedTab = useAppStore((state) => state.settingsTab);
+  const persistActiveTab = useAppStore((state) => state.setSettingsTab);
   const { isLoading, error } = useSettings();
-  const [activeTab, setActiveTab] = useState<Tab>('general');
+  const [activeTab, setActiveTab] = useState<Tab>(requestedTab ?? 'general');
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    persistActiveTab?.(tab);
+  };
 
   const handleBack = () => {
     // Close Settings View and return to Dashboard
@@ -81,7 +88,7 @@ export default function SettingsPage() {
                   <button
                     aria-current={activeTab === tab.id ? 'page' : undefined}
                     className={`gap-3 ${activeTab === tab.id ? 'active font-medium' : 'text-base-content/70'}`}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => handleTabChange(tab.id)}
                   >
                     <tab.Icon size={16} className="shrink-0" />
                     {t(`tabs.${tab.id}`)}

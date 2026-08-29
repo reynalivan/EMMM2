@@ -9,7 +9,7 @@ pub(crate) enum CollectionPathTransitionKind {
     SemanticMoveOrRename,
 }
 
-pub(super) fn logical_collection_path(path: &str) -> String {
+pub(crate) fn logical_collection_path(path: &str) -> String {
     path.split(['/', '\\'])
         .filter(|segment| !segment.is_empty())
         .map(normalize_display_name)

@@ -6,21 +6,46 @@
 use sqlx::SqlitePool;
 
 use crate::domain::errors::AppError;
-use crate::domain::task::{PipelineTask, RecoveryAction, TaskStatus};
+use crate::domain::task::{PipelineTask, RecoveryAction, TaskStatus, TASK_TYPE_APPLY_COLLECTION};
 use crate::services::config::models::AppSettings;
 use crate::services::config::ConfigService;
 use crate::services::scanner::watcher::WatcherState;
 
+pub struct RecoveryTaskRequest<'a> {
+    pub pool: &'a SqlitePool,
+    pub config: &'a ConfigService,
+    pub watcher_state: &'a WatcherState,
+    pub task_id: &'a str,
+    pub action: RecoveryAction,
+}
+
+pub async fn get_startup_recovery_tasks(pool: &SqlitePool) -> Result<Vec<PipelineTask>, AppError> {
+    crate::repo::task_repo::get_all_pending_tasks_global(pool).await
+}
+
+struct RecoveryApplyContext<'a> {
+    pool: &'a SqlitePool,
+    watcher_state: &'a WatcherState,
+    settings: AppSettings,
+    mods_path: std::path::PathBuf,
+}
+
+struct RecoveryRollbackTarget {
+    collection_id: String,
+    active_baseline_id: Option<String>,
+}
+
 /// Resolve one recovery task. The caller is responsible for holding the
 /// operation lock: resuming an apply mutates the filesystem and must be
 /// mutually excluded from concurrent runtime ops.
-pub async fn resolve_recovery_task(
-    pool: &SqlitePool,
-    config: &ConfigService,
-    watcher_state: &WatcherState,
-    task_id: &str,
-    action: RecoveryAction,
-) -> Result<(), AppError> {
+pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(), AppError> {
+    let RecoveryTaskRequest {
+        pool,
+        config,
+        watcher_state,
+        task_id,
+        action,
+    } = request;
     log::info!(
         "Resolving recovery task {} with action {:?}",
         task_id,
@@ -31,6 +56,68 @@ pub async fn resolve_recovery_task(
         .await?
         .ok_or_else(|| AppError::Validation(format!("Task {} not found", task_id)))?;
 
+    if action == RecoveryAction::Ignore {
+        return settle_ignored_task(pool, task_id).await;
+    }
+
+    let claimed = crate::repo::task_repo::compare_and_set_status(
+        pool,
+        task_id,
+        TaskStatus::Pending,
+        TaskStatus::Running,
+    )
+    .await?;
+    if !claimed {
+        return Err(AppError::Validation(format!(
+            "Recovery task '{task_id}' is already claimed or settled"
+        )));
+    }
+
+    let result = resolve_claimed_task(pool, config, watcher_state, &task, action).await;
+    if result.is_err() {
+        match crate::repo::task_repo::compare_and_set_status(
+            pool,
+            task_id,
+            TaskStatus::Running,
+            TaskStatus::Pending,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => log::error!(
+                "Recovery task '{task_id}' failed but was no longer RUNNING during release"
+            ),
+            Err(error) => log::error!(
+                "Recovery task '{task_id}' failed and could not be released to PENDING: {error}"
+            ),
+        }
+    }
+    result
+}
+
+async fn settle_ignored_task(pool: &SqlitePool, task_id: &str) -> Result<(), AppError> {
+    let settled = crate::repo::task_repo::compare_and_set_status(
+        pool,
+        task_id,
+        TaskStatus::Pending,
+        TaskStatus::Failed,
+    )
+    .await?;
+    if !settled {
+        return Err(AppError::Validation(format!(
+            "Recovery task '{task_id}' is already claimed or settled"
+        )));
+    }
+    Ok(())
+}
+
+async fn resolve_claimed_task(
+    pool: &SqlitePool,
+    config: &ConfigService,
+    watcher_state: &WatcherState,
+    task: &PipelineTask,
+    action: RecoveryAction,
+) -> Result<(), AppError> {
     let settings = config.get_settings();
     let mods_path = settings
         .games
@@ -40,27 +127,20 @@ pub async fn resolve_recovery_task(
         .mod_path
         .clone();
 
-    // The corridor comes from settings, not from the collection being recovered.
-    // Deriving it from the data would make `validate_corridor` compare a value
-    // with itself, letting a recovery apply an unsafe collection during Safe Mode.
-    let is_safe = settings.safe_mode.enabled;
+    let apply_context = RecoveryApplyContext {
+        pool,
+        watcher_state,
+        settings,
+        mods_path,
+    };
 
     match action {
-        RecoveryAction::Retry => {
-            retry_task(pool, watcher_state, &task, settings, mods_path, is_safe).await?;
-            mark_task(pool, task_id, TaskStatus::Completed).await
-        }
-        RecoveryAction::Rollback => {
-            rollback_task(pool, watcher_state, &task, settings, mods_path, is_safe).await?;
-            mark_task(pool, task_id, TaskStatus::Completed).await
-        }
-        RecoveryAction::Ignore => mark_task(pool, task_id, TaskStatus::Failed).await,
+        RecoveryAction::Retry => retry_task(apply_context, task).await,
+        RecoveryAction::Rollback => rollback_task(apply_context, task).await,
+        RecoveryAction::Ignore => Err(AppError::Validation(
+            "Ignore does not run through the claimed recovery path".to_string(),
+        )),
     }
-}
-
-async fn mark_task(pool: &SqlitePool, task_id: &str, status: TaskStatus) -> Result<(), AppError> {
-    crate::repo::task_repo::update_status(pool, task_id, status).await?;
-    Ok(())
 }
 
 fn target_collection_id(task: &PipelineTask) -> Result<&str, AppError> {
@@ -70,39 +150,36 @@ fn target_collection_id(task: &PipelineTask) -> Result<&str, AppError> {
 }
 
 async fn retry_task(
-    pool: &SqlitePool,
-    watcher_state: &WatcherState,
+    context: RecoveryApplyContext<'_>,
     task: &PipelineTask,
-    settings: AppSettings,
-    mods_path: std::path::PathBuf,
-    is_safe: bool,
 ) -> Result<(), AppError> {
     match task.task_type.as_str() {
-        "apply_collection" => {
-            // Existence is validated downstream by `validate_corridor`.
+        TASK_TYPE_APPLY_COLLECTION => {
+            // Existence is validated by the collection apply pipeline.
             let collection_id = target_collection_id(task)?;
+            let final_active_collection_id =
+                crate::services::collection_service::valid_active_baseline(
+                    context.pool,
+                    &task.game_id,
+                    task.final_active_collection_id.as_deref(),
+                )
+                .await?;
 
-            crate::services::collection_service::apply_collection(
+            crate::services::collection_service::apply_collection_with_existing_task(
                 crate::services::collection_service::ApplyCollectionRequest {
-                    pool,
+                    pool: context.pool,
                     game_id: &task.game_id,
                     collection_id,
-                    is_safe,
-                    mods_path,
-                    suppressor: watcher_state.suppressor.clone(),
+                    capture_last_changes: false,
+                    mods_path: context.mods_path,
+                    suppressor: context.watcher_state.suppressor.clone(),
                     ignore_missing: true,
-                    settings,
-                    reconcile_lock: None,
+                    settings: context.settings,
                 },
+                &task.id,
+                final_active_collection_id,
             )
             .await?;
-            Ok(())
-        }
-        "switch_corridor" => {
-            log::info!(
-                "Ignoring legacy switch_corridor recovery task {} because mode switching has been removed",
-                task.id
-            );
             Ok(())
         }
         other => Err(AppError::Validation(format!(
@@ -113,39 +190,26 @@ async fn retry_task(
 }
 
 async fn rollback_task(
-    pool: &SqlitePool,
-    watcher_state: &WatcherState,
+    context: RecoveryApplyContext<'_>,
     task: &PipelineTask,
-    settings: AppSettings,
-    mods_path: std::path::PathBuf,
-    is_safe: bool,
 ) -> Result<(), AppError> {
     match task.task_type.as_str() {
-        "switch_corridor" => {
-            log::info!(
-                "Ignoring legacy switch_corridor rollback task {} because mode switching has been removed",
-                task.id
-            );
-            Ok(())
-        }
-        "apply_collection" => {
-            let collection_id = target_collection_id(task)?;
+        TASK_TYPE_APPLY_COLLECTION => {
+            let rollback = resolve_rollback_target(context.pool, task).await?;
 
-            let rollback_collection_id =
-                resolve_rollback_target(pool, task, collection_id, is_safe).await?;
-
-            crate::services::collection_service::apply_collection(
+            crate::services::collection_service::apply_collection_with_existing_task(
                 crate::services::collection_service::ApplyCollectionRequest {
-                    pool,
+                    pool: context.pool,
                     game_id: &task.game_id,
-                    collection_id: &rollback_collection_id,
-                    is_safe,
-                    mods_path,
-                    suppressor: watcher_state.suppressor.clone(),
+                    collection_id: &rollback.collection_id,
+                    capture_last_changes: false,
+                    mods_path: context.mods_path,
+                    suppressor: context.watcher_state.suppressor.clone(),
                     ignore_missing: true,
-                    settings,
-                    reconcile_lock: None,
+                    settings: context.settings,
                 },
+                &task.id,
+                rollback.active_baseline_id,
             )
             .await?;
             Ok(())
@@ -157,48 +221,32 @@ async fn rollback_task(
     }
 }
 
-/// Pick a *different* collection to apply in place of the failed one.
-///
-/// NOTE: this is not a rollback in the restore-previous-state sense. Nothing
-/// captures the runtime state that existed before the failed apply — `tasks`
-/// has no snapshot column — so a hand-toggled runtime cannot be recovered and
-/// is instead overwritten by whichever saved preset is chosen here. Real
-/// rollback needs the pre-apply `ProjectedCollectionState` persisted on the
-/// task row before the rename step runs.
 async fn resolve_rollback_target(
     pool: &SqlitePool,
     task: &PipelineTask,
-    collection_id: &str,
-    is_safe: bool,
-) -> Result<String, AppError> {
-    let corridor_state = crate::repo::corridor_repo::get(pool, &task.game_id, is_safe).await?;
-
-    let from_corridor = corridor_state
-        .as_ref()
-        .and_then(|state| state.active_collection_id.as_deref())
-        .filter(|candidate| *candidate != collection_id)
-        .map(|id| id.to_string());
-
-    if let Some(existing_id) = from_corridor {
-        return Ok(existing_id);
+) -> Result<RecoveryRollbackTarget, AppError> {
+    let collection_id = task.rollback_collection_id.clone().ok_or_else(|| {
+        AppError::Validation("Recovery task has no stored rollback collection".to_string())
+    })?;
+    let rollback_exists = crate::repo::collection_repo::get_by_id(pool, &collection_id)
+        .await?
+        .is_some_and(|collection| collection.game_id == task.game_id);
+    if !rollback_exists {
+        return Err(AppError::Validation(format!(
+            "Stored rollback collection does not exist: {collection_id}"
+        )));
     }
+    let active_baseline_id = crate::services::collection_service::valid_active_baseline(
+        pool,
+        &task.game_id,
+        task.rollback_active_collection_id.as_deref(),
+    )
+    .await?;
 
-    crate::services::corridor_service::resolve_restore_collection(pool, &task.game_id, is_safe)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|(collection, _)| {
-            if collection.id == collection_id {
-                None
-            } else {
-                Some(collection.id)
-            }
-        })
-        .ok_or_else(|| {
-            AppError::Validation(
-                "No rollback collection is available for this corridor".to_string(),
-            )
-        })
+    Ok(RecoveryRollbackTarget {
+        collection_id,
+        active_baseline_id,
+    })
 }
 
 #[cfg(test)]

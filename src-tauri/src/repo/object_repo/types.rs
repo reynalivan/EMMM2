@@ -20,6 +20,8 @@ pub struct ObjectCountCandidate {
     pub folder_path: String,
     pub actual_name: String,
     pub status: ItemStatus,
+    pub is_safe: bool,
+    pub safety_source: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -32,10 +34,12 @@ pub struct TerminalDescriptor {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ReconcileObjectRow {
     pub id: String,
+    pub name: String,
     pub folder_path: String,
     pub folder_path_key: String,
     pub status: crate::domain::models::ItemStatus,
     pub object_type: String,
+    pub filesystem_identity: Option<String>,
 }
 
 /// A page of objects plus the ids whose runtime projection is cold.

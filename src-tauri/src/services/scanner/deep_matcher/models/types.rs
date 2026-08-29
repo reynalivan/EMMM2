@@ -251,6 +251,15 @@ pub struct CustomSkin {
     pub rarity: Option<String>,
 }
 
+/// Controls whether a MasterDB entry can be selected as a concrete object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryKind {
+    #[default]
+    Canonical,
+    Taxonomy,
+}
+
 /// A single DB entry from Master DB.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DbEntry {
@@ -259,6 +268,9 @@ pub struct DbEntry {
     pub tags: Vec<String>,
     #[serde(default)]
     pub object_type: String,
+    /// Whether this is a matchable object or a generic taxonomy placeholder.
+    #[serde(default)]
+    pub entry_kind: EntryKind,
     #[serde(default)]
     pub custom_skins: Vec<CustomSkin>,
     #[serde(default)]

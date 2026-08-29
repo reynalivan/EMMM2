@@ -39,6 +39,15 @@ vi.mock('../../features/folder-grid/components/ExplorerEmptyState', () => ({
 vi.mock('../../features/file-watcher/ExternalChangeHandler', () => ({
   ExternalChangeHandler: () => null,
 }));
+vi.mock('../../features/mod-inbox/ModInboxPage', () => ({
+  default: () => <div data-testid="mod-inbox">Mod Inbox</div>,
+}));
+vi.mock('../../features/import-batches/ImportBatchWizardHost', () => ({
+  ImportBatchWizardHost: () => null,
+}));
+vi.mock('../../features/match-wizard/ObjectClassificationWizardHost', () => ({
+  ObjectClassificationWizardHost: () => null,
+}));
 vi.mock('./ResizableWorkspace', () => ({
   default: ({
     leftPanel,
@@ -79,6 +88,12 @@ describe('MainLayout (TC-05)', () => {
     mockView = 'collections';
     render(<MainLayout />);
     expect(screen.getByTestId('collections')).toBeInTheDocument();
+  });
+
+  it('renders Mod Inbox as a dedicated workspace view', () => {
+    mockView = 'mod-inbox';
+    render(<MainLayout />);
+    expect(screen.getByTestId('mod-inbox')).toBeInTheDocument();
   });
 
   it('renders ResizableWorkspace and EmptyState when view is string and NO selected object', () => {

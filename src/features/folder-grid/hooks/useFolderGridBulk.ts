@@ -10,6 +10,7 @@ import {
   useBulkToggle,
   useBulkDelete,
   useBulkUpdateInfo,
+  useBulkSafety,
   useBulkFavorite,
   useBulkPin,
 } from '../../../hooks/useBulkModMutations';
@@ -33,6 +34,7 @@ export function useFolderGridBulk({
   const bulkToggle = useBulkToggle();
   const bulkDelete = useBulkDelete();
   const bulkUpdateInfo = useBulkUpdateInfo();
+  const bulkSafety = useBulkSafety();
   const bulkFavorite = useBulkFavorite();
   const bulkPin = useBulkPin();
 
@@ -47,7 +49,7 @@ export function useFolderGridBulk({
       if (paths.length === 0 || !activeGame?.id) return;
       bulkToggle.mutate({ gameId: activeGame.id, paths, enable });
     },
-    [activeGame?.id, bulkToggle.mutate, gridSelection],
+    [activeGame, bulkToggle, gridSelection],
   );
 
   const handleBulkTagRequest = useCallback(() => {
@@ -61,7 +63,7 @@ export function useFolderGridBulk({
       if (paths.length === 0 || !activeGame?.id) return;
       bulkUpdateInfo.mutate({ gameId: activeGame.id, paths, update: { tags_add: tags } });
     },
-    [activeGame?.id, bulkUpdateInfo.mutate, gridSelection],
+    [activeGame, bulkUpdateInfo, gridSelection],
   );
 
   const handleBulkDeleteRequest = useCallback(() => {
@@ -80,7 +82,7 @@ export function useFolderGridBulk({
         },
       },
     );
-  }, [activeGame, bulkDelete.mutate, clearGridSelection, gridSelection]);
+  }, [activeGame, bulkDelete, clearGridSelection, gridSelection]);
 
   // Bulk Favorite/Unfavorite — uses proper mutation hook with targeted cache
   const handleBulkFavorite = useCallback(
@@ -89,7 +91,7 @@ export function useFolderGridBulk({
       if (paths.length === 0 || !activeGame?.id) return;
       bulkFavorite.mutate({ gameId: activeGame.id, folderPaths: paths, favorite });
     },
-    [activeGame?.id, bulkFavorite.mutate, gridSelection],
+    [activeGame, bulkFavorite, gridSelection],
   );
 
   // Bulk Safe/Unsafe — uses existing bulk_update_info
@@ -97,9 +99,9 @@ export function useFolderGridBulk({
     (safe: boolean) => {
       const paths = Array.from(gridSelection);
       if (paths.length === 0 || !activeGame?.id) return;
-      bulkUpdateInfo.mutate({ gameId: activeGame.id, paths, update: { is_safe: safe } });
+      bulkSafety.mutate({ gameId: activeGame.id, paths, safe });
     },
-    [activeGame?.id, bulkUpdateInfo.mutate, gridSelection],
+    [activeGame, bulkSafety, gridSelection],
   );
 
   // Bulk Pin/Unpin — uses proper mutation hook with targeted cache
@@ -109,7 +111,7 @@ export function useFolderGridBulk({
       if (paths.length === 0 || !activeGame?.id) return;
       bulkPin.mutate({ gameId: activeGame.id, folderPaths: paths, pin });
     },
-    [activeGame?.id, bulkPin.mutate, gridSelection],
+    [activeGame, bulkPin, gridSelection],
   );
 
   // Bulk Move to Object

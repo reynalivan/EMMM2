@@ -30,9 +30,24 @@
       "rename": "Ubah Nama",
       "apply": "Terapkan",
       "delete": "Hapus koleksi",
-      "mod_count": "{{count}} mod"
+      "mod_count": "{{count}} mod",
+      "current_runtime": "Perubahan saat ini",
+      "unsaved": "Perubahan belum disimpan",
+      "modified": "Diubah",
+      "matches_runtime": "Sama dengan runtime saat ini",
+      "save_changes": "Simpan perubahan"
     },
     "load_failed": "Gagal memuat koleksi"
+  },
+  "last_changes": {
+    "title": "Perubahan terakhir",
+    "description": "Runtime yang dimodifikasi atau belum disimpan diamankan sebelum berpindah koleksi.",
+    "save_as": "Simpan sebagai koleksi",
+    "restore": "Pulihkan",
+    "clear": "Hapus",
+    "restored": "Perubahan terakhir dipulihkan",
+    "cleared": "Perubahan terakhir dihapus",
+    "remove_missing_confirm": "Hapus {{count}} mod yang hilang dari koleksi ini?"
   },
   "preview": {
     "title": "Pratinjau Koleksi",
@@ -120,7 +135,6 @@
   "randomizer": {
     "title": "Smart Randomizer",
     "desc": "Merekomendasikan 1 mod yang dinonaktifkan secara acak untuk setiap Karakter yang aktif. Tinjau dan terapkan.",
-    "safe_mode": "Mode Aman",
     "no_eligible": "Tidak ditemukan mod karakter yang memenuhi syarat (periksa filter atau pastikan Anda memiliki mod yang dinonaktifkan).",
     "consulting": "Berkonsultasi dengan Dewa RNG...",
     "reroll": "Acak Ulang Semua",

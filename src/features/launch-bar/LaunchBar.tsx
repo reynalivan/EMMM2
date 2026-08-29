@@ -1,6 +1,6 @@
 import { formatAppError } from '../../lib/appError';
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import { useActiveConflicts } from '../../hooks/useFolderMutations';
 import { useAppStore } from '../../stores/useAppStore';
@@ -10,6 +10,38 @@ import RandomizerModal from '../randomizer/RandomizerModal';
 import ConflictModal from '../conflict-report/ConflictModal';
 import ConflictToast from '../scanner/components/ConflictToast';
 import { useTranslation } from 'react-i18next';
+import type { ConflictInfo } from '../../types/scanner';
+
+function buildConflictSignature(conflicts: ConflictInfo[]): string | null {
+  if (conflicts.length === 0) return null;
+
+  return conflicts
+    .map((conflict) => {
+      const evidence = conflict.evidence
+        .map((item) =>
+          [
+            item.mod_path,
+            item.source_path,
+            item.section_name,
+            item.condition ?? '',
+            item.priority ?? '',
+            item.match_first_index ?? '',
+            item.shader_stage ?? '',
+          ].join(':'),
+        )
+        .sort()
+        .join(',');
+      return [
+        conflict.kind,
+        conflict.hash,
+        conflict.certainty,
+        [...conflict.mod_paths].sort().join(','),
+        evidence,
+      ].join('|');
+    })
+    .sort()
+    .join('||');
+}
 
 export default function LaunchBar() {
   const { t } = useTranslation(['layout']);
@@ -19,19 +51,13 @@ export default function LaunchBar() {
   const [error, setError] = useState<string | null>(null);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
-  const [toastDismissed, setToastDismissed] = useState(false);
+  const [dismissedConflictSignature, setDismissedConflictSignature] = useState<string | null>(null);
 
   const { data: conflicts } = useActiveConflicts();
   const hasConflicts = conflicts && conflicts.length > 0;
-
-  // Dismissal only lasts as long as the conflicts do; clearing it here (rather
-  // than in an effect) means a fresh batch shows the toast again without an
-  // extra committed render.
-  if (!hasConflicts && toastDismissed) {
-    setToastDismissed(false);
-  }
-
-  const showToast = !!hasConflicts && !toastDismissed;
+  const conflictSignature = useMemo(() => buildConflictSignature(conflicts ?? []), [conflicts]);
+  const showToast = !!hasConflicts && conflictSignature !== dismissedConflictSignature;
+  const dismissCurrentConflicts = () => setDismissedConflictSignature(conflictSignature);
 
   const handleLaunch = async () => {
     if (!activeGame) return;
@@ -78,7 +104,7 @@ export default function LaunchBar() {
               className="btn btn-warning btn-sm shadow-lg animate-pulse"
               onClick={() => {
                 setConflictOpen(true);
-                setToastDismissed(true);
+                dismissCurrentConflicts();
               }}
               title={t('layout:launch_bar.conflict_toast', { count: conflicts.length })}
             >
@@ -86,7 +112,7 @@ export default function LaunchBar() {
               <span className="hidden sm:inline">{t('layout:launch_bar.conflicts')}</span>
             </button>
             {showToast && (
-              <ConflictToast conflicts={conflicts} onDismiss={() => setToastDismissed(true)} />
+              <ConflictToast conflicts={conflicts} onDismiss={dismissCurrentConflicts} />
             )}
           </div>
         )}
@@ -115,6 +141,7 @@ export default function LaunchBar() {
         open={conflictOpen}
         onClose={() => setConflictOpen(false)}
         conflicts={conflicts || []}
+        gameId={activeGame.id}
       />
     </div>
   );

@@ -8,7 +8,6 @@ use std::path::Path;
 
 use super::snapshot::ModSnapshot;
 
-const KEY_EXTS: &[&str] = &["ini", "dds", "buf", "ib", "vb"];
 /// Textures carry the colour, meshes carry the shape. The two are hashed into
 /// separate buckets because a pair that shares its meshes but not its textures
 /// is a recolor, and that scores differently from an unrelated pair.
@@ -18,38 +17,60 @@ const PARTIAL_HASH_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HashProfile {
-    pub key_file_hashes: BTreeMap<String, String>,
+    pub file_hashes: BTreeMap<String, String>,
     pub texture_samples: BTreeMap<String, String>,
     pub mesh_hashes: BTreeMap<String, String>,
 }
 
 pub(crate) fn hash_snapshot(snapshot: &ModSnapshot) -> HashProfile {
+    hash_snapshot_with_identity_mode(snapshot, false)
+}
+
+pub(crate) fn hash_snapshot_full(snapshot: &ModSnapshot) -> HashProfile {
+    hash_snapshot_with_identity_mode(snapshot, true)
+}
+
+fn hash_snapshot_with_identity_mode(
+    snapshot: &ModSnapshot,
+    require_full_identity: bool,
+) -> HashProfile {
     let mut profile = HashProfile::default();
     for file in &snapshot.files {
-        if !KEY_EXTS.contains(&file.extension.as_str()) {
-            continue;
-        }
         let is_texture = file.extension == TEXTURE_EXT;
-        let hash = if is_texture && file.size_bytes > PARTIAL_HASH_THRESHOLD_BYTES {
+        let use_sample =
+            is_texture && file.size_bytes > PARTIAL_HASH_THRESHOLD_BYTES && !require_full_identity;
+        let identity_hash = if use_sample {
             partial_blake3_hash(&file.abs_path)
         } else {
             full_blake3_hash(&file.abs_path)
         };
-        if let Ok(value) = hash {
+        let Ok(identity_hash) = identity_hash else {
+            continue;
+        };
+
+        profile
+            .file_hashes
+            .insert(file.rel_path.clone(), identity_hash.clone());
+
+        if is_texture {
+            let sample_hash = if file.size_bytes > PARTIAL_HASH_THRESHOLD_BYTES {
+                partial_blake3_hash(&file.abs_path).unwrap_or_else(|_| identity_hash.clone())
+            } else {
+                identity_hash.clone()
+            };
             profile
-                .key_file_hashes
-                .insert(file.rel_path.clone(), value.clone());
-            if is_texture {
-                profile.texture_samples.insert(file.rel_path.clone(), value);
-            } else if MESH_EXTS.contains(&file.extension.as_str()) {
-                profile.mesh_hashes.insert(file.rel_path.clone(), value);
-            }
+                .texture_samples
+                .insert(file.rel_path.clone(), sample_hash);
+        } else if MESH_EXTS.contains(&file.extension.as_str()) {
+            profile
+                .mesh_hashes
+                .insert(file.rel_path.clone(), identity_hash);
         }
     }
     profile
 }
 
-fn full_blake3_hash(path: &Path) -> Result<String, ScannerError> {
+pub(super) fn full_blake3_hash(path: &Path) -> Result<String, ScannerError> {
     let file = File::open(path)?;
     // blake3's own reader does the buffering; an 8 KiB hand-rolled loop is
     // below the 16 KiB the multi-threaded fast path needs.

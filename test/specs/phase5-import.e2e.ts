@@ -1,26 +1,30 @@
 import { expect } from '@wdio/globals';
 import fs from 'fs/promises';
 import path from 'path';
-import { createMockGame, removeMockGame, listDir, type MockGame } from '../support/fixtures.js';
+import { createMockGame, listDir, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
-import { invokeInApp, invokeWithChannel } from '../support/ipc.js';
+import { getObjects, reconcile } from '../support/data.js';
+import { invokeInApp } from '../support/ipc.js';
 
-interface BulkResult {
-  success: string[];
-  failures: { path: string; error: unknown }[];
+interface ImportItem {
+  id: string;
+  plannedName: string;
+  status: string;
 }
-interface ArchiveInfo {
-  path: string;
-  name: string;
-  [key: string]: unknown;
+
+interface ImportBatch {
+  id: string;
+  items: ImportItem[];
+}
+
+interface ImportBatchReport {
+  moved: number;
+  collisions: number;
+  failed: number;
 }
 
 const FIXTURE_ZIP = path.resolve('test/fixtures/sample-mod.zip');
 
-/**
- * Creates a loose folder (outside the mods tree) with a mod.ini the classifier
- * recognizes — a `[Constants]`-only stub reads as a plain container, not a mod.
- */
 async function makeLooseFolder(root: string, name: string): Promise<string> {
   const dir = path.join(root, 'incoming', name);
   await fs.mkdir(dir, { recursive: true });
@@ -31,88 +35,125 @@ async function makeLooseFolder(root: string, name: string): Promise<string> {
   return dir;
 }
 
-/**
- * Fase 5 — Import & organisasi ⚠️ DATA-SAFETY. Folder import, auto-organizer
- * ingest, collision handling, and real archive extraction (plain zip fixture).
- * Password/7z archives remain [manual-smoke].
- */
-describe('Fase 5 — Import & Organization (data-safety)', () => {
+describe('Fase 5 — Shared import batches (data-safety)', () => {
   let game: MockGame;
+  let gameId: string;
 
   before(async () => {
     game = await createMockGame('Phase5');
-    await seedGameAndOpenDashboard(game);
+    gameId = await seedGameAndOpenDashboard(game);
   });
 
   after(async () => {
     await removeMockGame(game);
   });
 
-  it('TC-23-01: Import moves a loose folder into the mods library', async () => {
-    const loose = await makeLooseFolder(game.root, 'ImportedMod');
-    const res = await invokeInApp<BulkResult>('import_mods_from_paths', {
-      paths: [loose],
-      targetDir: game.modsPath,
-      strategy: 'Raw',
-      dbJson: null,
-    });
-    expect(res.failures.length).toBe(0);
-    expect(await listDir(game.modsPath)).toContain('ImportedMod');
-  });
+  async function createTarget(name: string): Promise<{ id: string; path: string }> {
+    const targetPath = path.join(game.modsPath, name);
+    await fs.mkdir(targetPath, { recursive: true });
+    await reconcile(gameId, 'ManualRepair');
+    const object = (await getObjects(gameId)).find((candidate) => candidate.name === name);
+    expect(object).toBeDefined();
+    return { id: object!.id, path: targetPath };
+  }
 
-  it('TC-39-01: Import into an existing name reports collision, source untouched', async () => {
-    await fs.mkdir(path.join(game.modsPath, 'DupName'), { recursive: true });
-    const loose = await makeLooseFolder(game.root, 'DupName');
-
-    const res = await invokeInApp<BulkResult>('import_mods_from_paths', {
-      paths: [loose],
-      targetDir: game.modsPath,
-      strategy: 'Raw',
-      dbJson: null,
-    });
-    expect(res.failures.length).toBe(1);
-    // Source folder must survive a rejected import (no data loss).
-    expect(await listDir(loose)).toContain('mod.ini');
-  });
-
-  it('TC-38-01: Auto-organizer ingest relocates dropped folders', async () => {
-    const loose = await makeLooseFolder(game.root, 'DroppedMod');
-    // Returns the moved folder names — there is no {moved,failed,skipped} shape.
-    const moved = await invokeInApp<string[]>('ingest_dropped_folders', {
-      paths: [loose],
-      modsPath: game.modsPath,
-    });
-    expect(moved).toContain('DroppedMod');
-    // Two-sided: it really left the drop dir and landed under Mods.
-    expect(await listDir(path.dirname(loose))).not.toContain('DroppedMod');
-    expect(await listDir(game.modsPath)).toContain('DroppedMod');
-  });
-
-  it('TC-37-01: Archive extraction unpacks a zip into the library', async () => {
-    // Must sit inside the configured mods dir — the command refuses to scan
-    // anywhere else ("Target is outside every configured mods directory").
-    const scanDir = path.join(game.modsPath, 'archives');
-    await fs.mkdir(scanDir, { recursive: true });
-    const zipCopy = path.join(scanDir, 'sample-mod.zip');
-    await fs.copyFile(FIXTURE_ZIP, zipCopy);
-
-    const detected = await invokeInApp<ArchiveInfo[]>('detect_archives_cmd', {
-      modsPath: scanDir,
-    });
-    expect(detected.some((a) => a.name.includes('sample-mod'))).toBe(true);
-
-    await invokeWithChannel<unknown>(
-      'extract_archive_cmd',
-      {
-        archivePath: zipCopy,
-        modsDir: game.modsPath,
-        overwrite: false,
-        disableAfter: false,
-        unpackNested: false,
+  async function prepareSpecificBatch(
+    targetObjectId: string,
+    sources: Array<{ path: string; sourceKind: 'folder' | 'archive_root' }>,
+  ): Promise<ImportBatch> {
+    const created = await invokeInApp<ImportBatch>('create_import_batch', {
+      input: {
+        gameId,
+        flow: 'specific_import',
+        targetMode: 'specific',
+        targetObjectId,
+        targetSubpath: null,
+        sources,
       },
-      'onProgress',
-    );
+    });
+    const analyzed = await invokeInApp<ImportBatch>('analyze_import_batch', {
+      batchId: created.id,
+    });
 
-    expect(await listDir(game.modsPath)).toContain('ArchivedMod');
+    for (const item of analyzed.items) {
+      expect(item.status).toBe('awaiting_category');
+      await invokeInApp('set_import_item_classification', {
+        input: {
+          itemId: item.id,
+          category: 'Other',
+          subCategory: null,
+          metadata: {},
+        },
+      });
+      await invokeInApp('refresh_import_item_suggestions', { itemId: item.id });
+      await invokeInApp('set_import_item_decision', {
+        input: {
+          itemId: item.id,
+          decision: 'keep_specific_target',
+          destinationObjectId: targetObjectId,
+          destinationPath: null,
+          canonicalEntryKey: null,
+          matchedAlias: null,
+        },
+      });
+    }
+
+    return invokeInApp<ImportBatch>('get_import_batch', { batchId: created.id });
+  }
+
+  it('TC-23-01: bulk specific import moves every confirmed folder through one batch', async () => {
+    const target = await createTarget('ImportTarget');
+    const ayaka = await makeLooseFolder(game.root, 'DISABLED ayaka-12319mods');
+    const raiden = await makeLooseFolder(game.root, 'DISABLED raiden32114');
+    const batch = await prepareSpecificBatch(target.id, [
+      { path: ayaka, sourceKind: 'folder' },
+      { path: raiden, sourceKind: 'folder' },
+    ]);
+
+    const report = await invokeInApp<ImportBatchReport>('commit_import_batch', {
+      input: { batchId: batch.id, itemIds: batch.items.map((item) => item.id) },
+    });
+
+    expect(report.moved).toBe(2);
+    expect(report.failed).toBe(0);
+    expect(await listDir(target.path)).toEqual(
+      expect.arrayContaining(['DISABLED ayaka-12319mods', 'DISABLED raiden32114']),
+    );
+    expect(await listDir(path.dirname(ayaka))).not.toContain('DISABLED ayaka-12319mods');
+  });
+
+  it('TC-39-01: collision skips the item and leaves the source untouched', async () => {
+    const target = await createTarget('CollisionTarget');
+    await fs.mkdir(path.join(target.path, 'DISABLED DupName'), { recursive: true });
+    await fs.writeFile(path.join(target.path, 'DISABLED DupName', 'mod.ini'), '[Constants]\n');
+    await reconcile(gameId, 'ManualRepair');
+    const source = await makeLooseFolder(game.root, 'DupName');
+    const batch = await prepareSpecificBatch(target.id, [{ path: source, sourceKind: 'folder' }]);
+
+    const report = await invokeInApp<ImportBatchReport>('commit_import_batch', {
+      input: { batchId: batch.id, itemIds: batch.items.map((item) => item.id) },
+    });
+
+    expect(report.collisions).toBe(1);
+    expect(await listDir(source)).toContain('mod.ini');
+  });
+
+  it('TC-37-01: archive extraction stages roots and commits them through the same wizard contract', async () => {
+    const target = await createTarget('ArchiveTarget');
+    const archive = path.join(game.root, 'incoming', 'sample-mod.zip');
+    await fs.mkdir(path.dirname(archive), { recursive: true });
+    await fs.copyFile(FIXTURE_ZIP, archive);
+    const batch = await prepareSpecificBatch(target.id, [
+      { path: archive, sourceKind: 'archive_root' },
+    ]);
+
+    expect(batch.items.map((item) => item.plannedName)).toContain('DISABLED ArchivedMod');
+    const report = await invokeInApp<ImportBatchReport>('commit_import_batch', {
+      input: { batchId: batch.id, itemIds: batch.items.map((item) => item.id) },
+    });
+
+    expect(report.moved).toBe(1);
+    expect(await listDir(target.path)).toContain('DISABLED ArchivedMod');
+    expect(await fs.stat(archive)).toBeDefined();
   });
 });

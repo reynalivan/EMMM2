@@ -1,11 +1,4 @@
-export type WorkspaceIntent =
-  | { type: 'autoOrganizePaths'; paths: string[] }
-  | {
-      type: 'archiveImport';
-      archives: string[];
-      nonArchivePaths: string[];
-      targetDir: string;
-    };
+export type WorkspaceIntent = { type: 'autoOrganizePaths'; paths: string[] };
 
 type WorkspaceIntentListener = (intent: WorkspaceIntent) => void;
 

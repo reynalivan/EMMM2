@@ -20,9 +20,9 @@ mod required_tests;
 
 // Public types and matcher entrypoints used by commands and sync services.
 pub use models::types::{
-    sort_candidates_deterministic, Candidate, Confidence, CustomSkin, DbEntry, Evidence, MatchMode,
-    MatchStatus, Reason, ScoreState, StagedMatchResult, MAX_EVIDENCE_HASHES, MAX_EVIDENCE_SECTIONS,
-    MAX_EVIDENCE_TOKENS, MAX_REASONS_PER_CANDIDATE,
+    sort_candidates_deterministic, Candidate, Confidence, CustomSkin, DbEntry, EntryKind, Evidence,
+    MatchMode, MatchStatus, Reason, ScoreState, StagedMatchResult, MAX_EVIDENCE_HASHES,
+    MAX_EVIDENCE_SECTIONS, MAX_EVIDENCE_TOKENS, MAX_REASONS_PER_CANDIDATE,
 };
 pub use pipeline::full_pipeline::{match_folder_full, score_forced_candidates};
 pub use pipeline::quick_pipeline::match_folder_quick;

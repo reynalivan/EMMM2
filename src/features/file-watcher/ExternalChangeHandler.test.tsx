@@ -43,6 +43,8 @@ type EventHandler = (event: { payload: DiskReconcileResult }) => void;
 
 function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileResult {
   return {
+    folder_conflicts: [],
+    rename_confirmations: [],
     game_id: 'game-1',
     reason: 'WatcherBatch',
     status: 'Applied',
@@ -52,10 +54,14 @@ function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileRes
     folders_changed: false,
     collections_changed: false,
     runtime_file_changed: false,
-    overlay_refresh_triggered: false,
     thumbnail_roots: [],
     cleared_selection_paths: [],
     path_updates: [],
+    pending_runtime_effects: {
+      collections_dirty: false,
+      overlay_refresh: false,
+    },
+    warnings: [],
     collection_reference_impact: {
       affected_collection_count: 0,
       affected_collection_names: [],

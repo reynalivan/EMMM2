@@ -9,9 +9,11 @@ import type {
   WorkspaceExplorerNode,
   WorkspaceViewModel,
 } from '../types/workspace';
-import { useBulkToggle } from './useBulkModMutations';
+import { useBulkSafety, useBulkToggle } from './useBulkModMutations';
 
 const bulkToggleMods = vi.fn();
+const bulkSetModSafety = vi.fn();
+const notifyCommittedMutationSyncWarning = vi.fn();
 
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
 
@@ -19,6 +21,7 @@ vi.mock('../lib/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     bulkToggleMods: (...args: unknown[]) => bulkToggleMods(...args),
+    bulkSetModSafety: (...args: unknown[]) => bulkSetModSafety(...args),
   },
 }));
 
@@ -26,7 +29,13 @@ vi.mock('../stores/useToastStore', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   },
+}));
+
+vi.mock('../lib/committedMutationWarning', () => ({
+  notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
+    notifyCommittedMutationSyncWarning(...args),
 }));
 
 const capabilities: WorkspaceCapabilities = {
@@ -63,6 +72,9 @@ function createNode(path: string): WorkspaceExplorerNode {
     is_favorite: false,
     is_misplaced: false,
     is_safe: true,
+    is_safety_classified: true,
+    contains_safe_mods: true,
+    contains_unsafe_mods: false,
     metadata: null,
     category: null,
     conflict_group_id: null,
@@ -131,11 +143,11 @@ function createWorkspace(path: string): WorkspaceViewModel {
     },
     runtime: {
       game_id: 'game-1',
-      safe_mode: false,
       source_state: {
         status: 'available',
         message: null,
       },
+      recovery_status: 'ready',
     },
   };
 }
@@ -173,7 +185,6 @@ describe('useBulkToggle', () => {
         sort_by: null,
         status_filter: null,
       },
-      false,
       'ALBEDO',
       'ALBEDO',
       oldPath,
@@ -212,5 +223,103 @@ describe('useBulkToggle', () => {
     });
     expect(useAppStore.getState().gridSelection.has(rewrittenPath)).toBe(true);
     expect(useAppStore.getState().gridSelection.has('E:\\Mods\\ALBEDO\\Variant')).toBe(false);
+  });
+
+  it('publishes collection impact in the same terminal refresh', async () => {
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    bulkToggleMods.mockResolvedValue({
+      success: ['E:/Mods/ALBEDO/DISABLED Variant'],
+      failures: [],
+      collection_impact: {
+        affected_collection_count: 1,
+        affected_collection_names: ['Loadout'],
+        rewritten_paths: ['E:/Mods/ALBEDO/Variant'],
+        missing_paths: [],
+      },
+      path_rewrites: [],
+    });
+
+    const { result } = renderHook(() => useBulkToggle(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        gameId: 'game-1',
+        paths: ['E:/Mods/ALBEDO/Variant'],
+        enable: false,
+      });
+    });
+
+    expect(
+      invalidate.mock.calls.filter(
+        ([request]) =>
+          request !== undefined &&
+          JSON.stringify(request.queryKey) === JSON.stringify(['v2-collections']),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('refreshes committed bulk changes before presenting projection lag', async () => {
+    bulkToggleMods.mockResolvedValue({
+      success: ['E:/Mods/ALBEDO/DISABLED Variant'],
+      failures: [],
+      collection_impact: {
+        affected_collection_count: 0,
+        affected_collection_names: [],
+        rewritten_paths: [],
+        missing_paths: [],
+      },
+      path_rewrites: [],
+      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useBulkToggle(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        gameId: 'game-1',
+        paths: ['E:/Mods/ALBEDO/Variant'],
+        enable: false,
+      });
+    });
+
+    expect(invalidate).toHaveBeenCalled();
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_warning: expect.any(Object) }),
+    );
+  });
+});
+
+describe('useBulkSafety', () => {
+  it('refreshes collection filters when safety changes', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    bulkSetModSafety.mockResolvedValue({ success: ['E:/Mods/A'], failures: [] });
+    const { result } = renderHook(() => useBulkSafety(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        gameId: 'game-1',
+        paths: ['E:/Mods/A'],
+        safe: false,
+      });
+    });
+
+    expect(bulkSetModSafety).toHaveBeenCalledWith('game-1', ['E:/Mods/A'], false);
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['v2-collections'],
+      refetchType: 'active',
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['v2-collection-runtime'],
+      refetchType: 'active',
+    });
   });
 });

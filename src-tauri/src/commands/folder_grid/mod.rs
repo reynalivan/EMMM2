@@ -1,7 +1,7 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::fs_utils::guard::validate_path;
+use crate::services::scanner::watcher::WatcherState;
 
 #[cfg(test)]
 #[path = "tests/mod_tests.rs"]
@@ -16,20 +16,8 @@ mod tests;
 pub async fn get_mod_thumbnail(
     game_id: String,
     folder_path: String,
-    config: tauri::State<'_, ConfigService>,
 ) -> Result<Option<String>, AppError> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
-    // Fortify Safe Mode: Do not serve thumbnails for unsafe mods if Safe Mode is locked (enabled)
-    if config.current_corridor().is_safe() {
-        let analysis = crate::services::explorer::helpers::analyze_mod_metadata(
-            std::path::Path::new(&folder_path),
-            None,
-        );
-        if !analysis.is_safe {
-            return Ok(None);
-        }
-    }
-
     ThumbnailCache::resolve(&game_id, &folder_path).await
 }
 
@@ -41,39 +29,33 @@ pub async fn delete_mod_thumbnail(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     watcher: tauri::State<'_, WatcherState>,
+    op_lock: tauri::State<'_, crate::services::fs_utils::operation_lock::OperationLock>,
+    game_id: String,
     folder_path: String,
 ) -> Result<(), AppError> {
     use crate::services::images::thumbnail_cache::ThumbnailCache;
     use crate::services::scanner::core::thumbnail::find_thumbnail;
 
-    let path = std::path::Path::new(&folder_path);
-    if !path.exists() {
-        return Err(AppError::NotFound("Folder does not exist".to_string()));
-    }
+    let path = validate_path(&config, &game_id, &folder_path)?;
+    let preflight_paths = [path.to_string_lossy().to_string()];
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&preflight_paths),
+    )
+    .await?;
 
-    let settings = config.get_settings();
-    let game_id = settings
-        .games
-        .iter()
-        .find(|game| path.starts_with(&game.mod_path))
-        .map(|game| game.id.clone())
-        .ok_or_else(|| {
-            AppError::Security("Folder is outside every configured mods_path".to_string())
-        })?;
-
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
-    let mut changed_paths: Vec<String> = Vec::new();
-    if let Some(thumb_path) = find_thumbnail(path) {
+    let lock = op_lock.acquire().await?;
+    let guard = watcher.suppressor.suppress_paths([path.as_ref()]);
+    if let Some(thumb_path) = find_thumbnail(&path) {
         crate::services::fs_utils::recycle_bin::move_path_to_recycle_bin(&thumb_path)?;
         ThumbnailCache::invalidate(&thumb_path);
-        changed_paths.push(thumb_path.to_string_lossy().to_string());
     }
 
     // Always invalidate the folder-keyed cache entry regardless of whether a file was found.
     ThumbnailCache::invalidate_folder(&folder_path);
-    if changed_paths.is_empty() {
-        changed_paths.push(folder_path.clone());
-    }
-
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, changed_paths).await
+    drop(lock);
+    drop(guard);
+    Ok(())
 }

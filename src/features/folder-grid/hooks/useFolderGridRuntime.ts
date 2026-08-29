@@ -4,6 +4,8 @@ import { sortFolders } from '../../../hooks/folderCache';
 import { useWorkspaceViewModel } from '../../workspace-runtime/useWorkspaceViewModel';
 import { useFolderGridLayout } from './useFolderGridLayout';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
+import { useAppStore } from '../../../stores/useAppStore';
+import { filterFoldersBySafety } from './safetyFilter';
 
 interface UseFolderGridRuntimeOptions {
   viewMode: 'grid' | 'list';
@@ -25,6 +27,7 @@ export function useFolderGridRuntime({
   explorerSearchQuery,
 }: UseFolderGridRuntimeOptions) {
   const { isMobile } = useResponsive();
+  const safetyFilter = useAppStore((state) => state.safetyFilter);
   const parentRef = useRef<HTMLDivElement>(null);
   const { data: workspace, isLoading, isError, error, isPlaceholderData } = useWorkspaceViewModel();
 
@@ -34,13 +37,14 @@ export function useFolderGridRuntime({
     [rawResponse?.children],
   );
   const filteredFolders = useMemo(() => {
+    const safetyFiltered = filterFoldersBySafety(rawFolders, safetyFilter);
     if (!explorerSearchQuery) {
-      return rawFolders;
+      return safetyFiltered;
     }
 
     const query = explorerSearchQuery.toLowerCase();
-    return rawFolders.filter((folder) => folder.name.toLowerCase().includes(query));
-  }, [explorerSearchQuery, rawFolders]);
+    return safetyFiltered.filter((folder) => folder.name.toLowerCase().includes(query));
+  }, [explorerSearchQuery, rawFolders, safetyFilter]);
   const sortedFolders = useMemo(
     () => sortFolders(filteredFolders, sortField, sortOrder),
     [filteredFolders, sortField, sortOrder],

@@ -3,7 +3,7 @@
  * Category/Sort/Status filtering is fully delegated to FilterPanel.
  */
 
-import { Search, RefreshCw, RotateCcw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-react';
+import { Search, RefreshCw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GameSchema, FilterDef, CategoryDef } from '../../../types/object';
@@ -20,7 +20,6 @@ interface ToolbarProps {
   onSortChange: (val: 'name' | 'date' | 'rarity') => void;
   isSyncing: boolean;
   onSync: () => void;
-  onRefresh: () => void;
   onCreateNew: () => void;
   /** Per-category filters for FilterPanel */
   categoryFilters: FilterDef[];
@@ -46,7 +45,7 @@ interface ToolbarProps {
     onDisable: () => void;
     onAddTags: () => void;
     onRemoveTags: () => void;
-    onAutoRecognize: () => void;
+    onClassifyMatch: () => void;
     onFavorite: (fav: boolean) => void;
     onMarkSafe: (safe: boolean) => void;
     onClear: () => void;
@@ -63,7 +62,6 @@ export default function ObjectListToolbar({
   onSortChange,
   isSyncing,
   onSync,
-  onRefresh,
   onCreateNew,
   categoryFilters,
   activeFilters,
@@ -158,13 +156,6 @@ export default function ObjectListToolbar({
               </button>
             )}
 
-            <button
-              className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
-              onClick={onRefresh}
-              title={t('toolbar.refresh_list')}
-            >
-              <RotateCcw size={15} />
-            </button>
             <button
               className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
               onClick={onSync}

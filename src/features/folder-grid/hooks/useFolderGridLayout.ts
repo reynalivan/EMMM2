@@ -1,12 +1,12 @@
 /**
  * useFolderGridLayout — Virtualization, layout math, and scroll persistence.
  *
- * Extracted from useFolderGrid to keep the orchestrator under 350 lines.
+ * Extracted from useFolderGrid to keep the orchestrator cohesive.
  */
 
 'use no memo';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 // Grid layout constants
@@ -24,6 +24,23 @@ interface FolderGridLayoutOptions {
   itemCount: number;
 }
 
+export function calculateFolderGridLayout(
+  containerWidth: number,
+  isGridView: boolean,
+  itemCount: number,
+) {
+  const width = Math.max(0, Math.floor(containerWidth));
+  const columnCount = isGridView ? Math.max(1, Math.floor((width + GAP) / (CARD_MIN_W + GAP))) : 1;
+  const cardWidth = isGridView ? Math.floor((width - GAP * (columnCount - 1)) / columnCount) : 0;
+  const cardHeight = isGridView ? Math.round(cardWidth) + CARD_INFO_H : 0;
+  return {
+    columnCount,
+    cardWidth,
+    cardHeight,
+    rowCount: isGridView ? Math.ceil(itemCount / columnCount) : itemCount,
+  };
+}
+
 export function useFolderGridLayout({
   parentRef,
   explorerSubPath,
@@ -32,25 +49,24 @@ export function useFolderGridLayout({
   isGridView,
   itemCount,
 }: FolderGridLayoutOptions) {
-  const [containerWidth, setContainerWidth] = useState(800);
+  const [containerWidth, setContainerWidth] = useState(0);
 
   // ── Grid dimension math ───────────────────────────────────────────────────
-  const columnCount = isGridView
-    ? Math.max(1, Math.floor((containerWidth + GAP) / (CARD_MIN_W + GAP)))
-    : 1;
-  const cardWidth = isGridView
-    ? Math.floor((containerWidth - GAP * (columnCount - 1)) / columnCount)
-    : 0;
-  // Actual image container uses aspect-square (1:1), so height equals cardWidth
-  const cardHeight = isGridView ? Math.round(cardWidth) + CARD_INFO_H : 0;
-  const rowCount = isGridView ? Math.ceil(itemCount / columnCount) : itemCount;
+  const { columnCount, cardWidth, cardHeight, rowCount } = calculateFolderGridLayout(
+    containerWidth,
+    isGridView,
+    itemCount,
+  );
 
   // ── ResizeObserver ────────────────────────────────────────────────────────
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = parentRef.current;
     if (!el) return;
+    setContainerWidth(el.clientWidth);
     const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) setContainerWidth(entry.contentRect.width);
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -72,8 +88,9 @@ export function useFolderGridLayout({
   });
 
   // Force virtualizer to recalculate when row height changes to prevent tearing/overlaps
-  useEffect(() => {
-    rowVirtualizer.measure();
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => rowVirtualizer.measure());
+    return () => cancelAnimationFrame(frame);
   }, [cardHeight, isGridView, rowVirtualizer]);
 
   const scrollToIndex = useCallback(

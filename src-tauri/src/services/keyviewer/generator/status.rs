@@ -12,7 +12,6 @@ const MAX_STATUS_BYTES: usize = 4096;
 /// Status banner fields for `runtime_status.txt`.
 #[derive(Debug, Clone, Default)]
 pub struct StatusFields {
-    pub safe_mode: bool,
     pub preset_name: Option<String>,
     pub folder_name: Option<String>,
     pub scope_name: Option<String>,

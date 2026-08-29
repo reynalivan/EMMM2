@@ -11,7 +11,6 @@ async fn workspace_view_model_uses_flat_root_as_preview_target() {
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_workspace")
             },
             selected_object_folder_path: Some(object_folder.clone()),
@@ -112,7 +111,6 @@ async fn workspace_view_model_collapses_nested_selected_path_under_flat_root() {
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_workspace")
             },
             selected_object_folder_path: Some(object_folder.clone()),
@@ -190,7 +188,6 @@ async fn workspace_view_model_marks_disabled_ancestor_children_as_inactive_branc
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_workspace")
             },
             selected_object_folder_path: Some(object_folder.clone()),

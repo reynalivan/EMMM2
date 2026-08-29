@@ -17,16 +17,28 @@ describe('buildRuntimeMutationDescriptor', () => {
 
   it('deduplicates merged events when combining mutation classes', () => {
     const descriptor = buildRuntimeMutationDescriptor([
-      'workspaceCorridor',
+      'workspaceRuntime',
       'dashboardKeybindings',
-      'workspaceCorridor',
+      'workspaceRuntime',
     ]);
 
     expect(descriptor.refreshEvents).toEqual([
       'workspaceChanged',
-      'corridorChanged',
+      'runtimeStateChanged',
       'dashboardChanged',
       'activeKeybindingsChanged',
+    ]);
+  });
+
+  it('refreshes every safety-dependent view after classification changes', () => {
+    const descriptor = buildRuntimeMutationDescriptor('safetyClassification');
+
+    expect(descriptor.refreshEvents).toEqual([
+      'workspaceChanged',
+      'folderMetadataChanged',
+      'runtimeStateChanged',
+      'collectionsChanged',
+      'previewChanged',
     ]);
   });
 });

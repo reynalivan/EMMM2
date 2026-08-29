@@ -72,8 +72,6 @@
   "toast": {
     "save_success": "设置已成功保存。",
     "save_failed": "保存设置失败：{{error}}",
-    "pin_success": "Safe Mode PIN 已成功更新。",
-    "pin_failed": "更新 PIN 失败：{{error}}",
     "ai_failed": "更新 AI 配置失败：{{error}}",
     "theme_success": "主题已成功更新。",
     "theme_failed": "更新主题失败：{{error}}",
@@ -88,12 +86,9 @@
     "active": "激活",
     "actions": {
       "set_active": "设为激活",
-      "rescan": "重新扫描库",
+      "scan_ready_to_move": "打开模组收件箱",
       "edit": "编辑游戏",
-      "remove": "移除游戏",
-      "scanning": "正在扫描 {{name}} 的库...",
-      "scan_success": "扫描完成！找到 {{new}} 个新 mod 和 {{updated}} 个更新。",
-      "scan_failed": "扫描失败：{{error}}"
+      "remove": "移除游戏"
     },
     "delete_confirm": "您确定要移除此游戏配置吗？",
     "types": {
@@ -112,6 +107,9 @@
       "path_label": "Mod 文件夹路径",
       "path_placeholder": "C:/Games/Genshin Impact/Mods",
       "path_help": "选择存储 Mod 的文件夹。",
+      "ready_to_move_label": "模组收件箱（可选）",
+      "ready_to_move_placeholder": "默认：Downloads/mods/<游戏名称>",
+      "ready_to_move_help": "放在此处的文件夹和压缩包会显示在模组收件箱页面中。",
       "exe_label": "游戏可执行文件 (.exe)",
       "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
       "advanced_title": "高级选项",
@@ -133,6 +131,7 @@
         "pick_folder_error": "选择文件夹失败",
         "pick_file_error": "选择文件失败",
         "pick_folder_title": "选择 Mod 文件夹",
+        "pick_ready_to_move_title": "选择模组收件箱",
         "pick_exe_title": "选择游戏可执行文件",
         "pick_loader_title": "选择加载器可执行文件"
       }
@@ -195,7 +194,6 @@
     "cooldown_desc": "防止意外的双重触发",
     "conflicts_title": "检测到按键冲突",
     "labels": {
-      "safe_mode": "安全模式 (紧急按键)",
       "next_preset": "切换到下一个预设",
       "prev_preset": "切换到上一个预设",
       "toggle_overlay": "切换显示层 (横幅 + 按键查看器)",
@@ -229,12 +227,6 @@
     "storage_title": "存储优化器",
     "storage_desc": "查找大型模组、重复文件和可清理项，避免占用过多磁盘空间。",
     "retention_title": "存储保留",
-    "trash_title": "回收站管理",
-    "trash_desc": "永久移除已删除的模组以释放磁盘空间。",
-    "empty_trash": "清空回收站",
-    "trash_confirm": "您确定要永久删除回收站中的所有项目吗？",
-    "trash_success": "回收站已清空：所有项目已删除。",
-    "trash_failed": "清空回收站失败：{{error}}",
     "system_title": "系统维护",
     "system_desc": "运行自动清理任务、验证数据库完整性并清理孤立元数据。",
     "run_maintenance": "运行维护",
@@ -271,28 +263,15 @@
     "sync_failed": "元数据同步失败：{{error}}"
   },
   "privacy": {
-    "title": "走廊与安全模式",
-    "desc": "安全模式 (Corridor) 从界面中隐藏敏感模组。如果已配置，退出安全模式需要进行 PIN 检查。",
-    "keywords_title": "隐藏关键字",
+    "title": "安全分类",
+    "desc": "Safe 和 Unsafe 仅用于模组与收藏集分类。关键词可帮助识别敏感模组，但不会切换当前运行状态。",
+    "keywords_title": "分类关键词",
     "keywords_placeholder": "例如：skin, lewd, bikini",
     "keywords_add": "添加关键字",
-    "keywords_empty": "尚未配置隐藏关键字。",
+    "keywords_empty": "尚未配置分类关键词。",
+    "keywords_remove": "移除 {{keyword}}",
     "keywords_exists": "关键字已存在",
-    "keywords_update_failed": "更新关键字失败：{{error}}",
-    "protection_title": "强制独占模式",
-    "protection_desc": "启用后，启动时将强制禁用不匹配当前走廊白名单的模组。",
-    "protection_update_failed": "更新保护失败：{{error}}",
-    "security_title": "PIN 与恢复",
-    "security_status_set": "PIN 保护已激活。",
-    "security_status_none": "未设置 PIN。切换不受保护。",
-    "security_recovery_configured": "恢复码已配置",
-    "security_remove": "移除 PIN",
-    "security_change": "更改 PIN",
-    "security_set": "设置 PIN",
-    "security_modal_set_title": "设置安全 PIN",
-    "security_modal_unlock_title": "解锁 PIN 保护",
-    "security_modal_set_desc": "创建 PIN 将保护切换和敏感设置。",
-    "security_modal_unlock_desc": "输入当前的 PIN 以继续。"
+    "keywords_update_failed": "更新关键字失败：{{error}}"
   },
   "logs": {
     "title": "系统日志",

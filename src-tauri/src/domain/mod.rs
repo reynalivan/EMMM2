@@ -1,13 +1,12 @@
 pub mod browser;
 pub mod collection;
 pub mod conflicts;
-pub mod corridor;
 pub mod dashboard;
 pub mod errors;
 pub mod mod_path;
 pub mod models;
 pub mod mods;
 pub mod objects;
-pub mod pin;
+pub mod runtime_state;
 pub mod task;
 pub mod workspace;

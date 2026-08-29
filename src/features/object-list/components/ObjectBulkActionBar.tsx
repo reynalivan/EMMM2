@@ -21,7 +21,7 @@ interface ObjectBulkActionBarProps {
   onDisable: () => void;
   onAddTags: () => void;
   onRemoveTags: () => void;
-  onAutoRecognize: () => void;
+  onClassifyMatch: () => void;
   onFavorite: (fav: boolean) => void;
   onMarkSafe: (safe: boolean) => void;
   onClear: () => void;
@@ -36,7 +36,7 @@ export default function ObjectBulkActionBar({
   onDisable,
   onAddTags,
   onRemoveTags,
-  onAutoRecognize,
+  onClassifyMatch,
   onFavorite,
   onMarkSafe,
   onClear,
@@ -75,8 +75,8 @@ export default function ObjectBulkActionBar({
         { icon: PowerOff, label: t('bulk.disable'), onClick: onDisable, className: 'text-warning' },
         {
           icon: Sparkles,
-          label: t('bulk.auto_recognize'),
-          onClick: onAutoRecognize,
+          label: t('bulk.classify_match'),
+          onClick: onClassifyMatch,
           className: 'text-info',
           dividerBefore: true,
         },

@@ -1,14 +1,55 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { useToastStore } from './useToastStore';
 import { useAppStore } from './useAppStore';
 
 // Snapshot the pristine state (defaults + actions) once, restore before each test.
 const initialState = useAppStore.getState();
 
 beforeEach(() => {
+  vi.clearAllMocks();
   useAppStore.setState(initialState, true);
+  useToastStore.setState({ toasts: [] });
 });
 
 describe('useAppStore smoke net', () => {
+  describe('startup recovery', () => {
+    it('captures source-unavailable recovery before publishing the active game', async () => {
+      vi.mocked(listen).mockImplementationOnce(async (_event, handler) => {
+        handler({
+          payload: {
+            game_id: 'genshin',
+            status: 'SourceUnavailable',
+            error_message: 'Mods drive is unavailable',
+            folder_conflicts: [],
+            rename_confirmations: [],
+          },
+        } as never);
+        return () => undefined;
+      });
+      vi.mocked(invoke).mockResolvedValueOnce({
+        active_game_id: 'genshin',
+        auto_close_launcher: false,
+      });
+
+      await useAppStore.getState().initStore();
+
+      const state = useAppStore.getState();
+      expect(state.activeGameId).toBe('genshin');
+      expect(state.diskReconcileByGame.genshin?.unavailable).toBe('Mods drive is unavailable');
+    });
+
+    it('shows a visible toast when startup recovery fails', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('startup disk scan failed'));
+
+      await useAppStore.getState().initStore();
+
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1]?.message).toContain('startup disk scan failed');
+    });
+  });
+
   describe('initial state', () => {
     it('has the expected defaults per domain', () => {
       const s = useAppStore.getState();
@@ -24,6 +65,7 @@ describe('useAppStore smoke net', () => {
       expect(s.leftPanelWidth).toBe(260);
       expect(s.rightPanelWidth).toBe(320);
       expect(s.activePane).toBe('objectList');
+      expect(s.safetyFilter).toBe('all');
     });
   });
 
@@ -33,6 +75,12 @@ describe('useAppStore smoke net', () => {
       useAppStore.getState().setCurrentPath(['Mods', 'Diluc']);
       expect(useAppStore.getState().workspaceView).toBe('collections');
       expect(useAppStore.getState().currentPath).toEqual(['Mods', 'Diluc']);
+    });
+
+    it('supports Mod Inbox as a workspace view', () => {
+      useAppStore.getState().setWorkspaceView('mod-inbox');
+
+      expect(useAppStore.getState().workspaceView).toBe('mod-inbox');
     });
 
     it('selecting an object folder auto-navigates mobile pane to grid, deselecting back to sidebar', () => {
@@ -98,6 +146,21 @@ describe('useAppStore smoke net', () => {
   });
 
   describe('game switching', () => {
+    it('does not publish the new game before the backend resets its recovery gate', async () => {
+      let releaseBackend!: () => void;
+      const backendReady = new Promise<void>((resolve) => {
+        releaseBackend = resolve;
+      });
+      vi.mocked(invoke).mockReturnValueOnce(backendReady.then(() => null));
+
+      const switching = useAppStore.getState().setActiveGameId('genshin');
+      expect(useAppStore.getState().activeGameId).toBeNull();
+
+      releaseBackend();
+      await switching;
+      expect(useAppStore.getState().activeGameId).toBe('genshin');
+    });
+
     it('setActiveGameId resets selection, sidebar and explorer navigation state', async () => {
       useAppStore.setState({
         selectedObjectType: 'Character',
@@ -132,6 +195,18 @@ describe('useAppStore smoke net', () => {
       // Current behavior: these survive a game switch.
       expect(s.workspaceView).toBe('mods');
       expect(s.explorerScrollOffset).toBe(120);
+    });
+  });
+
+  describe('persisted behavior settings', () => {
+    it('rolls back the optimistic auto-close value when persistence fails', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('settings write failed'));
+
+      await useAppStore.getState().setAutoCloseLauncher(true);
+
+      expect(useAppStore.getState().autoCloseLauncher).toBe(false);
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1]?.message).toContain('settings write failed');
     });
   });
 
@@ -190,6 +265,7 @@ describe('useAppStore smoke net', () => {
         at: 0,
         pending: false,
         unavailable: 'gone',
+        progress: null,
       });
 
       useAppStore.getState().setDiskReconcileTimestamp('g1', 1234);
@@ -197,6 +273,7 @@ describe('useAppStore smoke net', () => {
         at: 1234,
         pending: false,
         unavailable: null,
+        progress: null,
       });
     });
   });
@@ -212,6 +289,12 @@ describe('useAppStore smoke net', () => {
       expect(s.sortOrder).toBe('desc');
       expect(s.viewMode).toBe('list');
       expect(s.explorerSearchQuery).toBe('abc');
+    });
+
+    it('updates the shared safety filter', () => {
+      useAppStore.getState().setSafetyFilter('unsafe');
+
+      expect(useAppStore.getState().safetyFilter).toBe('unsafe');
     });
   });
 });

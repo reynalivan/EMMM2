@@ -12,9 +12,12 @@ export type BulkSuccessActionKey =
   | 'favorited'
   | 'unfavorited'
   | 'pinned'
-  | 'unpinned';
+  | 'unpinned'
+  | 'marked_safe'
+  | 'marked_unsafe';
 
-export type BulkFailureActionKey = 'toggle' | 'delete' | 'update' | 'favorite' | 'pin' | 'import';
+export type BulkFailureActionKey =
+  'toggle' | 'delete' | 'update' | 'favorite' | 'pin' | 'import' | 'safety';
 
 export const BULK_TOAST_PREVIEW_LIMIT = 4;
 
@@ -50,10 +53,7 @@ export function truncateNameList(names: string[], more: (extra: number) => strin
  * Success toast for a finished bulk batch: only the first few paths are named,
  * the rest collapse into a counter.
  */
-export function formatBulkSuccessMessage(
-  paths: string[],
-  actionKey: BulkSuccessActionKey,
-): string {
+export function formatBulkSuccessMessage(paths: string[], actionKey: BulkSuccessActionKey): string {
   const count = paths.length;
   if (count === 0) return '';
 

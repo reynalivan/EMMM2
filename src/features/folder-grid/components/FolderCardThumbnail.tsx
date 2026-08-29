@@ -128,23 +128,23 @@ export default function FolderCardThumbnail({
         </div>
       )}
 
-      {hasConflict && (
+      {hasNamingConflict && (
+        <div
+          className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm"
+          title={t('card.name_conflict_title')}
+        >
+          <AlertTriangle size={10} />
+          <span className="text-[9px] font-bold">{t('card.name_conflict')}</span>
+        </div>
+      )}
+
+      {hasConflict && !hasNamingConflict && (
         <div
           className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm"
           title={t('card.hash_conflict_title')}
         >
           <Copy size={10} />
           <span className="text-[9px] font-bold">{t('card.conflict')}</span>
-        </div>
-      )}
-
-      {hasNamingConflict && !hasConflict && (
-        <div
-          className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm animate-pulse"
-          title={t('card.name_conflict_title')}
-        >
-          <AlertTriangle size={10} />
-          <span className="text-[9px] font-bold">{t('card.name_conflict')}</span>
         </div>
       )}
 

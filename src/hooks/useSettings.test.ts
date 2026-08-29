@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { useSettings } from './useSettings';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { useToastStore } from '../stores/useToastStore';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -33,6 +33,15 @@ describe('useSettings', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === 'save_settings') {
+        return {
+          settings: { ...(args as { settings: object }).settings, revision: 1 },
+          sync_warning: null,
+        };
+      }
+      return null;
+    });
     vi.mocked(useToastStore).mockReturnValue({
       addToast: mockAddToast,
       toasts: [],
@@ -46,7 +55,7 @@ describe('useSettings', () => {
         language: 'en',
         games: [],
         active_game_id: null,
-        safe_mode: { enabled: false, pin_hash: null, keywords: [], force_exclusive_mode: false },
+        safety: { keywords: [] },
         ai: { enabled: false, api_key: null, base_url: null },
       },
       isLoading: false,
@@ -62,7 +71,7 @@ describe('useSettings', () => {
           // @ts-expect-error options has mutationFn
           const res = await options.mutationFn(...args);
           // @ts-expect-error options has onSuccess
-          if (options.onSuccess) options.onSuccess(res, ...args);
+          if (options.onSuccess) await options.onSuccess(res, ...args);
           return res;
         },
       } as unknown as ReturnType<typeof useMutation>;
@@ -95,8 +104,6 @@ describe('useSettings', () => {
 
     // Test that the mutations were set up
     expect(result.current.saveSettingsAsync).toBeDefined();
-    expect(result.current.setPinAsync).toBeDefined();
-    expect(result.current.verifyPin).toBeDefined();
     expect(result.current.runMaintenance).toBeDefined();
 
     await result.current.saveSettingsAsync({ theme: 'dark' } as never);
@@ -117,6 +124,41 @@ describe('useSettings', () => {
         theme: 'onyx',
         language: 'en',
       }),
+    });
+  });
+
+  it('refreshes safety-dependent views when classification keywords change', async () => {
+    const queryClient = vi.mocked(useQueryClient)();
+    vi.mocked(queryClient.getQueryData).mockReturnValue({
+      theme: 'light',
+      language: 'en',
+      games: [],
+      active_game_id: null,
+      safety: { keywords: [] },
+      ai: { enabled: false, api_key: null, base_url: null },
+    });
+    const { result } = renderHook(() => useSettings());
+
+    await result.current.saveSettingsAsync({
+      theme: 'light',
+      language: 'en',
+      games: [],
+      active_game_id: null,
+      safety: { keywords: ['private'] },
+      ai: { enabled: false, api_key: null, base_url: null },
+    } as never);
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['workspace', 'mods'],
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['v2-collections'],
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['v2-collection-runtime'],
+      refetchType: 'active',
     });
   });
 });

@@ -50,6 +50,10 @@
   },
   "indexing": {
     "title": "正在索引您的模组...",
-    "subtitle": "请稍候，EMMM 正在扫描游戏文件夹。"
+    "subtitle": "请稍候，EMMM 正在扫描游戏文件夹。",
+    "preparing": "正在准备模组库…",
+    "progress_label": "索引进度",
+    "estimating": "正在估算剩余时间…",
+    "estimated_remaining": "预计还需 {{duration}}"
   }
 }

@@ -16,6 +16,7 @@ import {
   isWorkspaceObjectNode,
   togglePendingKey,
   type WorkspaceSwitchSurface,
+  type WorkspaceSwitchEffectsOptions,
 } from './workspaceSwitchOps';
 
 export type { WorkspaceSwitchSurface } from './workspaceSwitchOps';
@@ -35,6 +36,7 @@ export function useWorkspaceSwitchActions() {
       node: WorkspaceExplorerNode,
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
+      options?: WorkspaceSwitchEffectsOptions,
     ) => {
       if (!activeGame?.id) {
         return null;
@@ -75,8 +77,12 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
-        t('objects:toasts.reload_required', { key }),
+      await applyWorkspaceSwitchEffects(
+        queryClient,
+        result,
+        'folderSwitch',
+        (key) => t('objects:toasts.reload_required', { key }),
+        options,
       );
 
       return nextPath;
@@ -85,7 +91,12 @@ export function useWorkspaceSwitchActions() {
   );
 
   const setObjectNodeEnabled = useCallback(
-    async (node: WorkspaceObjectNode, desiredEnabled: boolean, surface: WorkspaceSwitchSurface) => {
+    async (
+      node: WorkspaceObjectNode,
+      desiredEnabled: boolean,
+      surface: WorkspaceSwitchSurface,
+      options?: WorkspaceSwitchEffectsOptions,
+    ) => {
       // Explicit object enable/disable stays in Workspace Switch.
       // This path must not rely on Disk Reconcile or mod-toggle semantics.
       if (!activeGame) {
@@ -108,8 +119,12 @@ export function useWorkspaceSwitchActions() {
       }
 
       const nextPath = result.primary_path;
-      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', (key) =>
-        t('objects:toasts.reload_required', { key }),
+      await applyWorkspaceSwitchEffects(
+        queryClient,
+        result,
+        'objectSwitch',
+        (key) => t('objects:toasts.reload_required', { key }),
+        options,
       );
       // A no-op switch changed nothing on disk — don't announce a change.
       if (result.status !== 'noop') {
@@ -126,16 +141,21 @@ export function useWorkspaceSwitchActions() {
   );
 
   const setNodeEnabled = useCallback(
-    async (node: WorkspaceNode, desiredEnabled: boolean, surface: WorkspaceSwitchSurface) => {
+    async (
+      node: WorkspaceNode,
+      desiredEnabled: boolean,
+      surface: WorkspaceSwitchSurface,
+      options?: WorkspaceSwitchEffectsOptions,
+    ) => {
       const pendingKey = buildNodePendingKey(node);
       markPending(pendingKey, true);
 
       try {
         if (isWorkspaceObjectNode(node)) {
-          return await setObjectNodeEnabled(node, desiredEnabled, surface);
+          return await setObjectNodeEnabled(node, desiredEnabled, surface, options);
         }
 
-        return await setExplorerNodeEnabled(node, desiredEnabled, surface);
+        return await setExplorerNodeEnabled(node, desiredEnabled, surface, options);
       } finally {
         markPending(pendingKey, false);
       }

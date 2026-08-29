@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{Executor, QueryBuilder, Sqlite, SqliteConnection, SqlitePool};
 
 /// Game configuration row stored in the `games` table.
 /// Uses the extended columns from migration 012.
@@ -10,6 +10,7 @@ pub struct GameRow {
     pub game_type: crate::domain::models::GameType,
     pub path: String,
     pub mods_path: Option<String>,
+    pub ready_to_move_path: Option<String>,
     pub game_exe: Option<String>,
     pub launcher_path: Option<String>,
     pub loader_exe: Option<String>,
@@ -21,7 +22,7 @@ pub struct GameRow {
 /// Get all configured games.
 pub async fn get_all_games(pool: &SqlitePool) -> Result<Vec<GameRow>, sqlx::Error> {
     let rows = sqlx::query_as::<_, GameRow>(
-        "SELECT id, name, game_type, path, mods_path, game_exe, launcher_path, loader_exe, launch_args FROM games ORDER BY name"
+        "SELECT id, name, game_type, path, mods_path, ready_to_move_path, game_exe, launcher_path, loader_exe, launch_args FROM games ORDER BY name"
     )
     .fetch_all(pool)
     .await?;
@@ -35,15 +36,19 @@ pub async fn get_all_games(pool: &SqlitePool) -> Result<Vec<GameRow>, sqlx::Erro
 /// **NEVER** use `INSERT OR REPLACE` here — SQLite implements that as
 /// DELETE + INSERT, which triggers `ON DELETE CASCADE` on `objects` and
 /// `mods` tables, permanently wiping all child rows.
-pub async fn upsert_game(pool: &SqlitePool, game: &GameRow) -> Result<(), sqlx::Error> {
+pub async fn upsert_game<'e, E>(executor: E, game: &GameRow) -> Result<(), sqlx::Error>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
     sqlx::query(
-        "INSERT INTO games (id, name, game_type, path, mods_path, game_exe, launcher_path, loader_exe, launch_args, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        "INSERT INTO games (id, name, game_type, path, mods_path, ready_to_move_path, game_exe, launcher_path, loader_exe, launch_args, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            game_type = excluded.game_type,
            path = excluded.path,
            mods_path = excluded.mods_path,
+           ready_to_move_path = excluded.ready_to_move_path,
            game_exe = excluded.game_exe,
            launcher_path = excluded.launcher_path,
            loader_exe = excluded.loader_exe,
@@ -54,12 +59,34 @@ pub async fn upsert_game(pool: &SqlitePool, game: &GameRow) -> Result<(), sqlx::
     .bind(game.game_type)
     .bind(&game.path)
     .bind(&game.mods_path)
+    .bind(&game.ready_to_move_path)
     .bind(&game.game_exe)
     .bind(&game.launcher_path)
     .bind(&game.loader_exe)
     .bind(&game.launch_args)
-    .execute(pool)
+    .execute(executor)
     .await?;
+    Ok(())
+}
+
+/// Delete only games explicitly removed from the previously loaded snapshot.
+pub async fn delete_games_by_ids(
+    connection: &mut SqliteConnection,
+    removed_ids: &[String],
+) -> Result<(), sqlx::Error> {
+    if removed_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new("DELETE FROM games WHERE id IN (");
+    {
+        let mut separated = query.separated(", ");
+        for id in removed_ids {
+            separated.push_bind(id);
+        }
+    }
+    query.push(")");
+    query.build().execute(connection).await?;
     Ok(())
 }
 
@@ -120,6 +147,16 @@ pub async fn get_mod_path(pool: &SqlitePool, game_id: &str) -> Result<Option<Str
     } else {
         Ok(None)
     }
+}
+
+pub async fn get_ready_to_move_config(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
+    sqlx::query_as("SELECT name, ready_to_move_path FROM games WHERE id = ?")
+        .bind(game_id)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn ensure_game_exists(

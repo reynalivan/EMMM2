@@ -55,7 +55,7 @@ export function DeleteCollectionModal({
         onClick={!isDeleting ? onCancel : undefined}
       >
         <button type="button" disabled={isDeleting}>
-          close
+          {t('common:actions.close', 'Close')}
         </button>
       </form>
     </dialog>

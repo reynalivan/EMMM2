@@ -5,7 +5,6 @@ use crate::domain::workspace::{
     WorkspaceRuntime, WorkspaceSelection, WorkspaceSourceState, WorkspaceSourceStatus,
     WorkspaceViewModel, WorkspaceViewModelInput,
 };
-use crate::services::explorer::helpers::apply_runtime_corridor_filter_to_response;
 use crate::services::explorer::listing::list_mod_folders_for_game;
 use crate::services::objects::query::get_filtered_objects_with_conflict_check;
 use crate::services::workspace_read_model::explorer_mapper::{
@@ -15,7 +14,7 @@ use crate::services::workspace_read_model::object_mapper::{
     map_workspace_objects, WorkspaceObjectMapping,
 };
 use crate::services::workspace_read_model::preview_builder::{
-    build_preview, clear_preview_selection_for_corridor_mismatch, empty_workspace_preview,
+    build_preview, clear_preview_selection_for_missing_path, empty_workspace_preview,
 };
 use crate::services::workspace_read_model::selection::{
     build_current_path, resolve_unavailable_workspace_selection, resolve_workspace_selection,
@@ -73,8 +72,18 @@ pub async fn get_workspace_view_model(
     pool: &sqlx::SqlitePool,
     input: WorkspaceViewModelInput,
 ) -> Result<WorkspaceViewModel, AppError> {
+    get_workspace_view_model_with_listing_mode(pool, input, false).await
+}
+
+/// A recovery pass already performs the authoritative deep disk traversal.
+/// For its duration, return a shallow directory view so opening Mods is not
+/// held hostage by classification and INI reads for every sibling.
+pub async fn get_workspace_view_model_with_listing_mode(
+    pool: &sqlx::SqlitePool,
+    input: WorkspaceViewModelInput,
+    shallow_listing: bool,
+) -> Result<WorkspaceViewModel, AppError> {
     let game_id = input.filter.game_id.clone();
-    let safe_mode = input.filter.safe_mode;
     let mods_path = load_game_mods_path(pool, &game_id).await?;
     let objects = get_filtered_objects_with_conflict_check(pool, &input.filter)
         .await?
@@ -99,17 +108,24 @@ pub async fn get_workspace_view_model(
             selection,
             runtime: WorkspaceRuntime {
                 game_id,
-                safe_mode,
                 source_state: unavailable_source_state(&mods_path),
+                recovery_status: crate::domain::workspace::WorkspaceRecoveryStatus::Ready,
             },
         });
     }
 
     let mut resolved_selection = resolve_workspace_selection(&mods_path, &input);
-    let root_listing = apply_runtime_corridor_filter_to_response(
-        list_mod_folders_for_game(pool, &game_id, mods_path.clone(), None).await?,
-        safe_mode,
-    );
+    let root_listing = if shallow_listing {
+        crate::services::explorer::listing::list_mod_folders_for_game_shallow(
+            pool,
+            &game_id,
+            mods_path.clone(),
+            None,
+        )
+        .await?
+    } else {
+        list_mod_folders_for_game(pool, &game_id, mods_path.clone(), None).await?
+    };
     let workspace_objects = map_workspace_objects(WorkspaceObjectMapping {
         objects,
         root_folders: &root_listing.children,
@@ -120,16 +136,24 @@ pub async fn get_workspace_view_model(
     let raw_explorer = if resolved_selection.explorer_sub_path.is_none() {
         root_listing
     } else {
-        apply_runtime_corridor_filter_to_response(
+        let listing = if shallow_listing {
+            crate::services::explorer::listing::list_mod_folders_for_game_shallow(
+                pool,
+                &game_id,
+                mods_path.clone(),
+                resolved_selection.explorer_sub_path.clone(),
+            )
+            .await?
+        } else {
             list_mod_folders_for_game(
                 pool,
                 &game_id,
                 mods_path.clone(),
                 resolved_selection.explorer_sub_path.clone(),
             )
-            .await?,
-            safe_mode,
-        )
+            .await?
+        };
+        listing
     };
     let explorer = map_workspace_explorer(raw_explorer);
     let preview = build_preview(
@@ -137,9 +161,8 @@ pub async fn get_workspace_view_model(
         resolved_selection.explorer_sub_path.as_deref(),
         &mods_path,
         resolved_selection.selected_mod_path.as_deref(),
-        safe_mode,
     );
-    clear_preview_selection_for_corridor_mismatch(&mut resolved_selection, &preview);
+    clear_preview_selection_for_missing_path(&mut resolved_selection, &preview);
     let selection = build_workspace_selection(&resolved_selection, preview.selected_path.clone());
 
     Ok(WorkspaceViewModel {
@@ -149,8 +172,8 @@ pub async fn get_workspace_view_model(
         selection,
         runtime: WorkspaceRuntime {
             game_id,
-            safe_mode,
             source_state: available_source_state(),
+            recovery_status: crate::domain::workspace::WorkspaceRecoveryStatus::Ready,
         },
     })
 }

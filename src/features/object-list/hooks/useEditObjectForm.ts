@@ -7,6 +7,7 @@ import { commands } from '../../../lib/bindings';
 import { useUpdateObject } from '../../../hooks/useObjectMutations';
 import {
   useDeleteModThumbnail,
+  useToggleModSafe,
   useUpdateModCategory,
   useUpdateModInfo,
   useUpdateModThumbnail,
@@ -69,6 +70,7 @@ export function useEditObjectForm(
   const updateThumbnail = useUpdateModThumbnail();
   const deleteThumbnail = useDeleteModThumbnail();
   const updateInfo = useUpdateModInfo();
+  const toggleSafety = useToggleModSafe();
 
   const isPending =
     updateObject.isPending ||
@@ -76,7 +78,8 @@ export function useEditObjectForm(
     updateCategory.isPending ||
     updateThumbnail.isPending ||
     deleteThumbnail.isPending ||
-    updateInfo.isPending;
+    updateInfo.isPending ||
+    toggleSafety.isPending;
 
   // Detect type
   const isFolder = object && 'path' in object;
@@ -136,7 +139,7 @@ export function useEditObjectForm(
 
     const defaultName = isFolder ? (object as ModFolder).name : (object as ObjectSummary).name;
     let defaultType = '';
-    let defaultSafe = true;
+    const defaultSafe = isFolder ? (object as ModFolder).is_safe : true;
     let defaultAutoSync: boolean;
     let defaultMeta: Record<string, unknown> = {};
     let defaultTags: string[] = [];
@@ -154,7 +157,6 @@ export function useEditObjectForm(
 
     if (fullDetails?.type === 'folder' && fullDetails.data) {
       const info = fullDetails.data as ModInfo;
-      defaultSafe = info.is_safe ?? true;
       defaultAutoSync = info.is_auto_sync ?? false;
       if (info.metadata) {
         defaultMeta = info.metadata as Record<string, unknown>;
@@ -308,15 +310,22 @@ export function useEditObjectForm(
           await deleteThumbnail.mutateAsync(currentPath);
         }
 
-        // 4. Update Info (Safe + Metadata + AutoSync)
+        // 4. Metadata and AutoSync. Safety has its own DB+disk operation.
         await updateInfo.mutateAsync({
           folderPath: currentPath,
           update: {
-            is_safe: data.is_safe,
             is_auto_sync: data.is_auto_sync,
             metadata: metaStrings,
           },
         });
+        if (data.is_safe !== folder.is_safe) {
+          if (!activeGame?.id) throw new Error('No active game selected');
+          await toggleSafety.mutateAsync({
+            gameId: activeGame.id,
+            folderPath: currentPath,
+            safe: data.is_safe,
+          });
+        }
       }
       onClose();
     } catch (e) {

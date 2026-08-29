@@ -1,105 +1,84 @@
-//! Job listing, status transitions, and the manual review / cancel decisions.
+//! Browser import queue listing and bounded cleanup of legacy staging.
 
 use crate::domain::errors::BrowserError;
-use chrono::Utc;
 use sqlx::SqlitePool;
-use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
+use std::path::{Component, Path, PathBuf};
+use tauri::{AppHandle, Manager};
 
-use crate::repo::browser_repo::{self, ImportJobMatch as MatchResult};
+use crate::repo::browser_repo;
 
-use super::placement::place_mod;
-
-/// DTO returned to the frontend for import queue display. Defined in
-/// `repo::browser_repo`; re-exported so existing users keep compiling.
 pub use crate::domain::browser::ImportJobDto;
 
-/// Return all active (non-canceled) import jobs ordered by most recent first.
 pub async fn list_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, BrowserError> {
     Ok(browser_repo::list_active_jobs(db).await?)
 }
 
-/// Manual confirmation for a needs_review job.
-/// Sets game_id, category, object_id, then resumes pipeline (place step).
-pub async fn confirm_review(
+pub async fn cleanup_old_terminal_staging(
     db: &SqlitePool,
     app: &AppHandle,
+    limit: i64,
+) -> Result<usize, BrowserError> {
+    let candidates = browser_repo::list_terminal_staging_cleanup_candidates(db, limit).await?;
+    let staging_root = browser_staging_root(app)?;
+    let mut cleaned = 0;
+    for (job_id, staging_path) in candidates {
+        match remove_job_staging_dir(&staging_root, &job_id, Path::new(&staging_path)) {
+            Ok(()) => {
+                browser_repo::clear_staging_path(db, &job_id).await?;
+                cleaned += 1;
+            }
+            Err(error) => {
+                log::warn!("startup: skipped unsafe import staging cleanup for {job_id}: {error}");
+            }
+        }
+    }
+    Ok(cleaned)
+}
+
+fn browser_staging_root(app: &AppHandle) -> Result<PathBuf, BrowserError> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join("staging"))
+        .map_err(|error| {
+            BrowserError::Import(format!("app data directory is unavailable: {error}"))
+        })
+}
+
+fn remove_job_staging_dir(
+    staging_root: &Path,
     job_id: &str,
-    game_id: &str,
-    category: &str,
-    object_id: Option<&str>,
+    stored_archive_path: &Path,
 ) -> Result<(), BrowserError> {
-    browser_repo::apply_review_decision(db, job_id, game_id, category).await?;
-
-    // Resume placement
-    let archive_opt: Option<String> = browser_repo::require_staging_path(db, job_id).await?;
-
-    let archive = archive_opt.ok_or_else(|| BrowserError::JobIncomplete {
-        job_id: job_id.to_string(),
-        field: "staging_path".to_string(),
+    if !matches!(
+        Path::new(job_id)
+            .components()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [Component::Normal(_)]
+    ) {
+        return Err(BrowserError::Import(format!(
+            "invalid import job id for staging cleanup: '{job_id}'"
+        )));
+    }
+    let expected_dir = staging_root.join(job_id);
+    let stored_dir = stored_archive_path.parent().ok_or_else(|| {
+        BrowserError::Import(format!(
+            "staging path has no parent: {}",
+            stored_archive_path.display()
+        ))
     })?;
-
-    let extract_dir = PathBuf::from(&archive).parent().unwrap().join("extracted");
-
-    let mut match_result = load_job_match_result(db, job_id).await?;
-    match_result.category = Some(category.to_string());
-    if match_result.reason.is_none() {
-        match_result.reason = Some("User confirmed".to_string());
+    let expected_key =
+        crate::common::path_key::folder_path_key(expected_dir.to_string_lossy().as_ref(), None);
+    let stored_key =
+        crate::common::path_key::folder_path_key(stored_dir.to_string_lossy().as_ref(), None);
+    if expected_key != stored_key {
+        return Err(BrowserError::Import(format!(
+            "refusing to remove staging path outside its staging directory: {}",
+            stored_dir.display()
+        )));
     }
-    if match_result.confidence <= 0.0 {
-        match_result.confidence = 1.0;
+    if expected_dir.exists() {
+        std::fs::remove_dir_all(expected_dir)?;
     }
-
-    let mod_roots = super::pipeline::mod_roots_on_disk(&extract_dir);
-    place_mod(db, app, job_id, &mod_roots, &match_result, object_id).await
-}
-
-/// Cancel a job and clean up its staging folder.
-pub async fn cancel_job(db: &SqlitePool, job_id: &str) -> Result<(), BrowserError> {
-    let staging: Option<String> = browser_repo::get_staging_path(db, job_id)
-        .await
-        .ok()
-        .flatten();
-
-    if let Some(p) = staging {
-        let staging_dir = PathBuf::from(&p)
-            .parent()
-            .map(|d| d.to_path_buf())
-            .unwrap_or_default();
-        if staging_dir.exists() {
-            let _ = std::fs::remove_dir_all(&staging_dir);
-        }
-    }
-
-    Ok(browser_repo::mark_canceled(db, job_id).await?)
-}
-
-async fn load_job_match_result(db: &SqlitePool, job_id: &str) -> Result<MatchResult, BrowserError> {
-    Ok(browser_repo::load_match_result(db, job_id).await?)
-}
-
-pub(super) fn emit_status(
-    app: &AppHandle,
-    job_id: &str,
-    status: &str,
-    extra: Option<serde_json::Value>,
-) {
-    let mut payload = serde_json::json!({ "job_id": job_id, "status": status });
-    if let Some(serde_json::Value::Object(map)) = extra {
-        if let serde_json::Value::Object(ref mut p) = payload {
-            p.extend(map);
-        }
-    }
-    let _ = app.emit("import:job-update", payload);
-}
-
-pub(super) async fn set_job_status(
-    db: &SqlitePool,
-    job_id: &str,
-    status: &str,
-    error_msg: Option<&str>,
-) -> Result<(), BrowserError> {
-    let now = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-    browser_repo::set_status(db, job_id, status, error_msg, &now).await?;
     Ok(())
 }

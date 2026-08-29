@@ -13,8 +13,68 @@
       "ignore_failed": "Failed to ignore: {{error}}"
     }
   },
+  "conflict_manager": {
+    "title": "Folder name conflicts",
+    "description": "Rename or move each duplicate folder to Trash before the database can sync with disk.",
+    "banner": "{{count}} folder name conflict(s) need resolution. Other mods remain in sync.",
+    "resolve": "Resolve",
+    "progress": "Conflict {{current}} of {{total}}",
+    "queue_progress": "{{resolved}} resolved · {{remaining}} remaining ({{total}} total)",
+    "complete_title": "All conflicts resolved",
+    "complete_summary": "{{resolved}} of {{total}} conflicts resolved",
+    "complete_description": "The Mods folder and database are synchronized with the latest disk state.",
+    "groups": "Conflict groups",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "base_name": "Base name",
+    "new_base_name": "New base name",
+    "action": "Action",
+    "keep_badge": "Keep",
+    "rename_badge": "Rename",
+    "keep_current_name": "Keep current name",
+    "keep_instead": "Keep this name instead",
+    "keep_action_label": "Keep current name for {{path}}",
+    "rename_folder": "Rename folder",
+    "no_filesystem_changes": "No filesystem changes",
+    "action_plan": "Actions for this conflict",
+    "apply_renames_one": "Rename {{count}} folder & Next",
+    "apply_renames_other": "Rename {{count}} folders & Next",
+    "file_count_one": "{{count}} file",
+    "file_count_other": "{{count}} files",
+    "loading": "Loading folder details...",
+    "details_unavailable": "Folder details unavailable",
+    "prefix_note": "Enabled/disabled prefixes are preserved automatically.",
+    "read_only_until_resolved": "This folder cannot be opened or changed until the naming conflict is resolved.",
+    "resolve_selected": "Resolve selected conflict",
+    "open_folder": "Open folder",
+    "move_to_trash": "Move to Trash",
+    "trash_action": "Move “{{name}}” to Trash",
+    "trash_action_label": "Move “{{name}}” to Trash — {{path}}",
+    "trash_continue": "Move “{{name}}” to Trash & Continue",
+    "trash_title": "Move folder to Trash?",
+    "trash_confirm": "Move “{{name}}” to Trash? You can restore it later.",
+    "trash_metadata_one": "{{size}} · {{count}} file",
+    "trash_metadata_other": "{{size}} · {{count}} files",
+    "cancel": "Cancel",
+    "close": "Close",
+    "resolved": "Folder conflict resolved.",
+    "trashed": "Folder moved to Trash.",
+    "details_failed": "Could not load folder details: {{error}}",
+    "retry": "Retry",
+    "partial_details": "Some folder details could not be read.",
+    "resolve_failed": "Could not resolve conflict: {{error}}",
+    "trash_failed": "Could not move folder to Trash: {{error}}",
+    "validation": {
+      "empty": "Enter a name without leading or trailing spaces.",
+      "invalid": "This name contains characters reserved by Windows.",
+      "reserved": "This device name is reserved by Windows.",
+      "disabled_prefix": "Enter only the base name; the DISABLED prefix is preserved automatically.",
+      "duplicate": "Each candidate needs a unique final name."
+    }
+  },
   "move": {
     "title": "Move to Object",
+    "match_suggestion": "Folder-name evidence suggests {{name}}. Review before moving.",
     "label": "Object",
     "placeholder": "Search objects...",
     "no_results": "No objects found",
@@ -22,27 +82,11 @@
     "location_label": "Location",
     "select_object_first": "Select an object first",
     "loading_targets": "Loading folders...",
-    "status_label": "Set Status",
-    "status": {
-      "keep": "Keep",
-      "disabled": "Disabled",
-      "only-enable": "Only Enable"
-    },
+    "disable_after_move": "Set moved mods to Disabled",
     "toast": {
       "success": "Moved to {{name}}",
       "failed": "Failed to move: {{error}}"
     }
-  },
-  "resolution": {
-    "title": "Name Conflict Detected",
-    "description": "Both an enabled and disabled version of {{name}} exist in the same directory. Compare them and choose what to keep.",
-    "loading": "Loading folder details...",
-    "enabled_label": "Enabled Version",
-    "disabled_label": "Disabled Version",
-    "file_count_one": "{{count}} file",
-    "file_count_other": "{{count}} files",
-    "more_files_one": "+{{count}} more file",
-    "more_files_other": "+{{count}} more files"
   },
   "breadcrumbs": {
     "root": "ROOT"
@@ -84,5 +128,34 @@
     "revoke_title": "Revoke ignored conflict",
     "revoke": "Revoke",
     "note": "Revoking a rule makes this object eligible for conflict warnings again."
+  },
+  "rename_confirmation": {
+    "title": "Review External Folder Changes",
+    "description": "The app found possible renames without enough identity evidence. Review every group so collections are not rewritten by guesswork.",
+    "banner_one": "{{count}} external rename needs review.",
+    "banner_other": "{{count}} external renames need review.",
+    "review": "Review",
+    "reviewed": "Reviewed",
+    "groups": "Rename groups",
+    "progress": "{{completed}} of {{total}} reviewed",
+    "kind": { "Object": "Object folder", "Mod": "Mod folder" },
+    "reason": {
+      "MissingIdentity": "Filesystem identity was unavailable, so the app cannot prove whether this is a rename or separate delete and add.",
+      "AmbiguousIdentity": "More than one folder shares the stored identity. Select the exact previous and current path."
+    },
+    "choose_action": "What happened on disk?",
+    "rename_action": "This folder was renamed or moved",
+    "rename_help": "Preserve the logical mod and rewrite its collection references to the current path.",
+    "separate_action": "These are separate delete and add changes",
+    "separate_help": "Keep the old collection member as missing and import the current folder as a new item.",
+    "previous_path": "Previous path",
+    "current_path": "Current path",
+    "open_folder": "Open current folder",
+    "ready": "All groups are ready to apply.",
+    "review_all": "Choose an action for every group.",
+    "apply": "Apply all decisions",
+    "resolved": "External folder changes reconciled.",
+    "resolve_failed": "Failed to reconcile external folder changes: {{error}}",
+    "close": "Close"
   }
 }

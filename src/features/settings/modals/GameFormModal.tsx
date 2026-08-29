@@ -1,5 +1,5 @@
 import { useDialogSync } from '../../../hooks/useDialogSync';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -10,6 +10,7 @@ import type { TFunction } from 'i18next';
 import type { GameConfig } from '../../../hooks/useSettings';
 import { GameType } from '../../../types/game';
 import { pathsEqual } from '../../../lib/pathKey';
+import { formatAppError } from '../../../lib/appError';
 
 function getGameSchema(t: TFunction) {
   return z.object({
@@ -20,6 +21,7 @@ function getGameSchema(t: TFunction) {
       .string()
       .min(1, t('games.form.validation.path_required'))
       .refine((value) => !/[?*<>|]/.test(value), t('games.form.validation.path_invalid')),
+    ready_to_move_path: z.string().nullable().optional(),
     game_exe: z.string().min(1, t('games.form.validation.exe_required')),
     loader_exe: z.string().nullable().optional(), // Can be empty
     launch_args: z.string().nullable().optional(),
@@ -31,7 +33,7 @@ type GameFormData = z.infer<ReturnType<typeof getGameSchema>>;
 interface GameFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (game: GameConfig) => void;
+  onSave: (game: GameConfig) => Promise<boolean>;
   initialData?: GameConfig | null;
   existingModPaths: string[];
 }
@@ -58,10 +60,12 @@ export default function GameFormModal({
       game_type: GameType.GIMI,
       loader_exe: '',
       launch_args: '',
+      ready_to_move_path: '',
     },
   });
 
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useDialogSync(dialogRef, isOpen);
 
@@ -74,12 +78,14 @@ export default function GameFormModal({
 
   useEffect(() => {
     if (isOpen) {
+      setSubmitError(null);
       if (initialData) {
         reset({
           id: initialData.id,
           name: initialData.name,
           game_type: initialData.game_type as GameType,
           mod_path: initialData.mod_path,
+          ready_to_move_path: initialData.ready_to_move_path || '',
           game_exe: initialData.game_exe,
           loader_exe: initialData.loader_exe || '',
           launch_args: initialData.launch_args || '',
@@ -90,6 +96,7 @@ export default function GameFormModal({
           name: '',
           game_type: GameType.GIMI,
           mod_path: '',
+          ready_to_move_path: '',
           game_exe: '',
           loader_exe: '',
           launch_args: '',
@@ -98,29 +105,38 @@ export default function GameFormModal({
     }
   }, [isOpen, initialData, reset]);
 
-  const onSubmit = (data: GameFormData) => {
+  const onSubmit = async (data: GameFormData) => {
     const gameConfig: GameConfig = {
       id: data.id || crypto.randomUUID(),
       name: data.name,
       game_type: data.game_type,
       mod_path: data.mod_path,
+      ready_to_move_path: data.ready_to_move_path || null,
       game_exe: data.game_exe,
       loader_exe: data.loader_exe || null,
       launch_args: data.launch_args || null,
     };
-    onSave(gameConfig);
-    onClose();
+    setSubmitError(null);
+    try {
+      if (await onSave(gameConfig)) onClose();
+    } catch (error) {
+      setSubmitError(formatAppError(error));
+    }
   };
 
-  const pickFolder = async () => {
+  const pickFolder = async (field: 'mod_path' | 'ready_to_move_path') => {
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: t('games.form.validation.pick_folder_title'),
+        title: t(
+          field === 'mod_path'
+            ? 'games.form.validation.pick_folder_title'
+            : 'games.form.validation.pick_ready_to_move_title',
+        ),
       });
       if (selected && typeof selected === 'string') {
-        setValue('mod_path', selected, { shouldValidate: true });
+        setValue(field, selected, { shouldValidate: true });
       }
     } catch (err) {
       console.error(t('games.form.validation.pick_folder_error'), err);
@@ -206,7 +222,11 @@ export default function GameFormModal({
                 placeholder={t('games.form.path_placeholder')}
                 {...modPathField}
               />
-              <button type="button" onClick={pickFolder} className="btn btn-primary join-item">
+              <button
+                type="button"
+                onClick={() => void pickFolder('mod_path')}
+                className="btn btn-primary join-item"
+              >
                 <FolderOpen size={18} />
               </button>
             </div>
@@ -215,6 +235,30 @@ export default function GameFormModal({
             )}
             <div className="text-xs text-base-content/50 mt-1 ml-1">
               {t('games.form.path_help')}
+            </div>
+          </div>
+
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text font-medium">{t('games.form.ready_to_move_label')}</span>
+            </label>
+            <div className="join w-full">
+              <input
+                type="text"
+                className="input input-bordered join-item w-full"
+                placeholder={t('games.form.ready_to_move_placeholder')}
+                {...register('ready_to_move_path')}
+              />
+              <button
+                type="button"
+                onClick={() => void pickFolder('ready_to_move_path')}
+                className="btn btn-neutral join-item"
+              >
+                <FolderOpen size={18} />
+              </button>
+            </div>
+            <div className="text-xs text-base-content/50 mt-1 ml-1">
+              {t('games.form.ready_to_move_help')}
             </div>
           </div>
 
@@ -283,6 +327,12 @@ export default function GameFormModal({
               </div>
             </div>
           </div>
+
+          {submitError && (
+            <div className="alert alert-error py-2 text-sm" role="alert">
+              {submitError}
+            </div>
+          )}
 
           <div className="modal-action">
             <button type="button" className="btn" onClick={onClose} disabled={isSubmitting}>

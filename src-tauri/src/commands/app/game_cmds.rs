@@ -55,6 +55,7 @@ pub async fn auto_detect_games_inner(
             name: detected.game_type.display_name().to_string(),
             game_type: detected.game_type,
             mod_path: PathBuf::from(&detected.info.mods_path),
+            ready_to_move_path: None,
             game_exe: PathBuf::from(&detected.info.path),
             loader_exe: Some(PathBuf::from(&detected.info.launcher_path)),
             launch_args: None,
@@ -125,6 +126,7 @@ pub async fn add_game_manual_inner(
         name: gt.display_name().to_string(),
         game_type: gt,
         mod_path: PathBuf::from(&info.mods_path),
+        ready_to_move_path: None,
         game_exe: PathBuf::from(&info.path),
         loader_exe: Some(PathBuf::from(&info.launcher_path)),
         launch_args: None,
@@ -159,25 +161,24 @@ pub async fn save_onboarding_games_inner(
     service: &ConfigService,
     games: Vec<GameConfig>,
 ) -> Result<(), AppError> {
-    let mut settings = service.get_settings();
+    let added_count = service.update_settings(move |settings| {
+        let mut added_count = 0;
+        for game in games {
+            // Double check against the latest committed list, not the snapshot
+            // from when onboarding detection started.
+            let normalized_path = canonical_game_path_key(&game.game_exe.to_string_lossy());
 
-    let mut added_count = 0;
-    for game in games {
-        // Double check for duplicates
-        let normalized_path = canonical_game_path_key(&game.game_exe.to_string_lossy());
+            let is_duplicate = settings.games.iter().any(|configured| {
+                canonical_game_path_key(&configured.game_exe.to_string_lossy()) == normalized_path
+            });
 
-        let is_duplicate = settings
-            .games
-            .iter()
-            .any(|g| canonical_game_path_key(&g.game_exe.to_string_lossy()) == normalized_path);
-
-        if !is_duplicate {
-            settings.games.push(game);
-            added_count += 1;
+            if !is_duplicate {
+                settings.games.push(game);
+                added_count += 1;
+            }
         }
-    }
-
-    service.save_settings(settings)?;
+        Ok(added_count)
+    })?;
     log::info!("Onboarding complete: saved {} game(s)", added_count);
 
     Ok(())

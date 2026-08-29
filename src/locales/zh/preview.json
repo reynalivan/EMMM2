@@ -3,6 +3,13 @@
     "no_mod_selected": "未选择模组",
     "select_folder": "从列表中选择一个文件夹以查看其详细信息、管理图像并编辑配置。"
   },
+  "folder_conflict": {
+    "title": "文件夹名称冲突",
+    "description": "在解决重复的文件系统标识之前，此模组为只读状态。",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "resolve": "解决冲突"
+  },
   "actions": {
     "import_archives": "导入压缩包",
     "import_folders": "导入文件夹",

@@ -31,7 +31,6 @@ pub enum WorkspaceSwitchOriginSurface {
     Preview,
     ObjectList,
     Collections,
-    Corridor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
@@ -69,4 +68,5 @@ pub struct WorkspaceSwitchResult {
     pub changed_object_ids: Vec<String>,
     pub duplicates: Vec<WorkspaceSwitchDuplicate>,
     pub impact: WorkspaceImpact,
+    pub sync_warning: Option<crate::services::disk_reconcile::types::CommittedMutationSyncWarning>,
 }

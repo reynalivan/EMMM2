@@ -55,94 +55,144 @@ async fn apply_mod_rename_hints(
     conn: &mut sqlx::SqliteConnection,
     request: ModRenameHintsRequest<'_>,
 ) -> Result<(), AppError> {
-    for (old_relative, new_relative) in &request.hints.mod_renames {
-        let mod_exists = crate::repo::mod_repo::get_mod_id_and_status_by_path_tx(
+    for (hint_from, hint_to) in &request.hints.mod_renames {
+        let exact_match = crate::repo::mod_repo::get_mod_id_and_status_by_path_tx(
             &mut *conn,
-            old_relative,
+            hint_from,
             request.game_id,
         )
         .await?;
-        let Some((old_id, _object_id, _status)) = mod_exists else {
-            continue;
+        let rename_pairs = if exact_match.is_some() {
+            vec![(hint_from.clone(), hint_to.clone())]
+        } else {
+            let rows =
+                crate::repo::mod_repo::get_rows_for_reconcile(&mut *conn, request.game_id).await?;
+            rows.into_iter()
+                .filter_map(|row| {
+                    let suffix = crate::common::path_key::strip_path_prefix_preserve_display(
+                        &row.folder_path,
+                        hint_from,
+                        None,
+                    )?;
+                    if suffix.is_empty() {
+                        return None;
+                    }
+                    let target = Path::new(hint_to).join(suffix);
+                    request
+                        .mods_path
+                        .join(&target)
+                        .is_dir()
+                        .then(|| (row.folder_path, target.to_string_lossy().to_string()))
+                })
+                .collect()
         };
 
-        let components = Path::new(new_relative).components().collect::<Vec<_>>();
-        if components.len() != 2 {
-            continue;
+        for (old_relative, new_relative) in rename_pairs {
+            let mod_exists = crate::repo::mod_repo::get_mod_id_and_status_by_path_tx(
+                &mut *conn,
+                &old_relative,
+                request.game_id,
+            )
+            .await?;
+            let Some((old_id, _object_id, _status)) = mod_exists else {
+                continue;
+            };
+
+            let components = Path::new(&new_relative).components().collect::<Vec<_>>();
+            if components.len() < 2 {
+                continue;
+            }
+
+            let object_folder = components[0].as_os_str().to_string_lossy().to_string();
+            let mod_folder = components
+                .last()
+                .map(|component| component.as_os_str().to_string_lossy().to_string())
+                .unwrap_or_default();
+            let object_name = normalize_display_name(&object_folder);
+            let mut new_objects_count = 0usize;
+            let object_id = crate::services::objects::reconcile::ensure_object_exists(
+                &mut *conn,
+                crate::domain::objects::EnsureObjectInput {
+                    game_id: request.game_id,
+                    folder_path: &object_folder,
+                    obj_name: &object_name,
+                    obj_type: "Other",
+                    source: crate::domain::objects::MatchSource::Disk,
+                    db_thumbnail: None,
+                    db_tags_json: "[]",
+                    db_metadata_json: "{}",
+                    db_hash_db_json: None,
+                    db_custom_skins_json: None,
+                },
+                &mut new_objects_count,
+            )
+            .await?;
+            let object_type = load_object_type(&mut *conn, &object_id).await?;
+            let existing_manual_safe = load_existing_manual_safe(
+                &mut *conn,
+                request.game_id,
+                &old_relative,
+                request.mods_root,
+            )
+            .await?;
+            let metadata = load_runtime_mod_metadata(
+                &request.mods_path.join(&new_relative),
+                &mod_folder,
+                request.safe_mode_keywords,
+                existing_manual_safe,
+            );
+            let new_id = generate_stable_id(request.game_id, &new_relative);
+
+            crate::repo::mod_repo::defer_foreign_keys_tx(&mut *conn).await?;
+
+            crate::repo::mod_repo::update_mod_identity_tx(
+                &mut *conn,
+                &new_id,
+                &new_relative,
+                &metadata.actual_name,
+                metadata.status,
+                metadata.is_safe,
+                metadata.safety_source,
+                &old_id,
+                Some(request.mods_root),
+            )
+            .await?;
+
+            crate::repo::mod_repo::update_mod_object_id_and_type_tx(
+                &mut *conn,
+                &new_id,
+                &object_id,
+                &object_type,
+            )
+            .await?;
+
+            let impact = crate::services::collection_service::handle_mod_moved_or_renamed_tx(
+                &mut *conn,
+                request.game_id,
+                &old_relative,
+                &new_relative,
+                Some(&object_id),
+            )
+            .await?;
+            crate::repo::collection_repo::update_member_mod_id_for_path(
+                &mut *conn,
+                request.game_id,
+                &new_relative,
+                &new_id,
+            )
+            .await?;
+            request.collection_reference_impact.merge(impact);
+
+            push_path_update(
+                &mut *request.path_updates,
+                DiskReconcilePathKind::Mod,
+                &old_relative,
+                &new_relative,
+            );
+            request
+                .change_summary
+                .record_mod_renamed(&metadata.actual_name);
         }
-
-        let object_folder = components[0].as_os_str().to_string_lossy().to_string();
-        let mod_folder = components[1].as_os_str().to_string_lossy().to_string();
-        let object_name = normalize_display_name(&object_folder);
-        let mut new_objects_count = 0usize;
-        let object_id = crate::services::objects::reconcile::ensure_object_exists(
-            &mut *conn,
-            crate::domain::objects::EnsureObjectInput {
-                game_id: request.game_id,
-                folder_path: &object_folder,
-                obj_name: &object_name,
-                obj_type: "Other",
-                source: crate::domain::objects::MatchSource::Disk,
-                db_thumbnail: None,
-                db_tags_json: "[]",
-                db_metadata_json: "{}",
-                db_hash_db_json: None,
-                db_custom_skins_json: None,
-            },
-            &mut new_objects_count,
-        )
-        .await?;
-        let object_type = load_object_type(&mut *conn, &object_id).await?;
-        let existing_manual_safe =
-            load_existing_manual_safe(&mut *conn, request.game_id, old_relative, request.mods_root)
-                .await?;
-        let metadata = load_runtime_mod_metadata(
-            &request.mods_path.join(new_relative),
-            &mod_folder,
-            request.safe_mode_keywords,
-            existing_manual_safe,
-        );
-        let new_id = generate_stable_id(request.game_id, new_relative);
-
-        crate::repo::mod_repo::update_mod_identity_tx(
-            &mut *conn,
-            &new_id,
-            new_relative,
-            &metadata.actual_name,
-            metadata.status,
-            metadata.is_safe,
-            metadata.corridor_source,
-            &old_id,
-            Some(request.mods_root),
-        )
-        .await?;
-
-        crate::repo::mod_repo::update_mod_object_id_and_type_tx(
-            &mut *conn,
-            &new_id,
-            &object_id,
-            &object_type,
-        )
-        .await?;
-
-        let impact = crate::services::collection_service::handle_mod_moved_or_renamed_tx(
-            &mut *conn,
-            old_relative,
-            new_relative,
-            Some(&object_id),
-        )
-        .await?;
-        request.collection_reference_impact.merge(impact);
-
-        push_path_update(
-            &mut *request.path_updates,
-            DiskReconcilePathKind::Mod,
-            old_relative,
-            new_relative,
-        );
-        request
-            .change_summary
-            .record_mod_renamed(&metadata.actual_name);
     }
 
     Ok(())
@@ -178,7 +228,7 @@ async fn apply_object_rename_hints(
         .await?;
 
         let impact = crate::services::collection_service::handle_object_renamed_tx(
-            &mut *conn, old_folder, new_folder,
+            &mut *conn, game_id, old_folder, new_folder,
         )
         .await?;
         collection_reference_impact.merge(impact);
@@ -215,20 +265,9 @@ pub(crate) async fn apply_watcher_rename_hints(
     }
 
     let mods_root = request.mods_path.to_string_lossy().to_string();
-    apply_mod_rename_hints(
-        &mut *request.conn,
-        ModRenameHintsRequest {
-            game_id: request.game_id,
-            mods_path: request.mods_path,
-            mods_root: &mods_root,
-            safe_mode_keywords: request.safe_mode_keywords,
-            hints: &hints,
-            path_updates: &mut *request.path_updates,
-            collection_reference_impact: &mut *request.collection_reference_impact,
-            change_summary: &mut *request.change_summary,
-        },
-    )
-    .await?;
+    // A parent-object rename already rewrites every child row and collection
+    // reference. Apply it first, then suppress redundant child hints emitted
+    // by noisy watcher backends for the same physical tree move.
     apply_object_rename_hints(
         &mut *request.conn,
         request.game_id,
@@ -237,6 +276,54 @@ pub(crate) async fn apply_watcher_rename_hints(
         &mut *request.path_updates,
         &mut *request.collection_reference_impact,
         &mut *request.change_summary,
+    )
+    .await?;
+    let mut uncovered_hints = hints.clone();
+    uncovered_hints.mod_renames = hints
+        .mod_renames
+        .iter()
+        .filter_map(|(mod_from, mod_to)| {
+            for (object_from, object_to) in &hints.object_renames {
+                let Some(from_suffix) = crate::common::path_key::strip_path_prefix_preserve_display(
+                    mod_from,
+                    object_from,
+                    None,
+                ) else {
+                    continue;
+                };
+                let Some(to_suffix) = crate::common::path_key::strip_path_prefix_preserve_display(
+                    mod_to, object_to, None,
+                ) else {
+                    continue;
+                };
+                if !from_suffix.is_empty() {
+                    if from_suffix.eq_ignore_ascii_case(&to_suffix) {
+                        return None;
+                    }
+                    return Some((
+                        Path::new(object_to)
+                            .join(from_suffix)
+                            .to_string_lossy()
+                            .to_string(),
+                        mod_to.clone(),
+                    ));
+                }
+            }
+            Some((mod_from.clone(), mod_to.clone()))
+        })
+        .collect();
+    apply_mod_rename_hints(
+        &mut *request.conn,
+        ModRenameHintsRequest {
+            game_id: request.game_id,
+            mods_path: request.mods_path,
+            mods_root: &mods_root,
+            safe_mode_keywords: request.safe_mode_keywords,
+            hints: &uncovered_hints,
+            path_updates: &mut *request.path_updates,
+            collection_reference_impact: &mut *request.collection_reference_impact,
+            change_summary: &mut *request.change_summary,
+        },
     )
     .await
 }

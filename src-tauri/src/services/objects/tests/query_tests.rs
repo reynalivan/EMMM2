@@ -29,6 +29,8 @@ async fn run_full_disk_reconcile(
         changed_paths: &[],
         force_full: true,
         watcher_events: None,
+        path_hints: &[],
+        progress_reporter: None,
     })
     .await
     .expect("Disk Reconcile should succeed in test")
@@ -119,35 +121,15 @@ async fn test_get_category_counts_service() {
         .unwrap();
     }
 
-    // Phase 1 fix: safe_mode no longer filters categories — always returns ALL counts.
-    // The _safe_mode param is kept for API compatibility but ignored.
-    let safe_counts = get_category_counts_service(
-        &pool,
-        "g_cat_counts",
-        crate::domain::corridor::Corridor::from_is_safe(true),
-    )
-    .await
-    .unwrap();
-    assert_eq!(safe_counts.len(), 2);
-    let char_count = safe_counts
+    let counts = get_category_counts_service(&pool, "g_cat_counts")
+        .await
+        .unwrap();
+    assert_eq!(counts.len(), 2);
+    let char_count = counts
         .iter()
         .find(|c| c.object_type == "Character")
         .unwrap();
-    // Now returns ALL characters (3), not just safe ones
     assert_eq!(char_count.count, 3);
-
-    let all_counts = get_category_counts_service(
-        &pool,
-        "g_cat_counts",
-        crate::domain::corridor::Corridor::from_is_safe(false),
-    )
-    .await
-    .unwrap();
-    let char_count_all = all_counts
-        .iter()
-        .find(|c| c.object_type == "Character")
-        .unwrap();
-    assert_eq!(char_count_all.count, 3);
 }
 
 #[tokio::test]
@@ -298,6 +280,8 @@ async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
         changed_paths: &[],
         force_full: true,
         watcher_events: None,
+        path_hints: &[],
+        progress_reporter: None,
     })
     .await
     .expect("missing source should return a typed no-write result");

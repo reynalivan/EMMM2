@@ -43,18 +43,12 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn reset_database(
     app: tauri::AppHandle,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
     config: tauri::State<'_, crate::services::config::ConfigService>,
 ) -> Result<(), AppError> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
 
-    crate::services::app::app_service::reset_database_service(pool.inner(), &app_data_dir).await?;
-
-    // Clear out the in-memory singleton state
-    config.reset_to_default();
-
-    Ok(())
+    config.reset_database(&app_data_dir)
 }
 
 /// Check if a given absolute path exists on the disk.
@@ -63,22 +57,6 @@ pub async fn reset_database(
 #[tauri::command]
 pub fn check_path_exists_cmd(path: String) -> bool {
     std::path::Path::new(&path).exists()
-}
-
-/// Ensure a directory exists on disk.
-/// Used by frontend import flows to avoid direct plugin-fs dependency in
-/// tests/runtime. Creation is confined to configured mods roots — this used
-/// to `create_dir_all` any absolute path the client sent.
-#[specta::specta]
-#[tauri::command]
-pub fn ensure_dir_cmd(
-    path: String,
-    config: tauri::State<'_, crate::services::config::ConfigService>,
-) -> Result<(), AppError> {
-    let target =
-        crate::services::fs_utils::guard::validate_future_dir_in_configured_roots(&config, &path)?;
-    std::fs::create_dir_all(&target)
-        .map_err(|e| AppError::Io(format!("Failed to create directory {path}: {e}")))
 }
 
 #[cfg(test)]

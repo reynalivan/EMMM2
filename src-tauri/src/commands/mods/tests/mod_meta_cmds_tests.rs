@@ -297,57 +297,24 @@ async fn test_suggest_random_mods() {
         .unwrap();
     }
 
-    // Test 1: Safe Mode OFF (is_safe = false)
-    let proposals_unsafe = suggest_random_mods(
-        &pool,
-        "g1",
-        crate::domain::corridor::Corridor::from_is_safe(false),
-    )
-    .await
-    .unwrap();
+    let proposals = suggest_random_mods(&pool, "g1").await.unwrap();
 
     assert_eq!(
-        proposals_unsafe.len(),
+        proposals.len(),
         2,
         "Should return 1 mod per character object"
     );
-    let obj1_prop = proposals_unsafe
-        .iter()
-        .find(|p| p.object_id == "obj1")
-        .unwrap();
+    let obj1_prop = proposals.iter().find(|p| p.object_id == "obj1").unwrap();
     assert!(
         obj1_prop.mod_id == "m1" || obj1_prop.mod_id == "m3",
         "Obj1 should get m1 or m3"
     );
 
-    let obj2_prop = proposals_unsafe
-        .iter()
-        .find(|p| p.object_id == "obj2")
-        .unwrap();
+    let obj2_prop = proposals.iter().find(|p| p.object_id == "obj2").unwrap();
     assert_eq!(
         obj2_prop.mod_id, "m4",
         "Obj2 should get m4, skipping dot prefix"
     );
-
-    // Test 2: Safe Mode ON (is_safe = true)
-    let proposals_safe = suggest_random_mods(
-        &pool,
-        "g1",
-        crate::domain::corridor::Corridor::from_is_safe(true),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        proposals_safe.len(),
-        2,
-        "Should return 1 safe mod per character object"
-    );
-
-    let obj1_safe = proposals_safe
-        .iter()
-        .find(|p| p.object_id == "obj1")
-        .unwrap();
-    assert_eq!(obj1_safe.mod_id, "m1", "Obj1 MUST get m1, as m3 is unsafe");
 }
 
 #[tokio::test]
@@ -399,14 +366,53 @@ async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
     .await
     .unwrap();
 
-    let proposals = suggest_random_mods(
-        &pool,
-        "g_effective_disabled",
-        crate::domain::corridor::Corridor::from_is_safe(true),
-    )
-    .await
-    .unwrap();
+    let proposals = suggest_random_mods(&pool, "g_effective_disabled")
+        .await
+        .unwrap();
 
     assert_eq!(proposals.len(), 1);
     assert_eq!(proposals[0].mod_id, "m_effective");
+}
+
+#[tokio::test]
+async fn committed_metadata_mutation_stages_runtime_effects_when_finalization_fails() {
+    let pool = setup_object_mods_fixture().await;
+    let state = crate::services::disk_reconcile::orchestrator::DiskReconcileState::new();
+
+    sqlx::query("UPDATE mods SET object_type = 'Weapon' WHERE id = 'm1'")
+        .execute(&pool)
+        .await
+        .expect("metadata mutation commits before runtime effects");
+
+    let settlement = crate::services::app::runtime_effects::settle_committed_runtime_effects_with(
+        &state,
+        "g_object_mods",
+        crate::services::disk_reconcile::types::PendingRuntimeEffects {
+            collections_dirty: false,
+            overlay_refresh: true,
+        },
+        || async {
+            Err(crate::domain::errors::AppError::Io(
+                "injected effect failure".to_string(),
+            ))
+        },
+    )
+    .await;
+
+    let category: String = sqlx::query_scalar("SELECT object_type FROM mods WHERE id = 'm1'")
+        .fetch_one(&pool)
+        .await
+        .expect("committed metadata remains visible");
+    assert_eq!(category, "Weapon");
+    assert!(settlement.pending_runtime_effects.overlay_refresh);
+    assert!(settlement.warning.is_some());
+    assert_eq!(settlement.effect_attempts, 2);
+    assert_eq!(
+        state.stage_runtime_effects(
+            "g_object_mods",
+            crate::services::disk_reconcile::types::PendingRuntimeEffects::default(),
+        ),
+        settlement.pending_runtime_effects,
+        "the existing reconcile state retains the failed post-commit intent"
+    );
 }

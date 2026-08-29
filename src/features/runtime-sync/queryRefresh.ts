@@ -11,7 +11,7 @@ export const runtimeQueryKeys = {
   folderMetadata: ['mod-folders'] as const,
   objectRows: ['objects', 'list'] as const,
   objectCounts: ['objects', 'counts'] as const,
-  corridorState: ['v2-corridor'] as const,
+  collectionRuntime: ['v2-collection-runtime'] as const,
   collections: ['v2-collections'] as const,
   dashboard: ['dashboard-stats'] as const,
   activeKeybindings: ['active-keybindings'] as const,
@@ -25,7 +25,6 @@ export const runtimeQueryKeys = {
   browserHomepage: ['browser_homepage'] as const,
   dedupAll: ['dedup'] as const,
   dedupReport: ['dedup', 'report'] as const,
-  pins: ['v2-pin'] as const,
 };
 
 export type RuntimeRefreshScope = keyof typeof runtimeQueryKeys;
@@ -62,8 +61,8 @@ const runtimeEventScopes: Record<RuntimeRefreshEvent, RuntimeRefreshScope[]> = {
   previewChanged: ['workspaceViewModel', 'previewDetails'],
   thumbnailChanged: ['workspaceViewModel', 'thumbnails', 'previewDetails'],
   conflictsChanged: ['conflicts'],
-  corridorChanged: ['corridorState', 'workspaceViewModel', 'objectRows', 'objectCounts'],
-  collectionsChanged: ['collections', 'corridorState'],
+  runtimeStateChanged: ['collectionRuntime', 'workspaceViewModel', 'objectRows', 'objectCounts'],
+  collectionsChanged: ['collections', 'collectionRuntime'],
   dashboardChanged: ['dashboard'],
   activeKeybindingsChanged: ['activeKeybindings'],
   trashChanged: ['trash'],
@@ -74,7 +73,6 @@ const runtimeEventScopes: Record<RuntimeRefreshEvent, RuntimeRefreshScope[]> = {
   dedupChanged: ['dedupAll'],
   dedupReportChanged: ['dedupReport'],
   scannerChanged: ['folderStructure', 'trash', 'conflicts', 'dedupAll', 'dedupReport'],
-  pinsChanged: ['pins'],
 };
 
 const pendingRuntimeRefreshes = new WeakMap<QueryClient, PendingRuntimeRefresh>();
@@ -93,10 +91,17 @@ async function refreshRuntimeQueriesNow(
   options: RefreshRuntimeQueriesOptions,
 ): Promise<void> {
   const refetchType = options.refetchType ?? 'active';
-  const uniqueScopes = [...new Set(options.scopes)];
-  const tasks = uniqueScopes.map((scope) =>
+  // Logical scopes may intentionally share one physical query key (for
+  // example folder structure and metadata). Deduplicate after resolving the
+  // key so a bulk mutation never refetches the same cache entry twice.
+  const uniqueKeys = new Map<string, readonly unknown[]>();
+  for (const scope of options.scopes) {
+    const queryKey = runtimeQueryKeys[scope];
+    uniqueKeys.set(JSON.stringify(queryKey), queryKey);
+  }
+  const tasks = [...uniqueKeys.values()].map((queryKey) =>
     queryClient.invalidateQueries({
-      queryKey: runtimeQueryKeys[scope],
+      queryKey,
       refetchType,
     }),
   );

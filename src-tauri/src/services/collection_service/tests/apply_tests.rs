@@ -27,6 +27,8 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
         node_type: Some("FlatModRoot".to_string()),
         warnings: Vec::new(),
         is_enabled: true,
+        is_safe: true,
+        safety_source: Some("manual".to_string()),
     };
     let object = CollectionObject {
         kind: MemberKind::Object,
@@ -44,7 +46,6 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
     persist_projected_state(
         &ctx.pool,
         &collection.id,
-        true,
         &[missing_mod],
         &[object],
         &projected_state,
@@ -56,12 +57,11 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
         pool: &ctx.pool,
         game_id: "game-1",
         collection_id: &collection.id,
-        is_safe: true,
+        capture_last_changes: false,
         mods_path: mods_root.path().to_path_buf(),
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: false,
         settings: AppSettings::default(),
-        reconcile_lock: None,
     })
     .await;
 
@@ -73,11 +73,11 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
         other => panic!("expected MissingMods error, got {other:?}"),
     }
 
-    let corridor = corridor_repo::get(&ctx.pool, "game-1", true)
+    let runtime = crate::repo::collection_runtime_repo::get(&ctx.pool, "game-1")
         .await
-        .expect("load corridor");
+        .expect("load runtime");
     assert!(
-        corridor
+        runtime
             .and_then(|state| state.active_collection_id)
             .is_none(),
         "missing target must fail before setting active collection"
@@ -135,7 +135,6 @@ async fn partial_apply_skips_missing_paths_without_replacing_original_collection
     persist_projected_state(
         &ctx.pool,
         &collection.id,
-        true,
         &target_mods,
         &target_objects,
         &projected_state,
@@ -147,12 +146,11 @@ async fn partial_apply_skips_missing_paths_without_replacing_original_collection
         pool: &ctx.pool,
         game_id: "game-1",
         collection_id: &collection.id,
-        is_safe: true,
+        capture_last_changes: false,
         mods_path: mods_root.path().to_path_buf(),
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: true,
         settings: AppSettings::default(),
-        reconcile_lock: None,
     })
     .await
     .expect("partial apply succeeds");
@@ -195,7 +193,7 @@ async fn partial_apply_skips_missing_paths_without_replacing_original_collection
 }
 
 #[tokio::test]
-async fn apply_collection_rejects_cross_corridor_request() {
+async fn applying_a_collection_is_independent_of_its_safety_classification() {
     let ctx = init_test_db().await;
     let mods_root = tempfile::tempdir().expect("create mods root");
     let mods_path = mods_root.path().to_string_lossy().to_string();
@@ -240,7 +238,6 @@ async fn apply_collection_rejects_cross_corridor_request() {
     persist_projected_state(
         &ctx.pool,
         &collection.id,
-        false,
         &[target_mod],
         &[target_object],
         &projected_state,
@@ -248,35 +245,228 @@ async fn apply_collection_rejects_cross_corridor_request() {
     .await
     .expect("persist unsafe collection state");
 
-    // Corridor enforcement: applying an UNSAFE collection while the request is
-    // in the SAFE corridor must be rejected before any filesystem mutation.
     let result = apply_collection(ApplyCollectionRequest {
         pool: &ctx.pool,
         game_id: "game-apply-no-mode",
         collection_id: &collection.id,
-        is_safe: true,
+        capture_last_changes: false,
         mods_path: mods_root.path().to_path_buf(),
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: false,
         settings: AppSettings::default(),
-        reconcile_lock: None,
+    })
+    .await
+    .expect("safety classification must not block applying a collection");
+
+    assert_eq!(result.mods_enabled, 1);
+    let row: (String, i64) = sqlx::query_as(
+        "SELECT folder_path, status FROM mods WHERE game_id = ? AND actual_name = ?",
+    )
+    .bind("game-apply-no-mode")
+    .bind("Red")
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("load mod row");
+
+    assert_eq!(row.0.replace('\\', "/"), "AINOZ/Red");
+    assert_eq!(row.1, ItemStatus::Enabled as i64);
+    assert!(!mods_root.path().join("AINOZ/DISABLED Red").exists());
+    assert!(mods_root.path().join("AINOZ/Red").exists());
+}
+
+#[tokio::test]
+async fn failed_parent_rename_reconciles_a_successful_child_rename_and_keeps_task_pending() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    seed_game(&ctx.pool, "game-partial-rename", Some(&mods_path)).await;
+    seed_ainoz_object(&ctx.pool, "object-1", "game-partial-rename").await;
+    create_flat_mod_folder(mods_root.path(), "AINOZ/DISABLED Red");
+    std::fs::write(mods_root.path().join("DISABLED AINOZ"), b"collision")
+        .expect("create deterministic parent rename collision");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-partial-rename",
+            game_id: "game-partial-rename",
+            object_id: Some("object-1"),
+            actual_name: "Red",
+            folder_path: "AINOZ/DISABLED Red",
+            status: ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert disabled mod");
+
+    let collection = collection_repo::create(
+        &ctx.pool,
+        "collection-partial-rename",
+        "game-partial-rename",
+        "Partial rename",
+        true,
+        false,
+    )
+    .await
+    .expect("create collection");
+    let target_mod = test_collection_mod(&collection.id, "AINOZ/Red", "Red");
+    let target_object = CollectionObject {
+        is_enabled: false,
+        ..test_collection_object(&collection.id)
+    };
+    let projected_state = projected_state_service::build_projected_state(
+        std::slice::from_ref(&target_mod),
+        std::slice::from_ref(&target_object),
+        Some(&mods_path),
+    );
+    persist_projected_state(
+        &ctx.pool,
+        &collection.id,
+        &[target_mod],
+        &[target_object],
+        &projected_state,
+    )
+    .await
+    .expect("persist collection state");
+
+    let result = apply_collection(ApplyCollectionRequest {
+        pool: &ctx.pool,
+        game_id: "game-partial-rename",
+        collection_id: &collection.id,
+        capture_last_changes: false,
+        mods_path: mods_root.path().to_path_buf(),
+        suppressor: Arc::new(WatcherSuppressor::new(false)),
+        ignore_missing: false,
+        settings: AppSettings::default(),
     })
     .await;
 
-    assert!(
-        matches!(result, Err(CollectionError::Validation(_))),
-        "cross-corridor apply must be rejected, got {result:?}"
+    assert!(result.is_err(), "parent collision must fail the apply");
+    assert!(mods_root.path().join("AINOZ/Red").is_dir());
+    assert!(!mods_root.path().join("AINOZ/DISABLED Red").exists());
+    let mod_projection: (String, i64) = sqlx::query_as(
+        "SELECT folder_path, status FROM mods WHERE game_id = ? AND actual_name = ?",
+    )
+    .bind("game-partial-rename")
+    .bind("Red")
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("load reconciled mod");
+    assert_eq!(mod_projection.0.replace('\\', "/"), "AINOZ/Red");
+    assert_eq!(mod_projection.1, ItemStatus::Enabled as i64);
+
+    let task_status: String = sqlx::query_scalar(
+        "SELECT status FROM tasks WHERE game_id = ? AND task_type = 'apply_collection'",
+    )
+    .bind("game-partial-rename")
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("load recovery task");
+    assert_eq!(task_status, "PENDING");
+}
+
+#[tokio::test]
+async fn restoring_a_draft_finalizes_its_baseline_with_the_apply_task() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+    seed_game(&ctx.pool, "game-restore-finalize", Some(&mods_path)).await;
+    seed_ainoz_object(&ctx.pool, "object-1", "game-restore-finalize").await;
+    create_flat_mod_folder(mods_root.path(), "AINOZ/Blue");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-restore-finalize",
+            game_id: "game-restore-finalize",
+            object_id: Some("object-1"),
+            actual_name: "Blue",
+            folder_path: "AINOZ/Blue",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("seed mod");
+
+    let baseline = collection_repo::create(
+        &ctx.pool,
+        "baseline-restore-finalize",
+        "game-restore-finalize",
+        "Baseline",
+        true,
+        false,
+    )
+    .await
+    .expect("create baseline");
+    let draft = collection_repo::create(
+        &ctx.pool,
+        "draft-restore-finalize",
+        "game-restore-finalize",
+        "Last changes",
+        true,
+        true,
+    )
+    .await
+    .expect("create draft");
+    let target_mod = test_collection_mod(&draft.id, "AINOZ/Blue", "Blue");
+    let target_object = test_collection_object(&draft.id);
+    let projected_state = projected_state_service::build_projected_state(
+        std::slice::from_ref(&target_mod),
+        std::slice::from_ref(&target_object),
+        Some(&mods_path),
     );
+    persist_projected_state(
+        &ctx.pool,
+        &draft.id,
+        &[target_mod],
+        &[target_object],
+        &projected_state,
+    )
+    .await
+    .expect("persist draft");
+    let mut connection = ctx.pool.acquire().await.expect("acquire connection");
+    crate::repo::collection_runtime_repo::set_draft_tx(
+        &mut connection,
+        "game-restore-finalize",
+        &draft.id,
+        Some(&baseline.id),
+    )
+    .await
+    .expect("set draft");
+    drop(connection);
 
-    // The mod stays disabled on disk and in the DB — no mutation occurred.
-    let row: (String, i64) = sqlx::query_as("SELECT folder_path, status FROM mods WHERE id = ?")
-        .bind("mod-apply-no-mode")
-        .fetch_one(&ctx.pool)
+    crate::services::collection_service::restore_collection_with_baseline(
+        ApplyCollectionRequest {
+            pool: &ctx.pool,
+            game_id: "game-restore-finalize",
+            collection_id: &draft.id,
+            capture_last_changes: false,
+            mods_path: mods_root.path().to_path_buf(),
+            suppressor: Arc::new(WatcherSuppressor::new(false)),
+            ignore_missing: false,
+            settings: AppSettings::default(),
+        },
+        Some(baseline.id.clone()),
+    )
+    .await
+    .expect("restore draft");
+
+    let runtime = crate::repo::collection_runtime_repo::get(&ctx.pool, "game-restore-finalize")
         .await
-        .expect("load mod row");
-
-    assert_eq!(row.0.replace('\\', "/"), "AINOZ/DISABLED Red");
-    assert_eq!(row.1, ItemStatus::Disabled as i64);
-    assert!(mods_root.path().join("AINOZ/DISABLED Red").exists());
-    assert!(!mods_root.path().join("AINOZ/Red").exists());
+        .expect("load runtime")
+        .expect("runtime exists");
+    assert_eq!(runtime.active_collection_id, Some(baseline.id));
+    let task_status: String =
+        sqlx::query_scalar("SELECT status FROM tasks WHERE game_id = ? AND target_id = ?")
+            .bind("game-restore-finalize")
+            .bind(&draft.id)
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("load restore task");
+    assert_eq!(task_status, "COMPLETED");
 }

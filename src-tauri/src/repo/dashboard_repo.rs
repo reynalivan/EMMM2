@@ -3,30 +3,11 @@ use sqlx::SqlitePool;
 
 // ── Response Structs ────────────────────────────────────────────────────────
 
-/// Restricts a dashboard count to the safe corridor.
-///
-/// Narrower than the corridor-*visibility* rule in `runtime_projection_repo`:
-/// the dashboard counts only mods classified safe, with no manual/unknown
-/// escape hatch.
-fn safe_mode_clause(safe_mode: bool) -> &'static str {
-    if safe_mode {
-        "AND COALESCE(m.is_safe, 1) = 1"
-    } else {
-        ""
-    }
-}
-
 // ── Queries ─────────────────────────────────────────────────────────────────
 
 /// Fetch global overview stats (total/enabled/disabled mods, size, games, collections).
-/// When `safe_mode` is true, only `is_safe = 1` mods are counted.
-pub async fn fetch_global_stats(
-    pool: &SqlitePool,
-    safe_mode: bool,
-) -> Result<DashboardStats, sqlx::Error> {
-    let safe_clause = safe_mode_clause(safe_mode);
-
-    let query = format!(
+pub async fn fetch_global_stats(pool: &SqlitePool) -> Result<DashboardStats, sqlx::Error> {
+    let row = sqlx::query_as::<_, DashboardStats>(
         r#"
         SELECT
             COALESCE(COUNT(*), 0)                                          AS total_mods,
@@ -36,13 +17,10 @@ pub async fn fetch_global_stats(
             (SELECT COUNT(*) FROM games)                                   AS total_games,
             (SELECT COUNT(*) FROM collections)                             AS total_collections
         FROM mods m
-        WHERE 1=1 {safe_clause}
         "#,
-    );
-
-    let row = sqlx::query_as::<_, DashboardStats>(&query)
-        .fetch_one(pool)
-        .await?;
+    )
+    .fetch_one(pool)
+    .await?;
 
     Ok(row)
 }
@@ -69,63 +47,45 @@ pub async fn fetch_duplicate_waste(pool: &SqlitePool) -> Result<i64, sqlx::Error
 /// Fetch mod counts grouped by `object_type` for the category distribution chart.
 pub async fn fetch_category_distribution(
     pool: &SqlitePool,
-    safe_mode: bool,
 ) -> Result<Vec<CategorySlice>, sqlx::Error> {
-    let safe_clause = safe_mode_clause(safe_mode);
-
-    let query = format!(
+    sqlx::query_as::<_, CategorySlice>(
         r#"
         SELECT
             COALESCE(m.object_type, 'Uncategorized') AS category,
             COUNT(*) AS count
         FROM mods m
-        WHERE 1=1 {safe_clause}
         GROUP BY COALESCE(m.object_type, 'Uncategorized')
         ORDER BY count DESC
         "#,
-    );
-
-    sqlx::query_as::<_, CategorySlice>(&query)
-        .fetch_all(pool)
-        .await
+    )
+    .fetch_all(pool)
+    .await
 }
 
 /// Fetch mod counts grouped by game for the game distribution bar chart.
-pub async fn fetch_game_distribution(
-    pool: &SqlitePool,
-    safe_mode: bool,
-) -> Result<Vec<GameSlice>, sqlx::Error> {
-    let safe_clause = safe_mode_clause(safe_mode);
-
-    let query = format!(
+pub async fn fetch_game_distribution(pool: &SqlitePool) -> Result<Vec<GameSlice>, sqlx::Error> {
+    sqlx::query_as::<_, GameSlice>(
         r#"
         SELECT
             g.id   AS game_id,
             g.name AS game_name,
             COUNT(m.id) AS count
         FROM games g
-        LEFT JOIN (
-            SELECT m.id, m.game_id
-            FROM mods m
-                WHERE 1=1 {safe_clause}
-        ) m ON m.game_id = g.id
+        LEFT JOIN mods m ON m.game_id = g.id
         GROUP BY g.id, g.name
         ORDER BY count DESC
         "#,
-    );
-
-    sqlx::query_as::<_, GameSlice>(&query).fetch_all(pool).await
+    )
+    .fetch_all(pool)
+    .await
 }
 
 /// Fetch the N most recently indexed mods for the activity widget.
 pub async fn fetch_recent_mods(
     pool: &SqlitePool,
-    safe_mode: bool,
     limit: i64,
 ) -> Result<Vec<RecentMod>, sqlx::Error> {
-    let safe_clause = safe_mode_clause(safe_mode);
-
-    let query = format!(
+    sqlx::query_as::<_, RecentMod>(
         r#"
         SELECT
             m.id,
@@ -136,16 +96,13 @@ pub async fn fetch_recent_mods(
         FROM mods m
         JOIN games g ON g.id = m.game_id
         LEFT JOIN objects o ON o.id = m.object_id
-        WHERE 1=1 {safe_clause}
         ORDER BY m.indexed_at DESC
         LIMIT ?
         "#,
-    );
-
-    sqlx::query_as::<_, RecentMod>(&query)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
 }
 
 #[cfg(test)]

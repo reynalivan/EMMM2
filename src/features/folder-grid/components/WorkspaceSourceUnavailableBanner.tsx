@@ -2,13 +2,12 @@ import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
 import { AlertTriangle, FolderSearch, RotateCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { open } from '@tauri-apps/plugin-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
-import { useSettings } from '../../../hooks/useSettings';
 import { useActiveGame } from '../../../hooks/useActiveGame';
 import { applyDiskReconcileResult } from '../../file-watcher/hooks';
 import { toast } from '../../../stores/useToastStore';
+import { openWorkspaceSourceRecoveryDialog } from '../../workspace-runtime/state/workspaceDialogs';
 
 interface WorkspaceSourceUnavailableBannerProps {
   message: string;
@@ -18,15 +17,14 @@ interface WorkspaceSourceUnavailableBannerProps {
  * Actionable banner shown when the active game's mods folder is missing on disk
  * (moved, renamed, or drive disconnected). Offers an in-place recovery:
  * - Retry: re-run reconcile — repairs the common case where the folder returned.
- * - Locate folder…: pick a new folder, persist it as the game's mod_path, then
- *   reconcile. The watcher restarts automatically once the source is available.
+ * - Locate folder…: reopen the recovery dialog, which inspects and classifies
+ *   the candidate before the backend atomically applies it.
  */
 export default function WorkspaceSourceUnavailableBanner({
   message,
 }: WorkspaceSourceUnavailableBannerProps) {
   const { t } = useTranslation(['grid']);
   const { activeGame } = useActiveGame();
-  const { settings, saveSettingsAsync } = useSettings();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
 
@@ -52,36 +50,6 @@ export default function WorkspaceSourceUnavailableBanner({
     }
   };
 
-  const handleLocate = async () => {
-    if (busy || !activeGame?.id || !settings) {
-      return;
-    }
-
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: t('grid:banners.source_locate_title'),
-    });
-    if (!selected || typeof selected !== 'string') {
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const resolved = await commands.resolveGameFolder(selected);
-      const games = settings.games.map((game) =>
-        game.id === activeGame.id ? { ...game, mod_path: resolved.mods_path } : game,
-      );
-      await saveSettingsAsync({ ...settings, games });
-      await reconcile();
-      toast.success(t('grid:banners.source_relocated'));
-    } catch (error) {
-      toast.error(t('grid:banners.source_action_failed', { error: formatAppError(error) }));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="mb-3 flex items-center gap-3 bg-error/10 border border-error/20 rounded-lg px-3 py-2">
       <AlertTriangle size={16} className="text-error shrink-0" />
@@ -100,7 +68,7 @@ export default function WorkspaceSourceUnavailableBanner({
         </button>
         <button
           className="btn btn-xs btn-error gap-1"
-          onClick={handleLocate}
+          onClick={openWorkspaceSourceRecoveryDialog}
           disabled={busy || !activeGame?.id}
         >
           <FolderSearch size={12} />

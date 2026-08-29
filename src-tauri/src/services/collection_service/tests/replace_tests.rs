@@ -24,7 +24,6 @@ async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_m
     persist_projected_state(
         &ctx.pool,
         &collection.id,
-        true,
         &[target_mod],
         &[target_object],
         &projected_state,
@@ -36,19 +35,18 @@ async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_m
         pool: &ctx.pool,
         game_id: "game-1",
         collection_id: &collection.id,
-        is_safe: true,
+        capture_last_changes: false,
         mods_path: missing_root,
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: true,
         settings: AppSettings::default(),
-        reconcile_lock: None,
     })
     .await;
 
     match result {
-        Err(CollectionError::Corridor(crate::domain::errors::CorridorError::NoModsPath {
-            game_id,
-        })) => assert_eq!(game_id, "game-1"),
+        Err(CollectionError::RuntimeState(
+            crate::domain::errors::RuntimeStateError::NoModsPath { game_id },
+        )) => assert_eq!(game_id, "game-1"),
         other => panic!("expected source unavailable NoModsPath error, got {other:?}"),
     }
 }
@@ -97,7 +95,6 @@ async fn replace_collection_with_current_state_drops_missing_partial_apply_membe
     persist_projected_state(
         &ctx.pool,
         &collection.id,
-        true,
         &target_mods,
         &target_objects,
         &projected_state,
@@ -109,12 +106,11 @@ async fn replace_collection_with_current_state_drops_missing_partial_apply_membe
         pool: &ctx.pool,
         game_id: "game-1",
         collection_id: &collection.id,
-        is_safe: true,
+        capture_last_changes: false,
         mods_path: mods_root.path().to_path_buf(),
         suppressor: Arc::new(WatcherSuppressor::new(false)),
         ignore_missing: true,
         settings: AppSettings::default(),
-        reconcile_lock: None,
     })
     .await
     .expect("partial apply succeeds");

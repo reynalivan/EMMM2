@@ -3,7 +3,6 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { commands } from '../../lib/bindings';
 import { useActiveGame } from '../../hooks/useActiveGame';
-import { useSafeMode } from '../../hooks/settingsQuery';
 import { useAppStore } from '../../stores/useAppStore';
 import { toast } from '../../stores/useToastStore';
 import { ItemStatus, type ObjectFilter } from '../../types/object';
@@ -25,7 +24,6 @@ export type { WorkspaceViewModelSelectionInput } from './selectionReconciliation
 
 export interface WorkspaceViewModelFilterInput {
   gameId: string | null;
-  safeMode: boolean;
   selectedObjectType: string | null;
   objectMetaFilters: Record<string, string[]> | null;
   objectSortBy: 'name' | 'date' | 'rarity' | null;
@@ -40,10 +38,6 @@ export const workspaceKeys = {
   all: ['workspace', 'mods'] as const,
   viewModel: (
     filter: ObjectFilter,
-    // Kept in the key even though the wire filter no longer carries it: the
-    // server derives the corridor, so toggling Safe Mode changes the response
-    // and must change the cache entry.
-    safeMode: boolean,
     selectedObjectFolderPath: string | null,
     explorerSubPath: string | undefined,
     selectedModPath: string | null,
@@ -51,7 +45,6 @@ export const workspaceKeys = {
     [
       ...workspaceKeys.all,
       filter,
-      safeMode,
       selectedObjectFolderPath,
       explorerSubPath ?? null,
       selectedModPath,
@@ -105,7 +98,6 @@ export function useWorkspaceSelectionInput(): WorkspaceViewModelSelectionInput {
 
 export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
   const { activeGame } = useActiveGame();
-  const safeMode = useSafeMode();
   // Shared by ObjectList and FolderGrid — a bare useAppStore() here re-runs
   // both panes' filter build on any write to any slice.
   const { selectedObjectType, objectMetaFilters, objectSortBy, objectStatusFilter } = useAppStore(
@@ -119,7 +111,6 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
   const selection = useWorkspaceSelectionInput();
   const filterInput = {
     gameId: options?.filterOverrides?.gameId ?? activeGame?.id ?? null,
-    safeMode: options?.filterOverrides?.safeMode ?? safeMode,
     selectedObjectType: options?.filterOverrides?.selectedObjectType ?? selectedObjectType,
     objectMetaFilters: options?.filterOverrides?.objectMetaFilters ?? objectMetaFilters,
     objectSortBy: options?.filterOverrides?.objectSortBy ?? objectSortBy,
@@ -133,7 +124,6 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
     // Focus/navigation changes only reshape the query key; they must not trigger Disk Reconcile.
     queryKey: workspaceKeys.viewModel(
       filter,
-      filterInput.safeMode,
       selection.selectedObjectFolderPath,
       selection.explorerSubPath,
       selection.selectedModPath,
@@ -159,7 +149,6 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
     if (
       !shouldRunSelectionReconciliationEffect({
         gameId: filterInput.gameId,
-        safeMode: filterInput.safeMode,
         selection: reconciledSelection,
       })
     ) {
@@ -170,7 +159,7 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
     if (shouldShowSelectionReconciliationToast(selection, reconciledSelection, nowMs)) {
       toast.info(buildReconciliationMessage(reconciledSelection.reconciliation_reason), 4000);
     }
-  }, [filterInput.gameId, filterInput.safeMode, query.data, query.isPlaceholderData, selection]);
+  }, [filterInput.gameId, query.data, query.isPlaceholderData, selection]);
 
   return query;
 }

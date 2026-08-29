@@ -59,6 +59,9 @@ fn build_mod_folder_with_path(
         is_favorite: info.is_favorite,
         is_misplaced: info.is_misplaced,
         is_safe: info.is_safe,
+        is_safety_classified: info.has_info_json,
+        contains_safe_mods: false,
+        contains_unsafe_mods: false,
         metadata: info.metadata,
         category: info.category,
         conflict_group_id: None,
@@ -79,4 +82,55 @@ pub fn build_mod_folder_from_fs_entry(
     let path = entry.path();
     let entry_meta = entry.metadata().ok();
     build_mod_folder_with_path(&path, sub_path, entry_meta)
+}
+
+/// Fast first paint while Disk Reconcile owns the authoritative deep walk.
+/// It deliberately avoids classifying folders, reading INI files, and parsing
+/// `info.json`; those fields are refreshed by the normal listing afterwards.
+pub fn build_mod_folder_shallow_from_fs_entry(entry: std::fs::DirEntry) -> Option<ModFolder> {
+    let path = entry.path();
+    if !entry.file_type().ok()?.is_dir() {
+        return None;
+    }
+
+    let folder_name = path.file_name()?.to_string_lossy().to_string();
+    if folder_name.starts_with('.') {
+        return None;
+    }
+    let (is_enabled, name) = if is_disabled_folder(&folder_name) {
+        (false, normalize_display_name(&folder_name).into_owned())
+    } else {
+        (true, folder_name.clone())
+    };
+    Some(ModFolder {
+        node_type: crate::common::classifier::NodeType::ContainerFolder
+            .as_str()
+            .to_string(),
+        classification_reasons: Vec::new(),
+        id: None,
+        owner_object_id: None,
+        owner_object_folder_path: None,
+        name,
+        folder_name,
+        path: path.to_string_lossy().to_string(),
+        is_enabled,
+        is_directory: true,
+        thumbnail_path: None,
+        modified_at: 0,
+        size_bytes: 0,
+        has_info_json: false,
+        is_favorite: false,
+        is_misplaced: false,
+        // Unknown until the shallow listing overlays the DB's last-known
+        // classification. Filtered views fail closed during recovery.
+        is_safe: false,
+        is_safety_classified: false,
+        contains_safe_mods: false,
+        contains_unsafe_mods: false,
+        metadata: None,
+        category: None,
+        conflict_group_id: None,
+        conflict_state: None,
+        warnings: Vec::new(),
+    })
 }

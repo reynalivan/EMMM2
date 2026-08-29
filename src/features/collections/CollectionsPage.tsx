@@ -3,44 +3,61 @@
  *
  * **658 → ~120 lines** — All state derivation removed.
  * Backend computes: active collection, undo target, dirty state, signatures.
- * Frontend just renders: corridor tabs + list + preview.
+ * Frontend renders the runtime status, collection list, and preview.
  *
  * Replaces: 6 useMemo chains, 3 useEffect syncs, resolveActiveCollection,
- *           buildCollectionWorkspaceRows, findWorkspaceRowByCollectionId.
+ *           findWorkspaceRowByCollectionId.
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Layers, Save } from 'lucide-react';
+import { History, Layers, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '../../hooks/useActiveGame';
 
-import { useCorridor, useCollections, useDeleteCollection, useUpdateCollection } from './hooks';
+import {
+  useClearLastChanges,
+  useCollectionRuntime,
+  useCollections,
+  useDeleteCollection,
+  useRestoreLastChanges,
+  useSaveCollectionChanges,
+  useUpdateCollection,
+} from './hooks';
 import { CollectionList } from './components/CollectionList';
 import { CollectionPreviewPanel } from './components/CollectionPreviewPanel';
 import { SaveCollectionModal } from './components/SaveCollectionModal';
 import { ApplyCollectionModal } from './components/ApplyCollectionModal';
 import {
-  buildCurrentRuntimeRow,
+  buildCollectionWorkspaceRows,
   CURRENT_RUNTIME_ROW_ID,
+  filterCollectionRowsBySafety,
   isCollectionWorkspaceSourceEqual,
   type CollectionListRow,
   type CollectionSaveRequest,
   type CollectionWorkspaceSource,
 } from './types';
+import { useAppStore } from '../../stores/useAppStore';
+import { SafetyFilterControl } from '../../components/ui/SafetyFilterControl';
+import { extractMissingModsPayload } from '../../lib/appError';
 
 export default function CollectionsPage() {
   const { t } = useTranslation('collections');
   const { activeGame } = useActiveGame();
 
   const gameId = activeGame?.id ?? null;
+  const safetyFilter = useAppStore((state) => state.safetyFilter);
+  const setSafetyFilter = useAppStore((state) => state.setSafetyFilter);
 
   // ── v2 Queries ──
-  const corridor = useCorridor(gameId);
+  const runtime = useCollectionRuntime(gameId);
   const collections = useCollections(gameId);
 
   // ── v2 Mutations ──
   const deleteMutation = useDeleteCollection();
   const updateMutation = useUpdateCollection();
+  const saveChangesMutation = useSaveCollectionChanges();
+  const restoreLastChangesMutation = useRestoreLastChanges();
+  const clearLastChangesMutation = useClearLastChanges();
 
   // ── Local UI State ──
   const [selectedSource, setSelectedSource] = useState<CollectionWorkspaceSource | null>(null);
@@ -56,20 +73,15 @@ export default function CollectionsPage() {
   }, [gameId]);
 
   const rows = useMemo<CollectionListRow[]>(() => {
-    const collectionRows: CollectionListRow[] = (collections.data ?? []).map((collection) => ({
-      kind: 'stored_collection',
-      rowId: collection.id,
-      collection,
-    }));
-    if (!corridor.data?.is_dirty) {
-      return collectionRows;
-    }
-
-    return [
-      buildCurrentRuntimeRow(corridor.data, t('list.item.current_runtime', 'Current Runtime')),
-      ...collectionRows,
-    ];
-  }, [collections.data, corridor.data, t]);
+    return filterCollectionRowsBySafety(
+      buildCollectionWorkspaceRows(
+        collections.data ?? [],
+        runtime.data,
+        t('list.item.current_runtime', 'Current changes'),
+      ),
+      safetyFilter,
+    );
+  }, [collections.data, runtime.data, safetyFilter, t]);
 
   const effectiveSource = useMemo<CollectionWorkspaceSource | null>(() => {
     const hasCurrentRuntime = rows.some((row) => row.kind === 'current_runtime');
@@ -88,20 +100,13 @@ export default function CollectionsPage() {
       }
     }
 
-    const activeCollectionId = corridor.data?.active_collection_id;
+    const activeCollectionId = runtime.data?.active_collection_id;
     if (activeCollectionId && hasStoredCollection(activeCollectionId)) {
       return { kind: 'stored_collection', collectionId: activeCollectionId };
     }
 
-    if (corridor.data?.is_dirty && hasCurrentRuntime) {
+    if (runtime.data?.is_dirty && hasCurrentRuntime) {
       return { kind: 'current_runtime' };
-    }
-
-    const storedUnsaved = rows.find(
-      (row) => row.kind === 'stored_collection' && row.collection.is_unsaved,
-    );
-    if (storedUnsaved && storedUnsaved.kind === 'stored_collection') {
-      return { kind: 'stored_collection', collectionId: storedUnsaved.collection.id };
     }
 
     const firstStored = rows.find((row) => row.kind === 'stored_collection');
@@ -114,7 +119,7 @@ export default function CollectionsPage() {
     }
 
     return null;
-  }, [corridor.data, rows, selectedSource]);
+  }, [runtime.data, rows, selectedSource]);
 
   useEffect(() => {
     if (isCollectionWorkspaceSourceEqual(selectedSource, effectiveSource)) {
@@ -176,6 +181,36 @@ export default function CollectionsPage() {
     setSaveModalOpen(true);
   }, []);
 
+  const handleSaveChanges = useCallback(
+    async (collectionId: string) => {
+      if (!gameId) return;
+      try {
+        await saveChangesMutation.mutateAsync({
+          gameId,
+          collectionId,
+          confirmRemoveMissing: false,
+        });
+      } catch (error) {
+        const missing = extractMissingModsPayload(error);
+        if (!missing) return;
+        const confirmed = window.confirm(
+          t('last_changes.remove_missing_confirm', {
+            count: missing.paths.length,
+            defaultValue: `Remove ${missing.paths.length} missing mod(s) from this collection?`,
+          }),
+        );
+        if (confirmed) {
+          await saveChangesMutation.mutateAsync({
+            gameId,
+            collectionId,
+            confirmRemoveMissing: true,
+          });
+        }
+      }
+    },
+    [gameId, saveChangesMutation, t],
+  );
+
   // ── No active game guard ──
   if (!activeGame) {
     return (
@@ -205,12 +240,60 @@ export default function CollectionsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <SafetyFilterControl value={safetyFilter} onChange={setSafetyFilter} />
           <button className="btn btn-secondary btn-sm" onClick={() => setSaveModalOpen(true)}>
             <Save size={14} />
             {t('collections:page.actions.save_current')}
           </button>
         </div>
       </div>
+
+      {runtime.data?.last_changes?.source === 'draft' && (
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-warning/25 bg-warning/8 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <History className="shrink-0 text-warning" size={20} />
+            <div>
+              <div className="font-semibold">{t('last_changes.title', 'Last changes')}</div>
+              <div className="text-xs text-base-content/60">
+                {t(
+                  'last_changes.description',
+                  'A modified or unsaved runtime was preserved before switching collections.',
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {runtime.data.last_changes.collection_id && (
+              <button
+                className="btn btn-xs btn-ghost"
+                onClick={() => {
+                  setSaveRequest({
+                    mode: 'clone_snapshot',
+                    sourceCollectionId: runtime.data?.last_changes?.collection_id ?? null,
+                  });
+                  setSaveModalOpen(true);
+                }}
+              >
+                <Save size={13} /> {t('last_changes.save_as', 'Save as collection')}
+              </button>
+            )}
+            <button
+              className="btn btn-xs btn-primary"
+              disabled={restoreLastChangesMutation.isPending}
+              onClick={() => gameId && restoreLastChangesMutation.mutate(gameId)}
+            >
+              <RotateCcw size={13} /> {t('last_changes.restore', 'Restore')}
+            </button>
+            <button
+              className="btn btn-xs btn-ghost text-error"
+              disabled={clearLastChangesMutation.isPending}
+              onClick={() => gameId && clearLastChangesMutation.mutate(gameId)}
+            >
+              <Trash2 size={13} /> {t('last_changes.clear', 'Clear')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
@@ -229,6 +312,9 @@ export default function CollectionsPage() {
                 onDelete={handleDelete}
                 onRename={handleRename}
                 onSave={handleSave}
+                onSaveChanges={handleSaveChanges}
+                activeCollectionId={runtime.data?.active_collection_id}
+                runtimeStatus={runtime.data?.runtime_status}
                 isApplying={!!applyTargetId}
                 isDeleting={deleteMutation.isPending}
               />
@@ -241,7 +327,7 @@ export default function CollectionsPage() {
           <CollectionPreviewPanel
             source={effectiveSource}
             gameId={gameId}
-            corridorSnapshot={corridor.data}
+            runtimeSnapshot={runtime.data}
           />
         </div>
       </div>

@@ -9,7 +9,7 @@
 //! 6. Write status banner
 //! 7. Schedule banner clear after TTL
 //!
-//! The actual workspace/reload/privacy calls are abstracted behind
+//! The actual workspace and reload calls are abstracted behind
 //! result types so callers can wire them to real services.
 
 use super::HotkeyAction;
@@ -30,8 +30,6 @@ pub struct ActionResult {
     /// Human-readable summary for logging/toast.
     pub summary: String,
 }
-
-// ─── Safe Mode Toggle ────────────────────────────────────────────────────────
 
 // ─── Preset Cycling ──────────────────────────────────────────────────────────
 
@@ -84,11 +82,10 @@ pub fn resolve_next_preset(
 }
 
 /// Compute the result of switching presets.
-pub fn plan_cycle_preset(new_preset_name: &str, safe_mode: bool) -> ActionResult {
+pub fn plan_cycle_preset(new_preset_name: &str) -> ActionResult {
     ActionResult {
         action: HotkeyAction::NextPreset,
         status: StatusFields {
-            safe_mode,
             preset_name: Some(new_preset_name.to_string()),
             ..Default::default()
         },
@@ -100,13 +97,10 @@ pub fn plan_cycle_preset(new_preset_name: &str, safe_mode: bool) -> ActionResult
 // ─── No-op Results ───────────────────────────────────────────────────────────
 
 /// Generate a no-op result when an action can't be performed (e.g. no presets).
-pub fn plan_noop(action: HotkeyAction, reason: &str, safe_mode: bool) -> ActionResult {
+pub fn plan_noop(action: HotkeyAction, reason: &str) -> ActionResult {
     ActionResult {
         action,
-        status: StatusFields {
-            safe_mode,
-            ..Default::default()
-        },
+        status: StatusFields::default(),
         needs_reload: false,
         summary: reason.to_string(),
     }

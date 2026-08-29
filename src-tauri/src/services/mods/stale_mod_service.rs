@@ -16,7 +16,7 @@ use std::path::Path;
 /// working directory, so every row looked gone — and this function's answer to
 /// "gone" is to delete it. A read-only action like revealing a folder in
 /// Explorer was quietly dropping index rows, taking the favourite flag and the
-/// manual safe-mode classification with them.
+/// manual safety classification with them.
 pub async fn resolve_mod_path_for_object(
     pool: &sqlx::SqlitePool,
     object_id: &str,

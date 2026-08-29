@@ -45,7 +45,6 @@ pub struct TestCollectionFixture<'a> {
     pub name: &'a str,
     pub game_id: &'a str,
     pub is_safe: bool,
-    pub is_last_unsaved: bool,
 }
 
 pub struct TestCollectionObjectStateFixture<'a> {
@@ -88,6 +87,7 @@ pub async fn insert_test_game(
         game_type: fixture.game_type,
         path: fixture.path.to_string(),
         mods_path: fixture.mods_path.map(ToString::to_string),
+        ready_to_move_path: None,
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
@@ -123,7 +123,7 @@ pub async fn insert_test_mod(
     fixture: &TestModFixture<'_>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, corridor_source, size_bytes)
+        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, safety_source, size_bytes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', 0)",
     )
     .bind(fixture.id)
@@ -153,48 +153,14 @@ pub async fn set_test_collection_snapshot(
     let active_root_count = state.summary.active_root_count as i32;
 
     sqlx::query(
-        "UPDATE collections SET snapshot_json = ?, signature = ?, root_count = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE collections SET snapshot_json = ?, signature = ?, display_mod_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(snapshot_json)
     .bind(signature)
     .bind(active_root_count)
-    .bind(active_root_count)
     .bind(collection_id)
     .execute(pool)
     .await?;
-
-    Ok(())
-}
-
-/// Seeds `corridor_state.active_collection_id`, allowing ids that do not exist
-/// so stale-pointer paths can be exercised.
-pub async fn set_test_corridor_active_unchecked(
-    pool: &Pool<Sqlite>,
-    game_id: &str,
-    is_safe: bool,
-    active_collection_id: Option<&str>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("PRAGMA foreign_keys = OFF")
-        .execute(pool)
-        .await?;
-
-    let result = sqlx::query(
-        r#"
-        INSERT INTO corridor_state (game_id, is_safe, active_collection_id)
-        VALUES (?, ?, ?)
-        ON CONFLICT(game_id, is_safe) DO UPDATE SET
-            active_collection_id = excluded.active_collection_id
-        "#,
-    )
-    .bind(game_id)
-    .bind(is_safe)
-    .bind(active_collection_id)
-    .execute(pool)
-    .await;
-
-    let restore_result = sqlx::query("PRAGMA foreign_keys = ON").execute(pool).await;
-    result?;
-    restore_result?;
 
     Ok(())
 }
@@ -222,15 +188,14 @@ pub async fn insert_test_collection(
     fixture: &TestCollectionFixture<'_>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO collections (id, name, name_key, game_id, is_safe, is_last_unsaved)
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO collections (id, name, name_key, game_id, is_safe)
+         VALUES (?, ?, ?, ?, ?)",
     )
     .bind(fixture.id)
     .bind(fixture.name)
     .bind(canonical_name_key(fixture.name))
     .bind(fixture.game_id)
     .bind(fixture.is_safe)
-    .bind(fixture.is_last_unsaved)
     .execute(pool)
     .await?;
 

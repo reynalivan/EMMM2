@@ -2,10 +2,8 @@
   "toolbar": {
     "search_placeholder": "Search...",
     "auto_organize": "Auto Organize",
-    "auto_recognize": "Auto Recognize",
     "hide_filters": "Hide Filters",
     "show_filters": "Show Filters",
-    "refresh_list": "Refresh list",
     "auto_reorganize": "Auto Reorganize (Full scan & sync)",
     "create_new": "Create New Object",
     "clear_all": "Clear",
@@ -117,7 +115,7 @@
     "enable": "Enable",
     "disable": "Disable",
     "auto_organize": "Auto Organize",
-    "auto_recognize": "Auto Recognize",
+    "classify_match": "Classify & Match",
     "add_tags": "Add Tags",
     "remove_tags": "Remove Tags"
   },
@@ -233,46 +231,8 @@
     "dialog_message": "Are you sure you want to let the system auto-organize {{count}} folder(s)? This will move them to their best matched Object.",
     "confirm": "Auto-Organize"
   },
-  "auto_recognize": {
-    "toast_none": "No database matches found for the selected objects.",
-    "toast_success": "Recognized {{matched}} object(s); {{skipped}} skipped.",
-    "toast_error": "Auto-recognize failed: {{error}}"
-  },
-  "scan_review": {
-    "title": "Scan Review",
-    "no_folders": "No mod folders found.",
-    "filter_label": "Filter",
-    "search_placeholder": "Search folder name...",
-    "committing_state": "Committing...",
-    "confirm_button_label": "Confirm {{count}} Items",
-    "skipped_summary": "{{count}} will be skipped",
-    "none_group_warning": "No target found; included folders will be organized under Other.",
-    "bulk_skip_label": "Decline Selected",
-    "bulk_skip_tip": "Skip all currently selected items",
-    "select_deselect_all_tip": "Select/Deselect All visible",
-    "headers": {
-      "folder_name": "Folder Name",
-      "target_detected": "Target Detected",
-      "type": "Type",
-      "percentage": "Match %",
-      "action": "Action"
-    },
-    "tabs": {
-      "all": "All",
-      "matched": "Matched",
-      "unmatched": "Unmatched",
-      "existing": "Existing",
-      "skipped": "Skipped",
-      "excellent": "Excellent",
-      "high": "High",
-      "medium": "Medium",
-      "low": "Low",
-      "manual": "Manual",
-      "candidates": "Candidates",
-      "other": "Other",
-      "clear_override": "Clear override",
-      "no_results": "No results found"
-    }
+  "classify_match": {
+    "toast_none": "Select at least one object to classify and match."
   },
   "toasts": {
     "favorite_added_one": "Favorited {{count}} object",
@@ -292,23 +252,5 @@
     "tags_added": "Added {{count}} tag(s) to {{items}}",
     "tags_removed": "Removed {{count}} tag(s) from {{items}}",
     "reload_required": "Disk state applied — press {{key}} in-game to reload"
-  },
-  "trash": {
-    "title": "Trash",
-    "empty_state": "Trash is empty",
-    "loading": "Loading trash...",
-    "error_load": "Failed to load trash",
-    "action_empty": "Empty Trash",
-    "action_restore": "Restore",
-    "restore_tip": "Restore to original location",
-    "empty_tip": "Permanently delete all items",
-    "item_count_one": "1 item",
-    "item_count_other": "{{count}} items",
-    "toasts": {
-      "restore_success": "Restored \"{{name}}\"",
-      "restore_failed": "Failed to restore: {{error}}",
-      "empty_success": "Emptied trash ({{count}} item(s) removed)",
-      "empty_failed": "Failed to empty trash: {{error}}"
-    }
   }
 }

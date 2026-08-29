@@ -1,1 +1,0 @@
-ALTER TABLE collections ADD COLUMN display_mod_count INTEGER NOT NULL DEFAULT 0;

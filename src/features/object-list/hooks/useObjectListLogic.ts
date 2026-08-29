@@ -1,5 +1,5 @@
 import { useShallow } from 'zustand/react/shallow';
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../../../stores/useAppStore';
 import { useGameSchema } from '../../../hooks/useObjectQueries';
 import { useActiveGame } from '../../../hooks/useActiveGame';
@@ -52,6 +52,7 @@ export function useObjectListLogic() {
     setObjectSortBy,
     objectStatusFilter,
     setObjectStatusFilter,
+    safetyFilter,
   } = useAppStore(
     useShallow((state) => ({
       selectedObjectFolderPath: state.selectedObjectFolderPath,
@@ -65,6 +66,7 @@ export function useObjectListLogic() {
       setObjectSortBy: state.setObjectSortBy,
       objectStatusFilter: state.objectStatusFilter,
       setObjectStatusFilter: state.setObjectStatusFilter,
+      safetyFilter: state.safetyFilter,
     })),
   );
   const { focusObject } = useWorkspaceRuntime();
@@ -142,9 +144,19 @@ export function useObjectListLogic() {
   // ponytail: substring filter; bring back a worker only if profiling shows lag on huge lists
   const objects = useMemo(() => {
     const query = sidebarSearchQuery.trim().toLowerCase();
-    if (!query) return allObjects;
-    return allObjects.filter((o) => o.name.toLowerCase().includes(query));
-  }, [allObjects, sidebarSearchQuery]);
+    return allObjects.filter((object) => {
+      if (query && !object.name.toLowerCase().includes(query)) {
+        return false;
+      }
+      if (safetyFilter === 'safe') {
+        return object.safe_mod_count > 0;
+      }
+      if (safetyFilter === 'unsafe') {
+        return object.unsafe_mod_count > 0;
+      }
+      return true;
+    });
+  }, [allObjects, safetyFilter, sidebarSearchQuery]);
 
   const isLoading = objectsLoading;
   const isError = objectsError;
@@ -164,16 +176,12 @@ export function useObjectListLogic() {
     isMobile,
   });
 
-  const [mismatchConfirm, setMismatchConfirm] = useState<string[] | null>(null);
-
   // Create bulkSelect first as it's needed by handlers
   const bulkSelect = useObjectBulkSelect(flatObjectItems);
 
   const handlers = useObjectListHandlers({
     objects: allObjects,
     schema,
-    mismatchConfirm,
-    setMismatchConfirm,
   });
 
   const handleFilterChange = useCallback(
@@ -303,14 +311,8 @@ export function useObjectListLogic() {
     setForceDeleteObjectDialog: handlers.setForceDeleteObjectDialog,
     editObject: handlers.editObject,
     setEditObject: handlers.setEditObject,
-    syncConfirm: handlers.syncConfirm,
-    setSyncConfirm: handlers.setSyncConfirm,
-    scanReview: handlers.scanReview,
-    archiveModal: handlers.archiveModal,
     bulkTagModal: handlers.bulkTagModal,
     setBulkTagModal: handlers.setBulkTagModal,
-    mismatchConfirm,
-    setMismatchConfirm,
   };
 
   const handlerMap = {
@@ -329,23 +331,16 @@ export function useObjectListLogic() {
     handleSync: handlers.handleSync,
     handleBackgroundSync: handlers.handleBackgroundSync,
     handleSyncWithDb: handlers.handleSyncWithDb,
-    handleApplySyncMatch: handlers.handleApplySyncMatch,
-    handleCommitScan: handlers.handleCommitScan,
-    handleCloseScanReview: handlers.handleCloseScanReview,
     handleDropOnItem: handlers.handleDropOnItem,
     handleDropAutoOrganize: handlers.handleDropAutoOrganize,
     handleDropOnNewObjectSubmit: handlers.handleDropOnNewObjectSubmit,
-    handleArchivesInteractively: handlers.handleArchivesInteractively,
-    handleArchiveExtractSubmit: handlers.handleArchiveExtractSubmit,
-    handleArchiveExtractSkip: handlers.handleArchiveExtractSkip,
-    handleStopExtraction: handlers.handleStopExtraction,
     handleBulkDelete: handlers.handleBulkDelete,
     handleBulkPin: handlers.handleBulkPin,
     handleBulkEnable: handlers.handleBulkEnable,
     handleBulkDisable: handlers.handleBulkDisable,
     handleBulkAddTags: handlers.handleBulkAddTags,
     handleBulkRemoveTags: handlers.handleBulkRemoveTags,
-    handleBulkAutoRecognize: handlers.handleBulkAutoRecognize,
+    handleBulkClassifyAndMatch: handlers.handleBulkClassifyAndMatch,
     handleBulkFavorite: handlers.handleBulkFavorite,
     handleBulkSafe: handlers.handleBulkSafe,
   };

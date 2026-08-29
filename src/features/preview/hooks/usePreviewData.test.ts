@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createWrapper } from '../../../testing/test-utils';
 import { useAppStore } from '../../../stores/useAppStore';
+import { useToastStore } from '../../../stores/useToastStore';
 import {
   useModInfo,
   useModIniFiles,
@@ -31,6 +32,7 @@ describe('usePreviewData hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.setState({ activeGameId: 'game-1' });
+    useToastStore.setState({ toasts: [] });
   });
 
   it('fetches mod info when folder path is provided', async () => {
@@ -124,6 +126,49 @@ describe('usePreviewData hooks', () => {
       expectedSourceHash: 'source-1',
       lineUpdates: [{ line_idx: 1, content: '$swapvar = 1' }],
     });
+  });
+
+  it('invalidates active conflicts after writing an ini file', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+    queryClient.setQueryData(['conflicts', 'game-1'], [{ hash: 'abcdef12' }]);
+    vi.mocked(invoke).mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useWriteModIni(), { wrapper });
+    await result.current.mutateAsync({
+      folderPath: 'E:/Mods/ModA',
+      fileName: 'config.ini',
+      expectedSourceHash: 'source-1',
+      lineUpdates: [{ line_idx: 1, content: 'hash = deadbeef' }],
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryState(['conflicts', 'game-1'])?.isInvalidated).toBe(true);
+    });
+  });
+
+  it('surfaces a nonfatal reconcile warning after a committed ini write', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+    });
+
+    const { result } = renderHook(() => useWriteModIni(), { wrapper: createWrapper });
+    await result.current.mutateAsync({
+      folderPath: 'E:/Mods/ModA',
+      fileName: 'config.ini',
+      expectedSourceHash: 'source-1',
+      lineUpdates: [{ line_idx: 1, content: '$swapvar = 1' }],
+    });
+
+    expect(useToastStore.getState().toasts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'warning',
+          message: expect.stringContaining('projection pending'),
+        }),
+      ]),
+    );
   });
 
   it('saves preview image with object naming mutation', async () => {

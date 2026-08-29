@@ -1,0 +1,51 @@
+{
+  "resume_import": "继续导入（{{count}} 项）",
+  "title": "匹配向导",
+  "classification_title": "分类并匹配现有对象",
+  "classification_no_move": "除非您明确选择禁用，否则会保留现有状态。",
+  "classification_disable_after_apply": "将已分类的对象文件夹设为禁用",
+  "classification_after_category": "确认所有分类后再计算标准对象匹配。",
+  "classification_match_objects": "匹配标准对象",
+  "classification_apply": "应用分类",
+  "classification_applied": "已应用 {{count}} 个分类，并更新 {{mods}} 个子模组。",
+  "batch_summary": "{{count}} 个项目 · {{flow}}",
+  "analyzing": "正在检查来源并生成分类依据…",
+  "steps": {
+    "sources": "来源",
+    "category": "分类和元数据",
+    "destination": "对象和目标",
+    "validation": "验证",
+    "result": "结果"
+  },
+  "columns": {
+    "source": "来源 / 计划名称",
+    "category": "分类",
+    "canonical": "标准对象",
+    "destination": "目标",
+    "confidence": "置信度 / 依据",
+    "decision": "决定 / 结果",
+    "actions": "操作"
+  },
+  "actions": {
+    "confirm_high": "确认高置信度",
+    "skip_medium_low": "跳过中低置信度",
+    "confirm": "确认分类",
+    "rename": "修改计划名称",
+    "use_target": "使用目标",
+    "skip": "跳过",
+    "retry": "重新生成建议",
+    "open": "在资源管理器中打开",
+    "commit": "提交 {{count}} 个项目"
+  },
+  "choose_existing": "选择已有目标…",
+  "specific_warning": "目标匹配度不足，需要明确确认",
+  "no_match": "没有标准匹配",
+  "no_destination": "尚未选择目标",
+  "evidence": "依据",
+  "result_summary": "已移动 {{moved}}，重新分配 {{reallocated}}，新建 {{created}}，跳过 {{skipped}}，冲突 {{collisions}}，元数据待处理 {{pending}}，失败 {{failed}}。",
+  "errors": {
+    "launch": "无法打开匹配向导：{{error}}",
+    "update": "无法更新项目：{{error}}",
+    "commit": "无法提交批次：{{error}}"
+  }
+}

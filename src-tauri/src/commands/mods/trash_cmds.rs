@@ -1,11 +1,10 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
 use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::mods::trash;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
-use tauri::{AppHandle, Manager, State};
+use crate::services::scanner::watcher::WatcherState;
+use tauri::{AppHandle, State};
 
 #[specta::specta]
 #[tauri::command]
@@ -18,83 +17,62 @@ pub async fn delete_mod(
     path: String,
     game_id: String,
 ) -> Result<trash::DeleteModResult, AppError> {
-    let trash_dir = trash::trash_dir(&app)?;
-
     // `game_id` is required: it names the mods root the path must sit inside.
     // Without it the delete used to skip containment entirely and trash any
     // absolute path the caller sent.
     let validated = validate_path(&config, &game_id, &path)?;
-
-    let op_guard = op_lock.acquire().await?;
-    let result = trash::delete_mod_service(
-        &config, &pool, &state, &op_guard, trash_dir, &validated, &game_id,
+    let preflight_paths = [validated.to_string_lossy().to_string()];
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&preflight_paths),
     )
     .await?;
 
+    let op_guard = op_lock.acquire().await?;
+    let mut result = trash::delete_mod_service(&state, &validated).await?;
+    drop(op_guard);
+
     // Convergence: reconcile the deleted root so DB matches disk even if a
     // manual sync step missed a case.
-    if let Err(error) = emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![path]).await
+    let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+        crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+            &app,
+            pool.inner(),
+            &game_id,
+            vec![path],
+        )
+        .await,
+    );
+    if let Some(reconcile) = settlement.reconcile {
+        result
+            .collection_impact
+            .merge(reconcile.collection_reference_impact);
+    }
+    result.sync_warning = settlement.sync_warning;
+
+    Ok(result)
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn open_recycle_bin() -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
     {
-        log::warn!("Post-delete disk reconcile failed: {error}");
+        std::process::Command::new("explorer.exe")
+            .arg("shell:RecycleBinFolder")
+            .spawn()
+            .map_err(|error| AppError::Io(format!("Failed to open Recycle Bin: {error}")))?;
+        Ok(())
     }
 
-    Ok(result)
-}
-
-#[specta::specta]
-#[tauri::command]
-pub async fn restore_mod(
-    app: AppHandle,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
-    state: State<'_, WatcherState>,
-    trash_id: String,
-    game_id: Option<String>,
-) -> Result<String, AppError> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Io(format!("Failed to get app data dir: {e}")))?;
-
-    let result = {
-        let _guard = SuppressionGuard::new(&state.suppressor);
-        trash::restore_from_trash(&trash_id, &app_data_dir.join("trash"), game_id.as_ref())?
-    };
-
-    // Single-writer: events were suppressed during the restore, so the scoped
-    // reconcile is what re-creates the row. With no explicit game id, resolve
-    // it from the restored path's mods root.
-    let config = {
-        use tauri::Manager;
-        app.state::<crate::services::config::ConfigService>()
-    };
-    let reconcile_game_id = game_id
-        .clone()
-        .or_else(|| config.game_id_for_path(std::path::Path::new(&result)));
-    if let Some(game_id) = &reconcile_game_id {
-        if let Err(error) =
-            emit_internal_disk_reconcile(&app, pool.inner(), game_id, vec![result.clone()]).await
-        {
-            log::warn!("Post-restore disk reconcile failed: {error}");
-        }
-    } else {
-        log::warn!(
-            "Restored path not under any configured mods root; skipping reconcile: {result}"
-        );
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(AppError::Validation(
+            "Opening the system Recycle Bin is only supported on Windows".to_string(),
+        ))
     }
-
-    Ok(result)
-}
-
-#[specta::specta]
-#[tauri::command]
-pub async fn list_trash(app: AppHandle) -> Result<Vec<trash::TrashMetadata>, AppError> {
-    trash::list_trash(&trash::trash_dir(&app)?)
-}
-
-#[specta::specta]
-#[tauri::command]
-pub async fn empty_trash(app: AppHandle) -> Result<u64, AppError> {
-    trash::empty_trash(&trash::trash_dir(&app)?)
 }
 
 #[cfg(test)]

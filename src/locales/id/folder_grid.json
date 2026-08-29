@@ -13,8 +13,68 @@
       "ignore_failed": "Gagal mengabaikan: {{error}}"
     }
   },
+  "conflict_manager": {
+    "title": "Konflik nama folder",
+    "description": "Ubah nama atau pindahkan setiap folder duplikat ke Trash sebelum database dapat sinkron dengan disk.",
+    "banner": "{{count}} konflik nama folder perlu diselesaikan. Mod lain tetap tersinkron.",
+    "resolve": "Selesaikan",
+    "progress": "Konflik {{current}} dari {{total}}",
+    "queue_progress": "{{resolved}} selesai · {{remaining}} tersisa ({{total}} total)",
+    "complete_title": "Semua konflik selesai",
+    "complete_summary": "{{resolved}} dari {{total}} konflik selesai",
+    "complete_description": "Folder Mods dan database telah tersinkron dengan kondisi disk terbaru.",
+    "groups": "Kelompok konflik",
+    "enabled": "Aktif",
+    "disabled": "Nonaktif",
+    "base_name": "Nama dasar",
+    "new_base_name": "Nama dasar baru",
+    "action": "Tindakan",
+    "keep_badge": "Pertahankan",
+    "rename_badge": "Ubah nama",
+    "keep_current_name": "Pertahankan nama saat ini",
+    "keep_instead": "Pertahankan nama ini",
+    "keep_action_label": "Pertahankan nama saat ini untuk {{path}}",
+    "rename_folder": "Ubah nama folder",
+    "no_filesystem_changes": "Tidak ada perubahan filesystem",
+    "action_plan": "Tindakan untuk konflik ini",
+    "apply_renames_one": "Ubah nama {{count}} folder & Lanjut",
+    "apply_renames_other": "Ubah nama {{count}} folder & Lanjut",
+    "file_count_one": "{{count}} file",
+    "file_count_other": "{{count}} file",
+    "loading": "Memuat detail folder...",
+    "details_unavailable": "Detail folder tidak tersedia",
+    "prefix_note": "Prefix aktif/nonaktif dipertahankan otomatis.",
+    "read_only_until_resolved": "Folder ini tidak dapat dibuka atau diubah sampai konflik penamaan diselesaikan.",
+    "resolve_selected": "Selesaikan konflik terpilih",
+    "open_folder": "Buka folder",
+    "move_to_trash": "Pindahkan ke Trash",
+    "trash_action": "Pindahkan “{{name}}” ke Trash",
+    "trash_action_label": "Pindahkan “{{name}}” ke Trash — {{path}}",
+    "trash_continue": "Pindahkan “{{name}}” ke Trash & Lanjut",
+    "trash_title": "Pindahkan folder ke Trash?",
+    "trash_confirm": "Pindahkan “{{name}}” ke Trash? Folder dapat dipulihkan nanti.",
+    "trash_metadata_one": "{{size}} · {{count}} file",
+    "trash_metadata_other": "{{size}} · {{count}} file",
+    "cancel": "Batal",
+    "close": "Tutup",
+    "resolved": "Konflik folder berhasil diselesaikan.",
+    "trashed": "Folder dipindahkan ke Trash.",
+    "details_failed": "Detail folder gagal dimuat: {{error}}",
+    "retry": "Coba lagi",
+    "partial_details": "Sebagian detail folder tidak dapat dibaca.",
+    "resolve_failed": "Konflik gagal diselesaikan: {{error}}",
+    "trash_failed": "Folder gagal dipindahkan ke Trash: {{error}}",
+    "validation": {
+      "empty": "Masukkan nama tanpa spasi di awal atau akhir.",
+      "invalid": "Nama mengandung karakter yang dilarang Windows.",
+      "reserved": "Nama perangkat ini dilarang Windows.",
+      "disabled_prefix": "Masukkan nama dasar saja; prefix DISABLED dipertahankan otomatis.",
+      "duplicate": "Setiap kandidat harus memiliki nama akhir yang unik."
+    }
+  },
   "move": {
     "title": "Pindah ke Objek",
+    "match_suggestion": "Bukti nama folder menyarankan {{name}}. Tinjau sebelum memindahkan.",
     "label": "Objek",
     "placeholder": "Cari objek...",
     "no_results": "Objek tidak ditemukan",
@@ -22,27 +82,11 @@
     "location_label": "Lokasi",
     "select_object_first": "Pilih objek dulu",
     "loading_targets": "Memuat folder...",
-    "status_label": "Atur Status",
-    "status": {
-      "keep": "Pertahankan",
-      "disabled": "Nonaktif",
-      "only-enable": "Aktifkan Saja"
-    },
+    "disable_after_move": "Atur mod yang dipindahkan menjadi Nonaktif",
     "toast": {
       "success": "Dipindahkan ke {{name}}",
       "failed": "Gagal memindahkan: {{error}}"
     }
-  },
-  "resolution": {
-    "title": "Konflik Nama Terdeteksi",
-    "loading": "Memuat detail folder...",
-    "enabled_label": "Versi Aktif",
-    "disabled_label": "Versi Nonaktif",
-    "description": "Versi aktif dan nonaktif dari {{name}} ada di direktori yang sama. Bandingkan keduanya lalu pilih yang ingin dipertahankan.",
-    "file_count_one": "{{count}} file",
-    "file_count_other": "{{count}} file",
-    "more_files_one": "+{{count}} file lagi",
-    "more_files_other": "+{{count}} file lagi"
   },
   "breadcrumbs": {
     "root": "ROOT"
@@ -84,5 +128,34 @@
     "revoke_title": "Cabut aturan konflik yang diabaikan",
     "revoke": "Cabut",
     "note": "Jika aturan dicabut, objek ini akan kembali memunculkan peringatan konflik."
+  },
+  "rename_confirmation": {
+    "title": "Tinjau Perubahan Folder Eksternal",
+    "description": "Aplikasi menemukan kemungkinan rename tanpa bukti identity yang cukup. Tinjau semua grup agar collection tidak diubah berdasarkan tebakan.",
+    "banner_one": "{{count}} rename eksternal perlu ditinjau.",
+    "banner_other": "{{count}} rename eksternal perlu ditinjau.",
+    "review": "Tinjau",
+    "reviewed": "Sudah ditinjau",
+    "groups": "Grup rename",
+    "progress": "{{completed}} dari {{total}} ditinjau",
+    "kind": { "Object": "Folder object", "Mod": "Folder mod" },
+    "reason": {
+      "MissingIdentity": "Identity filesystem tidak tersedia, sehingga aplikasi tidak dapat membuktikan apakah ini rename atau delete dan add yang terpisah.",
+      "AmbiguousIdentity": "Lebih dari satu folder memiliki identity tersimpan yang sama. Pilih path lama dan path baru yang tepat."
+    },
+    "choose_action": "Apa yang terjadi di disk?",
+    "rename_action": "Folder ini di-rename atau dipindahkan",
+    "rename_help": "Pertahankan mod logis dan rewrite referensi collection ke path saat ini.",
+    "separate_action": "Ini adalah perubahan delete dan add yang terpisah",
+    "separate_help": "Biarkan member collection lama berstatus missing dan masukkan folder saat ini sebagai item baru.",
+    "previous_path": "Path sebelumnya",
+    "current_path": "Path saat ini",
+    "open_folder": "Buka folder saat ini",
+    "ready": "Semua grup siap diterapkan.",
+    "review_all": "Pilih tindakan untuk setiap grup.",
+    "apply": "Terapkan semua keputusan",
+    "resolved": "Perubahan folder eksternal berhasil direconcile.",
+    "resolve_failed": "Gagal mereconcile perubahan folder eksternal: {{error}}",
+    "close": "Tutup"
   }
 }

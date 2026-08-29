@@ -3,6 +3,13 @@
     "no_mod_selected": "No mod selected",
     "select_folder": "Select a folder from the list to view its details, manage images, and edit configuration."
   },
+  "folder_conflict": {
+    "title": "Folder name conflict",
+    "description": "This mod is read-only until its duplicate filesystem identity is resolved.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "resolve": "Resolve conflict"
+  },
   "actions": {
     "import_archives": "Import Archives",
     "import_folders": "Import Folders",

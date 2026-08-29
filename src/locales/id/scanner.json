@@ -157,8 +157,8 @@
     "action_close": "Tutup"
   },
   "conflict_toast": {
-    "title": "Konflik Shader Terdeteksi!",
-    "count": "{{count}} konflik terdeteksi."
+    "title": "Konflik Mod Aktif Terdeteksi",
+    "count": "{{count}} konflik antar-mod aktif."
   },
   "overlay": {
     "title": "Memindai Mod...",
@@ -214,11 +214,41 @@
     }
   },
   "conflict_modal": {
-    "title": "Konflik Shader Terdeteksi",
+    "title": "Konflik Mod Aktif",
     "empty": "Tidak ada konflik.",
-    "description": "Mod-mod ini mengubah hash shader atau buffer yang sama. Mengaktifkannya bersamaan dapat menyebabkan glitch atau crash.",
+    "description": "Hanya file yang dimuat dari mod aktif yang ditampilkan. Override resource atau shader yang sama dapat menyebabkan glitch atau crash.",
     "acknowledge": "Mengerti",
     "definite": "Tumpang tindih pasti",
-    "potential": "Tumpang tindih potensial"
+    "potential": "Tumpang tindih potensial",
+    "kind": {
+      "resource_hash": "Hash resource",
+      "shader_hash": "Hash shader",
+      "shader_replacement": "Pengganti shader"
+    },
+    "namespace": "Namespace",
+    "match_priority": "Prioritas pencocokan",
+    "first_index": "Indeks pertama",
+    "shader_stage": "Tahap shader",
+    "resolved": "Terselesaikan",
+    "unresolved": "Belum selesai",
+    "potential_guidance": "Kondisi runtime mungkin mencegah tumpang tindih nyata. Pilih secara manual; tidak ada pemenang yang dipilih otomatis.",
+    "keep": "Pertahankan",
+    "disable": "Nonaktifkan",
+    "open": "Buka",
+    "keep_enabled": "Pertahankan {{name}} tetap aktif",
+    "disable_mod": "Nonaktifkan {{name}}",
+    "open_folder": "Buka folder {{name}}",
+    "impact": "{{resolved}}/{{total}} grup terselesaikan · {{count}} mod dipilih",
+    "clear_choices": "Hapus pilihan",
+    "review_changes": "Tinjau perubahan",
+    "review_title": "Tinjau resolusi konflik",
+    "review_description": "Mod aktif berikut akan dinonaktifkan. Periksa setiap path sebelum menerapkan perubahan.",
+    "mods_to_disable": "Mod yang dinonaktifkan",
+    "resolved_groups": "Grup terselesaikan",
+    "unresolved_groups": "Grup belum selesai",
+    "unresolved_warning": "{{count}} grup konflik akan tetap ada setelah perubahan ini.",
+    "disable_confirm": "Nonaktifkan {{count}} mod",
+    "submit_failed": "Gagal menonaktifkan mod yang dipilih: {{error}}",
+    "open_failed": "Gagal membuka folder mod: {{error}}"
   }
 }

@@ -12,8 +12,11 @@ vi.mock('./components/layout/MainLayout', () => ({
 vi.mock('./features/onboarding/WelcomeScreen', () => ({
   default: () => <div data-testid="welcome">Welcome</div>,
 }));
-vi.mock('./features/folder-grid/modals/ConflictResolveDialog', () => ({
-  default: () => null,
+vi.mock('./features/folder-grid/modals/FolderConflictManager', () => ({
+  default: () => <div data-testid="folder-conflict-manager" />,
+}));
+vi.mock('./features/folder-grid/modals/RenameConfirmationManager', () => ({
+  default: () => <div data-testid="rename-confirmation-manager" />,
 }));
 vi.mock('./components/ui/Toast', () => ({
   ToastContainer: () => null,
@@ -55,6 +58,8 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
       expect(screen.getByTestId('welcome')).toBeInTheDocument();
     });
     expect(invoke).toHaveBeenCalledWith('check_config_status');
+    expect(screen.getByTestId('folder-conflict-manager')).toBeInTheDocument();
+    expect(screen.getByTestId('rename-confirmation-manager')).toBeInTheDocument();
   });
 
   it('TC-01-09: Routes to /dashboard on HasConfig status', async () => {

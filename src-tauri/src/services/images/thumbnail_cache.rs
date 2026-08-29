@@ -176,10 +176,38 @@ impl ThumbnailCache {
         cache.folder_cache.pop(&key);
     }
 
+    /// A completed full disk scan has no precise image paths for offline
+    /// changes. Drop only L1 so the next explicitly-invalidated UI query can
+    /// revalidate its existing L2 thumbnail against the source image.
+    pub fn clear_memory() {
+        lock(Self::get_instance()).folder_cache.clear();
+    }
+
     /// Invalidate the parent folder cache for a changed image path.
     pub fn invalidate(original_path: &Path) {
         if let Some(parent) = original_path.parent() {
             Self::invalidate_folder(&parent.to_string_lossy());
+        }
+
+        let base_dir = lock(Self::get_instance()).base_dir.clone();
+        let Some(base_dir) = base_dir else {
+            return;
+        };
+        Self::invalidate_l2_at(&base_dir, original_path);
+    }
+
+    fn invalidate_l2_at(base_dir: &Path, original_path: &Path) {
+        let cached_path = base_dir.join(format!(
+            "{}.webp",
+            Self::cache_key(&Self::identity_key(original_path))
+        ));
+        if let Err(error) = fs::remove_file(&cached_path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                warn!(
+                    "Failed to remove stale thumbnail cache {}: {error}",
+                    cached_path.display()
+                );
+            }
         }
     }
 

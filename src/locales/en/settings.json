@@ -72,8 +72,6 @@
   "toast": {
     "save_success": "Settings saved successfully.",
     "save_failed": "Failed to save settings: {{error}}",
-    "pin_success": "Safe Mode PIN updated successfully.",
-    "pin_failed": "Failed to update PIN: {{error}}",
     "ai_failed": "Failed to update AI config: {{error}}",
     "theme_success": "Theme updated successfully.",
     "theme_failed": "Failed to update theme: {{error}}",
@@ -88,12 +86,9 @@
     "active": "ACTIVE",
     "actions": {
       "set_active": "Set as Active",
-      "rescan": "Rescan Library",
+      "scan_ready_to_move": "Open Mod Inbox",
       "edit": "Edit Game",
-      "remove": "Remove Game",
-      "scanning": "Scanning library for {{name}}...",
-      "scan_success": "Scan complete! Found {{new}} new mods and {{updated}} updates.",
-      "scan_failed": "Scan failed: {{error}}"
+      "remove": "Remove Game"
     },
     "delete_confirm": "Are you sure you want to remove this game configuration?",
     "types": {
@@ -112,6 +107,9 @@
       "path_label": "Mods Folder Path",
       "path_placeholder": "C:/Games/Genshin Impact/Mods",
       "path_help": "Select the folder where you store your Mods.",
+      "ready_to_move_label": "Mod Inbox (Optional)",
+      "ready_to_move_placeholder": "Defaults to Downloads/mods/<game-name>",
+      "ready_to_move_help": "Folders and archives placed here appear on the Mod Inbox page.",
       "exe_label": "Game Executable (.exe)",
       "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
       "advanced_title": "Advanced Options",
@@ -133,6 +131,7 @@
         "pick_folder_error": "Failed to pick folder",
         "pick_file_error": "Failed to pick file",
         "pick_folder_title": "Select Mod Folder",
+        "pick_ready_to_move_title": "Select Mod Inbox",
         "pick_exe_title": "Select Game Executable",
         "pick_loader_title": "Select Loader Executable"
       }
@@ -195,7 +194,6 @@
     "cooldown_desc": "Prevent accidental double-trigger",
     "conflicts_title": "Key Conflicts Detected",
     "labels": {
-      "safe_mode": "Safe Mode (Panic Key)",
       "next_preset": "Switch to Next Preset",
       "prev_preset": "Switch to Previous Preset",
       "toggle_overlay": "Toggle Overlay (Banner + KeyViewer)",
@@ -229,12 +227,6 @@
     "storage_title": "Storage Optimizer",
     "storage_desc": "Find large mods, duplicate files, and cleanup opportunities before they waste disk space.",
     "retention_title": "Storage Retention",
-    "trash_title": "Trash Management",
-    "trash_desc": "Permanently remove deleted mods to free up disk space.",
-    "empty_trash": "Empty Trash",
-    "trash_confirm": "Are you sure you want to permanently delete all items in the Trash?",
-    "trash_success": "Trash Emptied: All items deleted.",
-    "trash_failed": "Failed to empty trash: {{error}}",
     "system_title": "System Maintenance",
     "system_desc": "Run automated cleanup tasks, verify database integrity, and prune orphaned metadata.",
     "run_maintenance": "Run Maintenance",
@@ -277,22 +269,9 @@
     "keywords_placeholder": "e.g. skin, lewd, bikini",
     "keywords_add": "Add Keyword",
     "keywords_empty": "No classification keywords configured.",
+    "keywords_remove": "Remove {{keyword}}",
     "keywords_exists": "Keyword already exists",
-    "keywords_update_failed": "Failed to update keywords: {{error}}",
-    "protection_title": "Strict Keyword Classification",
-    "protection_desc": "When enabled, keyword matches can classify a mod as unsafe even if its metadata says safe.",
-    "protection_update_failed": "Failed to update protection: {{error}}",
-    "security_title": "PIN & Recovery",
-    "security_status_set": "PIN protection is ACTIVE.",
-    "security_status_none": "No PIN set.",
-    "security_recovery_configured": "Recovery Code Configured",
-    "security_remove": "Remove PIN",
-    "security_change": "Change PIN",
-    "security_set": "Set PIN",
-    "security_modal_set_title": "Set Security PIN",
-    "security_modal_unlock_title": "Unlock PIN Protection",
-    "security_modal_set_desc": "Creating a PIN will protect sensitive settings and reveal actions.",
-    "security_modal_unlock_desc": "Enter your current PIN to continue."
+    "keywords_update_failed": "Failed to update keywords: {{error}}"
   },
   "logs": {
     "title": "System Logs",

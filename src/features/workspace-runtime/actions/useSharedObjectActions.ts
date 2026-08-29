@@ -107,13 +107,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
     [dispatch],
   );
 
-  const syncActions = useSharedObjectSyncActions({
-    activeGame,
-    objects: options.objects,
-    syncConfirm: state.syncConfirm,
-    updateObject,
-    dispatch,
-  });
+  const syncActions = useSharedObjectSyncActions(activeGame);
 
   const handleDeleteObject = useCallback(
     (id: string) => {
@@ -284,8 +278,6 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
     setDeleteObjectDialog,
     forceDeleteObjectDialog: state.forceDeleteObjectDialog,
     setForceDeleteObjectDialog,
-    syncConfirm: state.syncConfirm,
-    setSyncConfirm: syncActions.setSyncConfirm,
     categoryNames,
     isSwitchPending: switchActions.isPending,
     isObjectSwitchPending: switchActions.isNodePending,
@@ -300,6 +292,5 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
     handleDisableObject,
     handleRevealInExplorer,
     handleSyncWithDb: syncActions.handleSyncWithDb,
-    handleApplySyncMatch: syncActions.handleApplySyncMatch,
   };
 }

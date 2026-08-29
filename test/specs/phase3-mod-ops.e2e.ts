@@ -15,10 +15,6 @@ interface BulkResult {
   success: string[];
   failures: { path: string; error: unknown }[];
 }
-interface TrashEntry {
-  id: string;
-  original_name: string;
-}
 
 /**
  * Fase 3 — Operasi mod inti ⚠️ DATA-SAFETY. Every destructive mutation is
@@ -82,7 +78,7 @@ describe('Fase 3 — Core Mod Operations (data-safety)', () => {
     expect(await listDir(path.join(objDir, 'NewName'))).toContain('mod.ini');
   });
 
-  it('TC-22-01: Delete → trash → restore keeps DB projection consistent', async () => {
+  it('TC-22-01: Delete moves to native Recycle Bin and clears DB projection', async () => {
     await createObject(gameId, 'TrashObj');
     await addMockMod(game, 'TrashObj', 'ModX');
     await reconcile(gameId);
@@ -91,14 +87,7 @@ describe('Fase 3 — Core Mod Operations (data-safety)', () => {
     await invokeInApp('delete_mod', { path: path.join(objDir, 'ModX'), gameId });
     expect(await listDir(objDir)).not.toContain('ModX');
 
-    const trash = await invokeInApp<TrashEntry[]>('list_trash');
-    const entry = trash.find((t) => t.original_name === 'ModX');
-    expect(entry).toBeDefined();
-
-    await invokeInApp('restore_mod', { trashId: entry!.id, gameId });
-    await reconcile(gameId);
-    expect(await listDir(objDir)).toContain('ModX');
-    expect((await findObject(gameId, 'TrashObj'))!.mod_count).toBeGreaterThanOrEqual(1);
+    expect((await findObject(gameId, 'TrashObj'))!.mod_count).toBe(0);
   });
 
   it('TC-14-01: Bulk toggle + bulk delete apply to every path', async () => {

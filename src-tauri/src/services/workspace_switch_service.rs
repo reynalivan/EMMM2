@@ -106,6 +106,7 @@ async fn run_enable_only_this(
         changed_object_ids: changed_object_ids.clone(),
         duplicates: Vec::new(),
         impact,
+        sync_warning: None,
     })
 }
 
@@ -114,7 +115,7 @@ fn default_switch_refresh_scopes() -> Vec<WorkspaceRefreshScope> {
         WorkspaceRefreshScope::WorkspaceChanged,
         WorkspaceRefreshScope::FolderStructureChanged,
         WorkspaceRefreshScope::ObjectRowsChanged,
-        WorkspaceRefreshScope::CorridorChanged,
+        WorkspaceRefreshScope::RuntimeStateChanged,
         WorkspaceRefreshScope::CollectionsChanged,
         WorkspaceRefreshScope::DashboardChanged,
         WorkspaceRefreshScope::ActiveKeybindingsChanged,
@@ -148,35 +149,7 @@ fn build_switch_impact(
     }
 }
 
-/// The single writer for this mutation: scoped disk reconcile after a switch.
-/// Quiet (no `disk_reconcile:result` event) — the switch result the command
-/// returns already drives the frontend refresh, and emitting too would cause
-/// a second full invalidation+refetch round per toggle. Failure is logged,
-/// not fatal — the FS work already succeeded and the next reconcile heals.
-async fn reconcile_after_switch(
-    app: &tauri::AppHandle,
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    changed_paths: Vec<String>,
-) {
-    if changed_paths.is_empty() {
-        return;
-    }
-
-    if let Err(error) = crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
-        app,
-        pool,
-        game_id,
-        changed_paths,
-    )
-    .await
-    {
-        log::warn!("Post-switch disk reconcile failed: {error}");
-    }
-}
-
 pub async fn execute_switch(
-    app: &tauri::AppHandle,
     input: WorkspaceSwitchInput,
     config: &ConfigService,
     pool: &sqlx::SqlitePool,
@@ -205,28 +178,25 @@ pub async fn execute_switch(
         let original_path = outcome.original_path.clone();
         let object_id = outcome.object_id.clone();
 
-        // Unconditional: the reconcile IS the DB write for this mutation
-        // (single writer), and on a no-op it heals any drift the toggle found.
-        reconcile_after_switch(
-            app,
-            pool,
-            &input.game_id,
-            vec![original_path.clone(), next_path.clone()],
-        )
-        .await;
+        let changed_folder_paths = if original_path == next_path {
+            vec![next_path.clone()]
+        } else {
+            vec![original_path.clone(), next_path.clone()]
+        };
 
         return Ok(WorkspaceSwitchResult {
             status,
             primary_path: Some(next_path.clone()),
-            changed_folder_paths: vec![next_path.clone()],
+            changed_folder_paths: changed_folder_paths.clone(),
             changed_object_ids: vec![object_id.clone()],
             duplicates: Vec::new(),
             impact: build_switch_impact(
                 Some(&original_path),
                 Some(&next_path),
-                std::slice::from_ref(&next_path),
+                &changed_folder_paths,
                 std::slice::from_ref(&object_id),
             ),
+            sync_warning: None,
         });
     }
 
@@ -248,13 +218,6 @@ pub async fn execute_switch(
             changed_object_ids,
         )
         .await?;
-        reconcile_after_switch(
-            app,
-            pool,
-            &input.game_id,
-            result.changed_folder_paths.clone(),
-        )
-        .await;
         return Ok(result);
     }
 
@@ -283,6 +246,7 @@ pub async fn execute_switch(
                 changed_object_ids: changed_object_ids.clone(),
                 duplicates: map_duplicates(duplicates),
                 impact: build_switch_impact(None, None, &[], &changed_object_ids),
+                sync_warning: None,
             });
         }
         Err(error) => return Err(error),
@@ -301,20 +265,19 @@ pub async fn execute_switch(
     // part of the scope too.
     let mut reconcile_paths = vec![target_path.clone(), next_path.clone()];
     reconcile_paths.extend(outcome.swapped_paths);
-    reconcile_after_switch(app, pool, &input.game_id, reconcile_paths).await;
-
     Ok(WorkspaceSwitchResult {
         status,
         primary_path: Some(next_path.clone()),
-        changed_folder_paths: vec![next_path.clone()],
+        changed_folder_paths: reconcile_paths.clone(),
         changed_object_ids: changed_object_ids.clone(),
         duplicates: Vec::new(),
         impact: build_switch_impact(
             Some(&input.target.value),
             Some(&next_path),
-            std::slice::from_ref(&next_path),
+            &reconcile_paths,
             &changed_object_ids,
         ),
+        sync_warning: None,
     })
 }
 

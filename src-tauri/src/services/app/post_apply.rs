@@ -1,6 +1,6 @@
 use crate::domain::errors::AppError;
 use crate::repo;
-use crate::services::corridor_service;
+use crate::services::collection_runtime_service;
 use crate::services::hotkeys::HotkeyConfig;
 use crate::services::keyviewer::generator;
 use crate::services::keyviewer::harvester;
@@ -15,7 +15,6 @@ use std::path::PathBuf;
 pub struct PostApplyContext {
     pub pool: SqlitePool,
     pub game_id: String,
-    pub is_safe: bool,
     pub mods_path: PathBuf,
     /// Only the hotkey bindings, not the whole settings blob: post-apply reads
     /// `hotkeys` and nothing else, and this context is cloned on every
@@ -39,7 +38,7 @@ fn cleanup_staging_after_error(staging: &std::path::Path, error: AppError) -> Ap
 /// Run tasks that should execute after any mod state change (Toggle, Apply, Switch).
 ///
 /// Tasks include:
-/// 1. Recomputing corridor signature (DB)
+/// 1. Recomputing runtime signature (DB)
 /// 2. Harvesting hashes from enabled mods
 /// 3. Matching characters & generating KeyViewer.ini + keybind texts
 /// 4. Refreshing conflict cache
@@ -47,7 +46,6 @@ fn cleanup_staging_after_error(staging: &std::path::Path, error: AppError) -> Ap
 pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError> {
     let pool = &ctx.pool;
     let game_id = &ctx.game_id;
-    let is_safe = ctx.is_safe;
     let mods_path = &ctx.mods_path;
 
     if !mods_path.is_dir() {
@@ -186,9 +184,9 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
 
     // 4. Update Runtime Status (Req-42)
     //
-    // `get_corridor_state` re-derives the whole live runtime state — a
+    // Runtime state derivation rebuilds the whole live collection projection — a
     // per-mod filesystem classify pass. A caller that already settled the
-    // corridor (the apply pipeline) supplies the answer instead.
+    // caller that already knows the applied collection supplies the answer instead.
     let caller_knows_preset = ctx
         .status_fields
         .as_ref()
@@ -196,23 +194,16 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
 
     let mut preset_name = None;
     if !caller_knows_preset {
-        match corridor_service::get_corridor_state(
-            pool,
-            game_id,
-            crate::domain::corridor::Corridor::from_is_safe(is_safe),
-        )
-        .await
-        {
+        match collection_runtime_service::get_collection_runtime_state(pool, game_id).await {
             Ok(snapshot) if !snapshot.is_dirty => {
                 preset_name = snapshot.active_collection_name;
             }
             Ok(_) => {}
-            Err(error) => log::warn!("[post_apply] Could not derive corridor status: {error}"),
+            Err(error) => log::warn!("[post_apply] Could not derive runtime status: {error}"),
         }
     }
 
     let mut status = generator::StatusFields {
-        safe_mode: is_safe,
         preset_name,
         folder_name: None,
         scope_name: None,
@@ -246,7 +237,7 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
 }
 
 /// Convenience function to trigger a full overlay artifact regeneration for the active game.
-/// Useful when settings (hotkeys, safe mode) change without a mod mutation.
+/// Useful when settings (hotkeys or classification keywords) change without a mod mutation.
 pub async fn trigger_overlay_refresh_for_game(
     pool: &SqlitePool,
     config: &crate::services::config::ConfigService,
@@ -258,12 +249,9 @@ pub async fn trigger_overlay_refresh_for_game(
         .iter()
         .find(|entry| entry.id == game_id)
         .ok_or_else(|| AppError::Internal(format!("Game {} not found", game_id)))?;
-    let is_safe = settings.safe_mode.enabled;
-
     let ctx = PostApplyContext {
         pool: pool.clone(),
         game_id: game_id.to_string(),
-        is_safe,
         mods_path: game.mod_path.clone(),
         hotkeys: settings.hotkeys.clone(),
         status_fields: None,
@@ -273,7 +261,7 @@ pub async fn trigger_overlay_refresh_for_game(
 }
 
 /// Convenience function to trigger a full overlay artifact regeneration for the active game.
-/// Useful when settings (hotkeys, safe mode) change without a mod mutation.
+/// Useful when settings (hotkeys or classification keywords) change without a mod mutation.
 pub async fn trigger_overlay_refresh(
     pool: &SqlitePool,
     config: &crate::services::config::ConfigService,
@@ -298,7 +286,6 @@ mod tests {
         let result = run_post_apply_tasks(PostApplyContext {
             pool: ctx.pool,
             game_id: "missing-game".to_string(),
-            is_safe: true,
             mods_path: missing.clone(),
             hotkeys: HotkeyConfig::default(),
             status_fields: None,

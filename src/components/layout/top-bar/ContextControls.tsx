@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../../stores/useAppStore';
 import { SaveCollectionModal } from '../../../features/collections/components/SaveCollectionModal';
 import { ApplyCollectionModal } from '../../../features/collections/components/ApplyCollectionModal';
-import { useCollections, useCorridor } from '../../../features/collections/hooks';
-import { getCollectionDisplayName, useUnsavedLabels } from '../../../lib/corridorLabels';
+import {
+  useCollectionRuntimeDescriptor,
+  useCollections,
+} from '../../../features/collections/hooks';
+import { getCollectionDisplayName, useRuntimeLabels } from '../../../lib/runtimeLabels';
 import { useState } from 'react';
 
 export default function ContextControls() {
@@ -12,21 +15,22 @@ export default function ContextControls() {
   const activeGameId = useAppStore((state) => state.activeGameId);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const { data: collections = [], isLoading } = useCollections(activeGameId);
-  const corridorQuery = useCorridor(activeGameId);
+  const runtimeQuery = useCollectionRuntimeDescriptor(activeGameId);
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [applyModalCollectionId, setApplyModalCollectionId] = useState<string | null>(null);
 
-  const activeNamedCollectionId = corridorQuery.data?.active_collection_id ?? null;
-  const unsavedLabels = useUnsavedLabels();
+  const activeNamedCollectionId = runtimeQuery.data?.active_collection_id ?? null;
+  const runtimeStatus = runtimeQuery.data?.runtime_status;
+  const isDirty = runtimeStatus === 'modified' || runtimeStatus === 'unsaved';
+  const runtimeLabels = useRuntimeLabels();
   const triggerText =
-    activeGameId && corridorQuery.status === 'pending'
+    activeGameId && runtimeQuery.status === 'pending'
       ? t('context.loading')
       : getCollectionDisplayName({
-          name: corridorQuery.data?.is_dirty ? null : corridorQuery.data?.active_collection_name,
-          isUnsaved: corridorQuery.data?.is_dirty,
-          isSafe: corridorQuery.data?.is_safe,
-          labels: unsavedLabels,
+          name: isDirty ? null : runtimeQuery.data?.active_collection_name,
+          isUnsaved: runtimeStatus === 'unsaved',
+          labels: runtimeLabels,
         });
 
   const handleApplyClick = (e: React.MouseEvent, id: string, _name: string) => {
@@ -102,14 +106,7 @@ export default function ContextControls() {
                           onClick={(e) => handleApplyClick(e, c.id, c.name)}
                           disabled={activeNamedCollectionId === c.id}
                         >
-                          <span className="truncate max-w-32.5">
-                            {getCollectionDisplayName({
-                              name: c.name,
-                              isUnsaved: c.is_unsaved,
-                              isSafe: c.is_safe,
-                              labels: unsavedLabels,
-                            })}
-                          </span>
+                          <span className="truncate max-w-32.5">{c.name}</span>
                           <span className="badge badge-xs badge-ghost opacity-75">
                             {c.mod_count}
                           </span>

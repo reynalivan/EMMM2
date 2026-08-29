@@ -1,16 +1,17 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { commands, type MatchedDbEntry } from '../../../lib/bindings';
+import { commands } from '../../../lib/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
 import { toast } from '../../../stores/useToastStore';
 import type { ModFolder } from '../../../types/object';
 import type { WorkspaceExplorerNode } from '../../../types/workspace';
 import { applyRuntimePathInvalidationMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
+import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
 
 export interface SharedModSwitchActions {
   setNodeEnabled: (
     node: WorkspaceExplorerNode,
     enabled: boolean,
-    surface: 'folder_grid' | 'preview' | 'object_list' | 'collections' | 'corridor',
+    surface: 'folder_grid' | 'preview' | 'object_list' | 'collections',
   ) => Promise<string | null | undefined>;
 }
 
@@ -18,28 +19,14 @@ export function hasIllegalCharacters(name: string): boolean {
   return /[\\/:*?"<>|]/.test(name);
 }
 
-export async function loadSharedModSyncMatch(params: {
-  gameType: number;
-  folder: ModFolder;
-}): Promise<MatchedDbEntry | null> {
-  try {
-    const match = await commands.matchObjectWithDb(params.gameType, params.folder.name);
-    return match ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export async function runSharedModActiveContextToggle(params: {
   activeGameId: string;
   folder: ModFolder;
   queryClient: QueryClient;
-  switchSurface: 'folder_grid' | 'preview' | 'object_list' | 'collections' | 'corridor';
+  switchSurface: 'folder_grid' | 'preview' | 'object_list' | 'collections';
   switchActions: SharedModSwitchActions;
-  hasPin: boolean;
-  safeMode: boolean;
   translate: (key: string, vars?: Record<string, unknown>) => string;
-}): Promise<{ kind: 'complete' } | { kind: 'requiresPinSafe'; folder: ModFolder }> {
+}): Promise<{ kind: 'complete' }> {
   const newPath =
     (await params.switchActions.setNodeEnabled(
       params.folder as WorkspaceExplorerNode,
@@ -48,14 +35,8 @@ export async function runSharedModActiveContextToggle(params: {
     )) ?? params.folder.path;
 
   const targetSafeStatus = !params.folder.is_safe;
-  if (params.safeMode && !targetSafeStatus && params.hasPin) {
-    return {
-      kind: 'requiresPinSafe',
-      folder: { ...params.folder, path: newPath, is_enabled: false },
-    };
-  }
-
-  await commands.toggleModSafe(params.activeGameId, newPath, targetSafeStatus);
+  const safetyResult = await commands.toggleModSafe(params.activeGameId, newPath, targetSafeStatus);
+  notifyCommittedMutationSyncWarning(safetyResult);
 
   const store = useAppStore.getState();
   if (store.gridSelection?.has(params.folder.path) || store.gridSelection?.has(newPath)) {

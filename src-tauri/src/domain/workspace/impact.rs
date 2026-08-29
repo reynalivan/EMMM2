@@ -8,7 +8,7 @@ pub enum WorkspaceRefreshScope {
     FolderStructureChanged,
     PreviewChanged,
     ConflictsChanged,
-    CorridorChanged,
+    RuntimeStateChanged,
     CollectionsChanged,
     DashboardChanged,
     ActiveKeybindingsChanged,

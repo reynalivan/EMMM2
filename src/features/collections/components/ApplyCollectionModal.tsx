@@ -176,7 +176,10 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
               </h3>
               <p className="text-sm text-base-content/70">
                 {result
-                  ? t('collections:apply.success.desc', 'The corridor state has been refreshed.')
+                  ? t(
+                      'collections:apply.success.desc',
+                      'The collection runtime has been refreshed.',
+                    )
                   : t('collections:apply.desc')}
               </p>
             </div>
@@ -227,7 +230,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                   {result.final_state_name ?? preview?.collection_name}
                 </div>
                 <div className="mt-1 text-xs text-base-content/60">
-                  {result.final_mode ?? t('collections:apply.success.runtime', 'Runtime snapshot')}
+                  {t('collections:apply.success.runtime', 'Runtime snapshot')}
                 </div>
               </div>
               {result.partial_apply && (

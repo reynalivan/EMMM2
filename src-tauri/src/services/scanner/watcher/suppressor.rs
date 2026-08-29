@@ -1,80 +1,124 @@
 //! Watcher suppression.
 //!
 //! Two mechanisms:
-//! - **Blanket** (`SuppressionGuard`, manual frontend flag): drops every event
-//!   while held. For broad operations (deep scan, archive extraction) whose
+//! - **Blanket** (`SuppressionGuard`): drops every event while held. For broad
+//!   operations (deep scan, archive extraction) whose
 //!   write set is unknown up front. Self-healing: those flows end with a full
 //!   reconcile that re-reads disk anyway.
 //! - **Path-scoped** (`PathSuppressionGuard`): drops only events under the
 //!   registered paths, matched by identity key — so registering either the
-//!   enabled or DISABLED spelling covers both sides of a toggle rename. On
-//!   drop the entry lingers for `SUPPRESSION_TAIL` to absorb OS events that
-//!   were already queued asynchronously (the old guard-dropped-too-early echo
-//!   bug). External events elsewhere keep flowing during the operation.
+//!   enabled or DISABLED spelling covers both sides of a toggle rename.
+//!   Suppression ends with the mutation guard; queued app echoes are handled
+//!   by idempotent reconcile instead of creating a blind window for external
+//!   changes.
 
 use crate::common::sync::lock;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-
-/// How long a scoped entry keeps suppressing after its guard drops.
-/// ReadDirectoryChangesW delivers callbacks asynchronously; events for a
-/// rename the app just performed can arrive well after the mutation returns.
-const SUPPRESSION_TAIL: Duration = Duration::from_secs(2);
 
 struct ScopedEntry {
     id: u64,
     /// Identity key of the suppressed root (see `path_key`).
     key: String,
-    /// `None` while the guard is alive; a deadline once it dropped.
-    expires_at: Option<Instant>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WatcherSession {
+    generation: u64,
+    canonical_root: String,
+}
+
+impl WatcherSession {
+    pub(super) fn new(generation: u64, root: &Path) -> Self {
+        Self {
+            generation,
+            canonical_root: crate::common::path_key::canonical_path_key_for_path(root),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct WatcherRepairEvidence {
+    owner: WatcherSession,
+    through_generation: u64,
+}
+
+#[derive(Default)]
+struct RepairLedger {
+    owner: Option<WatcherSession>,
+    dropped_generation: u64,
+    repaired_generation: u64,
 }
 
 pub struct WatcherSuppressor {
     guard_depth: AtomicUsize,
-    manual_depth: AtomicUsize,
     next_id: AtomicU64,
+    repair: Mutex<RepairLedger>,
     scoped: Mutex<Vec<ScopedEntry>>,
 }
 
 impl WatcherSuppressor {
     pub fn new(suppressed: bool) -> Self {
         Self {
-            guard_depth: AtomicUsize::new(0),
-            manual_depth: AtomicUsize::new(if suppressed { 1 } else { 0 }),
+            guard_depth: AtomicUsize::new(usize::from(suppressed)),
             next_id: AtomicU64::new(0),
+            repair: Mutex::new(RepairLedger::default()),
             scoped: Mutex::new(Vec::new()),
         }
     }
 
     pub fn load(&self, ordering: Ordering) -> bool {
-        self.guard_depth.load(ordering) + self.manual_depth.load(ordering) > 0
+        self.guard_depth.load(ordering) > 0
     }
 
-    pub fn store(&self, suppressed: bool, ordering: Ordering) {
-        if suppressed {
-            self.manual_depth.fetch_add(1, ordering);
-            return;
+    pub(crate) fn begin_session(&self, session: &WatcherSession) {
+        *lock(&self.repair) = RepairLedger {
+            owner: Some(session.clone()),
+            ..RepairLedger::default()
+        };
+    }
+
+    pub(crate) fn invalidate_session(&self, session: &WatcherSession) {
+        let mut repair = lock(&self.repair);
+        if repair.owner.as_ref() == Some(session) {
+            *repair = RepairLedger::default();
         }
-
-        let _ = self
-            .manual_depth
-            .fetch_update(ordering, Ordering::Acquire, |current| {
-                Some(current.saturating_sub(1))
-            });
     }
 
-    /// Clear manual (frontend-driven) suppression. Called when a new watcher
-    /// session starts so a webview reload mid-operation cannot leave the
-    /// watcher suppressed forever. Backend guards are unaffected.
-    pub fn reset_manual(&self) {
-        self.manual_depth.store(0, Ordering::Release);
+    pub(crate) fn mark_blanket_event_dropped(&self, session: &WatcherSession) {
+        let mut repair = lock(&self.repair);
+        if repair.owner.as_ref() == Some(session) {
+            repair.dropped_generation = repair.dropped_generation.saturating_add(1);
+        }
+    }
+
+    pub fn has_unrepaired_drops(&self) -> bool {
+        let repair = lock(&self.repair);
+        repair.dropped_generation > repair.repaired_generation
+    }
+
+    pub(crate) fn pending_repair(&self, session: &WatcherSession) -> Option<WatcherRepairEvidence> {
+        let repair = lock(&self.repair);
+        (repair.owner.as_ref() == Some(session)
+            && repair.dropped_generation > repair.repaired_generation)
+            .then(|| WatcherRepairEvidence {
+                owner: session.clone(),
+                through_generation: repair.dropped_generation,
+            })
+    }
+
+    pub(crate) fn mark_repaired_through(&self, evidence: &WatcherRepairEvidence) -> bool {
+        let mut repair = lock(&self.repair);
+        if repair.owner.as_ref() != Some(&evidence.owner) {
+            return false;
+        }
+        repair.repaired_generation = repair.repaired_generation.max(evidence.through_generation);
+        true
     }
 
     /// Register paths the app is about to mutate. Events under them (in any
-    /// prefix/case spelling) are dropped until the guard drops plus
-    /// `SUPPRESSION_TAIL`.
+    /// prefix/case spelling) are dropped until the guard drops.
     pub fn suppress_paths(
         self: &Arc<Self>,
         paths: impl IntoIterator<Item = impl AsRef<Path>>,
@@ -82,26 +126,10 @@ impl WatcherSuppressor {
         let mut ids = Vec::new();
         {
             let mut scoped = lock(&self.scoped);
-            // Expired entries are normally dropped by `is_path_suppressed`,
-            // but that only runs while the watcher delivers events — prune
-            // here too so a stopped or blanket-suppressed watcher cannot let
-            // a bulk operation's entries accumulate.
-            let now = Instant::now();
-            scoped.retain(|entry| entry.expires_at.is_none_or(|deadline| deadline > now));
             for path in paths {
                 let key = crate::common::path_key::canonical_path_key_for_path(path.as_ref());
-                if scoped
-                    .iter()
-                    .any(|entry| entry.expires_at.is_none() && entry.key == key)
-                {
-                    continue;
-                }
                 let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-                scoped.push(ScopedEntry {
-                    id,
-                    key,
-                    expires_at: None,
-                });
+                scoped.push(ScopedEntry { id, key });
                 ids.push(id);
             }
         }
@@ -114,9 +142,7 @@ impl WatcherSuppressor {
     /// Whether an event path falls under a live scoped registration.
     pub fn is_path_suppressed(&self, path: &Path) -> bool {
         let key = crate::common::path_key::canonical_path_key_for_path(path);
-        let now = Instant::now();
-        let mut scoped = lock(&self.scoped);
-        scoped.retain(|entry| entry.expires_at.is_none_or(|deadline| deadline > now));
+        let scoped = lock(&self.scoped);
         scoped.iter().any(|entry| {
             key.len() >= entry.key.len()
                 && key.starts_with(entry.key.as_str())
@@ -125,13 +151,8 @@ impl WatcherSuppressor {
     }
 
     fn release_scoped(&self, ids: &[u64]) {
-        let deadline = Instant::now() + SUPPRESSION_TAIL;
         let mut scoped = lock(&self.scoped);
-        for entry in scoped.iter_mut() {
-            if ids.contains(&entry.id) {
-                entry.expires_at = Some(deadline);
-            }
-        }
+        scoped.retain(|entry| !ids.contains(&entry.id));
     }
 
     fn increment(&self) {

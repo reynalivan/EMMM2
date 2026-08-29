@@ -72,7 +72,7 @@ pub(crate) fn aggregate_signals(
     let structural_name = ((name_score + structure_score) / 2.0).clamp(0.0, 1.0);
 
     let (hash_score, exact_hash_match) =
-        hash_similarity(&left_hash.key_file_hashes, &right_hash.key_file_hashes);
+        hash_similarity(&left_hash.file_hashes, &right_hash.file_hashes);
     let header_score = set_overlap_score(&left.ini_headers, &right.ini_headers);
     let file_identity = ((hash_score * w::FILE_IDENTITY_HASH)
         + (header_score * w::FILE_IDENTITY_HEADERS))
@@ -109,7 +109,7 @@ pub(crate) fn aggregate_signals(
     if exact_hash_match {
         let signals = vec![DupScanSignal {
             key: "content_hash".to_string(),
-            detail: "All key-file BLAKE3 hashes match exactly".to_string(),
+            detail: "All regular-file BLAKE3 hashes match exactly".to_string(),
             score: 100,
         }];
         return (100, signals, "Exact hash match".to_string());
@@ -142,7 +142,7 @@ pub(crate) fn aggregate_signals(
         ),
         build_signal(
             "file_identity",
-            "BLAKE3 key-file and INI header signal",
+            "BLAKE3 regular-file and INI header signal",
             file_identity,
         ),
         build_signal(

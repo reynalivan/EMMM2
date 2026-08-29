@@ -3,9 +3,8 @@ use super::*;
 // ─── Status Banner ───────────────────────────────────────────────────────────
 
 #[test]
-fn status_text_includes_preset_without_safe_mode() {
+fn status_text_includes_preset_without_obsolete_safety_banner() {
     let fields = StatusFields {
-        safe_mode: true,
         preset_name: Some("Default".to_string()),
         conflict_count: Some(0),
         ..Default::default()
@@ -18,7 +17,6 @@ fn status_text_includes_preset_without_safe_mode() {
 #[test]
 fn status_text_with_folder() {
     let fields = StatusFields {
-        safe_mode: false,
         preset_name: Some("Main".to_string()),
         folder_name: Some("Cape".to_string()),
         scope_name: Some("Albedo".to_string()),
@@ -33,7 +31,6 @@ fn status_text_with_folder() {
 #[test]
 fn status_text_within_limits() {
     let fields = StatusFields {
-        safe_mode: true,
         preset_name: Some("Very Long Preset Name That Could Be Anything".to_string()),
         folder_name: Some("SomeFolderName".to_string()),
         scope_name: Some("SomeScope".to_string()),
@@ -48,7 +45,6 @@ fn status_text_within_limits() {
 fn write_status_file_atomic() {
     let dir = TempDir::new().unwrap();
     let fields = StatusFields {
-        safe_mode: true,
         preset_name: Some("Test".to_string()),
         conflict_count: Some(0),
         ..Default::default()

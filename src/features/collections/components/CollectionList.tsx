@@ -1,5 +1,5 @@
 /**
- * CollectionList — Left panel showing all collections for the current corridor.
+ * CollectionList — Left panel showing all collections for the active game.
  *
  * Extracted from CollectionsPage. Replaces the inline table + workspaceRows chain.
  * Uses v2 types directly — no intermediary transformation.
@@ -9,7 +9,6 @@ import ListStateView from '../../../components/ui/ListStateView';
 import { Layers, Trash2, Edit2, Check, X, PlayCircle, Loader2, Save } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getCollectionDisplayName, useUnsavedLabels } from '../../../lib/corridorLabels';
 import type { CollectionListRow, CollectionSaveRequest } from '../types';
 import { DeleteCollectionModal } from './DeleteCollectionModal';
 
@@ -24,6 +23,9 @@ interface CollectionListProps {
   onDelete: (id: string) => void;
   onRename: (id: string, newName: string) => void;
   onSave?: (request: CollectionSaveRequest) => void;
+  onSaveChanges?: (collectionId: string) => void;
+  activeCollectionId?: string | null;
+  runtimeStatus?: 'clean' | 'modified' | 'unsaved';
   isApplying: boolean;
   isDeleting: boolean;
 }
@@ -39,11 +41,13 @@ export function CollectionList({
   onDelete,
   onRename,
   onSave,
+  onSaveChanges,
+  activeCollectionId = null,
+  runtimeStatus = 'unsaved',
   isApplying,
   isDeleting,
 }: CollectionListProps) {
   const { t } = useTranslation('collections');
-  const unsavedLabels = useUnsavedLabels();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [collectionToDelete, setCollectionToDelete] = useState<{ id: string; name: string } | null>(
@@ -116,18 +120,8 @@ export function CollectionList({
             const isSelected = rowId === selectedId;
             const isEditing = collection ? editingId === collection.id : false;
             const isCurrentRuntime = row.kind === 'current_runtime';
-            const isUnsaved = collection ? collection.is_unsaved : true;
-            const isActive = collection ? collection.is_active : isCurrentRuntime;
-            const label = collection
-              ? getCollectionDisplayName({
-                  name: collection.name,
-                  isUnsaved: collection.is_unsaved,
-                  isSafe: collection.is_safe,
-                  labels: unsavedLabels,
-                })
-              : isCurrentRuntime
-                ? row.label
-                : '';
+            const isActive = isCurrentRuntime || collection?.id === activeCollectionId;
+            const label = collection ? collection.name : isCurrentRuntime ? row.label : '';
             const modCount = collection
               ? collection.mod_count
               : isCurrentRuntime
@@ -143,7 +137,7 @@ export function CollectionList({
                 }`}
               >
                 <td className="pl-4">
-                  {isEditing && collection && !collection.is_unsaved ? (
+                  {isEditing && collection ? (
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
@@ -181,7 +175,9 @@ export function CollectionList({
                       <span className="truncate max-w-30 2xl:max-w-50">{label}</span>
                       {isActive && (
                         <span className="badge badge-sm badge-success opacity-90 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
-                          {t('list.item.matches_runtime', 'Matches current runtime')}
+                          {activeCollectionId === rowId && runtimeStatus === 'modified'
+                            ? t('list.item.modified', 'Modified')
+                            : t('list.item.matches_runtime', 'Matches current runtime')}
                         </span>
                       )}
                       {isCurrentRuntime && (
@@ -189,7 +185,7 @@ export function CollectionList({
                           {t('list.item.current_runtime', 'Live')}
                         </span>
                       )}
-                      {collection && !collection.is_unsaved && (
+                      {collection && (
                         <span
                           className={`badge badge-sm opacity-85 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0 ${
                             collection.is_safe
@@ -200,7 +196,7 @@ export function CollectionList({
                           {collection.is_safe ? t('tab.safe', 'SAFE') : t('tab.unsafe', 'UNSAFE')}
                         </span>
                       )}
-                      {collection && !collection.is_unsaved && (
+                      {collection && (
                         <button
                           className="btn btn-xs btn-square btn-ghost opacity-0 group-hover:opacity-100 transition-opacity text-base-content/40 hover:text-base-content shrink-0"
                           onClick={(e) => {
@@ -222,8 +218,8 @@ export function CollectionList({
                 </td>
                 <td className="text-right pr-4">
                   <div className="flex items-center justify-end gap-2">
-                    {isActive ? (
-                      isUnsaved && onSave ? (
+                    {isCurrentRuntime ? (
+                      onSave ? (
                         <button
                           className="btn btn-sm btn-secondary"
                           onClick={(e) => {
@@ -235,9 +231,20 @@ export function CollectionList({
                           }}
                         >
                           <Save size={14} />
-                          {isCurrentRuntime
-                            ? t('actions.save_current', 'Save')
-                            : t('list.item.save_snapshot', 'Save')}
+                          {t('actions.save_current', 'Save')}
+                        </button>
+                      ) : null
+                    ) : isActive ? (
+                      runtimeStatus === 'modified' && onSaveChanges ? (
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onSaveChanges(rowId);
+                          }}
+                        >
+                          <Save size={14} />
+                          {t('list.item.save_changes', 'Save changes')}
                         </button>
                       ) : null
                     ) : (
@@ -264,7 +271,7 @@ export function CollectionList({
                         )}
                       </button>
                     )}
-                    {collection && !collection.is_unsaved && (
+                    {collection && (
                       <button
                         className="btn btn-sm btn-square btn-ghost text-error/70 hover:text-error hover:bg-error/10 shrink-0"
                         onClick={(e) => {

@@ -1,25 +1,34 @@
 import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Play, RefreshCcw } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, Inbox } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings, GameConfig } from '../../../hooks/useSettings';
 import GameFormModal from '../modals/GameFormModal';
 import { useAppStore } from '../../../stores/useAppStore';
-import { useToastStore } from '../../../stores/useToastStore';
-import { scanService } from '../../../lib/services/scanService';
 import { useQueryClient } from '@tanstack/react-query';
-import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
+import { commands } from '../../../lib/bindings';
+import type { GameModsDirectoryInspection } from '../../../lib/bindings';
+import { pathsEqual } from '../../../lib/pathKey';
+import { applyDiskReconcileResult } from '../../file-watcher/hooks';
+
+interface PendingSourceChange {
+  game: GameConfig;
+  inspection: GameModsDirectoryInspection;
+}
 
 export default function GamesTab() {
-  const { t } = useTranslation(['settings', 'common']);
-  const { settings, saveSettings } = useSettings();
+  const { t } = useTranslation(['settings', 'common', 'grid']);
+  const { settings, saveSettingsAsync } = useSettings();
   const setActiveGameId = useAppStore((state) => state.setActiveGameId);
+  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const activeGameId = useAppStore((state) => state.activeGameId);
-  const { addToast } = useToastStore();
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<GameConfig | null>(null);
-  const [scanningId, setScanningId] = useState<string | null>(null);
+  const [pendingSourceChange, setPendingSourceChange] = useState<PendingSourceChange | null>(null);
+  const [sourceConfirmation, setSourceConfirmation] = useState('');
+  const [sourceChangeError, setSourceChangeError] = useState<string | null>(null);
+  const [sourceChangePending, setSourceChangePending] = useState(false);
 
   const handleAdd = () => {
     setEditingGame(null);
@@ -31,11 +40,11 @@ export default function GamesTab() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!settings) return;
     if (window.confirm(t('settings:games.delete_confirm'))) {
       const newGames = settings.games.filter((g) => g.id !== id);
-      saveSettings({ ...settings, games: newGames });
+      await saveSettingsAsync({ ...settings, games: newGames });
 
       // If deleted active game, deselect it
       if (activeGameId === id) {
@@ -44,55 +53,77 @@ export default function GamesTab() {
     }
   };
 
-  const handleSave = (game: GameConfig) => {
-    if (!settings) return;
+  const applySourceChange = async (
+    pending: PendingSourceChange,
+    confirmEmpty: boolean,
+    differentGameName: string | null,
+  ) => {
+    const applied = await commands.applyGameModsDirectory({
+      game_id: pending.game.id,
+      candidate_path: pending.inspection.candidate_path,
+      expected_fingerprint: pending.inspection.fingerprint,
+      confirm_empty: confirmEmpty,
+      different_confirmation_game_name: differentGameName,
+    });
+    const refreshed = await commands.getSettings();
+    const games = refreshed.games.map((configured) =>
+      configured.id === pending.game.id
+        ? { ...pending.game, mod_path: applied.game.mod_path }
+        : configured,
+    );
+    await saveSettingsAsync({ ...refreshed, games });
+    applyDiskReconcileResult(applied.reconcile, queryClient, applied.game);
+  };
+
+  const handleSave = async (game: GameConfig): Promise<boolean> => {
+    if (!settings) return false;
 
     const newGames = [...settings.games];
     const index = newGames.findIndex((g) => g.id === game.id);
 
     if (index >= 0) {
-      // Edit
+      if (!pathsEqual(newGames[index].mod_path, game.mod_path)) {
+        const inspection = await commands.inspectGameModsDirectory(game.id, game.mod_path);
+        const pending = { game, inspection };
+        if (
+          inspection.summary.classification === 'Matching' ||
+          inspection.summary.classification === 'NewLibrary'
+        ) {
+          await applySourceChange(pending, false, null);
+          return true;
+        }
+        setPendingSourceChange(pending);
+        setSourceConfirmation('');
+        setSourceChangeError(null);
+        return false;
+      }
       newGames[index] = game;
     } else {
-      // Add
       newGames.push(game);
     }
 
-    saveSettings({ ...settings, games: newGames });
+    await saveSettingsAsync({ ...settings, games: newGames });
+    return true;
   };
 
-  const handleRescan = async (game: GameConfig) => {
-    if (scanningId) return;
-    setScanningId(game.id);
-    const toastId = addToast('info', t('settings:games.actions.scanning', { name: game.name }), 0); // Persist toast
-
+  const confirmSourceChange = async () => {
+    if (!pendingSourceChange) return;
+    setSourceChangePending(true);
+    setSourceChangeError(null);
     try {
-      const result = await scanService.runDeepmatchScanner(
-        game.id,
-        game.name,
-        game.game_type,
-        game.mod_path,
+      const classification = pendingSourceChange.inspection.summary.classification;
+      await applySourceChange(
+        pendingSourceChange,
+        classification === 'Empty',
+        classification === 'Different' ? sourceConfirmation : null,
       );
-
-      // Update the toast after scan completes
-      useToastStore.getState().removeToast(toastId);
-      addToast(
-        'success',
-        t('settings:games.actions.scan_success', {
-          new: result.newMods,
-          updated: result.updatedMods,
-        }),
-      );
-
-      if (activeGameId === game.id) {
-        await publishQueryScopes(queryClient, ['corridorState']);
-      }
-    } catch (e) {
-      console.error(e);
-      useToastStore.getState().removeToast(toastId);
-      addToast('error', t('settings:games.actions.scan_failed', { error: formatAppError(e) }));
+      setPendingSourceChange(null);
+      setSourceConfirmation('');
+      setIsModalOpen(false);
+    } catch (error) {
+      setSourceChangeError(formatAppError(error));
     } finally {
-      setScanningId(null);
+      setSourceChangePending(false);
     }
   };
 
@@ -154,6 +185,16 @@ export default function GamesTab() {
 
                 <div className="join">
                   <button
+                    className="btn btn-ghost btn-sm join-item text-accent"
+                    onClick={() => {
+                      setActiveGameId(game.id);
+                      setWorkspaceView('mod-inbox');
+                    }}
+                    title={t('settings:games.actions.scan_ready_to_move')}
+                  >
+                    <Inbox size={16} />
+                  </button>
+                  <button
                     className="btn btn-ghost btn-sm join-item text-primary"
                     onClick={() => setActiveGameId(game.id)}
                     disabled={activeGameId === game.id}
@@ -162,28 +203,15 @@ export default function GamesTab() {
                     <Play size={16} />
                   </button>
                   <button
-                    className="btn btn-ghost btn-sm join-item text-secondary hover:bg-secondary/10"
-                    onClick={() => void handleRescan(game)}
-                    disabled={scanningId !== null}
-                    title={t('settings:games.actions.rescan')}
-                  >
-                    <RefreshCcw
-                      size={16}
-                      className={scanningId === game.id ? 'animate-spin' : ''}
-                    />
-                  </button>
-                  <button
                     className="btn btn-ghost btn-sm join-item"
                     onClick={() => handleEdit(game)}
-                    disabled={scanningId !== null}
                     title={t('settings:games.actions.edit')}
                   >
                     <Edit2 size={16} />
                   </button>
                   <button
                     className="btn btn-ghost btn-sm join-item text-error hover:bg-error/10"
-                    onClick={() => handleDelete(game.id)}
-                    disabled={scanningId !== null}
+                    onClick={() => void handleDelete(game.id)}
                     title={t('settings:games.actions.remove')}
                   >
                     <Trash2 size={16} />
@@ -204,6 +232,74 @@ export default function GamesTab() {
           .filter((game) => game.id !== editingGame?.id)
           .map((game) => game.mod_path)}
       />
+      {pendingSourceChange && (
+        <dialog open className="modal modal-open" aria-labelledby="settings-source-change-title">
+          <div className="modal-box max-w-lg">
+            <h3 id="settings-source-change-title" className="text-lg font-bold">
+              {t('grid:banners.source_dialog_title')}
+            </h3>
+            <p className="mt-3 text-sm text-warning" role="alert">
+              {t(
+                pendingSourceChange.inspection.summary.classification === 'Empty'
+                  ? 'grid:banners.source_empty_warning'
+                  : 'grid:banners.source_different_warning',
+              )}
+            </p>
+            <code className="mt-3 block break-all rounded bg-base-200 p-2 text-xs">
+              {pendingSourceChange.inspection.candidate_path}
+            </code>
+            {sourceChangeError && (
+              <p className="alert alert-error mt-3 text-sm" role="alert">
+                {sourceChangeError}
+              </p>
+            )}
+            {pendingSourceChange.inspection.summary.classification === 'Different' && (
+              <label className="form-control mt-4">
+                <span className="label-text text-xs">
+                  {t('grid:banners.source_type_game_name', {
+                    name: pendingSourceChange.game.name,
+                  })}
+                </span>
+                <input
+                  className="input input-bordered mt-1 w-full"
+                  value={sourceConfirmation}
+                  onChange={(event) => setSourceConfirmation(event.target.value)}
+                  autoComplete="off"
+                />
+              </label>
+            )}
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={sourceChangePending}
+                onClick={() => {
+                  setPendingSourceChange(null);
+                  setSourceChangeError(null);
+                }}
+              >
+                {t('common:actions.cancel')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-warning"
+                disabled={
+                  sourceChangePending ||
+                  (pendingSourceChange.inspection.summary.classification === 'Different' &&
+                    sourceConfirmation.trim() !== pendingSourceChange.game.name)
+                }
+                onClick={() => void confirmSourceChange()}
+              >
+                {t(
+                  pendingSourceChange.inspection.summary.classification === 'Empty'
+                    ? 'grid:banners.source_confirm_empty_btn'
+                    : 'grid:banners.source_confirm_different_btn',
+                )}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
     </div>
   );
 }

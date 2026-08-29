@@ -19,6 +19,9 @@ import {
 } from '../../../types/workspace';
 import type { IniDocumentLike } from '../previewPanelUtils';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '../../workspace-runtime/actions/workspaceActionAvailability';
+import { useAppStore } from '../../../stores/useAppStore';
+import { isFolderConflictProtected } from '../../folder-grid/hooks/folderConflictScope';
+import type { FolderNameConflictGroup } from '../../../lib/bindings';
 
 interface PreviewIniDocument {
   fileName: string;
@@ -27,6 +30,7 @@ interface PreviewIniDocument {
 
 interface PreviewRuntimeState {
   activePath: string | null;
+  folderNameConflict: FolderNameConflictGroup | null;
   selectedFolder: WorkspaceExplorerNode | null;
   previewSummary: WorkspacePreview | null;
   resolvedTitle: string | null;
@@ -47,6 +51,19 @@ interface PreviewRuntimeState {
 export function usePreviewRuntime(): PreviewRuntimeState {
   const { data: workspace } = useWorkspaceViewModel();
   const activePath = workspace?.preview.selected_path ?? null;
+  const activeGameId = useAppStore((state) => state.activeGameId);
+  const folderConflicts = useAppStore((state) =>
+    activeGameId ? (state.folderConflictsByGame[activeGameId] ?? []) : [],
+  );
+  const folderNameConflict =
+    activePath === null
+      ? null
+      : (folderConflicts.find((group) =>
+          group.candidates.some((candidate) =>
+            isFolderConflictProtected(activePath, [candidate.path]),
+          ),
+        ) ?? null);
+  const detailPath = folderNameConflict ? null : activePath;
   const previewSummary = workspace?.preview ?? null;
   const selectedNode = workspace?.preview.selected_node ?? null;
   const selectedFolder = isWorkspaceExplorerNode(selectedNode) ? selectedNode : null;
@@ -58,8 +75,8 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const resolvedTitle = workspace?.preview.display_title ?? selectedFolder?.display_name ?? null;
   const resolvedSubtitle = workspace?.preview.display_subtitle ?? null;
 
-  const iniFilesQuery = useModIniFiles(activePath);
-  const previewImagesQuery = usePreviewImages(activePath);
+  const iniFilesQuery = useModIniFiles(detailPath);
+  const previewImagesQuery = usePreviewImages(detailPath);
   // Each mutation invalidates its own detail queries in `usePreviewData`.
   const updateModInfo = useUpdateModInfoDetails();
   const savePreviewImage = useSavePreviewImage();
@@ -69,7 +86,7 @@ export function usePreviewRuntime(): PreviewRuntimeState {
 
   const iniFiles = useMemo<IniFileEntry[]>(() => iniFilesQuery.data ?? [], [iniFilesQuery.data]);
 
-  const allIniQueries = useAllModIniDocuments(activePath, iniFiles);
+  const allIniQueries = useAllModIniDocuments(detailPath, iniFiles);
   const iniDocuments = useMemo(
     () =>
       iniFiles.map((file, index) => ({
@@ -83,6 +100,7 @@ export function usePreviewRuntime(): PreviewRuntimeState {
 
   return {
     activePath,
+    folderNameConflict,
     selectedFolder,
     previewSummary,
     resolvedTitle,

@@ -7,8 +7,6 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../lib/bindings';
-import i18n from '../lib/i18n';
-import { toast } from '../stores/useToastStore';
 import { useActiveGame } from './useActiveGame';
 import { thumbnailKeys } from './useThumbnail';
 import { detailsKeys } from '../features/preview/hooks/usePreviewData';
@@ -20,11 +18,9 @@ import {
 } from '../features/workspace-runtime/optimistic/descriptorBuilders';
 import { ModInfoUpdate } from '../types/object';
 import { ConflictInfo } from '../types/scanner';
-import { TrashEntry } from '../types/mod';
 import { useAppStore } from '../stores/useAppStore';
 import { applyRuntimePathInvalidationMutationResult } from '../features/workspace-runtime/actions/sharedRuntimeResultMapper';
-import { withWatcherSuppression } from '../features/file-watcher/watcherSuppression';
-import { formatBulkFailureMessage } from './bulkToastMessages';
+import { notifyCommittedMutationSyncWarning } from '../lib/committedMutationWarning';
 
 /**
  * Getter for the active game id that throws when there is none.
@@ -48,37 +44,6 @@ function useRequireActiveGameId(): () => string {
 // ── Trash ───────────────────────────────────────────────────────
 
 /** Query key for trash listing. */
-export const trashKeys = {
-  all: ['trash'] as const,
-  list: () => [...trashKeys.all, 'list'] as const,
-};
-
-/** Hook to fetch all trashed mods. */
-export function useListTrash(enabled = true) {
-  return useQuery<TrashEntry[]>({
-    queryKey: trashKeys.list(),
-    queryFn: () => commands.listTrash(),
-    enabled,
-    staleTime: 30_000,
-  });
-}
-
-/** Hook to permanently delete all items in the trash. */
-export function useEmptyTrash() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => commands.emptyTrash(),
-    onSuccess: () => {
-      void publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('trashOnly'),
-        'active',
-      );
-    },
-  });
-}
-
 // ── Metadata Mutations ──────────────────────────────────────────
 
 /** Hook to update a mod's category (object type). */
@@ -123,7 +88,7 @@ export function useToggleModSafe() {
   return useMutation({
     mutationFn: (params: { gameId: string; folderPath: string; safe: boolean }) =>
       commands.toggleModSafe(params.gameId, params.folderPath, params.safe),
-    onSuccess: async (_data, variables) => {
+    onSuccess: async (result, variables) => {
       // If it was selected, clear the selection pane as well
       const appStore = useAppStore.getState();
       if (appStore.gridSelection?.has(variables.folderPath)) {
@@ -133,9 +98,10 @@ export function useToggleModSafe() {
       await applyRuntimePathInvalidationMutationResult(
         queryClient,
         [variables.folderPath],
-        'workspaceCorridor',
+        'safetyClassification',
         'active',
       );
+      notifyCommittedMutationSyncWarning(result);
     },
   });
 }
@@ -147,10 +113,7 @@ export function useDeleteModThumbnail() {
 
   return useMutation({
     mutationFn: async (folderPath: string) => {
-      // Rust resolves the path itself here, but deleting a thumbnail with no
-      // active game still means the caller is in an invalid state.
-      requireGameId();
-      await commands.deleteModThumbnail(folderPath);
+      await commands.deleteModThumbnail(requireGameId(), folderPath);
     },
     onSuccess: async (_data, folderPath) => {
       const descriptor = buildQueryInvalidationDescriptor(
@@ -199,37 +162,7 @@ export function useUpdateModInfo() {
   });
 }
 
-// ── Import & Organize ───────────────────────────────────────────
-
-/** Hook to import mods from external paths (Drag & Drop). */
-export function useImportMods() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (params: { paths: string[]; targetDir: string }) => {
-      return withWatcherSuppression({ releaseDelayMs: null }, async () => {
-        return commands.importModsFromPaths(params.paths, params.targetDir);
-      });
-    },
-    onSuccess: (result) => {
-      void publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('folderSwitch'),
-        'active',
-      );
-      if (result.success.length > 0) {
-        toast.success(
-          i18n.t('grid:bulk_toast.import_success', {
-            count: result.success.length,
-          }),
-        );
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'import'));
-      }
-    },
-  });
-}
+// ── Conflict queries ─────────────────────────────────────────────
 
 /**
  * Hook to get all active conflicts for the current game.

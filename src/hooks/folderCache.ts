@@ -3,8 +3,6 @@ import type { SortField, SortOrder } from '../types/mod';
 
 export const folderKeys = {
   all: ['mod-folders'] as const,
-  list: (modsPath: string, subPath?: string, safeMode?: boolean) =>
-    [...folderKeys.all, modsPath, subPath ?? '', safeMode ?? null] as const,
 };
 
 export function sortFolders<TFolder extends ModFolder>(

@@ -18,6 +18,7 @@ fn entry(name: &str, aliases: Vec<&str>) -> DbEntry {
         name: name.to_string(),
         tags: vec!["electro".to_string()],
         object_type: "Character".to_string(),
+        entry_kind: Default::default(),
         custom_skins: if aliases.is_empty() {
             vec![]
         } else {
@@ -116,7 +117,7 @@ fn attach_adds_nothing_when_every_alias_is_a_duplicate() {
 }
 
 /// An alias whose entry key matches nothing bundled is dropped rather than
-/// creating a phantom entry — the matcher can only return bundled entries.
+/// creating a phantom entry â€” the matcher can only return bundled entries.
 #[test]
 fn attach_drops_aliases_for_unknown_entry_keys() {
     let mut db = MasterDb::new(vec![entry("Raiden Shogun", vec![])]);

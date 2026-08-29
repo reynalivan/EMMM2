@@ -8,7 +8,7 @@ export type RuntimeRefreshEvent =
   | 'previewChanged'
   | 'thumbnailChanged'
   | 'conflictsChanged'
-  | 'corridorChanged'
+  | 'runtimeStateChanged'
   | 'collectionsChanged'
   | 'dashboardChanged'
   | 'activeKeybindingsChanged'
@@ -19,8 +19,7 @@ export type RuntimeRefreshEvent =
   | 'browserHomepageChanged'
   | 'dedupChanged'
   | 'dedupReportChanged'
-  | 'scannerChanged'
-  | 'pinsChanged';
+  | 'scannerChanged';
 
 /**
  * Invalidation-only contract: effects either evict caches (`thumbnailPaths`,

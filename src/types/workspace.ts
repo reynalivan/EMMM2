@@ -14,6 +14,7 @@ export type {
   WorkspacePreview,
   WorkspaceReason,
   WorkspaceReasonCode,
+  WorkspaceRecoveryStatus,
   WorkspaceRefreshScope,
   WorkspaceRuntime,
   WorkspaceSelection,

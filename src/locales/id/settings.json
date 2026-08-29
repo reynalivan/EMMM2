@@ -72,8 +72,6 @@
   "toast": {
     "save_success": "Pengaturan berhasil disimpan.",
     "save_failed": "Gagal menyimpan pengaturan: {{error}}",
-    "pin_success": "PIN Safe Mode berhasil diperbarui.",
-    "pin_failed": "Gagal memperbarui PIN: {{error}}",
     "ai_failed": "Gagal memperbarui konfigurasi AI: {{error}}",
     "theme_success": "Tema berhasil diperbarui.",
     "theme_failed": "Gagal memperbarui tema: {{error}}",
@@ -88,12 +86,9 @@
     "active": "AKTIF",
     "actions": {
       "set_active": "Jadikan Aktif",
-      "rescan": "Pindai Ulang Perpustakaan",
+      "scan_ready_to_move": "Buka Mod Inbox",
       "edit": "Edit Game",
-      "remove": "Hapus Game",
-      "scanning": "Memindai perpustakaan untuk {{name}}...",
-      "scan_success": "Pemindaian selesai! Menemukan {{new}} mod baru dan {{updated}} pembaruan.",
-      "scan_failed": "Pemindaian gagal: {{error}}"
+      "remove": "Hapus Game"
     },
     "delete_confirm": "Apakah Anda yakin ingin menghapus konfigurasi game ini?",
     "types": {
@@ -112,6 +107,9 @@
       "path_label": "Path Folder Mod",
       "path_placeholder": "C:/Games/Genshin Impact/Mods",
       "path_help": "Pilih folder tempat Anda menyimpan Mod.",
+      "ready_to_move_label": "Mod Inbox (Opsional)",
+      "ready_to_move_placeholder": "Default: Downloads/mods/<nama-game>",
+      "ready_to_move_help": "Folder dan arsip yang disimpan di sini akan tampil pada halaman Mod Inbox.",
       "exe_label": "Executable Game (.exe)",
       "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
       "advanced_title": "Opsi Lanjutan",
@@ -133,6 +131,7 @@
         "pick_folder_error": "Gagal memilih folder",
         "pick_file_error": "Gagal memilih file",
         "pick_folder_title": "Pilih Folder Mod",
+        "pick_ready_to_move_title": "Pilih Mod Inbox",
         "pick_exe_title": "Pilih Executable Game",
         "pick_loader_title": "Pilih Executable Loader"
       }
@@ -195,7 +194,6 @@
     "cooldown_desc": "Mencegah pemicuan ganda yang tidak disengaja",
     "conflicts_title": "Konflik Kunci Terdeteksi",
     "labels": {
-      "safe_mode": "Safe Mode (Tombol Panik)",
       "next_preset": "Beralih ke Preset Berikutnya",
       "prev_preset": "Beralih ke Preset Sebelumnya",
       "toggle_overlay": "Alihkan Overlay (Banner + KeyViewer)",
@@ -229,12 +227,6 @@
     "storage_title": "Pengoptimal Penyimpanan",
     "storage_desc": "Temukan mod besar, file duplikat, dan peluang pembersihan sebelum memenuhi ruang disk.",
     "retention_title": "Retensi Penyimpanan",
-    "trash_title": "Manajemen Tempat Sampah",
-    "trash_desc": "Hapus mod yang dihapus secara permanen untuk membebaskan ruang disk.",
-    "empty_trash": "Kosongkan Tempat Sampah",
-    "trash_confirm": "Apakah Anda yakin ingin menghapus semua item di Tempat Sampah secara permanen?",
-    "trash_success": "Tempat Sampah Dikosongkan: Semua item dihapus.",
-    "trash_failed": "Gagal mengosongkan tempat sampah: {{error}}",
     "system_title": "Pemeliharaan Sistem",
     "system_desc": "Jalankan tugas pembersihan otomatis, verifikasi integritas database, dan bersihkan metadata yatim piatu.",
     "run_maintenance": "Jalankan Pemeliharaan",
@@ -277,22 +269,9 @@
     "keywords_placeholder": "misal: skin, lewd, bikini",
     "keywords_add": "Tambah Kata Kunci",
     "keywords_empty": "Tidak ada kata kunci klasifikasi yang dikonfigurasi.",
+    "keywords_remove": "Hapus {{keyword}}",
     "keywords_exists": "Kata kunci sudah ada",
-    "keywords_update_failed": "Gagal memperbarui kata kunci: {{error}}",
-    "protection_title": "Klasifikasi Kata Kunci Ketat",
-    "protection_desc": "Saat diaktifkan, kecocokan kata kunci dapat mengklasifikasikan mod sebagai unsafe walaupun metadata menyatakan safe.",
-    "protection_update_failed": "Gagal memperbarui perlindungan: {{error}}",
-    "security_title": "PIN & Pemulihan",
-    "security_status_set": "Perlindungan PIN AKTIF.",
-    "security_status_none": "Tidak ada PIN yang disetel.",
-    "security_recovery_configured": "Kode Pemulihan Dikonfigurasi",
-    "security_remove": "Hapus PIN",
-    "security_change": "Ganti PIN",
-    "security_set": "Setel PIN",
-    "security_modal_set_title": "Setel PIN Keamanan",
-    "security_modal_unlock_title": "Buka Perlindungan PIN",
-    "security_modal_set_desc": "Membuat PIN akan melindungi pengaturan sensitif dan aksi reveal.",
-    "security_modal_unlock_desc": "Masukkan PIN Anda saat ini untuk melanjutkan."
+    "keywords_update_failed": "Gagal memperbarui kata kunci: {{error}}"
   },
   "logs": {
     "title": "Log Sistem",

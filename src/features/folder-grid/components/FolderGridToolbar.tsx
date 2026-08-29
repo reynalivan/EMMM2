@@ -1,6 +1,8 @@
-import { Search, ChevronLeft, ArrowUpDown, LayoutGrid, List, RefreshCw } from 'lucide-react';
+import { Search, ChevronLeft, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ExplorerBreadcrumbs from './Breadcrumbs';
+import { SafetyFilterControl } from '../../../components/ui/SafetyFilterControl';
+import { useAppStore } from '../../../stores/useAppStore';
 
 export interface FolderGridToolbarProps {
   isMobile: boolean;
@@ -16,7 +18,6 @@ export interface FolderGridToolbarProps {
   explorerSearchQuery: string;
   setExplorerSearch: (query: string) => void;
   visibleCount: number;
-  handleRefresh: () => void;
 }
 
 export default function FolderGridToolbar({
@@ -33,9 +34,10 @@ export default function FolderGridToolbar({
   explorerSearchQuery,
   setExplorerSearch,
   visibleCount,
-  handleRefresh,
 }: FolderGridToolbarProps) {
   const { t } = useTranslation(['grid']);
+  const safetyFilter = useAppStore((state) => state.safetyFilter);
+  const setSafetyFilter = useAppStore((state) => state.setSafetyFilter);
 
   return (
     <>
@@ -115,16 +117,10 @@ export default function FolderGridToolbar({
             onChange={(e) => setExplorerSearch(e.target.value)}
           />
         </div>
+        <SafetyFilterControl value={safetyFilter} onChange={setSafetyFilter} compact={isMobile} />
         <span className="text-[10px] text-base-content/30 font-medium tabular-nums shrink-0">
           {t('toolbar.item_count', { count: visibleCount })}
         </span>
-        <button
-          onClick={handleRefresh}
-          className="btn btn-ghost btn-xs btn-square text-base-content/30 hover:text-primary transition-colors"
-          title={t('toolbar.refresh_title')}
-        >
-          <RefreshCw size={14} />
-        </button>
       </div>
     </>
   );

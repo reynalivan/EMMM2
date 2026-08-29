@@ -13,6 +13,12 @@ import { AutoDetectResult } from './AutoDetectResult';
 import AuroraBackground from './welcome/AuroraBackground';
 import SmartDemoStrip from './welcome/SmartDemoStrip';
 import AnimatedLogo from './welcome/AnimatedLogo';
+import { useOnboardingDiskProgress } from './useOnboardingDiskProgress';
+import {
+  estimatedRemainingMs,
+  formatEstimatedDuration,
+  type IndexingProgress,
+} from './indexingProgress';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 
@@ -27,10 +33,12 @@ export default function WelcomeScreen({
   const [view, setView] = useState<Screen>('welcome');
   const [isScanning, setIsScanning] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
   const prefersReduced = usePrefersReducedMotion();
+  const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames);
 
   // One shared entrance rhythm for every block on the welcome view.
   const fade = {
@@ -99,12 +107,27 @@ export default function WelcomeScreen({
     try {
       setError(null);
       setIsIndexing(true);
+      const total = Math.max(1, games.length);
+      const completedDurationsMs: number[] = [];
+      setIndexingProgress({
+        completed: 0,
+        total,
+        currentGame: games[0]?.name ?? null,
+        completedDurationsMs,
+      });
 
       // Save the games to DB — this is mandatory
       await commands.saveOnboardingGames(games);
 
       // Disk Reconcile only. Onboarding must not trigger Deep Match Scanner implicitly.
-      for (const game of games) {
+      for (const [index, game] of games.entries()) {
+        setIndexingProgress({
+          completed: index,
+          total,
+          currentGame: game.name,
+          completedDurationsMs: [...completedDurationsMs],
+        });
+        const startedAt = performance.now();
         try {
           await commands.reconcileDiskStateCmd(game.id, 'OnboardingCompleted', null, true);
         } catch (refreshErr) {
@@ -113,6 +136,13 @@ export default function WelcomeScreen({
             refreshErr,
           );
         }
+        completedDurationsMs.push(performance.now() - startedAt);
+        setIndexingProgress({
+          completed: index + 1,
+          total,
+          currentGame: game.name,
+          completedDurationsMs: [...completedDurationsMs],
+        });
       }
 
       onComplete(games);
@@ -120,6 +150,7 @@ export default function WelcomeScreen({
       // Only the save_onboarding_games failure is a hard blocker
       setError(formatAppError(err));
       setIsIndexing(false);
+      setIndexingProgress(null);
     }
   };
 
@@ -270,20 +301,57 @@ export default function WelcomeScreen({
 
   // == Indexing State ==
   if (isIndexing) {
+    const progress = indexingProgress ?? {
+      completed: 0,
+      total: 1,
+      currentGame: null,
+      completedDurationsMs: [],
+    };
+    const rootProgress = diskProgress?.total_units === null ? null : diskProgress;
+    const completed = rootProgress?.completed_units ?? progress.completed;
+    const total = rootProgress?.total_units ?? progress.total;
+    const percent = Math.round((completed / total) * 100);
+    const remaining = rootProgress?.eta_ms ?? estimatedRemainingMs(progress);
     return (
       <div className="min-h-screen bg-base-100 flex items-center justify-center">
-        <div className="text-center space-y-6">
-          <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto" />
+        <div className="w-full max-w-sm px-6 text-center space-y-6">
+          <Loader2 className="w-12 h-12 text-primary animate-spin motion-reduce:animate-none mx-auto" />
           <div>
             <h2 className="text-2xl font-semibold">{t('onboarding:indexing.title')}</h2>
             <p className="text-base-content/60 mt-2">{t('onboarding:indexing.subtitle')}</p>
+          </div>
+          <div className="space-y-2 text-left" aria-live="polite">
+            <div className="flex items-center justify-between text-sm text-base-content/70">
+              <span className="truncate">
+                {diskProgress?.current_root ??
+                  progress.currentGame ??
+                  t('onboarding:indexing.preparing')}
+              </span>
+              <span>{percent}%</span>
+            </div>
+            <progress
+              className="progress progress-primary h-3 w-full"
+              value={completed}
+              max={total}
+              role="progressbar"
+              aria-label={t('onboarding:indexing.progress_label')}
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={completed}
+            />
+            <p className="text-center text-xs text-base-content/50">
+              {remaining === null
+                ? t('onboarding:indexing.estimating')
+                : t('onboarding:indexing.estimated_remaining', {
+                    duration: formatEstimatedDuration(remaining),
+                  })}
+            </p>
           </div>
         </div>
       </div>
     );
   }
 
-  // == Manual Setup View ==
   if (view === 'manual') {
     return (
       <ManualSetupForm
@@ -299,7 +367,6 @@ export default function WelcomeScreen({
     );
   }
 
-  // == Result View ==
   if (view === 'result') {
     return (
       <AutoDetectResult

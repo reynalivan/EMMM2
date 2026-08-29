@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../lib/bindings';
 import { useAppStore } from '../stores/useAppStore';
 import { useActiveGame } from './useActiveGame';
-import { useSafeMode } from './settingsQuery';
 import { getCategoryCounts } from '../lib/services/objectService';
 import {
   buildObjectListRefreshDescriptor,
@@ -15,11 +14,10 @@ import type { GameType } from '../types/game';
 
 export function useCategoryCounts() {
   const { activeGame } = useActiveGame();
-  const safeMode = useSafeMode();
   const gameId = activeGame?.id ?? '';
 
   return useQuery<CategoryCount[]>({
-    queryKey: [...objectKeys.counts(gameId), safeMode],
+    queryKey: objectKeys.counts(gameId),
     queryFn: () => getCategoryCounts(gameId),
     enabled: !!gameId,
     staleTime: 30_000,
@@ -50,7 +48,7 @@ export function useGameSwitch() {
       buildObjectListRefreshDescriptor({
         includeFolders: true,
         includeCollections: true,
-        includeCorridor: true,
+        includeRuntime: true,
         includeDashboard: true,
       }),
       'active',

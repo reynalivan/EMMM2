@@ -21,38 +21,26 @@ export function useImportQueue() {
   useEffect(() => {
     // The event only says a job moved; the refetch brings the whole row back —
     // including jobs auto-import queued while the panel was open.
-    const unlisten = listen<ImportJobUpdateEvent>('import:job-update', () => {
+    const unlistenJob = listen<ImportJobUpdateEvent>('import:job-update', () => {
+      void publishQueryScopes(queryClient, ['browserImportQueue']);
+    });
+    const unlistenBatch = listen<ImportJobUpdateEvent>('import:batch-update', () => {
       void publishQueryScopes(queryClient, ['browserImportQueue']);
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      void unlistenJob.then((fn) => fn());
+      void unlistenBatch.then((fn) => fn());
     };
   }, [queryClient]);
 
-  const confirmMutation = useMutation({
-    mutationFn: ({
-      jobId,
-      gameId,
-      category,
-      objectId,
-    }: {
-      jobId: string;
-      gameId: string;
-      category: string;
-      objectId?: string | null;
-    }) => commands.browserConfirmImport(jobId, gameId, category, objectId ?? null),
-    onSuccess: async () => publishQueryScopes(queryClient, ['browserImportQueue']),
-  });
-
   const skipMutation = useMutation({
-    mutationFn: (jobId: string) => commands.browserCancelImport(jobId),
+    mutationFn: (batchId: string) => commands.cancelImportBatch(batchId),
     onSuccess: async () => publishQueryScopes(queryClient, ['browserImportQueue']),
   });
 
   return {
     jobs: query.data ?? [],
-    confirmJob: confirmMutation.mutate,
-    skipJob: skipMutation.mutate,
+    cancelBatch: skipMutation.mutate,
   };
 }

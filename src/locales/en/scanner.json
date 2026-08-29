@@ -157,16 +157,46 @@
     "action_close": "Close"
   },
   "conflict_toast": {
-    "title": "Shader Conflict Detected!",
-    "count": "{{count}} conflict(s) detected."
+    "title": "Enabled Mod Conflicts Detected",
+    "count": "{{count}} conflict(s) between enabled mods."
   },
   "conflict_modal": {
-    "title": "Shader Conflicts Detected",
+    "title": "Enabled Mod Conflicts",
     "empty": "No conflicts found.",
-    "description": "These mods modify the same shader or buffer hashes. Enabling them together may cause glitches or crashes.",
+    "description": "Only files loaded from enabled mods are listed. Matching resource or shader overrides may cause glitches or crashes.",
     "acknowledge": "Acknowledge",
     "definite": "Definite overlap",
-    "potential": "Potential overlap"
+    "potential": "Potential overlap",
+    "kind": {
+      "resource_hash": "Resource hash",
+      "shader_hash": "Shader hash",
+      "shader_replacement": "Shader replacement"
+    },
+    "namespace": "Namespace",
+    "match_priority": "Match priority",
+    "first_index": "First index",
+    "shader_stage": "Shader stage",
+    "resolved": "Resolved",
+    "unresolved": "Unresolved",
+    "potential_guidance": "Runtime conditions may prevent a real overlap. Choose manually; no winner is selected automatically.",
+    "keep": "Keep",
+    "disable": "Disable",
+    "open": "Open",
+    "keep_enabled": "Keep {{name}} enabled",
+    "disable_mod": "Disable {{name}}",
+    "open_folder": "Open {{name}} folder",
+    "impact": "{{resolved}}/{{total}} groups resolved · {{count}} mods selected",
+    "clear_choices": "Clear choices",
+    "review_changes": "Review changes",
+    "review_title": "Review conflict resolution",
+    "review_description": "These enabled mods will be disabled. Review every path before applying the change.",
+    "mods_to_disable": "Mods to disable",
+    "resolved_groups": "Resolved groups",
+    "unresolved_groups": "Unresolved groups",
+    "unresolved_warning": "{{count}} conflict group(s) will remain after this change.",
+    "disable_confirm": "Disable {{count}} mod(s)",
+    "submit_failed": "Could not disable the selected mods: {{error}}",
+    "open_failed": "Could not open the mod folder: {{error}}"
   },
   "overlay": {
     "title": "Scanning Mods...",

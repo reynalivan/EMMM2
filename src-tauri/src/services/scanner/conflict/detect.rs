@@ -1,5 +1,7 @@
 use crate::domain::errors::ScannerError;
-use crate::services::scanner::conflict::{detect_conflicts, ConflictInfo};
+use crate::services::scanner::conflict::{
+    detect_conflicts_with_roots, discover_runtime_ini_files, ConflictInfo,
+};
 use crate::services::scanner::core::walker;
 use std::path::Path;
 
@@ -11,17 +13,18 @@ pub fn detect_conflicts_in_folder_service(
     let candidates = walker::scan_mod_folders(mods_path)?;
 
     let mut all_inis = Vec::new();
+    let mut mod_roots = Vec::new();
     for candidate in candidates {
         // Only check active mods
         if candidate.is_disabled {
             continue;
         }
 
-        let content = walker::scan_folder_content(&candidate.path, 3); // Depth 3 per Epic 2
-        for ini in content.ini_files {
+        mod_roots.push(candidate.path.clone());
+        for ini in discover_runtime_ini_files(&candidate.path) {
             all_inis.push((candidate.path.clone(), ini));
         }
     }
 
-    Ok(detect_conflicts(&all_inis))
+    Ok(detect_conflicts_with_roots(&all_inis, &mod_roots))
 }

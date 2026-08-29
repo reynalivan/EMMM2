@@ -1,30 +1,8 @@
-import type { MatchedDbEntry } from '../../../lib/bindings';
 import type { ModFolder } from '../../../types/object';
 import type { DuplicateInfo } from '../../../types/scanner';
 import type { WorkspaceExplorerNode, WorkspaceObjectNode } from '../../../types/workspace';
 
 export type WorkspaceMobilePane = 'sidebar' | 'grid' | 'details';
-
-export interface SyncCurrentData {
-  name: string;
-  object_type: string;
-  metadata: Record<string, unknown> | null;
-  thumbnail_path: string | null;
-}
-
-export interface ObjectSyncCurrentData {
-  name: string;
-  object_type: string;
-  metadata: Record<string, unknown> | null;
-  thumbnail_path: string | null;
-}
-
-export interface WorkspaceRenameConflict {
-  type: 'RenameConflict';
-  attempted_target: string;
-  existing_path: string;
-  base_name: string;
-}
 
 export interface WorkspaceFileInUseDialogData {
   path: string;
@@ -35,12 +13,13 @@ export interface WorkspaceFileInUseDialogData {
 export type WorkspaceDialogState =
   | { kind: 'none' }
   | { kind: 'previewUnsavedChanges' }
-  | { kind: 'conflict'; conflict: WorkspaceRenameConflict }
+  | { kind: 'folderConflicts' }
+  | { kind: 'renameConfirmations' }
+  | { kind: 'sourceRecovery' }
   | { kind: 'fileInUse'; data: WorkspaceFileInUseDialogData }
   | { kind: 'modMove'; folder: ModFolder }
   | { kind: 'modRename'; folder: ModFolder }
   | { kind: 'modDelete'; folder: ModFolder }
-  | { kind: 'modPinSafe'; folder: ModFolder }
   | { kind: 'modActiveContext'; folder: ModFolder; isProcessing: boolean }
   | { kind: 'modDuplicateWarning'; folder: ModFolder; duplicates: DuplicateInfo[] }
   | {
@@ -50,25 +29,9 @@ export type WorkspaceDialogState =
       willActivate: WorkspaceExplorerNode[];
       stayDisabled: WorkspaceExplorerNode[];
     }
-  | {
-      kind: 'modSync';
-      folder: ModFolder;
-      match: MatchedDbEntry | null;
-      isLoading: boolean;
-      currentData: SyncCurrentData | null;
-    }
   | { kind: 'objectEdit'; object: WorkspaceObjectNode }
   | { kind: 'objectDelete'; id: string; name: string }
-  | { kind: 'objectForceDelete'; id: string; name: string; count: number }
-  | {
-      kind: 'objectSync';
-      objectId: string;
-      objectName: string;
-      itemType: 'object' | 'folder';
-      match: MatchedDbEntry | null;
-      isLoading: boolean;
-      currentData: ObjectSyncCurrentData | null;
-    };
+  | { kind: 'objectForceDelete'; id: string; name: string; count: number };
 
 export type WorkspaceTransitionTarget =
   | { kind: 'focusObject'; folderPath: string }

@@ -1,0 +1,68 @@
+{
+  "title": "Kotak Masuk Mod",
+  "subtitle": "Tinjau mod unduhan sebelum memindahkannya ke pustaka",
+  "watcher_failed": "Penyegaran otomatis tidak tersedia: {{error}}",
+  "no_game": {
+    "title": "Pilih game terlebih dahulu",
+    "description": "Lokasi Kotak Masuk Mod diatur terpisah untuk setiap game."
+  },
+  "tabs": { "ready": "Siap", "processed": "Diproses" },
+  "actions": {
+    "settings": "Pengaturan Kotak Masuk",
+    "open_inbox": "Buka Kotak Masuk",
+    "refresh": "Segarkan",
+    "retry": "Coba Lagi",
+    "select_all": "Pilih Semua",
+    "create_folder": "Buat Folder",
+    "choose_location": "Pilih Lokasi",
+    "cancel": "Batal"
+  },
+  "missing": {
+    "title": "Folder Kotak Masuk Mod belum tersedia.",
+    "description": "Buat folder default atau pilih lokasi lain di Pengaturan."
+  },
+  "ready": {
+    "select_all": "Pilih semua entri siap",
+    "select_entry": "Pilih {{name}}",
+    "review_selected": "Tinjau pilihan ({{count}})",
+    "resume_review": "Lanjutkan Tinjauan",
+    "size_unknown": "Ukuran tidak tersedia",
+    "empty_title": "Kotak masuk kosong",
+    "empty_description": "Folder dan arsip yang ditambahkan akan muncul secara otomatis.",
+    "layouts": {
+      "direct_mod": "Mod",
+      "folder_pack": "Paket mod · {{count}} root",
+      "wrapper": "Mod terbungkus",
+      "unknown": "Susunan tidak dikenali"
+    }
+  },
+  "processed": {
+    "select_all": "Pilih semua sumber yang diproses",
+    "select_source": "Pilih {{name}}",
+    "delete_selected": "Hapus pilihan ({{count}})",
+    "source_retained": "Sumber tersimpan",
+    "source_deleted": "Sumber dihapus",
+    "source_moved": "Sumber dipindahkan ke Mods",
+    "destination_unavailable": "Tujuan tidak tersedia",
+    "destination_label": "tujuan",
+    "no_destinations": "Tidak ada tujuan yang tercatat untuk sumber ini.",
+    "open_in_app": "Buka di Aplikasi",
+    "open_in_explorer": "Buka di Explorer",
+    "open_in_app_label": "Buka {{name}} di aplikasi",
+    "open_in_explorer_label": "Buka {{name}} di Explorer",
+    "empty_title": "Belum ada impor yang diproses",
+    "empty_description": "Riwayat impor yang selesai akan tetap tersedia di sini."
+  },
+  "delete": {
+    "title": "Hapus {{count}} sumber yang diproses?",
+    "description": "Sumber tersimpan yang dipilih akan dipindahkan ke Recycle Bin. Mod tujuan dan riwayat impor tidak akan dihapus.",
+    "confirm": "Hapus Sumber"
+  },
+  "errors": {
+    "load": "Kotak Masuk Mod tidak dapat dimuat: {{error}}",
+    "create_folder": "Kotak Masuk Mod tidak dapat dibuat: {{error}}",
+    "create_batch": "Tinjauan impor tidak dapat dimulai: {{error}}",
+    "delete_sources": "Sumber yang diproses tidak dapat dihapus: {{error}}",
+    "open_destination": "Tujuan tidak dapat dibuka: {{error}}"
+  }
+}

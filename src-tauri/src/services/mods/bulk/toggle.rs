@@ -3,10 +3,8 @@
 use super::types::{BulkActionError, BulkProgressPayload, BulkResult};
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::workspace::WorkspacePathRewrite;
-use crate::services::disk_reconcile::emit::run_internal_disk_reconcile;
 use crate::services::mods::core_ops::toggle_mod_inner;
 use crate::services::scanner::watcher::WatcherState;
-use sqlx::SqlitePool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 
@@ -16,9 +14,7 @@ use tauri::{AppHandle, Emitter};
 /// Paths in `paths` are absolute and already validated by the command layer.
 pub async fn bulk_toggle(
     app: &AppHandle,
-    pool: &SqlitePool,
     state: &WatcherState,
-    game_id: &str,
     paths: Vec<String>,
     enable: bool,
     cancel: &AtomicBool,
@@ -94,15 +90,6 @@ pub async fn bulk_toggle(
             active: false,
         },
     );
-
-    // Single writer: the scoped reconcile is what writes the rows. Quiet (no
-    // frontend event) — the bulk mutation's caller publishes its own refresh,
-    // and the event would trigger a second invalidation round.
-    if !success.is_empty() {
-        if let Err(error) = run_internal_disk_reconcile(app, pool, game_id, success.clone()).await {
-            log::warn!("Post-bulk-toggle disk reconcile failed: {error}");
-        }
-    }
 
     Ok(BulkResult::with_collection_impact(
         success,

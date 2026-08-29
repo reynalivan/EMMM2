@@ -3,8 +3,6 @@ import type { DragPosition } from '../../../hooks/useFileDrop';
 import { classifyDroppedPaths, validateDropForZone, type DropZone } from '../utils/dropUtils';
 
 export type { DropZone } from '../utils/dropUtils';
-import type { DropValidation } from '../modals/DropConfirmModal';
-import { scanService } from '../../../lib/services/scanService';
 import { toast } from '../../../stores/useToastStore';
 import type { GameType } from '../../../types/game';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
@@ -45,7 +43,6 @@ export function useObjectListDropZones({
   const [activeDropZone, setActiveDropZone] = useState<DropZone | null>(null);
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const [tooltipTop, setTooltipTop] = useState<number>(0);
-  const [dropValidation, setDropValidation] = useState<DropValidation | null>(null);
 
   /** Resolve which drop zone the cursor is in */
   const resolveDropZone = useCallback(
@@ -95,9 +92,9 @@ export function useObjectListDropZones({
     [toolbarRef, bottomRef, contentRef],
   );
 
-  /** Pre-drop validation: score the drop against candidates, show modal if low confidence */
+  /** Resolve a specific-target drop. Match Wizard performs the actual validation. */
   const handleDropWithValidation = useCallback(
-    async (paths: string[], position: DragPosition) => {
+    (paths: string[], position: DragPosition) => {
       if (!activeGame || !contentRef.current) return;
 
       const targetId = findObjectIdAtPoint(position);
@@ -115,72 +112,7 @@ export function useObjectListDropZones({
         toast.info('Register this folder before moving mods into it.');
         return;
       }
-      const registeredObjects = objects.filter((object) => object.is_registered);
-
-      // Only validate folders (not loose files)
-      const classified = classifyDroppedPaths(paths);
-      const foldersToValidate = classified.folders;
-
-      // If no folders, skip validation — just move directly
-      if (foldersToValidate.length === 0) {
-        handleDropOnItem(targetId, paths);
-        return;
-      }
-
-      // Show validating modal
-      setDropValidation({
-        paths,
-        targetId,
-        targetName: targetObject.name,
-        status: 'validating',
-      });
-
-      try {
-        // Score the first dropped folder against all object names
-        const candidateNames = registeredObjects.map((object) => object.name);
-        const scores = await scanService.scoreCandidatesBatch(
-          foldersToValidate[0],
-          candidateNames,
-          activeGame.game_type,
-        );
-
-        const targetScore = scores[targetObject.name] ?? 0;
-
-        // Find best match
-        let bestName = targetObject.name;
-        let bestScore = targetScore;
-        for (const [name, score] of Object.entries(scores)) {
-          if (score !== undefined && score > bestScore) {
-            bestName = name;
-            bestScore = score;
-          }
-        }
-
-        const bestObject = registeredObjects.find((object) => object.name === bestName);
-
-        // Confidence threshold: 50% or below → show warning
-        if (targetScore <= 50) {
-          setDropValidation({
-            paths,
-            targetId,
-            targetName: targetObject.name,
-            status: 'warning',
-            targetScore,
-            suggestedId: bestObject?.id,
-            suggestedName: bestName,
-            suggestedScore: bestScore,
-          });
-        } else {
-          // High confidence — move directly
-          setDropValidation(null);
-          handleDropOnItem(targetId, paths);
-        }
-      } catch (e) {
-        console.error('Pre-drop validation failed:', e);
-        // On validation failure, move directly (fail-open)
-        setDropValidation(null);
-        handleDropOnItem(targetId, paths);
-      }
+      handleDropOnItem(targetId, paths);
     },
     [activeGame, objects, handleDropOnItem, contentRef],
   );
@@ -264,8 +196,6 @@ export function useObjectListDropZones({
     activeDropZone,
     hoveredItemId,
     tooltipTop,
-    dropValidation,
-    setDropValidation,
     onDrop,
     handleDragOver,
     handleDragStateChange,

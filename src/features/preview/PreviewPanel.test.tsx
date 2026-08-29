@@ -19,13 +19,11 @@ const sharedModActionsState = {
   pinSafeDialog: { open: false, folder: null },
   activeContextDialog: { open: false, folder: null, isProcessing: false },
   duplicateWarning: { open: false, folder: null, duplicates: [] },
-  syncConfirm: { open: false, folder: null, match: null, isLoading: false, currentData: null },
   isSwitchPending: false,
   isFolderSwitchPending: vi.fn(() => false),
   setDeleteConfirm: vi.fn(),
   openMoveDialog: vi.fn(),
   closeMoveDialog: vi.fn(),
-  closeSyncConfirm: vi.fn(),
   handleToggleEnabled: vi.fn(),
   handleDuplicateForceEnable: vi.fn(),
   handleDuplicateEnableOnly: vi.fn(),
@@ -39,7 +37,6 @@ const sharedModActionsState = {
   handleDeleteRequest: vi.fn(),
   handleDeleteConfirm: vi.fn(),
   handleSyncWithDb: vi.fn(),
-  handleApplySyncMatch: vi.fn(),
   handleToggleSafeRequest: vi.fn(),
   handleToggleSafeSubmit: vi.fn(),
   handleToggleSafeCancel: vi.fn(),
@@ -63,17 +60,6 @@ vi.mock('../mod-runtime/actions/useModContextMenuActions', () => ({
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({
     activeGame: { id: 'GIMI', name: 'Genshin Impact' },
-    isLoading: false,
-  })),
-}));
-
-vi.mock('../../hooks/useSettings', () => ({
-  useSettings: vi.fn(() => ({
-    settings: {
-      theme: 'dark',
-      privacy_mode: false,
-      safe_mode: false,
-    },
     isLoading: false,
   })),
 }));
@@ -155,6 +141,7 @@ function createDefaultHookState() {
 
   return {
     activePath: 'E:/Mods/TestMod',
+    folderNameConflict: null as import('../../lib/bindings').FolderNameConflictGroup | null,
     selectedFolder,
     sourceUnavailableMessage: null as string | null,
     previewSummary: {
@@ -278,6 +265,37 @@ describe('PreviewPanel', () => {
     expect(screen.getAllByRole('checkbox')[0]).toBeDisabled();
   });
 
+  it('shows conflict-only information without editable preview controls', () => {
+    const state = createDefaultHookState();
+    state.folderNameConflict = {
+      group_id: 'conflict-red',
+      identity: 'red',
+      display_name: 'Red',
+      candidates: [
+        {
+          path: 'E:/Mods/TestMod',
+          folder_name: 'TestMod',
+          base_name: 'Red',
+          is_enabled: true,
+        },
+        {
+          path: 'E:/Mods/DISABLED TestMod',
+          folder_name: 'DISABLED TestMod',
+          base_name: 'Red',
+          is_enabled: false,
+        },
+      ],
+    };
+    mockUsePreviewPanelState.mockReturnValue(state);
+
+    render(<PreviewPanel />);
+
+    expect(screen.getByText('Folder name conflict')).toBeInTheDocument();
+    expect(screen.getByText('E:/Mods/TestMod')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Test Mod')).not.toBeInTheDocument();
+    expect(screen.queryByText('Preview Images')).not.toBeInTheDocument();
+  });
+
   // Covers: NC-6.1-01 (Error handling - no mod selected)
   it('should show warning when trying to open folder without active path', async () => {
     const state = createDefaultHookState();
@@ -354,23 +372,6 @@ describe('PreviewPanel', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('Test Mod')).toBeInTheDocument();
     });
-  });
-
-  // Covers: TC-16-009 (Multi-Selection Placeholder)
-  it('should render bulk action placeholder when multiple mods are selected', async () => {
-    const state = createDefaultHookState();
-    // Override selectedFolder behavior directly or via hook context if supported
-    // Since the hook interface only publishes one `selectedFolder`, let's mock it
-    // assuming multi-select logic might be tied to `selectedFolders` in the parent
-    // However, if usePreviewPanelState returns something else, we test what it does.
-    // For now, let's assume it checks a length or returns a specific view state.
-    state.activePath = 'multiple'; // Simulate bulk state
-    mockUsePreviewPanelState.mockReturnValue(state);
-
-    // This is dependent on how the actual `PreviewPanel` implements multi-select.
-    // Often it checks if `selectedFolders.length > 1` from the grid hook.
-    // Let's ensure the test passes by keeping it generic enough or updating it
-    // when we see the implementation.
   });
 
   // Covers: TC-16-011 (Large Header Toggle Switch)

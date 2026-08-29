@@ -1,12 +1,9 @@
 use crate::domain::errors::AppError;
 use crate::domain::models::ItemStatus;
-use crate::services::config::ConfigService;
 use crate::services::fs_utils::guard::ValidatedPath;
 use crate::services::images::thumbnail_cache::ThumbnailCache;
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::fs;
 use std::path::Path;
 
 /// Set the category (Object Type) for a mod.
@@ -57,6 +54,13 @@ pub fn update_mod_thumbnail(
         )));
     }
 
+    let source_bytes = std::fs::read(source_path_obj)?;
+    image::load_from_memory(&source_bytes).map_err(|error| {
+        AppError::Metadata(crate::domain::errors::MetadataError::Validation(format!(
+            "Invalid thumbnail image: {error}"
+        )))
+    })?;
+
     // Determine the new thumbnail path within the mod folder
     let new_thumbnail_name = source_path_obj
         .file_name()
@@ -65,25 +69,21 @@ pub fn update_mod_thumbnail(
         .to_string();
     let new_thumbnail_path = target_dir.join(&new_thumbnail_name);
 
-    // Copy the source image to the mod folder
-    fs::copy(source_path_obj, &new_thumbnail_path)?;
+    crate::services::fs_utils::atomic_file::atomic_write(&new_thumbnail_path, &source_bytes)?;
 
     // Invalidate cache for this mod's thumbnail
     ThumbnailCache::invalidate(&new_thumbnail_path);
+    ThumbnailCache::invalidate_folder(&target_dir.to_string_lossy());
 
     Ok(new_thumbnail_path.to_string_lossy().to_string())
 }
 
 pub async fn toggle_mod_safe(
-    config: &ConfigService,
     pool: &SqlitePool,
-    watcher: &WatcherState,
     game_id: &str,
     full_path: &ValidatedPath,
     safe: bool,
 ) -> Result<(), AppError> {
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
-
     let game_mod_path = crate::repo::game_repo::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found or has no mods_path".to_string()))?;
@@ -95,24 +95,32 @@ pub async fn toggle_mod_safe(
         .to_string_lossy()
         .to_string();
 
-    // Update mod-level safety (is_safe lives on the mods table, not objects)
-    let object_id =
-        crate::repo::mod_repo::get_object_id_by_folder_and_game(pool, &rel_path, game_id).await?;
-    crate::repo::mod_repo::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await?;
-
+    let info_path = full_path.join("info.json");
+    let previous = match std::fs::read(&info_path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
     let update = crate::services::mods::info_json::ModInfoUpdate {
         is_safe: Some(safe),
         ..Default::default()
     };
-    let _ = crate::services::mods::info_json::update_info_json(full_path, &update);
-
-    crate::services::app::runtime_effects::finalize_mutation(
-        pool,
-        config,
-        game_id,
-        crate::services::app::runtime_effects::MutationOutcome::objects(object_id),
-    )
-    .await;
+    crate::services::mods::info_json::update_info_json(full_path, &update)?;
+    if let Err(error) =
+        crate::repo::mod_repo::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await
+    {
+        let rollback = match previous.as_deref() {
+            Some(bytes) => crate::services::fs_utils::atomic_file::atomic_write(&info_path, bytes),
+            None if info_path.exists() => std::fs::remove_file(&info_path).map_err(AppError::from),
+            None => Ok(()),
+        };
+        return Err(match rollback {
+            Ok(()) => error.into(),
+            Err(rollback_error) => AppError::Io(format!(
+                "Safety database update failed ({error}); info.json rollback failed: {rollback_error}"
+            )),
+        });
+    }
 
     Ok(())
 }
@@ -150,9 +158,7 @@ fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::repo::mod_repo:
 pub async fn suggest_random_mods(
     pool: &SqlitePool,
     game_id: &str,
-    corridor: crate::domain::corridor::Corridor,
 ) -> Result<Vec<RandomModProposal>, AppError> {
-    let is_safe = corridor.is_safe();
     use rand::seq::SliceRandom;
 
     let characters = crate::repo::object_repo::get_characters_for_game(pool, game_id).await?;
@@ -164,7 +170,7 @@ pub async fn suggest_random_mods(
     let mut proposals = Vec::new();
 
     for (object_id, object_name) in characters {
-        let mods = crate::repo::mod_repo::get_mods_by_object_id(pool, &object_id, is_safe).await?;
+        let mods = crate::repo::mod_repo::get_mods_by_object_id(pool, &object_id).await?;
 
         if mods.is_empty() {
             continue;
@@ -228,8 +234,8 @@ pub fn conflicts_for_enabled_paths(
             continue;
         }
         mod_roots.push(path.clone());
-        let content = crate::services::scanner::core::walker::scan_folder_content(&path, 3);
-        for ini in content.ini_files {
+        let discovered = crate::services::scanner::conflict::discover_runtime_ini_files(&path);
+        for ini in discovered {
             ini_files.push((path.clone(), ini));
         }
     }

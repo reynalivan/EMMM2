@@ -133,3 +133,27 @@ fn test_update_creates_if_missing() {
     assert_eq!(result.actual_name, "NewMod");
     assert!(mod_dir.join("info.json").exists());
 }
+
+#[test]
+fn info_json_update_replaces_atomically_without_staging_artifacts() {
+    let tmp = TempDir::new().unwrap();
+    let mod_dir = tmp.path().join("AtomicMod");
+    fs::create_dir(&mod_dir).unwrap();
+    create_default_info_json(&mod_dir).unwrap();
+
+    update_info_json(
+        &mod_dir,
+        &ModInfoUpdate {
+            author: Some("Updated".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let entries = fs::read_dir(&mod_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(entries, vec!["info.json"]);
+    assert_eq!(read_info_json(&mod_dir).unwrap().unwrap().author, "Updated");
+}

@@ -5,9 +5,9 @@ use thiserror::Error;
 // Typed error enums for each domain
 // ---------------------------------------------------------------------------
 
-/// Errors specific to corridor operations.
+/// Errors while deriving or applying the current collection runtime.
 #[derive(Debug, Clone, Error, Serialize, Deserialize, specta::Type)]
-pub enum CorridorError {
+pub enum RuntimeStateError {
     #[error("Game '{game_id}' has no mods_path configured")]
     NoModsPath { game_id: String },
 
@@ -21,7 +21,7 @@ pub enum CorridorError {
     Collection(#[from] Box<CollectionError>),
 }
 
-impl From<sqlx::Error> for CorridorError {
+impl From<sqlx::Error> for RuntimeStateError {
     fn from(e: sqlx::Error) -> Self {
         Self::Db(e.to_string())
     }
@@ -39,7 +39,7 @@ impl From<CollectionError> for AppError {
     }
 }
 
-impl From<CollectionError> for CorridorError {
+impl From<CollectionError> for RuntimeStateError {
     fn from(e: CollectionError) -> Self {
         Self::Collection(Box::new(e))
     }
@@ -51,7 +51,7 @@ pub enum CollectionError {
     #[error("Collection '{id}' not found")]
     NotFound { id: String },
 
-    #[error("Collection name '{name}' already exists in this corridor")]
+    #[error("Collection name '{name}' already exists for this game")]
     DuplicateName { name: String },
 
     #[error("Missing mods on disk: {count} mod(s) not found")]
@@ -67,8 +67,8 @@ pub enum CollectionError {
     #[error("Database error: {0}")]
     Db(String), // Converted sqlx::Error to String for Serde/Specta
 
-    #[error("Corridor error: {0}")]
-    Corridor(#[from] CorridorError),
+    #[error("Runtime state error: {0}")]
+    RuntimeState(#[from] RuntimeStateError),
 
     #[error("IO error: {0}")]
     Io(String), // Converted std::io::Error to String for Serde/Specta
@@ -126,19 +126,6 @@ impl From<sqlx::Error> for MetadataError {
 impl From<std::io::Error> for MetadataError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e.to_string())
-    }
-}
-
-/// Errors specific to Pin operations.
-#[derive(Debug, Clone, Error, Serialize, Deserialize, specta::Type)]
-pub enum PinError {
-    #[error("Database error: {0}")]
-    Db(String),
-}
-
-impl From<sqlx::Error> for PinError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Db(e.to_string())
     }
 }
 
@@ -266,13 +253,10 @@ impl From<reqwest::Error> for ScannerError {
 #[serde(tag = "type", content = "payload")]
 pub enum AppError {
     #[error("{0}")]
-    Corridor(#[from] CorridorError),
+    RuntimeState(#[from] RuntimeStateError),
 
     #[error("{0}")]
     Collection(CollectionError),
-
-    #[error("{0}")]
-    Pin(#[from] PinError),
 
     #[error("{0}")]
     Metadata(#[from] MetadataError),

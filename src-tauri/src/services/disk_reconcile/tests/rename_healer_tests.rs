@@ -132,6 +132,98 @@ async fn mod_rename_hint_rewrites_row_identity_and_path() {
 }
 
 #[tokio::test]
+async fn nested_mod_rename_hint_rewrites_row_identity_at_any_depth() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    let new_path = mods_path.join("Alice").join("Variants").join("New Mod");
+    std::fs::create_dir_all(&new_path).expect("nested destination");
+    std::fs::write(
+        new_path.join("mod.ini"),
+        "[TextureOverrideAlice]\nhash = abc\n",
+    )
+    .expect("nested ini");
+    seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Variants/Old Mod").await;
+
+    let events = vec![ModWatchEvent::Renamed {
+        from: mods_path
+            .join("Alice")
+            .join("Variants")
+            .join("Old Mod")
+            .to_string_lossy()
+            .to_string(),
+        to: new_path.to_string_lossy().to_string(),
+    }];
+    let run = run_healer(&ctx.pool, &mods_path, &events).await;
+
+    let expected_rel = PathBuf::from("Alice")
+        .join("Variants")
+        .join("New Mod")
+        .to_string_lossy()
+        .to_string();
+    let mod_row: (String, String, String) =
+        sqlx::query_as("SELECT id, folder_path, actual_name FROM mods WHERE game_id = ?")
+            .bind("game-1")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("nested mod row");
+
+    assert_eq!(mod_row.0, generate_stable_id("game-1", &expected_rel));
+    assert_eq!(mod_row.1, expected_rel);
+    assert_eq!(mod_row.2, "New Mod");
+    assert_eq!(run.path_updates.len(), 1);
+    assert_eq!(run.path_updates[0].kind, DiskReconcilePathKind::Mod);
+    assert_eq!(run.path_updates[0].to, expected_rel);
+}
+
+#[tokio::test]
+async fn container_rename_hint_rewrites_every_terminal_child_by_suffix() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    let new_path = mods_path.join("Alice").join("Looks").join("Blue");
+    std::fs::create_dir_all(&new_path).expect("renamed container destination");
+    std::fs::write(
+        new_path.join("mod.ini"),
+        "[TextureOverrideAlice]\nhash = abc\n",
+    )
+    .expect("terminal ini");
+    seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Variants/Blue").await;
+
+    let events = vec![ModWatchEvent::Renamed {
+        from: mods_path
+            .join("Alice")
+            .join("Variants")
+            .to_string_lossy()
+            .to_string(),
+        to: mods_path
+            .join("Alice")
+            .join("Looks")
+            .to_string_lossy()
+            .to_string(),
+    }];
+    let run = run_healer(&ctx.pool, &mods_path, &events).await;
+
+    let expected_rel = PathBuf::from("Alice")
+        .join("Looks")
+        .join("Blue")
+        .to_string_lossy()
+        .to_string();
+    let mod_row: (String, String) =
+        sqlx::query_as("SELECT id, folder_path FROM mods WHERE game_id = ?")
+            .bind("game-1")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("container child row");
+
+    assert_eq!(mod_row.0, generate_stable_id("game-1", &expected_rel));
+    assert_eq!(mod_row.1, expected_rel);
+    assert_eq!(run.path_updates.len(), 1);
+    assert_eq!(run.path_updates[0].from, "Alice/Variants/Blue");
+    assert_eq!(run.path_updates[0].to, expected_rel);
+}
+
+#[tokio::test]
 async fn object_rename_hint_updates_object_status_and_child_mod_paths() {
     let ctx = init_test_db().await;
     let temp = tempfile::tempdir().expect("tempdir");
@@ -169,6 +261,52 @@ async fn object_rename_hint_updates_object_status_and_child_mod_paths() {
     assert_eq!(run.path_updates[0].kind, DiskReconcilePathKind::Object);
     assert_eq!(run.path_updates[0].from, "Alice");
     assert_eq!(run.path_updates[0].to, "DISABLED Alice");
+}
+
+#[tokio::test]
+async fn parent_and_child_hints_apply_parent_once_without_duplicate_object() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    let destination = mods_path.join("Alicia").join("Blue");
+    std::fs::create_dir_all(&destination).expect("destination");
+    std::fs::write(
+        destination.join("mod.ini"),
+        "[TextureOverrideAlice]\nhash = abc\n",
+    )
+    .expect("ini");
+    seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Blue").await;
+    let events = vec![
+        ModWatchEvent::Renamed {
+            from: mods_path.join("Alice").to_string_lossy().to_string(),
+            to: mods_path.join("Alicia").to_string_lossy().to_string(),
+        },
+        ModWatchEvent::Renamed {
+            from: mods_path
+                .join("Alice")
+                .join("Blue")
+                .to_string_lossy()
+                .to_string(),
+            to: destination.to_string_lossy().to_string(),
+        },
+    ];
+
+    let run = run_healer(&ctx.pool, &mods_path, &events).await;
+
+    let objects: Vec<String> =
+        sqlx::query_scalar("SELECT folder_path FROM objects WHERE game_id = 'game-1'")
+            .fetch_all(&ctx.pool)
+            .await
+            .expect("objects");
+    let mods: Vec<String> =
+        sqlx::query_scalar("SELECT folder_path FROM mods WHERE game_id = 'game-1'")
+            .fetch_all(&ctx.pool)
+            .await
+            .expect("mods");
+    assert_eq!(objects, vec!["Alicia"]);
+    assert_eq!(mods, vec!["Alicia/Blue"]);
+    assert_eq!(run.path_updates.len(), 1);
+    assert_eq!(run.path_updates[0].kind, DiskReconcilePathKind::Object);
 }
 
 #[tokio::test]

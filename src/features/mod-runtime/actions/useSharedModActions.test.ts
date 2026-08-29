@@ -1,6 +1,6 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../stores/useAppStore';
 import type { ModFolder } from '../../../types/object';
@@ -13,14 +13,14 @@ const bulkFavoriteMutate = vi.fn();
 const renameMutateAsync = vi.fn();
 const deleteMutateAsync = vi.fn();
 const toggleSafeMutate = vi.fn();
-const applyFolderDbSyncMatchAndRefresh = vi.fn();
-const matchObjectWithDb = vi.fn();
+const openObjectClassificationWizard = vi.fn();
 const toastError = vi.fn();
 const switchToggleNode = vi.fn();
 const switchResolveDuplicateForceEnable = vi.fn();
 const switchResolveDuplicateEnableOnly = vi.fn();
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: () => undefined },
   useTranslation: () => ({
     t: (key: string, vars?: Record<string, unknown>) => {
       if (vars?.name && typeof vars.name === 'string') {
@@ -37,17 +37,6 @@ vi.mock('../../../hooks/useActiveGame', () => ({
     activeGame: {
       id: 'game-1',
       game_type: 'GIMI',
-    },
-  }),
-}));
-
-vi.mock('../../../hooks/useSettings', () => ({
-  useSettings: () => ({
-    settings: {
-      safe_mode: {
-        enabled: true,
-        pin_hash: '1234',
-      },
     },
   }),
 }));
@@ -89,15 +78,13 @@ vi.mock('../../workspace-runtime/actions/useWorkspaceSwitchActions', () => ({
   }),
 }));
 
-vi.mock('../operations/sharedOperations', () => ({
-  applyFolderDbSyncMatchAndRefresh: (...args: unknown[]) =>
-    applyFolderDbSyncMatchAndRefresh(...args),
+vi.mock('../../import-batches/classificationLauncher', () => ({
+  openObjectClassificationWizard: (...args: unknown[]) => openObjectClassificationWizard(...args),
 }));
 
 vi.mock('../../../lib/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
-    matchObjectWithDb: (...args: unknown[]) => matchObjectWithDb(...args),
     toggleModSafe: vi.fn(),
   },
 }));
@@ -134,6 +121,9 @@ function createFolder(overrides: Partial<ModFolder> = {}): ModFolder {
     is_favorite: false,
     is_misplaced: false,
     is_safe: true,
+    is_safety_classified: true,
+    contains_safe_mods: true,
+    contains_unsafe_mods: false,
     metadata: null,
     category: 'Character',
     conflict_group_id: null,
@@ -163,8 +153,6 @@ describe('useSharedModActions', () => {
       workspacePreviewDirty: false,
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
     });
-    matchObjectWithDb.mockResolvedValue({ id: 'db-1', name: 'Alpha' });
-    applyFolderDbSyncMatchAndRefresh.mockResolvedValue(undefined);
     renameMutateAsync.mockResolvedValue(undefined);
     deleteMutateAsync.mockResolvedValue(undefined);
   });
@@ -246,7 +234,7 @@ describe('useSharedModActions', () => {
     expect(toastError).toHaveBeenCalledWith('objects:edit_modal.validation.path_invalid');
   });
 
-  it('loads sync match into runtime dialog state', async () => {
+  it('opens the shared classification wizard for the owning object', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { result } = renderHook(() => useSharedModActions(), {
       wrapper: createWrapper(queryClient),
@@ -257,15 +245,9 @@ describe('useSharedModActions', () => {
       await result.current.handleSyncWithDb(folder);
     });
 
-    await waitFor(() => {
-      const dialogState = useAppStore.getState().workspaceDialogState;
-      expect(dialogState.kind).toBe('modSync');
-      if (dialogState.kind !== 'modSync') {
-        throw new Error('Expected mod sync dialog');
-      }
-      expect(dialogState.folder).toEqual(folder);
-      expect(dialogState.isLoading).toBe(false);
-      expect(dialogState.match).toEqual({ id: 'db-1', name: 'Alpha' });
+    expect(openObjectClassificationWizard).toHaveBeenCalledWith({
+      gameId: 'game-1',
+      objectIds: ['object-1'],
     });
   });
 });

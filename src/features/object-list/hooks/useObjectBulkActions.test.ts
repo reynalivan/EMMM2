@@ -10,6 +10,9 @@ import type { WorkspaceObjectNode } from '../../../types/workspace';
 
 const pinObject = vi.fn();
 const updateObject = vi.fn();
+const bulkSetModSafety = vi.fn();
+const buildRuntimeMutationDescriptor = vi.fn();
+const publishRuntimeDescriptor = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 
@@ -19,7 +22,7 @@ vi.mock('../../../lib/bindings', () => ({
     pinObject: (...args: unknown[]) => pinObject(...args),
     updateObjectCmd: (...args: unknown[]) => updateObject(...args),
     bulkToggleFavorite: vi.fn(),
-    bulkUpdateInfo: vi.fn(),
+    bulkSetModSafety: (...args: unknown[]) => bulkSetModSafety(...args),
   },
 }));
 
@@ -57,24 +60,24 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../runtime-sync/queryRefresh', () => ({
-  publishRuntimeDescriptor: vi.fn(),
+  publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
 }));
 
 vi.mock('../../workspace-runtime/optimistic/descriptorBuilders', () => ({
-  buildRuntimeMutationDescriptor: vi.fn(),
+  buildRuntimeMutationDescriptor: (...args: unknown[]) => buildRuntimeMutationDescriptor(...args),
 }));
 
 vi.mock('../../workspace-runtime/actions/useWorkspaceSwitchActions', () => ({
   useWorkspaceSwitchActions: () => ({ setNodeEnabled: vi.fn() }),
 }));
 
-vi.mock('../utils/runBulkAutoRecognize', () => ({
-  runBulkAutoRecognize: vi.fn(),
+vi.mock('../utils/runBulkClassifyAndMatch', () => ({
+  runBulkClassifyAndMatch: vi.fn(),
 }));
 
 const objects = [
-  { id: 'a', name: 'Ayaka', tags: '["old"]' },
-  { id: 'b', name: 'Yelan', tags: '["old"]' },
+  { id: 'a', name: 'Ayaka', tags: '["old"]', folder_path: 'Ayaka' },
+  { id: 'b', name: 'Yelan', tags: '["old"]', folder_path: 'Yelan' },
 ] as unknown as WorkspaceObjectNode[];
 
 function setup() {
@@ -146,5 +149,19 @@ describe('bulk tag handlers', () => {
     expect(updateObject).toHaveBeenCalledWith('a', { tags: [] });
     expect(toastSuccess).toHaveBeenCalledTimes(1);
     expect(toastError).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleBulkSafe', () => {
+  it('publishes the shared safety refresh descriptor', async () => {
+    bulkSetModSafety.mockResolvedValue({ success: ['Ayaka'], failures: [] });
+    buildRuntimeMutationDescriptor.mockReturnValue({ refreshEvents: [] });
+    publishRuntimeDescriptor.mockResolvedValue(undefined);
+
+    await setup().current.handleBulkSafe(new Set(['a']), false);
+
+    expect(bulkSetModSafety).toHaveBeenCalledWith('game-1', ['Ayaka'], false);
+    expect(buildRuntimeMutationDescriptor).toHaveBeenCalledWith('safetyClassification');
+    expect(publishRuntimeDescriptor).toHaveBeenCalled();
   });
 });

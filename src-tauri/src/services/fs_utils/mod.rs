@@ -1,3 +1,4 @@
+pub mod atomic_file;
 pub mod file_utils;
 pub mod guard;
 pub mod locking;

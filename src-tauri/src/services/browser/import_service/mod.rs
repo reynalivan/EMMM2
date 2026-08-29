@@ -3,13 +3,7 @@
 //! `services::browser::import_service` is re-exported here.
 
 mod jobs;
-mod matching;
-mod pipeline;
-mod placement;
 mod queue;
 
 pub use jobs::*;
 pub use queue::*;
-
-#[cfg(test)]
-mod tests;

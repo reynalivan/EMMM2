@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
 import type { DashboardPayload } from '../../../types/dashboard';
-import { useSafeMode } from '../../../hooks/settingsQuery';
 import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 export const dashboardKeys = {
@@ -11,15 +10,13 @@ export const dashboardKeys = {
 /**
  * TanStack Query hook for dashboard data.
  * Fetches all dashboard data in a single IPC call.
- * Respects Safe Mode from settings (filters NSFW when active).
  * Cache: 30s staleTime per Epic 13 spec.
  */
 export function useDashboardStats() {
-  const safeMode = useSafeMode();
   const queryClient = useQueryClient();
 
   const query = useQuery<DashboardPayload>({
-    queryKey: [...dashboardKeys.all, safeMode],
+    queryKey: dashboardKeys.all,
     queryFn: () => commands.getDashboardStats(),
     staleTime: 30_000,
   });

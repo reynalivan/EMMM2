@@ -50,6 +50,10 @@ impl OperationLock {
             .map(OpGuard)
             .map_err(|_| AppError::Io(CONTENTION_MESSAGE.to_string()))
     }
+
+    pub async fn acquire_for_reconcile(&self) -> OpGuard {
+        OpGuard(self.lock.clone().lock_owned().await)
+    }
 }
 
 impl Default for OperationLock {

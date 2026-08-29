@@ -1,0 +1,51 @@
+{
+  "title": "Match Wizard",
+  "resume_import": "Resume import ({{count}} item(s))",
+  "classification_title": "Classify & Match Existing Objects",
+  "classification_no_move": "Existing status is preserved unless you explicitly disable the object folders below.",
+  "classification_disable_after_apply": "Set classified object folders to Disabled",
+  "classification_after_category": "Confirm all categories to calculate canonical matches.",
+  "classification_match_objects": "Match canonical objects",
+  "classification_apply": "Apply classifications",
+  "classification_applied": "Applied {{count}} classification(s) and updated {{mods}} child mod(s).",
+  "batch_summary": "{{count}} item(s) · {{flow}}",
+  "analyzing": "Inspecting sources and building category evidence…",
+  "steps": {
+    "sources": "Sources",
+    "category": "Category & metadata",
+    "destination": "Object & destination",
+    "validation": "Validation",
+    "result": "Result"
+  },
+  "columns": {
+    "source": "Source / planned name",
+    "category": "Category",
+    "canonical": "Canonical object",
+    "destination": "Destination",
+    "confidence": "Confidence / evidence",
+    "decision": "Decision / result",
+    "actions": "Actions"
+  },
+  "actions": {
+    "confirm_high": "Confirm High",
+    "skip_medium_low": "Skip Medium & Low",
+    "confirm": "Confirm category",
+    "rename": "Rename plan",
+    "use_target": "Use target",
+    "skip": "Skip",
+    "retry": "Retry suggestions",
+    "open": "Open in Explorer",
+    "commit": "Commit {{count}} item(s)"
+  },
+  "choose_existing": "Choose existing target…",
+  "specific_warning": "target does not strongly match; explicit confirmation required",
+  "no_match": "No canonical match",
+  "no_destination": "No destination selected",
+  "evidence": "Evidence",
+  "result_summary": "Moved {{moved}}, reallocated {{reallocated}}, created {{created}}, skipped {{skipped}}, collisions {{collisions}}, metadata pending {{pending}}, failed {{failed}}.",
+  "errors": {
+    "launch": "Could not open Match Wizard: {{error}}",
+    "update": "Could not update the item: {{error}}",
+    "commit": "Could not commit the batch: {{error}}"
+  }
+}

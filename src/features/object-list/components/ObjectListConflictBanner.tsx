@@ -1,17 +1,14 @@
 import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { openWorkspaceConflictDialog } from '../../workspace-runtime/state/workspaceDialogs';
-import type { GameConfig } from '../../../types/game';
+import { openFolderConflictManagerDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 
 interface ObjectListConflictBannerProps {
   conflictObjects: WorkspaceObjectNode[];
-  activeGame: GameConfig | null;
 }
 
 export default function ObjectListConflictBanner({
   conflictObjects,
-  activeGame,
 }: ObjectListConflictBannerProps) {
   const { t } = useTranslation(['objects']);
 
@@ -27,21 +24,7 @@ export default function ObjectListConflictBanner({
       </span>
       <button
         className="text-[10px] text-warning font-semibold hover:underline shrink-0"
-        onClick={() => {
-          const obj = conflictObjects[0];
-          if (!activeGame?.mod_path || !obj.folder_path) {
-            return;
-          }
-
-          const baseName = obj.name;
-          const modPath = activeGame.mod_path.replace(/\\/g, '/');
-          openWorkspaceConflictDialog({
-            type: 'RenameConflict',
-            attempted_target: `${modPath}/${obj.folder_path}`,
-            existing_path: `${modPath}/DISABLED ${baseName}`,
-            base_name: baseName,
-          });
-        }}
+        onClick={openFolderConflictManagerDialog}
       >
         {t('item.resolve')}
       </button>

@@ -15,6 +15,15 @@ use crate::domain::models::ItemStatus;
 use crate::domain::objects::ObjectSummary;
 use crate::repo::object_repo::{ObjectCountCandidate, TerminalDescriptor};
 
+pub(crate) struct TerminalCounts {
+    pub total: i64,
+    pub enabled: i64,
+    pub safe: i64,
+    pub unsafe_count: i64,
+    pub unclassified: i64,
+    pub active_paths: Option<String>,
+}
+
 /// Memoized `classify_folder`.
 ///
 /// Sibling mods share ancestors, so the unmemoized walk re-read the same
@@ -40,13 +49,16 @@ pub(crate) fn build_terminal_counts(
     objects: &[ObjectSummary],
     candidates: &[ObjectCountCandidate],
     mods_path: Option<&str>,
-) -> HashMap<String, (i64, i64, Option<String>)> {
+) -> HashMap<String, TerminalCounts> {
     let object_lookup: HashMap<&str, &ObjectSummary> = objects
         .iter()
         .map(|object| (object.id.as_str(), object))
         .collect();
     let mut totals_by_object: HashMap<String, HashSet<String>> = HashMap::new();
     let mut enabled_by_object: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut safe_by_object: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut unsafe_by_object: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut unclassified_by_object: HashMap<String, HashSet<String>> = HashMap::new();
     let mut active_paths_by_object: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut cache = ClassificationCache::default();
 
@@ -65,6 +77,26 @@ pub(crate) fn build_terminal_counts(
             .entry(candidate.object_id.clone())
             .or_default()
             .insert(terminal_key.clone());
+
+        match candidate.safety_source.as_deref() {
+            Some(source) if source != crate::common::safety_constants::SAFETY_SOURCE_UNKNOWN => {
+                let target = if candidate.is_safe {
+                    &mut safe_by_object
+                } else {
+                    &mut unsafe_by_object
+                };
+                target
+                    .entry(candidate.object_id.clone())
+                    .or_default()
+                    .insert(terminal_key.clone());
+            }
+            _ => {
+                unclassified_by_object
+                    .entry(candidate.object_id.clone())
+                    .or_default()
+                    .insert(terminal_key.clone());
+            }
+        }
 
         if candidate.status != ItemStatus::Enabled {
             continue;
@@ -99,7 +131,23 @@ pub(crate) fn build_terminal_counts(
             values.sort_by_key(|value| canonical_name_key(value));
             values.join("|")
         });
-        counts.insert(object.id.clone(), (total, enabled, active_paths));
+        let count = |values: &HashMap<String, HashSet<String>>| {
+            values
+                .get(&object.id)
+                .map(|entries| entries.len() as i64)
+                .unwrap_or(0)
+        };
+        counts.insert(
+            object.id.clone(),
+            TerminalCounts {
+                total,
+                enabled,
+                safe: count(&safe_by_object),
+                unsafe_count: count(&unsafe_by_object),
+                unclassified: count(&unclassified_by_object),
+                active_paths,
+            },
+        );
     }
 
     counts

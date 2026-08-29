@@ -2,9 +2,10 @@
 // v2 Query Key Factory — Single source of truth for all v2 query cache keys
 // ---------------------------------------------------------------------------
 
-export const corridorKeys = {
-  all: ['v2-corridor'] as const,
-  state: (gameId: string) => [...corridorKeys.all, 'state', gameId] as const,
+export const collectionRuntimeKeys = {
+  all: ['v2-collection-runtime'] as const,
+  state: (gameId: string) => [...collectionRuntimeKeys.all, 'state', gameId] as const,
+  descriptor: (gameId: string) => [...collectionRuntimeKeys.all, 'descriptor', gameId] as const,
 };
 
 export const collectionKeys = {

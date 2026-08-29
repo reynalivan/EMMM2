@@ -5,12 +5,7 @@
 import type { BrowserDownloadDto, ImportJobDto } from '../../lib/bindings.gen';
 
 export type DownloadStatus =
-  | 'requested'
-  | 'in_progress'
-  | 'finished'
-  | 'failed'
-  | 'canceled'
-  | 'imported';
+  'requested' | 'in_progress' | 'finished' | 'failed' | 'canceled' | 'imported';
 
 // ponytail: derived from codegen so a Rust schema change breaks the build here
 // instead of drifting silently. Only `status` is narrowed — the DTO types it as
@@ -18,6 +13,17 @@ export type DownloadStatus =
 export type BrowserDownloadItem = Omit<BrowserDownloadDto, 'status'> & { status: DownloadStatus };
 
 export type ImportJobStatus =
+  | 'discovered'
+  | 'staged'
+  | 'awaiting_category'
+  | 'awaiting_destination'
+  | 'ready'
+  | 'committing'
+  | 'reconciling'
+  | 'finalizing_metadata'
+  | 'skipped'
+  | 'partial'
+  | 'metadata_pending'
   | 'queued'
   | 'extracting'
   | 'matching'
@@ -45,7 +51,8 @@ export interface DownloadStatusEvent {
 
 // Runtime import job update event
 export interface ImportJobUpdateEvent {
-  job_id: string;
+  job_id?: string;
+  batch_id?: string;
   status: ImportJobStatus;
   category?: string | null;
   entry_key?: string | null;

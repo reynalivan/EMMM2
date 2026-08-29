@@ -21,9 +21,14 @@ vi.mock('./tabs/UpdateTab', () => ({
 
 // Mock hooks
 const mockSetWorkspaceView = vi.fn();
+const mockSetSettingsTab = vi.fn();
 vi.mock('../../stores/useAppStore', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ setWorkspaceView: mockSetWorkspaceView }),
+    selector({
+      setWorkspaceView: mockSetWorkspaceView,
+      settingsTab: 'general',
+      setSettingsTab: mockSetSettingsTab,
+    }),
 }));
 
 let mockIsLoading = false;

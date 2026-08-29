@@ -2,20 +2,20 @@
 //! the rest of the crate used to import from `repo::mod_repo` is re-exported here.
 
 mod batch;
-mod corridor;
 mod listing;
 mod lookup;
 mod mutate;
 mod paths;
+mod safety;
 mod sync;
 mod types;
 mod update;
 
 pub use batch::*;
-pub use corridor::*;
 pub use listing::*;
 pub use lookup::*;
 pub use mutate::*;
+pub use safety::*;
 pub use sync::*;
 pub use types::*;
 pub use update::*;

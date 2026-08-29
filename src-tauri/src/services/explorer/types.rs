@@ -66,6 +66,12 @@ pub struct ModFolder {
     pub is_misplaced: bool,
     /// Whether the mod is marked as safe (from info.json)
     pub is_safe: bool,
+    /// False until the DB, info.json, a manual action, or auto-tag provides a verdict.
+    pub is_safety_classified: bool,
+    /// Whether this folder is, or contains, at least one classified safe mod.
+    pub contains_safe_mods: bool,
+    /// Whether this folder is, or contains, at least one classified unsafe mod.
+    pub contains_unsafe_mods: bool,
     /// Metadata from info.json (element, rarity, etc.)
     pub metadata: Option<HashMap<String, String>>,
     /// Category from info.json metadata

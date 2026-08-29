@@ -4,7 +4,6 @@ import { useObjectListHandlers } from './useObjectListHandlers';
 import { useDeleteMod } from '../../../hooks/useFolderCoreMutations';
 import { useDeleteObject, useUpdateObject } from '../../../hooks/useObjectMutations';
 import { useActiveGame } from '../../../hooks/useActiveGame';
-import { scanService } from '../../../lib/services/scanService';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
@@ -26,13 +25,9 @@ vi.mock('../../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(),
 }));
 
-vi.mock('../../../lib/services/scanService', () => ({
-  scanService: {
-    runDeepmatchPreview: vi.fn(),
-    getMasterDb: vi.fn(),
-    commitScan: vi.fn(),
-    extractArchive: vi.fn(),
-  },
+const openObjectClassificationWizard = vi.fn();
+vi.mock('../../import-batches/classificationLauncher', () => ({
+  openObjectClassificationWizard: (...args: unknown[]) => openObjectClassificationWizard(...args),
 }));
 
 vi.mock('../../../stores/useToastStore', () => ({
@@ -134,6 +129,9 @@ describe('useObjectListHandlers', () => {
         sub_category: null,
         mod_count: 0,
         enabled_count: 0,
+        safe_mod_count: 0,
+        unsafe_mod_count: 0,
+        unclassified_mod_count: 0,
         tags: '[]',
         metadata: '{}',
         is_auto_sync: false,
@@ -181,13 +179,6 @@ describe('useObjectListHandlers', () => {
       activeGame: { id: 'game-1', game_type: 'hsr', mod_path: 'C:\\mods' },
     } as unknown as ReturnType<typeof useActiveGame>);
 
-    vi.mocked(scanService.runDeepmatchPreview).mockResolvedValue([
-      { folderName: 'mod1' } as unknown as Awaited<
-        ReturnType<typeof scanService.runDeepmatchPreview>
-      >[0],
-    ]);
-    vi.mocked(scanService.getMasterDb).mockResolvedValue('[]');
-
     const { result } = renderHook(() => useObjectListHandlers(defaultProps), {
       wrapper: createWrapper(),
     });
@@ -196,10 +187,9 @@ describe('useObjectListHandlers', () => {
       await result.current.handleSync();
     });
 
-    expect(scanService.runDeepmatchPreview).toHaveBeenCalledWith('game-1', 'hsr', 'C:\\mods');
-    expect(scanService.getMasterDb).toHaveBeenCalledWith('hsr');
-
-    expect(result.current.scanReview.open).toBe(true);
-    expect(result.current.scanReview.items).toHaveLength(1);
+    expect(openObjectClassificationWizard).toHaveBeenCalledWith({
+      gameId: 'game-1',
+      objectIds: ['obj-1'],
+    });
   });
 });

@@ -1,7 +1,6 @@
 import { Fragment } from 'react';
 import { MoreHorizontal, Power, PowerOff, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useSafeMode } from '../../hooks/settingsQuery';
 
 export interface BulkBarAction {
   icon: LucideIcon;
@@ -43,7 +42,7 @@ interface BulkActionBarProps {
 
 /**
  * BulkActionBar — shared selection action bar for folder-grid and object-list.
- * Owns the single safeMode-adaptive safety toggle; per-feature actions come in
+ * Owns the manual Safe/Unsafe classification actions; per-feature actions come in
  * as lists, layout/sizing is driven by the variant.
  */
 export default function BulkActionBar({
@@ -57,8 +56,6 @@ export default function BulkActionBar({
   dropdownActions,
   mutationsDisabled = false,
 }: BulkActionBarProps) {
-  const safeMode = useSafeMode();
-
   if (count === 0) return null;
 
   const isFloating = variant === 'floating';
@@ -68,33 +65,27 @@ export default function BulkActionBar({
   const itemClass = isFloating ? 'py-2' : 'flex items-center gap-2 text-xs py-1.5';
   const circleBtn = `btn ${btnSize} btn-ghost btn-circle text-primary-content hover:bg-primary-content/20`;
 
-  // The single safeMode-adaptive safety toggle shared by both features.
-  const shieldButton = safeMode ? (
-    <button
-      className={`btn ${btnSize} btn-ghost btn-circle text-warning ${
-        isFloating
-          ? 'hover:bg-warning hover:text-warning-content border-none'
-          : 'hover:bg-primary-content/20'
-      }`}
-      onClick={() => onMarkSafe(false)}
-      title={labels.unsafe}
-      disabled={mutationsDisabled}
-    >
-      <ShieldAlert size={iconSize} />
-    </button>
-  ) : (
-    <button
-      className={`btn ${btnSize} btn-ghost btn-circle text-success ${
-        isFloating
-          ? 'hover:bg-success hover:text-success-content border-none'
-          : 'hover:bg-primary-content/20'
-      }`}
-      onClick={() => onMarkSafe(true)}
-      title={labels.safe}
-      disabled={mutationsDisabled}
-    >
-      <ShieldCheck size={iconSize} />
-    </button>
+  const safetyButtons = (
+    <div className="join">
+      <button
+        className={`btn ${btnSize} btn-ghost join-item text-success hover:bg-success hover:text-success-content`}
+        onClick={() => onMarkSafe(true)}
+        title={labels.safe}
+        aria-label={labels.safe}
+        disabled={mutationsDisabled}
+      >
+        <ShieldCheck size={iconSize} />
+      </button>
+      <button
+        className={`btn ${btnSize} btn-ghost join-item text-warning hover:bg-warning hover:text-warning-content`}
+        onClick={() => onMarkSafe(false)}
+        title={labels.unsafe}
+        aria-label={labels.unsafe}
+        disabled={mutationsDisabled}
+      >
+        <ShieldAlert size={iconSize} />
+      </button>
+    </div>
   );
 
   const dropdown = (
@@ -207,7 +198,7 @@ export default function BulkActionBar({
           </button>
         ))}
 
-        {shieldButton}
+        {safetyButtons}
         {!isFloating && dropdown}
       </div>
 

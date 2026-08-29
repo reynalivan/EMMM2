@@ -41,7 +41,7 @@ describe('runSharedModActiveContextToggle', () => {
     });
   });
 
-  it('invalidates the rewritten path after retagging across corridors', async () => {
+  it('invalidates the rewritten path after safety reclassification', async () => {
     const queryClient = new QueryClient();
     const setNodeEnabled = vi.fn().mockResolvedValue('E:/Mods/DISABLED Private Outfit');
 
@@ -52,6 +52,9 @@ describe('runSharedModActiveContextToggle', () => {
         name: 'Private Outfit',
         folder_name: 'Private Outfit',
         is_safe: false,
+        is_safety_classified: true,
+        contains_safe_mods: false,
+        contains_unsafe_mods: true,
         is_enabled: true,
         node_type: 'FlatModRoot',
         classification_reasons: [],
@@ -74,8 +77,6 @@ describe('runSharedModActiveContextToggle', () => {
       queryClient,
       switchSurface: 'preview',
       switchActions: { setNodeEnabled },
-      hasPin: false,
-      safeMode: true,
       translate: (key: string) => key,
     });
 

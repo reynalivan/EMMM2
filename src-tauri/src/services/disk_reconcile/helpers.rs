@@ -1,15 +1,15 @@
 use std::path::Path;
 
-use crate::common::corridor_constants::CORRIDOR_SOURCE_MANUAL;
 use crate::common::normalizer::{is_disabled_folder, normalize_display_name};
+use crate::common::safety_constants::SAFETY_SOURCE_MANUAL;
 use crate::domain::models::ItemStatus;
-use crate::services::scanner::sync::helpers::classify_corridor;
+use crate::services::scanner::sync::helpers::classify_safety;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeModMetadata {
     pub actual_name: String,
     pub is_safe: bool,
-    pub corridor_source: &'static str,
+    pub safety_source: &'static str,
     pub status: ItemStatus,
 }
 
@@ -43,16 +43,17 @@ pub fn load_runtime_mod_metadata(
         }
     }
 
-    // info.json wins over a remembered manual choice; both are manual verdicts.
-    let (is_safe, corridor_source) = match info_is_safe.or(existing_manual_safe) {
-        Some(value) => (value, CORRIDOR_SOURCE_MANUAL),
-        None => classify_corridor(&actual_name, safe_mode_keywords),
+    // The latest explicit in-app classification is authoritative. info.json is
+    // only the first-index fallback for folders that have no remembered choice.
+    let (is_safe, safety_source) = match existing_manual_safe.or(info_is_safe) {
+        Some(value) => (value, SAFETY_SOURCE_MANUAL),
+        None => classify_safety(&actual_name, safe_mode_keywords),
     };
 
     RuntimeModMetadata {
         actual_name,
         is_safe,
-        corridor_source,
+        safety_source,
         status: ItemStatus::from_is_disabled(is_disabled_folder(raw_folder_name)),
     }
 }
@@ -78,5 +79,19 @@ mod tests {
         let metadata = load_runtime_mod_metadata(temp.path(), "DISABLED Blue Dress", &[], None);
 
         assert_eq!(metadata.status, ItemStatus::Disabled);
+    }
+
+    #[test]
+    fn remembered_manual_classification_wins_over_stale_info_json() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        std::fs::write(
+            temp.path().join("info.json"),
+            r#"{"actual_name":"Blue Dress","is_safe":false}"#,
+        )
+        .expect("write metadata");
+
+        let metadata = load_runtime_mod_metadata(temp.path(), "Blue Dress", &[], Some(true));
+
+        assert!(metadata.is_safe);
     }
 }

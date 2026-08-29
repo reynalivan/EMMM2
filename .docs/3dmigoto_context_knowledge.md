@@ -123,6 +123,23 @@ Perbedaannya bukan kosmetik. Namespace `WWMIv1`, composition root, utilities, co
 
 File mod valid dapat dibuat manusia, generator, atau merge tool. Reader/Writer EMMM tidak boleh memformat ulang seluruh file berdasarkan satu gaya contoh.
 
+#### 2.3.1 `merged.ini` dan ownership subvariant
+
+`genshin_merge_mods.py` membangun satu orchestrator `merged.ini`: variable cycle seperti `$swapvar` memilih branch/CommandList, sedangkan resource dan file milik beberapa source variant tetap berada di descendant folder. Source INI variant biasanya dinonaktifkan agar 3DMigoto tidak mengeksekusi orchestrator dan source secara bersamaan.
+
+Konsekuensi untuk Storage Optimizer:
+
+- root hasil merge beserta seluruh descendant adalah satu logical mod unit, bukan kumpulan mod duplikat;
+- status `DISABLED` pada child INI adalah bagian dari orchestration dan bukan bukti bahwa asset child bebas dihapus;
+- nama `merged.ini` hanya hint; batas ownership utama tetap terminal root hasil classifier/walker;
+- hash target 3DMigoto yang sama dapat berarti subvariant, recolor, atau runtime conflict. Ia bukan bukti byte-identical;
+- partial content hash hanya untuk prefilter. Aksi Keep/Delete/Hardlink membutuhkan path-aware manifest semua file reguler dan full BLAKE3 yang identik;
+- section TextureOverride menerima resource hash 8-hex, sedangkan ShaderOverride/replacement memakai shader hash 16-hex. Typed target ini berguna untuk explanation/conflict review, tidak memberi izin destruktif.
+
+Decoder bersama saat ini mencakup UTF-8 (dengan/tanpa BOM) dan fallback Shift-JIS. UTF-16 LE/BE belum menjadi capability yang didukung; mod dengan encoding itu harus ditolak/ditandai sampai reader dan lossless writer sama-sama mendukungnya.
+
+Semantik branch bergantung pada urutan command section yang diproses 3DMigoto. Karena itu flatten child variant atau menyatukan relasi secara transitif dapat mengubah perilaku walaupun beberapa texture/buffer kebetulan sama.
+
 ### 2.4 Tur file-level: asset repositories
 
 GI assets membagi data menjadi `PlayerCharacterData`, `NPCData`, `EnemyData`, `WeaponData`, `SkillData`, dan `MiscellaneousData`. SR assets memakai `PlayerCharacterData`, `WeaponData`, `SkillObjData`, dan `EnemyData`.

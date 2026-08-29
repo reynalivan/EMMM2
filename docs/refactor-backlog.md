@@ -321,7 +321,7 @@ rule warns about. Revisit when a column rename is actually needed.
 
 ## Tier 3 — hygiene
 
-### 3.1 Files over the 350-line rule — PARTLY DONE, target not reachable
+### 3.1 Large-file cohesion review — PARTLY DONE
 
 The two files the plan named as "roughly 40% repeated fixture boilerplate"
 were deduplicated (`3bc891a`, `5344083`). The estimate was wrong, and the
@@ -337,7 +337,7 @@ times — and shed 125 lines. `sync_tests.rs` did not: it is long because it
 holds eleven tests that each build a temp tree, a game row and a MasterDB.
 Collapsing its literals saved 60 lines, which the new coverage then spent.
 
-**Neither reaches 350, and neither should be split to get there.** Each file
+**Neither should be split mechanically.** Each file
 covers one concern. The rule is aimed at production modules where length
 signals tangled responsibility; a test file's length signals how much
 behaviour is pinned.
@@ -351,7 +351,7 @@ eighteen times and obvious when it is written once.
 
 ### The production files, measured
 
-I first wrote that the eight production files over 350 lines were mostly doc
+I first wrote that the eight flagged production files were mostly doc
 comments and left them. That was asserted, not measured, and it was half
 wrong. Counting lines that are neither comment nor blank:
 
@@ -367,7 +367,7 @@ deepmatch_scanner_cmds.rs     359    289
 walker.rs                     353    252
 ```
 
-Six are under 350 lines of code and cross the line on documentation and
+Six only appear oversized because of documentation and
 spacing. Splitting those would trade explanation for a number, which is the
 opposite of what the rule is for.
 
@@ -418,7 +418,7 @@ Nothing is blocked, and nothing here is a bug.
   sections. Revisit 2.2 if a third import caller appears or the same bug has to
   be fixed twice; revisit 2.3 when a column actually needs to diverge from its
   wire shape.
-- **3.1** — eight production files sit over 350 lines. Most of the excess is
+- **3.1** — eight production files were flagged as oversized. Most of the excess is
   doc comments added during Tier 1. Not worth trading for a file split.
 
 If you want more ground covered, the honest answer is that the backlog is

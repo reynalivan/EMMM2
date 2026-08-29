@@ -6,7 +6,7 @@
  */
 
 import { formatAppError } from '../../../lib/appError';
-import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../lib/bindings';
 import { toast } from '../../../stores/useToastStore';
@@ -15,16 +15,19 @@ import { runObjectBatchMutation } from '../../../hooks/objectQueryCache';
 import { useDeleteObject } from '../../../hooks/useObjectMutations';
 import { useTranslation } from 'react-i18next';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
-import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
+import {
+  buildRuntimeMutationDescriptor,
+  type RuntimeMutationClass,
+} from '../../workspace-runtime/optimistic/descriptorBuilders';
 import { useWorkspaceSwitchActions } from '../../workspace-runtime/actions/useWorkspaceSwitchActions';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
-import { runBulkAutoRecognize } from '../utils/runBulkAutoRecognize';
+import { runBulkClassifyAndMatch } from '../utils/runBulkClassifyAndMatch';
 import { parseTagList, resolveObjectNames } from '../utils/bulkSummary';
 import { truncateNameList } from '../../../hooks/bulkToastMessages';
 
 interface BulkDeps {
   objects: WorkspaceObjectNode[];
-  setIsSyncing: Dispatch<SetStateAction<boolean>>;
+  setIsSyncing?: unknown;
 }
 
 type BulkOutcome = { success: number; failed: number };
@@ -53,11 +56,13 @@ async function runPerId(ids: Set<string>, op: (id: string) => Promise<void>): Pr
   return { success, failed };
 }
 
-export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
+export function useObjectBulkActions({ objects }: BulkDeps) {
   const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const queryClient = useQueryClient();
-  const deleteObjectMutation = useDeleteObject();
+  // The batch owns the single trailing refresh; per-item mutation callbacks
+  // must not refetch the list after every successful delete.
+  const deleteObjectMutation = useDeleteObject({ publishOnSuccess: false });
   const switchActions = useWorkspaceSwitchActions();
 
   const [bulkTagModal, setBulkTagModal] = useState<{
@@ -142,12 +147,22 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
       let successCount = 0;
       let failedCount = 0;
       for (const object of objects.filter((candidate) => ids.has(candidate.id))) {
-        const nextPath = await switchActions.setNodeEnabled(object, enable, 'object_list');
+        const nextPath = await switchActions.setNodeEnabled(object, enable, 'object_list', {
+          publish: false,
+        });
         if (nextPath) {
           successCount += 1;
           continue;
         }
         failedCount += 1;
+      }
+
+      if (successCount > 0) {
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor('objectSwitch'),
+          'active',
+        );
       }
 
       if (failedCount === 0) {
@@ -169,7 +184,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
 
       toast.error(`${enable ? 'Enabled' : 'Disabled'} ${successCount}, failed ${failedCount}`);
     },
-    [activeGame, objects, switchActions, t],
+    [activeGame, objects, queryClient, switchActions, t],
   );
 
   const handleBulkEnable = useCallback(
@@ -234,18 +249,15 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
     [applyBulkTags, reportOutcome, summarizeSelection, t],
   );
 
-  const handleBulkAutoRecognize = useCallback(
+  const handleBulkClassifyAndMatch = useCallback(
     async (ids: Set<string>) => {
-      await runBulkAutoRecognize({
+      await runBulkClassifyAndMatch({
         ids,
         activeGame,
-        objects,
-        queryClient,
-        setIsSyncing,
         t,
       });
     },
-    [activeGame, objects, queryClient, setIsSyncing, t],
+    [activeGame, t],
   );
 
   /** Run a bulk folder-path command, refresh the rows, and report the outcome. */
@@ -254,18 +266,23 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
       ids: Set<string>,
       run: (gameId: string, paths: string[]) => Promise<unknown>,
       successKey: string,
+      mutationClass: RuntimeMutationClass = 'objectRows',
     ) => {
       if (!activeGame) return;
       const paths = objects.filter((o) => ids.has(o.id)).map((o) => o.folder_path);
       try {
         await run(activeGame.id, paths);
-        await refreshObjectRows();
+        await publishRuntimeDescriptor(
+          queryClient,
+          buildRuntimeMutationDescriptor(mutationClass),
+          'active',
+        );
         toast.success(t(successKey, { count: ids.size }));
       } catch (e) {
         toast.error(t('objects:edit_modal.error_message', { error: formatAppError(e) }));
       }
     },
-    [activeGame, objects, refreshObjectRows, t],
+    [activeGame, objects, queryClient, t],
   );
 
   const handleBulkFavorite = useCallback(
@@ -282,8 +299,9 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
     (ids: Set<string>, safe: boolean) =>
       runBulkFolderCommand(
         ids,
-        (gameId, paths) => commands.bulkUpdateInfo(gameId, paths, sparse({ is_safe: safe })),
+        (gameId, paths) => commands.bulkSetModSafety(gameId, paths, safe),
         safe ? 'objects:toasts.mark_safe' : 'objects:toasts.mark_unsafe',
+        'safetyClassification',
       ),
     [runBulkFolderCommand],
   );
@@ -297,7 +315,7 @@ export function useObjectBulkActions({ objects, setIsSyncing }: BulkDeps) {
     handleBulkDisable,
     handleBulkAddTags,
     handleBulkRemoveTags,
-    handleBulkAutoRecognize,
+    handleBulkClassifyAndMatch,
     handleBulkFavorite,
     handleBulkSafe,
   };

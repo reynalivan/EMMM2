@@ -1,8 +1,10 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '../../../types/object';
 import { commands, sparse } from '../../../lib/bindings';
 import { useAppStore } from '../../../stores/useAppStore';
-import { publishQueryInvalidations } from '../../runtime-sync/queryRefresh';
+import { publishQueryInvalidations, publishQueryScopes } from '../../runtime-sync/queryRefresh';
+import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
 
 export interface IniFileEntry {
   filename: string;
@@ -96,6 +98,10 @@ function useDetailsInvalidator(): (queryKeys: Array<readonly unknown[]>) => void
   };
 }
 
+function publishIniRuntimeRefresh(queryClient: QueryClient): void {
+  void publishQueryScopes(queryClient, ['workspaceViewModel', 'collectionRuntime', 'conflicts']);
+}
+
 export function useModInfo(folderPath?: string | null) {
   const normalizedPath = normalizeFolderPath(folderPath);
   const gameId = useActiveGameId();
@@ -149,6 +155,7 @@ export function usePreviewImages(folderPath?: string | null) {
 
 export function useWriteModIni() {
   const gameId = useActiveGameId();
+  const queryClient = useQueryClient();
   const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: WriteModIniInput) =>
@@ -159,11 +166,15 @@ export function useWriteModIni() {
         input.expectedSourceHash,
         input.lineUpdates,
       ),
-    onSuccess: (_result, input) =>
+    onSuccess: (result, input) => {
       invalidate([
         detailsKeys.iniDocument(input.folderPath, input.fileName),
         detailsKeys.iniFiles(input.folderPath),
-      ]),
+        ['conflicts', gameId],
+      ]);
+      publishIniRuntimeRefresh(queryClient);
+      notifyCommittedMutationSyncWarning(result);
+    },
   });
 }
 

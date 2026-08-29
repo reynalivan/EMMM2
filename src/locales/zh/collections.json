@@ -25,6 +25,11 @@
       "actions": "操作"
     },
     "item": {
+      "current_runtime": "Current changes",
+      "unsaved": "Unsaved changes",
+      "modified": "Modified",
+      "matches_runtime": "Matches current runtime",
+      "save_changes": "Save changes",
       "active": "活动",
       "undo": "撤销",
       "rename": "重命名",
@@ -33,6 +38,16 @@
       "mod_count": "{{count}} 个 Mod"
     },
     "load_failed": "加载合集失败"
+  },
+  "last_changes": {
+    "title": "最近更改",
+    "description": "切换合集前已保存修改或未保存的运行状态。",
+    "save_as": "另存为合集",
+    "restore": "恢复",
+    "clear": "清除",
+    "restored": "已恢复最近更改",
+    "cleared": "已清除最近更改",
+    "remove_missing_confirm": "从此合集中移除 {{count}} 个缺失的模组吗？"
   },
   "preview": {
     "title": "收藏集预览",
@@ -120,7 +135,6 @@
   "randomizer": {
     "title": "智能随机生成器",
     "desc": "为每个活动角色推荐 1 个随机禁用的 Mod。查看并应用。",
-    "safe_mode": "安全模式",
     "no_eligible": "未找到符合条件的角色 Mod（请检查过滤器或确保您有禁用的 Mod）。",
     "consulting": "正在咨询 RNG 大神...",
     "reroll": "全部重抽",

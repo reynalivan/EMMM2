@@ -22,6 +22,7 @@ pub struct BrowserDownloadDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct ImportJobDto {
     pub id: String,
+    pub batch_id: Option<String>,
     pub download_id: Option<String>,
     pub game_id: Option<String>,
     pub archive_path: String,

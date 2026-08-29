@@ -114,6 +114,12 @@ pub fn read_info_json(mod_path: &Path) -> Result<Option<ModInfo>, MetadataError>
 /// Uses the folder's name as `actual_name`.
 /// Does NOT overwrite if the file already exists.
 pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, MetadataError> {
+    if !mod_path.is_dir() {
+        return Err(MetadataError::NotFound(format!(
+            "Mod folder does not exist: {}",
+            mod_path.display()
+        )));
+    }
     let info_path = mod_path.join("info.json");
     if info_path.exists() {
         return read_info_json(mod_path)?
@@ -133,7 +139,8 @@ pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, MetadataErro
 
     let json = serde_json::to_string_pretty(&info)
         .map_err(|e| MetadataError::Validation(format!("Failed to serialize info.json: {e}")))?;
-    fs::write(&info_path, json)?;
+    crate::services::fs_utils::atomic_file::atomic_write(&info_path, json.as_bytes())
+        .map_err(|error| MetadataError::Io(error.to_string()))?;
 
     log::info!("Created default info.json for '{}'", clean_name);
     Ok(info)
@@ -231,7 +238,8 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
     let info_path = mod_path.join("info.json");
     let json = serde_json::to_string_pretty(&info)
         .map_err(|e| MetadataError::Validation(format!("Failed to serialize: {e}")))?;
-    fs::write(&info_path, json)?;
+    crate::services::fs_utils::atomic_file::atomic_write(&info_path, json.as_bytes())
+        .map_err(|error| MetadataError::Io(error.to_string()))?;
 
     Ok(info)
 }

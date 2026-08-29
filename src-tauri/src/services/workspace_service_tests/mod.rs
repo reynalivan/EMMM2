@@ -1,4 +1,4 @@
-use super::get_workspace_view_model;
+use super::{get_workspace_view_model, get_workspace_view_model_with_listing_mode};
 use crate::domain::models::{GameType, ItemStatus};
 use crate::domain::objects::ObjectFilter;
 use crate::domain::workspace::{
@@ -66,7 +66,7 @@ async fn setup_workspace_fixture(
     )
 }
 
-mod corridor;
 mod drift;
 mod preview;
 mod roots;
+mod safety_filter;

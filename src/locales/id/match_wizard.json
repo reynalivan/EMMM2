@@ -1,0 +1,51 @@
+{
+  "title": "Wizard Pencocokan",
+  "resume_import": "Lanjutkan import ({{count}} item)",
+  "classification_title": "Klasifikasi & Cocokkan Objek Existing",
+  "classification_no_move": "Status existing dipertahankan kecuali Anda memilih untuk menonaktifkan folder objek di bawah.",
+  "classification_disable_after_apply": "Atur folder objek yang diklasifikasikan menjadi Nonaktif",
+  "classification_after_category": "Konfirmasi seluruh kategori untuk menghitung canonical match.",
+  "classification_match_objects": "Cocokkan objek canonical",
+  "classification_apply": "Terapkan klasifikasi",
+  "classification_applied": "{{count}} klasifikasi diterapkan dan {{mods}} child mod diperbarui.",
+  "batch_summary": "{{count}} item · {{flow}}",
+  "analyzing": "Memeriksa sumber dan menyusun bukti kategori…",
+  "steps": {
+    "sources": "Sumber",
+    "category": "Kategori & metadata",
+    "destination": "Objek & tujuan",
+    "validation": "Validasi",
+    "result": "Hasil"
+  },
+  "columns": {
+    "source": "Sumber / nama rencana",
+    "category": "Kategori",
+    "canonical": "Objek canonical",
+    "destination": "Tujuan",
+    "confidence": "Confidence / bukti",
+    "decision": "Keputusan / hasil",
+    "actions": "Aksi"
+  },
+  "actions": {
+    "confirm_high": "Konfirmasi High",
+    "skip_medium_low": "Lewati Medium & Low",
+    "confirm": "Konfirmasi kategori",
+    "rename": "Ubah nama rencana",
+    "use_target": "Pakai tujuan",
+    "skip": "Lewati",
+    "retry": "Ulangi saran",
+    "open": "Buka di Explorer",
+    "commit": "Commit {{count}} item"
+  },
+  "choose_existing": "Pilih tujuan yang sudah ada…",
+  "specific_warning": "target tidak cukup cocok; perlu konfirmasi eksplisit",
+  "no_match": "Tidak ada canonical match",
+  "no_destination": "Belum ada tujuan",
+  "evidence": "Bukti",
+  "result_summary": "Dipindah {{moved}}, dialokasikan ulang {{reallocated}}, dibuat {{created}}, dilewati {{skipped}}, bentrok {{collisions}}, metadata tertunda {{pending}}, gagal {{failed}}.",
+  "errors": {
+    "launch": "Wizard Pencocokan tidak dapat dibuka: {{error}}",
+    "update": "Item tidak dapat diperbarui: {{error}}",
+    "commit": "Batch tidak dapat di-commit: {{error}}"
+  }
+}

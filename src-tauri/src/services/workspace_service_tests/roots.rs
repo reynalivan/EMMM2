@@ -45,7 +45,6 @@ async fn workspace_lists_visible_root_folders_without_database_objects() {
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_roots")
             },
             selected_object_folder_path: None,
@@ -61,7 +60,7 @@ async fn workspace_lists_visible_root_folders_without_database_objects() {
         .iter()
         .map(|root| root.object.name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(names, vec!["Aether", "Amber"]);
+    assert_eq!(names, vec!["Aether", "Amber", "Private"]);
     assert_eq!(view_model.objects[1].object.folder_path, "DISABLED Amber");
     assert!(view_model.objects.iter().all(|root| !root.is_registered));
     assert!(view_model.objects.iter().all(|root| {
@@ -69,7 +68,7 @@ async fn workspace_lists_visible_root_folders_without_database_objects() {
             && !root.capabilities.can_edit_metadata
             && !root.capabilities.can_delete
     }));
-    assert_eq!(view_model.explorer.children.len(), 2);
+    assert_eq!(view_model.explorer.children.len(), 3);
 }
 
 #[tokio::test]
@@ -93,7 +92,6 @@ async fn workspace_enriches_registered_roots_without_duplicates() {
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_roots")
             },
             selected_object_folder_path: None,
@@ -134,7 +132,6 @@ async fn workspace_excludes_unregistered_roots_from_metadata_filters() {
             filter: ObjectFilter {
                 game_id: "game_roots".to_string(),
                 object_type: Some("Character".to_string()),
-                safe_mode: true,
                 ..Default::default()
             },
             selected_object_folder_path: None,
@@ -164,7 +161,6 @@ async fn workspace_grid_keeps_mods_and_plain_folders_visible() {
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_roots")
             },
             selected_object_folder_path: Some("Aether".to_string()),

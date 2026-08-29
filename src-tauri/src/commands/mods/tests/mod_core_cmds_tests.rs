@@ -4,6 +4,22 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
+fn open_folder_preflight_uses_containment_and_conflict_validation_without_reconcile() {
+    let source = include_str!("../mod_core_cmds.rs");
+    let start = source
+        .find("async fn ensure_path_can_be_opened(")
+        .expect("open-folder preflight source");
+    let remainder = &source[start..];
+    let end = remainder
+        .find("async fn resolve_and_heal_db_path")
+        .expect("next helper boundary");
+    let preflight = &remainder[..end];
+
+    assert!(preflight.contains("ensure_open_path_preflight"));
+    assert!(!preflight.contains("ensure_mutation_preflight_for_paths"));
+}
+
+#[test]
 fn rename_rejects_case_insensitive_duplicate() {
     let tmp = TempDir::new().unwrap();
     let raiden = tmp.path().join("Raiden");
@@ -21,6 +37,75 @@ fn rename_rejects_case_insensitive_duplicate() {
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("already exists"));
+}
+
+#[test]
+fn rename_rejects_disabled_prefix_identity_collision() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("Blue");
+    let existing = tmp.path().join("DISABLED Red");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&existing).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let state = WatcherState::new();
+    let result = rt.block_on(rename_mod_folder_inner(
+        &state,
+        source.to_string_lossy().to_string(),
+        "Red".to_string(),
+    ));
+
+    assert!(result.is_err());
+    assert!(
+        source.exists(),
+        "failed rename must leave the source untouched"
+    );
+    assert!(existing.exists());
+}
+
+#[test]
+fn rename_rejects_disabled_prefix_in_user_base_name_without_writes() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("Blue");
+    fs::create_dir(&source).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let state = WatcherState::new();
+    let result = rt.block_on(rename_mod_folder_inner(
+        &state,
+        source.to_string_lossy().to_string(),
+        "DISABLED Red".to_string(),
+    ));
+
+    let error = result.expect_err("status prefixes are not valid user base names");
+    assert!(error.to_string().contains("DISABLED prefix"));
+    assert!(
+        source.is_dir(),
+        "validation must run before the disk rename"
+    );
+    assert!(!tmp.path().join("DISABLED Red").exists());
+}
+
+#[test]
+fn rename_rejects_windows_reserved_base_name_before_writing() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("Blue");
+    fs::create_dir(&source).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let state = WatcherState::new();
+    let result = rt.block_on(rename_mod_folder_inner(
+        &state,
+        source.to_string_lossy().to_string(),
+        "CON.txt".to_string(),
+    ));
+
+    let error = result.expect_err("Windows device names must be rejected on every platform");
+    assert!(error.to_string().contains("reserved by Windows"));
+    assert!(
+        source.is_dir(),
+        "validation must run before the disk rename"
+    );
 }
 
 #[test]
@@ -88,16 +173,11 @@ fn delete_mod_moves_to_trash() {
     fs::create_dir(&mod_dir).unwrap();
     fs::write(mod_dir.join("test.txt"), "hello").unwrap();
 
-    let trash_dir = tmp.path().join("trash");
-    fs::create_dir(&trash_dir).unwrap();
-
     let rt = tokio::runtime::Runtime::new().unwrap();
     let state = WatcherState::new();
     let result = rt.block_on(trash::move_to_trash_guarded(
         &state,
-        &trash_dir,
         mod_dir.to_string_lossy().to_string(),
-        None,
     ));
 
     assert!(result.is_ok());
@@ -124,6 +204,7 @@ fn rename_enabled_mod_success() {
     assert!(result.is_ok());
     let res = result.unwrap();
     assert_eq!(res.new_name, "BetterName");
+    assert!(res.sync_warning.is_none());
     assert!(res.new_path.ends_with("BetterName"));
     assert!(Path::new(&res.new_path).exists());
     assert!(!mod_dir.exists());

@@ -182,6 +182,12 @@ describe('Dashboard - TC-33', () => {
       });
     });
 
+    it('does not render a second refresh action beside the global disk sync', () => {
+      render(<Dashboard />);
+
+      expect(screen.queryByRole('button', { name: /^refresh$/i })).not.toBeInTheDocument();
+    });
+
     it('renders Total Mods stat tile correctly', () => {
       render(<Dashboard />);
 

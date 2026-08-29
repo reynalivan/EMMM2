@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import ObjectListModals, { SYNC_CONFIRM_RESET } from './ObjectListModals';
+import ObjectListModals from './ObjectListModals';
 
 vi.mock('../../../components/ui/ConfirmDialog', () => ({
   default: ({ open }: { open: boolean }) =>
@@ -11,17 +11,9 @@ vi.mock('./EditObjectModal', () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div data-testid="edit-modal">Edit Modal</div> : null,
 }));
-vi.mock('../../../components/modals/SyncConfirmModal', () => ({
-  default: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="sync-modal">Sync Modal</div> : null,
-}));
 vi.mock('./CreateObjectModal', () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div data-testid="create-modal">Create Modal</div> : null,
-}));
-vi.mock('./ScanReviewModal', () => ({
-  default: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="scan-modal">Scan Modal</div> : null,
 }));
 vi.mock('./AutoSetupModal', () => ({
   default: ({ open }: { open: boolean }) =>
@@ -32,16 +24,8 @@ describe('ObjectListModals', () => {
   it('renders nothing when not explicitly opened', () => {
     render(
       <ObjectListModals
-        activeGame={null}
         editObject={null}
         onCloseEdit={vi.fn()}
-        syncConfirm={SYNC_CONFIRM_RESET}
-        onApplySyncMatch={vi.fn()}
-        onEditManually={vi.fn()}
-        onCloseSyncConfirm={vi.fn()}
-        scanReview={{ open: false, items: [], masterDbEntries: [], isCommitting: false }}
-        onCommitScan={vi.fn()}
-        onCloseScanReview={vi.fn()}
         createModalOpen={false}
         onCloseCreate={vi.fn()}
         autoSetupOpen={false}
@@ -52,9 +36,6 @@ describe('ObjectListModals', () => {
         forceDeleteObjectDialog={{ open: false, id: '', name: '', count: 0 }}
         onConfirmForceDeleteObject={vi.fn()}
         onCancelForceDeleteObject={vi.fn()}
-        mismatchConfirm={null}
-        onConfirmMismatchHandler={vi.fn()}
-        onCancelMismatchHandler={vi.fn()}
       />,
     );
     expect(screen.queryByTestId('confirm-dialog')).toBeNull();
@@ -63,20 +44,12 @@ describe('ObjectListModals', () => {
   it('renders modals when opened', () => {
     render(
       <ObjectListModals
-        activeGame={null}
         editObject={
           { id: '1', name: 'Z' } as unknown as React.ComponentProps<
             typeof ObjectListModals
           >['editObject']
         }
         onCloseEdit={vi.fn()}
-        syncConfirm={{ ...SYNC_CONFIRM_RESET, open: true }}
-        onApplySyncMatch={vi.fn()}
-        onEditManually={vi.fn()}
-        onCloseSyncConfirm={vi.fn()}
-        scanReview={{ open: true, items: [], masterDbEntries: [], isCommitting: false }}
-        onCommitScan={vi.fn()}
-        onCloseScanReview={vi.fn()}
         createModalOpen={true}
         onCloseCreate={vi.fn()}
         autoSetupOpen={true}
@@ -87,16 +60,11 @@ describe('ObjectListModals', () => {
         forceDeleteObjectDialog={{ open: false, id: '', name: '', count: 0 }}
         onConfirmForceDeleteObject={vi.fn()}
         onCancelForceDeleteObject={vi.fn()}
-        mismatchConfirm={null}
-        onConfirmMismatchHandler={vi.fn()}
-        onCancelMismatchHandler={vi.fn()}
       />,
     );
 
     expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     expect(screen.getByTestId('edit-modal')).toBeInTheDocument();
-    expect(screen.getByTestId('sync-modal')).toBeInTheDocument();
-    expect(screen.getByTestId('scan-modal')).toBeInTheDocument();
     expect(screen.getByTestId('create-modal')).toBeInTheDocument();
     expect(screen.getByTestId('autosetup-modal')).toBeInTheDocument();
   });

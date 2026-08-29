@@ -43,26 +43,6 @@ describe('buildSharedObjectActionState', () => {
       ...INITIAL_SHARED_OBJECT_ACTION_STATE,
       forceDeleteObjectDialog: { open: true, id: 'object-1', name: 'Alpha', count: 3 },
     });
-
-    expect(
-      buildSharedObjectActionState({
-        kind: 'objectSync',
-        objectId: 'object-1',
-        objectName: 'Alpha',
-        itemType: 'object',
-        match: null,
-        isLoading: true,
-        currentData: null,
-      }).syncConfirm,
-    ).toEqual({
-      open: true,
-      objectId: 'object-1',
-      objectName: 'Alpha',
-      itemType: 'object',
-      match: null,
-      isLoading: true,
-      currentData: null,
-    });
   });
 });
 
@@ -90,27 +70,6 @@ describe('buildSharedObjectDialogEvent', () => {
     expect(buildSharedObjectDialogEvent(reduced, 'objectDelete')).toEqual({
       type: 'DIALOG_OPENED',
       dialog: { kind: 'objectForceDelete', id: 'object-1', name: 'Alpha', count: 2 },
-    });
-  });
-
-  it('updates instead of reopening an already open sync dialog', () => {
-    const reduced = sharedObjectActionsReducer(INITIAL_SHARED_OBJECT_ACTION_STATE, {
-      type: 'openSync',
-      objectId: 'object-1',
-      objectName: 'Alpha',
-      currentData: {
-        name: 'Alpha',
-        object_type: 'Character',
-        metadata: null,
-        thumbnail_path: null,
-      },
-    });
-
-    expect(buildSharedObjectDialogEvent(reduced, 'objectSync')).toMatchObject({
-      type: 'DIALOG_UPDATED',
-    });
-    expect(buildSharedObjectDialogEvent(reduced, 'none')).toMatchObject({
-      type: 'DIALOG_OPENED',
     });
   });
 

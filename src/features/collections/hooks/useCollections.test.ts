@@ -4,10 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createWrapper } from '../../../testing/test-utils';
-import { corridorKeys } from '../queryKeys';
-import { useApplyCollection, useApplyCollectionPreview, useCollections } from './useCollections';
-import type { CorridorSnapshot } from '../../../types/collection';
+import { collectionRuntimeKeys } from '../queryKeys';
+import {
+  useApplyCollection,
+  useApplyCollectionPreview,
+  useCollections,
+  useRestoreLastChanges,
+} from './useCollections';
+import type { CollectionRuntimeSnapshot } from '../../../types/collection';
 import { useAppStore } from '../../../stores/useAppStore';
+import { toast } from '../../../stores/useToastStore';
 
 function createProjectedState() {
   return {
@@ -34,6 +40,7 @@ vi.mock('../../../stores/useToastStore', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
     withAction: vi.fn(),
   },
 }));
@@ -41,6 +48,15 @@ vi.mock('../../../stores/useToastStore', () => ({
 function createMutationWrapper(queryClient: QueryClient) {
   return ({ children }: { children: React.ReactNode }) =>
     React.createElement(QueryClientProvider, { client: queryClient }, children);
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
 }
 
 describe('useCollections', () => {
@@ -71,7 +87,51 @@ describe('useCollections', () => {
     expect(result.current.data?.[0].name).toBe('Abyss Team');
   });
 
-  it('apply invalidates corridor state and applies backend path rewrites', async () => {
+  it('does not retain game A collection IDs while game B is still loading', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const gameBCollections = createDeferred<unknown>();
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command !== 'list_collections') {
+        throw new Error(`Unexpected invoke command: ${command}`);
+      }
+
+      const { gameId } = args as { gameId: string };
+      if (gameId === 'game-a') {
+        return Promise.resolve([
+          {
+            id: 'collection-a',
+            name: 'Game A only',
+            is_safe: true,
+            is_safety_classified: true,
+            is_active: false,
+            signature: 'signature-a',
+            updated_at: '2026-08-28T00:00:00Z',
+            mod_count: 1,
+          },
+        ]);
+      }
+
+      return gameBCollections.promise;
+    });
+
+    const { result, rerender } = renderHook(
+      ({ gameId }: { gameId: string }) => useCollections(gameId),
+      { initialProps: { gameId: 'game-a' }, wrapper: createMutationWrapper(queryClient) },
+    );
+
+    await waitFor(() => expect(result.current.data?.[0]?.id).toBe('collection-a'));
+    rerender({ gameId: 'game-b' });
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('list_collections', { gameId: 'game-b' }),
+    );
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isPlaceholderData).toBe(false);
+  });
+
+  it('apply invalidates runtime state and applies backend path rewrites', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -86,9 +146,12 @@ describe('useCollections', () => {
           mods_disabled: 0,
           warnings: [],
           final_state_name: 'Backend Runtime',
-          final_mode: 'SAFE',
           partial_apply: false,
           skipped_missing_paths: [],
+          sync_warning: {
+            kind: 'ReconcileFailed',
+            message: 'Projection refresh is pending',
+          },
           runtime_path_rewrites: [
             {
               old_path: 'E:/Mods/ALBEDO/Variant',
@@ -102,31 +165,39 @@ describe('useCollections', () => {
         return [];
       }
 
-      if (command === 'get_corridor_state') {
+      if (command === 'get_collection_runtime_state') {
         return {
           game_id: 'g-1',
-          is_safe: true,
           active_collection_id: 'c-1',
           active_collection_name: 'Backend Runtime',
           current_signature: 'backend-sig',
           is_dirty: false,
+          runtime_status: 'clean',
+          is_safe: true,
+          is_safety_classified: true,
+          missing_count: 0,
+          last_changes: null,
           current_mods: [],
           current_objects: [],
           current_tree_nodes: [],
           projected_state: createProjectedState(),
-        } satisfies CorridorSnapshot;
+        } satisfies CollectionRuntimeSnapshot;
       }
 
       throw new Error(`Unexpected invoke command: ${command}`);
     });
 
-    queryClient.setQueryData<CorridorSnapshot>(corridorKeys.state('g-1'), {
+    queryClient.setQueryData<CollectionRuntimeSnapshot>(collectionRuntimeKeys.state('g-1'), {
       game_id: 'g-1',
-      is_safe: true,
       active_collection_id: null,
       active_collection_name: 'Old Snapshot',
       current_signature: 'old',
       is_dirty: false,
+      runtime_status: 'clean',
+      is_safe: true,
+      is_safety_classified: true,
+      missing_count: 0,
+      last_changes: null,
       current_mods: [],
       current_objects: [],
       current_tree_nodes: [],
@@ -147,12 +218,57 @@ describe('useCollections', () => {
     });
 
     // Invalidation-only: the stale snapshot is marked for refetch, never patched.
-    expect(queryClient.getQueryState(corridorKeys.state('g-1'))?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryData<CorridorSnapshot>(corridorKeys.state('g-1'))).toMatchObject({
+    expect(queryClient.getQueryState(collectionRuntimeKeys.state('g-1'))?.isInvalidated).toBe(true);
+    expect(
+      queryClient.getQueryData<CollectionRuntimeSnapshot>(collectionRuntimeKeys.state('g-1')),
+    ).toMatchObject({
       active_collection_name: 'Old Snapshot',
     });
     expect(useAppStore.getState().selectedModPath).toBe('E:/Mods/ALBEDO/DISABLED Variant');
     expect(useAppStore.getState().gridSelection.has('E:/Mods/ALBEDO/DISABLED Variant')).toBe(true);
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('Projection refresh'), 7000);
+  });
+
+  it('restore last changes applies backend path rewrites to workspace selection', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+    const wrapper = createMutationWrapper(queryClient);
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command === 'restore_last_changes') {
+        return {
+          mods_enabled: 0,
+          mods_disabled: 1,
+          warnings: [],
+          final_state_name: 'Previous Runtime',
+          partial_apply: false,
+          skipped_missing_paths: [],
+          runtime_path_rewrites: [
+            {
+              old_path: 'E:/Mods/ALBEDO/DISABLED Variant',
+              new_path: 'E:/Mods/ALBEDO/Variant',
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected invoke command: ${command}`);
+    });
+    useAppStore.setState({
+      selectedModPath: 'E:/Mods/ALBEDO/DISABLED Variant',
+      gridSelection: new Set(['E:/Mods/ALBEDO/DISABLED Variant']),
+    });
+
+    const { result } = renderHook(() => useRestoreLastChanges(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync('g-1');
+    });
+
+    expect(useAppStore.getState().selectedModPath).toBe('E:/Mods/ALBEDO/Variant');
+    expect(useAppStore.getState().gridSelection.has('E:/Mods/ALBEDO/Variant')).toBe(true);
   });
 
   it('refetches apply preview when game id changes', async () => {

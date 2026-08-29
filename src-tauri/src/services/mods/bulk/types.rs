@@ -26,6 +26,7 @@ pub struct BulkResult {
     pub failures: Vec<BulkActionError>,
     pub collection_impact: CollectionReferenceImpact,
     pub path_rewrites: Vec<WorkspacePathRewrite>,
+    pub sync_warning: Option<crate::services::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 impl BulkResult {
@@ -35,6 +36,7 @@ impl BulkResult {
             failures,
             collection_impact: CollectionReferenceImpact::default(),
             path_rewrites: Vec::new(),
+            sync_warning: None,
         }
     }
 
@@ -49,6 +51,19 @@ impl BulkResult {
             failures,
             collection_impact,
             path_rewrites,
+            sync_warning: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_bulk_result_has_no_sync_warning_before_terminal_reconcile() {
+        assert!(BulkResult::new(Vec::new(), Vec::new())
+            .sync_warning
+            .is_none());
     }
 }

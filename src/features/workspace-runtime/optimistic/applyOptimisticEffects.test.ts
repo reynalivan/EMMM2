@@ -44,9 +44,11 @@ describe('applyRuntimeEffects', () => {
       selectedModPath: 'E:\\Mods\\ALBEDO\\Variant',
     });
 
-    useAppStore.getState().replaceGridSelections([
-      { oldPath: 'E:/Mods/ALBEDO/Variant', newPath: 'E:/Mods/ALBEDO/DISABLED Variant' },
-    ]);
+    useAppStore
+      .getState()
+      .replaceGridSelections([
+        { oldPath: 'E:/Mods/ALBEDO/Variant', newPath: 'E:/Mods/ALBEDO/DISABLED Variant' },
+      ]);
 
     // Selections are matched by exact string against backend paths
     // (backslashed on Windows), so the rewrite keeps the caller's separators.

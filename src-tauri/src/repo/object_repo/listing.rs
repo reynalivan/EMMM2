@@ -11,7 +11,6 @@ pub async fn get_filtered_objects(
     pool: &SqlitePool,
     filter: &ObjectFilter,
 ) -> Result<ObjectPage, sqlx::Error> {
-    let safe_mode = if filter.safe_mode { 1i64 } else { 0i64 };
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
         SELECT
@@ -34,30 +33,18 @@ pub async fn get_filtered_objects(
             COALESCE(o.is_auto_sync, 0) as is_auto_sync,
             o.thumbnail_path,
             o.created_at,
-            CASE WHEN "#,
-    );
-    qb.push_bind(safe_mode);
-    qb.push(
-        r#" = 1
-                THEN COALESCE(p.mod_count_safe, 0)
-                ELSE COALESCE(p.mod_count_unsafe, 0)
-            END as mod_count,
-            CASE WHEN "#,
-    );
-    qb.push_bind(safe_mode);
-    qb.push(
-        r#" = 1
-                THEN COALESCE(p.enabled_count_safe, 0)
-                ELSE COALESCE(p.enabled_count_unsafe, 0)
-            END as enabled_count,
-            CASE WHEN "#,
-    );
-    qb.push_bind(safe_mode);
-    qb.push(
-        r#" = 1
-                THEN NULLIF(COALESCE(p.active_mod_paths_safe_json, '[]'), '[]')
-                ELSE NULLIF(COALESCE(p.active_mod_paths_unsafe_json, '[]'), '[]')
-            END as active_mod_paths,
+            (SELECT COUNT(*) FROM mods m WHERE m.object_id = o.id) as mod_count,
+            (SELECT COUNT(*) FROM mods m WHERE m.object_id = o.id AND m.status = 1) as enabled_count,
+            COALESCE(p.mod_count_safe, 0) as safe_mod_count,
+            COALESCE(p.mod_count_unsafe, 0) as unsafe_mod_count,
+            (SELECT COUNT(*) FROM mods m
+             WHERE m.object_id = o.id
+               AND COALESCE(m.safety_source, 'unknown') = 'unknown') as unclassified_mod_count,
+            NULLIF(COALESCE((
+                SELECT json_group_array(m.folder_path)
+                FROM mods m
+                WHERE m.object_id = o.id AND m.status = 1
+            ), '[]'), '[]') as active_mod_paths,
             COALESCE(p.is_object_disabled, CASE WHEN o.status = 0 THEN 1 ELSE 0 END) as is_object_disabled,
             COALESCE(p.has_naming_conflict, 0) as has_naming_conflict,
             CASE WHEN p.object_id IS NULL THEN 0 ELSE 1 END as projection_available

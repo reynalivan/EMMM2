@@ -205,7 +205,8 @@ pub async fn list_active_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, sqlx
     use sqlx::Row;
 
     let rows = sqlx::query(
-        r#"SELECT id, download_id, game_id, archive_path, status,
+        r#"SELECT id, batch_id, download_id, game_id,
+                  COALESCE(source_path, archive_path, '') AS archive_path, status,
                   match_category, match_entry_key, match_alias_name, match_confidence, match_reason,
                   placed_path, error_msg, is_duplicate, created_at, updated_at
            FROM import_jobs
@@ -220,6 +221,7 @@ pub async fn list_active_jobs(db: &SqlitePool) -> Result<Vec<ImportJobDto>, sqlx
         .into_iter()
         .map(|r| ImportJobDto {
             id: r.try_get("id").unwrap_or_default(),
+            batch_id: r.try_get("batch_id").unwrap_or(None),
             download_id: r.try_get("download_id").unwrap_or(None),
             game_id: r.try_get("game_id").unwrap_or(None),
             archive_path: r.try_get("archive_path").unwrap_or_default(),
@@ -244,18 +246,18 @@ pub async fn apply_review_decision(
     job_id: &str,
     game_id: &str,
     category: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
         "UPDATE import_jobs
          SET game_id = ?, match_category = ?, status = 'placing', updated_at = datetime('now')
-         WHERE id = ?",
+         WHERE id = ? AND status = 'needs_review'",
     )
     .bind(game_id)
     .bind(category)
     .bind(job_id)
     .execute(db)
     .await?;
-    Ok(())
+    Ok(result.rows_affected() == 1)
 }
 
 /// Staging path of a job that must exist — errors when the job row is gone.
@@ -279,15 +281,44 @@ pub async fn get_staging_path(
     Ok(staging.flatten())
 }
 
-/// Mark a job `canceled`.
-pub async fn mark_canceled(db: &SqlitePool, job_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "UPDATE import_jobs SET status = 'canceled', updated_at = datetime('now') WHERE id = ?",
-        job_id
+/// A bounded startup batch of old terminal jobs whose staging directories can
+/// be reclaimed. User-blocked `needs_review` jobs are deliberately excluded.
+pub async fn list_terminal_staging_cleanup_candidates(
+    db: &SqlitePool,
+    limit: i64,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, staging_path
+         FROM import_jobs
+         WHERE staging_path IS NOT NULL
+           AND status IN ('done', 'failed', 'canceled')
+           AND updated_at < datetime('now', '-7 days')
+         ORDER BY updated_at ASC
+         LIMIT ?",
     )
+    .bind(limit.max(0))
+    .fetch_all(db)
+    .await
+}
+
+pub async fn clear_staging_path(db: &SqlitePool, job_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE import_jobs SET staging_path = NULL WHERE id = ?")
+        .bind(job_id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Mark a job `canceled`.
+pub async fn mark_canceled(db: &SqlitePool, job_id: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE import_jobs SET status = 'canceled', updated_at = datetime('now')
+         WHERE id = ? AND status IN ('needs_review', 'failed')",
+    )
+    .bind(job_id)
     .execute(db)
     .await?;
-    Ok(())
+    Ok(result.rows_affected() == 1)
 }
 
 /// Record the final on-disk location and close the job (inside the placement tx).

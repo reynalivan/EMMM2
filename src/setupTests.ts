@@ -11,10 +11,10 @@ import layoutEn from './locales/en/layout.json';
 import objectsEn from './locales/en/objects.json';
 import onboardingEn from './locales/en/onboarding.json';
 import previewEn from './locales/en/preview.json';
-import safeModeEn from './locales/en/safe_mode.json';
 import scannerEn from './locales/en/scanner.json';
 import settingsEn from './locales/en/settings.json';
 import welcomeEn from './locales/en/welcome.json';
+import modInboxEn from './locales/en/mod_inbox.json';
 
 // Mock Tauri API globally
 vi.mock('@tauri-apps/api/core', () => ({
@@ -130,10 +130,10 @@ const englishResources: Record<string, TranslationNode> = {
   objects: objectsEn,
   onboarding: onboardingEn,
   preview: previewEn,
-  safe_mode: safeModeEn,
   scanner: scannerEn,
   settings: settingsEn,
   welcome: welcomeEn,
+  mod_inbox: modInboxEn,
 };
 
 function normalizeNamespaces(namespace: NamespaceInput): string[] {

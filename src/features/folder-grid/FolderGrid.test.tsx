@@ -118,7 +118,6 @@ const defaultHookReturn = {
   setExplorerSearch: vi.fn(),
   handleSortToggle: vi.fn(),
   handleKeyDown: vi.fn(),
-  handleRefresh: vi.fn(),
   focusedId: null,
   gridSelection: new Set(),
   toggleGridSelection: vi.fn(),
@@ -224,6 +223,9 @@ describe('FolderGrid', () => {
         is_favorite: false,
         is_misplaced: false,
         is_safe: true,
+        is_safety_classified: true,
+        contains_safe_mods: true,
+        contains_unsafe_mods: false,
         metadata: null,
         category: null,
         warnings: [],
@@ -245,15 +247,21 @@ describe('FolderGrid', () => {
     expect(screen.getByText('Mod A')).toBeInTheDocument();
   });
 
+  it('does not expose a local refresh action because disk sync is global', () => {
+    render(<FolderGrid />, { wrapper: createWrapper });
+
+    expect(screen.queryByTitle('Refresh')).not.toBeInTheDocument();
+  });
+
   it('renders only folders supplied by the workspace view model', () => {
     const visibleFolder = {
-      name: 'Visible Corridor Mod',
-      path: '/mods/Visible Corridor Mod',
+      name: 'Visible Safe Mod',
+      path: '/mods/Visible Safe Mod',
       is_directory: true,
     } as unknown as ModFolder;
     const hiddenFolder = {
-      name: 'Hidden Outside Corridor',
-      path: '/mods/Hidden Outside Corridor',
+      name: 'Hidden Unsafe Mod',
+      path: '/mods/Hidden Unsafe Mod',
       is_directory: true,
     } as unknown as ModFolder;
 
@@ -268,8 +276,8 @@ describe('FolderGrid', () => {
 
     render(<FolderGrid />, { wrapper: createWrapper });
 
-    expect(screen.getByText('Visible Corridor Mod')).toBeInTheDocument();
-    expect(screen.queryByText('Hidden Outside Corridor')).not.toBeInTheDocument();
+    expect(screen.getByText('Visible Safe Mod')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden Unsafe Mod')).not.toBeInTheDocument();
   });
 
   it('TC-12-01: renders Grid layout correctly', () => {

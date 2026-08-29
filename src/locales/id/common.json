@@ -37,9 +37,6 @@
     "retry": "Coba Lagi",
     "discard": "Buang Perubahan",
     "done": "Selesai",
-    "keep_enabled": "Pertahankan yang Aktif",
-    "keep_disabled": "Pertahankan yang Nonaktif",
-    "separate": "Simpan Keduanya Terpisah",
     "dismiss": "Abaikan"
   },
   "errors": {
@@ -86,6 +83,12 @@
     "category": "Kategori",
     "thumbnail": "Thumbnail"
   },
+  "safety_filter": {
+    "label": "Filter status mod",
+    "all": "Semua",
+    "safe": "Aman",
+    "unsafe": "Tidak aman"
+  },
   "watcher": {
     "error": "Kesalahan file watcher: {{error}}",
     "toast": {
@@ -94,5 +97,8 @@
       "mod_changes": "{{count}} perubahan folder mod: {{names}}",
       "mod_changes_detected": "{{count}} perubahan folder mod terdeteksi"
     }
+  },
+  "reconcile": {
+    "runtime_effects_pending": "Perubahan disk sudah diterapkan, tetapi pembaruan runtime masih tertunda: {{error}}"
   }
 }

@@ -1,35 +1,13 @@
 //! Snapshots taken from the live runtime: the synthetic "Current Runtime"
 //! summary and overwriting an existing collection with current state.
 
-use super::live_state::{
-    live_runtime_is_safe, load_game_mods_path, load_live_corridor_state, load_live_runtime_state,
-};
-use super::projection::{persist_projected_state, require_collection, require_game_match};
+use super::live_state::{live_runtime_is_safe, load_game_mods_path, load_live_runtime_state};
+use super::projection::{persist_projected_state_tx, require_collection, require_game_match};
 use crate::domain::collection::{CollectionMod, CollectionObject, CollectionSummary};
 use crate::domain::errors::CollectionError;
-use crate::repo::{collection_repo, corridor_repo};
+use crate::repo::{collection_repo, collection_runtime_repo};
 use crate::services::projected_state_service;
 use sqlx::SqlitePool;
-
-pub async fn handle_dirty_state(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<CollectionSummary, CollectionError> {
-    let (mods, objects) = load_live_runtime_state(pool, game_id).await?;
-    let projected_state = projected_state_service::build_projected_state(&mods, &objects, None);
-    let signature = projected_state_service::signature_for_projected_state(&projected_state);
-
-    Ok(CollectionSummary {
-        id: "__current_runtime__".to_string(),
-        name: "Current Runtime".to_string(),
-        is_safe: live_runtime_is_safe(pool, game_id).await?,
-        is_unsaved: true,
-        is_active: false,
-        signature: Some(signature),
-        updated_at: chrono::Utc::now().to_rfc3339(),
-        mod_count: projected_state.summary.active_root_count as i32,
-    })
-}
 
 pub async fn replace_collection_with_current_state(
     pool: &SqlitePool,
@@ -39,14 +17,14 @@ pub async fn replace_collection_with_current_state(
     let collection = require_collection(pool, collection_id).await?;
 
     require_game_match(&collection, game_id)?;
-    if collection.is_unsaved {
+    if collection.is_draft {
         return Err(CollectionError::Validation(
             "Cannot replace an unsaved collection snapshot".to_string(),
         ));
     }
 
     let mods_path = load_game_mods_path(pool, game_id).await?;
-    let (mods, objects) = load_live_corridor_state(pool, game_id, collection.is_safe).await?;
+    let (mods, objects) = load_live_runtime_state(pool, game_id).await?;
     if mods.is_empty() {
         return Err(CollectionError::Validation(
             "A collection must contain at least 1 active mod".to_string(),
@@ -72,21 +50,31 @@ pub async fn replace_collection_with_current_state(
         &persisted_objects,
         mods_path.as_deref(),
     );
-    persist_projected_state(
-        pool,
+    let collection_is_safe = live_runtime_is_safe(pool, game_id).await?;
+
+    let mut tx = pool.begin().await?;
+    let draft_id = collection_runtime_repo::get_tx(&mut tx, game_id)
+        .await?
+        .and_then(|runtime| runtime.draft_collection_id);
+    persist_projected_state_tx(
+        &mut tx,
         &collection.id,
-        collection.is_safe,
         &persisted_mods,
         &persisted_objects,
         &projected_state,
     )
     .await?;
+    collection_repo::update_safety_summary_tx(&mut tx, &collection.id, collection_is_safe).await?;
+    collection_runtime_repo::set_active_tx(&mut tx, game_id, Some(&collection.id)).await?;
+    collection_runtime_repo::clear_draft_tx(&mut tx, game_id).await?;
+    if let Some(draft_id) = draft_id {
+        collection_repo::delete_tx(&mut tx, &draft_id).await?;
+    }
+    tx.commit().await?;
 
     let updated = require_collection(pool, &collection.id).await?;
-    let corridor = corridor_repo::get(pool, game_id, collection.is_safe)
-        .await
-        .map_err(CollectionError::Corridor)?;
-    let active_id = corridor
+    let runtime = collection_runtime_repo::get(pool, game_id).await?;
+    let active_id = runtime
         .as_ref()
         .and_then(|state| state.active_collection_id.as_deref());
 

@@ -922,6 +922,7 @@
     },
     {
       "name": "Weapon",
+      "entry_kind": "taxonomy",
       "hash_db": {},
       "tags": [],
       "object_type": "Weapon",
@@ -930,6 +931,7 @@
     },
     {
       "name": "User Interface",
+      "entry_kind": "taxonomy",
       "hash_db": {},
       "tags": [],
       "object_type": "UI",
@@ -938,6 +940,7 @@
     },
     {
       "name": "Enemy",
+      "entry_kind": "taxonomy",
       "hash_db": {},
       "tags": [],
       "object_type": "Other",
@@ -946,6 +949,7 @@
     },
     {
       "name": "NPC",
+      "entry_kind": "taxonomy",
       "hash_db": {},
       "tags": [],
       "object_type": "Other",
@@ -954,6 +958,7 @@
     },
     {
       "name": "Collectibles",
+      "entry_kind": "taxonomy",
       "hash_db": {},
       "tags": [],
       "object_type": "Other",
@@ -962,6 +967,7 @@
     },
     {
       "name": "World Objects",
+      "entry_kind": "taxonomy",
       "hash_db": {},
       "tags": [],
       "object_type": "Other",
@@ -970,6 +976,7 @@
     },
     {
       "name": "VFX",
+      "entry_kind": "taxonomy",
       "hash_db": {},
       "tags": [],
       "object_type": "Other",

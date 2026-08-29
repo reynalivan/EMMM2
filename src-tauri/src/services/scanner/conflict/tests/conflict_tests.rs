@@ -20,20 +20,21 @@ fn test_detect_conflict() {
     let ini_a = create_ini(
         &mod_a,
         "config.ini",
-        "[TextureOverrideBody]\nhash = abc123\n",
+        "[TextureOverrideBody]\nhash = abc12345\n",
     );
     let ini_b = create_ini(
         &mod_b,
         "config.ini",
-        "[TextureOverrideBody]\nhash = abc123\n",
+        "[TextureOverrideBody]\nhash = abc12345\n",
     );
 
     let conflicts = detect_conflicts(&[(mod_a.clone(), ini_a), (mod_b.clone(), ini_b)]);
 
     assert_eq!(conflicts.len(), 1);
-    assert_eq!(conflicts[0].hash, "abc123");
+    assert_eq!(conflicts[0].hash, "abc12345");
     assert_eq!(conflicts[0].mod_paths.len(), 2);
     assert_eq!(conflicts[0].kind, ConflictKind::ResourceHash);
+    assert_eq!(conflicts[0].certainty, ConflictCertainty::Potential);
     assert_eq!(conflicts[0].evidence.len(), 2);
 }
 
@@ -48,7 +49,7 @@ fn records_override_evidence_and_excludes_disjoint_first_indices() {
     let ini_a = create_ini(
         &mod_a,
         "a.ini",
-        "namespace = Alice\n[TextureOverrideBody]\nhash = abcdef12\ncondition = $active\npriority = 7\nmatch_first_index = 0\n",
+        "namespace = Alice\n[TextureOverrideBody]\nhash = abcdef12\ncondition = $active\nmatch_priority = 7\nmatch_first_index = 0\n",
     );
     let ini_b = create_ini(
         &mod_b,
@@ -60,7 +61,7 @@ fn records_override_evidence_and_excludes_disjoint_first_indices() {
 
     fs::write(
         &ini_a,
-        "namespace = Alice\n[TextureOverrideBody]\nhash = abcdef12\ncondition = $active\npriority = 7\nmatch_first_index = 1\n",
+        "namespace = Alice\n[TextureOverrideBody]\nhash = abcdef12\ncondition = $active\nmatch_priority = 7\nmatch_first_index = 1\n",
     )
     .unwrap();
     let conflicts = detect_conflicts(&[(mod_a, ini_a), (mod_b, dir.path().join("ModB/b.ini"))]);
@@ -103,7 +104,7 @@ fn test_no_conflict_same_mod() {
     let ini = create_ini(
         &mod_dir,
         "config.ini",
-        "[TextureOverrideBody]\nhash = abc123\n[TextureOverrideHead]\nhash = abc123\n",
+        "[TextureOverrideBody]\nhash = abc12345\n[TextureOverrideHead]\nhash = abc12345\n",
     );
 
     let conflicts = detect_conflicts(&[(mod_dir.clone(), ini)]);
@@ -123,12 +124,12 @@ fn test_no_conflict_different_hashes() {
     let ini_a = create_ini(
         &mod_a,
         "config.ini",
-        "[TextureOverrideBody]\nhash = abc123\n",
+        "[TextureOverrideBody]\nhash = abc12345\n",
     );
     let ini_b = create_ini(
         &mod_b,
         "config.ini",
-        "[TextureOverrideBody]\nhash = def456\n",
+        "[TextureOverrideBody]\nhash = def45678\n",
     );
 
     let conflicts = detect_conflicts(&[(mod_a.clone(), ini_a), (mod_b.clone(), ini_b)]);
@@ -155,8 +156,8 @@ fn test_non_texture_override_section_ignored() {
     fs::create_dir(&mod_a).unwrap();
     fs::create_dir(&mod_b).unwrap();
 
-    let ini_a = create_ini(&mod_a, "config.ini", "[Constants]\nhash = abc123\n");
-    let ini_b = create_ini(&mod_b, "config.ini", "[Constants]\nhash = abc123\n");
+    let ini_a = create_ini(&mod_a, "config.ini", "[Constants]\nhash = abc12345\n");
+    let ini_b = create_ini(&mod_b, "config.ini", "[Constants]\nhash = abc12345\n");
 
     let conflicts = detect_conflicts(&[(mod_a.clone(), ini_a), (mod_b.clone(), ini_b)]);
     // Should be empty because [Constants] is not [TextureOverride...]
@@ -266,4 +267,25 @@ fn test_multiple_conflicting_hashes_each_produce_a_conflict() {
     for c in &conflicts {
         assert_eq!(c.mod_paths.len(), 2);
     }
+}
+
+#[test]
+fn rejects_hash_lengths_that_do_not_match_the_override_namespace() {
+    let dir = TempDir::new().unwrap();
+    let mod_a = dir.path().join("ModA");
+    let mod_b = dir.path().join("ModB");
+    fs::create_dir(&mod_a).unwrap();
+    fs::create_dir(&mod_b).unwrap();
+
+    let content = concat!(
+        "[TextureOverrideInvalid]\nhash = abc123\n",
+        "[ShaderOverrideInvalid]\nhash = abcdef12\n"
+    );
+    let ini_a = create_ini(&mod_a, "a.ini", content);
+    let ini_b = create_ini(&mod_b, "b.ini", content);
+
+    assert!(
+        detect_conflicts(&[(mod_a, ini_a), (mod_b, ini_b)]).is_empty(),
+        "TextureOverride requires 8 hex digits and ShaderOverride requires 16"
+    );
 }

@@ -52,7 +52,7 @@ SELECT
         WHERE m.object_id = o.id
           AND (
             COALESCE(m.is_safe, 1) = 1
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            OR COALESCE(m.safety_source, 'unknown') IN ('manual', 'unknown')
           )
     ) AS mod_count_safe,
     (
@@ -61,7 +61,7 @@ SELECT
         WHERE m.object_id = o.id
           AND (
             COALESCE(m.is_safe, 1) = 0
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            OR COALESCE(m.safety_source, 'unknown') IN ('manual', 'unknown')
           )
     ) AS mod_count_unsafe,
     (
@@ -71,7 +71,7 @@ SELECT
           AND m.status = 1
           AND (
             COALESCE(m.is_safe, 1) = 1
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            OR COALESCE(m.safety_source, 'unknown') IN ('manual', 'unknown')
           )
     ) AS enabled_count_safe,
     (
@@ -81,7 +81,7 @@ SELECT
           AND m.status = 1
           AND (
             COALESCE(m.is_safe, 1) = 0
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            OR COALESCE(m.safety_source, 'unknown') IN ('manual', 'unknown')
           )
     ) AS enabled_count_unsafe,
     CASE
@@ -99,7 +99,7 @@ SELECT
           AND m.status = 1
           AND (
             COALESCE(m.is_safe, 1) = 1
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            OR COALESCE(m.safety_source, 'unknown') IN ('manual', 'unknown')
           )
     ), '[]') AS active_mod_paths_safe_json,
     COALESCE((
@@ -109,7 +109,7 @@ SELECT
           AND m.status = 1
           AND (
             COALESCE(m.is_safe, 1) = 0
-            OR COALESCE(m.corridor_source, 'unknown') IN ('manual', 'unknown')
+            OR COALESCE(m.safety_source, 'unknown') IN ('manual', 'unknown')
           )
     ), '[]') AS active_mod_paths_unsafe_json,
     CURRENT_TIMESTAMP

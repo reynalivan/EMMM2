@@ -4,8 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamesTab from './GamesTab';
 import { useSettings } from '../../../hooks/useSettings';
 import { useAppStore } from '../../../stores/useAppStore';
-import { useToastStore } from '../../../stores/useToastStore';
-import { scanService } from '../../../lib/services/scanService';
+import { commands } from '../../../lib/bindings';
 
 vi.mock('../../../hooks/useSettings', () => ({
   useSettings: vi.fn(),
@@ -15,19 +14,19 @@ vi.mock('../../../stores/useAppStore', () => ({
   useAppStore: vi.fn(),
 }));
 
-vi.mock('../../../stores/useToastStore', () => ({
-  useToastStore: vi.fn(),
-}));
-
-vi.mock('../../../lib/services/scanService', () => ({
-  scanService: {
-    runDeepmatchScanner: vi.fn(),
+vi.mock('../../../lib/bindings', () => ({
+  commands: {
+    inspectGameModsDirectory: vi.fn(),
+    applyGameModsDirectory: vi.fn(),
+    getSettings: vi.fn(),
   },
 }));
 
+vi.mock('../../file-watcher/hooks', () => ({ applyDiskReconcileResult: vi.fn() }));
+
 // Mock the GameFormModal so we don't need to mount it fully for simple tests
 vi.mock('../modals/GameFormModal', () => ({
-  default: ({ isOpen, onClose, onSave }: any) => {
+  default: ({ isOpen, onClose, onSave, initialData }: any) => {
     if (!isOpen) return null;
     return (
       <div data-testid="game-form-modal">
@@ -37,14 +36,18 @@ vi.mock('../modals/GameFormModal', () => ({
         <button
           data-testid="modal-save"
           onClick={() =>
-            onSave({
-              id: 'new-id',
-              name: 'New Game',
-              game_type: 'GIMI',
-              mod_path: 'C:/Mods',
-              game_exe: 'C:/Game/GenshinImpact.exe',
-              loader_exe: 'C:/Game/3dmigotoloader.exe',
-            })
+            onSave(
+              initialData
+                ? { ...initialData, name: 'Renamed Game', mod_path: 'D:/Replacement/Mods' }
+                : {
+                    id: 'new-id',
+                    name: 'New Game',
+                    game_type: 'GIMI',
+                    mod_path: 'C:/Mods',
+                    game_exe: 'C:/Game/GenshinImpact.exe',
+                    loader_exe: 'C:/Game/3dmigotoloader.exe',
+                  },
+            )
           }
         >
           Save
@@ -57,8 +60,6 @@ vi.mock('../modals/GameFormModal', () => ({
 describe('GamesTab (TC-02)', () => {
   const mockSaveSettings = vi.fn();
   const mockSetActiveGameId = vi.fn();
-  const mockAddToast = vi.fn();
-  const mockRemoveToast = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -66,26 +67,69 @@ describe('GamesTab (TC-02)', () => {
     // Default mocks
     (useSettings as any).mockReturnValue({
       settings: { games: [] },
-      saveSettings: mockSaveSettings,
+      saveSettingsAsync: mockSaveSettings,
     });
 
     (useAppStore as any).mockImplementation(
-      (selector: (state: Record<string, unknown>) => unknown) => selector({
-      activeGameId: null,
-      setActiveGameId: mockSetActiveGameId,
-    }),
+      (selector: (state: Record<string, unknown>) => unknown) =>
+        selector({
+          activeGameId: null,
+          setActiveGameId: mockSetActiveGameId,
+        }),
     );
 
-    (useToastStore as any).mockReturnValue({
-      addToast: mockAddToast,
-      removeToast: mockRemoveToast,
-    });
-    // For when we check the getState() inside handleRescan
-    (useToastStore as any).getState = () => ({
-      removeToast: mockRemoveToast,
-    });
-
     window.confirm = vi.fn(() => true);
+    vi.mocked(commands.inspectGameModsDirectory).mockResolvedValue({
+      game_id: 'g1',
+      candidate_path: 'D:/Replacement/Mods',
+      fingerprint: 'matching-v1',
+      summary: {
+        classification: 'Matching',
+        existing_object_count: 1,
+        existing_mod_count: 1,
+        candidate_object_count: 1,
+        candidate_mod_count: 1,
+        physical_entry_count: 1,
+        filesystem_identity_match_count: 2,
+        relative_path_match_count: 2,
+        requires_confirmation: false,
+      },
+    });
+    vi.mocked(commands.applyGameModsDirectory).mockResolvedValue({
+      game: {
+        id: 'g1',
+        name: 'Genshin Impact',
+        game_type: 0,
+        mod_path: 'D:/Replacement/Mods',
+        game_exe: 'C:/Game/Genshin.exe',
+        loader_exe: null,
+        launch_args: null,
+      },
+      inspection: {} as never,
+      reconcile: {} as never,
+    });
+    vi.mocked(commands.getSettings).mockResolvedValue({
+      revision: 4,
+      theme: 'dark',
+      language: 'en',
+      games: [
+        {
+          id: 'g1',
+          name: 'Genshin Impact',
+          game_type: 0,
+          mod_path: 'D:/Replacement/Mods',
+          game_exe: 'C:/Game/Genshin.exe',
+          loader_exe: null,
+          launch_args: null,
+        },
+      ],
+      active_game_id: null,
+      safety: {
+        keywords: [],
+      },
+      ai: { enabled: false, api_key: null, base_url: null },
+      auto_close_launcher: false,
+    });
   });
 
   it('renders empty state correctly', () => {
@@ -108,19 +152,21 @@ describe('GamesTab (TC-02)', () => {
           },
         ],
       },
-      saveSettings: mockSaveSettings,
+      saveSettingsAsync: mockSaveSettings,
     });
     (useAppStore as any).mockImplementation(
-      (selector: (state: Record<string, unknown>) => unknown) => selector({
-      activeGameId: 'g1',
-      setActiveGameId: mockSetActiveGameId,
-    }),
+      (selector: (state: Record<string, unknown>) => unknown) =>
+        selector({
+          activeGameId: 'g1',
+          setActiveGameId: mockSetActiveGameId,
+        }),
     );
 
     render(<GamesTab />);
     expect(screen.getByText('Genshin Impact')).toBeInTheDocument();
     expect(screen.getByText('ACTIVE')).toBeInTheDocument();
     expect(screen.getByText('C:/Mods')).toBeInTheDocument();
+    expect(screen.queryByTitle('Repair Index')).not.toBeInTheDocument();
   });
 
   it('triggers Add Game flow', () => {
@@ -152,7 +198,7 @@ describe('GamesTab (TC-02)', () => {
     });
   });
 
-  it('handles game deletion and unsets activeGameId', () => {
+  it('handles game deletion and unsets activeGameId', async () => {
     (useSettings as any).mockReturnValue({
       settings: {
         games: [
@@ -160,13 +206,14 @@ describe('GamesTab (TC-02)', () => {
           { id: 'g2', name: 'Honkai Star Rail' },
         ],
       },
-      saveSettings: mockSaveSettings,
+      saveSettingsAsync: mockSaveSettings,
     });
     (useAppStore as any).mockImplementation(
-      (selector: (state: Record<string, unknown>) => unknown) => selector({
-      activeGameId: 'g1',
-      setActiveGameId: mockSetActiveGameId,
-    }),
+      (selector: (state: Record<string, unknown>) => unknown) =>
+        selector({
+          activeGameId: 'g1',
+          setActiveGameId: mockSetActiveGameId,
+        }),
     );
 
     render(<GamesTab />);
@@ -180,7 +227,94 @@ describe('GamesTab (TC-02)', () => {
     expect(mockSaveSettings).toHaveBeenCalledWith({
       games: [{ id: 'g2', name: 'Honkai Star Rail' }], // g1 is removed
     });
-    expect(mockSetActiveGameId).toHaveBeenCalledWith(null); // Because g1 was active
+    await waitFor(() => expect(mockSetActiveGameId).toHaveBeenCalledWith(null)); // Because g1 was active
+  });
+
+  it('routes an existing game path change through source recovery', async () => {
+    (useSettings as any).mockReturnValue({
+      settings: {
+        revision: 3,
+        games: [
+          {
+            id: 'g1',
+            name: 'Genshin Impact',
+            game_type: 'GIMI',
+            mod_path: 'C:/Mods',
+            game_exe: 'C:/Game/Genshin.exe',
+            loader_exe: null,
+            launch_args: null,
+          },
+        ],
+      },
+      saveSettingsAsync: mockSaveSettings,
+    });
+
+    render(<GamesTab />);
+    fireEvent.click(screen.getByTitle('Edit Game'));
+    fireEvent.click(screen.getByTestId('modal-save'));
+
+    await waitFor(() =>
+      expect(commands.inspectGameModsDirectory).toHaveBeenCalledWith('g1', 'D:/Replacement/Mods'),
+    );
+    expect(commands.applyGameModsDirectory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game_id: 'g1',
+        candidate_path: 'D:/Replacement/Mods',
+        expected_fingerprint: 'matching-v1',
+      }),
+    );
+    expect(mockSaveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        revision: 4,
+        games: [expect.objectContaining({ name: 'Renamed Game', mod_path: 'D:/Replacement/Mods' })],
+      }),
+    );
+  });
+
+  it('keeps source confirmation open and reports an apply failure', async () => {
+    (useSettings as any).mockReturnValue({
+      settings: {
+        revision: 3,
+        games: [
+          {
+            id: 'g1',
+            name: 'Genshin Impact',
+            game_type: 'GIMI',
+            mod_path: 'C:/Mods',
+            game_exe: 'C:/Game/Genshin.exe',
+          },
+        ],
+      },
+      saveSettingsAsync: mockSaveSettings,
+    });
+    vi.mocked(commands.inspectGameModsDirectory).mockResolvedValueOnce({
+      game_id: 'g1',
+      candidate_path: 'D:/Replacement/Mods',
+      fingerprint: 'empty-v1',
+      summary: {
+        classification: 'Empty',
+        existing_object_count: 1,
+        existing_mod_count: 1,
+        candidate_object_count: 0,
+        candidate_mod_count: 0,
+        physical_entry_count: 0,
+        filesystem_identity_match_count: 0,
+        relative_path_match_count: 0,
+        requires_confirmation: true,
+      },
+    });
+    vi.mocked(commands.applyGameModsDirectory).mockRejectedValueOnce(
+      new Error('source apply failed'),
+    );
+
+    render(<GamesTab />);
+    fireEvent.click(screen.getByTitle('Edit Game'));
+    fireEvent.click(screen.getByTestId('modal-save'));
+    const confirm = await screen.findByRole('button', { name: 'Use empty folder' });
+    fireEvent.click(confirm);
+
+    expect(await screen.findByText(/source apply failed/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use empty folder' })).toBeInTheDocument();
   });
 
   it('handles Set Active game', () => {
@@ -191,13 +325,14 @@ describe('GamesTab (TC-02)', () => {
           { id: 'g2', name: 'Honkai Star Rail' },
         ],
       },
-      saveSettings: mockSaveSettings,
+      saveSettingsAsync: mockSaveSettings,
     });
     (useAppStore as any).mockImplementation(
-      (selector: (state: Record<string, unknown>) => unknown) => selector({
-      activeGameId: 'g1',
-      setActiveGameId: mockSetActiveGameId,
-    }),
+      (selector: (state: Record<string, unknown>) => unknown) =>
+        selector({
+          activeGameId: 'g1',
+          setActiveGameId: mockSetActiveGameId,
+        }),
     );
 
     render(<GamesTab />);
@@ -209,41 +344,5 @@ describe('GamesTab (TC-02)', () => {
     // Click second game to make it active
     fireEvent.click(activeButtons[1]);
     expect(mockSetActiveGameId).toHaveBeenCalledWith('g2');
-  });
-
-  it('runs active collection reconciliation after successful rescan on active game', async () => {
-    (useSettings as any).mockReturnValue({
-      settings: {
-        games: [
-          {
-            id: 'g1',
-            name: 'Genshin Impact',
-            game_type: 'GIMI',
-            mod_path: 'C:/Mods',
-            game_exe: 'C:/Game/Genshin.exe',
-          },
-        ],
-      },
-      saveSettings: mockSaveSettings,
-    });
-    (useAppStore as any).mockImplementation(
-      (selector: (state: Record<string, unknown>) => unknown) => selector({
-      activeGameId: 'g1',
-      setActiveGameId: mockSetActiveGameId,
-    }),
-    );
-    (scanService.runDeepmatchScanner as ReturnType<typeof vi.fn>).mockResolvedValue({
-      new_mods: 1,
-      updated_mods: 2,
-    });
-
-    render(<GamesTab />);
-
-    const rescanBtn = screen.getByTitle('Rescan Library');
-    fireEvent.click(rescanBtn);
-
-    await waitFor(() => {
-      expect(scanService.runDeepmatchScanner).toHaveBeenCalled();
-    });
   });
 });

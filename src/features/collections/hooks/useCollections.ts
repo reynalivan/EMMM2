@@ -9,13 +9,7 @@
  * each collection, not a runtime cache dimension.
  */
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  keepPreviousData,
-  type QueryClient,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../../../stores/useToastStore';
 import { collectionKeys } from '../queryKeys';
@@ -34,6 +28,7 @@ import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimisti
 import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import { openWorkspaceFileInUseDialog } from '../../workspace-runtime/state/workspaceDialogs';
 import type { RuntimeEffectDescriptor } from '../../../lib/runtimeEffects';
+import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
 import type {
   CollectionSummary,
   CollectionPreview,
@@ -69,7 +64,6 @@ export function useCollections(gameId: string | null) {
     queryKey: collectionKeys.list(gameId ?? ''),
     queryFn: () => commands.listCollections(gameId ?? ''),
     enabled: !!gameId,
-    placeholderData: keepPreviousData,
     staleTime: 10_000,
   });
 }
@@ -169,7 +163,7 @@ export function useUpdateCollection() {
   });
 }
 
-/** Replace an existing named collection with the current live corridor state. */
+/** Replace an existing named collection with the current live runtime state. */
 export function useReplaceCollectionWithCurrentState() {
   const queryClient = useQueryClient();
   const { t } = useTranslation('collections');
@@ -186,6 +180,69 @@ export function useReplaceCollectionWithCurrentState() {
       toast.success(t('toast.updated', { name: result.name }));
     },
 
+    onError: toastMutationError,
+  });
+}
+
+export function useSaveCollectionChanges() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
+
+  return useMutation({
+    mutationFn: ({
+      gameId,
+      collectionId,
+      confirmRemoveMissing,
+    }: {
+      gameId: string;
+      collectionId: string;
+      confirmRemoveMissing: boolean;
+    }) => commands.saveCollectionChanges(gameId, collectionId, confirmRemoveMissing),
+    onSuccess: async (result: CollectionSummary) => {
+      await publishCollectionMutation(
+        queryClient,
+        buildRuntimeMutationDescriptor('collectionsState'),
+      );
+      toast.success(t('toast.updated', { name: result.name }));
+    },
+    onError: (error: unknown) => {
+      if (!extractMissingModsPayload(error)) toastMutationError(error);
+    },
+  });
+}
+
+export function useRestoreLastChanges() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
+  return useMutation({
+    mutationFn: (gameId: string) => commands.restoreLastChanges(gameId),
+    onSuccess: async (result: ApplyResult) => {
+      notifyCommittedMutationSyncWarning(result);
+      await publishCollectionMutation(
+        queryClient,
+        mergeRuntimeEffectDescriptors(
+          buildRuntimeMutationDescriptor('collectionsState'),
+          buildWorkspacePathRewritesDescriptor(result.runtime_path_rewrites ?? [], []),
+        ),
+      );
+      toast.success(t('last_changes.restored', 'Last changes restored'));
+    },
+    onError: toastMutationError,
+  });
+}
+
+export function useClearLastChanges() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation('collections');
+  return useMutation({
+    mutationFn: (gameId: string) => commands.clearLastChanges(gameId),
+    onSuccess: async () => {
+      await publishCollectionMutation(
+        queryClient,
+        buildRuntimeMutationDescriptor('collectionsState'),
+      );
+      toast.success(t('last_changes.cleared', 'Last changes cleared'));
+    },
     onError: toastMutationError,
   });
 }
@@ -228,6 +285,7 @@ export function useApplyCollection() {
     }) => commands.applyCollection(gameId, collectionId, ignoreMissing ?? false),
 
     onSuccess: async (result: ApplyResult) => {
+      notifyCommittedMutationSyncWarning(result);
       await publishCollectionMutation(
         queryClient,
         mergeRuntimeEffectDescriptors(

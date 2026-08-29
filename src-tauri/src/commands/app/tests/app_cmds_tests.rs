@@ -29,6 +29,7 @@ async fn test_check_config_status_has_config() {
         game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\Game".into(),
         mods_path: Some("C:\\Mods".into()),
+        ready_to_move_path: None,
         game_exe: None,
         launcher_path: None,
         loader_exe: None,

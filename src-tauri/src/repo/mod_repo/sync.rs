@@ -3,7 +3,6 @@
 use super::types::SyncModRowUpdate;
 use crate::common::path_key::folder_path_key;
 use crate::domain::models::ItemStatus;
-use sqlx::SqlitePool;
 
 pub async fn update_mod_sync_row(
     conn: &mut sqlx::SqliteConnection,
@@ -11,7 +10,7 @@ pub async fn update_mod_sync_row(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE mods
-         SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, is_safe = ?, corridor_source = ?, object_id = ?, object_type = ?
+         SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, is_safe = ?, safety_source = ?, object_id = ?, object_type = ?
          WHERE folder_path_key = ? AND game_id = ?",
     )
     .bind(update.new_id)
@@ -20,7 +19,7 @@ pub async fn update_mod_sync_row(
     .bind(update.actual_name)
     .bind(update.status)
     .bind(update.is_safe)
-    .bind(update.corridor_source)
+    .bind(update.safety_source)
     .bind(update.object_id)
     .bind(update.object_type)
     .bind(folder_path_key(update.old_folder_path, Some(update.mods_path)))
@@ -38,13 +37,13 @@ pub async fn update_mod_identity_tx(
     new_actual_name: &str,
     new_status: ItemStatus,
     new_is_safe: bool,
-    corridor_source: &str,
+    safety_source: &str,
     old_id: &str,
     mods_path: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE mods
-         SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, is_safe = ?, corridor_source = ?
+         SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, is_safe = ?, safety_source = ?
          WHERE id = ?",
     )
     .bind(new_id)
@@ -53,10 +52,54 @@ pub async fn update_mod_identity_tx(
     .bind(new_actual_name)
     .bind(new_status as i64)
     .bind(new_is_safe)
-    .bind(corridor_source)
+    .bind(safety_source)
     .bind(old_id)
     .execute(conn)
     .await?;
+    Ok(())
+}
+
+pub async fn defer_foreign_keys_tx(conn: &mut sqlx::SqliteConnection) -> Result<(), sqlx::Error> {
+    sqlx::query("PRAGMA defer_foreign_keys = ON")
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+pub async fn stage_mod_identity_tx(
+    conn: &mut sqlx::SqliteConnection,
+    temp_id: &str,
+    temp_path: &str,
+    old_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE mods SET id = ?, folder_path = ?, folder_path_key = ? WHERE id = ?")
+        .bind(temp_id)
+        .bind(temp_path)
+        .bind(folder_path_key(temp_path, None))
+        .bind(old_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+pub async fn rewrite_dependent_mod_ids_tx(
+    conn: &mut sqlx::SqliteConnection,
+    old_id: &str,
+    new_id: &str,
+) -> Result<(), sqlx::Error> {
+    for (table, column) in [
+        ("mod_hash_index", "mod_id"),
+        ("dedup_group_members", "folder_id"),
+        ("duplicate_whitelist", "folder_a_id"),
+        ("duplicate_whitelist", "folder_b_id"),
+    ] {
+        let sql = format!("UPDATE {table} SET {column} = ? WHERE {column} = ?");
+        sqlx::query(&sql)
+            .bind(new_id)
+            .bind(old_id)
+            .execute(&mut *conn)
+            .await?;
+    }
     Ok(())
 }
 
@@ -76,17 +119,20 @@ where
     Ok(())
 }
 
-pub async fn set_object_type_for_object(
-    pool: &SqlitePool,
+pub async fn set_object_type_for_object<'c, E>(
+    executor: E,
     game_id: &str,
     object_id: &str,
     object_type: &str,
-) -> Result<u64, sqlx::Error> {
+) -> Result<u64, sqlx::Error>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+{
     let result = sqlx::query("UPDATE mods SET object_type = ? WHERE game_id = ? AND object_id = ?")
         .bind(object_type)
         .bind(game_id)
         .bind(object_id)
-        .execute(pool)
+        .execute(executor)
         .await?;
     Ok(result.rows_affected())
 }

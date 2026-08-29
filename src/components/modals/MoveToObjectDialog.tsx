@@ -1,6 +1,6 @@
 import { formatAppError } from '../../lib/appError';
 import type { MoveStatus } from '../../types/mod';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, Check, MoveRight, FolderTree } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -8,7 +8,6 @@ import { commands } from '../../lib/bindings';
 import { toast } from '../../stores/useToastStore';
 import { useActiveGame } from '../../hooks/useActiveGame';
 import type { ObjectSummary } from '../../types/object';
-
 
 interface MoveToObjectDialogProps {
   isOpen: boolean;
@@ -23,8 +22,6 @@ interface MoveToObjectDialogProps {
   ) => Promise<void> | void;
 }
 
-const MOVE_STATUSES: MoveStatus[] = ['keep', 'disabled', 'only-enable'];
-
 export default function MoveToObjectDialog({
   isOpen,
   onClose,
@@ -38,7 +35,7 @@ export default function MoveToObjectDialog({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedObjectId, setSelectedObjectId] = useState('');
   const [targetSubpath, setTargetSubpath] = useState<string | null>(null);
-  const [targetStatus, setTargetStatus] = useState<MoveStatus>('keep');
+  const [disableAfterMove, setDisableAfterMove] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const availableObjects = useMemo(() => {
@@ -62,6 +59,44 @@ export default function MoveToObjectDialog({
   });
   const moveTargets = Array.isArray(moveTargetsData) ? moveTargetsData : [];
 
+  const { data: relocationPreview = [] } = useQuery({
+    queryKey: ['relocation-preview', activeGame?.id, currentObjectId, targetModPaths],
+    queryFn: () =>
+      commands.previewRelocationBatch({
+        gameId: activeGame?.id ?? '',
+        sourcePaths: targetModPaths,
+        currentObjectId: currentObjectId ?? null,
+      }),
+    enabled: isOpen && !!activeGame?.id && targetModPaths.length > 0,
+  });
+  const recommendedTarget = useMemo(() => {
+    const scores = new Map<string, { score: number; count: number }>();
+    for (const item of relocationPreview) {
+      const top = item.suggestions[0];
+      if (!top?.objectId) continue;
+      const current = scores.get(top.objectId) ?? { score: 0, count: 0 };
+      current.score += top.confidencePercentage;
+      current.count += 1;
+      scores.set(top.objectId, current);
+    }
+    return (
+      [...scores.entries()]
+        .filter(([, value]) => value.count === relocationPreview.length)
+        .sort((left, right) => right[1].score - left[1].score)[0]?.[0] ?? null
+    );
+  }, [relocationPreview]);
+
+  useEffect(() => {
+    if (isOpen && !selectedObjectId && recommendedTarget) {
+      setSelectedObjectId(recommendedTarget);
+      setTargetSubpath(null);
+    }
+  }, [isOpen, recommendedTarget, selectedObjectId]);
+
+  useEffect(() => {
+    if (isOpen) setDisableAfterMove(false);
+  }, [isOpen]);
+
   const handleSelectObject = (objectId: string) => {
     setSelectedObjectId(objectId);
     setTargetSubpath(null);
@@ -72,6 +107,7 @@ export default function MoveToObjectDialog({
 
     setIsSubmitting(true);
     try {
+      const targetStatus: MoveStatus = disableAfterMove ? 'disabled' : 'keep';
       await onSubmit(selectedObjectId, targetStatus, targetSubpath);
       toast.success(
         t('folder_grid:move.toast.success', { name: selectedObject?.name || selectedObjectId }),
@@ -88,6 +124,13 @@ export default function MoveToObjectDialog({
     <dialog open={isOpen} className="modal modal-bottom sm:modal-middle" onClose={onClose}>
       <div className="modal-box bg-base-100 border border-base-content/10 shadow-xl max-w-lg">
         <h3 className="font-bold text-lg mb-2">{t('folder_grid:move.title')}</h3>
+        {recommendedTarget && (
+          <div className="alert alert-info py-2 mb-3 text-xs">
+            {t('folder_grid:move.match_suggestion', {
+              name: objects.find((object) => object.id === recommendedTarget)?.name,
+            })}
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="form-control w-full">
@@ -173,26 +216,15 @@ export default function MoveToObjectDialog({
           </div>
         </div>
 
-        <div className="form-control w-full mt-4">
-          <label className="block text-sm font-medium mb-1">
-            {t('folder_grid:move.status_label')}
-          </label>
-          <div className="flex gap-1 bg-base-200 p-1 rounded-lg">
-            {MOVE_STATUSES.map((status) => (
-              <button
-                key={status}
-                className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${
-                  targetStatus === status
-                    ? 'bg-base-100 shadow-sm text-primary'
-                    : 'text-base-content/40 hover:text-base-content/70'
-                }`}
-                onClick={() => setTargetStatus(status)}
-              >
-                {t(`folder_grid:move.status.${status}`)}
-              </button>
-            ))}
-          </div>
-        </div>
+        <label className="label cursor-pointer justify-start gap-3 mt-4 rounded-lg bg-base-200 px-3">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-sm"
+            checked={disableAfterMove}
+            onChange={(event) => setDisableAfterMove(event.target.checked)}
+          />
+          <span className="label-text">{t('folder_grid:move.disable_after_move')}</span>
+        </label>
 
         <div className="modal-action">
           <button className="btn btn-ghost btn-sm px-6" onClick={onClose}>

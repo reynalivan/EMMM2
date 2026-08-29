@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { DupScanGroup, DuplicateSelection } from '../../../types/scanner';
 import { buildResolutionRequests } from './resolutionRequests';
 
-function group(id: string, paths: string[]): DupScanGroup {
+function group(id: string, paths: string[], confidenceScore = 100): DupScanGroup {
   return {
     groupId: id,
-    confidenceScore: 90,
+    confidenceScore,
     matchReason: 'test',
     isUnsafe: false,
     signals: [],
@@ -17,7 +17,7 @@ function group(id: string, paths: string[]): DupScanGroup {
       totalSizeBytes: 0,
       fileCount: 0,
       isSafe: true,
-      confidenceScore: 90,
+      confidenceScore,
       signals: [],
     })),
   } as unknown as DupScanGroup;
@@ -67,5 +67,13 @@ describe('buildResolutionRequests', () => {
     ]);
 
     expect(buildResolutionRequests(selections, [group('g1', ['a'])])).toEqual([]);
+  });
+
+  it('does not build destructive requests for an inexact group', () => {
+    const selections = new Map<string, DuplicateSelection>([
+      ['g1', { type: 'Keep', targetPath: 'a' }],
+    ]);
+
+    expect(buildResolutionRequests(selections, [group('g1', ['a', 'b'], 85)])).toEqual([]);
   });
 });

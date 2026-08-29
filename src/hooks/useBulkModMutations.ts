@@ -18,9 +18,13 @@ import {
 import type { ModInfoUpdate } from '../types/object';
 import { formatAppError } from '../lib/appError';
 import { openFileInUseRetryDialog } from './fileInUseRetry';
-import { publishCollectionReferenceImpact } from './collectionReferenceImpact';
+import {
+  collectionReferenceImpactRefreshEvents,
+  notifyCollectionReferenceImpact,
+} from './collectionReferenceImpact';
 import { formatBulkFailureMessage, formatBulkSuccessMessage } from './bulkToastMessages';
 import { resolveTogglePathRewrites } from './folderMutationPayloads';
+import { notifyCommittedMutationSyncWarning } from '../lib/committedMutationWarning';
 
 /** Hook to bulk toggle mods. */
 export function useBulkToggle() {
@@ -44,7 +48,10 @@ export function useBulkToggle() {
       applyRuntimeEffects(queryClient, buildWorkspacePathRewritesDescriptor(pathRewrites, []));
       await publishRuntimeDescriptor(
         queryClient,
-        buildRuntimeMutationDescriptor('folderSwitch'),
+        buildRuntimeMutationDescriptor(
+          'folderSwitch',
+          collectionReferenceImpactRefreshEvents(result.collection_impact),
+        ),
         'active',
       );
 
@@ -52,10 +59,11 @@ export function useBulkToggle() {
         const action = variables.enable ? 'enabled' : 'disabled';
         toast.success(formatBulkSuccessMessage(result.success, action));
       }
-      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
+      if (result.collection_impact) notifyCollectionReferenceImpact(result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'toggle'));
       }
+      notifyCommittedMutationSyncWarning(result);
     },
     onError: (error, variables) => {
       if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
@@ -87,21 +95,21 @@ export function useBulkDelete() {
       );
       await publishRuntimeDescriptor(
         queryClient,
-        buildRuntimeMutationDescriptor([
-          'workspaceStructure',
-          'workspaceCorridor',
-          'dashboardKeybindings',
-        ]),
+        buildRuntimeMutationDescriptor(
+          ['workspaceStructure', 'workspaceRuntime', 'dashboardKeybindings'],
+          collectionReferenceImpactRefreshEvents(result.collection_impact),
+        ),
         'active',
       );
 
       if (result.success.length > 0) {
         toast.success(formatBulkSuccessMessage(result.success, 'deleted'));
       }
-      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
+      if (result.collection_impact) notifyCollectionReferenceImpact(result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'delete'));
       }
+      notifyCommittedMutationSyncWarning(result);
     },
   });
 }
@@ -125,6 +133,36 @@ export function useBulkUpdateInfo() {
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'update'));
       }
+      notifyCommittedMutationSyncWarning(result);
+    },
+  });
+}
+
+/** Classify terminal mods selected directly or through parent object folders. */
+export function useBulkSafety() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (params: { gameId: string; paths: string[]; safe: boolean }) =>
+      commands.bulkSetModSafety(params.gameId, params.paths, params.safe),
+    onSuccess: async (result, variables) => {
+      await publishRuntimeDescriptor(
+        queryClient,
+        buildRuntimeMutationDescriptor('safetyClassification'),
+        'active',
+      );
+      if (result.success.length > 0) {
+        toast.success(
+          formatBulkSuccessMessage(
+            result.success,
+            variables.safe ? 'marked_safe' : 'marked_unsafe',
+          ),
+        );
+      }
+      if (result.failures.length > 0) {
+        toast.error(formatBulkFailureMessage(result.failures, 'safety'));
+      }
+      notifyCommittedMutationSyncWarning(result);
     },
   });
 }
@@ -149,6 +187,7 @@ export function useBulkFavorite() {
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'favorite'));
       }
+      notifyCommittedMutationSyncWarning(result);
     },
   });
 }
@@ -173,6 +212,7 @@ export function useBulkPin() {
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'pin'));
       }
+      notifyCommittedMutationSyncWarning(result);
     },
   });
 }

@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use crate::common::path_key::canonical_name_key;
 use crate::domain::collection::{
-    CollectionMod, CollectionObject, CollectionRoot, MemberKind, PreviewTreeNode,
-    PreviewTreeNodeKind, ProjectedActiveRoot, ProjectedCollectionState,
+    CollectionMod, CollectionObject, MemberKind, PreviewTreeNode, PreviewTreeNodeKind,
+    ProjectedActiveRoot, ProjectedCollectionState,
 };
 
 pub fn build_preview_tree_from_projected_state(
@@ -73,6 +73,8 @@ pub fn mods_from_projected_state(
             node_type: Some(root.root_type.clone()),
             warnings: root.warnings.clone(),
             is_enabled: true,
+            is_safe: root.is_safe,
+            safety_source: root.safety_source.clone(),
         })
         .collect()
 }
@@ -91,33 +93,6 @@ pub fn objects_from_projected_state(
             is_enabled: object.is_enabled,
             display_name: Some(object.display_name.clone()),
             path_key: Some(object.path_key.clone()),
-        })
-        .collect()
-}
-
-pub fn roots_from_projected_state(
-    collection_id: &str,
-    is_safe: bool,
-    state: &ProjectedCollectionState,
-) -> Vec<CollectionRoot> {
-    state
-        .active_roots
-        .iter()
-        .map(|root| CollectionRoot {
-            kind: MemberKind::Root,
-            collection_id: collection_id.to_string(),
-            root_path: root.source_path.clone(),
-            root_path_key: root.root_key.clone(),
-            display_name: root.display_name.clone(),
-            display_name_key: canonical_name_key(&root.display_name),
-            object_id: Some(root.object_id.clone()),
-            object_name: None,
-            object_type: None,
-            root_kind: root.root_type.clone(),
-            is_safe,
-            is_enabled: true,
-            thumbnail_hint: root.thumbnail_hint.clone(),
-            corridor_source: None,
         })
         .collect()
 }

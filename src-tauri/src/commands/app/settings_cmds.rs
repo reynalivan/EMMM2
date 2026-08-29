@@ -1,36 +1,187 @@
 use crate::domain::errors::AppError;
 use crate::services::config::{AppSettings, ConfigService};
-use tauri::State;
+use tauri::{Emitter, State};
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct SaveSettingsResult {
+    pub settings: AppSettings,
+    pub sync_warning: Option<crate::services::disk_reconcile::types::CommittedMutationSyncWarning>,
+}
+
+fn completed_settings_save(
+    settings: AppSettings,
+    sync_warning: Option<crate::services::disk_reconcile::types::CommittedMutationSyncWarning>,
+) -> SaveSettingsResult {
+    SaveSettingsResult {
+        settings,
+        sync_warning,
+    }
+}
 
 #[specta::specta]
 #[tauri::command]
-pub async fn get_settings(state: State<'_, ConfigService>) -> Result<AppSettings, AppError> {
+pub async fn get_settings(
+    app: tauri::AppHandle,
+    state: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<
+        '_,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+) -> Result<AppSettings, AppError> {
+    let _activation_guard = disk_reconcile_state.activation_guard().await;
+    let settings = state.get_settings();
+    if let Some(game) = settings
+        .active_game()
+        .filter(|game| !game.mod_path.as_os_str().is_empty())
+    {
+        // Frontend store initialization fans out into workspace, collection,
+        // and runtime queries. Hold that fan-out until startup recovery has a
+        // terminal result so none of those caches can race the disk scan.
+        let outcome = crate::services::disk_reconcile::emit::ensure_initial_disk_recovery(
+            &app,
+            pool.inner(),
+            disk_reconcile_state.inner(),
+            &game.id,
+        )
+        .await;
+        match outcome {
+            crate::services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
+                result,
+            ) => {
+                if result.status
+                    != crate::services::disk_reconcile::types::DiskReconcileStatus::Applied
+                {
+                    if let Err(error) = app.emit("disk_reconcile:result", result) {
+                        log::warn!(
+                            "Startup recovery completed but its terminal result could not be emitted: {error}"
+                        );
+                    }
+                }
+            }
+            crate::services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                error,
+            ) => {
+                return Err(AppError::Io(format!(
+                    "Disk recovery failed before settings hydration: {error}"
+                )));
+            }
+        }
+    }
+    // Recovery can overlap source-directory repair, which updates the game
+    // path without changing the active ID. Return the post-recovery snapshot.
     Ok(state.get_settings())
 }
 
 #[specta::specta]
 #[tauri::command]
 pub async fn save_settings(
+    app: tauri::AppHandle,
     settings: AppSettings,
     state: State<'_, ConfigService>,
-) -> Result<(), AppError> {
-    state.save_settings(settings)
+    pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<
+        '_,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+) -> Result<SaveSettingsResult, AppError> {
+    let _activation_guard = disk_reconcile_state.activation_guard().await;
+    let previous = state.get_settings();
+    if settings.active_game_id != previous.active_game_id {
+        return Err(AppError::Validation(
+            "Use the active-game command to change the active game safely".to_string(),
+        ));
+    }
+    let saved = state.save_settings(settings)?;
+    let mut sync_warning = None;
+    if saved.safety.keywords != previous.safety.keywords {
+        if let Some(game_id) = saved.active_game_id.as_deref() {
+            let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+                crate::services::disk_reconcile::emit::run_full_internal_disk_reconcile(
+                    &app,
+                    pool.inner(),
+                    game_id,
+                )
+                .await,
+            );
+            if let Some(result) = settlement.reconcile {
+                if !result.status.applied() {
+                    if let Err(error) = app.emit("disk_reconcile:result", result) {
+                        log::warn!(
+                            "Safety keywords were saved but the blocked reconcile result could not be emitted: {error}"
+                        );
+                    }
+                }
+            }
+            sync_warning = settlement.sync_warning;
+        }
+    }
+    Ok(completed_settings_save(saved, sync_warning))
 }
 
 #[specta::specta]
 #[tauri::command]
 pub async fn set_active_game(
+    app: tauri::AppHandle,
     game_id: Option<String>,
     state: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<
+        '_,
+        crate::services::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
 ) -> Result<(), AppError> {
-    state.set_active_game(game_id.clone())?;
-    if game_id.is_some() {
+    let _activation_guard = disk_reconcile_state.activation_guard().await;
+    if let Some(game_id) = game_id.as_deref() {
+        // Every activation is a new disk-authority boundary. The first
+        // workspace read must scan this game's current folder before using a
+        // DB projection that may predate changes made while the game was idle.
+        disk_reconcile_state.reset_initial_recovery(game_id);
+        let recovery_result =
+            match crate::services::disk_reconcile::emit::ensure_initial_disk_recovery(
+                &app,
+                pool.inner(),
+                disk_reconcile_state.inner(),
+                game_id,
+            )
+            .await
+            {
+                crate::services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
+                    result,
+                ) => Ok(result),
+                crate::services::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                    error,
+                ) => Err(AppError::Io(format!(
+                    "Disk recovery failed while activating game '{game_id}': {error}"
+                ))),
+            };
+        match recovery_result {
+            Ok(result) => {
+                // Publish the selection only after the target game's disk
+                // recovery is terminal. A failed activation therefore needs
+                // no stale-snapshot rollback at all.
+                state.set_active_game(Some(game_id.to_string()))?;
+                if result.status
+                    != crate::services::disk_reconcile::types::DiskReconcileStatus::Applied
+                {
+                    if let Err(error) = app.emit("disk_reconcile:result", result) {
+                        log::warn!(
+                            "Game activation reconciled but its resolution event could not be emitted: {error}"
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(error);
+            }
+        }
         if let Err(error) =
             crate::services::app::post_apply::trigger_overlay_refresh(pool.inner(), &state).await
         {
             log::warn!("Active game changed but overlay refresh failed: {error}");
         }
+    } else {
+        state.set_active_game(None)?;
     }
     Ok(())
 }
@@ -49,7 +200,7 @@ pub async fn set_auto_close_launcher(
 pub async fn run_maintenance(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
-) -> Result<(u64, u64), AppError> {
+) -> Result<u64, AppError> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
     crate::services::app::maintenance_service::run_maintenance_counts(pool.inner(), &app_data_dir)
@@ -64,15 +215,27 @@ pub async fn clear_old_thumbnails() -> Result<u64, AppError> {
     Ok(pruned as u64)
 }
 
-#[specta::specta]
-#[tauri::command]
-pub async fn reset_pin_with_recovery_code(
-    code: String,
-    state: State<'_, ConfigService>,
-) -> Result<bool, AppError> {
-    state.reset_pin_with_recovery_code(&code)
-}
-
 #[cfg(test)]
-#[path = "tests/settings_cmds_tests.rs"]
-mod tests;
+mod tests {
+    use super::completed_settings_save;
+    use crate::services::config::AppSettings;
+    use crate::services::disk_reconcile::emit::settle_committed_reconcile;
+    use crate::services::disk_reconcile::types::CommittedMutationSyncWarningKind;
+
+    #[test]
+    fn persisted_settings_remain_success_when_follow_up_reconcile_fails() {
+        let mut settings = AppSettings::default();
+        settings.safety.keywords = vec!["unsafe".to_string()];
+        let settlement = settle_committed_reconcile(Err(crate::domain::errors::AppError::Io(
+            "disk unavailable".to_string(),
+        )));
+
+        let result = completed_settings_save(settings, settlement.sync_warning);
+
+        assert_eq!(result.settings.safety.keywords, ["unsafe"]);
+        assert_eq!(
+            result.sync_warning.expect("typed warning").kind,
+            CommittedMutationSyncWarningKind::ReconcileFailed
+        );
+    }
+}

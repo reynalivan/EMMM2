@@ -66,28 +66,6 @@ pub async fn pin_object(
     crate::services::objects::mutate::toggle_pin_object(pool.inner(), &id, pin).await
 }
 
-/// Match a single object name against the MasterDB for a specific game.
-/// Uses staged quick matcher semantics and adapter labels.
-///
-/// This is used for the "Sync with DB" context menu action on individual objects/folders.
-#[tauri::command]
-#[specta::specta]
-pub async fn match_object_with_db(
-    app: tauri::AppHandle,
-    game_type: i32,
-    object_name: String,
-) -> Result<Option<crate::services::scanner::master_db::MatchedDbEntry>, AppError> {
-    let resource_dir = resource_dir(&app)?;
-
-    Ok(
-        crate::services::scanner::master_db::match_object_with_db_service(
-            &resource_dir,
-            game_type,
-            &object_name,
-        )?,
-    )
-}
-
 /// Search Master DB from Rust to offload fuzzy matching from the JS thread.
 /// Finds the top results matching `query`, optionally filtering by `object_type`.
 #[tauri::command]
@@ -113,7 +91,3 @@ pub async fn search_master_db(
         ),
     )
 }
-
-#[cfg(test)]
-#[path = "tests/master_db_cmds_tests.rs"]
-mod tests;

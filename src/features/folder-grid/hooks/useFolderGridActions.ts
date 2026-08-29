@@ -76,7 +76,7 @@ export function useFolderGridActions({
     return parts.join('\\');
   }, [activeGame, currentPath, sourceAvailable]);
 
-  const handleRefresh = useCallback(() => {
+  const refreshWorkspaceQueries = useCallback(() => {
     void applyRuntimeMutationResult(queryClient, 'workspaceStructure');
   }, [queryClient]);
 
@@ -96,10 +96,10 @@ export function useFolderGridActions({
       } catch (error) {
         const message = formatAppError(error);
         toast.error(message);
-        handleRefresh();
+        refreshWorkspaceQueries();
       }
     },
-    [activeGame, handleRefresh, objects],
+    [activeGame, objects, refreshWorkspaceQueries],
   );
 
   const handleOpenCurrentFolderInExplorer = useCallback(async () => {
@@ -171,7 +171,6 @@ export function useFolderGridActions({
     actions,
     switchActions,
     enableParentDialog,
-    handleRefresh,
     handleRevealInExplorer,
     currentAbsPath,
     handleOpenCurrentFolderInExplorer,

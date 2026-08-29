@@ -50,6 +50,10 @@
   },
   "indexing": {
     "title": "Mengindeks mod Anda...",
-    "subtitle": "Harap tunggu sementara EMMM memindai folder game."
+    "subtitle": "Harap tunggu sementara EMMM memindai folder game.",
+    "preparing": "Menyiapkan library…",
+    "progress_label": "Progres pengindeksan",
+    "estimating": "Mengestimasi waktu tersisa…",
+    "estimated_remaining": "Sekitar {{duration}} tersisa"
   }
 }

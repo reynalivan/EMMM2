@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::services::explorer::types::{ConflictGroup, InfoAnalysis};
+use crate::services::explorer::types::InfoAnalysis;
 
 pub fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis {
     // `read_info_json` already reports a missing file as `Ok(None)`; a
@@ -35,41 +35,3 @@ pub fn analyze_mod_metadata(path: &Path, sub_path: Option<&str>) -> InfoAnalysis
         },
     }
 }
-
-fn prune_conflicts(
-    conflicts: Vec<ConflictGroup>,
-    visible_paths: &std::collections::HashSet<String>,
-) -> Vec<ConflictGroup> {
-    conflicts
-        .into_iter()
-        .filter_map(|mut conflict| {
-            conflict
-                .members
-                .retain(|member| visible_paths.contains(&member.path));
-            if conflict.members.len() < 2 {
-                return None;
-            }
-            Some(conflict)
-        })
-        .collect()
-}
-
-pub fn apply_runtime_corridor_filter_to_response(
-    mut response: crate::services::explorer::types::FolderGridResponse,
-    safe_mode: bool,
-) -> crate::services::explorer::types::FolderGridResponse {
-    response
-        .children
-        .retain(|folder| folder.is_safe == safe_mode);
-    let visible_paths = response
-        .children
-        .iter()
-        .map(|folder| folder.path.clone())
-        .collect::<std::collections::HashSet<_>>();
-    response.conflicts = prune_conflicts(response.conflicts, &visible_paths);
-    response
-}
-
-#[cfg(test)]
-#[path = "tests/helpers_tests.rs"]
-mod tests;

@@ -157,8 +157,8 @@
     "action_close": "关闭"
   },
   "conflict_toast": {
-    "title": "检测到 Shader 冲突！",
-    "count": "检测到 {{count}} 个冲突。"
+    "title": "检测到已启用模组冲突",
+    "count": "已启用模组之间有 {{count}} 个冲突。"
   },
   "overlay": {
     "title": "正在扫描模组...",
@@ -214,11 +214,41 @@
     }
   },
   "conflict_modal": {
-    "title": "检测到 Shader 冲突",
+    "title": "已启用模组冲突",
     "empty": "未发现冲突。",
-    "description": "这些模组修改了相同的 shader 或 buffer 哈希。若同时启用，可能会导致画面异常或崩溃。",
+    "description": "这里只列出已启用模组实际加载的文件。相同的资源或着色器覆盖可能导致画面异常或崩溃。",
     "acknowledge": "知道了",
     "definite": "确定重叠",
-    "potential": "潜在重叠"
+    "potential": "潜在重叠",
+    "kind": {
+      "resource_hash": "资源哈希",
+      "shader_hash": "着色器哈希",
+      "shader_replacement": "着色器替换"
+    },
+    "namespace": "命名空间",
+    "match_priority": "匹配优先级",
+    "first_index": "起始索引",
+    "shader_stage": "着色器阶段",
+    "resolved": "已解决",
+    "unresolved": "未解决",
+    "potential_guidance": "运行时条件可能不会产生实际重叠。请手动选择；不会自动选择保留项。",
+    "keep": "保留",
+    "disable": "禁用",
+    "open": "打开",
+    "keep_enabled": "保持启用 {{name}}",
+    "disable_mod": "禁用 {{name}}",
+    "open_folder": "打开 {{name}} 文件夹",
+    "impact": "已解决 {{resolved}}/{{total}} 组 · 已选择 {{count}} 个模组",
+    "clear_choices": "清除选择",
+    "review_changes": "检查更改",
+    "review_title": "检查冲突解决方案",
+    "review_description": "以下已启用模组将被禁用。应用更改前请检查每个路径。",
+    "mods_to_disable": "要禁用的模组",
+    "resolved_groups": "已解决组",
+    "unresolved_groups": "未解决组",
+    "unresolved_warning": "更改后仍有 {{count}} 个冲突组未解决。",
+    "disable_confirm": "禁用 {{count}} 个模组",
+    "submit_failed": "无法禁用所选模组：{{error}}",
+    "open_failed": "无法打开模组文件夹：{{error}}"
   }
 }

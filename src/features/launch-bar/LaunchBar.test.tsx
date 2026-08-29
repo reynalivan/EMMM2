@@ -1,15 +1,17 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import LaunchBar from './LaunchBar';
 import { exit } from '@tauri-apps/plugin-process';
+import type { ConflictInfo } from '../../types/scanner';
 
 const launchGame = vi.fn();
+let activeConflicts: ConflictInfo[] = [];
 
 vi.mock('../../hooks/useActiveGame', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
 }));
 vi.mock('../../hooks/useFolderMutations', () => ({
-  useActiveConflicts: vi.fn(() => ({ data: [] })), // no conflicts initially
+  useActiveConflicts: vi.fn(() => ({ data: activeConflicts })),
 }));
 vi.mock('../../stores/useAppStore', () => ({
   useAppStore: vi.fn(() => ({ autoCloseLauncher: true })),
@@ -46,10 +48,32 @@ vi.mock('../conflict-report/ConflictModal', () => ({
   default: () => <div data-testid="conflict-modal"></div>,
 }));
 vi.mock('../scanner/components/ConflictToast', () => ({
-  default: () => <div data-testid="conflict-toast"></div>,
+  default: ({ onDismiss }: { onDismiss: () => void }) => (
+    <button data-testid="conflict-toast" onClick={onDismiss}>
+      Dismiss conflict
+    </button>
+  ),
 }));
 
+function conflict(hash: string): ConflictInfo {
+  return {
+    hash,
+    section_name: 'TextureOverrideBody',
+    mod_paths: ['ModA', 'ModB'],
+    is_active: true,
+    kind: 'resource_hash',
+    certainty: 'definite',
+    has_conditional_evidence: false,
+    evidence: [],
+  };
+}
+
 describe('LaunchBar', () => {
+  beforeEach(() => {
+    activeConflicts = [];
+    launchGame.mockReset();
+  });
+
   it('launches game and triggers exit if autoClose is true', async () => {
     render(<LaunchBar />);
 
@@ -71,5 +95,18 @@ describe('LaunchBar', () => {
     await waitFor(() => {
       expect(screen.getByText(/Launch failed/)).toBeInTheDocument();
     });
+  });
+
+  it('shows a changed conflict batch after the previous batch was dismissed', () => {
+    activeConflicts = [conflict('aaaaaaaa')];
+    const { rerender } = render(<LaunchBar />);
+
+    fireEvent.click(screen.getByTestId('conflict-toast'));
+    expect(screen.queryByTestId('conflict-toast')).not.toBeInTheDocument();
+
+    activeConflicts = [conflict('bbbbbbbb')];
+    rerender(<LaunchBar />);
+
+    expect(screen.getByTestId('conflict-toast')).toBeInTheDocument();
   });
 });

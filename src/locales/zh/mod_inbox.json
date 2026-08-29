@@ -1,0 +1,68 @@
+{
+  "title": "模组收件箱",
+  "subtitle": "将下载的模组放入库前进行检查",
+  "watcher_failed": "自动刷新收件箱不可用：{{error}}",
+  "no_game": {
+    "title": "请先选择游戏",
+    "description": "每个游戏都需要单独配置模组收件箱。"
+  },
+  "tabs": { "ready": "待处理", "processed": "已处理" },
+  "actions": {
+    "settings": "收件箱设置",
+    "open_inbox": "打开收件箱",
+    "refresh": "刷新",
+    "retry": "重试",
+    "select_all": "全选",
+    "create_folder": "创建文件夹",
+    "choose_location": "选择位置",
+    "cancel": "取消"
+  },
+  "missing": {
+    "title": "模组收件箱文件夹尚不存在。",
+    "description": "创建默认文件夹，或在设置中选择其他位置。"
+  },
+  "ready": {
+    "select_all": "选择所有待处理项目",
+    "select_entry": "选择 {{name}}",
+    "review_selected": "检查所选项目（{{count}}）",
+    "resume_review": "继续检查",
+    "size_unknown": "大小不可用",
+    "empty_title": "收件箱为空",
+    "empty_description": "添加到此处的文件夹和压缩包会自动显示。",
+    "layouts": {
+      "direct_mod": "模组",
+      "folder_pack": "模组包 · {{count}} 个根目录",
+      "wrapper": "嵌套模组",
+      "unknown": "无法识别的结构"
+    }
+  },
+  "processed": {
+    "select_all": "选择所有已处理源",
+    "select_source": "选择 {{name}}",
+    "delete_selected": "删除所选项目（{{count}}）",
+    "source_retained": "源文件已保留",
+    "source_deleted": "源文件已删除",
+    "source_moved": "源文件已移入模组目录",
+    "destination_unavailable": "目标不可用",
+    "destination_label": "目标",
+    "no_destinations": "此源文件没有记录目标位置。",
+    "open_in_app": "在应用中打开",
+    "open_in_explorer": "在资源管理器中打开",
+    "open_in_app_label": "在应用中打开 {{name}}",
+    "open_in_explorer_label": "在资源管理器中打开 {{name}}",
+    "empty_title": "暂无已处理的导入",
+    "empty_description": "已完成的导入历史会保留在这里。"
+  },
+  "delete": {
+    "title": "删除 {{count}} 个已处理源？",
+    "description": "所选保留源文件将移至回收站；目标模组和导入历史不会被删除。",
+    "confirm": "删除源文件"
+  },
+  "errors": {
+    "load": "无法加载模组收件箱：{{error}}",
+    "create_folder": "无法创建模组收件箱：{{error}}",
+    "create_batch": "无法开始导入检查：{{error}}",
+    "delete_sources": "无法删除已处理源：{{error}}",
+    "open_destination": "无法打开目标位置：{{error}}"
+  }
+}

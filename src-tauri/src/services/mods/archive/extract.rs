@@ -1,4 +1,4 @@
-use super::classify::{collect_loose_files_recursive, find_mod_roots, resolve_unique_dest};
+use super::classify::{collect_loose_files_recursive, find_mod_roots};
 use super::destination::{
     check_disk_space, move_to_extracted_dir, parent_dir_join, remove_existing_dest,
 };
@@ -15,6 +15,8 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 
 use super::is_cancelled;
+
+pub type DestinationPreflight<'a> = dyn Fn(&[PathBuf]) -> Result<(), AppError> + 'a;
 
 /// Caller-supplied knobs for [`extract_archive`].
 ///
@@ -36,6 +38,9 @@ pub struct ExtractOptions<'a> {
     pub disable_after: bool,
     /// Recursively unpack archives found inside the archive.
     pub unpack_nested: bool,
+    /// Validate the final destination plan after staging and before any
+    /// existing directory can be replaced or a staged root is committed.
+    pub before_commit: Option<&'a DestinationPreflight<'a>>,
     pub on_progress: Option<&'a Channel<ExtractionEvent>>,
 }
 
@@ -62,6 +67,7 @@ pub fn extract_archive(
         custom_name,
         disable_after,
         unpack_nested,
+        before_commit,
         on_progress,
     } = options;
     let format = ArchiveFormat::detect(archive_path).ok_or_else(|| {
@@ -71,6 +77,7 @@ pub fn extract_archive(
         ))
     })?;
     let archive_name = archive_display_name(archive_path, custom_name);
+    crate::services::mods::core_ops::validate_folder_name_component(&archive_name)?;
 
     let analysis = crate::services::mods::archive::analyze_archive(archive_path)?;
     check_disk_space(mods_dir, analysis.uncompressed_size + (50 * 1024 * 1024))?;
@@ -110,7 +117,7 @@ pub fn extract_archive(
     }
 
     let loose_files = collect_loose_files_recursive(guard.path(), &mod_roots);
-    let mut dest_paths = move_mod_roots(
+    let dest_paths = move_mod_roots(
         archive_path,
         mods_dir,
         &archive_name,
@@ -118,12 +125,10 @@ pub fn extract_archive(
         &mod_roots,
         &loose_files,
         overwrite,
+        disable_after,
+        before_commit,
         &mut guard,
     )?;
-
-    if disable_after {
-        dest_paths = apply_disabled_prefix(dest_paths);
-    }
 
     if !dest_paths.is_empty() {
         if let Err(error) = move_to_extracted_dir(archive_path) {
@@ -141,6 +146,7 @@ pub fn extract_archive(
         error: None,
         aborted: false,
         collisions: Vec::new(),
+        sync_warning: None,
     })
 }
 
@@ -162,24 +168,50 @@ fn move_mod_roots(
     mod_roots: &[PathBuf],
     loose_files: &[PathBuf],
     overwrite: bool,
+    disable_after: bool,
+    before_commit: Option<&DestinationPreflight<'_>>,
     guard: &mut TempDirGuard,
 ) -> Result<Vec<String>, AppError> {
     if mod_roots.len() == 1 && mod_roots[0] == temp_path {
-        let dest = destination_for(mods_dir, archive_name, overwrite);
+        let destination_name = final_destination_name(archive_name, disable_after);
+        let dest = destination_for(mods_dir, &destination_name, overwrite, &[])?;
+        ensure_direct_child_destination(mods_dir, &dest)?;
+        if let Some(validate) = before_commit {
+            validate(std::slice::from_ref(&dest))?;
+        }
         move_root_to_dest(guard.path(), &dest, overwrite)?;
         guard.commit();
         cleanup_temp_extract_parent(temp_path);
         return Ok(vec![dest.to_string_lossy().to_string()]);
     }
 
-    let mut dest_paths = Vec::new();
-    let mut loose_files_moved = false;
+    let mut move_plan = Vec::with_capacity(mod_roots.len());
+    let mut planned_destinations = Vec::with_capacity(mod_roots.len());
     for root in mod_roots {
         let name = root
             .file_name()
             .map(|value| value.to_string_lossy().to_string())
             .unwrap_or_else(|| archive_name.to_string());
-        let dest = destination_for(mods_dir, &name, overwrite);
+        crate::services::mods::core_ops::validate_folder_name_component(&name)?;
+        let destination_name = final_destination_name(&name, disable_after);
+        let dest = destination_for(
+            mods_dir,
+            &destination_name,
+            overwrite,
+            &planned_destinations,
+        )?;
+        ensure_direct_child_destination(mods_dir, &dest)?;
+        planned_destinations.push(dest.clone());
+        move_plan.push((root, dest));
+    }
+
+    if let Some(validate) = before_commit {
+        validate(&planned_destinations)?;
+    }
+
+    let mut dest_paths = Vec::with_capacity(move_plan.len());
+    let mut loose_files_moved = false;
+    for (root, dest) in move_plan {
         move_root_to_dest(root, &dest, overwrite)?;
 
         if !loose_files_moved {
@@ -200,12 +232,84 @@ fn move_mod_roots(
     Ok(dest_paths)
 }
 
-fn destination_for(mods_dir: &Path, name: &str, overwrite: bool) -> PathBuf {
+fn destination_for(
+    mods_dir: &Path,
+    name: &str,
+    overwrite: bool,
+    planned_destinations: &[PathBuf],
+) -> Result<PathBuf, AppError> {
     if overwrite {
-        return parent_dir_join(mods_dir, name);
+        let destination = parent_dir_join(mods_dir, name);
+        if contains_planned_identity(planned_destinations, &destination) {
+            return Err(AppError::Validation(
+                "Archive contains multiple mod roots with the same folder identity".to_string(),
+            ));
+        }
+        return Ok(destination);
     }
 
-    resolve_unique_dest(mods_dir, name)
+    const MAX_NUMBERED_DESTINATIONS: u32 = 999;
+    for counter in 1..=MAX_NUMBERED_DESTINATIONS {
+        let candidate_name = if counter == 1 {
+            name.to_string()
+        } else {
+            format!("{name} ({counter})")
+        };
+        let candidate = parent_dir_join(mods_dir, &candidate_name);
+        let sibling_collision = crate::services::mods::core_ops::find_sibling_identity_collision(
+            mods_dir,
+            &candidate_name,
+            None,
+        )
+        .is_some();
+        if !sibling_collision && !contains_planned_identity(planned_destinations, &candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    loop {
+        let candidate = parent_dir_join(mods_dir, &format!("{name} ({})", uuid::Uuid::new_v4()));
+        if crate::services::mods::core_ops::find_sibling_identity_collision(
+            mods_dir,
+            candidate
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default(),
+            None,
+        )
+        .is_none()
+            && !contains_planned_identity(planned_destinations, &candidate)
+        {
+            return Ok(candidate);
+        }
+    }
+}
+
+fn contains_planned_identity(planned: &[PathBuf], candidate: &Path) -> bool {
+    let Some(candidate_name) = candidate.file_name().and_then(|value| value.to_str()) else {
+        return true;
+    };
+    planned.iter().any(|path| {
+        path.file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| crate::common::path_key::names_equal_by_key(name, candidate_name))
+    })
+}
+
+fn final_destination_name(name: &str, disable_after: bool) -> String {
+    if disable_after && !crate::common::normalizer::is_disabled_folder(name) {
+        return format!("{}{name}", crate::DISABLED_PREFIX);
+    }
+    name.to_string()
+}
+
+fn ensure_direct_child_destination(mods_dir: &Path, destination: &Path) -> Result<(), AppError> {
+    if destination.parent() == Some(mods_dir) && destination.file_name().is_some() {
+        return Ok(());
+    }
+    Err(AppError::Security(
+        "Archive destination must be a direct child of the configured mods directory".to_string(),
+    ))
 }
 
 fn move_root_to_dest(root: &Path, dest: &Path, overwrite: bool) -> Result<(), AppError> {
@@ -234,33 +338,4 @@ fn move_loose_files(loose_files: &[PathBuf], dest: &Path) {
             );
         }
     }
-}
-
-fn apply_disabled_prefix(dest_paths: Vec<String>) -> Vec<String> {
-    let mut renamed_paths = Vec::new();
-    for dest_path in dest_paths {
-        let path = Path::new(&dest_path);
-        let Some(folder_name) = path.file_name().and_then(|value| value.to_str()) else {
-            renamed_paths.push(dest_path);
-            continue;
-        };
-
-        // The canonical matcher also covers the legacy `disabled_`/`Disabled-`
-        // spellings; a plain starts_with would prefix those a second time.
-        if crate::common::normalizer::is_disabled_folder(folder_name) {
-            renamed_paths.push(dest_path);
-            continue;
-        }
-
-        let disabled_path = path.with_file_name(format!("{}{folder_name}", crate::DISABLED_PREFIX));
-        match fs::rename(path, &disabled_path) {
-            Ok(()) => renamed_paths.push(disabled_path.to_string_lossy().to_string()),
-            Err(error) => {
-                log::warn!("Failed to apply DISABLED prefix to {folder_name}: {error}");
-                renamed_paths.push(dest_path);
-            }
-        }
-    }
-
-    renamed_paths
 }

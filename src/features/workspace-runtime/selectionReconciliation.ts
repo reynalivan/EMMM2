@@ -28,7 +28,6 @@ interface RecentInternalRewrite extends WorkspacePathRewriteInput {
 
 interface SelectionReconciliationEffectKeyInput {
   gameId: string | null;
-  safeMode: boolean;
   selection: WorkspaceSelection;
 }
 
@@ -182,7 +181,6 @@ export function shouldRunSelectionReconciliationEffect(
   pruneSelectionReconciliationEffects(nowMs);
   const key = JSON.stringify({
     gameId: input.gameId,
-    safeMode: input.safeMode,
     selection: serializeSelection(input.selection),
   });
   if (seenSelectionReconciliationEffects.has(key)) {

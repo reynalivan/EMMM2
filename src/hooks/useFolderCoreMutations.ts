@@ -16,6 +16,7 @@ import {
 import { formatAppError } from '../lib/appError';
 import { openFileInUseRetryDialog } from './fileInUseRetry';
 import { publishCollectionReferenceImpact } from './collectionReferenceImpact';
+import { notifyCommittedMutationSyncWarning } from '../lib/committedMutationWarning';
 
 async function runDiskRepairRecovery(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -75,6 +76,7 @@ export function useRenameMod() {
       );
       await publishFolderStructureChange(queryClient);
       await publishCollectionReferenceImpact(queryClient, result.collection_impact);
+      notifyCommittedMutationSyncWarning(result);
     },
     onError: (error, variables) => {
       if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
@@ -110,6 +112,7 @@ export function useDeleteMod() {
       applyRuntimeEffects(queryClient, buildPathInvalidationDescriptor(variables.path, []));
       await publishFolderStructureChange(queryClient);
       await publishCollectionReferenceImpact(queryClient, result.collection_impact);
+      notifyCommittedMutationSyncWarning(result);
     },
     onError: (error, variables) => {
       if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
@@ -123,31 +126,6 @@ export function useDeleteMod() {
       }
 
       toast.error(`Delete failed: ${errorMessage}`);
-    },
-  });
-
-  return mutation;
-}
-
-export function useRestoreMod() {
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: (params: { trashId: string; gameId?: string }) =>
-      commands.restoreMod(params.trashId, params.gameId ?? null),
-    onSuccess: async () => {
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('trashState'),
-        'active',
-      );
-    },
-    onError: (error, variables) => {
-      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
-        return;
-      }
-
-      toast.error(`Restore failed: ${formatAppError(error)}`);
     },
   });
 

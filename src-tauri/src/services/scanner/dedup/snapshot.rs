@@ -7,8 +7,8 @@
 use crate::domain::errors::ScannerError;
 use crate::services::scanner::core::walker::ModCandidate;
 use std::collections::{BTreeSet, HashMap};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::ffi::OsStr;
+use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -49,9 +49,17 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
     for entry in WalkDir::new(&candidate.path)
         .follow_links(false)
         .into_iter()
+        .filter_entry(|entry| {
+            entry.depth() == 0
+                || (!entry.file_type().is_dir()
+                    || !entry.file_name().to_string_lossy().starts_with('.'))
+        })
         .filter_map(|item| item.ok())
     {
         if !entry.file_type().is_file() {
+            continue;
+        }
+        if is_ignored_file_name(entry.file_name()) {
             continue;
         }
         let path = entry.path().to_path_buf();
@@ -97,6 +105,13 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
     })
 }
 
+pub(super) fn is_ignored_file_name(name: &OsStr) -> bool {
+    matches!(
+        name.to_string_lossy().to_ascii_lowercase().as_str(),
+        "desktop.ini" | "thumbs.db" | ".ds_store"
+    )
+}
+
 static RE_VERSION: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new(r"(?i)\b(v|ver|version)\s*\d+(\.\d+)*\b").unwrap()
 });
@@ -111,23 +126,44 @@ fn strip_version(name: &str) -> String {
 }
 
 fn read_ini_signals(path: &Path) -> (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>) {
-    let file = match File::open(path) {
+    let bytes = match fs::read(path) {
         Ok(value) => value,
         Err(_) => return (BTreeSet::new(), BTreeSet::new(), BTreeSet::new()),
     };
+    let (content, _, _) = crate::services::ini::document::decode_ini_bytes(&bytes);
     let mut headers = BTreeSet::new();
     let mut keybindings = BTreeSet::new();
     let mut target_hashes = BTreeSet::new();
+    let mut hash_kind: Option<(&str, usize)> = None;
 
-    for line in BufReader::new(file).lines().map_while(Result::ok).take(200) {
+    for line in content.lines() {
         let trimmed = line.trim().to_ascii_lowercase();
-        if trimmed.starts_with(';') || trimmed.starts_with('[') {
+        if trimmed.starts_with(';') || trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.starts_with('[') {
             headers.insert(trimmed.clone());
+            hash_kind = if trimmed.starts_with("[textureoverride") {
+                Some(("texture", 8))
+            } else if trimmed.starts_with("[shaderoverride") {
+                Some(("shader", 16))
+            } else {
+                None
+            };
         } else if trimmed.contains("$swapvar") || trimmed.starts_with("key") {
             keybindings.insert(trimmed.clone());
         } else if trimmed.starts_with("hash") {
-            if let Some(hash_val) = trimmed.split('=').nth(1) {
-                target_hashes.insert(hash_val.trim().to_string());
+            if let (Some((kind, expected_len)), Some((_, hash_val))) =
+                (hash_kind, trimmed.split_once('='))
+            {
+                let hash_val = hash_val.split(';').next().unwrap_or_default().trim();
+                if hash_val.len() == expected_len
+                    && hash_val
+                        .chars()
+                        .all(|character| character.is_ascii_hexdigit())
+                {
+                    target_hashes.insert(format!("{kind}:{hash_val}"));
+                }
             }
         }
     }
@@ -142,3 +178,7 @@ fn normalize_name(value: &str) -> String {
         .filter(|ch| ch.is_ascii_alphanumeric())
         .collect()
 }
+
+#[cfg(test)]
+#[path = "tests/dedup_snapshot_tests.rs"]
+mod tests;

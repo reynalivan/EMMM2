@@ -13,6 +13,9 @@ import DownloadsPage from '../../features/browser/components/DownloadsPage';
 import { useAppStore } from '../../stores/useAppStore';
 import { ExternalChangeHandler } from '../../features/file-watcher/ExternalChangeHandler';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
+import { ImportBatchWizardHost } from '../../features/import-batches/ImportBatchWizardHost';
+import { ObjectClassificationWizardHost } from '../../features/match-wizard/ObjectClassificationWizardHost';
+import ModInboxPage from '../../features/mod-inbox/ModInboxPage';
 
 export default function MainLayout() {
   const workspaceView = useAppStore((state) => state.workspaceView);
@@ -21,9 +24,12 @@ export default function MainLayout() {
   return (
     <div
       data-testid="dashboard-layout"
+      data-workspace-view={workspaceView}
       className="flex flex-col h-screen overflow-hidden bg-base-100 font-sans text-base-content selection:bg-primary/20 relative"
     >
       <ExternalChangeHandler />
+      <ImportBatchWizardHost />
+      <ObjectClassificationWizardHost />
 
       {/* Top Navigation Bar */}
       <TopBar />
@@ -45,6 +51,8 @@ export default function MainLayout() {
             <DownloadsPage />
           ) : workspaceView === 'storage-optimizer' ? (
             <StorageOptimizerPage />
+          ) : workspaceView === 'mod-inbox' ? (
+            <ModInboxPage />
           ) : (
             <ResizableWorkspace
               leftPanel={<ObjectList />}

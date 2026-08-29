@@ -1,4 +1,5 @@
-//! Enable/disable a mod folder on disk and keep the DB in sync.
+//! Enable/disable a mod folder on disk. Callers converge the DB through Disk
+//! Reconcile after releasing the operation lock.
 
 use super::naming::{
     find_existing_sibling_case_insensitive, rename_conflict_error, standardize_prefix,
@@ -56,30 +57,6 @@ pub(crate) fn rename_toggle_on_disk(
         .map_err(|error| map_toggle_error(src, noun, error))?;
 
     Ok(Some(new_path))
-}
-
-/// After a top-level folder rename, point the object row and all child mod
-/// rows at the new path. Non-fatal: the disk rename already happened.
-pub(crate) async fn sync_object_and_child_paths(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    mods_path: &str,
-    old_rel: &str,
-    new_rel: &str,
-) {
-    if Path::new(old_rel).components().count() != 1 {
-        return;
-    }
-
-    let _ =
-        crate::repo::object_repo::update_object_folder_path(pool, game_id, old_rel, new_rel).await;
-
-    if let Err(e) =
-        crate::repo::mod_repo::update_child_paths(pool, game_id, old_rel, new_rel, Some(mods_path))
-            .await
-    {
-        log::warn!("Failed to update child paths ({old_rel} -> {new_rel}): {e}");
-    }
 }
 
 pub async fn toggle_mod_inner(

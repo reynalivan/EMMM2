@@ -1,12 +1,7 @@
 import type { MoveStatus } from '../../../types/mod';
 import type { QueryClient } from '@tanstack/react-query';
-import { commands, sparse } from '../../../lib/bindings';
-import { toast } from '../../../stores/useToastStore';
-import type { GameConfig } from '../../../types/game';
-import type { MasterDbEntry } from '../../../types/scanner';
-import type { MatchedDbEntry } from '../../../lib/bindings';
+import { commands } from '../../../lib/bindings';
 import { applyRuntimeMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
-import { formatAppError } from '../../../lib/appError';
 import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
 import {
   buildQueryRemovalDescriptor,
@@ -14,26 +9,7 @@ import {
 } from '../../workspace-runtime/optimistic/descriptorBuilders';
 import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimistic/descriptor';
 import { thumbnailKeys } from '../../../hooks/useThumbnail';
-
-export function parseMasterDb(dbJson: string): MasterDbEntry[] {
-  try {
-    const parsed = JSON.parse(dbJson);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.map((entry: Record<string, unknown>) => ({
-      matched_entry_key: typeof entry.matched_entry_key === 'string' ? entry.matched_entry_key : '',
-      name: String(entry.name ?? ''),
-      object_type: String(entry.object_type ?? 'Other'),
-      tags: Array.isArray(entry.tags) ? (entry.tags as string[]) : [],
-      metadata: (entry.metadata as Record<string, unknown>) ?? null,
-      thumbnail_path: entry.thumbnail_path ? String(entry.thumbnail_path) : null,
-    }));
-  } catch {
-    return [];
-  }
-}
+import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
 
 export async function moveModsToObjectAndRefresh(params: {
   queryClient: QueryClient;
@@ -61,92 +37,10 @@ export async function moveModsToObjectAndRefresh(params: {
       buildWorkspacePathRewritesDescriptor(result.path_rewrites, []),
     ),
   );
+  await applyRuntimeMutationResult(params.queryClient, 'workspaceStructure');
+  notifyCommittedMutationSyncWarning(result);
 
   if (result.failures.length > 0) {
     throw result.failures[0].error;
-  }
-
-  await applyRuntimeMutationResult(params.queryClient, 'workspaceStructure');
-}
-
-export async function applyFolderDbSyncMatchAndRefresh(params: {
-  queryClient: QueryClient;
-  activeGame: GameConfig;
-  folderPath: string;
-  match: MatchedDbEntry;
-}): Promise<void> {
-  await commands.applyObjectMatchCmd(
-    sparse({
-      game_id: params.activeGame.id,
-      folder_path: params.folderPath,
-      matched_entry_key: params.match.matched_entry_key ?? null,
-      matched_alias_name: params.match.matched_alias_name ?? params.match.name,
-      matched_reason: params.match.match_detail,
-      matched_source: 'manual_match',
-    }),
-  );
-
-  if (params.match.object_type) {
-    await commands.setModCategory(
-      params.activeGame.id,
-      params.folderPath,
-      params.match.object_type,
-    );
-    await applyRuntimeMutationResult(params.queryClient, 'workspaceStructure');
-  }
-
-  if (params.match.metadata) {
-    const metaStrings: Record<string, string> = {};
-    Object.entries(params.match.metadata).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        metaStrings[key] = String(value);
-      }
-    });
-    await commands.updateModInfo(
-      params.activeGame.id,
-      params.folderPath,
-      sparse({ metadata: metaStrings }),
-    );
-  }
-
-  if (params.match.thumbnail_path) {
-    await commands.updateModThumbnail(
-      params.activeGame.id,
-      params.folderPath,
-      params.match.thumbnail_path,
-    );
-  }
-
-  await applyRuntimeMutationResult(params.queryClient, 'folderMetadataThumbnail');
-}
-
-export async function executeImportAndInvalidate(
-  paths: string[],
-  targetDir: string,
-  queryClient: QueryClient,
-  options: {
-    isNewObject?: boolean;
-    objectName?: string;
-  },
-): Promise<void> {
-  const result = await commands.importModsFromPaths(paths, targetDir);
-
-  await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
-
-  const movedCount = result.success.length;
-  const failCount = result.failures.length;
-  if (movedCount > 0) {
-    const fails = failCount > 0 ? `, ${failCount} failed` : '';
-    const label = options.isNewObject
-      ? `Created ${options.objectName ?? 'Object'} with ${movedCount} item(s)${fails}`
-      : `Moved ${movedCount} item(s)${options.objectName ? ` to ${options.objectName}` : ''}${fails}`;
-    toast.success(label);
-    return;
-  }
-  if (failCount > 0) {
-    const action = options.isNewObject
-      ? 'Created Object but failed to move items'
-      : 'Failed to move items';
-    toast.error(`${action}: ${formatAppError(result.failures[0].error)}`);
   }
 }

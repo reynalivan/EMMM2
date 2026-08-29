@@ -36,7 +36,6 @@ pub enum WorkspaceSelectionReconciliationReason {
     MissingObjectRoot,
     MissingExplorerPath,
     MissingModPath,
-    CorridorMismatch,
     SourceUnavailable,
 }
 
@@ -104,8 +103,16 @@ pub struct WorkspacePreview {
 #[derive(Clone, Serialize, specta::Type)]
 pub struct WorkspaceRuntime {
     pub game_id: String,
-    pub safe_mode: bool,
     pub source_state: WorkspaceSourceState,
+    pub recovery_status: WorkspaceRecoveryStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceRecoveryStatus {
+    Ready,
+    Syncing,
+    Failed,
 }
 
 #[derive(Clone, Serialize, specta::Type)]

@@ -15,7 +15,7 @@ interface UseObjectListBulkToolbarPropsInput {
   handleBulkPin: (ids: Set<string>, pin: boolean) => Promise<void>;
   handleBulkEnable: (ids: Set<string>) => Promise<void>;
   handleBulkDisable: (ids: Set<string>) => Promise<void>;
-  handleBulkAutoRecognize: (ids: Set<string>) => Promise<void>;
+  handleBulkClassifyAndMatch: (ids: Set<string>) => Promise<void>;
   handleBulkFavorite: (ids: Set<string>, favorite: boolean) => Promise<void>;
   handleBulkSafe: (ids: Set<string>, safe: boolean) => Promise<void>;
 }
@@ -29,7 +29,7 @@ export function useObjectListBulkToolbarProps({
   handleBulkPin,
   handleBulkEnable,
   handleBulkDisable,
-  handleBulkAutoRecognize,
+  handleBulkClassifyAndMatch,
   handleBulkFavorite,
   handleBulkSafe,
 }: UseObjectListBulkToolbarPropsInput) {
@@ -61,7 +61,7 @@ export function useObjectListBulkToolbarProps({
       onDisable: run(handleBulkDisable),
       onAddTags: openTagModal('add'),
       onRemoveTags: openTagModal('remove'),
-      onAutoRecognize: run(handleBulkAutoRecognize),
+      onClassifyMatch: run(handleBulkClassifyAndMatch),
       onFavorite: run(handleBulkFavorite),
       onMarkSafe: run(handleBulkSafe),
       onClear: bulkSelect.clearSelection,
@@ -76,7 +76,7 @@ export function useObjectListBulkToolbarProps({
     handleBulkPin,
     handleBulkEnable,
     handleBulkDisable,
-    handleBulkAutoRecognize,
+    handleBulkClassifyAndMatch,
     handleBulkFavorite,
     handleBulkSafe,
     mutationsDisabled,

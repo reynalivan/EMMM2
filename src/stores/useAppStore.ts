@@ -71,6 +71,7 @@ export const useAppStore = create<AppState>()(
         currentPath: state.currentPath,
         explorerSubPath: state.explorerSubPath,
         explorerScrollOffset: state.explorerScrollOffset,
+        safetyFilter: state.safetyFilter,
 
         // Epic 3: Persist collapsed categories (serializable array)
         collapsedCategories: Array.from(state.collapsedCategories),

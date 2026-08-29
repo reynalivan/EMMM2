@@ -16,7 +16,6 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
 import type { DbEntryFull } from '../hooks/useMasterDbSync';
-import { withWatcherSuppression } from '../../file-watcher/watcherSuppression';
 
 interface AutoSetupModalProps {
   open: boolean;
@@ -111,31 +110,29 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     let failCount = 0;
 
     try {
-      await withWatcherSuppression({ releaseDelayMs: 1000 }, async () => {
-        for (let i = 0; i < entriesToCreate.length; i++) {
-          const entry = entriesToCreate[i];
-          try {
-            await createObject.mutateAsync({
-              game_id: activeGame.id,
-              name: entry.name,
-              folder_path: entry.folder_path ?? null,
-              object_type: entry.object_type,
-              sub_category: null,
-              status: 1,
-              metadata: (entry.metadata ?? null) as JsonValue,
-              thumbnail_url: (entry.thumbnail_path as string | null) ?? null,
-              hash_db: null,
-              custom_skins: null,
-            });
-            successCount++;
-          } catch (err) {
-            console.warn(`Failed to create object ${entry.name}:`, err);
-            // Continue loop even on failure (e.g., duplicates)
-            failCount++;
-          }
-          setProgress(i + 1);
+      for (let i = 0; i < entriesToCreate.length; i++) {
+        const entry = entriesToCreate[i];
+        try {
+          await createObject.mutateAsync({
+            game_id: activeGame.id,
+            name: entry.name,
+            folder_path: entry.folder_path ?? null,
+            object_type: entry.object_type,
+            sub_category: null,
+            status: 1,
+            metadata: (entry.metadata ?? null) as JsonValue,
+            thumbnail_url: (entry.thumbnail_path as string | null) ?? null,
+            hash_db: null,
+            custom_skins: null,
+          });
+          successCount++;
+        } catch (err) {
+          console.warn(`Failed to create object ${entry.name}:`, err);
+          // Continue loop even on failure (e.g., duplicates)
+          failCount++;
         }
-      });
+        setProgress(i + 1);
+      }
 
       if (failCount > 0) {
         toast.warning(

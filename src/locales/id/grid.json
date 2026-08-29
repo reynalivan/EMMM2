@@ -4,14 +4,12 @@
     "search_placeholder": "Cari mod...",
     "item_count_one": "{{count}} item",
     "item_count_other": "{{count}} item",
-    "refresh_title": "Segarkan",
     "view_grid": "Tampilan grid",
     "view_list": "Tampilan daftar"
   },
   "banners": {
-    "conflict_detected_one": "{{count}} konflik penamaan terdeteksi",
-    "conflict_detected_other": "{{count}} konflik penamaan terdeteksi",
-    "resolve_btn": "Selesaikan",
+    "disk_syncing": "Menyinkronkan mod dengan disk. Pengeditan sementara tidak tersedia.",
+    "disk_sync_failed": "Sinkronisasi mod gagal: {{error}}",
     "flat_mod_title": "Direktori Mod Aktif",
     "flat_mod_desc": "Folder ini adalah akar mod langsung (struktur datar). Anda dapat mengaktifkan/menonaktifkan sebagai satu unit.",
     "disable_mod": "Nonaktifkan Mod",
@@ -29,7 +27,17 @@
     "source_dialog_title": "Folder Mods tidak ditemukan",
     "source_dialog_message": "Folder Mods yang tersimpan tidak tersedia. Pilih lokasi barunya untuk melanjutkan memuat data mod.",
     "source_later_btn": "Nanti",
-    "source_action_failed": "Tidak dapat mengakses folder mods: {{error}}"
+    "source_action_failed": "Tidak dapat mengakses folder mods: {{error}}",
+    "source_classification_Matching": "Library yang cocok ditemukan",
+    "source_classification_NewLibrary": "Library mod baru ditemukan",
+    "source_classification_Empty": "Folder kosong",
+    "source_classification_Different": "Library mod berbeda",
+    "source_candidate_counts": "{{objects}} object · {{mods}} mod",
+    "source_empty_warning": "Folder ini kosong. Konfirmasikan untuk memakainya sebagai library mod baru; snapshot database saat ini akan direkonsiliasi mengikuti disk yang kosong.",
+    "source_different_warning": "Folder ini berisi library mod yang berbeda. Jika diterapkan, database akan mengikuti isi folder ini.",
+    "source_type_game_name": "Ketik {{name}} untuk mengonfirmasi",
+    "source_confirm_empty_btn": "Gunakan folder kosong",
+    "source_confirm_different_btn": "Ganti library"
   },
   "empty": {
     "no_match": "Tidak ada mod yang cocok dengan pencarian Anda.",
@@ -65,8 +73,6 @@
     "conflict": "Konflik",
     "name_conflict_title": "Konflik Penamaan: versi aktif dan nonaktif keduanya ada",
     "name_conflict": "Konflik Nama",
-    "hidden_mod": "[Mod Tersembunyi]",
-    "hidden_mod_title": "Tersembunyi karena Mode Aman",
     "status_enabled": "Aktif",
     "status_disabled": "Nonaktif",
     "dir_label": "DIR",
@@ -88,7 +94,6 @@
     "confirm": "Aktifkan \"{{name}}\""
   },
   "context": {
-    "refresh": "Segarkan",
     "select_all": "Pilih Semua",
     "open_explorer": "Buka di Explorer",
     "rename": "Ubah Nama",
@@ -145,7 +150,9 @@
       "favorited": "menambahkan ke favorit",
       "unfavorited": "menghapus dari favorit",
       "pinned": "menyematkan",
-      "unpinned": "melepas sematan"
+      "unpinned": "melepas sematan",
+      "marked_safe": "menandai aman",
+      "marked_unsafe": "menandai tidak aman"
     },
     "failure_actions": {
       "toggle": "mengubah status",
@@ -153,7 +160,8 @@
       "update": "memperbarui",
       "favorite": "mengubah status favorit untuk",
       "pin": "mengubah status sematan untuk",
-      "import": "mengimpor"
+      "import": "mengimpor",
+      "safety": "mengubah klasifikasi untuk"
     }
   },
   "status": {

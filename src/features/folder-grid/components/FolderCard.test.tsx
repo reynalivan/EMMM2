@@ -2,11 +2,6 @@ import { render, screen, fireEvent } from '../../../testing/test-utils';
 import FolderCard from './FolderCard';
 import { beforeEach, vi, describe, it, expect } from 'vitest';
 import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '../../../types/workspace';
-import { useSafeMode } from '../../../hooks/settingsQuery';
-
-vi.mock('../../../hooks/settingsQuery', () => ({
-  useSafeMode: vi.fn(),
-}));
 
 // Mock dependencies
 vi.mock('@tauri-apps/api/core', () => ({
@@ -76,6 +71,9 @@ const mockFolder: WorkspaceExplorerNode = {
   is_favorite: false,
   is_misplaced: false,
   is_safe: true,
+  is_safety_classified: true,
+  contains_safe_mods: true,
+  contains_unsafe_mods: false,
   metadata: null,
   category: null,
   warnings: [],
@@ -96,9 +94,7 @@ const mockFolder: WorkspaceExplorerNode = {
 };
 
 describe('FolderCard', () => {
-  beforeEach(() => {
-    vi.mocked(useSafeMode).mockReturnValue(false);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
   it('renders mod name', () => {
     render(
@@ -254,6 +250,33 @@ describe('FolderCard', () => {
     expect(card).toHaveClass('ring-warning/40');
   });
 
+  it('allows conflict selection for the read-only info panel but blocks navigation and mutation', () => {
+    const onActivate = vi.fn();
+    const onNavigate = vi.fn();
+    const onToggleEnabled = vi.fn();
+    render(
+      <FolderCard
+        folder={mockFolder}
+        isSelected={false}
+        onNavigate={onNavigate}
+        toggleSelection={vi.fn()}
+        onActivate={onActivate}
+        onToggleEnabled={onToggleEnabled}
+        hasFolderNameConflict
+        mutationsDisabled
+      />,
+    );
+
+    const card = screen.getByRole('gridcell');
+    fireEvent.click(card);
+    fireEvent.doubleClick(card);
+    fireEvent.click(screen.getAllByRole('checkbox', { hidden: true })[1]);
+
+    expect(onActivate).toHaveBeenCalledWith(mockFolder.path);
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onToggleEnabled).not.toHaveBeenCalled();
+  });
+
   it('TC-21-01: renders Rename input and submits on Enter', () => {
     const onRenameSubmit = vi.fn();
     const onRenameCancel = vi.fn();
@@ -302,30 +325,5 @@ describe('FolderCard', () => {
     fireEvent.blur(input);
     expect(onRenameCancel).toHaveBeenCalledTimes(2);
     expect(onRenameSubmit).not.toHaveBeenCalled();
-  });
-
-  it('masks unsafe folder names while safe mode leak guard is active', () => {
-    vi.mocked(useSafeMode).mockReturnValue(true);
-    const unsafeFolder = {
-      ...mockFolder,
-      is_safe: false,
-      name: 'Unsafe Mod Name',
-      display_name: 'Unsafe Mod Name',
-      folder_name: 'Unsafe Mod Name',
-    };
-
-    render(
-      <FolderCard
-        folder={unsafeFolder}
-        isSelected={false}
-        onNavigate={vi.fn()}
-        toggleSelection={vi.fn()}
-      />,
-    );
-
-    const maskedName = screen.getByText('[Hidden Mod]');
-    expect(maskedName).toBeInTheDocument();
-    expect(maskedName).toHaveClass('blur-xs');
-    expect(screen.queryByText('Unsafe Mod Name')).not.toBeInTheDocument();
   });
 });

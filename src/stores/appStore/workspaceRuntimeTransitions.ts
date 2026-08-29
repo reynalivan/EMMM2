@@ -154,15 +154,13 @@ export function closeDialogIfTargetRemoved(
   }
 
   const targetPath =
-    state.dialogState.kind === 'conflict'
-      ? state.dialogState.conflict.attempted_target
-      : state.dialogState.kind === 'fileInUse'
-        ? state.dialogState.data.path
-        : state.dialogState.kind === 'folderEnableParent'
-          ? state.dialogState.ancestorPath
-          : 'folder' in state.dialogState
-            ? state.dialogState.folder.path
-            : null;
+    state.dialogState.kind === 'fileInUse'
+      ? state.dialogState.data.path
+      : state.dialogState.kind === 'folderEnableParent'
+        ? state.dialogState.ancestorPath
+        : 'folder' in state.dialogState
+          ? state.dialogState.folder.path
+          : null;
   if (!targetPath) {
     return state.dialogState;
   }

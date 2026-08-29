@@ -1,6 +1,5 @@
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
-use crate::services::disk_reconcile::emit::emit_internal_disk_reconcile;
 use crate::services::fs_utils::guard::validate_path;
 use crate::services::fs_utils::operation_lock::OperationLock;
 use crate::services::ini::document::IniDocument;
@@ -9,7 +8,7 @@ use crate::services::mods::preview_ops::{
     list_mod_preview_images_inner, read_mod_ini_inner, remove_mod_preview_image_inner,
     resolve_image_path, save_mod_preview_image_inner, write_mod_ini_locked_inner,
 };
-use crate::services::scanner::watcher::{SuppressionGuard, WatcherState};
+use crate::services::scanner::watcher::WatcherState;
 use tauri::State;
 
 pub use crate::services::mods::preview_ops::{IniFileEntry, IniLineUpdate};
@@ -51,11 +50,19 @@ pub async fn write_mod_ini(
     file_name: String,
     expected_source_hash: String,
     line_updates: Vec<IniLineUpdate>,
-) -> Result<(), AppError> {
+) -> Result<crate::services::disk_reconcile::types::CommittedMutationResult, AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    let preflight_paths = [mod_root.to_string_lossy().to_string()];
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&preflight_paths),
+    )
+    .await?;
     let changed_path = mod_root.join(&file_name).to_string_lossy().to_string();
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
     let op_guard = op_lock.acquire().await?;
+    let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     write_mod_ini_locked_inner(
         &op_guard,
         &mod_root,
@@ -64,7 +71,22 @@ pub async fn write_mod_ini(
         line_updates,
     )
     .await?;
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![changed_path]).await
+    drop(op_guard);
+    drop(guard);
+    let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+        crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+            &app,
+            pool.inner(),
+            &game_id,
+            vec![changed_path],
+        )
+        .await,
+    );
+    Ok(
+        crate::services::disk_reconcile::types::CommittedMutationResult {
+            sync_warning: settlement.sync_warning,
+        },
+    )
 }
 
 #[specta::specta]
@@ -95,10 +117,19 @@ pub async fn save_mod_preview_image(
     ensure_image_size(&image_data)?;
 
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
-    let _lock = op_lock.acquire().await?;
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
+    let preflight_paths = [mod_root.to_string_lossy().to_string()];
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&preflight_paths),
+    )
+    .await?;
+    let lock = op_lock.acquire().await?;
+    let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let saved = save_mod_preview_image_inner(&mod_root, &object_name, &image_data)?;
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, vec![saved.clone()]).await?;
+    drop(lock);
+    drop(guard);
     Ok(saved)
 }
 
@@ -116,17 +147,24 @@ pub async fn remove_mod_preview_image(
     image_path: String,
 ) -> Result<(), AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
-    let target = resolve_image_path(&mod_root, &image_path)?;
-    let _lock = op_lock.acquire().await?;
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
-    remove_mod_preview_image_inner(&mod_root, &image_path)?;
-    emit_internal_disk_reconcile(
+    let preflight_paths = [mod_root.to_string_lossy().to_string()];
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
-        vec![target.to_string_lossy().to_string()],
+        Some(&preflight_paths),
     )
-    .await
+    .await?;
+    resolve_image_path(&mod_root, &image_path)?;
+    let lock = op_lock.acquire().await?;
+    let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
+    remove_mod_preview_image_inner(&mod_root, &image_path)?;
+    crate::services::images::thumbnail_cache::ThumbnailCache::invalidate_folder(
+        &mod_root.to_string_lossy(),
+    );
+    drop(lock);
+    drop(guard);
+    Ok(())
 }
 
 #[specta::specta]
@@ -142,14 +180,21 @@ pub async fn clear_mod_preview_images(
     folder_path: String,
 ) -> Result<Vec<String>, AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
-    let _lock = op_lock.acquire().await?;
-    let _guard = SuppressionGuard::new(&watcher.suppressor);
+    let preflight_paths = [mod_root.to_string_lossy().to_string()];
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&preflight_paths),
+    )
+    .await?;
+    let lock = op_lock.acquire().await?;
+    let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let removed = clear_mod_preview_images_inner(&mod_root)?;
-    let changed_paths = if removed.is_empty() {
-        vec![mod_root.to_string_lossy().to_string()]
-    } else {
-        removed.clone()
-    };
-    emit_internal_disk_reconcile(&app, pool.inner(), &game_id, changed_paths).await?;
+    crate::services::images::thumbnail_cache::ThumbnailCache::invalidate_folder(
+        &mod_root.to_string_lossy(),
+    );
+    drop(lock);
+    drop(guard);
     Ok(removed)
 }

@@ -15,6 +15,7 @@ import {
 import { commands } from '../../../lib/bindings';
 import type { DupScanReport, DupScanEvent, ResolutionSummary } from '../../../types/scanner';
 import { createWrapper } from '../../../testing/test-utils';
+import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
 
 vi.unmock('@tanstack/react-query');
 
@@ -44,6 +45,11 @@ vi.mock('../../../stores/useToastStore', () => ({
     info: vi.fn(),
     warning: vi.fn(),
   },
+}));
+
+vi.mock('../../runtime-sync/queryRefresh', () => ({
+  publishQueryScopes: vi.fn().mockResolvedValue(undefined),
+  publishRuntimeDescriptor: vi.fn(),
 }));
 
 describe('useDedup hooks', () => {
@@ -96,19 +102,19 @@ describe('useDedup hooks', () => {
 
       vi.mocked(commands.dupScanGetReport).mockResolvedValue(mockReport);
 
-      const { result } = renderHook(() => useDedupReport(), {
+      const { result } = renderHook(() => useDedupReport('genshin'), {
         wrapper: createWrapper,
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data).toEqual(mockReport);
-      expect(commands.dupScanGetReport).toHaveBeenCalledOnce();
+      expect(commands.dupScanGetReport).toHaveBeenCalledWith('genshin');
     });
 
     it('handles null report (no scan completed)', async () => {
       vi.mocked(commands.dupScanGetReport).mockResolvedValue(null);
 
-      const { result } = renderHook(() => useDedupReport(), {
+      const { result } = renderHook(() => useDedupReport('genshin'), {
         wrapper: createWrapper,
       });
 
@@ -120,7 +126,7 @@ describe('useDedup hooks', () => {
       const error = new Error('Failed to fetch report');
       vi.mocked(commands.dupScanGetReport).mockRejectedValue(error);
 
-      const { result } = renderHook(() => useDedupReport(), {
+      const { result } = renderHook(() => useDedupReport('genshin'), {
         wrapper: createWrapper,
       });
 
@@ -190,6 +196,29 @@ describe('useDedup hooks', () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(onEvent).toHaveBeenCalledWith(mockEvent);
+    });
+
+    it('refreshes the report only after the finished event', async () => {
+      let emit: ((event: DupScanEvent) => void) | undefined;
+      vi.mocked(commands.dupScanStart).mockImplementation((_gameId, _modsRoot, channel) => {
+        emit = channel.onmessage ?? undefined;
+        return Promise.resolve();
+      });
+
+      const { result } = renderHook(() => useStartDedupScan(), {
+        wrapper: createWrapper,
+      });
+      result.current.mutate({ gameId: 'genshin', modsRoot: '/path', onEvent: vi.fn() });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(publishQueryScopes).not.toHaveBeenCalled();
+
+      emit?.({
+        event: 'finished',
+        data: { scanId: 'scan-1', totalGroups: 1, totalMembers: 2 },
+      });
+
+      await waitFor(() => expect(publishQueryScopes).toHaveBeenCalled());
     });
   });
 

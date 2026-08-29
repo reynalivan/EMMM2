@@ -6,6 +6,7 @@ import type {
   CreateObjectInput,
   UpdateObjectInput,
 } from '../../types/object';
+import { notifyCommittedMutationSyncWarning } from '../committedMutationWarning';
 
 /**
  * `get_object` returns `Option<GameObject>`. Re-reading a row we just wrote can
@@ -64,9 +65,10 @@ export async function createObject(input: CreateObjectInput): Promise<GameObject
   const nameError = validateObjectName(input.name);
   if (nameError) throw new Error(nameError);
 
-  const id = await commands.createObjectCmd(input);
+  const result = await commands.createObjectCmd(input);
+  notifyCommittedMutationSyncWarning(result);
   // Re-fetch since create_object_cmd only returns ID
-  return readBack(id);
+  return readBack(result.id);
 }
 
 export async function updateObject(id: string, updates: UpdateObjectInput): Promise<GameObject> {
@@ -79,6 +81,7 @@ export async function updateObject(id: string, updates: UpdateObjectInput): Prom
   return readBack(id);
 }
 
-export function deleteObject(id: string, force: boolean): Promise<void> {
-  return commands.deleteObjectCmd(id, force);
+export async function deleteObject(id: string, force: boolean): Promise<void> {
+  const result = await commands.deleteObjectCmd(id, force);
+  notifyCommittedMutationSyncWarning(result);
 }

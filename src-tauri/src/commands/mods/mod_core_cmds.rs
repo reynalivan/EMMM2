@@ -14,11 +14,14 @@ pub use crate::services::mods::core_ops::{
 #[specta::specta]
 #[tauri::command]
 pub async fn open_in_explorer(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
     game_id: String,
     path: String,
 ) -> Result<(), AppError> {
     let canonical_path = validate_path(&config, &game_id, &path)?;
+    ensure_path_can_be_opened(&app, pool.inner(), &game_id, &canonical_path).await?;
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
@@ -36,6 +39,7 @@ pub async fn open_in_explorer(
 #[specta::specta]
 #[tauri::command]
 pub async fn reveal_object_in_explorer(
+    app: tauri::AppHandle,
     config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     game_id: String,
@@ -50,12 +54,23 @@ pub async fn reveal_object_in_explorer(
         resolve_and_heal_db_path(pool.inner(), &object_id, Path::new(&mods_path)).await
     {
         let canonical = validate_path(&config, &game_id, &path_str)?;
+        ensure_path_can_be_opened(&app, pool.inner(), &game_id, &canonical).await?;
         return open_explorer_select(&canonical.to_string_lossy());
     }
 
     let candidate_path = find_fallback_path(&mods_path, &object_name)?;
     let canonical = validate_path(&config, &game_id, &candidate_path)?;
+    ensure_path_can_be_opened(&app, pool.inner(), &game_id, &canonical).await?;
     open_explorer_select(&canonical.to_string_lossy())
+}
+
+async fn ensure_path_can_be_opened(
+    app: &tauri::AppHandle,
+    _pool: &sqlx::SqlitePool,
+    game_id: &str,
+    path: &Path,
+) -> Result<(), AppError> {
+    crate::services::disk_reconcile::emit::ensure_open_path_preflight(app, game_id, path).await
 }
 
 async fn resolve_and_heal_db_path(
@@ -118,9 +133,17 @@ pub async fn rename_mod_folder(
     new_name: String,
     game_id: String,
 ) -> Result<RenameResult, AppError> {
-    let op_guard = op_lock.acquire().await?;
     let folder = validate_path(&config, &game_id, &folder_path)?;
-    let result = crate::services::mods::core_ops::rename_mod_folder_inner_service(
+    let preflight_paths = [folder.to_string_lossy().to_string()];
+    crate::services::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&preflight_paths),
+    )
+    .await?;
+    let op_guard = op_lock.acquire().await?;
+    let mut result = crate::services::mods::core_ops::rename_mod_folder_inner_service(
         &config,
         pool.inner(),
         &state,
@@ -130,19 +153,25 @@ pub async fn rename_mod_folder(
         &game_id,
     )
     .await?;
+    drop(op_guard);
 
     // Convergence: scoped disk reconcile guarantees DB matches disk even if a
     // manual sync step missed a case.
-    if let Err(error) = crate::services::disk_reconcile::emit::emit_internal_disk_reconcile(
-        &app,
-        pool.inner(),
-        &game_id,
-        vec![result.old_path.clone(), result.new_path.clone()],
-    )
-    .await
-    {
-        log::warn!("Post-rename disk reconcile failed: {error}");
+    let settlement = crate::services::disk_reconcile::emit::settle_committed_reconcile(
+        crate::services::disk_reconcile::emit::run_internal_disk_reconcile(
+            &app,
+            pool.inner(),
+            &game_id,
+            vec![result.old_path.clone(), result.new_path.clone()],
+        )
+        .await,
+    );
+    if let Some(reconcile) = settlement.reconcile {
+        result
+            .collection_impact
+            .merge(reconcile.collection_reference_impact);
     }
+    result.sync_warning = settlement.sync_warning;
 
     Ok(result)
 }

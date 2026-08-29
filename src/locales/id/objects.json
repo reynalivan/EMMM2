@@ -2,10 +2,8 @@
   "toolbar": {
     "search_placeholder": "Cari...",
     "auto_organize": "Atur Otomatis",
-    "auto_recognize": "Kenali Otomatis",
     "hide_filters": "Sembunyikan Filter",
     "show_filters": "Tampilkan Filter",
-    "refresh_list": "Segarkan daftar",
     "auto_reorganize": "Atur Ulang Otomatis (Pemindaian penuh & sinkronisasi)",
     "create_new": "Buat Objek Baru",
     "clear_all": "Hapus",
@@ -117,7 +115,7 @@
     "enable": "Aktifkan",
     "disable": "Nonaktifkan",
     "auto_organize": "Atur Otomatis",
-    "auto_recognize": "Kenali Otomatis",
+    "classify_match": "Klasifikasi & Cocokkan",
     "add_tags": "Tambah Tag",
     "remove_tags": "Hapus Tag"
   },
@@ -195,46 +193,8 @@
     "dialog_message": "Apakah Anda yakin ingin membiarkan sistem mengatur otomatis {{count}} folder? Ini akan memindahkannya ke Objek yang paling cocok.",
     "confirm": "Atur Otomatis"
   },
-  "auto_recognize": {
-    "toast_none": "Tidak ada kecocokan database untuk objek yang dipilih.",
-    "toast_success": "Mengenali {{matched}} objek; {{skipped}} dilewati.",
-    "toast_error": "Gagal mengenali otomatis: {{error}}"
-  },
-  "scan_review": {
-    "title": "Tinjau Pemindaian",
-    "no_folders": "Tidak ada folder mod yang ditemukan.",
-    "filter_label": "Filter",
-    "search_placeholder": "Cari nama folder...",
-    "committing_state": "Mendaftarkan...",
-    "confirm_button_label": "Konfirmasi {{count}} Item",
-    "skipped_summary": "{{count}} akan dilewati",
-    "none_group_warning": "Target tidak ditemukan; folder yang disertakan akan diatur ke Other.",
-    "bulk_skip_label": "Tolak Terpilih",
-    "bulk_skip_tip": "Lewati semua item yang saat ini dipilih",
-    "select_deselect_all_tip": "Pilih/Hapus Semua yang terlihat",
-    "headers": {
-      "folder_name": "Nama Folder",
-      "target_detected": "Target Terdeteksi",
-      "type": "Tipe",
-      "percentage": "% Kecocokan",
-      "action": "Tindakan"
-    },
-    "tabs": {
-      "all": "Semua",
-      "matched": "Cocok",
-      "unmatched": "Tidak Cocok",
-      "existing": "Ada",
-      "skipped": "Dilewati",
-      "excellent": "Sangat Baik",
-      "high": "Tinggi",
-      "medium": "Sedang",
-      "low": "Rendah",
-      "manual": "Manual",
-      "candidates": "Kandidat",
-      "other": "Lainnya",
-      "clear_override": "Hapus penimpaan",
-      "no_results": "Tidak ada hasil ditemukan"
-    }
+  "classify_match": {
+    "toast_none": "Pilih setidaknya satu objek untuk diklasifikasi dan dicocokkan."
   },
   "toasts": {
     "favorite_added_one": "Menambahkan {{count}} objek ke favorit",
@@ -254,24 +214,6 @@
     "tags_added": "Menambahkan {{count}} tag ke {{items}}",
     "tags_removed": "Menghapus {{count}} tag dari {{items}}",
     "reload_required": "Status disk diterapkan — tekan {{key}} di dalam game untuk memuat ulang"
-  },
-  "trash": {
-    "title": "Tempat Sampah",
-    "empty_state": "Tempat sampah kosong",
-    "loading": "Memuat tempat sampah...",
-    "error_load": "Gagal memuat tempat sampah",
-    "action_empty": "Kosongkan Tempat Sampah",
-    "action_restore": "Pulihkan",
-    "restore_tip": "Pulihkan ke lokasi asal",
-    "empty_tip": "Hapus semua item secara permanen",
-    "item_count_one": "1 item",
-    "item_count_other": "{{count}} item",
-    "toasts": {
-      "restore_success": "Memulihkan \"{{name}}\"",
-      "restore_failed": "Gagal memulihkan: {{error}}",
-      "empty_success": "Mengosongkan tempat sampah ({{count}} item dihapus)",
-      "empty_failed": "Gagal mengosongkan tempat sampah: {{error}}"
-    }
   },
   "bulk_tags": {
     "add_title": "Tambah Tag",

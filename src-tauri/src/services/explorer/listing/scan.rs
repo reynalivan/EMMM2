@@ -8,7 +8,7 @@ use crate::domain::errors::AppError;
 
 use crate::services::explorer::types::ModFolder;
 
-use super::builder::build_mod_folder_from_fs_entry;
+use super::builder::{build_mod_folder_from_fs_entry, build_mod_folder_shallow_from_fs_entry};
 
 /// Scans each segment of `sub_path` for a `DISABLED ` prefix.
 ///
@@ -64,5 +64,21 @@ pub fn scan_fs_folders(target: &Path, sub_path: Option<&str>) -> Result<Vec<ModF
     // Cached keys: `sort_by_key` would re-run the normalizer regex O(n log n) times.
     folders.sort_by_cached_key(|folder| canonical_name_key(&folder.name));
 
+    Ok(folders)
+}
+
+pub fn scan_fs_folders_shallow(target: &Path) -> Result<Vec<ModFolder>, AppError> {
+    let entries = match std::fs::read_dir(target) {
+        Ok(entries) => entries,
+        Err(error) => {
+            log::debug!("Could not read directory (may not exist yet): {error}");
+            return Ok(Vec::new());
+        }
+    };
+    let mut folders = entries
+        .flatten()
+        .filter_map(build_mod_folder_shallow_from_fs_entry)
+        .collect::<Vec<_>>();
+    folders.sort_by_cached_key(|folder| canonical_name_key(&folder.name));
     Ok(folders)
 }

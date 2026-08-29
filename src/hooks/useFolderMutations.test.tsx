@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   useDeleteModThumbnail,
   usePasteThumbnail,
+  useToggleModSafe,
   useUpdateModInfo,
   useUpdateModThumbnail,
 } from './useFolderMutations';
@@ -18,6 +19,8 @@ const updateModThumbnail = vi.fn();
 const pasteThumbnail = vi.fn();
 const updateModInfo = vi.fn();
 const deleteModThumbnail = vi.fn();
+const toggleModSafe = vi.fn();
+const notifyCommittedMutationSyncWarning = vi.fn();
 
 let activeGame: { id: string } | null = { id: 'game-1' };
 
@@ -30,11 +33,17 @@ vi.mock('../lib/bindings', () => ({
     pasteThumbnail: (...args: unknown[]) => pasteThumbnail(...args),
     updateModInfo: (...args: unknown[]) => updateModInfo(...args),
     deleteModThumbnail: (...args: unknown[]) => deleteModThumbnail(...args),
+    toggleModSafe: (...args: unknown[]) => toggleModSafe(...args),
   },
 }));
 
 vi.mock('./useActiveGame', () => ({
   useActiveGame: () => ({ activeGame }),
+}));
+
+vi.mock('../lib/committedMutationWarning', () => ({
+  notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
+    notifyCommittedMutationSyncWarning(...args),
 }));
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -77,6 +86,49 @@ describe('gameId injection', () => {
 
     expect(updateModInfo).toHaveBeenCalledWith('game-1', 'C:/Mods/Ayaka', { is_favorite: true });
   });
+
+  it('sends gameId when deleting a thumbnail', async () => {
+    deleteModThumbnail.mockResolvedValue(null);
+    const { result } = renderHook(() => useDeleteModThumbnail(), { wrapper });
+
+    await result.current.mutateAsync('C:/Mods/Ayaka');
+
+    expect(deleteModThumbnail).toHaveBeenCalledWith('game-1', 'C:/Mods/Ayaka');
+  });
+
+  it('refreshes workspace, runtime, and collections after safety changes', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    toggleModSafe.mockResolvedValue({
+      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+    });
+    const { result } = renderHook(() => useToggleModSafe(), {
+      wrapper: ({ children }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children),
+    });
+
+    await result.current.mutateAsync({
+      gameId: 'game-1',
+      folderPath: 'C:/Mods/Ayaka',
+      safe: false,
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['workspace', 'mods'],
+      refetchType: 'active',
+    });
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_warning: expect.any(Object) }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['v2-collections'],
+      refetchType: 'active',
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['v2-collection-runtime'],
+      refetchType: 'active',
+    });
+  });
 });
 
 describe('without an active game', () => {
@@ -90,7 +142,7 @@ describe('without an active game', () => {
     expect(updateModThumbnail).not.toHaveBeenCalled();
   });
 
-  it('blocks thumbnail deletion too, even though Rust takes no gameId', async () => {
+  it('blocks thumbnail deletion without an active game', async () => {
     activeGame = null;
     const { result } = renderHook(() => useDeleteModThumbnail(), { wrapper });
 

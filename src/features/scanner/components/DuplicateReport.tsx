@@ -6,28 +6,24 @@
 
 import { formatAppError } from '../../../lib/appError';
 import { useState } from 'react';
-import { AlertCircle, Loader2, ShieldOff, Lock } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
 import type { DuplicateSelection, ResolutionRequest } from '../../../types/scanner';
 import { buildResolutionRequests } from '../utils/resolutionRequests';
 import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';
 import { toast } from '../../../stores/useToastStore';
-import { useSettings } from '../../../hooks/useSettings';
-import PinEntryModal from '../../../components/modals/PinEntryModal';
 import { useTranslation } from 'react-i18next';
 
 interface Props {
   activeFilter?: 'all' | 'high' | 'medium' | 'low';
+  gameId?: string;
 }
 
-export default function DuplicateReport({ activeFilter = 'all' }: Props) {
+export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: Props) {
   const { t } = useTranslation(['scanner']);
-  const [pin, setPin] = useState<string | undefined>();
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
-  const { data: report, isLoading, error } = useDedupReport(pin);
+  const { data: report, isLoading, error } = useDedupReport(gameId);
   const { mutate: resolve, isPending } = useResolveDuplicates();
-  const { settings } = useSettings();
 
   const [selections, setSelections] = useState<Map<string, DuplicateSelection>>(new Map());
   const [showModal, setShowModal] = useState(false);
@@ -138,12 +134,6 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             {t('scanner:report.title')}
-            {pin && (
-              <ShieldOff
-                className="text-warning h-5 w-5"
-                aria-label={t('scanner:report.unsafe_revealed_label')}
-              />
-            )}
           </h2>
           <p className="text-sm text-base-content/60">
             {t('scanner:report.stats_summary', {
@@ -154,17 +144,6 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
         </div>
 
         <div className="flex gap-2">
-          {/* Reveal Unsafe Toggle */}
-          {settings?.safe_mode.enabled && !pin && (
-            <button
-              className="btn btn-warning btn-outline gap-2"
-              onClick={() => setIsPinModalOpen(true)}
-            >
-              <Lock size={16} />
-              {t('scanner:report.reveal_unsafe')}
-            </button>
-          )}
-
           {/* Apply All Button */}
           <button
             className="btn btn-primary"
@@ -199,18 +178,6 @@ export default function DuplicateReport({ activeFilter = 'all' }: Props) {
         onConfirm={handleConfirm}
         onCancel={handleCancel}
         isPending={isPending}
-      />
-
-      {/* PIN Entry Modal */}
-      <PinEntryModal
-        open={isPinModalOpen}
-        onClose={() => setIsPinModalOpen(false)}
-        onSuccess={(v) => {
-          setPin(v);
-          toast.success(t('scanner:report.unsafe_revealed'));
-        }}
-        title={t('scanner:report.pin_title')}
-        description={t('scanner:report.pin_desc')}
       />
     </div>
   );

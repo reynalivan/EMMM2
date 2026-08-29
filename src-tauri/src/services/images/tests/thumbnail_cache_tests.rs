@@ -11,6 +11,50 @@ fn create_dummy_image(path: &std::path::Path) {
     img.save(path).unwrap();
 }
 
+#[test]
+fn invalidating_a_changed_source_removes_l2_bytes() {
+    let tmp_dir = TempDir::new().unwrap();
+    let app_data = tmp_dir.path().join("app_data");
+    let mod_dir = tmp_dir.path().join("ModA");
+    fs::create_dir_all(&mod_dir).unwrap();
+    let source = mod_dir.join("preview.png");
+    create_dummy_image(&source);
+    let cache_dir = thumbnail_cache_dir(&app_data);
+    fs::create_dir_all(&cache_dir).unwrap();
+    let cached = cache_dir.join(format!(
+        "{}.webp",
+        ThumbnailCache::cache_key(&ThumbnailCache::identity_key(&source))
+    ));
+    fs::write(&cached, b"stale").unwrap();
+
+    ThumbnailCache::invalidate_l2_at(&cache_dir, &source);
+
+    assert!(
+        !cached.exists(),
+        "an external source-image event must not leave stale L2 bytes"
+    );
+}
+
+#[tokio::test]
+async fn clearing_memory_cache_drops_resolved_folder_entries() {
+    let tmp_dir = TempDir::new().unwrap();
+    let app_data = tmp_dir.path().join("app_data");
+    let mod_dir = tmp_dir.path().join("ModA");
+    fs::create_dir_all(&mod_dir).unwrap();
+    create_dummy_image(&mod_dir.join("preview.png"));
+    ThumbnailCache::init(&app_data);
+
+    ThumbnailCache::resolve("game1", &mod_dir.to_string_lossy())
+        .await
+        .unwrap();
+    let key = ThumbnailCache::identity_key(&mod_dir);
+    assert!(ThumbnailCache::folder_l1_path(&key).is_some());
+
+    ThumbnailCache::clear_memory();
+
+    assert!(ThumbnailCache::folder_l1_path(&key).is_none());
+}
+
 // Covers: TC-41-002 (8K Source handled via spawn_blocking without panic)
 #[tokio::test]
 async fn test_resolve_large_8k_image_without_blocking() {

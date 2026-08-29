@@ -134,8 +134,6 @@ fn cooldown_expires_allows_retrigger() {
     assert!(state.try_acquire()); // Should work now
 }
 
-// ─── Safe Mode Toggle Action ─────────────────────────────────────────────────
-
 // ─── Preset Cycling ──────────────────────────────────────────────────────────
 
 #[test]
@@ -189,9 +187,8 @@ fn unicode_preset_cycle_matches_current_name_with_ascii_case_fold_only() {
 
 #[test]
 fn plan_cycle_preset_sets_status() {
-    let result = plan_cycle_preset("MyPreset", true);
+    let result = plan_cycle_preset("MyPreset");
     assert_eq!(result.status.preset_name, Some("MyPreset".to_string()));
-    assert!(result.status.safe_mode);
     assert!(result.needs_reload);
 }
 
@@ -201,7 +198,7 @@ fn plan_cycle_preset_sets_status() {
 
 #[test]
 fn noop_has_no_reload() {
-    let result = plan_noop(HotkeyAction::NextPreset, "No presets configured", true);
+    let result = plan_noop(HotkeyAction::NextPreset, "No presets configured");
     assert!(!result.needs_reload);
     assert!(result.summary.contains("No presets"));
 }

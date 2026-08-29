@@ -30,56 +30,6 @@ async fn test_config_save_and_load() {
     assert_eq!(service_reloaded.get_settings().theme, "light");
 }
 
-// Covers: TC-11.4-01, DI-11.03 (PIN hash storage + verify)
-#[tokio::test(flavor = "multi_thread")]
-async fn test_config_pin_operations() {
-    let pool = setup_pool().await;
-    let service = ConfigService::new_for_test(pool);
-
-    // Unlock prompt: nothing configured means nothing to unlock.
-    assert!(service.verify_pin_status("anything").valid);
-    // Elevation gate: with no PIN configured there is nothing to prove, so
-    // seeing past the Safe Mode corridor must still be refused.
-    assert!(!service.pin_grants_elevation("anything"));
-
-    service
-        .set_pin("123456")
-        .expect("setting a valid pin should succeed");
-
-    assert!(service.verify_pin_status("123456").valid);
-    assert!(!service.verify_pin_status("wrong").valid);
-    assert!(service.pin_grants_elevation("123456"));
-    assert!(!service.pin_grants_elevation("wrong"));
-
-    // Verify pin_hash is stored but not the raw PIN
-    let settings = service.get_settings();
-    assert!(settings.safe_mode.pin_hash.is_some());
-    let hash = settings.safe_mode.pin_hash.unwrap();
-    assert!(!hash.contains("123456"));
-}
-
-// Covers: NC-11.4-01, DI-11.04 (5 failed attempts trigger lockout)
-#[tokio::test(flavor = "multi_thread")]
-async fn test_pin_lockout_after_five_failures() {
-    let pool = setup_pool().await;
-    let service = ConfigService::new_for_test(pool);
-
-    service
-        .set_pin("123456")
-        .expect("setting a valid pin should succeed");
-
-    for _ in 0..4 {
-        let status = service.verify_pin_status("000000");
-        assert!(!status.valid);
-        assert_eq!(status.locked_seconds_remaining, 0);
-    }
-
-    let status = service.verify_pin_status("000000");
-    assert!(!status.valid);
-    assert_eq!(status.attempts_remaining, 0);
-    assert!(status.locked_seconds_remaining > 0);
-}
-
 // Covers: TC-11.1-04, DI-11.02 (config updates via SQLite remain consistent)
 #[tokio::test(flavor = "multi_thread")]
 async fn save_settings_can_overwrite_existing() {
@@ -121,6 +71,7 @@ async fn test_games_persist_in_db() {
         name: "Test Game".into(),
         game_type: emmm_lib::domain::models::GameType::GIMI,
         mod_path: PathBuf::from("C:\\Mods"),
+        ready_to_move_path: None,
         game_exe: PathBuf::from("C:\\Game\\game.exe"),
         loader_exe: Some(PathBuf::from("C:\\Loader\\loader.exe")),
         launch_args: None,
@@ -136,66 +87,4 @@ async fn test_games_persist_in_db() {
     assert_eq!(reloaded.games.len(), 1);
     assert_eq!(reloaded.games[0].name, "Test Game");
     assert_eq!(reloaded.games[0].mod_path, PathBuf::from("C:\\Mods"));
-}
-
-// Covers: DI-11.05 (PIN lockout persists across app restart)
-#[tokio::test(flavor = "multi_thread")]
-async fn test_pin_lockout_persists_after_restart() {
-    let pool = setup_pool().await;
-
-    // === Phase 1: Set PIN and trigger lockout ===
-    {
-        let service = ConfigService::new_for_test(pool.clone());
-        service
-            .set_pin("123456")
-            .expect("setting a valid pin should succeed");
-
-        // 5 failed attempts
-        for _ in 0..5 {
-            service.verify_pin_status("000000");
-        }
-
-        // Verify lockout state in memory
-        let status = service.verify_pin_status("000000");
-        assert!(!status.valid);
-        assert_eq!(status.attempts_remaining, 0);
-        assert!(status.locked_seconds_remaining > 0, "Should be locked");
-
-        // Verify lockout is stored in the PIN table.
-        let persisted_status = emmm_lib::services::pin_service::get_status(&pool)
-            .await
-            .expect("pin status should load");
-        assert!(
-            persisted_status.is_locked,
-            "Lockout timestamp should be in pin_config"
-        );
-    }
-
-    // === Phase 2: Create new service instance (simulating app restart) ===
-    {
-        let service_restarted = ConfigService::new_for_test(pool);
-
-        // Immediately check PIN - should still be locked
-        let status = service_restarted.verify_pin_status("000000");
-        assert!(!status.valid, "PIN should still be locked after restart");
-        assert_eq!(
-            status.attempts_remaining, 0,
-            "No attempts remaining while locked"
-        );
-        assert!(
-            status.locked_seconds_remaining > 0,
-            "Lockout timeout should be preserved"
-        );
-
-        // Even correct PIN should fail while locked
-        let status_correct = service_restarted.verify_pin_status("123456");
-        assert!(
-            !status_correct.valid,
-            "Even correct PIN should fail during lockout"
-        );
-        assert_eq!(
-            status_correct.locked_seconds_remaining,
-            status.locked_seconds_remaining
-        );
-    }
 }

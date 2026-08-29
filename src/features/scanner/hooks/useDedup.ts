@@ -20,7 +20,7 @@ import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
  */
 export const dedupKeys = {
   all: ['dedup'] as const,
-  report: (pin?: string) => [...dedupKeys.all, 'report', pin || 'none'] as const,
+  report: (gameId: string) => [...dedupKeys.all, 'report', gameId] as const,
   ignored: (gameId: string) => [...dedupKeys.all, 'ignored', gameId] as const,
   events: () => [...dedupKeys.all, 'events'] as const,
 };
@@ -50,7 +50,9 @@ export function useRemoveIgnoredPair() {
       toast.success(i18next.t('scanner:dedup.toast.recover_success'));
     },
     onError: (error) => {
-      toast.error(i18next.t('scanner:dedup.toast.recover_failed', { error: formatAppError(error) }));
+      toast.error(
+        i18next.t('scanner:dedup.toast.recover_failed', { error: formatAppError(error) }),
+      );
     },
   });
 }
@@ -61,12 +63,13 @@ export function useRemoveIgnoredPair() {
  *
  * Covers: Epic 9 report retrieval
  */
-export function useDedupReport(pin?: string) {
+export function useDedupReport(gameId: string) {
   return useQuery<DupScanReport | null>({
-    queryKey: dedupKeys.report(pin),
-    queryFn: () => commands.dupScanGetReport(pin ?? null),
+    queryKey: dedupKeys.report(gameId),
+    queryFn: () => commands.dupScanGetReport(gameId),
     staleTime: 30_000, // Report valid for 30 seconds
     refetchOnWindowFocus: false,
+    enabled: gameId.length > 0,
   });
 }
 
@@ -88,13 +91,14 @@ export function useStartDedupScan() {
       onEvent: (event: DupScanEvent) => void;
     }) => {
       const channel = new Channel<DupScanEvent>();
-      channel.onmessage = (message) => params.onEvent(message);
+      channel.onmessage = (message) => {
+        params.onEvent(message);
+        if (message.event === 'finished') {
+          void publishQueryScopes(queryClient, ['dedupReport']);
+        }
+      };
 
       return commands.dupScanStart(params.gameId, params.modsRoot, channel);
-    },
-
-    onSuccess: async () => {
-      await publishQueryScopes(queryClient, ['dedupReport']);
     },
 
     onError: (error) => {
@@ -173,7 +177,9 @@ export function useResolveDuplicates() {
     },
 
     onError: (error) => {
-      toast.error(i18next.t('scanner:dedup.toast.resolve_failed', { error: formatAppError(error) }));
+      toast.error(
+        i18next.t('scanner:dedup.toast.resolve_failed', { error: formatAppError(error) }),
+      );
     },
   });
 }

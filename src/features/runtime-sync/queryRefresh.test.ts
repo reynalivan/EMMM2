@@ -122,4 +122,32 @@ describe('queryRefresh', () => {
       refetchType: 'active',
     });
   });
+
+  it('de-duplicates physical query keys when logical scopes share a key', async () => {
+    const queryClient = createQueryClientMock();
+    const descriptor: RuntimeEffectDescriptor = {
+      rewrites: [],
+      invalidatedPaths: [],
+      thumbnailPaths: [],
+      removedQueryKeys: [],
+      invalidatedQueryKeys: [],
+      refreshEvents: ['folderStructureChanged', 'folderMetadataChanged'],
+    };
+
+    await publishRuntimeDescriptor(queryClient as never, descriptor, 'active');
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(5);
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.folderStructure,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.workspaceViewModel,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.previewDetails,
+      refetchType: 'active',
+    });
+  });
 });

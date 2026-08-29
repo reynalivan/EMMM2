@@ -5,61 +5,15 @@
 
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import EditObjectModal from './EditObjectModal';
-import SyncConfirmModal from '../../../components/modals/SyncConfirmModal';
 import CreateObjectModal from './CreateObjectModal';
-import ScanReviewModal from './ScanReviewModal';
 import AutoSetupModal from './AutoSetupModal';
 import { useTranslation } from 'react-i18next';
 import type { ObjectSummary } from '../../../types/object';
-import type { MatchedDbEntry } from '../../../lib/bindings';
-import type { ScanPreviewItem, ConfirmedScanItem } from '../../../lib/services/scanService';
-import type { MasterDbEntry } from './scanReviewHelpers';
-import type { GameConfig } from '../../../types/game';
-
-interface SyncConfirmState {
-  open: boolean;
-  objectId: string;
-  objectName: string;
-  itemType: 'object' | 'folder';
-  match: MatchedDbEntry | null;
-  isLoading: boolean;
-  currentData: {
-    name: string;
-    object_type: string;
-    metadata: Record<string, unknown> | null;
-    thumbnail_path: string | null;
-  } | null;
-}
-
-const SYNC_CONFIRM_RESET: SyncConfirmState = {
-  open: false,
-  objectId: '',
-  objectName: '',
-  itemType: 'object',
-  match: null,
-  isLoading: false,
-  currentData: null,
-};
 
 interface ModalsProps {
-  activeGame: GameConfig | null;
   /* Edit modal */
   editObject: ObjectSummary | null;
   onCloseEdit: () => void;
-  /* Sync confirm modal */
-  syncConfirm: SyncConfirmState;
-  onApplySyncMatch: (match: MatchedDbEntry) => void;
-  onEditManually: () => void;
-  onCloseSyncConfirm: () => void;
-  /* Scan review modal */
-  scanReview: {
-    open: boolean;
-    items: ScanPreviewItem[];
-    masterDbEntries: MasterDbEntry[];
-    isCommitting: boolean;
-  };
-  onCommitScan: (items: ConfirmedScanItem[]) => void;
-  onCloseScanReview: () => void;
   /* Create modal */
   createModalOpen: boolean;
   pendingPaths?: string[] | null;
@@ -76,23 +30,11 @@ interface ModalsProps {
   forceDeleteObjectDialog: { open: boolean; id: string; name: string; count: number };
   onConfirmForceDeleteObject: () => void;
   onCancelForceDeleteObject: () => void;
-  /* Mismatch Auto-Organize confirm */
-  mismatchConfirm: string[] | null;
-  onConfirmMismatchHandler: () => void;
-  onCancelMismatchHandler: () => void;
 }
 
 export default function ObjectListModals({
-  activeGame,
   editObject,
   onCloseEdit,
-  syncConfirm,
-  onApplySyncMatch,
-  onEditManually,
-  onCloseSyncConfirm,
-  scanReview,
-  onCommitScan,
-  onCloseScanReview,
   createModalOpen,
   pendingPaths,
   onImportDropped,
@@ -105,9 +47,6 @@ export default function ObjectListModals({
   forceDeleteObjectDialog,
   onConfirmForceDeleteObject,
   onCancelForceDeleteObject,
-  mismatchConfirm,
-  onConfirmMismatchHandler,
-  onCancelMismatchHandler,
 }: ModalsProps) {
   const { t } = useTranslation(['objects', 'common']);
 
@@ -115,29 +54,6 @@ export default function ObjectListModals({
     <>
       {/* Edit Object Modal (US-3.3) */}
       <EditObjectModal open={!!editObject} object={editObject} onClose={onCloseEdit} />
-
-      {/* Sync Confirm Modal (single-object DB match) */}
-      <SyncConfirmModal
-        open={syncConfirm.open}
-        objectName={syncConfirm.objectName}
-        currentData={syncConfirm.currentData}
-        match={syncConfirm.match}
-        isLoading={syncConfirm.isLoading}
-        onApply={onApplySyncMatch}
-        onEditManually={onEditManually}
-        onClose={onCloseSyncConfirm}
-      />
-
-      {/* Scan Review Modal (bulk scan results — US-2.3) */}
-      <ScanReviewModal
-        activeGame={activeGame}
-        open={scanReview.open}
-        items={scanReview.items}
-        masterDbEntries={scanReview.masterDbEntries}
-        isCommitting={scanReview.isCommitting}
-        onConfirm={onCommitScan}
-        onClose={onCloseScanReview}
-      />
 
       {/* Create Object Modal (US-3.3) */}
       <CreateObjectModal
@@ -180,20 +96,6 @@ export default function ObjectListModals({
         onConfirm={onConfirmForceDeleteObject}
         onCancel={onCancelForceDeleteObject}
       />
-
-      {/* Mismatch Auto-Organize confirmation dialog */}
-      <ConfirmDialog
-        open={!!mismatchConfirm}
-        title={t('auto_organize.dialog_title')}
-        message={t('auto_organize.dialog_message', { count: mismatchConfirm?.length || 0 })}
-        confirmLabel={t('auto_organize.confirm')}
-        cancelLabel={t('common:actions.cancel')}
-        onConfirm={onConfirmMismatchHandler}
-        onCancel={onCancelMismatchHandler}
-      />
     </>
   );
 }
-
-export { SYNC_CONFIRM_RESET };
-export type { SyncConfirmState };

@@ -6,7 +6,7 @@ use crate::test_utils::{
 };
 
 #[test]
-fn switch_refresh_scopes_include_collections_for_unsaved_corridor_counts() {
+fn switch_refresh_scopes_include_collections_for_unsaved_runtime_counts() {
     let scopes = default_switch_refresh_scopes();
 
     assert!(scopes.contains(&WorkspaceRefreshScope::CollectionsChanged));

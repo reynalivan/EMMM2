@@ -6,7 +6,7 @@
 /**
  * Formats a byte count into a human-readable string (e.g., "1.2 MB").
  * Supports units from B to PB.
- * Matches the logic previously duplicated inline in Dashboard and ConflictResolveDialog.
+ * Matches the logic previously duplicated inline in Dashboard.
  *
  * @param bytes The number of bytes to format
  * @param decimals Precision (default: 1 for KB+, 0 for B)

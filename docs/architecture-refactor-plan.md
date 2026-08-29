@@ -89,8 +89,9 @@ paths (`archive_cmds.rs:44,56,132`, `scanner/conflict_cmds.rs:36`,
 routed through the guard. Add `validate_paths(&[String])` (canonicalize the
 mods root **once**) and use it in `bulk_toggle_mods`/`bulk_delete_mods` —
 deletes the 500-canonicalizations-per-bulk-toggle cost as a side effect.
-Open decision, do not guess: `ensure_dir_cmd` currently `create_dir_all`s an
-arbitrary client path — constrain it to app-data/mods roots or delete it.
+Resolved: the frontend-only `ensure_dir_cmd` was deleted. Import commands now
+create their own validated target directories while holding backend watcher
+suppression and the operation lock.
 
 ---
 

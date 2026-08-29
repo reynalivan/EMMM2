@@ -15,19 +15,19 @@ async fn test_detect_conflicts_in_folder_integration() {
     // Conflict between ModA and ModB
     fs::write(
         mod_a.join("config.ini"),
-        "[TextureOverrideBody]\nhash = abc123\n",
+        "[TextureOverrideBody]\nhash = abc12345\n",
     )
     .unwrap();
     fs::write(
         mod_b.join("config.ini"),
-        "[TextureOverrideBody]\nhash = abc123\n",
+        "[TextureOverrideBody]\nhash = abc12345\n",
     )
     .unwrap();
 
     // ModC has same hash but is DISABLED, so should be ignored
     fs::write(
         mod_disabled.join("config.ini"),
-        "[TextureOverrideBody]\nhash = abc123\n",
+        "[TextureOverrideBody]\nhash = abc12345\n",
     )
     .unwrap();
 
@@ -36,6 +36,6 @@ async fn test_detect_conflicts_in_folder_integration() {
             .unwrap();
 
     assert_eq!(conflicts.len(), 1);
-    assert_eq!(conflicts[0].hash, "abc123");
+    assert_eq!(conflicts[0].hash, "abc12345");
     assert_eq!(conflicts[0].mod_paths.len(), 2);
 }

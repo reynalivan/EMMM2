@@ -83,3 +83,60 @@ async fn rename_updates_name_key_and_preserves_duplicate_invariant() {
     .expect_err("canonical duplicate must fail");
     assert!(matches!(duplicate, CollectionError::DuplicateName { .. }));
 }
+
+#[tokio::test]
+async fn collection_names_are_unique_per_game_across_safety_classifications() {
+    let ctx = init_test_db().await;
+    seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
+
+    collection_repo::create(
+        &ctx.pool,
+        "collection-safe",
+        "game-1",
+        "Shared Name",
+        true,
+        false,
+    )
+    .await
+    .expect("create safe collection");
+
+    let create_error = collection_repo::create(
+        &ctx.pool,
+        "collection-unsafe",
+        "game-1",
+        "shared name",
+        false,
+        false,
+    )
+    .await
+    .expect_err("classification must not create a second name namespace");
+    assert!(matches!(
+        create_error,
+        CollectionError::DuplicateName { .. }
+    ));
+
+    let other = collection_repo::create(
+        &ctx.pool,
+        "collection-other",
+        "game-1",
+        "Other",
+        false,
+        false,
+    )
+    .await
+    .expect("create second collection");
+    let rename_error = update_collection(
+        &ctx.pool,
+        UpdateCollectionInput {
+            id: other.id,
+            game_id: "game-1".to_string(),
+            name: Some("SHARED NAME".to_string()),
+        },
+    )
+    .await
+    .expect_err("rename must share the same per-game namespace");
+    assert!(matches!(
+        rename_error,
+        CollectionError::DuplicateName { .. }
+    ));
+}

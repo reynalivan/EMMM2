@@ -6,11 +6,6 @@
  * results, trash, dup scan), both of which sit directly on `bindings.gen`.
  */
 
-import type { TrashMetadata } from './scanner';
-
-/** Metadata for a trashed mod folder. */
-export type TrashEntry = TrashMetadata;
-
 /** Sort field for mod folder listing. */
 export type SortField = 'name' | 'modified_at' | 'size_bytes';
 

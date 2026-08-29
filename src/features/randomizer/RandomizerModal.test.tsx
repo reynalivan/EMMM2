@@ -23,7 +23,6 @@ vi.mock('react-i18next', () => ({
     t: (key: string, vars?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
         'randomizer.title': 'Randomizer',
-        'randomizer.safe_mode': 'Safe Mode',
         'randomizer.desc': 'Pick random mods',
         'randomizer.consulting': 'Consulting the RNG Gods...',
         'randomizer.deselect_all': 'Deselect All',
@@ -259,7 +258,7 @@ describe('RandomizerModal - TC-35', () => {
     });
   });
 
-  // TC-35-005 (client-side Safe Mode toggle) was removed: the corridor is
+  // TC-35-005 (client-side Safe Mode toggle) was removed: classification is
   // derived server-side from Settings and can no longer be chosen per roll.
 
   describe('TC-35-006: Empty / Error States', () => {

@@ -3,6 +3,7 @@ import type { CollectionReferenceImpact } from '../types/collection';
 import { toast } from '../stores/useToastStore';
 import { publishRuntimeDescriptor } from '../features/runtime-sync/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../features/workspace-runtime/optimistic/descriptorBuilders';
+import type { RuntimeRefreshEvent } from '../lib/runtimeEffects';
 
 export function hasCollectionReferenceImpact(
   impact: CollectionReferenceImpact | null | undefined,
@@ -40,6 +41,13 @@ export function notifyCollectionReferenceImpact(impact: CollectionReferenceImpac
   if (message) {
     toast.info(message, 5000);
   }
+}
+
+/** Extra refresh event needed when a mutation rewrites collection references. */
+export function collectionReferenceImpactRefreshEvents(
+  impact: CollectionReferenceImpact | null | undefined,
+): RuntimeRefreshEvent[] {
+  return hasCollectionReferenceImpact(impact) ? ['collectionsChanged'] : [];
 }
 
 /**

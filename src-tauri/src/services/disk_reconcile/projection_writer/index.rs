@@ -30,10 +30,12 @@ pub(super) struct DbIndex {
     objects_by_key: HashMap<String, usize>,
     objects_by_runtime_key: HashMap<String, usize>,
     objects_by_id: HashMap<String, usize>,
+    objects_by_filesystem_identity: HashMap<String, Option<usize>>,
     pub(super) mods: Vec<DbModRow>,
     mods_by_key: HashMap<String, usize>,
     mods_by_path_lower: HashMap<String, usize>,
     mods_by_runtime_key: HashMap<String, usize>,
+    mods_by_filesystem_identity: HashMap<String, Option<usize>>,
 }
 
 impl DbIndex {
@@ -47,23 +49,37 @@ impl DbIndex {
         let mut objects_by_key = HashMap::with_capacity(objects.len());
         let mut objects_by_runtime_key = HashMap::with_capacity(objects.len());
         let mut objects_by_id = HashMap::with_capacity(objects.len());
+        let mut objects_by_filesystem_identity = HashMap::with_capacity(objects.len());
         for (position, row) in objects.iter().enumerate() {
             objects_by_key.insert(row.folder_path_key.clone(), position);
             objects_by_runtime_key
                 .entry(runtime_logical_path_key(&row.folder_path))
                 .or_insert(position);
             objects_by_id.insert(row.id.clone(), position);
+            if let Some(identity) = row.filesystem_identity.as_ref() {
+                objects_by_filesystem_identity
+                    .entry(identity.clone())
+                    .and_modify(|entry| *entry = None)
+                    .or_insert(Some(position));
+            }
         }
 
         let mut mods_by_key = HashMap::with_capacity(mods.len());
         let mut mods_by_path_lower = HashMap::with_capacity(mods.len());
         let mut mods_by_runtime_key = HashMap::with_capacity(mods.len());
+        let mut mods_by_filesystem_identity = HashMap::with_capacity(mods.len());
         for (position, row) in mods.iter().enumerate() {
             mods_by_key.insert(row.folder_path_key.clone(), position);
             mods_by_path_lower.insert(row.folder_path.to_ascii_lowercase(), position);
             mods_by_runtime_key
                 .entry(runtime_logical_path_key(&row.folder_path))
                 .or_insert(position);
+            if let Some(identity) = row.filesystem_identity.as_ref() {
+                mods_by_filesystem_identity
+                    .entry(identity.clone())
+                    .and_modify(|entry| *entry = None)
+                    .or_insert(Some(position));
+            }
         }
 
         Ok(Self {
@@ -71,10 +87,12 @@ impl DbIndex {
             objects_by_key,
             objects_by_runtime_key,
             objects_by_id,
+            objects_by_filesystem_identity,
             mods,
             mods_by_key,
             mods_by_path_lower,
             mods_by_runtime_key,
+            mods_by_filesystem_identity,
         })
     }
 
@@ -96,10 +114,25 @@ impl DbIndex {
             .map(|&position| &self.objects[position])
     }
 
+    pub(super) fn object_by_filesystem_identity(
+        &self,
+        filesystem_identity: &str,
+    ) -> Option<&DbObjectRow> {
+        self.objects_by_filesystem_identity
+            .get(filesystem_identity)
+            .copied()
+            .flatten()
+            .map(|position| &self.objects[position])
+    }
+
     pub(super) fn mod_by_key(&self, folder_path_key: &str) -> Option<&DbModRow> {
         self.mods_by_key
             .get(folder_path_key)
             .map(|&position| &self.mods[position])
+    }
+
+    pub(super) fn mod_by_id(&self, id: &str) -> Option<&DbModRow> {
+        self.mods.iter().find(|row| row.id == id)
     }
 
     pub(super) fn mod_by_path_lower(&self, folder_path_lower: &str) -> Option<&DbModRow> {
@@ -112,5 +145,16 @@ impl DbIndex {
         self.mods_by_runtime_key
             .get(runtime_key)
             .map(|&position| &self.mods[position])
+    }
+
+    pub(super) fn mod_by_filesystem_identity(
+        &self,
+        filesystem_identity: &str,
+    ) -> Option<&DbModRow> {
+        self.mods_by_filesystem_identity
+            .get(filesystem_identity)
+            .copied()
+            .flatten()
+            .map(|position| &self.mods[position])
     }
 }

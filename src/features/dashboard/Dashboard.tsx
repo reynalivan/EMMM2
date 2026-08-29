@@ -1,4 +1,4 @@
-import { Copy, RefreshCw } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DashboardPayload } from '../../types/dashboard';
 import { useAppStore } from '../../stores/useAppStore';
@@ -63,14 +63,6 @@ export default function Dashboard() {
               {activeGameId ? ` • ${activeGame?.name ?? activeGameId}` : ''}
             </p>
           </div>
-          <button
-            onClick={refresh}
-            className="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content"
-            aria-label={t('header.refresh')}
-          >
-            <RefreshCw size={16} />
-            {t('header.refresh')}
-          </button>
         </div>
 
         <DashboardQuickActions activeGameId={activeGameId} setWorkspaceView={setWorkspaceView} />

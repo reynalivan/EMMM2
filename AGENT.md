@@ -20,8 +20,9 @@ EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 ## 4. Architecture Standards
 
 - **Backend**: `src-tauri/src/` (Tauri v2, Rust, SQLite). Mandatory DAL separation.
+- **Tauri IPC**: Follow `docs/tauri-command-registration.md`; every frontend command must be registered, permission-allowlisted, generated, and covered by the registry test.
 - **Frontend**: `src/features/` (domain slices), `src/components/` (atoms).
-- **Limit**: 350 lines per file. Single Source of Truth; no logic duplication.
+- **Modularity**: Keep modules cohesive and easy to navigate; split large files when responsibility, state, or control flow becomes hard to reason about, never by a mechanical line limit. Single Source of Truth; no logic duplication.
 
 ## 5. Decision Guard
 

@@ -2,13 +2,14 @@ import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '../../../lib/
 
 export type RuntimeMutationClass =
   | 'workspaceOnly'
-  | 'workspaceCorridor'
+  | 'workspaceRuntime'
   | 'workspaceStructure'
   | 'folderStructureOnly'
   | 'folderConflictState'
   | 'folderMetadata'
   | 'folderMetadataPreview'
   | 'folderMetadataThumbnail'
+  | 'safetyClassification'
   | 'folderSwitch'
   | 'objectRows'
   | 'objectStructure'
@@ -16,7 +17,7 @@ export type RuntimeMutationClass =
   | 'collectionsOnly'
   | 'collectionsCatalog'
   | 'collectionsState'
-  | 'corridorState'
+  | 'runtimeState'
   | 'scannerConflictState'
   | 'scannerWorkspaceState'
   | 'trashOnly'
@@ -33,17 +34,24 @@ export interface WorkspacePathRewriteLike {
 
 const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]> = {
   workspaceOnly: ['workspaceChanged'],
-  workspaceCorridor: ['workspaceChanged', 'corridorChanged'],
+  workspaceRuntime: ['workspaceChanged', 'runtimeStateChanged'],
   workspaceStructure: ['workspaceChanged', 'folderStructureChanged'],
   folderStructureOnly: ['folderStructureChanged'],
-  folderConflictState: ['conflictsChanged', 'corridorChanged'],
+  folderConflictState: ['conflictsChanged', 'runtimeStateChanged'],
   folderMetadata: ['workspaceChanged'],
   folderMetadataPreview: ['folderMetadataChanged', 'previewChanged'],
   folderMetadataThumbnail: ['workspaceChanged', 'folderMetadataChanged', 'thumbnailChanged'],
+  safetyClassification: [
+    'workspaceChanged',
+    'folderMetadataChanged',
+    'runtimeStateChanged',
+    'collectionsChanged',
+    'previewChanged',
+  ],
   folderSwitch: [
     'workspaceChanged',
     'folderStructureChanged',
-    'corridorChanged',
+    'runtimeStateChanged',
     'collectionsChanged',
     'dashboardChanged',
     'activeKeybindingsChanged',
@@ -56,7 +64,7 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
     'workspaceChanged',
     'folderStructureChanged',
     'objectRowsChanged',
-    'corridorChanged',
+    'runtimeStateChanged',
     'collectionsChanged',
     'dashboardChanged',
     'activeKeybindingsChanged',
@@ -64,19 +72,19 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
     'conflictsChanged',
   ],
   collectionsOnly: ['collectionsChanged'],
-  collectionsCatalog: ['collectionsChanged', 'corridorChanged'],
+  collectionsCatalog: ['collectionsChanged', 'runtimeStateChanged'],
   collectionsState: [
     'workspaceChanged',
     'folderStructureChanged',
-    'corridorChanged',
+    'runtimeStateChanged',
     'collectionsChanged',
     'dashboardChanged',
     'activeKeybindingsChanged',
   ],
-  corridorState: [
+  runtimeState: [
     'workspaceChanged',
     'folderStructureChanged',
-    'corridorChanged',
+    'runtimeStateChanged',
     'collectionsChanged',
     'dashboardChanged',
     'activeKeybindingsChanged',
@@ -84,9 +92,9 @@ const runtimeMutationEvents: Record<RuntimeMutationClass, RuntimeRefreshEvent[]>
     'conflictsChanged',
   ],
   scannerConflictState: ['workspaceChanged', 'folderStructureChanged', 'conflictsChanged'],
-  scannerWorkspaceState: ['workspaceChanged', 'folderStructureChanged', 'corridorChanged'],
+  scannerWorkspaceState: ['workspaceChanged', 'folderStructureChanged', 'runtimeStateChanged'],
   trashOnly: ['trashChanged'],
-  trashState: ['workspaceChanged', 'folderStructureChanged', 'trashChanged', 'corridorChanged'],
+  trashState: ['workspaceChanged', 'folderStructureChanged', 'trashChanged', 'runtimeStateChanged'],
   thumbnailOnly: ['thumbnailChanged'],
   previewOnly: ['previewChanged'],
   conflictsOnly: ['conflictsChanged'],

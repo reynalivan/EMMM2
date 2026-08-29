@@ -40,8 +40,8 @@
         }
       ]
     },
-    { "name": "Echo", "icon": "Ghost", "color": "accent" },
-    { "name": "Other", "icon": "Package", "color": "neutral" }
+    { "name": "UI", "icon": "Layout", "color": "accent" },
+    { "name": "Other", "icon": "Package", "color": "neutral", "subcategories": ["Echo"] }
   ],
   "filters": [
     {
@@ -60,6 +60,7 @@
       "options": ["5-Star", "4-Star"]
     }
   ],
+  "match_extensions": ["ini", "dds", "buf", "ib"],
   "stopwords": [
     "mod",
     "mods",

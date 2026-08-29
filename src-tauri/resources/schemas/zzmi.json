@@ -24,7 +24,8 @@
       ]
     },
     {
-      "name": "W-Engine",
+      "name": "Weapon",
+      "label": "W-Engine",
       "icon": "Cog",
       "color": "secondary",
       "filters": [
@@ -40,9 +41,8 @@
         }
       ]
     },
-    { "name": "Bangboo", "icon": "Bot", "color": "info" },
     { "name": "UI", "icon": "Layout", "color": "accent" },
-    { "name": "Other", "icon": "Package", "color": "neutral" }
+    { "name": "Other", "icon": "Package", "color": "neutral", "subcategories": ["Bangboo"] }
   ],
   "filters": [
     {
@@ -61,6 +61,7 @@
       "options": ["Attack", "Stun", "Anomaly", "Support", "Defense"]
     }
   ],
+  "match_extensions": ["ini", "dds", "buf", "ib"],
   "stopwords": [
     "mod",
     "mods",

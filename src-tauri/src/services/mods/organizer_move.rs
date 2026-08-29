@@ -12,17 +12,31 @@ pub struct MoveModsToObjectParams<'a> {
     pub status: Option<&'a str>,
 }
 
+/// Exact filesystem transitions that terminal reconcile must apply in its
+/// projection transaction. The organizer never writes these paths to SQLite.
+#[derive(Debug, Clone)]
+pub struct OrganizerMovePathHint {
+    pub old_path: String,
+    pub new_path: String,
+    pub target_object_id: String,
+}
+
+pub struct OrganizerMoveOutcome {
+    pub result: crate::services::mods::bulk::BulkResult,
+    pub path_hints: Vec<OrganizerMovePathHint>,
+}
+
 pub async fn move_mods_to_object_service(
     pool: &sqlx::SqlitePool,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     watcher: &WatcherState,
     params: MoveModsToObjectParams<'_>,
-) -> Result<crate::services::mods::bulk::BulkResult, AppError> {
+) -> Result<OrganizerMoveOutcome, AppError> {
     if params.folder_paths.is_empty() {
-        return Ok(crate::services::mods::bulk::BulkResult::new(
-            Vec::new(),
-            Vec::new(),
-        ));
+        return Ok(OrganizerMoveOutcome {
+            result: crate::services::mods::bulk::BulkResult::new(Vec::new(), Vec::new()),
+            path_hints: Vec::new(),
+        });
     }
 
     let game_mod_path = crate::repo::game_repo::get_mod_path(pool, params.game_id)
@@ -54,7 +68,7 @@ pub async fn move_mods_to_object_service(
     );
     let mut success = Vec::new();
     let mut failures = Vec::new();
-    let mut collection_impact = crate::domain::collection::CollectionReferenceImpact::default();
+    let mut path_hints = Vec::new();
     let mut path_rewrites = Vec::new();
 
     for folder_path in params.folder_paths {
@@ -72,7 +86,7 @@ pub async fn move_mods_to_object_service(
         {
             Ok(result) => {
                 success.push(result.new_rel.clone());
-                collection_impact.merge(result.collection_impact);
+                path_hints.extend(result.path_hints);
                 path_rewrites.extend(result.path_rewrites);
             }
             Err(error) => failures.push(crate::services::mods::bulk::BulkActionError {
@@ -82,14 +96,15 @@ pub async fn move_mods_to_object_service(
         }
     }
 
-    Ok(
-        crate::services::mods::bulk::BulkResult::with_collection_impact(
+    Ok(OrganizerMoveOutcome {
+        result: crate::services::mods::bulk::BulkResult::with_collection_impact(
             success,
             failures,
-            collection_impact,
+            crate::domain::collection::CollectionReferenceImpact::default(),
             path_rewrites,
         ),
-    )
+        path_hints,
+    })
 }
 
 fn resolve_target_base_path(
@@ -139,9 +154,20 @@ fn parse_target_subpath(target_subpath: Option<&str>) -> Result<Option<PathBuf>,
     Ok(Some(relative))
 }
 
+fn relative_mod_path(path: &Path, mods_root: &Path) -> String {
+    let canonical_root = mods_root
+        .canonicalize()
+        .unwrap_or_else(|_| mods_root.to_path_buf());
+    path.strip_prefix(&canonical_root)
+        .or_else(|_| path.strip_prefix(mods_root))
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
+}
+
 struct MoveOneResult {
     new_rel: String,
-    collection_impact: crate::domain::collection::CollectionReferenceImpact,
+    path_hints: Vec<OrganizerMovePathHint>,
     path_rewrites: Vec<crate::domain::workspace::WorkspacePathRewrite>,
 }
 
@@ -172,16 +198,8 @@ async fn move_one_mod_to_object(
     }
 
     let new_path = target_base_path.join(&new_mod_folder_name);
-    let old_rel = current_path
-        .strip_prefix(base_path)
-        .unwrap_or(&current_path)
-        .to_string_lossy()
-        .to_string();
-    let new_rel = new_path
-        .strip_prefix(base_path)
-        .unwrap_or(&new_path)
-        .to_string_lossy()
-        .to_string();
+    let old_rel = relative_mod_path(&current_path, base_path);
+    let new_rel = relative_mod_path(&new_path, base_path);
 
     if current_path != new_path {
         if new_path.exists() {
@@ -194,26 +212,12 @@ async fn move_one_mod_to_object(
             .map_err(|error| AppError::Io(error.to_string()))?;
     }
 
-    // Identity migration only (doc 1b, path 1): the row follows its folder so
-    // tags/collections survive the move. `status` is not written here — it
-    // derives from the folder name via the caller's scoped reconcile.
-    let mod_id_status =
-        crate::repo::mod_repo::get_mod_id_and_status_by_path(pool, &old_rel, game_id).await?;
-    if let Some((mod_id, _, _)) = mod_id_status {
-        crate::repo::mod_repo::set_mod_object(pool, &mod_id, target_object_id).await?;
-    }
-
-    crate::repo::mod_repo::update_mod_path_by_old_path_in_game(pool, game_id, &old_rel, &new_rel)
-        .await?;
-
-    let collection_impact = crate::services::collection_service::handle_mod_moved_or_renamed(
-        pool,
-        &old_rel,
-        &new_rel,
-        Some(target_object_id),
-    )
-    .await?;
-    let mut path_rewrites = vec![crate::domain::workspace::WorkspacePathRewrite {
+    let mut path_hints = vec![OrganizerMovePathHint {
+        old_path: old_rel.clone(),
+        new_path: new_rel.clone(),
+        target_object_id: target_object_id.to_string(),
+    }];
+    let path_rewrites = vec![crate::domain::workspace::WorkspacePathRewrite {
         old_path: old_rel.clone(),
         new_path: new_rel.clone(),
     }];
@@ -226,14 +230,18 @@ async fn move_one_mod_to_object(
             &new_rel,
             base_path,
             target_obj_path,
-            &mut path_rewrites,
+            &mut path_hints,
         )
         .await?;
     }
 
     Ok(MoveOneResult {
         new_rel,
-        collection_impact,
+        path_hints,
         path_rewrites,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/organizer_move_tests.rs"]
+mod tests;

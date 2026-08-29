@@ -106,7 +106,7 @@ describe('MoveToObjectDialog', () => {
     fireEvent.click(screen.getByText('Alpha'));
     await waitFor(() => expect(listMoveTargetsForObject).toHaveBeenCalledWith('g1', '2'));
     fireEvent.click(await screen.findByText('Alpha/Variants'));
-    fireEvent.click(screen.getByText('Disabled'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Set moved mods to Disabled' }));
     fireEvent.click(screen.getByText('common:actions.move'));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('2', 'disabled', 'Variants'));

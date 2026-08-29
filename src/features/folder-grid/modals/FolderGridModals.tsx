@@ -4,10 +4,7 @@ import MoveToObjectDialog from '../../../components/modals/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import IgnoreManagementModal from './IgnoreManagementModal';
 import BulkTagModal from '../../../components/modals/BulkTagModal';
-import PinEntryModal from '../../../components/modals/PinEntryModal';
 import ActiveModContextDialog from '../../../components/modals/ActiveModContextDialog';
-import SyncConfirmModal from '../../../components/modals/SyncConfirmModal';
-import type { MatchedDbEntry } from '../../../lib/bindings';
 import type { ObjectSummary } from '../../../types/object';
 import { useTranslation } from 'react-i18next';
 
@@ -33,27 +30,9 @@ export interface FolderGridModalsProps {
   gridSelection: Set<string>;
   isIgnoreManagementOpen: boolean;
   setIsIgnoreManagementOpen: (open: boolean) => void;
-  pinSafeDialog: { open: boolean };
-  handleToggleSafeCancel: () => void;
-  handleToggleSafeSubmit: () => void;
   activeContextDialog: { open: boolean; folder: ModFolder | null; isProcessing: boolean };
   handleActiveContextCancel: () => void;
   handleActiveContextSubmit: () => void;
-  syncConfirm: {
-    open: boolean;
-    folder: ModFolder | null;
-    match: MatchedDbEntry | null;
-    isLoading: boolean;
-    currentData: {
-      name: string;
-      object_type: string;
-      metadata: Record<string, unknown> | null;
-      thumbnail_path: string | null;
-    } | null;
-  };
-  handleCloseSyncConfirm: () => void;
-  handleApplySyncMatch: (match: MatchedDbEntry) => void;
-  objectId?: string;
   currentPath?: string;
   objects: ObjectSummary[];
 }
@@ -74,16 +53,9 @@ export default function FolderGridModals({
   gridSelection,
   isIgnoreManagementOpen,
   setIsIgnoreManagementOpen,
-  pinSafeDialog,
-  handleToggleSafeCancel,
-  handleToggleSafeSubmit,
   activeContextDialog,
   handleActiveContextCancel,
   handleActiveContextSubmit,
-  syncConfirm,
-  handleCloseSyncConfirm,
-  handleApplySyncMatch,
-  objectId,
   currentPath,
   objects,
 }: FolderGridModalsProps) {
@@ -101,13 +73,9 @@ export default function FolderGridModals({
               ? Array.from(gridSelection)
               : [currentPath ?? moveDialog.folder.path]
           }
-          currentObjectId={objectId || undefined}
+          currentObjectId={moveDialog.folder.owner_object_id ?? undefined}
           objects={objects}
-          onSubmit={async (
-            targetId: string,
-            status: MoveStatus,
-            targetSubpath: string | null,
-          ) => {
+          onSubmit={async (targetId: string, status: MoveStatus, targetSubpath: string | null) => {
             if (!moveDialog.folder) return;
             const targetPaths =
               gridSelection.size > 1
@@ -159,12 +127,6 @@ export default function FolderGridModals({
         onClose={() => setIsIgnoreManagementOpen(false)}
       />
 
-      <PinEntryModal
-        open={pinSafeDialog.open}
-        onClose={handleToggleSafeCancel}
-        onSuccess={handleToggleSafeSubmit}
-      />
-
       <ActiveModContextDialog
         key={activeContextDialog.folder?.path || 'dialog-hidden'}
         open={activeContextDialog.open}
@@ -173,18 +135,6 @@ export default function FolderGridModals({
         isProcessing={activeContextDialog.isProcessing}
         onCancel={handleActiveContextCancel}
         onConfirm={handleActiveContextSubmit}
-      />
-
-      {/* Sync with DB Modal */}
-      <SyncConfirmModal
-        open={syncConfirm.open}
-        objectName={syncConfirm.folder?.name ?? ''}
-        currentData={syncConfirm.currentData}
-        match={syncConfirm.match}
-        isLoading={syncConfirm.isLoading}
-        onApply={handleApplySyncMatch}
-        onEditManually={handleCloseSyncConfirm}
-        onClose={handleCloseSyncConfirm}
       />
     </>
   );

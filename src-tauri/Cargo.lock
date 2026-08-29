@@ -1343,6 +1343,7 @@ dependencies = [
  "encoding_rs",
  "enigo",
  "env_logger",
+ "file-id",
  "filetime",
  "fs_extra",
  "futures-util",

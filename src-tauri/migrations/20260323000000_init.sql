@@ -108,11 +108,10 @@ CREATE TABLE IF NOT EXISTS mods (
     actual_name TEXT NOT NULL,
     status INTEGER NOT NULL DEFAULT 0 CHECK(status IN (0, 1)), -- 1: ENABLED, 0: DISABLED
     object_type TEXT,
-    disabled_reason TEXT,
     is_safe INTEGER NOT NULL DEFAULT 1,
     is_favorite INTEGER NOT NULL DEFAULT 0,
     is_pinned INTEGER NOT NULL DEFAULT 0,
-    corridor_source TEXT NOT NULL DEFAULT 'unknown',
+    safety_source TEXT NOT NULL DEFAULT 'unknown',
     content_hash TEXT, 
     size_bytes INTEGER NOT NULL DEFAULT 0,
     indexed_at TEXT,
@@ -124,7 +123,7 @@ CREATE TABLE IF NOT EXISTS mods (
 ) STRICT;
 
 -- ------------------------------------------------------------------------------
--- 3. VIRTUAL COLLECTIONS & CORRIDOR STATE
+-- 3. COLLECTION SNAPSHOTS
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS collections (
     id TEXT PRIMARY KEY,
@@ -132,95 +131,50 @@ CREATE TABLE IF NOT EXISTS collections (
     name TEXT NOT NULL,
     name_key TEXT,
     is_safe INTEGER NOT NULL,
-    is_unsaved INTEGER NOT NULL DEFAULT 0,
-    is_last_unsaved INTEGER NOT NULL DEFAULT 0,
-    last_active INTEGER NOT NULL DEFAULT 0,
     snapshot_json TEXT CHECK(snapshot_json IS NULL OR json_valid(snapshot_json)),
     signature TEXT,
-    root_count INTEGER NOT NULL DEFAULT 0,
+    display_mod_count INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
 ) STRICT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_one_unsaved_per_corridor 
-ON collections (game_id, is_safe) WHERE is_unsaved = 1;
-
-CREATE TABLE IF NOT EXISTS corridor_state (
-    game_id TEXT NOT NULL,
-    is_safe INTEGER NOT NULL CHECK(is_safe IN (0, 1)),
-    active_collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
-    undo_collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
-    PRIMARY KEY (game_id, is_safe),
-    FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS corridor_runtime_cache (
-    game_id TEXT NOT NULL,
-    is_safe INTEGER NOT NULL CHECK(is_safe IN (0, 1)),
-    matched_collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
-    state_kind TEXT NOT NULL,
-    state_name TEXT,
-    signature TEXT NOT NULL,
-    snapshot_json TEXT NOT NULL CHECK(json_valid(snapshot_json)),
-    snapshot_source TEXT NOT NULL,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (game_id, is_safe),
-    FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
-) STRICT;
-
 CREATE TABLE IF NOT EXISTS collection_mods (
     collection_id TEXT NOT NULL,
-    mod_id TEXT, 
+    mod_id TEXT,
     mod_path TEXT NOT NULL,
     mod_path_key TEXT,
-    object_id TEXT NOT NULL,
+    object_ref_key TEXT NOT NULL,
+    object_id TEXT,
+    preview_path TEXT,
+    node_type TEXT,
+    warnings_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(warnings_json)),
+    is_safe INTEGER NOT NULL DEFAULT 1,
+    safety_source TEXT,
     PRIMARY KEY (collection_id, mod_path),
     FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
     FOREIGN KEY(mod_id) REFERENCES mods(id) ON DELETE SET NULL,
-    FOREIGN KEY(object_id) REFERENCES objects(id) ON DELETE CASCADE
+    FOREIGN KEY(object_id) REFERENCES objects(id) ON DELETE SET NULL
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS collection_objects (
     collection_id TEXT NOT NULL,
-    object_id TEXT NOT NULL,
-    is_enabled INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (collection_id, object_id),
-    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-    FOREIGN KEY(object_id) REFERENCES objects(id) ON DELETE CASCADE
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS collection_nested_items (
-    collection_id TEXT NOT NULL,
-    mod_path_key TEXT NOT NULL,
-    PRIMARY KEY (collection_id, mod_path_key),
-    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS collection_roots (
-    collection_id TEXT NOT NULL,
-    root_path TEXT NOT NULL,
-    root_path_key TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    display_name_key TEXT NOT NULL,
+    object_ref_key TEXT NOT NULL,
     object_id TEXT,
-    object_name TEXT,
-    object_type TEXT,
-    root_kind TEXT NOT NULL,
-    is_safe INTEGER NOT NULL DEFAULT 1,
+    object_display_name TEXT,
     is_enabled INTEGER NOT NULL DEFAULT 1,
-    thumbnail_hint TEXT,
-    corridor_source TEXT,
-    PRIMARY KEY (collection_id, root_path_key),
-    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
-    FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE SET NULL
+    PRIMARY KEY (collection_id, object_ref_key),
+    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+    FOREIGN KEY(object_id) REFERENCES objects(id) ON DELETE SET NULL
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS collection_signatures (
-    collection_id TEXT PRIMARY KEY,
-    signature TEXT NOT NULL,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS collection_runtime_state (
+    game_id TEXT PRIMARY KEY,
+    active_collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
+    draft_collection_id TEXT UNIQUE REFERENCES collections(id) ON DELETE SET NULL,
+    draft_base_collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(game_id) REFERENCES games(id) ON DELETE CASCADE
 ) STRICT;
 
 -- ------------------------------------------------------------------------------
@@ -231,6 +185,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     game_id TEXT NOT NULL,
     task_type TEXT NOT NULL,
     target_id TEXT,
+    rollback_collection_id TEXT,
+    rollback_active_collection_id TEXT,
+    final_active_collection_id TEXT,
     payload TEXT CHECK(payload IS NULL OR json_valid(payload)),
     status TEXT NOT NULL DEFAULT 'PENDING',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -357,12 +314,16 @@ CREATE INDEX IF NOT EXISTS idx_objects_name_key ON objects(game_id, name_key);
 
 CREATE INDEX IF NOT EXISTS idx_objects_type_sub ON objects(game_id, object_type, sub_category);
 
-CREATE INDEX IF NOT EXISTS idx_collections_name_key_context ON collections(game_id, name_key, is_safe);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_named_name_key_game
+    ON collections(game_id, name_key);
 CREATE INDEX IF NOT EXISTS idx_collection_mods_collection_id ON collection_mods(collection_id);
 
 CREATE INDEX IF NOT EXISTS idx_import_jobs_status   ON import_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_import_jobs_hash     ON import_jobs(archive_hash);
-CREATE INDEX IF NOT EXISTS idx_tasks_status         ON tasks(status) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_tasks_status         ON tasks(status) WHERE status IN ('PENDING', 'RUNNING');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_one_open_collection_apply_per_game
+    ON tasks(game_id)
+    WHERE task_type = 'apply_collection' AND status IN ('PENDING', 'RUNNING');
 
 CREATE INDEX IF NOT EXISTS idx_mod_hash_index_hash ON mod_hash_index(hash);
 CREATE INDEX IF NOT EXISTS idx_mod_hash_index_game ON mod_hash_index(game_id);

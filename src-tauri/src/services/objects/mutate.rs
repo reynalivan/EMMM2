@@ -21,12 +21,23 @@ pub async fn create_object_cmd_inner(
 
     let mut thumbnail_abs_path: Option<String> = None;
     let mut pending_thumbnail_copy = None;
+    let mut previous_thumbnail = None;
 
     let mods_path = crate::repo::game_repo::get_configured_mods_path(pool, &input.game_id)
         .await
         .map_err(|e| AppError::Db(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
     let target_dir = std::path::Path::new(&mods_path).join(&folder_path);
+    if let Some((attempted_path, existing_path, base_name)) = find_new_path_identity_conflict(
+        std::path::Path::new(&mods_path),
+        std::path::Path::new(&folder_path),
+    ) {
+        return Err(crate::services::mods::core_ops::rename_conflict_error(
+            &attempted_path,
+            &existing_path,
+            &base_name,
+        ));
+    }
 
     if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
         if let Ok(res_dir) = app.path().resource_dir() {
@@ -57,13 +68,31 @@ pub async fn create_object_cmd_inner(
     }
 
     if let Some((src, dest)) = &pending_thumbnail_copy {
-        std::fs::copy(src, dest).map_err(|error| {
+        previous_thumbnail = Some(match std::fs::read(dest) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                cleanup_created_object_folder(&target_dir, created_folder);
+                return Err(error.into());
+            }
+        });
+        let thumbnail_bytes = std::fs::read(src).map_err(|error| {
             cleanup_created_object_folder(&target_dir, created_folder);
             AppError::Io(format!(
-                "Failed to copy object thumbnail to '{}': {error}",
-                dest.display()
+                "Failed to read object thumbnail '{}': {error}",
+                src.display()
             ))
         })?;
+        crate::services::fs_utils::atomic_file::atomic_write(dest, &thumbnail_bytes).map_err(
+            |error| {
+                cleanup_created_object_folder(&target_dir, created_folder);
+                AppError::Io(format!(
+                    "Failed to copy object thumbnail to '{}': {error}",
+                    dest.display()
+                ))
+            },
+        )?;
+        crate::services::images::thumbnail_cache::ThumbnailCache::invalidate(dest);
     }
 
     let res = crate::repo::object_repo::create_object(
@@ -95,6 +124,23 @@ pub async fn create_object_cmd_inner(
             Ok(id)
         }
         Err(e) => {
+            if let Some((_, destination)) = pending_thumbnail_copy.as_ref() {
+                let rollback = match previous_thumbnail.as_ref() {
+                    Some(Some(bytes)) => {
+                        crate::services::fs_utils::atomic_file::atomic_write(destination, bytes)
+                    }
+                    Some(None) if destination.exists() => {
+                        std::fs::remove_file(destination).map_err(AppError::from)
+                    }
+                    _ => Ok(()),
+                };
+                if let Err(rollback_error) = rollback {
+                    cleanup_created_object_folder(&target_dir, created_folder);
+                    return Err(AppError::Io(format!(
+                        "Object database insert failed ({e}); thumbnail rollback failed: {rollback_error}"
+                    )));
+                }
+            }
             cleanup_created_object_folder(&target_dir, created_folder);
             if is_object_name_conflict(&e) {
                 Err(AppError::Db(format!(
@@ -110,6 +156,39 @@ pub async fn create_object_cmd_inner(
 
 /// SQLite names the objects(game_id, name) unique index differently across
 /// versions; both spellings mean the same collision.
+fn find_new_path_identity_conflict(
+    root: &std::path::Path,
+    relative_path: &std::path::Path,
+) -> Option<(std::path::PathBuf, std::path::PathBuf, String)> {
+    let mut parent = root.to_path_buf();
+    for component in relative_path.components() {
+        let std::path::Component::Normal(name) = component else {
+            continue;
+        };
+        let target_name = name.to_string_lossy();
+        let attempted_path = parent.join(name);
+        let Some(existing_path) = crate::services::mods::core_ops::find_sibling_identity_collision(
+            &parent,
+            &target_name,
+            None,
+        ) else {
+            parent = attempted_path;
+            continue;
+        };
+        let existing_name = existing_path.file_name()?.to_string_lossy();
+        if existing_name.eq_ignore_ascii_case(&target_name) {
+            parent = existing_path;
+            continue;
+        }
+        return Some((
+            attempted_path,
+            existing_path,
+            crate::common::normalizer::normalize_display_name(&target_name).into_owned(),
+        ));
+    }
+    None
+}
+
 fn is_object_name_conflict(error: &sqlx::Error) -> bool {
     let message = error.to_string().to_lowercase();
     message.contains("unique constraint failed") || message.contains("idx_objects_game_name")
@@ -173,31 +252,72 @@ pub async fn update_object(
     id: &str,
     updates: &UpdateObjectInput,
 ) -> Result<(), AppError> {
-    let object_game_id = crate::repo::object_repo::get_game_id(pool, id)
-        .await
-        .map_err(|e| AppError::Db(e.to_string()))?;
-
-    match crate::repo::object_repo::update_object(pool, id, updates).await {
-        Ok(_) => {
-            if let Some(game_id) = object_game_id.as_deref() {
-                crate::repo::runtime_projection_repo::refresh_object_projection(pool, game_id, id)
-                    .await
-                    .map_err(|e| AppError::Db(e.to_string()))?;
-            }
-            Ok(())
+    let mut tx = pool.begin().await?;
+    let object_game_id = crate::repo::object_repo::get_game_id_conn(&mut tx, id).await?;
+    let update_result = async {
+        crate::repo::object_repo::update_object(&mut *tx, id, updates).await?;
+        if let Some(game_id) = object_game_id.as_deref() {
+            crate::repo::runtime_projection_repo::refresh_projection_for_object_ids_tx(
+                &mut tx,
+                game_id,
+                [id.to_string()],
+            )
+            .await?;
         }
+        tx.commit().await
+    }
+    .await;
+
+    match update_result {
+        Ok(()) => Ok(()),
         Err(e) if is_object_name_conflict(&e) => Err(AppError::Db(
             "An object with that name already exists.".to_string(),
         )),
         Err(e) => Err(e.into()),
     }
 }
-/// Delete an object: move its folder to trash, cascade-delete child mods, then remove the DB record.
+
+pub async fn set_object_and_mods_category(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    object_id: &str,
+    category: &str,
+) -> Result<usize, AppError> {
+    let category = category.trim();
+    if category.is_empty() {
+        return Err(AppError::Validation("Category is required".to_string()));
+    }
+
+    let mut tx = pool.begin().await?;
+    let object_updated = crate::repo::object_repo::update_object_type_for_game(
+        &mut *tx, game_id, object_id, category,
+    )
+    .await?;
+    if object_updated == 0 {
+        return Err(AppError::NotFound(format!(
+            "Object '{object_id}' was not found for game '{game_id}'"
+        )));
+    }
+
+    let child_updated =
+        crate::repo::mod_repo::set_object_type_for_object(&mut *tx, game_id, object_id, category)
+            .await?;
+    crate::repo::runtime_projection_repo::refresh_projection_for_object_ids_tx(
+        &mut tx,
+        game_id,
+        [object_id.to_string()],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(child_updated as usize)
+}
+/// Delete an object on disk. The command's trailing full reconcile is the
+/// single writer that removes object/mod projections and records collection
+/// members as missing before those runtime rows disappear.
 pub async fn delete_object(
     pool: &sqlx::SqlitePool,
     id: &str,
     force: bool,
-    trash_dir: &std::path::Path,
     watcher_state: &crate::services::scanner::watcher::WatcherState,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
 ) -> Result<(), AppError> {
@@ -230,12 +350,7 @@ pub async fn delete_object(
     if let Some(target_dir) = target_dir_opt {
         if target_dir.exists() {
             log::info!("delete_object: moving {:?} to trash", target_dir);
-            crate::services::mods::trash::move_to_trash(
-                &target_dir,
-                trash_dir,
-                Some(obj_game_id.clone()),
-            )
-            .map_err(|e| {
+            crate::services::mods::trash::move_to_trash(&target_dir).map_err(|e| {
                 log::error!("delete_object: trash move failed: {}", e);
                 AppError::Io(format!(
                     "Failed to move folder '{}' to trash. {}",
@@ -257,21 +372,5 @@ pub async fn delete_object(
         );
     }
 
-    // 3. Cascade-delete child mod rows from DB
-    let deleted_mods = crate::repo::object_repo::delete_mods_for_object(pool, id).await?;
-    if deleted_mods > 0 {
-        log::info!(
-            "delete_object: cascade-deleted {} mod rows for object id={}",
-            deleted_mods,
-            id
-        );
-    }
-
-    // 4. Delete the object record itself
-    crate::repo::object_repo::delete_object(pool, id).await?;
-    crate::repo::runtime_projection_repo::delete_object_projection(pool, &obj_game_id, id)
-        .await
-        .map_err(|e| AppError::Db(e.to_string()))?;
-    log::info!("delete_object: removed object id={} from DB", id);
     Ok(())
 }

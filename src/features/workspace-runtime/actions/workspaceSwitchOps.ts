@@ -9,6 +9,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { commands } from '../../../lib/bindings';
 import { extractFileInUsePayload, formatAppError } from '../../../lib/appError';
 import { toast } from '../../../stores/useToastStore';
+import { useAppStore } from '../../../stores/useAppStore';
 import type {
   WorkspaceImpact,
   WorkspaceNode,
@@ -24,14 +25,18 @@ import {
 } from '../optimistic/descriptorBuilders';
 import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
 import {
-  openWorkspaceConflictDialog,
+  openFolderConflictManagerDialog,
+  openRenameConfirmationDialog,
   openWorkspaceFileInUseDialog,
 } from '../state/workspaceDialogs';
+import { notifyCommittedMutationSyncWarning } from '../../../lib/committedMutationWarning';
 
-export type WorkspaceSwitchSurface =
-  'folder_grid' | 'preview' | 'object_list' | 'collections' | 'corridor';
+export type WorkspaceSwitchSurface = 'folder_grid' | 'preview' | 'object_list' | 'collections';
 
 export type WorkspaceSwitchFallbackClass = 'folderSwitch' | 'objectSwitch';
+export interface WorkspaceSwitchEffectsOptions {
+  publish?: boolean;
+}
 
 export interface WorkspaceRenameConflictPayload {
   type: 'RenameConflict';
@@ -100,11 +105,25 @@ export async function executeWorkspaceSwitch(
   input: WorkspaceSwitchInput,
 ): Promise<WorkspaceSwitchResult | null> {
   try {
-    return await commands.executeWorkspaceSwitch(input);
+    const result = await commands.executeWorkspaceSwitch(input);
+    notifyCommittedMutationSyncWarning(result);
+    return result;
   } catch (error) {
     const renameConflict = parseRenameConflict(error);
     if (renameConflict) {
-      openWorkspaceConflictDialog(renameConflict);
+      const report = await commands
+        .reconcileDiskStateCmd(input.game_id, 'ManualRepair', null, true)
+        .catch(() => null);
+      if (report?.status === 'AppliedWithFolderConflicts' && report.folder_conflicts.length > 0) {
+        useAppStore.getState().setFolderConflicts(input.game_id, report.folder_conflicts);
+        openFolderConflictManagerDialog();
+      } else if (
+        report?.status === 'NeedsRenameConfirmation' &&
+        report.rename_confirmations.length > 0
+      ) {
+        useAppStore.getState().setRenameConfirmations(input.game_id, report.rename_confirmations);
+        openRenameConfirmationDialog();
+      } else toast.error(formatAppError(error));
       return null;
     }
 
@@ -132,17 +151,20 @@ export async function applyWorkspaceSwitchEffects(
   result: WorkspaceSwitchResult,
   fallbackClass: WorkspaceSwitchFallbackClass,
   reloadMessage?: (key: string) => string,
+  options: WorkspaceSwitchEffectsOptions = {},
 ): Promise<void> {
   applyRuntimeEffects(
     queryClient,
     buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
   );
 
-  await publishRuntimeDescriptor(
-    queryClient,
-    buildSwitchRefreshDescriptor(result.impact, fallbackClass),
-    'active',
-  );
+  if (options.publish !== false) {
+    await publishRuntimeDescriptor(
+      queryClient,
+      buildSwitchRefreshDescriptor(result.impact, fallbackClass),
+      'active',
+    );
+  }
 
   if (result.status === 'applied' && reloadMessage) {
     const reloadKey = await commands.getReloadKey().catch(() => null);

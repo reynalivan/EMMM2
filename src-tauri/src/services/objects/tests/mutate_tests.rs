@@ -1,10 +1,199 @@
 use crate::domain::objects::{CreateObjectInput, UpdateObjectInput};
 use crate::services::objects::mutate::{
-    create_object_cmd_inner, delete_object, toggle_pin_object, update_object,
+    create_object_cmd_inner, delete_object, set_object_and_mods_category, toggle_pin_object,
+    update_object,
 };
+
+#[tokio::test]
+async fn object_and_child_category_roll_back_together_when_child_update_fails() {
+    let pool = setup_test_db().await;
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .expect("game seed");
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Alice",
+            folder_path: "Alice",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("object seed");
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "m1",
+            game_id: "g1",
+            object_id: Some("o1"),
+            actual_name: "Blue",
+            folder_path: "Alice/Blue",
+            status: crate::domain::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .expect("mod seed");
+    sqlx::query(
+        "CREATE TRIGGER fail_mod_category BEFORE UPDATE OF object_type ON mods BEGIN SELECT RAISE(ABORT, 'injected category failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .expect("failure trigger");
+
+    let result = set_object_and_mods_category(&pool, "g1", "o1", "Weapon").await;
+
+    assert!(result.is_err());
+    let object_type: String = sqlx::query_scalar("SELECT object_type FROM objects WHERE id = 'o1'")
+        .fetch_one(&pool)
+        .await
+        .expect("object category");
+    let mod_type: String = sqlx::query_scalar("SELECT object_type FROM mods WHERE id = 'm1'")
+        .fetch_one(&pool)
+        .await
+        .expect("mod category");
+    assert_eq!(object_type, "Character");
+    assert_eq!(mod_type, "Character");
+}
+
+#[tokio::test]
+async fn object_update_rolls_back_when_runtime_projection_write_fails() {
+    let pool = setup_test_db().await;
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .expect("game seed");
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Before",
+            folder_path: "Before",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("object seed");
+    sqlx::query(
+        "CREATE TRIGGER fail_projection_insert BEFORE INSERT ON object_runtime_projection BEGIN SELECT RAISE(ABORT, 'injected projection failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .expect("failure trigger");
+
+    let result = update_object(
+        &pool,
+        "o1",
+        &UpdateObjectInput {
+            name: Some("After".to_string()),
+            object_type: None,
+            sub_category: None,
+            metadata: None,
+            hash_db: None,
+            custom_skins: None,
+            thumbnail_path: None,
+            is_auto_sync: None,
+            is_pinned: None,
+            tags: None,
+        },
+    )
+    .await;
+
+    assert!(result.is_err());
+    let name: String = sqlx::query_scalar("SELECT name FROM objects WHERE id = 'o1'")
+        .fetch_one(&pool)
+        .await
+        .expect("object name");
+    assert_eq!(name, "Before");
+}
+
+#[tokio::test]
+async fn category_update_rolls_back_when_runtime_projection_write_fails() {
+    let pool = setup_test_db().await;
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .expect("game seed");
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Alice",
+            folder_path: "Alice",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("object seed");
+    sqlx::query(
+        "CREATE TRIGGER fail_projection_insert BEFORE INSERT ON object_runtime_projection BEGIN SELECT RAISE(ABORT, 'injected projection failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .expect("failure trigger");
+
+    let result = set_object_and_mods_category(&pool, "g1", "o1", "Weapon").await;
+
+    assert!(result.is_err());
+    let object_type: String = sqlx::query_scalar("SELECT object_type FROM objects WHERE id = 'o1'")
+        .fetch_one(&pool)
+        .await
+        .expect("object category");
+    assert_eq!(object_type, "Character");
+}
 
 async fn setup_test_db() -> sqlx::SqlitePool {
     crate::test_utils::init_test_db().await.pool
+}
+
+async fn reconcile_test_disk(pool: &sqlx::SqlitePool, mods_path: &std::path::Path) {
+    crate::services::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::services::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+            pool,
+            game_id: "g1",
+            mods_path,
+            safe_mode_keywords: &[],
+            reason: &crate::services::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            changed_paths: &[],
+            force_full: true,
+            watcher_events: None,
+            path_hints: &[],
+            progress_reporter: None,
+        },
+    )
+    .await
+    .expect("disk projection");
 }
 
 #[tokio::test]
@@ -101,6 +290,92 @@ async fn test_create_object_cmd_inner_conflict() {
         .unwrap_err()
         .to_string();
     assert!(err.to_string().contains("already exists"));
+}
+
+#[tokio::test]
+async fn create_object_rejects_disabled_prefix_identity_collision() {
+    let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mods_path = tmp.path().join("Mods");
+    std::fs::create_dir(&mods_path).unwrap();
+    std::fs::create_dir(mods_path.join("DISABLED Alice")).unwrap();
+    let mods_path_str = mods_path.to_string_lossy().to_string();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path_str),
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = create_object_cmd_inner(
+        &pool,
+        None,
+        CreateObjectInput {
+            status: None,
+            game_id: "g1".to_string(),
+            name: "Alice".to_string(),
+            folder_path: Some("Alice".to_string()),
+            object_type: "Character".to_string(),
+            sub_category: None,
+            metadata: None,
+            thumbnail_url: None,
+            hash_db: None,
+            custom_skins: None,
+        },
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(!mods_path.join("Alice").exists());
+}
+
+#[tokio::test]
+async fn create_nested_object_rejects_conflicting_parent_identity() {
+    let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mods_path = tmp.path().join("Mods");
+    std::fs::create_dir_all(mods_path.join("DISABLED Alice")).unwrap();
+    let mods_path_str = mods_path.to_string_lossy().to_string();
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Genshin",
+            game_type: crate::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path_str),
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = create_object_cmd_inner(
+        &pool,
+        None,
+        CreateObjectInput {
+            status: None,
+            game_id: "g1".to_string(),
+            name: "Alice Variant".to_string(),
+            folder_path: Some("Alice/Variants".to_string()),
+            object_type: "Character".to_string(),
+            sub_category: None,
+            metadata: None,
+            thumbnail_url: None,
+            hash_db: None,
+            custom_skins: None,
+        },
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(!mods_path.join("Alice").exists());
 }
 
 #[tokio::test]
@@ -254,8 +529,9 @@ async fn test_update_object() {
 async fn test_delete_object_empty() {
     let pool = setup_test_db().await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let trash_dir = tmp.path().join("trash");
-    std::fs::create_dir(&trash_dir).unwrap();
+    let mods_path = tmp.path().join("Mods");
+    std::fs::create_dir(&mods_path).unwrap();
+    let mods_path_string = mods_path.to_string_lossy().to_string();
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
@@ -267,7 +543,7 @@ async fn test_delete_object_empty() {
             name: "Genshin",
             game_type: crate::domain::models::GameType::GIMI,
             path: "/",
-            mods_path: Some("/Mods"),
+            mods_path: Some(&mods_path_string),
         },
     )
     .await
@@ -286,9 +562,10 @@ async fn test_delete_object_empty() {
     .await
     .unwrap();
 
-    delete_object(&pool, "o1", false, &trash_dir, &watcher_state, &op_guard)
+    delete_object(&pool, "o1", false, &watcher_state, &op_guard)
         .await
         .unwrap();
+    reconcile_test_disk(&pool, &mods_path).await;
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE id = 'o1'")
         .fetch_one(&pool)
@@ -301,8 +578,9 @@ async fn test_delete_object_empty() {
 async fn test_delete_object_cascade_mods() {
     let pool = setup_test_db().await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let trash_dir = tmp.path().join("trash");
-    std::fs::create_dir(&trash_dir).unwrap();
+    let mods_path = tmp.path().join("Mods");
+    std::fs::create_dir(&mods_path).unwrap();
+    let mods_path_string = mods_path.to_string_lossy().to_string();
     let watcher_state = crate::services::scanner::watcher::WatcherState::default();
     let op_lock = crate::services::fs_utils::operation_lock::OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
@@ -314,7 +592,7 @@ async fn test_delete_object_cascade_mods() {
             name: "Genshin",
             game_type: crate::domain::models::GameType::GIMI,
             path: "/",
-            mods_path: Some("/Mods"),
+            mods_path: Some(&mods_path_string),
         },
     )
     .await
@@ -344,7 +622,7 @@ async fn test_delete_object_cascade_mods() {
             status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Char"),
-            mods_path: Some("/Mods"),
+            mods_path: Some(&mods_path_string),
         },
     )
     .await
@@ -361,16 +639,17 @@ async fn test_delete_object_cascade_mods() {
             status: crate::domain::models::ItemStatus::Enabled,
             is_safe: true,
             object_type: Some("Char"),
-            mods_path: Some("/Mods"),
+            mods_path: Some(&mods_path_string),
         },
     )
     .await
     .unwrap();
 
     // Deletion should cascade — remove mods + object
-    delete_object(&pool, "o1", true, &trash_dir, &watcher_state, &op_guard)
+    delete_object(&pool, "o1", true, &watcher_state, &op_guard)
         .await
         .unwrap();
+    reconcile_test_disk(&pool, &mods_path).await;
 
     let obj_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE id = 'o1'")
         .fetch_one(&pool)

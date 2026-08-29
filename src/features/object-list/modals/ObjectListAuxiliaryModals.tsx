@@ -1,50 +1,10 @@
 import { parseTagList } from '../utils/bulkSummary';
-import ArchiveModal from '../../scanner/components/ArchiveModal';
 import BulkTagModal from '../../../components/modals/BulkTagModal';
-import DropConfirmModal, { type DropValidation } from './DropConfirmModal';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
-import type { ArchiveInfo } from '../../../types/scanner';
-import type { PendingDropContext } from '../utils/importPipeline';
 
-interface BulkTagModalState {
-  open: boolean;
-  mode: 'add' | 'remove';
-}
-
-interface ArchiveModalState {
-  open: boolean;
-  archives: ArchiveInfo[];
-  isExtracting: boolean;
-  error: string | null;
-  passwordError: { path: string; message: string } | null;
-  extractProgress: { current: number; total: number } | null;
-  fileProgress: { fileName: string; fileIndex: number; totalFiles: number } | null;
-  pendingDropContext: PendingDropContext | null;
-}
-
-interface ExtractOptions {
-  autoRename?: boolean;
-  disableByDefault?: boolean;
-  folderNames?: Record<string, string>;
-  unpackNested?: boolean;
-}
-
-interface ObjectListAuxiliaryModalsProps {
-  dropValidation: DropValidation | null;
-  onMoveAnyway: () => void;
-  onMoveToSuggested: () => void;
-  onCancelDrop: () => void;
-  onSkipValidation: () => void;
-  archiveModal: ArchiveModalState;
+interface Props {
   objects: WorkspaceObjectNode[];
-  onArchiveExtractSubmit: (
-    selectedPaths: string[],
-    passwords: Record<string, string>,
-    options?: ExtractOptions,
-  ) => Promise<void>;
-  onArchiveExtractSkip: () => void;
-  onStopExtraction: () => void;
-  bulkTagModal: BulkTagModalState;
+  bulkTagModal: { open: boolean; mode: 'add' | 'remove' };
   selectedIds: Set<string>;
   onBulkAddTags: (ids: Set<string>, tags: string[]) => Promise<void>;
   onBulkRemoveTags: (ids: Set<string>, tags: string[]) => Promise<void>;
@@ -53,69 +13,31 @@ interface ObjectListAuxiliaryModalsProps {
 }
 
 export default function ObjectListAuxiliaryModals({
-  dropValidation,
-  onMoveAnyway,
-  onMoveToSuggested,
-  onCancelDrop,
-  onSkipValidation,
-  archiveModal,
   objects,
-  onArchiveExtractSubmit,
-  onArchiveExtractSkip,
-  onStopExtraction,
   bulkTagModal,
   selectedIds,
   onBulkAddTags,
   onBulkRemoveTags,
   onCloseBulkTagModal,
   onClearBulkSelection,
-}: ObjectListAuxiliaryModalsProps) {
-  const targetObjectName = archiveModal.pendingDropContext?.targetObjectId
-    ? objects.find((object) => object.id === archiveModal.pendingDropContext?.targetObjectId)?.name
-    : undefined;
-
+}: Props) {
   const existingTags = [...selectedIds].flatMap((id) =>
     parseTagList(objects.find((object) => object.id === id)?.tags),
   );
 
   return (
-    <>
-      <DropConfirmModal
-        validation={dropValidation}
-        onMoveAnyway={onMoveAnyway}
-        onMoveToSuggested={onMoveToSuggested}
-        onCancel={onCancelDrop}
-        onSkipValidation={onSkipValidation}
-      />
-
-      <ArchiveModal
-        key={archiveModal.archives.length > 0 ? archiveModal.archives[0].path : 'empty'}
-        isOpen={archiveModal.open}
-        archives={archiveModal.archives}
-        isExtracting={archiveModal.isExtracting}
-        error={archiveModal.error}
-        passwordError={archiveModal.passwordError}
-        extractProgress={archiveModal.extractProgress}
-        fileProgress={archiveModal.fileProgress}
-        onExtract={onArchiveExtractSubmit}
-        onSkip={onArchiveExtractSkip}
-        onStop={onStopExtraction}
-        targetObjectName={targetObjectName}
-      />
-
-      <BulkTagModal
-        open={bulkTagModal.open}
-        mode={bulkTagModal.mode}
-        existingTags={existingTags}
-        onSubmit={(tags) => {
-          const operation =
-            bulkTagModal.mode === 'add'
-              ? onBulkAddTags(selectedIds, tags)
-              : onBulkRemoveTags(selectedIds, tags);
-          operation.then(onClearBulkSelection);
-        }}
-        onClose={onCloseBulkTagModal}
-      />
-    </>
+    <BulkTagModal
+      open={bulkTagModal.open}
+      mode={bulkTagModal.mode}
+      existingTags={existingTags}
+      onSubmit={(tags) => {
+        const operation =
+          bulkTagModal.mode === 'add'
+            ? onBulkAddTags(selectedIds, tags)
+            : onBulkRemoveTags(selectedIds, tags);
+        operation.then(onClearBulkSelection);
+      }}
+      onClose={onCloseBulkTagModal}
+    />
   );
 }

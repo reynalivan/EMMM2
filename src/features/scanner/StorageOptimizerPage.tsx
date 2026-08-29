@@ -7,12 +7,14 @@ import type { DupScanEvent } from '../../types/scanner';
 import DedupFeature, { type DedupScanProgress } from './DedupFeature';
 import { IgnoredPairsModal } from './components/IgnoredPairsModal';
 import { useTranslation } from 'react-i18next';
+import { reduceDedupProgress } from './dedupProgress';
 
 const IDLE_PROGRESS: DedupScanProgress = {
   isScanning: false,
   totalFolders: 0,
   scannedFolders: 0,
   currentFolder: '',
+  error: '',
 };
 
 export default function StorageOptimizerPage() {
@@ -29,26 +31,7 @@ export default function StorageOptimizerPage() {
   const isScanning = progress.isScanning;
 
   const handleEvent = useCallback((event: DupScanEvent) => {
-    switch (event.event) {
-      case 'started':
-        setProgress((current) => ({
-          ...current,
-          totalFolders: event.data.totalFolders,
-          scannedFolders: 0,
-        }));
-        break;
-      case 'progress':
-        setProgress((current) => ({
-          ...current,
-          scannedFolders: event.data.processedFolders,
-          currentFolder: event.data.currentFolder,
-        }));
-        break;
-      case 'finished':
-      case 'cancelled':
-        setProgress((current) => ({ ...current, isScanning: false }));
-        break;
-    }
+    setProgress((current) => reduceDedupProgress(current, event));
   }, []);
 
   const handleStartScan = useCallback(() => {
@@ -161,7 +144,7 @@ export default function StorageOptimizerPage() {
 
         {/* ── Main Feature Content ────────────────────────────────────── */}
         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200">
-          <DedupFeature activeFilter={activeTab} {...progress} />
+          <DedupFeature activeFilter={activeTab} gameId={activeGame?.id ?? ''} {...progress} />
         </div>
       </div>
 

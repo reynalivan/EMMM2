@@ -7,7 +7,18 @@ pub enum ModWatchEvent {
     Created(String),
     Modified(String),
     Removed(String),
-    Renamed { from: String, to: String },
+    Renamed {
+        from: String,
+        to: String,
+    },
+    /// User-reviewed recovery evidence. This is queued through the reconcile
+    /// state machine but is never produced by the OS watcher.
+    RenameResolution {
+        group_id: String,
+        from: Option<String>,
+        to: Option<String>,
+        apply_as_rename: bool,
+    },
     Error(String),
 }
 
@@ -18,6 +29,7 @@ pub enum ModWatchEvent {
 #[serde(tag = "type")]
 pub enum WatchEventPayload {
     Error {
+        game_id: String,
         error: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         path: Option<String>,

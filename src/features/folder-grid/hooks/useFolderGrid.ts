@@ -93,7 +93,6 @@ export function useFolderGrid() {
   const selfIsEnabled = rawResponse?.self_is_enabled ?? false;
   const selfIsEffectivelyActive = rawResponse?.self_is_effectively_active ?? false;
   const selfReasons = rawResponse?.self_classification_reasons || [];
-  const conflicts = rawResponse?.conflicts || [];
   const ancestorDisabledBy = rawResponse?.ancestor_disabled_by ?? null;
   const ancestorDisabledPath = rawResponse?.ancestor_disabled_path ?? null;
   const objects = useMemo(() => workspace?.objects ?? [], [workspace?.objects]);
@@ -101,6 +100,7 @@ export function useFolderGrid() {
   const sourceUnavailableMessage = sourceAvailable
     ? null
     : (workspace?.runtime?.source_state?.message ?? DEFAULT_SOURCE_UNAVAILABLE_MESSAGE);
+  const recoveryStatus = workspace?.runtime?.recovery_status ?? 'ready';
 
   const nav = useFolderGridNav({
     currentPath,
@@ -116,7 +116,6 @@ export function useFolderGrid() {
     actions,
     switchActions,
     enableParentDialog,
-    handleRefresh,
     handleRevealInExplorer,
     currentAbsPath,
     handleOpenCurrentFolderInExplorer,
@@ -163,7 +162,9 @@ export function useFolderGrid() {
 
   const { isDragging, handleImportFiles } = useFolderGridImport({
     parentRef,
+    activeGameId: activeGame?.id,
     activeModPath: activeGame?.mod_path,
+    selectedObjectFolderPath,
     explorerSubPath,
   });
 
@@ -180,9 +181,9 @@ export function useFolderGrid() {
     selfIsEnabled,
     selfIsEffectivelyActive,
     selfReasons,
-    conflicts,
     ancestorDisabledBy,
     sourceUnavailableMessage,
+    recoveryStatus,
     enableParentDialogOpen: enableParentDialog.open,
     enableParentDialogAncestorName: enableParentDialog.ancestorName,
     enableParentDialogWillActivate: enableParentDialog.willActivate,
@@ -216,7 +217,6 @@ export function useFolderGrid() {
     handleKeyDown,
     focusedId,
     selectedModPath: runtime.state.selectedModPath,
-    handleRefresh,
     gridSelection,
     toggleGridSelection: handleToggleSelection,
     activateGridItem: handleActivateItem,

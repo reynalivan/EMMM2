@@ -1,0 +1,71 @@
+{
+  "title": "Mod Inbox",
+  "subtitle": "Review downloaded mods before placing them in your library",
+  "watcher_failed": "Automatic inbox refresh is unavailable: {{error}}",
+  "no_game": {
+    "title": "Select a game first",
+    "description": "Mod Inbox is configured separately for each game."
+  },
+  "tabs": {
+    "ready": "Ready",
+    "processed": "Processed"
+  },
+  "actions": {
+    "settings": "Inbox Settings",
+    "open_inbox": "Open Inbox",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "select_all": "Select All",
+    "create_folder": "Create Folder",
+    "choose_location": "Choose Location",
+    "cancel": "Cancel"
+  },
+  "missing": {
+    "title": "Your Mod Inbox folder does not exist yet.",
+    "description": "Create the default folder, or choose another location in Settings."
+  },
+  "ready": {
+    "select_all": "Select all ready entries",
+    "select_entry": "Select {{name}}",
+    "review_selected": "Review selected ({{count}})",
+    "resume_review": "Resume Review",
+    "size_unknown": "Size unavailable",
+    "empty_title": "Inbox is clear",
+    "empty_description": "Folders and archives added here will appear automatically.",
+    "layouts": {
+      "direct_mod": "Mod",
+      "folder_pack": "Mod pack · {{count}} roots",
+      "wrapper": "Wrapped mod",
+      "unknown": "Unrecognized layout"
+    }
+  },
+  "processed": {
+    "select_all": "Select all processed sources",
+    "select_source": "Select {{name}}",
+    "delete_selected": "Delete selected ({{count}})",
+    "source_retained": "Source retained",
+    "source_deleted": "Source deleted",
+    "source_moved": "Source moved into Mods",
+    "destination_unavailable": "Destination unavailable",
+    "destination_label": "destination",
+    "no_destinations": "No destination was recorded for this source.",
+    "open_in_app": "Open in App",
+    "open_in_explorer": "Open in Explorer",
+    "open_in_app_label": "Open {{name}} in app",
+    "open_in_explorer_label": "Open {{name}} in Explorer",
+    "empty_title": "No processed imports yet",
+    "empty_description": "Completed import history will remain available here."
+  },
+  "delete": {
+    "title": "Delete {{count}} processed source?",
+    "description": "Selected retained sources will move to the Recycle Bin. Destination mods and import history will not be deleted.",
+    "confirm": "Delete Source"
+  },
+  "errors": {
+    "load": "Could not load Mod Inbox: {{error}}",
+    "create_folder": "Could not create Mod Inbox: {{error}}",
+    "create_batch": "Could not start import review: {{error}}",
+    "delete_sources": "Could not delete processed sources: {{error}}",
+    "open_destination": "Could not open destination: {{error}}"
+  }
+}

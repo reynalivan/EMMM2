@@ -12,6 +12,7 @@ async fn get_filtered_objects_matches_scalar_and_array_metadata_case_insensitive
         game_type: crate::domain::models::GameType::GIMI,
         path: "C:\\GameFilters".into(),
         mods_path: Some("C:\\Mods".into()),
+        ready_to_move_path: None,
         game_exe: None,
         launcher_path: None,
         loader_exe: None,

@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   Copy,
   FolderOpen,
+  Inbox,
   LayoutGrid,
   Layers,
   PlayCircle,
@@ -38,6 +39,13 @@ export default function TopBar() {
       label: t('nav.mods_manager'),
       color: 'text-info',
       bg: 'bg-info/15',
+    },
+    {
+      id: 'mod-inbox' as const,
+      icon: Inbox,
+      label: t('nav.mod_inbox'),
+      color: 'text-success',
+      bg: 'bg-success/15',
     },
     {
       id: 'collections' as const,

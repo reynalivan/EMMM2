@@ -9,7 +9,6 @@ async fn workspace_view_model_clears_selection_when_db_object_path_is_missing_on
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_workspace")
             },
             selected_object_folder_path: Some(object_folder.clone()),
@@ -132,7 +131,6 @@ async fn workspace_view_model_marks_disabled_sibling_resolution_as_fallback() {
         &pool,
         WorkspaceViewModelInput {
             filter: ObjectFilter {
-                safe_mode: true,
                 ..build_filter("game_workspace")
             },
             selected_object_folder_path: Some(object_folder.clone()),

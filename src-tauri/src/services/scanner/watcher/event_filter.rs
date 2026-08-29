@@ -21,17 +21,14 @@ fn is_relevant_path(path: &Path) -> bool {
 }
 
 pub(crate) fn should_keep_event_path(path: &Path, watcher_path: &Path) -> bool {
-    let Ok(relative) = path.strip_prefix(watcher_path) else {
-        return false;
-    };
-
-    let components = relative.components().collect::<Vec<_>>();
-    if components
-        .iter()
-        .any(|component| component.as_os_str().to_string_lossy().starts_with('.'))
-    {
+    if !should_keep_structural_event_path(path, watcher_path) {
         return false;
     }
+
+    let relative = path
+        .strip_prefix(watcher_path)
+        .expect("structural containment was checked above");
+    let components = relative.components().collect::<Vec<_>>();
 
     if components.len() <= 2 {
         return true;
@@ -45,11 +42,24 @@ pub(crate) fn should_keep_event_path(path: &Path, watcher_path: &Path) -> bool {
         return true;
     }
 
-    // A deep dotted name could be a folder ("Variant v1.2") or asset noise
-    // ("mesh.buf") — the name alone can't tell, so stat while it still exists.
-    // Checked only after the cheap extension match so relevant deep files never
-    // pay the syscall.
-    // ponytail: a Removed deep dot-folder stays filtered; sibling events for
-    // its contents still mark the parent root for scoped reconcile.
+    // Existing deep dotted directories are distinguishable from asset files.
+    // Removed/rename paths use `should_keep_structural_event_path` instead,
+    // because stat is no longer reliable after the filesystem event.
     path.is_dir()
+}
+
+pub(crate) fn should_keep_structural_event_path(path: &Path, watcher_path: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(watcher_path) else {
+        return false;
+    };
+
+    let components = relative.components().collect::<Vec<_>>();
+    if components
+        .iter()
+        .any(|component| component.as_os_str().to_string_lossy().starts_with('.'))
+    {
+        return false;
+    }
+
+    true
 }

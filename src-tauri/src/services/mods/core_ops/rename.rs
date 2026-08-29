@@ -1,6 +1,9 @@
-//! Rename a mod folder on disk and cascade the new path through DB and collections.
+//! Rename a mod folder on disk. The command's trailing disk reconcile owns
+//! the DB, stable-ID, runtime projection, and collection rewrite.
 
-use super::naming::{find_existing_sibling_case_insensitive, rename_conflict_error};
+use super::naming::{
+    find_existing_sibling_case_insensitive, rename_conflict_error, validate_folder_base_name,
+};
 use crate::domain::collection::CollectionReferenceImpact;
 use crate::domain::errors::AppError;
 use crate::services::config::ConfigService;
@@ -15,6 +18,7 @@ pub struct RenameResult {
     pub new_path: String,
     pub new_name: String,
     pub collection_impact: CollectionReferenceImpact,
+    pub sync_warning: Option<crate::services::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 pub async fn rename_mod_folder_inner(
@@ -29,11 +33,7 @@ pub async fn rename_mod_folder_inner(
         )));
     }
 
-    if new_name.is_empty() || new_name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
-        return Err(AppError::Io(
-            "Invalid folder name — contains reserved characters".to_string(),
-        ));
-    }
+    validate_folder_base_name(&new_name)?;
 
     let parent = path
         .parent()
@@ -90,6 +90,7 @@ pub async fn rename_mod_folder_inner(
         new_path: new_path.to_string_lossy().to_string(),
         new_name,
         collection_impact: CollectionReferenceImpact::default(),
+        sync_warning: None,
     })
 }
 
@@ -105,21 +106,15 @@ fn update_info_json_name(folder_path: &Path, new_name: &str) {
 }
 
 pub async fn rename_mod_folder_inner_service(
-    config: &ConfigService,
-    pool: &sqlx::SqlitePool,
+    _config: &ConfigService,
+    _pool: &sqlx::SqlitePool,
     state: &WatcherState,
     _op_guard: &crate::services::fs_utils::operation_lock::OpGuard,
     old_path: &ValidatedPath,
     new_name: String,
-    game_id: &str,
+    _game_id: &str,
 ) -> Result<RenameResult, AppError> {
     let canonical_path = old_path;
-
-    let mods_path = crate::repo::game_repo::get_mod_path(pool, game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Failed to fetch game mods path".to_string()))?;
-
-    let base = Path::new(&mods_path);
 
     // AC-21.1.6: Windows path limit check (260 characters)
     #[cfg(target_os = "windows")]
@@ -135,61 +130,10 @@ pub async fn rename_mod_folder_inner_service(
         }
     }
 
-    let mut result = rename_mod_folder_inner(
+    rename_mod_folder_inner(
         state,
         canonical_path.to_string_lossy().to_string(),
         new_name.clone(),
     )
-    .await?;
-    let new_absolute_path = &result.new_path;
-
-    let old_rel = canonical_path
-        .strip_prefix(base)
-        .unwrap_or(canonical_path)
-        .to_string_lossy()
-        .to_string();
-
-    let new_abs = Path::new(new_absolute_path);
-    let new_rel = new_abs
-        .strip_prefix(base)
-        .unwrap_or(new_abs)
-        .to_string_lossy()
-        .to_string();
-
-    if let Err(e) = crate::repo::mod_repo::update_mod_path_by_old_path_in_game(
-        pool, game_id, &old_rel, &new_rel,
-    )
     .await
-    {
-        log::warn!("Failed to update mod path in DB after rename ({old_rel} -> {new_rel}): {e}");
-    }
-
-    // Collection Auto-Healing: cascade path changes to all saved collections
-    result.collection_impact = crate::services::collection_service::handle_mod_moved_or_renamed(
-        pool, &old_rel, &new_rel, None,
-    )
-    .await
-    .unwrap_or_default();
-
-    super::toggle::sync_object_and_child_paths(pool, game_id, &mods_path, &old_rel, &new_rel).await;
-
-    let is_safe = crate::repo::mod_repo::get_is_safe_by_folder(pool, game_id, &new_rel)
-        .await
-        .ok()
-        .flatten();
-
-    if is_safe.is_some() {
-        let _ = crate::services::app::runtime_effects::finalize_runtime_side_effects(
-            crate::services::app::runtime_effects::RuntimeSideEffects {
-                pool,
-                config,
-                game_id,
-                collections_dirty: true,
-                overlay_refresh: true,
-            },
-        )
-        .await;
-    }
-
-    Ok(result)
 }

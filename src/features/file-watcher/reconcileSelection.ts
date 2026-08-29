@@ -14,7 +14,7 @@ export function buildDiskReconcilePathRewrites(
   const rewrites: Array<{ oldPath: string; newPath: string }> = [];
 
   for (const update of result.path_updates) {
-    if (update.kind !== 'Mod' || !modsPath) {
+    if (!modsPath) {
       rewrites.push({
         oldPath: update.from,
         newPath: update.to,
@@ -105,10 +105,12 @@ export function isPreviewAffected(
       continue;
     }
 
+    const absoluteFrom = joinModPath(activeGame.mod_path, update.from);
+    const absoluteTo = joinModPath(activeGame.mod_path, update.to);
     const objectRewrite = selectedObjectPath
-      ? rewritePath(selectedObjectPath, update.from, update.to)
+      ? rewritePath(selectedObjectPath, absoluteFrom, absoluteTo)
       : null;
-    if (objectRewrite || (selectedObjectPath && pathStartsWith(update.to, selectedObjectPath))) {
+    if (objectRewrite || (selectedObjectPath && pathStartsWith(absoluteTo, selectedObjectPath))) {
       return true;
     }
   }

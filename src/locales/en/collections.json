@@ -30,9 +30,24 @@
       "rename": "Rename",
       "apply": "Apply",
       "delete": "Delete collection",
-      "mod_count": "{{count}} mods"
+      "mod_count": "{{count}} mods",
+      "current_runtime": "Current changes",
+      "unsaved": "Unsaved changes",
+      "modified": "Modified",
+      "matches_runtime": "Matches current runtime",
+      "save_changes": "Save changes"
     },
     "load_failed": "Failed to load collections"
+  },
+  "last_changes": {
+    "title": "Last changes",
+    "description": "A modified or unsaved runtime was preserved before switching collections.",
+    "save_as": "Save as collection",
+    "restore": "Restore",
+    "clear": "Clear",
+    "restored": "Last changes restored",
+    "cleared": "Last changes cleared",
+    "remove_missing_confirm": "Remove {{count}} missing mod(s) from this collection?"
   },
   "preview": {
     "title": "Collection Preview",
@@ -120,7 +135,6 @@
   "randomizer": {
     "title": "Smart Randomizer",
     "desc": "Recommends 1 random disabled mod for every active Character. Review and apply.",
-    "safe_mode": "Safe Mode",
     "no_eligible": "No eligible character mods found (check filters or ensure you have disabled mods).",
     "consulting": "Consulting the RNG Gods...",
     "reroll": "Reroll All",

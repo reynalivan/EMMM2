@@ -50,6 +50,10 @@
   },
   "indexing": {
     "title": "Indexing your mods...",
-    "subtitle": "Please wait while EMMM scans the game folders."
+    "subtitle": "Please wait while EMMM scans the game folders.",
+    "preparing": "Preparing library…",
+    "progress_label": "Indexing progress",
+    "estimating": "Estimating remaining time…",
+    "estimated_remaining": "About {{duration}} remaining"
   }
 }

@@ -3,7 +3,7 @@ trigger: model_decision
 description: Data & Filesystem Rules - SQLx, migrations, watcher suppression, and locks.
 ---
 
-- Watcher: Use SuppressionGuard (Rust) / `commands.setWatcherSuppression` (TS, from `bindings.ts`) for mutations.
+- Watcher: Filesystem mutations own `SuppressionGuard` and terminal reconcile in Rust. Frontend blanket suppression is not allowed.
 - Lock: Acquire OperationLock BEFORE mutating mods_path.
 - Sync: FS is truth. Runtime refresh uses Disk Reconcile; explicit canonical assignment uses Deep Match Scanner.
 - SQLx: query! macros only. Parameter bind (?). Atomic transactions for multi-table.
@@ -12,7 +12,7 @@ description: Data & Filesystem Rules - SQLx, migrations, watcher suppression, an
   - USE `deepmatch_preview_cmd` and `deepmatch_scanner_cmd` only for explicit matching/import flows.
   - NEVER replace Disk Reconcile with Deep Match Scanner for watcher or focus-driven sync.
 - DB Indexing: FKs/Filter-columns (game_id, is_safe). No SELECT \*.
-- Trash: Use `trash` crate; fallback to `app_data/.trash/{uuid}` for cross-drive.
+- Trash: Use the native OS recycle bin through the `trash` crate; do not add an app-managed legacy Trash store.
 - Smart Extract: Discover shallowest .ini; split multi-pack archives.
 - Lazy Sync: Scan checks folder mtime vs cache.
 - Atomic: Multi-file ops MUST have transactional rollback.

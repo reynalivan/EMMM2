@@ -44,7 +44,6 @@ async fn patch_cold_counts(
     let candidates = crate::repo::object_repo::load_object_count_candidates(
         pool,
         &filter.game_id,
-        filter.safe_mode,
         &cold_objects,
     )
     .await?;
@@ -57,12 +56,15 @@ async fn patch_cold_counts(
     .await?;
 
     for object in objects.iter_mut() {
-        let Some((mod_count, enabled_count, active_paths)) = counts.get(&object.id) else {
+        let Some(counts) = counts.get(&object.id) else {
             continue;
         };
-        object.mod_count = *mod_count;
-        object.enabled_count = *enabled_count;
-        object.active_mod_paths = active_paths.clone();
+        object.mod_count = counts.total;
+        object.enabled_count = counts.enabled;
+        object.safe_mod_count = counts.safe;
+        object.unsafe_mod_count = counts.unsafe_count;
+        object.unclassified_mod_count = counts.unclassified;
+        object.active_mod_paths = counts.active_paths.clone();
     }
 
     let _ = crate::repo::runtime_projection_repo::refresh_projection_for_object_ids(
@@ -79,9 +81,8 @@ async fn patch_cold_counts(
 pub async fn get_category_counts_service(
     pool: &sqlx::SqlitePool,
     game_id: &str,
-    corridor: crate::domain::corridor::Corridor,
 ) -> Result<Vec<crate::domain::objects::CategoryCount>, AppError> {
-    Ok(crate::repo::object_repo::get_category_counts(pool, game_id, corridor.is_safe()).await?)
+    Ok(crate::repo::object_repo::get_category_counts(pool, game_id).await?)
 }
 
 pub async fn get_object_by_id_service(

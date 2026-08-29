@@ -1,5 +1,5 @@
 use crate::domain::errors::ScannerError;
-use crate::services::scanner::core::walker::ModCandidate;
+use crate::services::scanner::core::walker::{self, ModCandidate};
 use crate::types::dup_scan::DupScanGroup;
 use rayon::prelude::*;
 
@@ -10,10 +10,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::grouping::{build_groups, ScoredPair};
-use super::hashing::hash_snapshot;
+use super::hashing::{hash_snapshot, hash_snapshot_full};
 use super::signals::aggregate_signals;
 use super::snapshot::{collect_snapshot, ModSnapshot};
-use crate::domain::mod_path::ModFolderPath;
+use crate::common::path_key::canonical_path_key_for_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +43,7 @@ pub async fn scan_duplicates(
     let mod_rows = crate::repo::mod_repo::get_all_mods_id_and_paths_tx(&mut conn, game_id).await?;
     drop(conn);
 
-    let candidates = build_candidates(&mod_rows, mods_root);
+    let candidates = walker::scan_mod_folders(mods_root)?;
     let total_folders = candidates.len();
 
     if is_cancelled(&cancel_flag) {
@@ -55,8 +55,8 @@ pub async fn scan_duplicates(
     let path_to_mod_id: HashMap<String, (String, bool)> = mod_rows
         .into_iter()
         .map(|(id, folder_path, is_safe)| {
-            let absolute = folder_path.resolve(mods_root).to_string_lossy().to_string();
-            (absolute, (id, is_safe))
+            let absolute = folder_path.resolve(mods_root);
+            (canonical_path_key_for_path(&absolute), (id, is_safe))
         })
         .collect();
     let whitelist_pairs = fetch_whitelist_pairs(db, game_id).await?;
@@ -95,7 +95,6 @@ fn run_pipeline_blocking(
     }
 
     let candidate_pairs = phase1_candidate_filtering(&snapshots);
-    let candidate_pairs = apply_modpack_filter(candidate_pairs, &snapshots);
     let candidate_pairs = apply_whitelist_filter(
         candidate_pairs,
         &snapshots,
@@ -116,7 +115,7 @@ fn run_pipeline_blocking(
         return cancelled(total_folders);
     }
 
-    let scored_pairs: Vec<ScoredPair> = candidate_pairs
+    let preliminary_pairs: Vec<ScoredPair> = candidate_pairs
         .into_iter()
         .filter_map(|(left, right)| {
             let left_hash = hash_profiles.get(&left)?;
@@ -130,54 +129,39 @@ fn run_pipeline_blocking(
         })
         .collect();
 
+    let full_hash_indices: HashSet<usize> = preliminary_pairs
+        .iter()
+        .filter(|(_, _, score, _, _)| *score == 100)
+        .flat_map(|(left, right, _, _, _)| [*left, *right])
+        .collect();
+    let full_hash_profiles: HashMap<usize, _> = full_hash_indices
+        .par_iter()
+        .map(|index| (*index, hash_snapshot_full(&snapshots[*index])))
+        .collect();
+    let scored_pairs: Vec<ScoredPair> = preliminary_pairs
+        .into_iter()
+        .filter_map(|pair| {
+            if pair.2 < 100 {
+                return Some(pair);
+            }
+            let left_hash = full_hash_profiles.get(&pair.0)?;
+            let right_hash = full_hash_profiles.get(&pair.1)?;
+            let (score, signals, reason) = aggregate_signals(
+                &snapshots[pair.0],
+                &snapshots[pair.1],
+                left_hash,
+                right_hash,
+            );
+            (score >= super::signals::weights::MIN_REPORTED_SCORE)
+                .then_some((pair.0, pair.1, score, signals, reason))
+        })
+        .collect();
+
     DedupScanOutcome {
         status: DedupScanStatus::Completed,
         groups: build_groups(&snapshots, &scored_pairs, &path_to_mod_id),
         total_folders,
     }
-}
-
-fn apply_modpack_filter(
-    candidate_pairs: Vec<(usize, usize)>,
-    snapshots: &[ModSnapshot],
-) -> Vec<(usize, usize)> {
-    let mut variant_container_cache: HashMap<std::path::PathBuf, bool> = HashMap::new();
-
-    candidate_pairs
-        .into_iter()
-        .filter(|(left_index, right_index)| {
-            let left_path = &snapshots[*left_index].candidate.path;
-            let right_path = &snapshots[*right_index].candidate.path;
-
-            let left_parent = left_path.parent();
-            let right_parent = right_path.parent();
-
-            // If they share exactly the same parent directory
-            if let (Some(lp), Some(rp)) = (left_parent, right_parent) {
-                if lp == rp {
-                    // Check if this parent is a VariantContainer
-                    let parent_path = lp.to_path_buf();
-
-                    let is_variant_container = *variant_container_cache
-                        .entry(parent_path.clone())
-                        .or_insert_with(|| {
-                            let (node_type, _, _) =
-                                crate::common::classifier::classify_folder(&parent_path);
-                            node_type == crate::common::classifier::NodeType::VariantContainer
-                                || node_type == crate::common::classifier::NodeType::ModPackRoot
-                                || node_type == crate::common::classifier::NodeType::FlatModRoot
-                        });
-
-                    if is_variant_container {
-                        // They are variants in the same modpack, DO NOT match them as duplicates
-                        return false;
-                    }
-                }
-            }
-
-            true
-        })
-        .collect()
 }
 
 fn apply_whitelist_filter(
@@ -189,16 +173,8 @@ fn apply_whitelist_filter(
     candidate_pairs
         .into_iter()
         .filter(|(left_index, right_index)| {
-            let left_path = snapshots[*left_index]
-                .candidate
-                .path
-                .to_string_lossy()
-                .to_string();
-            let right_path = snapshots[*right_index]
-                .candidate
-                .path
-                .to_string_lossy()
-                .to_string();
+            let left_path = canonical_path_key_for_path(&snapshots[*left_index].candidate.path);
+            let right_path = canonical_path_key_for_path(&snapshots[*right_index].candidate.path);
 
             let Some((left_id, _)) = path_to_mod_id.get(&left_path) else {
                 return true;
@@ -211,48 +187,6 @@ fn apply_whitelist_filter(
             !whitelist_pairs.contains(&key)
         })
         .collect()
-}
-
-fn build_candidates(
-    mod_rows: &[(String, ModFolderPath, bool)],
-    mods_root: &Path,
-) -> Vec<ModCandidate> {
-    let mut candidates = Vec::new();
-
-    for (_id, folder_path, _is_safe) in mod_rows {
-        // Resolving is what makes the checks below mean anything: the stored
-        // value is relative, so testing it as a path found no directory and the
-        // whole scan reported zero candidates.
-        let path = folder_path.resolve(mods_root);
-
-        // Skip paths that no longer physically exist (`is_dir` is false for those too).
-        if !path.is_dir() {
-            continue;
-        }
-
-        // Also skip if it's identical to mods_root
-        if path == mods_root {
-            continue;
-        }
-
-        let raw_name = match path.file_name() {
-            Some(n) => n.to_string_lossy().to_string(),
-            None => continue,
-        };
-
-        let is_disabled = crate::common::normalizer::is_disabled_folder(&raw_name);
-        let display_name =
-            crate::common::normalizer::normalize_display_name(&raw_name).into_owned();
-
-        candidates.push(ModCandidate {
-            path,
-            raw_name,
-            display_name,
-            is_disabled,
-        });
-    }
-
-    candidates
 }
 
 async fn fetch_whitelist_pairs(

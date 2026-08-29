@@ -1,4 +1,13 @@
-import { Copy, Download, FolderOpen, Globe, Layers, PlayCircle, Settings } from 'lucide-react';
+import {
+  Copy,
+  Download,
+  FolderOpen,
+  Globe,
+  Inbox,
+  Layers,
+  PlayCircle,
+  Settings,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../lib/bindings';
@@ -16,7 +25,7 @@ export function DashboardQuickActions({
   const { t } = useTranslation(['dashboard']);
 
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
       {/* Launching the game is the only action that earns colour. The rest are
           navigation, and navigation that shouts in warning-orange or error-red
           reads as an alert about a problem that isn't there. */}
@@ -33,6 +42,11 @@ export function DashboardQuickActions({
         label={t('actions.mods_manager')}
         icon={<FolderOpen size={26} />}
         onClick={() => setWorkspaceView('mods')}
+      />
+      <ActionTile
+        label={t('actions.mod_inbox')}
+        icon={<Inbox size={26} />}
+        onClick={() => setWorkspaceView('mod-inbox')}
       />
       <ActionTile
         label={t('actions.storage_optimizer')}

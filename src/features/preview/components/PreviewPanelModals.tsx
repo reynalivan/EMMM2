@@ -6,7 +6,6 @@ import type { DuplicateInfo } from '../../../types/scanner';
 import MoveToObjectDialog from '../../../components/modals/MoveToObjectDialog';
 import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import DuplicateWarningModal from './DuplicateWarningModal';
-import PinEntryModal from '../../../components/modals/PinEntryModal';
 import ActiveModContextDialog from '../../../components/modals/ActiveModContextDialog';
 import type { ObjectSummary } from '../../../types/object';
 
@@ -41,9 +40,6 @@ interface PreviewPanelModalsProps {
   handleDuplicateCancel: () => void;
 
   // Pin Safe
-  pinSafeDialog: { open: boolean; folder: ModFolder | null };
-  handleToggleSafeCancel: () => void;
-  handleToggleSafeSubmit: () => void;
   activeContextDialog: { open: boolean; folder: ModFolder | null; isProcessing: boolean };
   handleActiveContextCancel: () => void;
   handleActiveContextSubmit: () => void;
@@ -65,9 +61,6 @@ export default function PreviewPanelModals({
   handleDuplicateForceEnable,
   handleDuplicateEnableOnly,
   handleDuplicateCancel,
-  pinSafeDialog,
-  handleToggleSafeCancel,
-  handleToggleSafeSubmit,
   activeContextDialog,
   handleActiveContextCancel,
   handleActiveContextSubmit,
@@ -97,11 +90,7 @@ export default function PreviewPanelModals({
           objects={objects}
           targetModPaths={[currentPath]}
           currentObjectId={objectId || undefined}
-          onSubmit={async (
-            targetId: string,
-            status: MoveStatus,
-            targetSubpath: string | null,
-          ) => {
+          onSubmit={async (targetId: string, status: MoveStatus, targetSubpath: string | null) => {
             if (!moveDialog.folder) return;
             await handleMoveToObject(moveDialog.folder, targetId, status, targetSubpath, [
               currentPath,
@@ -164,13 +153,6 @@ export default function PreviewPanelModals({
         onForceEnable={handleDuplicateForceEnable}
         onEnableOnlyThis={handleDuplicateEnableOnly}
         onCancel={handleDuplicateCancel}
-      />
-
-      {/* Safe Mode Pin Entry */}
-      <PinEntryModal
-        open={pinSafeDialog.open}
-        onClose={handleToggleSafeCancel}
-        onSuccess={handleToggleSafeSubmit}
       />
 
       <ActiveModContextDialog

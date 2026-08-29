@@ -1,6 +1,30 @@
 use crate::services::explorer::listing::{
     build_mod_folder_from_fs_entry, list_mod_folders_inner, scan_fs_folders,
+    scan_fs_folders_shallow,
 };
+
+#[test]
+fn shallow_listing_defers_folder_classification_and_metadata_reads() {
+    let temp_dir = tempfile::tempdir().expect("temp directory");
+    let mod_dir = temp_dir.path().join("Example Mod");
+    std::fs::create_dir_all(&mod_dir).expect("mod directory");
+    std::fs::write(
+        mod_dir.join("mod.ini"),
+        "[TextureOverrideExample]\nhash = abc",
+    )
+    .expect("ini file");
+    std::fs::write(mod_dir.join("info.json"), r#"{\"favorite\": true}"#).expect("metadata file");
+
+    let folders = scan_fs_folders_shallow(temp_dir.path()).expect("shallow listing");
+
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].node_type, "ContainerFolder");
+    assert!(folders[0].classification_reasons.is_empty());
+    assert!(!folders[0].has_info_json);
+    assert!(!folders[0].is_favorite);
+    assert_eq!(folders[0].modified_at, 0);
+    assert_eq!(folders[0].size_bytes, 0);
+}
 use std::fs;
 use tempfile::TempDir;
 

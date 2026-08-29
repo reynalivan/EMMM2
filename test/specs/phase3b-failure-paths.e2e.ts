@@ -15,10 +15,6 @@ interface BulkResult {
   success: string[];
   failures: { path: string; error: unknown }[];
 }
-interface TrashEntry {
-  id: string;
-  original_name: string;
-}
 
 /** Asserts a command rejects (errors bubble up — no silent success on bad input). */
 async function rejects(cmd: string, args: Record<string, unknown>): Promise<void> {
@@ -94,22 +90,5 @@ describe('Fase 3b — Failure & Validation Paths (data-safety)', () => {
     });
     expect(res.failures.length).toBe(0);
     expect(await listDir(objDir)).not.toContain('RealMod');
-  });
-
-  it('TC-22-02: Empty trash clears entries and returns a count', async () => {
-    await createObject(gameId, 'EmptyTrashObj');
-    await addMockMod(game, 'EmptyTrashObj', 'ToPurge');
-    await reconcile(gameId);
-
-    await invokeInApp('delete_mod', {
-      path: path.join(game.modsPath, 'EmptyTrashObj', 'ToPurge'),
-      gameId,
-    });
-    const before = await invokeInApp<TrashEntry[]>('list_trash');
-    expect(before.length).toBeGreaterThan(0);
-
-    const removed = await invokeInApp<number>('empty_trash');
-    expect(removed).toBeGreaterThan(0);
-    expect((await invokeInApp<TrashEntry[]>('list_trash')).length).toBe(0);
   });
 });

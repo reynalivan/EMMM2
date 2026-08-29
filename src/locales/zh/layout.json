@@ -1,9 +1,8 @@
 {
-  "app_locked_title": "应用已锁定",
-  "app_locked_description": "在不安全模式下访问应用需要 PIN 码。",
   "nav": {
     "dashboard": "仪表板",
     "mods_manager": "模组管理器",
+    "mod_inbox": "模组收件箱",
     "collections": "收藏集",
     "settings": "设置",
     "storage_optimizer": "存储优化器",
@@ -18,16 +17,20 @@
   },
   "maintenance": {
     "clear_success": "成功清除了 {{count}} 个旧缩略图。",
-    "maintenance_success": "维护完成。数据库已优化。修剪了 {{pruned}} 个缩略图。清理了 {{trash}} 个旧的空回收站条目。",
+    "maintenance_success": "维护完成。数据库已优化。修剪了 {{pruned}} 个缩略图。",
     "failed": "维护失败：{{error}}"
   },
   "actions": {
     "trash": "垃圾桶",
-    "refresh": "刷新",
+    "refresh": "从磁盘同步模组",
+    "refresh_started": "正在从磁盘同步 {{name}}...",
+    "refresh_complete": "完整同步已完成，磁盘更改已应用。",
+    "refresh_already_synced": "模组已同步。",
+    "refresh_conflicts": "同步完成，但有 {{count}} 个文件夹冲突需要处理。",
+    "refresh_rename_confirmation": "同步需要确认 {{count}} 个重命名组。",
+    "refresh_source_unavailable": "模组文件夹不可用：{{error}}",
+    "refresh_failed": "完整同步失败：{{error}}",
     "settings": "设置",
-    "safe_mode": "安全模式",
-    "privacy_mode": "隐私模式",
-    "privacy_toggle": "切换主隐私模式",
     "hide_preview": "隐藏预览",
     "show_preview": "显示预览"
   },
@@ -37,10 +40,7 @@
     "add_game": "添加游戏"
   },
   "context": {
-    "safe_mode_tip": "切换安全模式",
     "loading": "加载中...",
-    "unsaved_safe": "未保存的 SAFE 预设",
-    "unsaved_unsafe": "未保存的 UNSAFE 预设",
     "collections_title": "收藏集",
     "save_current": "保存当前状态",
     "no_collections": "无已保存的收藏",
@@ -50,8 +50,8 @@
     "play": "开始游戏",
     "launching": "启动中...",
     "randomizer": "随机化 (扭蛋)",
-    "conflicts": "冲突",
-    "conflict_toast": "检测到 {{count}} 个着色器冲突"
+    "conflicts": "已启用冲突",
+    "conflict_toast": "{{count}} 个已启用模组冲突"
   },
   "app": {
     "name": "EMMM",

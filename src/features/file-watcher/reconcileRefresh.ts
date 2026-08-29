@@ -32,7 +32,10 @@ export function publishDiskReconcileRefresh(
     [result.collections_changed, 'collectionsCatalog'],
     [dashboardAffected, 'dashboardKeybindings'],
     [previewAffected, 'previewOnly'],
-    [result.folders_changed || result.objects_changed, 'conflictsOnly'],
+    [
+      result.folders_changed || result.objects_changed || result.runtime_file_changed,
+      'conflictsOnly',
+    ],
   ];
 
   const active = kinds.filter(([applies]) => applies).map(([, kind]) => kind);

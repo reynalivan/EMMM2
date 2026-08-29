@@ -10,12 +10,12 @@
   },
   "header": {
     "title": "Dasbor",
-    "subtitle": "Ikhtisar ekosistem mod Anda",
-    "refresh": "Segarkan"
+    "subtitle": "Ikhtisar ekosistem mod Anda"
   },
   "actions": {
     "quick_play": "Main Cepat",
     "mods_manager": "Manajer Mod",
+    "mod_inbox": "Kotak Masuk Mod",
     "storage_optimizer": "Pengoptimal Penyimpanan",
     "collections": "Koleksi",
     "settings": "Pengaturan",

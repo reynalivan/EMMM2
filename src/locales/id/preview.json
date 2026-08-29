@@ -3,6 +3,13 @@
     "no_mod_selected": "Tidak ada mod terpilih",
     "select_folder": "Pilih folder dari daftar untuk melihat detail, mengelola gambar, dan mengedit konfigurasi."
   },
+  "folder_conflict": {
+    "title": "Konflik nama folder",
+    "description": "Mod ini hanya dapat dibaca sampai identity folder duplikat diselesaikan.",
+    "enabled": "Aktif",
+    "disabled": "Nonaktif",
+    "resolve": "Selesaikan konflik"
+  },
   "actions": {
     "import_archives": "Impor Arsip",
     "import_folders": "Impor Folder",

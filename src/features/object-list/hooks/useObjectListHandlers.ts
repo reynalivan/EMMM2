@@ -5,51 +5,29 @@
  * review, and import (drop → optional archive extraction → review).
  */
 
-import React from 'react';
 import type { GameSchema } from '../../../types/object';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import { useSharedObjectActions } from '../../workspace-runtime/actions/useSharedObjectActions';
 import { useScanReviewFlow } from './useScanReviewFlow';
-import { useArchiveImportFlow } from './useArchiveImportFlow';
 import { useDropImportFlow } from './useDropImportFlow';
 import { useObjectBulkActions } from './useObjectBulkActions';
 
 interface HandlerDeps {
   objects: WorkspaceObjectNode[];
   schema: GameSchema | undefined;
-  mismatchConfirm: string[] | null;
-  setMismatchConfirm: React.Dispatch<React.SetStateAction<string[] | null>>;
 }
 
-export function useObjectListHandlers({
-  objects,
-  schema,
-  mismatchConfirm,
-  setMismatchConfirm,
-}: HandlerDeps) {
+export function useObjectListHandlers({ objects, schema }: HandlerDeps) {
   // ── 1. Feature Hooks ───────────────────────────────────────────
   const crud = useSharedObjectActions({ objects, schema });
-  const scan = useScanReviewFlow();
-
-  // Archive depends on scan review state to resume flows
-  const archive = useArchiveImportFlow({
-    objects,
-    setScanReview: scan.setScanReview,
-    setIsSyncing: scan.setIsSyncing,
-    setMismatchConfirm: (paths) => setMismatchConfirm(paths),
-  });
+  const scan = useScanReviewFlow(objects.map((object) => object.id));
 
   const drop = useDropImportFlow({
     objects,
-    handleArchivesInteractively: archive.handleArchivesInteractively,
-    setMismatchConfirm: (paths) => setMismatchConfirm(paths),
-    setScanReview: scan.setScanReview,
-    setIsSyncing: scan.setIsSyncing,
   });
 
   const bulk = useObjectBulkActions({
     objects,
-    setIsSyncing: scan.setIsSyncing,
   });
 
   // ── 2. Mapping to Unified Interface ────────────────────────────
@@ -63,15 +41,7 @@ export function useObjectListHandlers({
     setForceDeleteObjectDialog: crud.setForceDeleteObjectDialog,
     bulkTagModal: bulk.bulkTagModal,
     setBulkTagModal: bulk.setBulkTagModal,
-    mismatchConfirm,
-    setMismatchConfirm,
     isSyncing: scan.isSyncing,
-    syncConfirm: crud.syncConfirm,
-    setSyncConfirm: crud.setSyncConfirm,
-    scanReview: scan.scanReview,
-    handleCommitScan: scan.handleCommitScan,
-    handleCloseScanReview: scan.handleCloseScanReview,
-    archiveModal: archive.archiveModal,
 
     // CRUD Handlers
     handleDeleteObject: crud.handleDeleteObject,
@@ -91,7 +61,6 @@ export function useObjectListHandlers({
     handleSync: scan.handleSync,
     handleBackgroundSync: scan.handleBackgroundSync,
     handleSyncWithDb: crud.handleSyncWithDb,
-    handleApplySyncMatch: crud.handleApplySyncMatch,
 
     // Drop & Ingest Handlers
     handleDropOnItem: drop.handleDropOnItem,
@@ -99,10 +68,6 @@ export function useObjectListHandlers({
     handleDropOnNewObjectSubmit: drop.handleDropOnNewObjectSubmit,
 
     // Archive Handlers
-    handleArchivesInteractively: archive.handleArchivesInteractively,
-    handleArchiveExtractSubmit: archive.handleArchiveExtractSubmit,
-    handleArchiveExtractSkip: archive.handleArchiveExtractSkip,
-    handleStopExtraction: archive.handleStopExtraction,
 
     // Bulk Action Handlers
     handleBulkDelete: bulk.handleBulkDelete,
@@ -111,7 +76,7 @@ export function useObjectListHandlers({
     handleBulkDisable: bulk.handleBulkDisable,
     handleBulkAddTags: bulk.handleBulkAddTags,
     handleBulkRemoveTags: bulk.handleBulkRemoveTags,
-    handleBulkAutoRecognize: bulk.handleBulkAutoRecognize,
+    handleBulkClassifyAndMatch: bulk.handleBulkClassifyAndMatch,
     handleBulkFavorite: bulk.handleBulkFavorite,
     handleBulkSafe: bulk.handleBulkSafe,
   };

@@ -1,4 +1,6 @@
 use super::*;
+use crate::domain::errors::AppError;
+use std::cell::Cell;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -181,6 +183,128 @@ fn test_extract_duplicate_dest() {
     assert!(result2.success);
     // Since overwrite is true, it extracts to "existing_mod2" directly
     assert!(dir.path().join("existing_mod2").join("file.ini").exists());
+}
+
+#[test]
+fn destination_preflight_runs_before_overwrite_commit() {
+    let dir = TempDir::new().unwrap();
+    let zip_path = create_test_zip(
+        dir.path(),
+        "protected_mod.zip",
+        &[("new.ini", b"[TextureOverride]\nnew")],
+    );
+    let existing = dir.path().join("protected_mod");
+    fs::create_dir(&existing).unwrap();
+    fs::write(existing.join("keep.ini"), "existing").unwrap();
+
+    let called = Cell::new(false);
+    let expected = existing.clone();
+    let reject = |destinations: &[PathBuf]| {
+        called.set(true);
+        assert_eq!(destinations, std::slice::from_ref(&expected));
+        Err(AppError::Validation(
+            "destination is conflicted".to_string(),
+        ))
+    };
+
+    let result = extract_archive(
+        &zip_path,
+        dir.path(),
+        ExtractOptions {
+            overwrite: true,
+            before_commit: Some(&reject),
+            ..Default::default()
+        },
+    );
+
+    assert!(result.is_err());
+    assert!(called.get());
+    assert_eq!(
+        fs::read_to_string(existing.join("keep.ini")).unwrap(),
+        "existing"
+    );
+    assert!(!existing.join("new.ini").exists());
+    assert!(zip_path.exists());
+    assert!(!dir.path().join(".temp_extract").exists());
+}
+
+#[test]
+fn custom_name_cannot_escape_or_target_the_mods_root() {
+    let dir = TempDir::new().unwrap();
+    let mods_dir = dir.path().join("Mods");
+    let outside = dir.path().join("Outside");
+    fs::create_dir_all(&mods_dir).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    let marker = outside.join("must-survive.txt");
+    fs::write(&marker, "outside").unwrap();
+    let zip_path = create_test_zip(
+        dir.path(),
+        "unsafe-name.zip",
+        &[("new.ini", b"[TextureOverride]\nnew")],
+    );
+    let absolute_outside = outside.to_string_lossy().to_string();
+
+    for unsafe_name in ["", "..", "../Outside", absolute_outside.as_str()] {
+        let result = extract_archive(
+            &zip_path,
+            &mods_dir,
+            ExtractOptions {
+                custom_name: Some(unsafe_name),
+                overwrite: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            result.is_err(),
+            "unsafe custom name must fail: {unsafe_name}"
+        );
+    }
+
+    assert_eq!(fs::read_to_string(marker).unwrap(), "outside");
+    assert!(mods_dir.exists());
+    assert!(zip_path.exists());
+}
+
+#[test]
+fn enabled_extraction_uniquifies_against_disabled_sibling_identity() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join("DISABLED status_mod")).unwrap();
+    let zip_path = create_test_zip(
+        dir.path(),
+        "status_mod.zip",
+        &[("mod.ini", b"[TextureOverride]\nnew")],
+    );
+
+    let result = extract_archive(&zip_path, dir.path(), ExtractOptions::default()).unwrap();
+
+    assert!(result.dest_paths[0].ends_with("status_mod (2)"));
+    assert!(dir.path().join("status_mod (2)").exists());
+    assert!(!dir.path().join("status_mod").exists());
+}
+
+#[test]
+fn disabled_extraction_commits_directly_to_a_unique_final_identity() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join("DISABLED status_mod")).unwrap();
+    let zip_path = create_test_zip(
+        dir.path(),
+        "status_mod.zip",
+        &[("mod.ini", b"[TextureOverride]\nnew")],
+    );
+
+    let result = extract_archive(
+        &zip_path,
+        dir.path(),
+        ExtractOptions {
+            disable_after: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert!(result.dest_paths[0].ends_with("DISABLED status_mod (2)"));
+    assert!(dir.path().join("DISABLED status_mod (2)").exists());
+    assert!(!dir.path().join("status_mod").exists());
 }
 
 // Covers: NC-2.1-01 — Corrupt archive

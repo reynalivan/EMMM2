@@ -23,8 +23,8 @@ export default function FolderGrid() {
     selfIsEnabled,
     selfIsEffectivelyActive,
     selfReasons,
-    conflicts: nameConflicts,
     sourceUnavailableMessage,
+    recoveryStatus,
     isMobile,
     currentPath,
     explorerSearchQuery,
@@ -38,7 +38,6 @@ export default function FolderGrid() {
     setExplorerSearch,
     handleSortToggle,
     handleKeyDown,
-    handleRefresh,
     gridSelection,
     clearGridSelection,
     handleToggleSelf,
@@ -72,15 +71,9 @@ export default function FolderGrid() {
     handleBulkSafe,
     handleBulkPin,
     handleBulkMoveToObject,
-    pinSafeDialog,
-    handleToggleSafeSubmit,
-    handleToggleSafeCancel,
     activeContextDialog,
     handleActiveContextCancel,
     handleActiveContextSubmit,
-    syncConfirm,
-    closeSyncConfirm,
-    handleApplySyncMatch,
     isDragging,
     handleImportFiles,
   } = folderGrid;
@@ -89,6 +82,7 @@ export default function FolderGrid() {
   const {
     visibleFolders,
     conflictPathSet,
+    folderConflictScopes,
     activePane,
     setActivePane,
     isIgnoreManagementOpen,
@@ -96,13 +90,13 @@ export default function FolderGrid() {
     workspaceSourceUnavailableMessage,
     mutationsDisabled,
     handleSelectAll,
-  } = useFolderGridViewModel({ sortedFolders, sourceUnavailableMessage });
+  } = useFolderGridViewModel({ sortedFolders, sourceUnavailableMessage, recoveryStatus });
 
   return (
     <div
       data-testid="folder-grid"
       className={cn(
-        'flex flex-col h-full bg-transparent p-4 relative outline-none transition-shadow duration-200',
+        'flex min-h-0 min-w-0 flex-col h-full bg-transparent p-4 relative outline-none transition-shadow duration-200',
         activePane === 'folderGrid' && 'ring-1 ring-inset ring-primary/20',
       )}
       onKeyDown={(e) => {
@@ -130,7 +124,6 @@ export default function FolderGrid() {
       <FolderGridBanners
         isLoading={isLoading}
         isError={isError}
-        nameConflicts={nameConflicts}
         isFlatModRoot={isFlatModRoot}
         selfIsEnabled={selfIsEffectivelyActive || selfIsEnabled}
         selfReasons={selfReasons}
@@ -143,6 +136,8 @@ export default function FolderGrid() {
         currentPath={currentPath}
         onOpenEnableParentDialog={openEnableParentDialog}
         diskSourceUnavailableMessage={workspaceSourceUnavailableMessage}
+        recoveryStatus={recoveryStatus}
+        mutationsDisabled={mutationsDisabled}
       />
 
       <FolderGridToolbar
@@ -159,7 +154,6 @@ export default function FolderGrid() {
         explorerSearchQuery={explorerSearchQuery}
         setExplorerSearch={setExplorerSearch}
         visibleCount={visibleFolders.length}
-        handleRefresh={handleRefresh}
       />
 
       <FolderGridStateViews
@@ -179,6 +173,7 @@ export default function FolderGrid() {
         model={folderGrid}
         visibleFolders={visibleFolders}
         conflictPathSet={conflictPathSet}
+        folderConflictScopes={folderConflictScopes}
         mutationsDisabled={mutationsDisabled}
         onSelectAll={handleSelectAll}
       />
@@ -199,16 +194,9 @@ export default function FolderGrid() {
         gridSelection={gridSelection}
         isIgnoreManagementOpen={isIgnoreManagementOpen}
         setIsIgnoreManagementOpen={setIsIgnoreManagementOpen}
-        pinSafeDialog={pinSafeDialog}
-        handleToggleSafeCancel={handleToggleSafeCancel}
-        handleToggleSafeSubmit={handleToggleSafeSubmit}
         activeContextDialog={activeContextDialog}
         handleActiveContextCancel={handleActiveContextCancel}
         handleActiveContextSubmit={handleActiveContextSubmit}
-        syncConfirm={syncConfirm}
-        handleCloseSyncConfirm={closeSyncConfirm}
-        handleApplySyncMatch={handleApplySyncMatch}
-        objectId={undefined}
         currentPath={typeof currentPath === 'string' ? currentPath : undefined}
         objects={objects}
       />

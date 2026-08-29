@@ -32,6 +32,16 @@ fn save_preview_image_resizes_to_epic_limits_and_writes_webp() {
     let decoded = image::open(&saved).unwrap();
     assert!(decoded.width() <= MAX_WIDTH);
     assert!(decoded.height() <= MAX_HEIGHT);
+    let names = fs::read_dir(&mod_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        names
+            .iter()
+            .all(|name| !name.contains(".tmp.") && !name.contains(".recover.")),
+        "successful atomic save must not leave staging artifacts: {names:?}"
+    );
 }
 
 #[test]

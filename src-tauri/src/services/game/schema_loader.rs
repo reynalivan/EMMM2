@@ -21,6 +21,9 @@ pub struct GameSchema {
     /// Optional INI key whitelist (keys to include during extraction).
     #[serde(default)]
     pub ini_key_whitelist: Vec<String>,
+    /// Extensions to inspect while matching a mod folder.
+    #[serde(default = "default_match_extensions")]
+    pub match_extensions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -34,6 +37,9 @@ pub struct CategoryDef {
     /// Per-category metadata filter fields. If absent, no metadata editing for this category.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filters: Option<Vec<FilterDef>>,
+    /// Game-specific groups within this canonical category.
+    #[serde(default)]
+    pub subcategories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -52,6 +58,13 @@ const DEFAULT_CATEGORIES: [(&str, &str, &str); 4] = [
     ("Other", "Package", "neutral"),
 ];
 
+fn default_match_extensions() -> Vec<String> {
+    ["ini", "dds", "buf", "ib"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
 /// Default schema fallback when game-specific schema.json is missing/corrupt.
 pub fn default_schema() -> GameSchema {
     GameSchema {
@@ -63,6 +76,7 @@ pub fn default_schema() -> GameSchema {
                 icon: (*icon).to_string(),
                 color: (*color).to_string(),
                 filters: None,
+                subcategories: Vec::new(),
             })
             .collect(),
         filters: Vec::new(),
@@ -70,6 +84,7 @@ pub fn default_schema() -> GameSchema {
         short_token_whitelist: Vec::new(),
         ini_key_blacklist: Vec::new(),
         ini_key_whitelist: Vec::new(),
+        match_extensions: default_match_extensions(),
     }
 }
 

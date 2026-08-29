@@ -1,10 +1,16 @@
 import { expect } from '@wdio/globals';
 import fs from 'fs/promises';
 import path from 'path';
-import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../support/fixtures.js';
+import {
+  createMockGame,
+  addMockMod,
+  listDir,
+  removeMockGame,
+  type MockGame,
+} from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
-import { createObject, getObjects, reconcile } from '../support/data.js';
+import { createObject, findObject, getObjects, reconcile } from '../support/data.js';
 
 interface CollectionSummary {
   id: string;
@@ -12,8 +18,10 @@ interface CollectionSummary {
   [key: string]: unknown;
 }
 interface ApplyResult {
-  success: boolean;
-  [key: string]: unknown;
+  mods_enabled: number;
+  mods_disabled: number;
+  partial_apply: boolean;
+  skipped_missing_paths: string[];
 }
 
 /**
@@ -36,7 +44,7 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
 
   it('TC-31-01: Collection create → list → apply → delete lifecycle', async () => {
     await createObject(gameId, 'ColObj');
-    await addMockMod(game, 'ColObj', 'ColMod');
+    const modPath = await addMockMod(game, 'ColObj', 'ColMod');
     await reconcile(gameId);
 
     const created = await invokeInApp<CollectionSummary>('create_collection', {
@@ -48,13 +56,21 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
     const list = await invokeInApp<CollectionSummary[]>('list_collections', { gameId });
     expect(list.some((c) => c.id === created.id)).toBe(true);
 
+    await invokeInApp('bulk_toggle_mods', { gameId, paths: [modPath], enable: false });
+    expect(await listDir(path.join(game.modsPath, 'ColObj'))).toContain('DISABLED ColMod');
+
     await invokeInApp('preview_apply_collection', { collectionId: created.id, gameId });
     const applied = await invokeInApp<ApplyResult>('apply_collection', {
       collectionId: created.id,
       gameId,
       ignoreMissing: true,
     });
-    expect(applied.success).toBe(true);
+    expect(applied.partial_apply).toBe(false);
+    expect(applied.mods_enabled).toBe(1);
+    expect(applied.mods_disabled).toBe(0);
+    expect(await listDir(path.join(game.modsPath, 'ColObj'))).toContain('ColMod');
+    expect(await listDir(path.join(game.modsPath, 'ColObj'))).not.toContain('DISABLED ColMod');
+    expect((await findObject(gameId, 'ColObj'))?.enabled_count).toBe(1);
 
     await invokeInApp('delete_collection', { id: created.id });
     const after = await invokeInApp<CollectionSummary[]>('list_collections', { gameId });
@@ -63,7 +79,8 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
 
   it('TC-31-02: Apply with a missing mod is transactional, not half-applied', async () => {
     await createObject(gameId, 'PartialObj');
-    await addMockMod(game, 'PartialObj', 'PartialMod');
+    const keepPath = await addMockMod(game, 'PartialObj', 'PartialKeep');
+    const missingPath = await addMockMod(game, 'PartialObj', 'PartialMissing');
     await reconcile(gameId);
 
     const created = await invokeInApp<CollectionSummary>('create_collection', {
@@ -72,8 +89,11 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
       saveMode: 'save_current_state',
     });
 
-    // Remove the mod from disk after the snapshot → apply must handle the gap.
-    await fs.rm(path.join(game.modsPath, 'PartialObj', 'PartialMod'), {
+    await invokeInApp('bulk_toggle_mods', { gameId, paths: [keepPath], enable: false });
+
+    // Remove one member after the snapshot → available members still apply,
+    // while the missing member remains explicit in the result.
+    await fs.rm(missingPath, {
       recursive: true,
       force: true,
     });
@@ -84,7 +104,15 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
       gameId,
       ignoreMissing: true,
     });
-    expect(typeof applied.success).toBe('boolean');
+    expect(applied.partial_apply).toBe(true);
+    expect(applied.skipped_missing_paths.some((item) => item.includes('PartialMissing'))).toBe(
+      true,
+    );
+    expect(await listDir(path.join(game.modsPath, 'PartialObj'))).toContain('PartialKeep');
+    expect(await listDir(path.join(game.modsPath, 'PartialObj'))).not.toContain(
+      'DISABLED PartialKeep',
+    );
+    expect((await findObject(gameId, 'PartialObj'))?.enabled_count).toBe(1);
 
     await invokeInApp('delete_collection', { id: created.id });
   });
@@ -111,14 +139,13 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
     expect(afterRevoke.length).toBeLessThan(ignored.length);
   });
 
-  it('TC-30-01: Safe-mode marking and safe-scoped object query', async () => {
+  it('TC-30-01: Safety marking remains queryable without filtering projection data', async () => {
     await createObject(gameId, 'SafeObj');
     const modDir = await addMockMod(game, 'SafeObj', 'SafeMod');
     await reconcile(gameId);
 
     await invokeInApp('toggle_mod_safe', { gameId, folderPath: modDir, safe: true });
 
-    // safe_mode is derived backend-side from the active corridor, not passed in.
     const safeObjects = await getObjects(gameId);
     expect(Array.isArray(safeObjects)).toBe(true);
   });

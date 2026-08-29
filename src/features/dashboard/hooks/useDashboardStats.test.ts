@@ -1,7 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDashboardStats } from './useDashboardStats';
-import { useSafeMode } from '../../../hooks/settingsQuery';
 import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../testing/test-utils';
 import type { DashboardPayload } from '../../../types/dashboard';
@@ -14,51 +13,18 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../hooks/settingsQuery', () => ({
-  useSafeMode: vi.fn(),
-}));
-
 describe('useDashboardStats', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should fetch stats respecting safeMode=false', async () => {
-    vi.mocked(useSafeMode).mockReturnValue(false);
+  it('fetches unfiltered dashboard stats', async () => {
     const mockPayload: DashboardPayload = {
       stats: {
         total_mods: 2,
         enabled_mods: 2,
         disabled_mods: 0,
         total_size_bytes: 100,
-        total_games: 1,
-        total_collections: 0,
-      },
-      duplicate_waste_bytes: 0,
-      category_distribution: [],
-      game_distribution: [],
-      recent_mods: [],
-    };
-    vi.mocked(invoke).mockResolvedValue(mockPayload);
-
-    const { result } = renderHook(() => useDashboardStats(), { wrapper: createWrapper });
-
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    expect(invoke).toHaveBeenCalledWith('get_dashboard_stats');
-    expect(result.current.data).toEqual(mockPayload);
-  });
-
-  it('should fetch stats respecting safeMode=true', async () => {
-    vi.mocked(useSafeMode).mockReturnValue(true);
-    const mockPayload: DashboardPayload = {
-      stats: {
-        total_mods: 1,
-        enabled_mods: 1,
-        disabled_mods: 0,
-        total_size_bytes: 50,
         total_games: 1,
         total_collections: 0,
       },

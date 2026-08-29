@@ -1,7 +1,10 @@
 use crate::common::sync::lock;
 use crate::domain::errors::AppError;
 use sqlx::SqlitePool;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use tauri::AppHandle;
 
 use super::models::AppSettings;
@@ -9,6 +12,7 @@ use super::models::AppSettings;
 pub struct ConfigService {
     pub(super) pool: SqlitePool,
     pub(super) settings: Mutex<AppSettings>,
+    pub(super) settings_authoritative: AtomicBool,
 }
 
 impl ConfigService {
@@ -24,37 +28,79 @@ impl ConfigService {
     /// Initialize from Tauri AppHandle. The pool is already migrated by
     /// `bootstrap::init_pool`, so this only loads current settings.
     pub fn init(_app_handle: &AppHandle, pool: SqlitePool) -> Self {
-        let settings = Self::run_async(async { Self::load_from_db(&pool).await });
+        let (settings, settings_authoritative) =
+            match Self::run_async(async { Self::load_from_db(&pool).await }) {
+                Ok(settings) => (settings, true),
+                Err(error) => {
+                    log::error!("Failed to load settings from DB: {error}");
+                    (AppSettings::default(), false)
+                }
+            };
 
         Self {
             pool,
             settings: Mutex::new(settings),
+            settings_authoritative: AtomicBool::new(settings_authoritative),
         }
     }
 
     /// Constructor for tests: takes an already-migrated pool directly.
     pub fn new_for_test(pool: SqlitePool) -> Self {
-        let settings = Self::run_async(async { Self::load_from_db(&pool).await });
+        let (settings, settings_authoritative) =
+            match Self::run_async(async { Self::load_from_db(&pool).await }) {
+                Ok(settings) => (settings, true),
+                Err(error) => {
+                    log::error!("Failed to load test settings from DB: {error}");
+                    (AppSettings::default(), false)
+                }
+            };
 
         Self {
             pool,
             settings: Mutex::new(settings),
+            settings_authoritative: AtomicBool::new(settings_authoritative),
         }
     }
 
     /// Async test constructor for current-thread tokio tests that cannot use block_in_place.
     pub async fn new_for_test_async(pool: SqlitePool) -> Self {
-        let settings = Self::load_from_db(&pool).await;
+        let (settings, settings_authoritative) = match Self::load_from_db(&pool).await {
+            Ok(settings) => (settings, true),
+            Err(error) => {
+                log::error!("Failed to load async test settings from DB: {error}");
+                (AppSettings::default(), false)
+            }
+        };
 
         Self {
             pool,
             settings: Mutex::new(settings),
+            settings_authoritative: AtomicBool::new(settings_authoritative),
         }
     }
 
-    /// Resets the in-memory state to defaults. Should be called after a database reset.
-    pub fn reset_to_default(&self) {
-        *lock(&self.settings) = AppSettings::default();
+    /// Reset persistent and in-memory settings under the same writer lock.
+    pub fn reset_database(&self, app_data_dir: &std::path::Path) -> Result<(), AppError> {
+        let mut current = lock(&self.settings);
+        let next_revision = current.revision.checked_add(1).ok_or_else(|| {
+            AppError::Internal("Settings revision counter overflowed during reset".to_string())
+        })?;
+        let pool = self.pool.clone();
+        Self::run_async(async {
+            crate::services::app::app_service::reset_database_service(
+                &pool,
+                app_data_dir,
+                Some(next_revision),
+            )
+            .await
+        })?;
+        let defaults = AppSettings {
+            revision: next_revision,
+            ..AppSettings::default()
+        };
+        *current = defaults;
+        self.settings_authoritative.store(true, Ordering::Release);
+        Ok(())
     }
 
     pub fn get_settings(&self) -> AppSettings {
@@ -83,30 +129,6 @@ impl ConfigService {
         })
     }
 
-    /// Whether the Safe Mode corridor is active.
-    /// The corridor the app is operating in right now.
-    ///
-    /// The only place a `Corridor` value is born: commands derive it here and
-    /// pass it down, so Safe Mode can never be supplied over IPC.
-    pub fn current_corridor(&self) -> crate::domain::corridor::Corridor {
-        crate::domain::corridor::Corridor::from_is_safe(self.safe_mode_enabled())
-    }
-
-    /// Corridor after an optional per-request PIN proof: a valid PIN widens
-    /// Safe to Unsafe. With no PIN configured there is nothing to prove, so
-    /// the corridor stays Safe.
-    pub fn corridor_with_elevation(&self, pin: Option<&str>) -> crate::domain::corridor::Corridor {
-        let corridor = self.current_corridor();
-        if corridor.is_safe() && pin.is_some_and(|value| self.pin_grants_elevation(value)) {
-            return crate::domain::corridor::Corridor::Unsafe;
-        }
-        corridor
-    }
-
-    pub fn safe_mode_enabled(&self) -> bool {
-        self.with_settings(|settings| settings.safe_mode.enabled)
-    }
-
     /// The configured mods root for a game, if it has one.
     pub fn mods_root_for(&self, game_id: &str) -> Option<std::path::PathBuf> {
         self.with_settings(|settings| {
@@ -118,28 +140,86 @@ impl ConfigService {
         })
     }
 
-    pub fn save_settings(&self, mut new_settings: AppSettings) -> Result<(), AppError> {
-        new_settings.safe_mode.keywords = normalize_keywords(&new_settings.safe_mode.keywords);
+    /// Persist a complete settings snapshot without allowing it to bypass the
+    /// disk-recovery activation boundary.
+    ///
+    /// Callers that own one field should use [`Self::update_settings`] so a
+    /// snapshot captured before another settings write cannot erase it.
+    pub fn save_settings(&self, new_settings: AppSettings) -> Result<AppSettings, AppError> {
+        self.update_settings(move |current| {
+            if new_settings.revision != current.revision {
+                return Err(AppError::Validation(
+                    "Settings changed since this screen was loaded. Refresh and retry your edit."
+                        .to_string(),
+                ));
+            }
+            if new_settings.active_game_id != current.active_game_id {
+                return Err(AppError::Validation(
+                    "Use the active-game command to change the active game safely".to_string(),
+                ));
+            }
+            ensure_existing_mod_paths_unchanged(current, &new_settings)?;
+            *current = new_settings;
+            if current
+                .active_game_id
+                .as_ref()
+                .is_some_and(|active_id| !current.games.iter().any(|game| &game.id == active_id))
+            {
+                current.active_game_id = None;
+            }
+            Ok(())
+        })?;
+        Ok(self.get_settings())
+    }
 
-        // Write to DB synchronously
+    /// Atomically derive and persist a settings change from the latest
+    /// in-memory snapshot. The lock intentionally spans the database write:
+    /// settings writers are rare, and serializing their commit point prevents
+    /// stale whole-struct writes from reverting unrelated fields.
+    pub(crate) fn update_settings<R>(
+        &self,
+        update: impl FnOnce(&mut AppSettings) -> Result<R, AppError>,
+    ) -> Result<R, AppError> {
+        if !self.settings_authoritative.load(Ordering::Acquire) {
+            return Err(AppError::Db(
+                "Settings were not loaded authoritatively; restart or repair the database before saving"
+                    .to_string(),
+            ));
+        }
+        let mut current = lock(&self.settings);
+        let mut next = current.clone();
+        let output = update(&mut next)?;
+        next.revision = current.revision.checked_add(1).ok_or_else(|| {
+            AppError::Internal("Settings revision counter overflowed".to_string())
+        })?;
+        next.safety.keywords = normalize_keywords(&next.safety.keywords);
+        let removed_game_ids: Vec<String> = current
+            .games
+            .iter()
+            .filter(|existing| !next.games.iter().any(|game| game.id == existing.id))
+            .map(|game| game.id.clone())
+            .collect();
+
         let pool = self.pool.clone();
-        Self::run_async(async { Self::write_settings_to_db(&pool, &new_settings).await })?;
-
-        // Update in-memory state
-        *lock(&self.settings) = new_settings;
-        Ok(())
+        Self::run_async(async {
+            Self::write_settings_to_db(&pool, &next, &removed_game_ids).await
+        })?;
+        *current = next;
+        Ok(output)
     }
 
     pub fn set_active_game(&self, game_id: Option<String>) -> Result<(), AppError> {
-        let mut settings = lock(&self.settings).clone();
-        settings.active_game_id = game_id;
-        self.save_settings(settings)
+        self.update_settings(move |settings| {
+            settings.active_game_id = game_id;
+            Ok(())
+        })
     }
 
     pub fn set_auto_close_launcher(&self, enabled: bool) -> Result<(), AppError> {
-        let mut settings = lock(&self.settings).clone();
-        settings.auto_close_launcher = enabled;
-        self.save_settings(settings)
+        self.update_settings(move |settings| {
+            settings.auto_close_launcher = enabled;
+            Ok(())
+        })
     }
 
     /// Get a reference to the pool (for use in commands that need direct DB access).
@@ -147,6 +227,10 @@ impl ConfigService {
         &self.pool
     }
 }
+
+#[cfg(test)]
+#[path = "tests/service_tests.rs"]
+mod tests;
 
 // ── Helpers ──────────────────────────────────────────
 
@@ -161,4 +245,25 @@ fn normalize_keywords(keywords: &[String]) -> Vec<String> {
     }
 
     normalized
+}
+
+fn ensure_existing_mod_paths_unchanged(
+    current: &AppSettings,
+    requested: &AppSettings,
+) -> Result<(), AppError> {
+    for existing in &current.games {
+        let Some(updated) = requested.games.iter().find(|game| game.id == existing.id) else {
+            continue;
+        };
+        let old_key =
+            crate::common::path_key::folder_path_key(&existing.mod_path.to_string_lossy(), None);
+        let new_key =
+            crate::common::path_key::folder_path_key(&updated.mod_path.to_string_lossy(), None);
+        if old_key != new_key {
+            return Err(AppError::Validation(
+                "Use source recovery to change an existing game's mods directory".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }

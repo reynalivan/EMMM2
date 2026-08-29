@@ -1,14 +1,10 @@
-import ObjectListModals, { SYNC_CONFIRM_RESET } from './ObjectListModals';
-import type { GameConfig } from '../../../types/game';
-import type { WorkspaceObjectNode } from '../../../types/workspace';
+import ObjectListModals from './ObjectListModals';
 import type { useObjectListLogic } from '../hooks/useObjectListLogic';
 
 type ObjectListModalsState = ReturnType<typeof useObjectListLogic>['modals'];
 type ObjectListHandlers = ReturnType<typeof useObjectListLogic>['handlers'];
 
 interface ObjectListPrimaryModalsProps {
-  activeGame: GameConfig | null;
-  objects: WorkspaceObjectNode[];
   modals: ObjectListModalsState;
   handlers: ObjectListHandlers;
   createModalOpen: boolean;
@@ -19,8 +15,6 @@ interface ObjectListPrimaryModalsProps {
 }
 
 export default function ObjectListPrimaryModals({
-  activeGame,
-  objects,
   modals,
   handlers,
   createModalOpen,
@@ -31,22 +25,8 @@ export default function ObjectListPrimaryModals({
 }: ObjectListPrimaryModalsProps) {
   return (
     <ObjectListModals
-      activeGame={activeGame}
       editObject={modals.editObject}
       onCloseEdit={() => modals.setEditObject(null)}
-      syncConfirm={modals.syncConfirm}
-      onApplySyncMatch={handlers.handleApplySyncMatch}
-      onEditManually={() => {
-        const object = objects.find((candidate) => candidate.id === modals.syncConfirm.objectId);
-        modals.setSyncConfirm(SYNC_CONFIRM_RESET);
-        if (object) {
-          modals.setEditObject(object);
-        }
-      }}
-      onCloseSyncConfirm={() => modals.setSyncConfirm(SYNC_CONFIRM_RESET)}
-      scanReview={modals.scanReview}
-      onCommitScan={handlers.handleCommitScan}
-      onCloseScanReview={handlers.handleCloseScanReview}
       createModalOpen={createModalOpen}
       pendingPaths={pendingPaths}
       onImportDropped={async (newObjId, newObjName, paths) => {
@@ -64,14 +44,6 @@ export default function ObjectListPrimaryModals({
       onCancelForceDeleteObject={() =>
         modals.setForceDeleteObjectDialog({ open: false, id: '', name: '', count: 0 })
       }
-      mismatchConfirm={modals.mismatchConfirm}
-      onConfirmMismatchHandler={() => {
-        if (modals.mismatchConfirm) {
-          handlers.handleDropAutoOrganize(modals.mismatchConfirm);
-        }
-        modals.setMismatchConfirm(null);
-      }}
-      onCancelMismatchHandler={() => modals.setMismatchConfirm(null)}
     />
   );
 }

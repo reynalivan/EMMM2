@@ -32,7 +32,8 @@
       ]
     },
     {
-      "name": "Light Cone",
+      "name": "Weapon",
+      "label": "Light Cone",
       "icon": "Disc3",
       "color": "secondary",
       "filters": [
@@ -86,6 +87,7 @@
       ]
     }
   ],
+  "match_extensions": ["ini", "dds", "buf", "ib"],
   "stopwords": [
     "mod",
     "mods",

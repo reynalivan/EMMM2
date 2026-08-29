@@ -28,9 +28,6 @@
     "retry": "重试",
     "discard": "放弃更改",
     "done": "完成",
-    "keep_enabled": "保留已启用版本",
-    "keep_disabled": "保留已禁用版本",
-    "separate": "分开保留两者",
     "dismiss": "忽略"
   },
   "action": {
@@ -86,6 +83,12 @@
     "category": "类别",
     "thumbnail": "缩略图"
   },
+  "safety_filter": {
+    "label": "Mod safety filter",
+    "all": "All",
+    "safe": "Safe",
+    "unsafe": "Unsafe"
+  },
   "watcher": {
     "error": "文件监视器错误：{{error}}",
     "toast": {
@@ -94,5 +97,8 @@
       "mod_changes": "{{count}} 个模组文件夹更改：{{names}}",
       "mod_changes_detected": "检测到 {{count}} 个模组文件夹更改"
     }
+  },
+  "reconcile": {
+    "runtime_effects_pending": "磁盘更改已应用，但运行时刷新仍待处理：{{error}}"
   }
 }

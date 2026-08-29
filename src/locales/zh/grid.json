@@ -4,14 +4,12 @@
     "search_placeholder": "搜索模组...",
     "item_count_one": "{{count}} 个项目",
     "item_count_other": "{{count}} 个项目",
-    "refresh_title": "刷新",
     "view_grid": "网格视图",
     "view_list": "列表视图"
   },
   "banners": {
-    "conflict_detected_one": "检测到 {{count}} 个命名冲突",
-    "conflict_detected_other": "检测到 {{count}} 个命名冲突",
-    "resolve_btn": "解决",
+    "disk_syncing": "正在与磁盘同步模组，暂时无法编辑。",
+    "disk_sync_failed": "模组同步失败：{{error}}",
     "flat_mod_title": "活动模组目录",
     "flat_mod_desc": "此文件夹是直接模组根目录（扁平结构）。您可以将其作为单个单元启用/禁用。",
     "disable_mod": "禁用模组",
@@ -29,7 +27,17 @@
     "source_dialog_title": "未找到模组文件夹",
     "source_dialog_message": "已保存的模组文件夹不可用。请选择新位置以继续加载模组数据。",
     "source_later_btn": "稍后",
-    "source_action_failed": "无法访问模组文件夹：{{error}}"
+    "source_action_failed": "无法访问模组文件夹：{{error}}",
+    "source_classification_Matching": "找到匹配的模组库",
+    "source_classification_NewLibrary": "找到新的模组库",
+    "source_classification_Empty": "空文件夹",
+    "source_classification_Different": "不同的模组库",
+    "source_candidate_counts": "{{objects}} 个对象 · {{mods}} 个模组",
+    "source_empty_warning": "此文件夹为空。确认后将其用作新的模组库；当前数据库快照将按空磁盘进行同步。",
+    "source_different_warning": "此文件夹包含不同的模组库。应用后，数据库将以此文件夹的内容为准。",
+    "source_type_game_name": "输入 {{name}} 以确认",
+    "source_confirm_empty_btn": "使用空文件夹",
+    "source_confirm_different_btn": "替换模组库"
   },
   "empty": {
     "no_match": "没有匹配您搜索的模组。",
@@ -65,8 +73,6 @@
     "conflict": "冲突",
     "name_conflict_title": "命名冲突：同时存在启用和禁用的版本",
     "name_conflict": "名称冲突",
-    "hidden_mod": "[隐藏模组]",
-    "hidden_mod_title": "由于安全模式已隐藏",
     "status_enabled": "已启用",
     "status_disabled": "已禁用",
     "dir_label": "目录",
@@ -88,7 +94,6 @@
     "confirm": "启用 \"{{name}}\""
   },
   "context": {
-    "refresh": "刷新",
     "select_all": "全选",
     "open_explorer": "在资源管理器中打开",
     "rename": "重命名",
@@ -145,7 +150,9 @@
       "favorited": "收藏",
       "unfavorited": "取消收藏",
       "pinned": "固定",
-      "unpinned": "取消固定"
+      "unpinned": "取消固定",
+      "marked_safe": "标记为安全",
+      "marked_unsafe": "标记为不安全"
     },
     "failure_actions": {
       "toggle": "切换状态",
@@ -153,7 +160,8 @@
       "update": "更新",
       "favorite": "更新收藏状态",
       "pin": "更新固定状态",
-      "import": "导入"
+      "import": "导入",
+      "safety": "更改安全分类"
     }
   },
   "status": {

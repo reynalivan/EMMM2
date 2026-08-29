@@ -10,12 +10,12 @@
   },
   "header": {
     "title": "仪表板",
-    "subtitle": "您的模组生态系统概览",
-    "refresh": "刷新"
+    "subtitle": "您的模组生态系统概览"
   },
   "actions": {
     "quick_play": "快速开始",
     "mods_manager": "模组管理器",
+    "mod_inbox": "模组收件箱",
     "storage_optimizer": "存储优化器",
     "collections": "收藏集",
     "settings": "设置",

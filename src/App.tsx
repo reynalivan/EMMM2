@@ -148,10 +148,11 @@ function AppRouter() {
 }
 
 import { ToastContainer } from './components/ui/Toast';
-import ConflictResolveDialog from './features/folder-grid/modals/ConflictResolveDialog';
 import { DynamicThemeInjector } from './features/settings/theme/DynamicThemeInjector';
 import { FileInUseDialog } from './components/dialogs/FileInUseDialog';
 import WorkspaceSourceUnavailableDialog from './features/folder-grid/components/WorkspaceSourceUnavailableDialog';
+import FolderConflictManager from './features/folder-grid/modals/FolderConflictManager';
+import RenameConfirmationManager from './features/folder-grid/modals/RenameConfirmationManager';
 
 export default function App() {
   useThemeRuntime();
@@ -168,7 +169,8 @@ export default function App() {
       <AppRouter />
       <DynamicThemeInjector />
       <ToastContainer />
-      <ConflictResolveDialog />
+      <FolderConflictManager />
+      <RenameConfirmationManager />
       <FileInUseDialog />
       <WorkspaceSourceUnavailableDialog />
     </div>

@@ -24,6 +24,7 @@ pub async fn check_config_status(pool: &sqlx::SqlitePool) -> Result<ConfigStatus
 pub async fn reset_database_service(
     pool: &sqlx::SqlitePool,
     app_data_dir: &Path,
+    settings_revision: Option<u64>,
 ) -> Result<(), AppError> {
     let db_path = app_data_dir.join("app.db");
     let trash_dir = app_data_dir.join("trash");
@@ -54,5 +55,5 @@ pub async fn reset_database_service(
     }
 
     // Clear all data from the database (tables only, no file deletion)
-    Ok(crate::repo::settings_repo::reset_all_data(pool).await?)
+    Ok(crate::repo::settings_repo::reset_all_data_with_revision(pool, settings_revision).await?)
 }

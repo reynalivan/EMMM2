@@ -28,7 +28,6 @@ macro_rules! emmm_collect_commands {
             commands::app::app_cmds::open_log_folder,
             commands::app::app_cmds::reset_database,
             commands::app::app_cmds::check_path_exists_cmd,
-            commands::app::app_cmds::ensure_dir_cmd,
             commands::app::game_cmds::auto_detect_games,
             commands::app::game_cmds::resolve_game_folder,
             commands::app::game_cmds::add_game_manual,
@@ -39,31 +38,23 @@ macro_rules! emmm_collect_commands {
             commands::objects::master_db_cmds::get_object,
             commands::objects::master_db_cmds::get_master_db,
             commands::objects::master_db_cmds::search_master_db,
-            commands::objects::master_db_cmds::match_object_with_db,
             commands::objects::master_db_cmds::pin_object,
-            commands::scanner::scan_control_cmds::cancel_scan_cmd,
-            commands::scanner::archive_cmds::detect_archives_cmd,
-            commands::scanner::archive_cmds::extract_archive_cmd,
-            commands::scanner::archive_cmds::analyze_archive_cmd,
-            commands::scanner::archive_cmds::match_check_folder_cmd,
-            commands::scanner::archive_cmds::abort_extraction_cmd,
             commands::scanner::conflict_cmds::detect_conflicts_cmd,
             commands::scanner::conflict_cmds::detect_conflicts_in_folder_cmd,
-            commands::scanner::watcher_cmds::set_watcher_suppression,
             commands::folder_grid::get_mod_thumbnail,
             commands::mods::mod_core_cmds::open_in_explorer,
             commands::mods::mod_core_cmds::reveal_object_in_explorer,
-            commands::mods::conflict_cmds::resolve_conflict,
-            commands::mods::conflict_cmds::get_conflict_details,
+            commands::mods::conflict_cmds::get_folder_conflict_details,
+            commands::mods::conflict_cmds::resolve_folder_name_conflict,
+            commands::mods::conflict_cmds::trash_folder_conflict_candidate,
             commands::mods::conflict_cmds::ignore_object_conflict,
             commands::mods::conflict_cmds::revoke_object_conflict,
             commands::mods::conflict_cmds::list_ignored_object_conflicts,
             commands::mods::mod_core_cmds::rename_mod_folder,
-            commands::mods::mod_import_cmds::import_mods_from_paths,
-            commands::mods::mod_import_cmds::ingest_dropped_folders,
             commands::mods::mod_bulk_cmds::bulk_toggle_mods,
             commands::mods::mod_bulk_cmds::bulk_delete_mods,
             commands::mods::mod_bulk_cmds::bulk_update_info,
+            commands::mods::mod_bulk_cmds::bulk_set_mod_safety,
             commands::mods::mod_bulk_cmds::bulk_toggle_favorite,
             commands::mods::mod_bulk_cmds::bulk_pin_mods,
             commands::mods::mod_bulk_cmds::bulk_cancel,
@@ -80,9 +71,7 @@ macro_rules! emmm_collect_commands {
             commands::mods::mod_thumbnail_cmds::paste_thumbnail,
             commands::folder_grid::delete_mod_thumbnail,
             commands::mods::trash_cmds::delete_mod,
-            commands::mods::trash_cmds::restore_mod,
-            commands::mods::trash_cmds::list_trash,
-            commands::mods::trash_cmds::empty_trash,
+            commands::mods::trash_cmds::open_recycle_bin,
             commands::mods::preview_cmds::list_mod_ini_files,
             commands::mods::preview_cmds::read_mod_ini,
             commands::mods::preview_cmds::write_mod_ini,
@@ -90,12 +79,31 @@ macro_rules! emmm_collect_commands {
             commands::mods::preview_cmds::save_mod_preview_image,
             commands::mods::preview_cmds::remove_mod_preview_image,
             commands::mods::preview_cmds::clear_mod_preview_images,
+            commands::imports::import_batch_cmds::create_import_batch,
+            commands::imports::import_batch_cmds::get_import_batch,
+            commands::imports::import_batch_cmds::list_import_batches,
+            commands::imports::import_batch_cmds::analyze_import_batch,
+            commands::imports::import_batch_cmds::set_import_item_classification,
+            commands::imports::import_batch_cmds::refresh_import_item_suggestions,
+            commands::imports::import_batch_cmds::set_import_item_decision,
+            commands::imports::import_batch_cmds::rename_import_item_plan,
+            commands::imports::import_batch_cmds::cancel_import_batch,
+            commands::imports::import_batch_cmds::commit_import_batch,
+            commands::imports::import_batch_cmds::get_mod_inbox,
+            commands::imports::import_batch_cmds::create_mod_inbox_folder,
+            commands::imports::import_batch_cmds::open_mod_inbox_folder,
+            commands::imports::import_batch_cmds::create_mod_inbox_batch,
+            commands::imports::import_batch_cmds::delete_processed_mod_inbox_sources,
+            commands::imports::import_batch_cmds::start_mod_inbox_watcher,
+            commands::imports::import_batch_cmds::stop_mod_inbox_watcher,
+            commands::imports::classification_cmds::preview_object_classification_batch,
+            commands::imports::classification_cmds::apply_object_classification_batch,
+            commands::imports::classification_cmds::preview_relocation_batch,
             commands::app::settings_cmds::get_settings,
             commands::app::settings_cmds::save_settings,
             commands::app::settings_cmds::set_active_game,
             commands::app::settings_cmds::set_auto_close_launcher,
             commands::app::settings_cmds::run_maintenance,
-            commands::app::settings_cmds::reset_pin_with_recovery_code,
             commands::app::settings_cmds::clear_old_thumbnails,
             commands::app::theme_cmds::list_custom_themes,
             commands::app::theme_cmds::load_custom_theme,
@@ -105,31 +113,29 @@ macro_rules! emmm_collect_commands {
             commands::objects::object_cmds::get_category_counts_cmd,
             commands::objects::object_cmds::create_object_cmd,
             commands::objects::object_cmds::update_object_cmd,
-            commands::objects::object_cmds::apply_object_match_cmd,
             commands::objects::object_cmds::delete_object_cmd,
-            commands::collections::cmds::get_corridor_state,
+            commands::collections::cmds::get_collection_runtime_state,
+            commands::collections::cmds::get_collection_runtime_descriptor,
             commands::collections::cmds::get_apply_progress,
             commands::collections::cmds::list_collections,
             commands::collections::cmds::create_collection,
+            commands::collections::cmds::save_current_runtime_as_collection,
             commands::collections::cmds::apply_collection,
             commands::collections::cmds::update_collection,
             commands::collections::cmds::replace_collection_with_current_state,
+            commands::collections::cmds::save_collection_changes,
+            commands::collections::cmds::restore_last_changes,
+            commands::collections::cmds::clear_last_changes,
             commands::collections::cmds::delete_collection,
             commands::collections::cmds::app_startup_check,
             commands::collections::cmds::resolve_recovery_task,
             commands::collections::cmds::get_collection_preview,
             commands::collections::cmds::preview_apply_collection,
-            commands::collections::cmds::set_pin,
-            commands::collections::cmds::verify_pin,
-            commands::collections::cmds::get_pin_status,
-            commands::scanner::deepmatch_scanner_cmds::deepmatch_scanner_cmd,
-            commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_cmd,
-            commands::scanner::deepmatch_scanner_cmds::deepmatch_preview_for_objects_cmd,
-            commands::scanner::deepmatch_scanner_cmds::rename_staged_folder_cmd,
-            commands::scanner::deepmatch_scanner_cmds::commit_scan_cmd,
-            commands::scanner::deepmatch_scanner_cmds::score_candidates_batch_cmd,
-            commands::scanner::deepmatch_scanner_cmds::list_folder_entries_cmd,
+            commands::scanner::folder_entries_cmds::list_folder_entries_cmd,
+            commands::scanner::disk_reconcile_cmds::apply_game_mods_directory,
             commands::scanner::disk_reconcile_cmds::reconcile_disk_state_cmd,
+            commands::scanner::disk_reconcile_cmds::inspect_game_mods_directory,
+            commands::scanner::disk_reconcile_cmds::resolve_rename_confirmations,
             commands::scanner::watcher_cmds::start_watcher,
             commands::scanner::watcher_cmds::stop_watcher,
             commands::duplicates::dup_scan_cmds::dup_scan_start,
@@ -157,8 +163,6 @@ macro_rules! emmm_collect_commands {
             commands::browser::browser_cmds::browser_clear_old_downloads,
             commands::browser::browser_cmds::browser_import_selected,
             commands::browser::browser_cmds::browser_list_import_queue,
-            commands::browser::browser_cmds::browser_confirm_import,
-            commands::browser::browser_cmds::browser_cancel_import,
         ]
     };
 }
@@ -209,6 +213,7 @@ pub fn run() {
                 .build(),
         )
         .manage(services::scanner::watcher::WatcherState::new())
+        .manage(services::import_batch::mod_inbox_watcher::ModInboxWatcherState::new())
         .manage(services::disk_reconcile::orchestrator::DiskReconcileState::new())
         .setup(move |app| {
             let app_handle = app.handle();
@@ -244,12 +249,10 @@ pub fn run() {
 
             Ok(())
         })
-        .manage(commands::scanner::scan_control_cmds::ScanState::new())
         .manage(commands::duplicates::dup_scan_cmds::DupScanState::new())
         .manage(commands::mods::mod_bulk_cmds::BulkCancelState::new())
         .manage(services::fs_utils::operation_lock::OperationLock::new())
         .manage(services::scanner::master_db::MasterDbCache::default())
-        .manage(commands::scanner::archive_cmds::ExtractionState::new())
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -261,6 +264,36 @@ pub fn run() {}
 #[cfg(test)]
 mod specta_tests {
     use super::*;
+
+    #[test]
+    fn every_registered_command_is_allowed_by_the_app_permission() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let command_source = std::fs::read_to_string(manifest_dir.join("src/lib.rs"))
+            .expect("read command registry");
+        let permission_source =
+            std::fs::read_to_string(manifest_dir.join("permissions/app-commands.toml"))
+                .expect("read app command permission");
+        let command_pattern = regex::Regex::new(r"commands(?:::[A-Za-z0-9_]+)+::([A-Za-z0-9_]+),")
+            .expect("valid command regex");
+        let allowed_pattern =
+            regex::Regex::new(r#"\"([A-Za-z0-9_]+)\""#).expect("valid allowlist regex");
+
+        let registered = command_pattern
+            .captures_iter(&command_source)
+            .map(|capture| capture[1].to_string())
+            .collect::<std::collections::BTreeSet<_>>();
+        let allowed = allowed_pattern
+            .captures_iter(&permission_source)
+            .map(|capture| capture[1].to_string())
+            .collect::<std::collections::BTreeSet<_>>();
+        let missing = registered.difference(&allowed).cloned().collect::<Vec<_>>();
+
+        assert!(
+            missing.is_empty(),
+            "commands missing from permissions/app-commands.toml (runtime `command not allowed`): {}",
+            missing.join(", ")
+        );
+    }
 
     /// Regenerates the committed frontend type bindings from the Rust command/type
     /// definitions. CI runs `git diff --exit-code src/lib/bindings.gen.ts` after
@@ -275,8 +308,16 @@ mod specta_tests {
                 specta_typescript::Typescript::default()
                     .header("// @ts-nocheck\n/* eslint-disable */")
                     .bigint(specta_typescript::BigIntExportBehavior::Number),
-                output_path,
+                &output_path,
             )
             .expect("The types could not be exported");
+        let generated = std::fs::read_to_string(&output_path).expect("read generated bindings");
+        let normalized = generated
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        std::fs::write(output_path, normalized).expect("normalize generated bindings");
     }
 }

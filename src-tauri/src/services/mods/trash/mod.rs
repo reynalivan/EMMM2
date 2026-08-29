@@ -1,7 +1,4 @@
-//! Soft delete (Trash) service for mod folders.
-//!
-//! Moves mod folders to `./app_data/trash/{uuid}/` with metadata JSON for restore.
-//! Does NOT use the OS Recycle Bin — uses a custom app-level trash.
+//! Native soft delete for mod folders through the OS recycle bin.
 //!
 //! # Covers: US-4.4 (Soft Delete), TC-4.5-01, DI-4.01
 //!
@@ -10,7 +7,6 @@
 
 mod service;
 mod store;
-mod timestamp;
 mod types;
 
 pub use service::*;

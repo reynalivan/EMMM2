@@ -12,23 +12,36 @@ import {
 } from './workspaceSwitchOps';
 
 const executeWorkspaceSwitchCommand = vi.fn();
-const openWorkspaceConflictDialog = vi.fn();
+const reconcileDiskStateCommand = vi.fn();
+const openFolderConflictManagerDialog = vi.fn();
+const openRenameConfirmationDialog = vi.fn();
 const openWorkspaceFileInUseDialog = vi.fn();
+const setFolderConflicts = vi.fn();
+const setRenameConfirmations = vi.fn();
 const toastError = vi.fn();
 const toastInfo = vi.fn();
 const getReloadKeyCommand = vi.fn();
+const notifyCommittedMutationSyncWarning = vi.fn();
 
 vi.mock('../../../lib/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitchCommand(...args),
+    reconcileDiskStateCmd: (...args: unknown[]) => reconcileDiskStateCommand(...args),
     getReloadKey: () => getReloadKeyCommand(),
   },
 }));
 
 vi.mock('../state/workspaceDialogs', () => ({
-  openWorkspaceConflictDialog: (...args: unknown[]) => openWorkspaceConflictDialog(...args),
+  openFolderConflictManagerDialog: (...args: unknown[]) => openFolderConflictManagerDialog(...args),
+  openRenameConfirmationDialog: (...args: unknown[]) => openRenameConfirmationDialog(...args),
   openWorkspaceFileInUseDialog: (...args: unknown[]) => openWorkspaceFileInUseDialog(...args),
+}));
+
+vi.mock('../../../stores/useAppStore', () => ({
+  useAppStore: {
+    getState: () => ({ setFolderConflicts, setRenameConfirmations }),
+  },
 }));
 
 vi.mock('../../../stores/useToastStore', () => ({
@@ -43,9 +56,15 @@ vi.mock('../../runtime-sync/queryRefresh', () => ({
   publishQueryInvalidations: vi.fn(),
 }));
 
+vi.mock('../../../lib/committedMutationWarning', () => ({
+  notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
+    notifyCommittedMutationSyncWarning(...args),
+}));
+
 describe('workspace switch ops', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    reconcileDiskStateCommand.mockResolvedValue(null);
   });
 
   describe('togglePendingKey', () => {
@@ -67,6 +86,20 @@ describe('workspace switch ops', () => {
       const current = { 'folder:b': true };
       expect(togglePendingKey(current, 'folder:a', false)).toBe(current);
     });
+  });
+
+  it('returns a committed switch and presents terminal projection lag', async () => {
+    executeWorkspaceSwitchCommand.mockResolvedValue({
+      status: 'applied',
+      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+    });
+
+    await expect(executeWorkspaceSwitch({ game_id: 'game-1' } as never)).resolves.toEqual(
+      expect.objectContaining({ status: 'applied' }),
+    );
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_warning: expect.any(Object) }),
+    );
   });
 
   describe('node identity', () => {
@@ -138,7 +171,7 @@ describe('workspace switch ops', () => {
       expect(toastError).not.toHaveBeenCalled();
     });
 
-    it('routes rename conflicts to the conflict dialog', async () => {
+    it('reports a rename conflict when reconcile cannot produce a safe review queue', async () => {
       executeWorkspaceSwitchCommand.mockRejectedValue(
         new Error(
           JSON.stringify({
@@ -151,8 +184,32 @@ describe('workspace switch ops', () => {
       );
 
       await expect(executeWorkspaceSwitch(input)).resolves.toBeNull();
-      expect(openWorkspaceConflictDialog).toHaveBeenCalledTimes(1);
-      expect(toastError).not.toHaveBeenCalled();
+      expect(toastError).toHaveBeenCalledTimes(1);
+      expect(openFolderConflictManagerDialog).not.toHaveBeenCalled();
+      expect(openRenameConfirmationDialog).not.toHaveBeenCalled();
+    });
+
+    it('normalizes a direct rename conflict into the folder conflict manager', async () => {
+      executeWorkspaceSwitchCommand.mockRejectedValue(
+        new Error(
+          JSON.stringify({
+            type: 'RenameConflict',
+            attempted_target: 'E:/Mods/B',
+            existing_path: 'E:/Mods/A',
+            base_name: 'A',
+          }),
+        ),
+      );
+      const folderConflicts = [{ group_id: 'group-1', candidates: [] }];
+      reconcileDiskStateCommand.mockResolvedValue({
+        status: 'AppliedWithFolderConflicts',
+        folder_conflicts: folderConflicts,
+      });
+
+      await expect(executeWorkspaceSwitch(input)).resolves.toBeNull();
+
+      expect(setFolderConflicts).toHaveBeenCalledWith('game-1', folderConflicts);
+      expect(openFolderConflictManagerDialog).toHaveBeenCalledTimes(1);
     });
 
     it('routes file-in-use failures to the file-in-use dialog', async () => {
@@ -173,7 +230,6 @@ describe('workspace switch ops', () => {
 
       await expect(executeWorkspaceSwitch(input)).resolves.toBeNull();
       expect(toastError).toHaveBeenCalledTimes(1);
-      expect(openWorkspaceConflictDialog).not.toHaveBeenCalled();
     });
   });
 

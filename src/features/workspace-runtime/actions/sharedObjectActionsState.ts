@@ -1,26 +1,11 @@
-import type { MatchedDbEntry } from '../../../lib/bindings';
 import type { WorkspaceObjectNode } from '../../../types/workspace';
 import type { WorkspaceRuntimeEvent } from '../state/workspaceEvents';
 import type { WorkspaceDialogState } from '../state/workspaceState';
-
-export type { ObjectSyncCurrentData } from '../state/workspaceState';
-import type { ObjectSyncCurrentData } from '../state/workspaceState';
-
-export interface SyncConfirmState {
-  open: boolean;
-  objectId: string;
-  objectName: string;
-  itemType: 'object' | 'folder';
-  match: MatchedDbEntry | null;
-  isLoading: boolean;
-  currentData: ObjectSyncCurrentData | null;
-}
 
 export interface SharedObjectActionState {
   editObject: WorkspaceObjectNode | null;
   deleteObjectDialog: { open: boolean; id: string; name: string };
   forceDeleteObjectDialog: { open: boolean; id: string; name: string; count: number };
-  syncConfirm: SyncConfirmState;
 }
 
 export type SharedObjectAction =
@@ -29,31 +14,12 @@ export type SharedObjectAction =
   | { type: 'openDelete'; id: string; name: string }
   | { type: 'closeDelete' }
   | { type: 'openForceDelete'; id: string; name: string; count: number }
-  | { type: 'closeForceDelete' }
-  | {
-      type: 'openSync';
-      objectId: string;
-      objectName: string;
-      currentData: ObjectSyncCurrentData;
-    }
-  | { type: 'setSyncMatch'; match: MatchedDbEntry | null; isLoading: boolean }
-  | { type: 'closeSync' };
-
-export const SYNC_CONFIRM_RESET: SyncConfirmState = {
-  open: false,
-  objectId: '',
-  objectName: '',
-  itemType: 'object',
-  match: null,
-  isLoading: false,
-  currentData: null,
-};
+  | { type: 'closeForceDelete' };
 
 export const INITIAL_SHARED_OBJECT_ACTION_STATE: SharedObjectActionState = {
   editObject: null,
   deleteObjectDialog: { open: false, id: '', name: '' },
   forceDeleteObjectDialog: { open: false, id: '', name: '', count: 0 },
-  syncConfirm: SYNC_CONFIRM_RESET,
 };
 
 export function sharedObjectActionsReducer(
@@ -89,33 +55,6 @@ export function sharedObjectActionsReducer(
       return {
         ...state,
         forceDeleteObjectDialog: INITIAL_SHARED_OBJECT_ACTION_STATE.forceDeleteObjectDialog,
-      };
-    case 'openSync':
-      return {
-        ...state,
-        syncConfirm: {
-          open: true,
-          objectId: action.objectId,
-          objectName: action.objectName,
-          itemType: 'object',
-          match: null,
-          isLoading: true,
-          currentData: action.currentData,
-        },
-      };
-    case 'setSyncMatch':
-      return {
-        ...state,
-        syncConfirm: {
-          ...state.syncConfirm,
-          match: action.match,
-          isLoading: action.isLoading,
-        },
-      };
-    case 'closeSync':
-      return {
-        ...state,
-        syncConfirm: SYNC_CONFIRM_RESET,
       };
     default:
       return state;
@@ -157,21 +96,6 @@ export function buildSharedObjectActionState(
       },
     };
   }
-  if (dialogState.kind === 'objectSync') {
-    return {
-      ...INITIAL_SHARED_OBJECT_ACTION_STATE,
-      syncConfirm: {
-        open: true,
-        objectId: dialogState.objectId,
-        objectName: dialogState.objectName,
-        itemType: dialogState.itemType,
-        match: dialogState.match,
-        isLoading: dialogState.isLoading,
-        currentData: dialogState.currentData,
-      },
-    };
-  }
-
   return INITIAL_SHARED_OBJECT_ACTION_STATE;
 }
 
@@ -210,21 +134,6 @@ export function buildSharedObjectDialogEvent(
         id: reduced.forceDeleteObjectDialog.id,
         name: reduced.forceDeleteObjectDialog.name,
         count: reduced.forceDeleteObjectDialog.count,
-      },
-    };
-  }
-
-  if (reduced.syncConfirm.open) {
-    return {
-      type: currentDialogKind === 'objectSync' ? 'DIALOG_UPDATED' : 'DIALOG_OPENED',
-      dialog: {
-        kind: 'objectSync',
-        objectId: reduced.syncConfirm.objectId,
-        objectName: reduced.syncConfirm.objectName,
-        itemType: reduced.syncConfirm.itemType,
-        match: reduced.syncConfirm.match,
-        isLoading: reduced.syncConfirm.isLoading,
-        currentData: reduced.syncConfirm.currentData,
       },
     };
   }

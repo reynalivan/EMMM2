@@ -42,9 +42,20 @@ export async function seedGameAndOpenDashboard(game: MockGame): Promise<string> 
  */
 export async function gotoWorkspaceView(view: string): Promise<void> {
   const appMenu = await $('button[title="App Menu"]');
-  await appMenu.waitForClickable({ timeout: 5000 });
+  await appMenu.waitForDisplayed({ timeout: 5000 });
+  await browser.waitUntil(() => appMenu.isEnabled(), {
+    timeout: 5000,
+    timeoutMsg: 'App Menu stayed disabled',
+  });
   await appMenu.click();
   const navItem = await $(`[data-testid="nav-${view}"]`);
-  await navItem.waitForClickable({ timeout: 3000 });
+  await navItem.waitForDisplayed({ timeout: 3000 });
+  await browser.waitUntil(() => navItem.isEnabled(), {
+    timeout: 3000,
+    timeoutMsg: `Navigation item ${view} stayed disabled`,
+  });
   await navItem.click();
+
+  const activeView = await $(`[data-testid="dashboard-layout"][data-workspace-view="${view}"]`);
+  await activeView.waitForExist({ timeout: 5000 });
 }

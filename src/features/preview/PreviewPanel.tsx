@@ -19,6 +19,8 @@ import { usePreviewEffects } from './hooks/usePreviewEffects';
 import PreviewEmptyState from './components/PreviewEmptyState';
 import PreviewConfirmDialogs from './components/PreviewConfirmDialogs';
 import PreviewHeader from './components/PreviewHeader';
+import { openFolderConflictManagerDialog } from '../workspace-runtime/state/workspaceDialogs';
+import PreviewFolderConflictState from './components/PreviewFolderConflictState';
 
 export default function PreviewPanel() {
   const { t } = useTranslation(['preview', 'common']);
@@ -28,6 +30,7 @@ export default function PreviewPanel() {
 
   const {
     activePath,
+    folderNameConflict,
     selectedFolder,
     previewSummary,
     resolvedTitle,
@@ -71,7 +74,8 @@ export default function PreviewPanel() {
   const actions = useSharedModActions({
     switchSurface: 'preview',
   });
-  const canEdit = Boolean(activePath) && !sourceUnavailableMessage;
+  const canEdit = Boolean(activePath) && !sourceUnavailableMessage && !folderNameConflict;
+  const interactiveActivePath = folderNameConflict ? null : activePath;
 
   const boundedImageIndex = Math.min(currentImageIndex, Math.max(images.length - 1, 0));
   const currentImagePath = images[boundedImageIndex] ?? null;
@@ -107,7 +111,7 @@ export default function PreviewPanel() {
     openCurrentLocation,
   } = usePreviewActions({
     activeGameId: activeGame?.id ?? null,
-    activePath,
+    activePath: interactiveActivePath,
     selectedFolder,
     images,
     currentImagePath,
@@ -117,7 +121,7 @@ export default function PreviewPanel() {
     clearPreviewImages,
   });
   usePreviewEffects({
-    activePath,
+    activePath: interactiveActivePath,
     pasteThumbnailFromClipboard,
   });
 
@@ -131,6 +135,16 @@ export default function PreviewPanel() {
         onImportFolders={() => {
           void requestImportFolders();
         }}
+      />
+    );
+  }
+
+  if (folderNameConflict) {
+    return (
+      <PreviewFolderConflictState
+        conflict={folderNameConflict}
+        onBack={() => runtime.clearSelection({ resetExplorer: true, clearObjectSelection: true })}
+        onResolve={openFolderConflictManagerDialog}
       />
     );
   }
@@ -292,9 +306,6 @@ export default function PreviewPanel() {
         handleDuplicateForceEnable={actions.handleDuplicateForceEnable}
         handleDuplicateEnableOnly={actions.handleDuplicateEnableOnly}
         handleDuplicateCancel={actions.handleDuplicateCancel}
-        pinSafeDialog={actions.pinSafeDialog}
-        handleToggleSafeCancel={actions.handleToggleSafeCancel}
-        handleToggleSafeSubmit={actions.handleToggleSafeSubmit}
         activeContextDialog={actions.activeContextDialog}
         handleActiveContextCancel={actions.handleActiveContextCancel}
         handleActiveContextSubmit={actions.handleActiveContextSubmit}

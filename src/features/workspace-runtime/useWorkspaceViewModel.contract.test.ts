@@ -21,7 +21,6 @@ describe('useWorkspaceViewModel contract', () => {
   it('builds workspace filter from app runtime inputs', () => {
     const filter = buildWorkspaceViewModelFilter({
       gameId: 'game-1',
-      safeMode: true,
       selectedObjectType: 'Character',
       objectMetaFilters: { element: ['Pyro'] },
       objectSortBy: 'name',
@@ -41,7 +40,6 @@ describe('useWorkspaceViewModel contract', () => {
   it('builds command input from filter and runtime selection', () => {
     const filter = buildWorkspaceViewModelFilter({
       gameId: 'game-1',
-      safeMode: true,
       selectedObjectType: 'Character',
       objectMetaFilters: { element: ['Pyro'] },
       objectSortBy: 'name',
@@ -79,7 +77,6 @@ describe('useWorkspaceViewModel contract', () => {
         sort_by: 'name',
         status_filter: 1,
       },
-      true,
       'Objects/Diluc',
       'Objects/Diluc/Variants',
       'Objects/Diluc/Variants/mod.ini',
@@ -96,7 +93,6 @@ describe('useWorkspaceViewModel contract', () => {
         sort_by: 'name',
         status_filter: 1,
       },
-      true,
       'Objects/Diluc',
       'Objects/Diluc/Variants',
       'Objects/Diluc/Variants/mod.ini',
@@ -225,7 +221,6 @@ describe('useWorkspaceViewModel contract', () => {
   it('deduplicates the same selection reconciliation effect across workspace consumers', () => {
     const effectKey = {
       gameId: 'genshin',
-      safeMode: false,
       selection: {
         selected_object_folder_path: 'ALBEDO',
         explorer_sub_path: 'ALBEDO',
@@ -255,14 +250,12 @@ describe('useWorkspaceViewModel contract', () => {
     expect(
       shouldRunSelectionReconciliationEffect({
         gameId: 'genshin',
-        safeMode: false,
         selection,
       }),
     ).toBe(true);
     expect(
       shouldRunSelectionReconciliationEffect({
         gameId: 'genshin',
-        safeMode: false,
         selection,
       }),
     ).toBe(false);

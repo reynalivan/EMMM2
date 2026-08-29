@@ -1,6 +1,4 @@
 {
-  "app_locked_title": "App Locked",
-  "app_locked_description": "A PIN is required to access the application in Unsafe Mode.",
   "app": {
     "name": "EMMM",
     "version": "Mod Manager"
@@ -8,6 +6,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "mods_manager": "Mods Manager",
+    "mod_inbox": "Mod Inbox",
     "collections": "Collections",
     "settings": "Settings",
     "storage_optimizer": "Storage Optimizer",
@@ -22,16 +21,20 @@
   },
   "maintenance": {
     "clear_success": "Successfully cleared {{count}} old thumbnails.",
-    "maintenance_success": "Maintenance complete. Database optimized. Pruned {{pruned}} thumbnails. Purged {{trash}} old empty trash entries.",
+    "maintenance_success": "Maintenance complete. Database optimized. Pruned {{pruned}} thumbnails.",
     "failed": "Maintenance failed: {{error}}"
   },
   "actions": {
     "trash": "Trash",
-    "refresh": "Refresh",
+    "refresh": "Sync mods from disk",
+    "refresh_started": "Syncing {{name}} from disk...",
+    "refresh_complete": "Full sync complete. Disk changes were applied.",
+    "refresh_already_synced": "Mods are already in sync.",
+    "refresh_conflicts": "Sync completed with {{count}} folder conflict(s) to resolve.",
+    "refresh_rename_confirmation": "Sync needs confirmation for {{count}} rename group(s).",
+    "refresh_source_unavailable": "The mods folder is unavailable: {{error}}",
+    "refresh_failed": "Full sync failed: {{error}}",
     "settings": "Settings",
-    "safe_mode": "Safe Mode",
-    "privacy_mode": "Privacy Mode",
-    "privacy_toggle": "Toggle Master Privacy Mode",
     "hide_preview": "Hide Preview",
     "show_preview": "Show Preview"
   },
@@ -41,10 +44,7 @@
     "add_game": "Add Game"
   },
   "context": {
-    "safe_mode_tip": "Safe Mode Toggle",
     "loading": "Loading...",
-    "unsaved_safe": "Unsaved SAFE Preset",
-    "unsaved_unsafe": "Unsaved UNSAFE Preset",
     "collections_title": "Collections",
     "save_current": "Save Current",
     "no_collections": "No collections saved",
@@ -54,7 +54,7 @@
     "play": "Play",
     "launching": "Launching...",
     "randomizer": "Randomizer (Gacha)",
-    "conflicts": "Conflicts",
-    "conflict_toast": "{{count}} Shader Conflicts Detected"
+    "conflicts": "Enabled Conflicts",
+    "conflict_toast": "{{count}} Enabled Mod Conflicts"
   }
 }

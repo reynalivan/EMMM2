@@ -12,6 +12,20 @@ pub struct ObjectSwitchOutcome {
     pub next_path: String,
 }
 
+/// Rename one resolved object root without changing projection state.
+pub fn toggle_object_root_on_disk(
+    current_path: &Path,
+    enable: bool,
+) -> Result<Option<std::path::PathBuf>, AppError> {
+    if !current_path.exists() || !current_path.is_dir() {
+        return Err(AppError::RuntimePathNotFound {
+            target: current_path.to_string_lossy().to_string(),
+        });
+    }
+
+    rename_toggle_on_disk(current_path, enable, "object folder")
+}
+
 /// Workspace Switch owns explicit object-root enable/disable.
 /// Do not route object targets through mod-toggle services. Disk-only: the
 /// caller's scoped reconcile settles the DB afterwards.
@@ -35,11 +49,6 @@ pub async fn toggle_object_root_service(
         .to_string_lossy()
         .to_string();
     let current_path = Path::new(&current_absolute_path);
-    if !current_path.exists() || !current_path.is_dir() {
-        return Err(AppError::RuntimePathNotFound {
-            target: current_absolute_path,
-        });
-    }
 
     // Disk is the source of truth: the rename is the whole mutation. Object
     // status, folder_path, child paths and the runtime projection converge
@@ -48,8 +57,7 @@ pub async fn toggle_object_root_service(
     // it derives from each mod's own folder name (see
     // `disk_reconcile::helpers::load_runtime_mod_metadata`), and the UI
     // derives EffectivelyDisabled from the ancestor chain.
-    let Some(next_absolute_path) = rename_toggle_on_disk(current_path, enable, "object folder")?
-    else {
+    let Some(next_absolute_path) = toggle_object_root_on_disk(current_path, enable)? else {
         // Already in the requested state: the caller's reconcile re-syncs any
         // DB drift; a no-op needs nothing else.
         return Ok(ObjectSwitchOutcome {

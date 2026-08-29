@@ -11,6 +11,7 @@ fn db_entries() -> Vec<DbEntry> {
             name: "Raiden Shogun".to_string(),
             tags: vec!["Ei".to_string(), "Electro".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![],
             thumbnail_path: None,
             metadata: None,
@@ -23,6 +24,7 @@ fn db_entries() -> Vec<DbEntry> {
             name: "Albedo".to_string(),
             tags: vec!["Kreideprinz".to_string()],
             object_type: "Character".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![CustomSkin {
                 name: "Default".to_string(),
                 aliases: vec![],
@@ -40,6 +42,7 @@ fn db_entries() -> Vec<DbEntry> {
             name: "NoHash".to_string(),
             tags: vec!["Support".to_string()],
             object_type: "Other".to_string(),
+            entry_kind: Default::default(),
             custom_skins: vec![],
             thumbnail_path: None,
             metadata: None,

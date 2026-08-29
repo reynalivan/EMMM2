@@ -23,6 +23,7 @@ async fn enabled_queries_exclude_rows_under_disabled_ancestors() {
             game_type: GameType::GIMI,
             path: "C:/Game".into(),
             mods_path: Some("C:/Package/Mods".into()),
+            ready_to_move_path: None,
             game_exe: Some("C:/Game/game.exe".into()),
             launcher_path: None,
             loader_exe: None,

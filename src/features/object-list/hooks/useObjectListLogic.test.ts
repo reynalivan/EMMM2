@@ -24,6 +24,7 @@ const appStoreState: {
   setObjectSortBy: ReturnType<typeof vi.fn>;
   objectStatusFilter: 'all' | 'enabled' | 'disabled';
   setObjectStatusFilter: ReturnType<typeof vi.fn>;
+  safetyFilter: 'all' | 'safe' | 'unsafe';
 } = {
   selectedObjectFolderPath: null,
   setSelectedObjectFolderPath: vi.fn(),
@@ -41,6 +42,7 @@ const appStoreState: {
   setObjectSortBy: vi.fn(),
   objectStatusFilter: 'all',
   setObjectStatusFilter: vi.fn(),
+  safetyFilter: 'all',
 };
 
 vi.mock('../../../stores/useAppStore', () => ({
@@ -88,9 +90,6 @@ vi.mock('./useObjectListHandlers', () => ({
     handleSync: vi.fn(),
     isSyncing: false,
     handleSyncWithDb: vi.fn(),
-    handleApplySyncMatch: vi.fn(),
-    syncConfirm: { open: false },
-    setSyncConfirm: vi.fn(),
     scanReview: { open: false },
     handleCommitScan: vi.fn(),
     handleCloseScanReview: vi.fn(),
@@ -139,6 +138,7 @@ describe('useObjectListLogic', () => {
     appStoreState.selectedObjectType = null;
     appStoreState.sidebarSearchQuery = '';
     appStoreState.objectMetaFilters = {};
+    appStoreState.safetyFilter = 'all';
     useGameSchemaMock.mockReturnValue({ data: undefined });
     useWorkspaceViewModelMock.mockReturnValue({
       data: { objects: [] },
@@ -164,6 +164,25 @@ describe('useObjectListLogic', () => {
     const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
 
     expect(result.current.state.objects.map((o) => o.id)).toEqual(['1', '3']);
+  });
+
+  it('filters parent objects by matching child safety counts', () => {
+    useWorkspaceViewModelMock.mockReturnValue({
+      data: {
+        objects: [
+          { id: 'safe', name: 'Safe', safe_mod_count: 2, unsafe_mod_count: 0 },
+          { id: 'mixed', name: 'Mixed', safe_mod_count: 1, unsafe_mod_count: 1 },
+          { id: 'unknown', name: 'Unknown', safe_mod_count: 0, unsafe_mod_count: 0 },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    appStoreState.safetyFilter = 'unsafe';
+
+    const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
+
+    expect(result.current.state.objects.map((object) => object.id)).toEqual(['mixed']);
   });
 
   it('initializes basic state correctly', () => {

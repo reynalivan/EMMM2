@@ -1,13 +1,17 @@
-import { FolderOpen, AlertTriangle, Lock } from 'lucide-react';
+import { FolderOpen, AlertTriangle, LoaderCircle, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ConflictGroup } from '../../../types/object';
-import { openWorkspaceConflictDialog } from '../../workspace-runtime/state/workspaceDialogs';
+import {
+  openFolderConflictManagerDialog,
+  openRenameConfirmationDialog,
+} from '../../workspace-runtime/state/workspaceDialogs';
 import WorkspaceSourceUnavailableBanner from './WorkspaceSourceUnavailableBanner';
+import { useAppStore } from '../../../stores/useAppStore';
+
+const EMPTY_DISK_CONFLICTS: never[] = [];
 
 export interface FolderGridBannersProps {
   isLoading: boolean;
   isError: boolean;
-  nameConflicts: ConflictGroup[];
   isFlatModRoot: boolean;
   selfIsEnabled: boolean;
   selfReasons: string[];
@@ -22,12 +26,13 @@ export interface FolderGridBannersProps {
   /** Open the EnableParent confirmation dialog with impact preview */
   onOpenEnableParentDialog: () => void;
   diskSourceUnavailableMessage: string | null;
+  recoveryStatus: 'ready' | 'syncing' | 'failed';
+  mutationsDisabled: boolean;
 }
 
 export default function FolderGridBanners({
   isLoading,
   isError,
-  nameConflicts,
   isFlatModRoot,
   selfIsEnabled,
   selfReasons,
@@ -40,8 +45,22 @@ export default function FolderGridBanners({
   ancestorDisabledBy,
   onOpenEnableParentDialog,
   diskSourceUnavailableMessage,
+  recoveryStatus,
+  mutationsDisabled,
 }: FolderGridBannersProps) {
-  const { t } = useTranslation(['grid']);
+  const { t } = useTranslation(['grid', 'folder_grid']);
+  const activeGameId = useAppStore((state) => state.activeGameId);
+  const conflictsByGame = useAppStore((state) => state.folderConflictsByGame);
+  const renameConfirmationsByGame = useAppStore((state) => state.renameConfirmationsByGame);
+  const reconcileProgress = useAppStore((state) =>
+    activeGameId ? (state.diskReconcileByGame[activeGameId]?.progress ?? null) : null,
+  );
+  const diskConflicts = activeGameId
+    ? (conflictsByGame[activeGameId] ?? EMPTY_DISK_CONFLICTS)
+    : EMPTY_DISK_CONFLICTS;
+  const renameConfirmations = activeGameId
+    ? (renameConfirmationsByGame[activeGameId] ?? EMPTY_DISK_CONFLICTS)
+    : EMPTY_DISK_CONFLICTS;
 
   if (isLoading || isError) {
     return null;
@@ -53,6 +72,77 @@ export default function FolderGridBanners({
     <>
       {diskSourceUnavailableMessage && (
         <WorkspaceSourceUnavailableBanner message={diskSourceUnavailableMessage} />
+      )}
+
+      {(recoveryStatus === 'syncing' || reconcileProgress) && (
+        <div
+          className="mb-3 flex items-center gap-3 rounded-lg border border-info/30 bg-info/10 px-3 py-2"
+          role="status"
+          data-testid="workspace-reconcile-sync-banner"
+        >
+          <LoaderCircle
+            size={16}
+            className="shrink-0 animate-spin motion-reduce:animate-none text-info"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-info">{t('banners.disk_syncing')}</div>
+            {reconcileProgress && reconcileProgress.total_units !== null && (
+              <div className="mt-1 flex items-center gap-2">
+                <progress
+                  className="progress progress-info h-1.5 flex-1"
+                  value={reconcileProgress.completed_units}
+                  max={reconcileProgress.total_units}
+                  aria-label={t('banners.disk_syncing')}
+                />
+                <span className="shrink-0 text-[10px] tabular-nums text-info/80">
+                  {reconcileProgress.completed_units}/{reconcileProgress.total_units}
+                  {reconcileProgress.eta_ms !== null
+                    ? ` · ~${Math.ceil(reconcileProgress.eta_ms / 1000)}s`
+                    : ''}
+                </span>
+              </div>
+            )}
+            {reconcileProgress && reconcileProgress.current_root && (
+              <div className="mt-1 truncate text-[10px] text-info/75">
+                {reconcileProgress.current_root}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {diskConflicts.length > 0 && (
+        <div
+          className="mb-3 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2"
+          role="status"
+          data-testid="folder-conflict-banner"
+        >
+          <AlertTriangle size={16} className="shrink-0 text-warning" />
+          <span className="flex-1 text-xs text-warning">
+            {t('folder_grid:conflict_manager.banner', { count: diskConflicts.length })}
+          </span>
+          <button className="btn btn-xs btn-warning" onClick={openFolderConflictManagerDialog}>
+            {t('folder_grid:conflict_manager.resolve')}
+          </button>
+        </div>
+      )}
+
+      {renameConfirmations.length > 0 && (
+        <div
+          className="mb-3 flex items-center gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2"
+          role="status"
+          data-testid="rename-confirmation-banner"
+        >
+          <AlertTriangle size={16} className="shrink-0 text-info" />
+          <span className="flex-1 text-xs text-info">
+            {t('folder_grid:rename_confirmation.banner', {
+              count: renameConfirmations.length,
+            })}
+          </span>
+          <button className="btn btn-xs btn-info" onClick={openRenameConfirmationDialog}>
+            {t('folder_grid:rename_confirmation.review')}
+          </button>
+        </div>
       )}
 
       {/* ── Parent-Disabled Notice (compact, topmost) ─────────────────────── */}
@@ -74,36 +164,6 @@ export default function FolderGridBanners({
               {t('banners.enable_parent_btn')}
             </button>
           </div>
-        </div>
-      )}
-
-      {/* ── Naming Conflict Banner ─────────────────────────────────────────── */}
-      {nameConflicts.length > 0 && (
-        <div className="mb-3 flex items-center gap-2 bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-          <AlertTriangle size={16} className="text-warning shrink-0" />
-          <span className="text-xs text-warning flex-1">
-            {t('banners.conflict_detected', { count: nameConflicts.length })}
-          </span>
-          <button
-            className="btn btn-xs btn-warning btn-outline"
-            onClick={() => {
-              const c = nameConflicts[0];
-              if (c.members.length >= 2) {
-                const enabled = c.members.find((m) => m.is_enabled);
-                const disabled = c.members.find((m) => !m.is_enabled);
-                if (enabled && disabled) {
-                  openWorkspaceConflictDialog({
-                    type: 'RenameConflict',
-                    attempted_target: enabled.path,
-                    existing_path: disabled.path,
-                    base_name: c.base_name,
-                  });
-                }
-              }
-            }}
-          >
-            {t('banners.resolve_btn')}
-          </button>
         </div>
       )}
 
@@ -136,7 +196,11 @@ export default function FolderGridBanners({
           </div>
 
           <div className="flex items-center gap-2 mt-4 md:mt-0 whitespace-nowrap">
-            <button className="btn btn-sm btn-success" onClick={() => handleToggleSelf(true)}>
+            <button
+              className="btn btn-sm btn-success"
+              disabled={mutationsDisabled}
+              onClick={() => handleToggleSelf(true)}
+            >
               {t('banners.enable_mod')}
             </button>
             <button

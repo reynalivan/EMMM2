@@ -71,7 +71,7 @@ async fn test_reset_database_service() {
     .unwrap();
 
     // Call reset
-    reset_database_service(&pool, app_data_dir)
+    reset_database_service(&pool, app_data_dir, None)
         .await
         .expect("Failed to reset database");
 

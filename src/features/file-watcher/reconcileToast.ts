@@ -32,6 +32,7 @@ export function maybeShowExternalChangeToast(result: DiskReconcileResult): void 
     result.reason === 'InternalMutation' ||
     result.reason === 'OnboardingCompleted' ||
     result.reason === 'GameSwitched' ||
+    result.reason === 'ManualRepair' ||
     !result.change_summary.has_user_visible_changes
   ) {
     return;

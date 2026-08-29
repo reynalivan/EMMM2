@@ -55,6 +55,7 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
         <tbody className="divide-y divide-base-300">
           {groups.map((group, index) => {
             const selectedAction = selections.get(group.groupId);
+            const isExactMatch = group.confidenceScore === 100;
 
             return (
               <tr key={group.groupId} className="hover:bg-base-200/30 transition-colors">
@@ -190,7 +191,7 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
                             : ''
                       }`}
                       value={
-                        selectedAction?.type === 'Keep'
+                        selectedAction?.type === 'Keep' && isExactMatch
                           ? selectedAction.targetPath
                           : selectedAction?.type === 'Ignore'
                             ? 'ignore'
@@ -202,7 +203,7 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
                           // No-op
                         } else if (val === 'ignore') {
                           onSelectionChange(group.groupId, { type: 'Ignore' });
-                        } else {
+                        } else if (isExactMatch) {
                           onSelectionChange(group.groupId, { type: 'Keep', targetPath: val });
                         }
                       }}
@@ -212,22 +213,24 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
                       <option value="pending" disabled>
                         {t('scanner:table.select_action')}
                       </option>
-                      <optgroup label={t('scanner:table.keep_one')}>
-                        {group.members.map((m, idx) => (
-                          <option key={m.folderPath} value={m.folderPath}>
-                            {t('scanner:table.keep_label', {
-                              id: String.fromCharCode(65 + idx),
-                              name: m.displayName,
-                            })}
-                          </option>
-                        ))}
-                      </optgroup>
+                      {isExactMatch && (
+                        <optgroup label={t('scanner:table.keep_one')}>
+                          {group.members.map((m, idx) => (
+                            <option key={m.folderPath} value={m.folderPath}>
+                              {t('scanner:table.keep_label', {
+                                id: String.fromCharCode(65 + idx),
+                                name: m.displayName,
+                              })}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                       <optgroup label={t('scanner:table.general')}>
                         <option value="ignore">{t('scanner:table.ignore')}</option>
                       </optgroup>
                     </select>
 
-                    {selectedAction?.type === 'Keep' && (
+                    {selectedAction?.type === 'Keep' && isExactMatch && (
                       <span className="text-[10px] text-error flex items-center gap-1 px-1">
                         <Trash2 size={10} />
                         {t('scanner:table.will_delete', { count: group.members.length - 1 })}

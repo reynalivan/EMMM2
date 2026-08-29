@@ -9,27 +9,27 @@ import { Layers, Loader2, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCollectionPreview } from '../hooks/useCollections';
 import { CollectionTreeView } from './CollectionTreeView';
-import { getCollectionDisplayName, useUnsavedLabels } from '../../../lib/corridorLabels';
-import type { CorridorSnapshot } from '../../../types/collection';
+import { getCollectionDisplayName, useRuntimeLabels } from '../../../lib/runtimeLabels';
+import type { CollectionRuntimeSnapshot } from '../../../types/collection';
 import type { CollectionWorkspaceSource } from '../types';
 
 interface CollectionPreviewPanelProps {
   source: CollectionWorkspaceSource | null;
   gameId: string | null;
-  corridorSnapshot: CorridorSnapshot | undefined;
+  runtimeSnapshot: CollectionRuntimeSnapshot | undefined;
 }
 
 export function CollectionPreviewPanel({
   source,
   gameId,
-  corridorSnapshot,
+  runtimeSnapshot,
 }: CollectionPreviewPanelProps) {
   const { t } = useTranslation(['collections', 'common', 'layout']);
   const previewQuery = useCollectionPreview(
     source?.kind === 'stored_collection' ? source.collectionId : null,
     gameId,
   );
-  const unsavedLabels = useUnsavedLabels();
+  const runtimeLabels = useRuntimeLabels();
 
   // No collection selected
   if (!source) {
@@ -57,7 +57,7 @@ export function CollectionPreviewPanel({
   }
 
   if (source.kind === 'current_runtime') {
-    if (!corridorSnapshot) {
+    if (!runtimeSnapshot) {
       return (
         <div className="flex flex-col items-center justify-center p-8 text-center h-full text-base-content/40">
           <Package size={48} className="mb-4 opacity-20" />
@@ -67,10 +67,9 @@ export function CollectionPreviewPanel({
     }
 
     const displayName = getCollectionDisplayName({
-      name: corridorSnapshot.is_dirty ? null : corridorSnapshot.active_collection_name,
-      isUnsaved: corridorSnapshot.is_dirty,
-      isSafe: corridorSnapshot.is_safe,
-      labels: unsavedLabels,
+      name: runtimeSnapshot.is_dirty ? null : runtimeSnapshot.active_collection_name,
+      isUnsaved: runtimeSnapshot.is_dirty,
+      labels: runtimeLabels,
     });
 
     return (
@@ -86,7 +85,7 @@ export function CollectionPreviewPanel({
               </h2>
               <span className="text-[10px] text-base-content/50 truncate">
                 {t('collections:preview.stats.mods', {
-                  count: corridorSnapshot.projected_state.summary.active_root_count,
+                  count: runtimeSnapshot.projected_state.summary.active_root_count,
                 })}
               </span>
             </div>
@@ -96,7 +95,7 @@ export function CollectionPreviewPanel({
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-base-100/50">
           <div className="max-w-3xl mx-auto">
             <CollectionTreeView
-              nodes={corridorSnapshot.current_tree_nodes}
+              nodes={runtimeSnapshot.current_tree_nodes}
               colorClass="text-primary"
               emptyMessage={t('collections:preview.empty')}
             />
@@ -123,14 +122,7 @@ export function CollectionPreviewPanel({
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="flex flex-col min-w-0">
             <h2 className="font-bold text-sm leading-tight flex items-center gap-2 truncate">
-              <span className="truncate">
-                {getCollectionDisplayName({
-                  name: preview.collection.name,
-                  isUnsaved: preview.collection.is_unsaved,
-                  isSafe: preview.collection.is_safe,
-                  labels: unsavedLabels,
-                })}
-              </span>
+              <span className="truncate">{preview.collection.name}</span>
               {preview.collection.is_active && (
                 <span className="badge badge-sm badge-success opacity-90 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
                   {t('collections:list.item.active')}

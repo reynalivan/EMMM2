@@ -1,9 +1,9 @@
 use super::projection::persist_projected_state;
 use super::{
-    apply_collection, create_collection, delete_collection, get_collection_preview,
-    handle_dirty_state, handle_mod_missing, handle_mod_moved_or_renamed, handle_object_renamed_tx,
-    list_collections, preview_apply, replace_collection_with_current_state, update_collection,
-    ApplyCollectionRequest,
+    apply_collection, capture_last_changes_if_needed, create_collection, delete_collection,
+    get_collection_preview, handle_mod_missing, handle_mod_moved_or_renamed,
+    handle_object_renamed_tx, list_collections, preview_apply,
+    replace_collection_with_current_state, update_collection, ApplyCollectionRequest,
 };
 use crate::domain::collection::{
     CollectionMod, CollectionObject, CreateCollectionInput, CreateCollectionMode, MemberKind,
@@ -11,13 +11,13 @@ use crate::domain::collection::{
 };
 use crate::domain::errors::CollectionError;
 use crate::domain::models::{GameType, ItemStatus};
-use crate::repo::{collection_repo, corridor_repo};
+use crate::repo::collection_repo;
 use crate::services::config::AppSettings;
 use crate::services::projected_state_service;
 use crate::services::scanner::watcher::WatcherSuppressor;
 use crate::test_utils::{
-    init_test_db, insert_test_game, insert_test_mod, insert_test_object,
-    set_test_corridor_active_unchecked, TestGameFixture, TestModFixture, TestObjectFixture,
+    init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
+    TestModFixture, TestObjectFixture,
 };
 use std::sync::Arc;
 
@@ -29,9 +29,13 @@ async fn seed_game(pool: &sqlx::SqlitePool, id: &str, mods_path: Option<&str>) {
         pool,
         &TestGameFixture {
             id,
-            name: "Test Game",
+            name: id,
             game_type: GameType::GIMI,
-            path: "E:/Games/TestGame",
+            path: if id == "game-1" {
+                "E:/Games/TestGame"
+            } else {
+                "E:/Games/TestGame2"
+            },
             mods_path,
         },
     )
@@ -68,6 +72,8 @@ fn test_collection_mod(collection_id: &str, mod_path: &str, display_name: &str) 
         node_type: Some("FlatModRoot".to_string()),
         warnings: Vec::new(),
         is_enabled: true,
+        is_safe: true,
+        safety_source: Some("manual".to_string()),
     }
 }
 
@@ -93,6 +99,7 @@ fn create_flat_mod_folder(mods_root: &std::path::Path, relative_path: &str) {
 }
 
 mod apply_tests;
+mod characterization_tests;
 mod create_tests;
 mod delete_tests;
 mod lifecycle_tests;

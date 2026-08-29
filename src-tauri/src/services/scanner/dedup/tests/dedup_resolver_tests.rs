@@ -9,16 +9,13 @@ use tempfile::TempDir;
 struct TestContext {
     _temp: TempDir,
     mods_root: PathBuf,
-    trash_root: PathBuf,
     pool: sqlx::SqlitePool,
 }
 
 async fn setup_context() -> TestContext {
     let temp = TempDir::new().unwrap();
     let mods_root = temp.path().join("Mods");
-    let trash_root = temp.path().join("app_data").join("trash");
     fs::create_dir_all(&mods_root).unwrap();
-    fs::create_dir_all(&trash_root).unwrap();
 
     let ctx = crate::test_utils::init_test_db().await;
     let pool = ctx.pool;
@@ -39,25 +36,77 @@ async fn setup_context() -> TestContext {
     TestContext {
         _temp: temp,
         mods_root,
-        trash_root,
         pool,
     }
 }
 
-async fn seed_dedup_group(context: &TestContext, game_id: &str, group_id: &str) {
+#[test]
+fn failed_hardlink_creation_restores_the_original_target_file() {
+    let temp = TempDir::new().unwrap();
+    let source = temp.path().join("source.ini");
+    let target = temp.path().join("target.ini");
+    fs::write(&source, b"new").unwrap();
+    fs::write(&target, b"old").unwrap();
+
+    let error = super::replace_file_with_hardlink_using(&source, &target, |_, _| {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "injected hardlink failure",
+        ))
+    })
+    .expect_err("replacement must report the hardlink failure");
+
+    assert!(error.to_string().contains("injected hardlink failure"));
+    assert_eq!(fs::read(&target).unwrap(), b"old");
+    assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 2);
+}
+
+async fn seed_dedup_group(
+    context: &TestContext,
+    game_id: &str,
+    group_id: &str,
+    folder_a: &str,
+    folder_b: &str,
+) {
     let job_id = format!("job-{group_id}");
-    sqlx::query("INSERT OR IGNORE INTO dedup_jobs (id, game_id, status) VALUES (?, ?, 'running')")
-        .bind(&job_id)
-        .bind(game_id)
-        .execute(&context.pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT OR IGNORE INTO dedup_jobs (id, game_id, status) VALUES (?, ?, 'completed')",
+    )
+    .bind(&job_id)
+    .bind(game_id)
+    .execute(&context.pool)
+    .await
+    .unwrap();
+
+    let group = crate::types::dup_scan::DupScanGroup {
+        group_id: group_id.to_string(),
+        confidence_score: 100,
+        match_reason: "Exact hash match".to_string(),
+        is_unsafe: false,
+        signals: Vec::new(),
+        members: [folder_a, folder_b]
+            .into_iter()
+            .map(|folder_path| crate::types::dup_scan::DupScanMember {
+                mod_id: None,
+                version: None,
+                folder_path: folder_path.to_string(),
+                display_name: folder_path.to_string(),
+                total_size_bytes: 12,
+                file_count: 1,
+                is_safe: true,
+                confidence_score: 100,
+                signals: Vec::new(),
+            })
+            .collect(),
+    };
 
     sqlx::query(
-        "INSERT INTO dedup_groups (id, job_id, resolution_status) VALUES (?, ?, 'pending')",
+        "INSERT INTO dedup_groups (id, job_id, reasons_json, resolution_status) \
+         VALUES (?, ?, ?, 'pending')",
     )
     .bind(group_id)
     .bind(&job_id)
+    .bind(serde_json::to_string(&group).unwrap())
     .execute(&context.pool)
     .await
     .unwrap();
@@ -68,8 +117,8 @@ async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {
     let folder_b = context.mods_root.join("Lumine");
     fs::create_dir_all(&folder_a).unwrap();
     fs::create_dir_all(&folder_b).unwrap();
-    fs::write(folder_a.join("mod.ini"), "a").unwrap();
-    fs::write(folder_b.join("mod.ini"), "b").unwrap();
+    fs::write(folder_a.join("mod.ini"), "same-content").unwrap();
+    fs::write(folder_b.join("mod.ini"), "same-content").unwrap();
 
     let folder_a_path = folder_a.to_string_lossy().to_string();
     let folder_b_path = folder_b.to_string_lossy().to_string();
@@ -117,7 +166,7 @@ async fn test_tc_9_2_01_keep_a_moves_b_to_trash() {
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
-    seed_dedup_group(&context, game_id, "group-1").await;
+    seed_dedup_group(&context, game_id, "group-1", &folder_a, &folder_b).await;
 
     let lock = OperationLock::new();
     let guard = lock.acquire().await.unwrap();
@@ -133,7 +182,6 @@ async fn test_tc_9_2_01_keep_a_moves_b_to_trash() {
         &context.pool,
         &guard,
         &suppressor,
-        &context.trash_root,
         |_| {},
     )
     .await
@@ -158,7 +206,7 @@ async fn test_tc_9_2_01_keep_b_moves_a_to_trash() {
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
-    seed_dedup_group(&context, game_id, "group-2").await;
+    seed_dedup_group(&context, game_id, "group-2", &folder_a, &folder_b).await;
 
     let lock = OperationLock::new();
     let guard = lock.acquire().await.unwrap();
@@ -174,7 +222,6 @@ async fn test_tc_9_2_01_keep_b_moves_a_to_trash() {
         &context.pool,
         &guard,
         &suppressor,
-        &context.trash_root,
         |_| {},
     )
     .await
@@ -185,13 +232,152 @@ async fn test_tc_9_2_01_keep_b_moves_a_to_trash() {
     assert!(!Path::new(&folder_a).exists());
 }
 
+#[tokio::test]
+async fn keep_rejects_folders_that_are_not_full_content_matches() {
+    let context = setup_context().await;
+    let game_id = "game-1";
+    let (folder_a, folder_b) = seed_pair(&context, game_id).await;
+    fs::write(Path::new(&folder_b).join("mod.ini"), "changed after scan").unwrap();
+    seed_dedup_group(&context, game_id, "group-not-exact", &folder_a, &folder_b).await;
+
+    let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
+    let summary = resolve_batch(
+        vec![ResolutionRequest {
+            group_id: "group-not-exact".to_string(),
+            action: ResolutionAction::KeepA,
+            folder_a: folder_a.clone(),
+            folder_b: folder_b.clone(),
+        }],
+        game_id.to_string(),
+        &context.pool,
+        &guard,
+        &suppressor,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.successful, 0);
+    assert_eq!(summary.failed, 1);
+    assert!(Path::new(&folder_a).exists());
+    assert!(Path::new(&folder_b).exists());
+}
+
+#[tokio::test]
+async fn keep_rejects_a_forged_group_before_trashing() {
+    let context = setup_context().await;
+    let game_id = "game-1";
+    let (folder_a, folder_b) = seed_pair(&context, game_id).await;
+
+    let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
+    let summary = resolve_batch(
+        vec![ResolutionRequest {
+            group_id: "missing-group".to_string(),
+            action: ResolutionAction::KeepA,
+            folder_a: folder_a.clone(),
+            folder_b: folder_b.clone(),
+        }],
+        game_id.to_string(),
+        &context.pool,
+        &guard,
+        &suppressor,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.failed, 1);
+    assert!(Path::new(&folder_a).exists());
+    assert!(Path::new(&folder_b).exists());
+}
+
+#[tokio::test]
+async fn keep_rejects_two_spellings_of_the_same_folder() {
+    let context = setup_context().await;
+    let game_id = "game-1";
+    let (folder_a, _folder_b) = seed_pair(&context, game_id).await;
+    seed_dedup_group(&context, game_id, "same-folder", &folder_a, &folder_a).await;
+
+    let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
+    let summary = resolve_batch(
+        vec![ResolutionRequest {
+            group_id: "same-folder".to_string(),
+            action: ResolutionAction::KeepA,
+            folder_a: folder_a.clone(),
+            folder_b: folder_a.clone(),
+        }],
+        game_id.to_string(),
+        &context.pool,
+        &guard,
+        &suppressor,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.failed, 1);
+    assert!(Path::new(&folder_a).exists());
+}
+
+#[tokio::test]
+async fn keep_rejects_a_persisted_non_exact_group() {
+    let context = setup_context().await;
+    let game_id = "game-1";
+    let (folder_a, folder_b) = seed_pair(&context, game_id).await;
+    seed_dedup_group(&context, game_id, "non-exact-group", &folder_a, &folder_b).await;
+    let group_json: String =
+        sqlx::query_scalar("SELECT reasons_json FROM dedup_groups WHERE id = ?")
+            .bind("non-exact-group")
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    let mut group: crate::types::dup_scan::DupScanGroup =
+        serde_json::from_str(&group_json).unwrap();
+    group.confidence_score = 85;
+    sqlx::query("UPDATE dedup_groups SET reasons_json = ? WHERE id = ?")
+        .bind(serde_json::to_string(&group).unwrap())
+        .bind("non-exact-group")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
+    let summary = resolve_batch(
+        vec![ResolutionRequest {
+            group_id: "non-exact-group".to_string(),
+            action: ResolutionAction::KeepA,
+            folder_a: folder_a.clone(),
+            folder_b: folder_b.clone(),
+        }],
+        game_id.to_string(),
+        &context.pool,
+        &guard,
+        &suppressor,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.failed, 1);
+    assert!(Path::new(&folder_a).exists());
+    assert!(Path::new(&folder_b).exists());
+}
+
 // Covers: TC-9.2-02 (Ignore Pair)
 #[tokio::test]
 async fn test_tc_9_2_02_ignore_persists_whitelist() {
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
-    seed_dedup_group(&context, game_id, "group-3").await;
+    seed_dedup_group(&context, game_id, "group-3", &folder_a, &folder_b).await;
 
     let lock = OperationLock::new();
     let guard = lock.acquire().await.unwrap();
@@ -207,7 +393,6 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
         &context.pool,
         &guard,
         &suppressor,
-        &context.trash_root,
         |_| {},
     )
     .await
@@ -255,8 +440,9 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
 
         fs::create_dir_all(&folder_a).unwrap();
         fs::create_dir_all(&folder_b).unwrap();
-        fs::write(folder_a.join("mod.ini"), format!("original {}", i)).unwrap();
-        fs::write(folder_b.join("mod.ini"), format!("duplicate {}", i)).unwrap();
+        let content = format!("duplicate-pair-{i}");
+        fs::write(folder_a.join("mod.ini"), &content).unwrap();
+        fs::write(folder_b.join("mod.ini"), &content).unwrap();
 
         let folder_a_path = folder_a.to_string_lossy().to_string();
         let folder_b_path = folder_b.to_string_lossy().to_string();
@@ -295,7 +481,14 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
         .await
         .unwrap();
 
-        seed_dedup_group(&context, game_id, &format!("group-{}", i)).await;
+        seed_dedup_group(
+            &context,
+            game_id,
+            &format!("group-{}", i),
+            &folder_a_path,
+            &folder_b_path,
+        )
+        .await;
 
         requests.push(ResolutionRequest {
             group_id: format!("group-{}", i),
@@ -317,7 +510,6 @@ async fn test_tc_9_2_03_bulk_resolution_with_progress_events() {
         &context.pool,
         &guard,
         &suppressor,
-        &context.trash_root,
         |progress| {
             progress_events.push(progress);
         },
@@ -408,7 +600,14 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
         .await
         .unwrap();
 
-        seed_dedup_group(&context, game_id, &format!("group-lock-{}", i)).await;
+        seed_dedup_group(
+            &context,
+            game_id,
+            &format!("group-lock-{}", i),
+            &folder_a_path,
+            &folder_b_path,
+        )
+        .await;
 
         requests.push(ResolutionRequest {
             group_id: format!("group-lock-{}", i),
@@ -431,7 +630,6 @@ async fn test_nc_9_2_01_file_locked_graceful_skip() {
         &context.pool,
         &guard,
         &suppressor,
-        &context.trash_root,
         |_| {},
     )
     .await

@@ -13,8 +13,68 @@
       "ignore_failed": "忽略失败：{{error}}"
     }
   },
+  "conflict_manager": {
+    "title": "文件夹名称冲突",
+    "description": "请重命名重复文件夹或将其移至回收站，然后数据库才能与磁盘同步。",
+    "banner": "有 {{count}} 个文件夹名称冲突需要处理，其他模组仍会同步。",
+    "resolve": "解决",
+    "progress": "冲突 {{current}} / {{total}}",
+    "queue_progress": "已解决 {{resolved}} 个 · 剩余 {{remaining}} 个（共 {{total}} 个）",
+    "complete_title": "所有冲突均已解决",
+    "complete_summary": "已解决 {{resolved}} / {{total}} 个冲突",
+    "complete_description": "Mods 文件夹和数据库已与最新磁盘状态同步。",
+    "groups": "冲突组",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "base_name": "基本名称",
+    "new_base_name": "新基本名称",
+    "action": "操作",
+    "keep_badge": "保留",
+    "rename_badge": "重命名",
+    "keep_current_name": "保留当前名称",
+    "keep_instead": "改为保留此名称",
+    "keep_action_label": "为 {{path}} 保留当前名称",
+    "rename_folder": "重命名文件夹",
+    "no_filesystem_changes": "不更改文件系统",
+    "action_plan": "此冲突的操作",
+    "apply_renames_one": "重命名 {{count}} 个文件夹并继续",
+    "apply_renames_other": "重命名 {{count}} 个文件夹并继续",
+    "file_count_one": "{{count}} 个文件",
+    "file_count_other": "{{count}} 个文件",
+    "loading": "正在加载文件夹详情...",
+    "details_unavailable": "文件夹详情不可用",
+    "prefix_note": "启用/禁用前缀会自动保留。",
+    "read_only_until_resolved": "解决命名冲突前，无法打开或更改此文件夹。",
+    "resolve_selected": "解决所选冲突",
+    "open_folder": "打开文件夹",
+    "move_to_trash": "移至回收站",
+    "trash_action": "将“{{name}}”移至回收站",
+    "trash_action_label": "将“{{name}}”移至回收站 — {{path}}",
+    "trash_continue": "将“{{name}}”移至回收站并继续",
+    "trash_title": "将文件夹移至回收站？",
+    "trash_confirm": "将“{{name}}”移至回收站？之后可以恢复。",
+    "trash_metadata_one": "{{size}} · {{count}} 个文件",
+    "trash_metadata_other": "{{size}} · {{count}} 个文件",
+    "cancel": "取消",
+    "close": "关闭",
+    "resolved": "文件夹冲突已解决。",
+    "trashed": "文件夹已移至回收站。",
+    "details_failed": "无法加载文件夹详情：{{error}}",
+    "retry": "重试",
+    "partial_details": "部分文件夹详情无法读取。",
+    "resolve_failed": "无法解决冲突：{{error}}",
+    "trash_failed": "无法将文件夹移至回收站：{{error}}",
+    "validation": {
+      "empty": "请输入不含首尾空格的名称。",
+      "invalid": "名称包含 Windows 保留字符。",
+      "reserved": "此设备名称为 Windows 保留名称。",
+      "disabled_prefix": "请仅输入基本名称；DISABLED 前缀会自动保留。",
+      "duplicate": "每个候选项都需要唯一的最终名称。"
+    }
+  },
   "move": {
     "title": "移动到对象",
+    "match_suggestion": "文件夹名称证据建议移动到 {{name}}。请在移动前确认。",
     "label": "对象",
     "placeholder": "搜索对象...",
     "no_results": "未找到对象",
@@ -22,27 +82,11 @@
     "location_label": "位置",
     "select_object_first": "请先选择对象",
     "loading_targets": "正在加载文件夹...",
-    "status_label": "设置状态",
-    "status": {
-      "keep": "保持",
-      "disabled": "禁用",
-      "only-enable": "仅启用"
-    },
+    "disable_after_move": "将移动后的模组设为禁用",
     "toast": {
       "success": "已移动到 {{name}}",
       "failed": "移动失败：{{error}}"
     }
-  },
-  "resolution": {
-    "title": "检测到名称冲突",
-    "loading": "正在加载文件夹详情...",
-    "enabled_label": "已启用版本",
-    "disabled_label": "已禁用版本",
-    "description": "已启用和已禁用的 {{name}} 版本同时存在于同一目录中。请比较后选择要保留的版本。",
-    "file_count_one": "{{count}} 个文件",
-    "file_count_other": "{{count}} 个文件",
-    "more_files_one": "+另外 {{count}} 个文件",
-    "more_files_other": "+另外 {{count}} 个文件"
   },
   "breadcrumbs": {
     "root": "根目录"
@@ -84,5 +128,34 @@
     "revoke_title": "撤销忽略的冲突规则",
     "revoke": "撤销",
     "note": "撤销规则后，此对象将再次显示冲突警告。"
+  },
+  "rename_confirmation": {
+    "title": "检查外部文件夹更改",
+    "description": "应用检测到缺少充分身份依据的潜在重命名。请检查所有组，避免猜测性地改写收藏引用。",
+    "banner_one": "有 {{count}} 个外部重命名需要检查。",
+    "banner_other": "有 {{count}} 个外部重命名需要检查。",
+    "review": "检查",
+    "reviewed": "已检查",
+    "groups": "重命名组",
+    "progress": "已检查 {{completed}} / {{total}}",
+    "kind": { "Object": "对象文件夹", "Mod": "模组文件夹" },
+    "reason": {
+      "MissingIdentity": "文件系统身份不可用，因此应用无法确认这是重命名，还是独立的删除和新增。",
+      "AmbiguousIdentity": "多个文件夹共享同一已存身份。请选择准确的旧路径和新路径。"
+    },
+    "choose_action": "磁盘上发生了什么？",
+    "rename_action": "此文件夹被重命名或移动",
+    "rename_help": "保留原有逻辑模组，并将收藏引用改写到当前路径。",
+    "separate_action": "这是独立的删除和新增",
+    "separate_help": "将旧收藏成员保留为缺失状态，并把当前文件夹作为新项目导入。",
+    "previous_path": "旧路径",
+    "current_path": "当前路径",
+    "open_folder": "打开当前文件夹",
+    "ready": "所有组都可以应用。",
+    "review_all": "请为每个组选择操作。",
+    "apply": "应用所有决定",
+    "resolved": "外部文件夹更改已同步。",
+    "resolve_failed": "同步外部文件夹更改失败：{{error}}",
+    "close": "关闭"
   }
 }
