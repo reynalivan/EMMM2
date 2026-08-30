@@ -1,4 +1,6 @@
 
-pub mod adapters;
-pub mod application;
-pub mod domain;
+pub(crate) mod adapters;
+pub(crate) mod application;
+pub(crate) mod domain;
+
+pub mod api;

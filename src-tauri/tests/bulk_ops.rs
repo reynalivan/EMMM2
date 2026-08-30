@@ -3,16 +3,16 @@ mod common;
 #[cfg(test)]
 mod tests {
     use super::common::init_test_db;
-    use emmm_lib::modules::games::domain::models::GameType;
-    use emmm_lib::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
-    use emmm_lib::modules::settings::application::config::ConfigService;
-    use emmm_lib::modules::library::application::mods::bulk;
-    use emmm_lib::modules::library::application::mods::core_ops::toggle_mod_inner;
-    use emmm_lib::modules::library::application::mods::info_json;
+    use emmm_lib::modules::games::api::testing::domain::models::GameType;
+    use emmm_lib::modules::games::api::testing::adapters::sqlite::game::{upsert_game, GameRow};
+    use emmm_lib::modules::settings::api::testing::application::config::ConfigService;
+    use emmm_lib::modules::library::api::testing::application::mods::bulk;
+    use emmm_lib::modules::library::api::testing::application::mods::core_ops::toggle_mod_inner;
+    use emmm_lib::modules::library::api::testing::application::mods::info_json;
     use std::fs;
     use tempfile::TempDir;
 
-    use emmm_lib::modules::workspace::application::scanner::watcher::WatcherState;
+    use emmm_lib::modules::workspace::api::testing::application::scanner::watcher::WatcherState;
 
     async fn toggle_all(
         state: &WatcherState,
