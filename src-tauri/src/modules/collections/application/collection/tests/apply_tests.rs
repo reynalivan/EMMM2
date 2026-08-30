@@ -73,7 +73,7 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
         other => panic!("expected MissingMods error, got {other:?}"),
     }
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-1")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-1")
         .await
         .expect("load runtime");
     assert!(
@@ -430,7 +430,7 @@ async fn restoring_a_draft_finalizes_its_baseline_with_the_apply_task() {
     .await
     .expect("persist draft");
     let mut connection = ctx.pool.acquire().await.expect("acquire connection");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut connection,
         "game-restore-finalize",
         &draft.id,
@@ -456,7 +456,7 @@ async fn restoring_a_draft_finalizes_its_baseline_with_the_apply_task() {
     .await
     .expect("restore draft");
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-restore-finalize")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-restore-finalize")
         .await
         .expect("load runtime")
         .expect("runtime exists");

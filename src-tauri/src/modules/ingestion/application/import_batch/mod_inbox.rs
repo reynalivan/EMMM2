@@ -4,7 +4,7 @@ use super::types::{
     ProcessedModInboxDestination, ProcessedModInboxSource, TargetMode,
 };
 use crate::shared::errors::AppError;
-use crate::modules::ingestion::adapters::outbound::sqlite::import_batch;
+use crate::modules::ingestion::adapters::sqlite::import_batch;
 use sqlx::SqlitePool;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

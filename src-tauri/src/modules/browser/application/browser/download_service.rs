@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
-use crate::modules::browser::adapters::outbound::sqlite::browser;
+use crate::modules::browser::adapters::sqlite::browser;
 use crate::modules::browser::application::browser::download_handler;
 
 /// DTO for the frontend download list. Defined in `repo::browser`; re-exported

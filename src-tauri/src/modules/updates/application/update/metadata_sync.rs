@@ -47,10 +47,10 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
     let client = super::http_client(super::MANIFEST_TIMEOUT)?;
 
     // Read cached ETag / Last-Modified from DB
-    let etag = crate::modules::system::adapters::outbound::sqlite::settings::get_app_meta(pool, "etag")
+    let etag = crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "etag")
         .await
         .unwrap_or_default();
-    let last_modified = crate::modules::system::adapters::outbound::sqlite::settings::get_app_meta(pool, "last_modified")
+    let last_modified = crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "last_modified")
         .await
         .unwrap_or_default();
 
@@ -90,7 +90,7 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
     let new_last_modified = header_value("last-modified");
 
     let manifest: RemoteManifest = response.json().await?;
-    let local_version: u64 = crate::modules::system::adapters::outbound::sqlite::settings::get_app_meta(pool, "metadata_version")
+    let local_version: u64 = crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "metadata_version")
         .await
         .unwrap_or_default()
         .parse()
@@ -120,7 +120,7 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
         if db_response.status().is_success() {
             let payload: serde_json::Value = db_response.json().await?;
             // Store raw payload in app_meta for downstream consumers
-            crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(
+            crate::modules::system::adapters::sqlite::settings::set_app_meta(
                 pool,
                 "metadata_payload",
                 &payload.to_string(),
@@ -131,7 +131,7 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
 
     // Update the local version marker, then cache the validators — only now
     // that the payload made it — so a failed run retries with the old ETag.
-    crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(
+    crate::modules::system::adapters::sqlite::settings::set_app_meta(
         pool,
         "metadata_version",
         &manifest.db_version.to_string(),
@@ -151,10 +151,10 @@ async fn persist_validators(
     last_modified: &Option<String>,
 ) {
     if let Some(value) = etag {
-        crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(pool, "etag", value).await;
+        crate::modules::system::adapters::sqlite::settings::set_app_meta(pool, "etag", value).await;
     }
     if let Some(value) = last_modified {
-        crate::modules::system::adapters::outbound::sqlite::settings::set_app_meta(pool, "last_modified", value).await;
+        crate::modules::system::adapters::sqlite::settings::set_app_meta(pool, "last_modified", value).await;
     }
 }
 

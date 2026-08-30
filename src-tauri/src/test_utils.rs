@@ -4,7 +4,7 @@ use std::sync::Once;
 
 use crate::shared::path_key::{canonical_name_key, folder_path_key};
 use crate::modules::collections::domain::collection::ProjectedCollectionState;
-use crate::modules::games::adapters::outbound::sqlite::game::{upsert_game, GameRow};
+use crate::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
 
 static INIT: Once = Once::new();
 
@@ -70,7 +70,7 @@ pub async fn init_test_db() -> TestContext {
     // Run migrations (force cache bust)
     let m = sqlx::migrate!("./migrations");
     m.run(&pool).await.expect("Failed to run migrations");
-    crate::modules::system::adapters::outbound::sqlite::utils::unicode_keys::ensure_unicode_keys(&pool)
+    crate::modules::system::adapters::sqlite::utils::unicode_keys::ensure_unicode_keys(&pool)
         .await
         .expect("Failed to backfill unicode keys");
 

@@ -10,7 +10,7 @@ use std::path::Path;
 /// Determine whether the app has games configured.
 /// Returns `HasConfig` when at least one game row exists; `FreshInstall` otherwise.
 pub async fn check_config_status(pool: &sqlx::SqlitePool) -> Result<ConfigStatus, AppError> {
-    let count = crate::modules::games::adapters::outbound::sqlite::game::count_games(pool).await?;
+    let count = crate::modules::games::adapters::sqlite::game::count_games(pool).await?;
 
     if count > 0 {
         Ok(ConfigStatus::HasConfig)
@@ -55,5 +55,5 @@ pub async fn reset_database_service(
     }
 
     // Clear all data from the database (tables only, no file deletion)
-    Ok(crate::modules::system::adapters::outbound::sqlite::settings::reset_all_data_with_revision(pool, settings_revision).await?)
+    Ok(crate::modules::system::adapters::sqlite::settings::reset_all_data_with_revision(pool, settings_revision).await?)
 }

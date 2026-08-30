@@ -285,7 +285,7 @@ async fn active_pointer_failure_keeps_the_apply_task_pending_for_recovery() {
         .await
         .expect("persist empty collection");
     }
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_active(
+    crate::modules::collections::adapters::sqlite::runtime::set_active(
         &ctx.pool,
         "game-finalize-gap",
         Some("baseline"),
@@ -317,7 +317,7 @@ async fn active_pointer_failure_keeps_the_apply_task_pending_for_recovery() {
     .await
     .expect_err("injected active pointer write must fail");
 
-    let tasks = crate::modules::workspace::adapters::outbound::sqlite::task::get_all_pending_tasks_global(&ctx.pool)
+    let tasks = crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&ctx.pool)
         .await
         .expect("load pending recovery tasks");
     let task = tasks
@@ -380,7 +380,7 @@ async fn pending_apply_rejects_another_apply_before_draft_capture() {
         .acquire()
         .await
         .expect("acquire runtime connection");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut connection,
         "game-open-apply",
         "existing-draft",
@@ -394,7 +394,7 @@ async fn pending_apply_rejects_another_apply_before_draft_capture() {
         .expect("load draft")
         .expect("draft exists")
         .signature;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(
+    crate::modules::workspace::adapters::sqlite::task::create_task(
         &ctx.pool,
         "existing-apply",
         "game-open-apply",
@@ -525,14 +525,14 @@ async fn assert_replace_failure_is_atomic(failpoint: ReplaceFailpoint) {
         .acquire()
         .await
         .expect("acquire runtime connection");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_active_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_active_tx(
         &mut connection,
         "game-replace-atomic",
         Some("replace-baseline"),
     )
     .await
     .expect("set initial active baseline");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut connection,
         "game-replace-atomic",
         "replace-draft",
@@ -556,7 +556,7 @@ async fn assert_replace_failure_is_atomic(failpoint: ReplaceFailpoint) {
         .into_iter()
         .map(|member| member.mod_path)
         .collect();
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-replace-atomic")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-replace-atomic")
         .await
         .expect("reload runtime state")
         .expect("runtime state exists");

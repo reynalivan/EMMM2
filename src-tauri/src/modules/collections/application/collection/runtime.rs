@@ -4,7 +4,7 @@ use super::live_state::{live_runtime_is_safe, load_game_mods_path, load_live_run
 use super::projection::persist_projected_state;
 use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
 use crate::shared::errors::CollectionError;
-use crate::modules::collections::adapters::outbound::sqlite as collection;
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::workspace::application::projected_state;
 
 pub async fn capture_last_changes_if_needed(
@@ -122,7 +122,7 @@ pub(crate) async fn ensure_rollback_draft_is_unreferenced(
     conn: &mut sqlx::SqliteConnection,
     draft_id: &str,
 ) -> Result<(), CollectionError> {
-    if crate::modules::workspace::adapters::outbound::sqlite::task::open_task_references_rollback_collection_tx(conn, draft_id).await? {
+    if crate::modules::workspace::adapters::sqlite::task::open_task_references_rollback_collection_tx(conn, draft_id).await? {
         return Err(CollectionError::Validation(
             "Last changes is required by an open recovery task; resolve recovery before clearing or saving it"
                 .to_string(),

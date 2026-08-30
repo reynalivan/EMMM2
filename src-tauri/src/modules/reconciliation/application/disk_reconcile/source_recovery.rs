@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::shared::errors::AppError;
-use crate::modules::library::adapters::outbound::sqlite::mods::ReconcileModRow;
-use crate::modules::catalog::adapters::outbound::sqlite::object::ReconcileObjectRow;
+use crate::modules::library::adapters::sqlite::mods::ReconcileModRow;
+use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{collect_disk_projection, DiskProjection};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -216,8 +216,8 @@ pub async fn inspect_game_mods_directory(
 
     let mut conn = pool.acquire().await?;
     let existing_objects =
-        crate::modules::catalog::adapters::outbound::sqlite::object::get_rows_for_reconcile(&mut conn, game_id).await?;
-    let existing_mods = crate::modules::library::adapters::outbound::sqlite::mods::get_rows_for_reconcile(&mut conn, game_id).await?;
+        crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(&mut conn, game_id).await?;
+    let existing_mods = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut conn, game_id).await?;
     let summary = classify_candidate(
         &existing_objects,
         &existing_mods,
@@ -374,8 +374,8 @@ fn rollback_game_mods_directory(
 #[cfg(test)]
 mod tests {
     use crate::modules::games::domain::models::ItemStatus;
-    use crate::modules::library::adapters::outbound::sqlite::mods::ReconcileModRow;
-    use crate::modules::catalog::adapters::outbound::sqlite::object::ReconcileObjectRow;
+    use crate::modules::library::adapters::sqlite::mods::ReconcileModRow;
+    use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow;
     use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
         DiskModEntry, DiskObjectEntry, DiskProjection,
     };

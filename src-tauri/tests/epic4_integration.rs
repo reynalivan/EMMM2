@@ -1,4 +1,4 @@
-use emmm_lib::modules::library::adapters::inbound::mod_core_cmds;
+use emmm_lib::modules::library::adapters::tauri::mod_core_cmds;
 use emmm_lib::modules::library::application::mods::trash;
 use std::fs;
 use tempfile::TempDir;

@@ -58,7 +58,7 @@ pub(super) async fn execute_cycle_preset(
         .map(|collection| collection.name.clone())
         .collect();
     let current_collection_id =
-        crate::modules::collections::adapters::outbound::sqlite::runtime::get(pool_state.inner(), game_id)
+        crate::modules::collections::adapters::sqlite::runtime::get(pool_state.inner(), game_id)
             .await?
             .and_then(|runtime| runtime.active_collection_id);
 
@@ -135,7 +135,7 @@ async fn write_runtime_status(
     status: &StatusFields,
     hotkey_config: &HotkeyConfig,
 ) -> Result<(), AppError> {
-    let Some(mods_path) = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, game_id).await? else {
+    let Some(mods_path) = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id).await? else {
         return Ok(());
     };
 

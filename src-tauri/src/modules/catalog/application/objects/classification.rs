@@ -82,7 +82,7 @@ pub async fn apply_object_classification_tx(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let metadata_json = serde_json::to_string(&input.metadata)?;
-    let current = crate::modules::catalog::adapters::outbound::sqlite::object::get_classification_object_state_tx(
+    let current = crate::modules::catalog::adapters::sqlite::object::get_classification_object_state_tx(
         tx,
         input.game_id.trim(),
         input.object_id.trim(),
@@ -108,11 +108,11 @@ pub async fn apply_object_classification_tx(
         None => (None, false),
     };
 
-    let object_updated = crate::modules::catalog::adapters::outbound::sqlite::object::apply_classification_fields_tx(
+    let object_updated = crate::modules::catalog::adapters::sqlite::object::apply_classification_fields_tx(
         tx,
         input.game_id.trim(),
         input.object_id.trim(),
-        crate::modules::catalog::adapters::outbound::sqlite::object::ClassificationFields {
+        crate::modules::catalog::adapters::sqlite::object::ClassificationFields {
             category,
             subcategory,
             metadata_json: &metadata_json,
@@ -128,7 +128,7 @@ pub async fn apply_object_classification_tx(
         )));
     }
 
-    crate::modules::catalog::adapters::outbound::sqlite::object::apply_canonical_match(
+    crate::modules::catalog::adapters::sqlite::object::apply_canonical_match(
         &mut **tx,
         input.object_id.trim(),
         canonical_match.map(|matched| matched.entry_key.trim()),
@@ -139,14 +139,14 @@ pub async fn apply_object_classification_tx(
     )
     .await?;
 
-    let child_mods_updated = crate::modules::library::adapters::outbound::sqlite::mods::set_object_type_for_object(
+    let child_mods_updated = crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(
         &mut **tx,
         input.game_id.trim(),
         input.object_id.trim(),
         category,
     )
     .await?;
-    crate::modules::workspace::adapters::outbound::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
+    crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
         tx,
         input.game_id.trim(),
         [input.object_id.trim().to_string()],

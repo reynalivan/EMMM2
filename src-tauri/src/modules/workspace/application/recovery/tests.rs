@@ -70,17 +70,17 @@ async fn resolve(
 #[tokio::test]
 async fn pending_startup_tasks_lists_only_open_work() {
     let (pool, _config, _watcher) = setup().await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "t-done", "g1", "apply_collection", Some("c1"))
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t-done", "g1", "apply_collection", Some("c1"))
         .await
         .expect("create done task");
-    crate::modules::workspace::adapters::outbound::sqlite::task::update_status(&pool, "t-done", TaskStatus::Completed)
+    crate::modules::workspace::adapters::sqlite::task::update_status(&pool, "t-done", TaskStatus::Completed)
         .await
         .expect("complete task");
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "t-open", "g1", "apply_collection", Some("c1"))
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t-open", "g1", "apply_collection", Some("c1"))
         .await
         .expect("create open task");
 
-    let pending = crate::modules::workspace::adapters::outbound::sqlite::task::get_all_pending_tasks_global(&pool)
+    let pending = crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&pool)
         .await
         .expect("list pending");
 
@@ -102,7 +102,7 @@ async fn missing_task_is_rejected() {
 #[tokio::test]
 async fn ignore_marks_the_task_failed_without_touching_the_filesystem() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "t1", "g1", "apply_collection", Some("c1"))
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t1", "g1", "apply_collection", Some("c1"))
         .await
         .expect("create task");
 
@@ -110,13 +110,13 @@ async fn ignore_marks_the_task_failed_without_touching_the_filesystem() {
         .await
         .expect("ignore should succeed");
 
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, "t1")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "t1")
         .await
         .expect("load task")
         .expect("task exists");
     assert_eq!(task.status, TaskStatus::Failed);
     // An ignored task must not stay in the startup queue.
-    let pending = crate::modules::workspace::adapters::outbound::sqlite::task::get_all_pending_tasks_global(&pool)
+    let pending = crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&pool)
         .await
         .expect("list pending");
     assert!(pending.is_empty());
@@ -125,7 +125,7 @@ async fn ignore_marks_the_task_failed_without_touching_the_filesystem() {
 #[tokio::test]
 async fn retry_rejects_an_unsupported_task_type() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "t1", "g1", "something_else", None)
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t1", "g1", "something_else", None)
         .await
         .expect("create task");
 
@@ -136,7 +136,7 @@ async fn retry_rejects_an_unsupported_task_type() {
     assert!(format!("{error:?}").contains("something_else"));
 
     // A failed retry must leave the task open so the user can retry again.
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, "t1")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "t1")
         .await
         .expect("load task")
         .expect("task exists");
@@ -146,7 +146,7 @@ async fn retry_rejects_an_unsupported_task_type() {
 #[tokio::test]
 async fn retry_requires_a_target_collection() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "t1", "g1", "apply_collection", None)
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t1", "g1", "apply_collection", None)
         .await
         .expect("create task");
 
@@ -174,7 +174,7 @@ async fn successful_retry_promotes_the_applied_collection_to_active_baseline() {
     )
     .await
     .expect("insert game");
-    let target = crate::modules::collections::adapters::outbound::sqlite::create(
+    let target = crate::modules::collections::adapters::sqlite::create(
         &ctx.pool,
         "target-collection",
         "g-retry",
@@ -194,7 +194,7 @@ async fn successful_retry_promotes_the_applied_collection_to_active_baseline() {
     )
     .await
     .expect("persist collection state");
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(
+    crate::modules::workspace::adapters::sqlite::task::create_task(
         &ctx.pool,
         "retry-task",
         "g-retry",
@@ -216,7 +216,7 @@ async fn successful_retry_promotes_the_applied_collection_to_active_baseline() {
     .await
     .expect("retry collection apply");
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "g-retry")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "g-retry")
         .await
         .expect("load runtime")
         .expect("runtime state");
@@ -224,7 +224,7 @@ async fn successful_retry_promotes_the_applied_collection_to_active_baseline() {
         runtime.active_collection_id.as_deref(),
         Some(target.id.as_str())
     );
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&ctx.pool, "retry-task")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&ctx.pool, "retry-task")
         .await
         .expect("load task")
         .expect("task exists");
@@ -257,7 +257,7 @@ async fn retrying_a_restore_task_uses_its_stored_final_baseline_not_the_draft_ta
         true,
     )
     .await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_full_intent(
+    crate::modules::workspace::adapters::sqlite::task::create_task_with_full_intent(
         &pool,
         "restore-retry-task",
         "g-restore-retry",
@@ -280,7 +280,7 @@ async fn retrying_a_restore_task_uses_its_stored_final_baseline_not_the_draft_ta
     .await
     .expect("retry restore task");
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&pool, "g-restore-retry")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-restore-retry")
         .await
         .expect("load runtime")
         .expect("runtime exists");
@@ -288,7 +288,7 @@ async fn retrying_a_restore_task_uses_its_stored_final_baseline_not_the_draft_ta
         runtime.active_collection_id.as_deref(),
         Some("restore-baseline")
     );
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, "restore-retry-task")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "restore-retry-task")
         .await
         .expect("load task")
         .expect("task exists");
@@ -305,10 +305,10 @@ async fn retry_finalization_failure_keeps_original_task_and_active_baseline() {
     for (id, name) in [("baseline", "Baseline"), ("target", "Target")] {
         create_empty_collection_for_game(&pool, "g-retry-atomic", id, name, false).await;
     }
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_active(&pool, "g-retry-atomic", Some("baseline"))
+    crate::modules::collections::adapters::sqlite::runtime::set_active(&pool, "g-retry-atomic", Some("baseline"))
         .await
         .expect("set baseline");
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_rollback_intent(
+    crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &pool,
         "retry-original",
         "g-retry-atomic",
@@ -339,12 +339,12 @@ async fn retry_finalization_failure_keeps_original_task_and_active_baseline() {
     .await
     .expect_err("task finalization failure must fail recovery");
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&pool, "g-retry-atomic")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-retry-atomic")
         .await
         .expect("load runtime")
         .expect("runtime exists");
     assert_eq!(runtime.active_collection_id.as_deref(), Some("baseline"));
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, "retry-original")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "retry-original")
         .await
         .expect("load task")
         .expect("task exists");
@@ -368,10 +368,10 @@ async fn rollback_finalization_failure_keeps_pre_recovery_active_pointer() {
     ] {
         create_empty_collection_for_game(&pool, "g-rollback-atomic", id, name, is_draft).await;
     }
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_active(&pool, "g-rollback-atomic", Some("target"))
+    crate::modules::collections::adapters::sqlite::runtime::set_active(&pool, "g-rollback-atomic", Some("target"))
         .await
         .expect("set target active");
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_rollback_intent(
+    crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &pool,
         "rollback-original",
         "g-rollback-atomic",
@@ -402,12 +402,12 @@ async fn rollback_finalization_failure_keeps_pre_recovery_active_pointer() {
     .await
     .expect_err("task finalization failure must fail recovery");
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&pool, "g-rollback-atomic")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-rollback-atomic")
         .await
         .expect("load runtime")
         .expect("runtime exists");
     assert_eq!(runtime.active_collection_id.as_deref(), Some("target"));
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, "rollback-original")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "rollback-original")
         .await
         .expect("load task")
         .expect("task exists");
@@ -424,7 +424,7 @@ async fn rollback_finalization_failure_keeps_pre_recovery_active_pointer() {
 #[tokio::test]
 async fn concurrent_ignore_actions_have_exactly_one_winner() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "claim-once", "g1", "apply_collection", None)
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "claim-once", "g1", "apply_collection", None)
         .await
         .expect("create task");
 
@@ -451,7 +451,7 @@ async fn concurrent_ignore_actions_have_exactly_one_winner() {
 #[tokio::test]
 async fn running_or_settled_tasks_reject_additional_recovery_actions() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "claimed", "g1", "apply_collection", None)
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "claimed", "g1", "apply_collection", None)
         .await
         .expect("create claimed task");
     sqlx::query("UPDATE tasks SET status = 'RUNNING' WHERE id = 'claimed'")
@@ -464,14 +464,14 @@ async fn running_or_settled_tasks_reject_additional_recovery_actions() {
     resolve(&pool, &config, &watcher, "claimed", RecoveryAction::Retry)
         .await
         .expect_err("a claimed task must reject an opposing retry");
-    crate::modules::workspace::adapters::outbound::sqlite::task::update_status(&pool, "claimed", TaskStatus::Completed)
+    crate::modules::workspace::adapters::sqlite::task::update_status(&pool, "claimed", TaskStatus::Completed)
         .await
         .expect("settle claimed task");
 
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "settled", "g1", "apply_collection", None)
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "settled", "g1", "apply_collection", None)
         .await
         .expect("create settled task");
-    crate::modules::workspace::adapters::outbound::sqlite::task::update_status(&pool, "settled", TaskStatus::Completed)
+    crate::modules::workspace::adapters::sqlite::task::update_status(&pool, "settled", TaskStatus::Completed)
         .await
         .expect("settle task");
     resolve(&pool, &config, &watcher, "settled", RecoveryAction::Ignore)
@@ -491,10 +491,10 @@ async fn running_or_settled_tasks_reject_additional_recovery_actions() {
 #[tokio::test]
 async fn startup_check_is_read_only_and_backend_boot_reclaims_crashed_recovery() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task(&pool, "crashed", "g1", "apply_collection", None)
+    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "crashed", "g1", "apply_collection", None)
         .await
         .expect("create task");
-    assert!(crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status(
+    assert!(crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
         &pool,
         "crashed",
         TaskStatus::Pending,
@@ -515,7 +515,7 @@ async fn startup_check_is_read_only_and_backend_boot_reclaims_crashed_recovery()
         .await
         .expect_err("repeatable startup check must not revoke a live claim");
 
-    let reclaimed_count = crate::modules::workspace::adapters::outbound::sqlite::task::reclaim_interrupted_apply_tasks(&pool)
+    let reclaimed_count = crate::modules::workspace::adapters::sqlite::task::reclaim_interrupted_apply_tasks(&pool)
         .await
         .expect("backend boot should reclaim interrupted tasks");
     assert_eq!(reclaimed_count, 1);
@@ -601,7 +601,7 @@ async fn create_empty_collection_for_game(
     name: &str,
     is_draft: bool,
 ) {
-    crate::modules::collections::adapters::outbound::sqlite::create(pool, id, game_id, name, true, is_draft)
+    crate::modules::collections::adapters::sqlite::create(pool, id, game_id, name, true, is_draft)
         .await
         .expect("create collection");
     crate::modules::collections::application::collection::persist_projected_state(
@@ -619,7 +619,7 @@ async fn create_empty_collection_for_game(
 async fn rollback_to_draft_without_baseline_stays_unsaved() {
     let (pool, _config, _watcher) = setup().await;
     create_empty_collection(&pool, "draft", "Last changes", true).await;
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut pool.acquire().await.unwrap(),
         "g1",
         "draft",
@@ -627,7 +627,7 @@ async fn rollback_to_draft_without_baseline_stays_unsaved() {
     )
     .await
     .unwrap();
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_rollback_intent(
+    crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &pool,
         "rollback",
         "g1",
@@ -638,7 +638,7 @@ async fn rollback_to_draft_without_baseline_stays_unsaved() {
     )
     .await
     .unwrap();
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, "rollback")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "rollback")
         .await
         .unwrap()
         .unwrap();
@@ -656,7 +656,7 @@ async fn rollback_to_draft_with_deleted_baseline_stays_unsaved() {
     let (pool, _config, _watcher) = setup().await;
     create_empty_collection(&pool, "baseline", "Baseline", false).await;
     create_empty_collection(&pool, "draft", "Last changes", true).await;
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut pool.acquire().await.unwrap(),
         "g1",
         "draft",
@@ -664,7 +664,7 @@ async fn rollback_to_draft_with_deleted_baseline_stays_unsaved() {
     )
     .await
     .unwrap();
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_rollback_intent(
+    crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &pool,
         "rollback",
         "g1",
@@ -679,7 +679,7 @@ async fn rollback_to_draft_with_deleted_baseline_stays_unsaved() {
         .execute(&pool)
         .await
         .unwrap();
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, "rollback")
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "rollback")
         .await
         .unwrap()
         .unwrap();

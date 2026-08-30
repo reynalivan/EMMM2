@@ -4,7 +4,7 @@ use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normaliz
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::shared::errors::AppError;
 use crate::modules::games::domain::models::ItemStatus;
-use crate::modules::system::adapters::outbound::sqlite::utils::stable_ids::generate_stable_id;
+use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id;
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::helpers::load_runtime_mod_metadata;
 use crate::modules::reconciliation::application::disk_reconcile::path_updates::push_path_update;
@@ -16,7 +16,7 @@ async fn load_object_type(
     conn: &mut sqlx::SqliteConnection,
     object_id: &str,
 ) -> Result<String, AppError> {
-    crate::modules::catalog::adapters::outbound::sqlite::object::get_object_type_by_id(conn, object_id)
+    crate::modules::catalog::adapters::sqlite::object::get_object_type_by_id(conn, object_id)
         .await?
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| {
@@ -32,7 +32,7 @@ async fn load_existing_manual_safe(
     folder_path: &str,
     mods_path: &str,
 ) -> Result<Option<bool>, AppError> {
-    Ok(crate::modules::library::adapters::outbound::sqlite::mods::get_manual_is_safe_by_key(
+    Ok(crate::modules::library::adapters::sqlite::mods::get_manual_is_safe_by_key(
         conn,
         game_id,
         &crate::shared::path_key::folder_path_key(folder_path, Some(mods_path)),
@@ -56,7 +56,7 @@ async fn apply_mod_rename_hints(
     request: ModRenameHintsRequest<'_>,
 ) -> Result<(), AppError> {
     for (hint_from, hint_to) in &request.hints.mod_renames {
-        let exact_match = crate::modules::library::adapters::outbound::sqlite::mods::get_mod_id_and_status_by_path_tx(
+        let exact_match = crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
             &mut *conn,
             hint_from,
             request.game_id,
@@ -66,7 +66,7 @@ async fn apply_mod_rename_hints(
             vec![(hint_from.clone(), hint_to.clone())]
         } else {
             let rows =
-                crate::modules::library::adapters::outbound::sqlite::mods::get_rows_for_reconcile(&mut *conn, request.game_id).await?;
+                crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut *conn, request.game_id).await?;
             rows.into_iter()
                 .filter_map(|row| {
                     let suffix = crate::shared::path_key::strip_path_prefix_preserve_display(
@@ -88,7 +88,7 @@ async fn apply_mod_rename_hints(
         };
 
         for (old_relative, new_relative) in rename_pairs {
-            let mod_exists = crate::modules::library::adapters::outbound::sqlite::mods::get_mod_id_and_status_by_path_tx(
+            let mod_exists = crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
                 &mut *conn,
                 &old_relative,
                 request.game_id,
@@ -143,9 +143,9 @@ async fn apply_mod_rename_hints(
             );
             let new_id = generate_stable_id(request.game_id, &new_relative);
 
-            crate::modules::library::adapters::outbound::sqlite::mods::defer_foreign_keys_tx(&mut *conn).await?;
+            crate::modules::library::adapters::sqlite::mods::defer_foreign_keys_tx(&mut *conn).await?;
 
-            crate::modules::library::adapters::outbound::sqlite::mods::update_mod_identity_tx(
+            crate::modules::library::adapters::sqlite::mods::update_mod_identity_tx(
                 &mut *conn,
                 &new_id,
                 &new_relative,
@@ -158,7 +158,7 @@ async fn apply_mod_rename_hints(
             )
             .await?;
 
-            crate::modules::library::adapters::outbound::sqlite::mods::update_mod_object_id_and_type_tx(
+            crate::modules::library::adapters::sqlite::mods::update_mod_object_id_and_type_tx(
                 &mut *conn,
                 &new_id,
                 &object_id,
@@ -174,7 +174,7 @@ async fn apply_mod_rename_hints(
                 Some(&object_id),
             )
             .await?;
-            crate::modules::collections::adapters::outbound::sqlite::update_member_mod_id_for_path(
+            crate::modules::collections::adapters::sqlite::update_member_mod_id_for_path(
                 &mut *conn,
                 request.game_id,
                 &new_relative,
@@ -209,7 +209,7 @@ async fn apply_object_rename_hints(
 ) -> Result<(), AppError> {
     for (old_folder, new_folder) in &hints.object_renames {
         let next_status = ItemStatus::from_is_disabled(is_disabled_folder(new_folder));
-        crate::modules::catalog::adapters::outbound::sqlite::object::update_object_runtime_state_by_path(
+        crate::modules::catalog::adapters::sqlite::object::update_object_runtime_state_by_path(
             &mut *conn,
             game_id,
             old_folder,
@@ -218,7 +218,7 @@ async fn apply_object_rename_hints(
         )
         .await?;
 
-        crate::modules::library::adapters::outbound::sqlite::mods::update_child_paths_tx(
+        crate::modules::library::adapters::sqlite::mods::update_child_paths_tx(
             &mut *conn,
             game_id,
             old_folder,

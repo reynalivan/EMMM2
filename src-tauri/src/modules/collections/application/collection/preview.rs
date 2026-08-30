@@ -4,7 +4,7 @@ use super::live_state::load_live_runtime_state;
 use super::projection::{load_projected_collection_state, require_collection, require_game_match};
 use crate::modules::collections::domain::collection::{ApplyPreview, CollectionPreview};
 use crate::shared::errors::CollectionError;
-use crate::modules::collections::adapters::outbound::sqlite as collection;
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::workspace::application::projected_state;
 use sqlx::SqlitePool;
 

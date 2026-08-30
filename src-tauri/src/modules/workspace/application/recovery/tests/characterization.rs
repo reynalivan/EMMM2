@@ -11,7 +11,7 @@ async fn rollback_expectations_distinguish_clean_modified_and_unsaved_state() {
         create_empty_collection(&pool, id, name, is_unsaved).await;
     }
     let mut connection = pool.acquire().await.expect("acquire runtime connection");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_active_tx(&mut connection, "g1", Some("clean"))
+    crate::modules::collections::adapters::sqlite::runtime::set_active_tx(&mut connection, "g1", Some("clean"))
         .await
         .expect("set unrelated current baseline");
     drop(connection);
@@ -26,7 +26,7 @@ async fn rollback_expectations_distinguish_clean_modified_and_unsaved_state() {
         ),
         ("rollback-unsaved", "modified-draft", None),
     ] {
-        crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_rollback_intent(
+        crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
             &pool,
             task_id,
             "g1",
@@ -37,7 +37,7 @@ async fn rollback_expectations_distinguish_clean_modified_and_unsaved_state() {
         )
         .await
         .expect("create rollback task");
-        let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&pool, task_id)
+        let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, task_id)
             .await
             .expect("load rollback task")
             .expect("rollback task exists");
@@ -45,7 +45,7 @@ async fn rollback_expectations_distinguish_clean_modified_and_unsaved_state() {
             .await
             .expect("resolve stored rollback");
         actual.push((rollback.collection_id, rollback.active_baseline_id));
-        crate::modules::workspace::adapters::outbound::sqlite::task::update_status(&pool, task_id, TaskStatus::Completed)
+        crate::modules::workspace::adapters::sqlite::task::update_status(&pool, task_id, TaskStatus::Completed)
             .await
             .expect("settle characterization task");
     }

@@ -21,8 +21,8 @@ use super::state::ProjectionWriteState;
 
 #[derive(Default)]
 pub(super) struct IdentityTransitionState {
-    pub(super) original_objects: HashMap<String, crate::modules::catalog::adapters::outbound::sqlite::object::ReconcileObjectRow>,
-    pub(super) original_mods: HashMap<String, crate::modules::library::adapters::outbound::sqlite::mods::ReconcileModRow>,
+    pub(super) original_objects: HashMap<String, crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow>,
+    pub(super) original_mods: HashMap<String, crate::modules::library::adapters::sqlite::mods::ReconcileModRow>,
     mod_final_ids: HashMap<String, String>,
     collection_ids_to_refresh: Vec<String>,
 }
@@ -46,7 +46,7 @@ fn disk_mod_identities(projection: &DiskProjection) -> HashSet<&str> {
 async fn record_and_delete_displaced_object(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
-    object: &crate::modules::catalog::adapters::outbound::sqlite::object::ReconcileObjectRow,
+    object: &crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow,
     index: &DbIndex,
     disk_mod_keys: &HashSet<&str>,
     state: &mut ProjectionWriteState<'_>,
@@ -67,7 +67,7 @@ async fn record_and_delete_displaced_object(
         }
         state.change_summary.record_mod_removed(&child.actual_name);
     }
-    crate::modules::catalog::adapters::outbound::sqlite::object::delete_object_and_mods_by_folder(
+    crate::modules::catalog::adapters::sqlite::object::delete_object_and_mods_by_folder(
         &mut *conn,
         game_id,
         &object.folder_path,
@@ -158,7 +158,7 @@ async fn prepare_identity_transitions(
 
     for (position, source) in transitions.original_objects.values().enumerate() {
         let stage = format!("{OBJECT_STAGE_PREFIX}{position}-{}", uuid::Uuid::new_v4());
-        crate::modules::catalog::adapters::outbound::sqlite::object::stage_object_identity_tx(&mut *conn, &source.id, &stage).await?;
+        crate::modules::catalog::adapters::sqlite::object::stage_object_identity_tx(&mut *conn, &source.id, &stage).await?;
     }
 
     let after_objects = DbIndex::load(&mut *conn, game_id).await?;
@@ -171,7 +171,7 @@ async fn prepare_identity_transitions(
         let Some(source) = after_objects.mod_by_filesystem_identity(identity) else {
             continue;
         };
-        let final_id = crate::modules::system::adapters::outbound::sqlite::utils::stable_ids::generate_stable_id_from_key(
+        let final_id = crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id_from_key(
             game_id,
             &disk_mod.folder_path_key,
         );
@@ -188,7 +188,7 @@ async fn prepare_identity_transitions(
                 .as_deref()
                 .is_some_and(|value| mod_identities.contains(value));
             if occupant.id != source.id && !occupant_is_elsewhere {
-                crate::modules::library::adapters::outbound::sqlite::mods::delete_mod_tx(&mut *conn, &occupant.id).await?;
+                crate::modules::library::adapters::sqlite::mods::delete_mod_tx(&mut *conn, &occupant.id).await?;
                 state.folders_changed = true;
                 state
                     .change_summary
@@ -234,18 +234,18 @@ async fn prepare_identity_transitions(
 
     // Primary-key swaps are legal only when every source first leaves the
     // path-derived ID namespace. Foreign keys are repaired before commit.
-    crate::modules::library::adapters::outbound::sqlite::mods::defer_foreign_keys_tx(&mut *conn).await?;
+    crate::modules::library::adapters::sqlite::mods::defer_foreign_keys_tx(&mut *conn).await?;
     for (position, (source, final_id)) in mod_sources.into_iter().enumerate() {
-        crate::modules::collections::adapters::outbound::sqlite::detach_mod_runtime_id(&mut *conn, game_id, &source.id)
+        crate::modules::collections::adapters::sqlite::detach_mod_runtime_id(&mut *conn, game_id, &source.id)
             .await?;
         let temp_id = format!(
             "emmm-reconcile-mod-stage-{position}-{}",
             uuid::Uuid::new_v4()
         );
         let temp_path = format!(".emmm-reconcile-mod-stage/{temp_id}");
-        crate::modules::library::adapters::outbound::sqlite::mods::stage_mod_identity_tx(&mut *conn, &temp_id, &temp_path, &source.id)
+        crate::modules::library::adapters::sqlite::mods::stage_mod_identity_tx(&mut *conn, &temp_id, &temp_path, &source.id)
             .await?;
-        crate::modules::library::adapters::outbound::sqlite::mods::rewrite_dependent_mod_ids_tx(&mut *conn, &source.id, &temp_id)
+        crate::modules::library::adapters::sqlite::mods::rewrite_dependent_mod_ids_tx(&mut *conn, &source.id, &temp_id)
             .await?;
         transitions.original_mods.insert(temp_id.clone(), source);
         transitions.mod_final_ids.insert(temp_id, final_id);
@@ -259,7 +259,7 @@ async fn finalize_mod_reference_transitions(
     transitions: &IdentityTransitionState,
 ) -> Result<(), AppError> {
     for (temp_id, final_id) in &transitions.mod_final_ids {
-        crate::modules::library::adapters::outbound::sqlite::mods::rewrite_dependent_mod_ids_tx(&mut *conn, temp_id, final_id).await?;
+        crate::modules::library::adapters::sqlite::mods::rewrite_dependent_mod_ids_tx(&mut *conn, temp_id, final_id).await?;
     }
     Ok(())
 }

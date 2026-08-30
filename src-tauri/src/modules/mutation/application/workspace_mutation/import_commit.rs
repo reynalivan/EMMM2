@@ -97,7 +97,7 @@ pub async fn commit_import_batch(
     input: CommitImportBatchInput,
     master_db: &MasterDb,
 ) -> Result<ImportBatchReport, AppError> {
-    let mut batch = crate::modules::ingestion::adapters::outbound::sqlite::import_batch::get_batch(pool, &input.batch_id)
+    let mut batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, &input.batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
     let requested_ids = validate_selected_items(&batch.items, &input.item_ids)?;
@@ -112,7 +112,7 @@ pub async fn commit_import_batch(
     if batch.flow == ImportFlow::ReadyToMove && !archive_pending_ids.is_empty() {
         return resume_ready_to_move_archive_finalization(app, pool, &batch).await;
     }
-    let mods_root = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, &batch.game_id)
+    let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, &batch.game_id)
         .await?
         .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
     let canonical_root = Path::new(&mods_root).canonicalize().map_err(|error| {
@@ -132,7 +132,7 @@ pub async fn commit_import_batch(
             &canonical_root,
         )
         .await?;
-        batch = crate::modules::ingestion::adapters::outbound::sqlite::import_batch::get_batch(pool, &input.batch_id)
+        batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, &input.batch_id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
     }
@@ -182,7 +182,7 @@ pub async fn commit_import_batch(
         .map(|item| item.id.clone())
         .collect::<BTreeSet<_>>();
     if selected_ids.is_empty() {
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
         return Ok(ImportBatchReport {
             batch_id: batch.id,
             moved: 0,
@@ -219,7 +219,7 @@ pub async fn commit_import_batch(
         .acquire_mutation_lease(&batch.game_id, operation_lock.inner())
         .await?;
     let selected_id_list = selected_ids.iter().cloned().collect::<Vec<_>>();
-    if !crate::modules::ingestion::adapters::outbound::sqlite::import_batch::begin_batch_commit(pool, &batch.id, &selected_id_list)
+    if !crate::modules::ingestion::adapters::sqlite::import_batch::begin_batch_commit(pool, &batch.id, &selected_id_list)
         .await?
     {
         return Err(AppError::Validation(
@@ -238,7 +238,7 @@ pub async fn commit_import_batch(
     let mut created_directories = Vec::new();
     let mut collision_ids = BTreeSet::new();
     for plan in &plans {
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+        crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
             &plan.item.id,
             ImportItemStatus::Committing,
@@ -263,14 +263,14 @@ pub async fn commit_import_batch(
         cleanup_created_directories(&created_directories);
         for plan in &plans {
             if rollback_succeeded {
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::restore_item_after_rollback(
+                crate::modules::ingestion::adapters::sqlite::import_batch::restore_item_after_rollback(
                     pool,
                     &plan.item.id,
                     &move_error.to_string(),
                 )
                 .await?;
             } else {
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &plan.item.id,
                     ImportItemStatus::Failed,
@@ -281,7 +281,7 @@ pub async fn commit_import_batch(
                 .await?;
             }
         }
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
         drop(suppression);
         let recovery =
             crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
@@ -306,7 +306,7 @@ pub async fn commit_import_batch(
         if collision_ids.contains(&plan.item.id) {
             continue;
         }
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+        crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
             &plan.item.id,
             ImportItemStatus::Reconciling,
@@ -359,14 +359,14 @@ pub async fn commit_import_batch(
         Ok(result) => {
             let warning = format!("Disk reconcile requires attention: {:?}", result.status);
             mark_committed_partial(pool, &plans, &collision_ids, &warning).await?;
-            crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+            crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
             let _ = app.emit("disk_reconcile:result", &result);
             return Ok(report_for(&batch.id, &plans, &collision_ids, true));
         }
         Err(error) => {
             let warning = format!("Disk reconcile failed after files were moved: {error}");
             mark_committed_partial(pool, &plans, &collision_ids, &warning).await?;
-            crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+            crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
             return Ok(report_for(&batch.id, &plans, &collision_ids, true));
         }
     };
@@ -378,7 +378,7 @@ pub async fn commit_import_batch(
         if collision_ids.contains(&plan.item.id) {
             continue;
         }
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+        crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
             &plan.item.id,
             ImportItemStatus::FinalizingMetadata,
@@ -390,7 +390,7 @@ pub async fn commit_import_batch(
         let object_id =
             resolve_reconciled_object_id(pool, &batch.game_id, &mods_root, plan).await?;
         let mod_id = resolve_reconciled_mod_id(pool, &batch.game_id, &plan.target).await?;
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::bind_reconciled_destination(
+        crate::modules::ingestion::adapters::sqlite::import_batch::bind_reconciled_destination(
             pool,
             &plan.item.id,
             &object_id,
@@ -402,7 +402,7 @@ pub async fn commit_import_batch(
         match classification {
             Ok(result) => {
                 aliases_changed |= result.aliases_changed;
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &plan.item.id,
                     ImportItemStatus::Done,
@@ -414,7 +414,7 @@ pub async fn commit_import_batch(
             }
             Err(error) => {
                 metadata_pending += 1;
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &plan.item.id,
                     ImportItemStatus::MetadataPending,
@@ -537,7 +537,7 @@ async fn recover_interrupted_commits(
     for (item, source, target) in &paths {
         match (source.exists(), target.exists()) {
             (true, false) => {
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &item.id,
                     ImportItemStatus::Ready,
@@ -556,7 +556,7 @@ async fn recover_interrupted_commits(
                     source.to_string_lossy().into_owned(),
                     target.to_string_lossy().into_owned(),
                 ]);
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &item.id,
                     ImportItemStatus::Ready,
@@ -567,7 +567,7 @@ async fn recover_interrupted_commits(
                 .await?;
             }
             (true, true) => {
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &item.id,
                     ImportItemStatus::Skipped,
@@ -578,7 +578,7 @@ async fn recover_interrupted_commits(
                 .await?;
             }
             (false, false) => {
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &item.id,
                     ImportItemStatus::Failed,
@@ -591,7 +591,7 @@ async fn recover_interrupted_commits(
         }
     }
     drop(suppression);
-    crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+    crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
     if !changed_paths.is_empty() {
         crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile_with_path_hints_under_lease(
             app,
@@ -645,7 +645,7 @@ async fn resume_committed_items(
         );
     }
     let ids = item_ids.iter().cloned().collect::<Vec<_>>();
-    if !crate::modules::ingestion::adapters::outbound::sqlite::import_batch::prepare_items_for_recovery(pool, &batch.id, &ids).await? {
+    if !crate::modules::ingestion::adapters::sqlite::import_batch::prepare_items_for_recovery(pool, &batch.id, &ids).await? {
         return Err(AppError::Validation(
             "Import recovery state changed; reload the batch before retrying".to_string(),
         ));
@@ -701,7 +701,7 @@ async fn resume_committed_items(
                     result.status
                 );
                 for item in &items {
-                    crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                    crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                         pool,
                         &item.id,
                         ImportItemStatus::Partial,
@@ -711,13 +711,13 @@ async fn resume_committed_items(
                     )
                     .await?;
                 }
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+                crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
                 return Ok(recovery_report(&batch.id, 0, 1));
             }
             Err(error) => {
                 let warning = format!("Disk reconcile retry failed: {error}");
                 for item in &items {
-                    crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                    crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                         pool,
                         &item.id,
                         ImportItemStatus::Partial,
@@ -727,7 +727,7 @@ async fn resume_committed_items(
                     )
                     .await?;
                 }
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+                crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
                 return Ok(recovery_report(&batch.id, 0, 1));
             }
         }
@@ -737,7 +737,7 @@ async fn resume_committed_items(
     let mut aliases_changed = false;
     let mut metadata_pending = 0_u32;
     for item in &items {
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+        crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
             &item.id,
             ImportItemStatus::FinalizingMetadata,
@@ -757,14 +757,14 @@ async fn resume_committed_items(
         })?;
         let mod_id =
             resolve_reconciled_mod_id(pool, &batch.game_id, Path::new(destination_path)).await?;
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::bind_reconciled_destination(
+        crate::modules::ingestion::adapters::sqlite::import_batch::bind_reconciled_destination(
             pool, &item.id, &object_id, &mod_id,
         )
         .await?;
         match apply_item_classification(pool, &batch.game_id, item, object_id).await {
             Ok(result) => {
                 aliases_changed |= result.aliases_changed;
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &item.id,
                     ImportItemStatus::Done,
@@ -776,7 +776,7 @@ async fn resume_committed_items(
             }
             Err(error) => {
                 metadata_pending += 1;
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                     pool,
                     &item.id,
                     ImportItemStatus::MetadataPending,
@@ -815,7 +815,7 @@ async fn resolve_recovery_object_id(
     let key =
         crate::shared::path_key::folder_path_key(&object_dir.to_string_lossy(), Some(mods_root));
     let mut connection = pool.acquire().await?;
-    crate::modules::catalog::adapters::outbound::sqlite::object::get_object_id_by_folder_key(&mut connection, &batch.game_id, &key)
+    crate::modules::catalog::adapters::sqlite::object::get_object_id_by_folder_key(&mut connection, &batch.game_id, &key)
         .await?
         .ok_or_else(|| {
             AppError::Internal(format!(
@@ -938,7 +938,7 @@ async fn resolve_object_dir(
             ));
         }
         let (game_id, folder_path) =
-            crate::modules::catalog::adapters::outbound::sqlite::object::get_game_id_and_folder_path(pool, object_id)
+            crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool, object_id)
                 .await?
                 .ok_or_else(|| AppError::NotFound(format!("Destination object '{object_id}'")))?;
         if game_id != batch.game_id {
@@ -1099,7 +1099,7 @@ async fn execute_moves(
     for plan in plans {
         if plan.target.exists() {
             collision_ids.insert(plan.item.id.clone());
-            crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+            crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
                 pool,
                 &plan.item.id,
                 ImportItemStatus::Skipped,
@@ -1167,7 +1167,7 @@ async fn mark_committed_partial(
         if collision_ids.contains(&plan.item.id) {
             continue;
         }
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::set_commit_item_state(
+        crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
             &plan.item.id,
             ImportItemStatus::Partial,
@@ -1194,7 +1194,7 @@ async fn resolve_reconciled_object_id(
         Some(mods_root),
     );
     let mut connection = pool.acquire().await?;
-    crate::modules::catalog::adapters::outbound::sqlite::object::get_object_id_by_folder_key(&mut connection, game_id, &key)
+    crate::modules::catalog::adapters::sqlite::object::get_object_id_by_folder_key(&mut connection, game_id, &key)
         .await?
         .ok_or_else(|| {
             AppError::Internal(format!(
@@ -1209,7 +1209,7 @@ async fn resolve_reconciled_mod_id(
     game_id: &str,
     destination: &Path,
 ) -> Result<String, AppError> {
-    crate::modules::library::adapters::outbound::sqlite::mods::get_mod_id_and_object_id_by_path(
+    crate::modules::library::adapters::sqlite::mods::get_mod_id_and_object_id_by_path(
         pool,
         &destination.to_string_lossy(),
         game_id,
@@ -1255,7 +1255,7 @@ pub(super) async fn finalize_ready_to_move_archives(
     pool: &sqlx::SqlitePool,
     batch_id: &str,
 ) -> Result<(), AppError> {
-    let Some(batch) = crate::modules::ingestion::adapters::outbound::sqlite::import_batch::get_batch(pool, batch_id).await? else {
+    let Some(batch) = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, batch_id).await? else {
         return Ok(());
     };
     let mut groups = BTreeMap::<String, Vec<&ImportItem>>::new();
@@ -1273,7 +1273,7 @@ pub(super) async fn finalize_ready_to_move_archives(
         }) {
             continue;
         }
-        let state = crate::modules::ingestion::adapters::outbound::sqlite::import_batch::get_mod_inbox_source_processing_state(
+        let state = crate::modules::ingestion::adapters::sqlite::import_batch::get_mod_inbox_source_processing_state(
             pool,
             batch_id,
             &source_path,
@@ -1288,7 +1288,7 @@ pub(super) async fn finalize_ready_to_move_archives(
         let source = PathBuf::from(&source_path);
         let retains_source = items.iter().any(|item| item.staging_path.is_some());
         if !retains_source {
-            crate::modules::ingestion::adapters::outbound::sqlite::import_batch::complete_mod_inbox_source_processing(
+            crate::modules::ingestion::adapters::sqlite::import_batch::complete_mod_inbox_source_processing(
                 pool,
                 batch_id,
                 &source_path,
@@ -1316,7 +1316,7 @@ pub(super) async fn finalize_ready_to_move_archives(
         match (source.exists(), target.exists()) {
             (false, true) => {}
             (true, false) => {
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::plan_mod_inbox_source_processing(
+                crate::modules::ingestion::adapters::sqlite::import_batch::plan_mod_inbox_source_processing(
                     pool,
                     batch_id,
                     &source_path,
@@ -1329,7 +1329,7 @@ pub(super) async fn finalize_ready_to_move_archives(
             }
             (true, true) => {
                 target = collision_safe_file(&processed, file_name);
-                crate::modules::ingestion::adapters::outbound::sqlite::import_batch::plan_mod_inbox_source_processing(
+                crate::modules::ingestion::adapters::sqlite::import_batch::plan_mod_inbox_source_processing(
                     pool,
                     batch_id,
                     &source_path,
@@ -1347,7 +1347,7 @@ pub(super) async fn finalize_ready_to_move_archives(
                 )));
             }
         }
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::complete_mod_inbox_source_processing(
+        crate::modules::ingestion::adapters::sqlite::import_batch::complete_mod_inbox_source_processing(
             pool,
             batch_id,
             &source_path,
@@ -1380,7 +1380,7 @@ async fn finalize_batch_after_metadata(
 ) -> Result<bool, AppError> {
     if batch.flow == ImportFlow::ReadyToMove {
         if let Err(error) = finalize_ready_to_move_archives(pool, &batch.id).await {
-            crate::modules::ingestion::adapters::outbound::sqlite::import_batch::mark_ready_to_move_archive_pending(
+            crate::modules::ingestion::adapters::sqlite::import_batch::mark_ready_to_move_archive_pending(
                 pool,
                 &batch.id,
                 &error.to_string(),
@@ -1388,11 +1388,11 @@ async fn finalize_batch_after_metadata(
             .await?;
             return Ok(true);
         }
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::complete_ready_to_move_archive_pending(pool, &batch.id)
+        crate::modules::ingestion::adapters::sqlite::import_batch::complete_ready_to_move_archive_pending(pool, &batch.id)
             .await?;
     }
     let final_status =
-        crate::modules::ingestion::adapters::outbound::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
     if final_status == crate::modules::ingestion::application::import_batch::types::ImportBatchStatus::Done {
         cleanup_import_staging(app, &batch.id)?;
     }

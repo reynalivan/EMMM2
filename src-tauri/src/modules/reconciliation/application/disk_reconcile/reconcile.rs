@@ -298,7 +298,7 @@ pub async fn reconcile_disk_projection(
         || !changed_roots.is_empty();
 
     let before_descriptors =
-        crate::modules::catalog::adapters::outbound::sqlite::object::get_runtime_descriptors(pool, game_id).await?;
+        crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(pool, game_id).await?;
 
     let mut objects_changed = false;
     let mut folders_changed = false;
@@ -488,14 +488,14 @@ pub async fn reconcile_disk_projection(
         .await?;
 
         if scoped {
-            crate::modules::workspace::adapters::outbound::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
+            crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
                 &mut tx,
                 game_id,
                 write_outcome.touched_object_ids.iter().cloned(),
             )
             .await?;
         } else {
-            crate::modules::workspace::adapters::outbound::sqlite::runtime_projection::rebuild_game_projection_tx(&mut tx, game_id)
+            crate::modules::workspace::adapters::sqlite::runtime_projection::rebuild_game_projection_tx(&mut tx, game_id)
                 .await?;
         }
         tx.commit().await?;
@@ -504,7 +504,7 @@ pub async fn reconcile_disk_projection(
         folders_changed = write_outcome.folders_changed;
 
         let after_descriptors =
-            crate::modules::catalog::adapters::outbound::sqlite::object::get_runtime_descriptors(pool, game_id).await?;
+            crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(pool, game_id).await?;
 
         // Both the cleared-selection diff and the changed-root merge compare the
         // same two descriptor sets; build each set once.

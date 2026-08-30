@@ -19,7 +19,7 @@ pub async fn disable_object_roots(
     if object_ids.is_empty() {
         return Ok(ObjectDisableResult::default());
     }
-    let mods_root_raw = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, game_id)
+    let mods_root_raw = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}'")))?;
     let mods_root = Path::new(&mods_root_raw).canonicalize()?;
@@ -31,7 +31,7 @@ pub async fn disable_object_roots(
                 "Object IDs to disable must be unique".to_string(),
             ));
         }
-        let object = crate::modules::catalog::adapters::outbound::sqlite::object::get_game_object_by_id(pool, object_id)
+        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, object_id)
             .await?
             .filter(|object| object.game_id == game_id)
             .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;

@@ -1,2 +1,2 @@
-pub mod inbound;
-pub mod outbound;
+pub mod sqlite;
+pub mod tauri;

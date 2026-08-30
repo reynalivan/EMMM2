@@ -17,14 +17,14 @@ pub async fn set_mod_category(
     let folder_path_str = canonical_path.to_string_lossy();
 
     let exists =
-        crate::modules::library::adapters::outbound::sqlite::mods::get_mod_id_and_object_id_by_path(pool, &folder_path_str, game_id)
+        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_object_id_by_path(pool, &folder_path_str, game_id)
             .await?;
 
     if let Some((mod_id, object_id)) = exists {
         let obj_id_str = object_id.unwrap_or_default();
         let mut conn = pool.acquire().await?;
 
-        crate::modules::library::adapters::outbound::sqlite::mods::update_mod_object_id_and_type_tx(
+        crate::modules::library::adapters::sqlite::mods::update_mod_object_id_and_type_tx(
             &mut conn,
             &mod_id,
             &obj_id_str,
@@ -84,7 +84,7 @@ pub async fn toggle_mod_safe(
     full_path: &ValidatedPath,
     safe: bool,
 ) -> Result<(), AppError> {
-    let game_mod_path = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, game_id)
+    let game_mod_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found or has no mods_path".to_string()))?;
 
@@ -107,7 +107,7 @@ pub async fn toggle_mod_safe(
     };
     crate::modules::library::application::mods::info_json::update_info_json(full_path, &update)?;
     if let Err(error) =
-        crate::modules::library::adapters::outbound::sqlite::mods::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await
+        crate::modules::library::adapters::sqlite::mods::set_mod_safe_by_path(pool, game_id, &rel_path, safe).await
     {
         let rollback = match previous.as_deref() {
             Some(bytes) => crate::platform::fs::atomic_file::atomic_write(&info_path, bytes),
@@ -147,7 +147,7 @@ fn path_has_disabled_segment(path: &str) -> bool {
         .any(crate::modules::workspace::domain::normalizer::is_disabled_folder)
 }
 
-fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::modules::library::adapters::outbound::sqlite::mods::Mod) -> bool {
+fn is_effectively_disabled_randomizer_candidate(mod_row: &crate::modules::library::adapters::sqlite::mods::Mod) -> bool {
     if path_has_hidden_segment(&mod_row.folder_path) {
         return false;
     }
@@ -161,7 +161,7 @@ pub async fn suggest_random_mods(
 ) -> Result<Vec<RandomModProposal>, AppError> {
     use rand::seq::SliceRandom;
 
-    let characters = crate::modules::catalog::adapters::outbound::sqlite::object::get_characters_for_game(pool, game_id).await?;
+    let characters = crate::modules::catalog::adapters::sqlite::object::get_characters_for_game(pool, game_id).await?;
 
     if characters.is_empty() {
         return Ok(Vec::new());
@@ -170,7 +170,7 @@ pub async fn suggest_random_mods(
     let mut proposals = Vec::new();
 
     for (object_id, object_name) in characters {
-        let mods = crate::modules::library::adapters::outbound::sqlite::mods::get_mods_by_object_id(pool, &object_id).await?;
+        let mods = crate::modules::library::adapters::sqlite::mods::get_mods_by_object_id(pool, &object_id).await?;
 
         if mods.is_empty() {
             continue;
@@ -202,10 +202,10 @@ pub async fn get_active_mod_conflicts(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<crate::modules::workspace::application::scanner::conflict::ConflictInfo>, AppError> {
-    let mods_path = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, game_id)
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
-    let rows = crate::modules::library::adapters::outbound::sqlite::mods::get_enabled_mods_paths(pool, game_id).await?;
+    let rows = crate::modules::library::adapters::sqlite::mods::get_enabled_mods_paths(pool, game_id).await?;
 
     Ok(conflicts_for_enabled_paths(Path::new(&mods_path), &rows))
 }

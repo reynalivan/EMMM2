@@ -162,7 +162,7 @@ async fn authorize_request(
     db: &SqlitePool,
 ) -> Result<(), ScannerError> {
     let requested_paths = canonical_request_paths(request)?;
-    let group = crate::modules::duplicates::adapters::outbound::sqlite::dedup::load_pending_group(db, game_id, &request.group_id)
+    let group = crate::modules::duplicates::adapters::sqlite::dedup::load_pending_group(db, game_id, &request.group_id)
         .await?
         .ok_or_else(|| {
             ScannerError::Validation(format!(
@@ -299,7 +299,7 @@ async fn persist_whitelist_pair(
 
     let (canonical_a, canonical_b) = canonicalize_pair(&folder_a_id, &folder_b_id);
 
-    crate::modules::duplicates::adapters::outbound::sqlite::dedup::insert_whitelist_pair(db, game_id, canonical_a, canonical_b).await?;
+    crate::modules::duplicates::adapters::sqlite::dedup::insert_whitelist_pair(db, game_id, canonical_a, canonical_b).await?;
 
     Ok(())
 }
@@ -309,7 +309,7 @@ async fn fetch_mod_id(
     game_id: &str,
     folder_path: &str,
 ) -> Result<String, ScannerError> {
-    crate::modules::library::adapters::outbound::sqlite::mods::get_mod_id_and_status_by_path(db, folder_path, game_id)
+    crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(db, folder_path, game_id)
         .await?
         .map(|(id, _, _)| id)
         .ok_or_else(|| {
@@ -326,7 +326,7 @@ async fn set_group_status(
 ) -> Result<(), ScannerError> {
     let set_resolved_at = status == "resolved" || status == "ignored";
     let rows_affected =
-        crate::modules::duplicates::adapters::outbound::sqlite::dedup::update_group_status(db, group_id, status, set_resolved_at).await?;
+        crate::modules::duplicates::adapters::sqlite::dedup::update_group_status(db, group_id, status, set_resolved_at).await?;
 
     if rows_affected == 0 {
         return Err(ScannerError::Validation(format!(

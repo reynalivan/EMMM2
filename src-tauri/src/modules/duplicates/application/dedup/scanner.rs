@@ -40,7 +40,7 @@ pub async fn scan_duplicates(
     // One read of the mods table feeds both the scan candidates and the
     // path -> (mod id, is_safe) lookup used when grouping the results.
     let mut conn = db.acquire().await?;
-    let mod_rows = crate::modules::library::adapters::outbound::sqlite::mods::get_all_mods_id_and_paths_tx(&mut conn, game_id).await?;
+    let mod_rows = crate::modules::library::adapters::sqlite::mods::get_all_mods_id_and_paths_tx(&mut conn, game_id).await?;
     drop(conn);
 
     let candidates = walker::scan_mod_folders(mods_root)?;
@@ -193,7 +193,7 @@ async fn fetch_whitelist_pairs(
     db: &SqlitePool,
     game_id: &str,
 ) -> Result<HashSet<(String, String)>, ScannerError> {
-    let rows = crate::modules::duplicates::adapters::outbound::sqlite::dedup::get_duplicate_whitelist_pairs(db, game_id).await?;
+    let rows = crate::modules::duplicates::adapters::sqlite::dedup::get_duplicate_whitelist_pairs(db, game_id).await?;
 
     let mut pairs = HashSet::new();
     for (folder_a_id, folder_b_id) in rows {

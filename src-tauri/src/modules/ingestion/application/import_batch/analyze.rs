@@ -1,7 +1,7 @@
 use super::staging::stage_import_batch_sources;
 use super::types::{ImportBatch, ImportBatchStatus, ImportItemStatus};
 use crate::shared::errors::AppError;
-use crate::modules::ingestion::adapters::outbound::sqlite::import_batch;
+use crate::modules::ingestion::adapters::sqlite::import_batch;
 use crate::modules::catalog::application::match_engine::classification::classify_source;
 use crate::modules::catalog::application::match_engine::inspection::{inspect_source, InspectionRequest};
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
@@ -18,7 +18,7 @@ pub async fn analyze_import_batch_for_app(
     let batch = import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
-    let game_type = crate::modules::games::adapters::outbound::sqlite::game::get_game_type(db, &batch.game_id)
+    let game_type = crate::modules::games::adapters::sqlite::game::get_game_type(db, &batch.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))?
         as i32;

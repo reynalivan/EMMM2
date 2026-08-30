@@ -56,7 +56,7 @@ async fn list_collections_hides_only_the_runtime_draft_pointer() {
     .await
     .expect("create row used as draft");
     let mut tx = ctx.pool.begin().await.expect("begin runtime update");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut tx,
         "game-pointer-list",
         "draft-collection",
@@ -143,7 +143,7 @@ async fn save_current_state_becomes_the_game_runtime_baseline() {
     )
     .await
     .expect("save current state");
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-save-no-pointer")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-save-no-pointer")
         .await
         .expect("load runtime")
         .expect("runtime row exists");
@@ -412,7 +412,7 @@ async fn clone_snapshot_does_not_change_the_runtime_baseline() {
     .await
     .expect("clone source snapshot");
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-1")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-1")
         .await
         .expect("load runtime")
         .expect("runtime exists");
@@ -513,7 +513,7 @@ async fn clean_runtime_does_not_create_or_replace_last_changes() {
         .expect("capture decision");
 
     assert!(captured.is_none());
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-clean-draft")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-clean-draft")
         .await
         .expect("runtime state")
         .expect("runtime row");
@@ -546,7 +546,7 @@ async fn unsaved_runtime_creates_one_last_changes_draft_without_baseline() {
         .await
         .expect("capture draft")
         .expect("draft id");
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-unsaved-draft")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-unsaved-draft")
         .await
         .expect("runtime state")
         .expect("runtime row");
@@ -630,7 +630,7 @@ async fn clear_last_changes_rejects_a_draft_referenced_by_an_open_apply() {
     )
     .await
     .expect("create draft");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut ctx.pool.acquire().await.expect("runtime connection"),
         "game-clear-protected",
         &draft.id,
@@ -638,7 +638,7 @@ async fn clear_last_changes_rejects_a_draft_referenced_by_an_open_apply() {
     )
     .await
     .expect("set draft pointer");
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_rollback_intent(
+    crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &ctx.pool,
         "open-rollback",
         "game-clear-protected",
@@ -656,7 +656,7 @@ async fn clear_last_changes_rejects_a_draft_referenced_by_an_open_apply() {
             .expect_err("open recovery task must protect its rollback draft");
 
     assert!(format!("{error}").contains("recovery"));
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-clear-protected")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-clear-protected")
         .await
         .expect("load runtime")
         .expect("runtime exists");

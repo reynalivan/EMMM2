@@ -2,7 +2,7 @@
 //! exists today (including the quirks), not an idealized contract.
 
 use super::*;
-use crate::modules::browser::adapters::outbound::sqlite::browser;
+use crate::modules::browser::adapters::sqlite::browser;
 use crate::test_utils::init_test_db;
 
 async fn status_of(db: &SqlitePool, id: &str) -> Option<String> {

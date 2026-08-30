@@ -15,12 +15,12 @@ pub async fn get_active_keybindings_service(
     pool: &sqlx::SqlitePool,
     game_id: &str,
 ) -> Result<Vec<ActiveKeyBinding>, AppError> {
-    let mods_root = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, game_id)
+    let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
     let mods_root = std::path::Path::new(&mods_root);
     // 1. Fetch enabled mods' folder paths and names for this game
-    let rows = crate::modules::library::adapters::outbound::sqlite::mods::get_enabled_mods_names_and_paths(pool, game_id).await?;
+    let rows = crate::modules::library::adapters::sqlite::mods::get_enabled_mods_names_and_paths(pool, game_id).await?;
 
     let mut bindings: Vec<ActiveKeyBinding> = Vec::new();
 
@@ -61,7 +61,7 @@ pub struct DashboardPayload {
 
 /// Fetch all dashboard data in a single service call.
 pub async fn get_dashboard_payload(pool: &sqlx::SqlitePool) -> Result<DashboardPayload, AppError> {
-    use crate::modules::dashboard::adapters::outbound::sqlite::dashboard;
+    use crate::modules::dashboard::adapters::sqlite::dashboard;
 
     let stats = dashboard::fetch_global_stats(pool).await?;
 

@@ -20,7 +20,7 @@ pub struct RecoveryTaskRequest<'a> {
 }
 
 pub async fn get_startup_recovery_tasks(pool: &SqlitePool) -> Result<Vec<PipelineTask>, AppError> {
-    crate::modules::workspace::adapters::outbound::sqlite::task::get_all_pending_tasks_global(pool).await
+    crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(pool).await
 }
 
 struct RecoveryApplyContext<'a> {
@@ -52,7 +52,7 @@ pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(
         action
     );
 
-    let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(pool, task_id)
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(pool, task_id)
         .await?
         .ok_or_else(|| AppError::Validation(format!("Task {} not found", task_id)))?;
 
@@ -60,7 +60,7 @@ pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(
         return settle_ignored_task(pool, task_id).await;
     }
 
-    let claimed = crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status(
+    let claimed = crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
         pool,
         task_id,
         TaskStatus::Pending,
@@ -75,7 +75,7 @@ pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(
 
     let result = resolve_claimed_task(pool, config, watcher_state, &task, action).await;
     if result.is_err() {
-        match crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status(
+        match crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
             pool,
             task_id,
             TaskStatus::Running,
@@ -96,7 +96,7 @@ pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(
 }
 
 async fn settle_ignored_task(pool: &SqlitePool, task_id: &str) -> Result<(), AppError> {
-    let settled = crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status(
+    let settled = crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
         pool,
         task_id,
         TaskStatus::Pending,
@@ -228,7 +228,7 @@ async fn resolve_rollback_target(
     let collection_id = task.rollback_collection_id.clone().ok_or_else(|| {
         AppError::Validation("Recovery task has no stored rollback collection".to_string())
     })?;
-    let rollback_exists = crate::modules::collections::adapters::outbound::sqlite::get_by_id(pool, &collection_id)
+    let rollback_exists = crate::modules::collections::adapters::sqlite::get_by_id(pool, &collection_id)
         .await?
         .is_some_and(|collection| collection.game_id == task.game_id);
     if !rollback_exists {

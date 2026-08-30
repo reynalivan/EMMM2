@@ -59,13 +59,13 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
         game_id
     );
 
-    crate::modules::workspace::adapters::outbound::sqlite::runtime_projection::rebuild_game_projection(pool, game_id).await?;
-    let game_type = crate::modules::games::adapters::outbound::sqlite::game::get_game_type(pool, game_id)
+    crate::modules::workspace::adapters::sqlite::runtime_projection::rebuild_game_projection(pool, game_id).await?;
+    let game_type = crate::modules::games::adapters::sqlite::game::get_game_type(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game {game_id} not found")))?;
 
     // One query feeds both the conflict scan and the harvest below.
-    let enabled_mods = crate::modules::library::adapters::outbound::sqlite::mods::get_enabled_mods_paths(pool, game_id).await?;
+    let enabled_mods = crate::modules::library::adapters::sqlite::mods::get_enabled_mods_paths(pool, game_id).await?;
 
     // 2. Refresh conflict cache
     let conflicts = metadata::conflicts_for_enabled_paths(mods_path, &enabled_mods);
@@ -95,7 +95,7 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
     }
 
     // Load character entries from DB
-    let db_objects = crate::modules::catalog::adapters::outbound::sqlite::object::get_kv_matching_objects(pool, game_id).await?;
+    let db_objects = crate::modules::catalog::adapters::sqlite::object::get_kv_matching_objects(pool, game_id).await?;
 
     let entries: Vec<matcher::KvObjectEntry> = db_objects
         .into_iter()

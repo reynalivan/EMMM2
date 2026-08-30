@@ -84,7 +84,7 @@ pub fn compute_download_path(dir: &Path, _session_id: Option<&str>, filename: &s
 /// Priority: Mod Inbox of the active game -> `AppData/EMM2/BrowserDownloads` fallback.
 pub async fn get_downloads_root(app: &AppHandle, db: &SqlitePool) -> PathBuf {
     // If there is an active game, route downloads directly to its Mod Inbox.
-    if let Ok(Some(active_game)) = crate::modules::system::adapters::outbound::sqlite::settings::get_setting(db, "active_game_id").await {
+    if let Ok(Some(active_game)) = crate::modules::system::adapters::sqlite::settings::get_setting(db, "active_game_id").await {
         if let Ok(inbox) = crate::modules::ingestion::application::import_batch::ready_to_move::resolve_mod_inbox_root(
             app,
             db,

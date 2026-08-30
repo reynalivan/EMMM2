@@ -39,10 +39,10 @@ pub async fn move_mods_to_object_service(
         });
     }
 
-    let game_mod_path = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, params.game_id)
+    let game_mod_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, params.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
-    let target_obj = crate::modules::catalog::adapters::outbound::sqlite::object::get_game_object_by_id(pool, params.target_object_id)
+    let target_obj = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, params.target_object_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Target object not found".to_string()))?;
 

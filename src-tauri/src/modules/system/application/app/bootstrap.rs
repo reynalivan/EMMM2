@@ -100,7 +100,7 @@ pub fn init_pool(app_data_dir: &std::path::Path) -> sqlx::SqlitePool {
             }
         };
 
-        if let Err(e) = crate::modules::system::adapters::outbound::sqlite::utils::unicode_keys::ensure_unicode_keys(&p).await {
+        if let Err(e) = crate::modules::system::adapters::sqlite::utils::unicode_keys::ensure_unicode_keys(&p).await {
             log::warn!("Unicode key backfill skipped: {e}");
         }
         p
@@ -126,12 +126,12 @@ pub fn init_hotkey_manager(
 /// a restart, so without this they stay `in_progress`/`extracting` forever and the
 /// user can never retry them.
 async fn recover_interrupted_transfers(pool: &sqlx::SqlitePool) {
-    match crate::modules::browser::adapters::outbound::sqlite::browser::fail_interrupted_downloads(pool).await {
+    match crate::modules::browser::adapters::sqlite::browser::fail_interrupted_downloads(pool).await {
         Ok(count) if count > 0 => log::info!("startup: failed {count} interrupted download(s)"),
         Ok(_) => {}
         Err(error) => log::warn!("startup: download recovery failed: {error}"),
     }
-    match crate::modules::browser::adapters::outbound::sqlite::browser::fail_interrupted_jobs(pool).await {
+    match crate::modules::browser::adapters::sqlite::browser::fail_interrupted_jobs(pool).await {
         Ok(count) if count > 0 => log::info!("startup: failed {count} interrupted import job(s)"),
         Ok(_) => {}
         Err(error) => log::warn!("startup: import job recovery failed: {error}"),
@@ -155,7 +155,7 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
     let pool = app.state::<sqlx::SqlitePool>().inner().clone();
 
     block_on(async {
-        match crate::modules::workspace::adapters::outbound::sqlite::task::reclaim_interrupted_apply_tasks(&pool).await {
+        match crate::modules::workspace::adapters::sqlite::task::reclaim_interrupted_apply_tasks(&pool).await {
             Ok(reclaimed) if reclaimed > 0 => {
                 log::info!("startup: reclaimed {reclaimed} interrupted collection apply task(s)");
             }
@@ -164,7 +164,7 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 log::warn!("startup: interrupted collection apply reclaim failed: {error}");
             }
         }
-        match crate::modules::workspace::adapters::outbound::sqlite::task::purge_old_tasks(&pool).await {
+        match crate::modules::workspace::adapters::sqlite::task::purge_old_tasks(&pool).await {
             Ok(purged) if purged > 0 => {
                 log::info!("startup: purged {purged} old task log(s) before boot reconcile");
             }
@@ -175,14 +175,14 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         }
 
         recover_interrupted_transfers(&pool).await;
-        match crate::modules::ingestion::adapters::outbound::sqlite::import_batch::recover_interrupted_batch_states(&pool).await {
+        match crate::modules::ingestion::adapters::sqlite::import_batch::recover_interrupted_batch_states(&pool).await {
             Ok(recovered) if recovered > 0 => {
                 log::info!("startup: made {recovered} interrupted import state(s) resumable");
             }
             Ok(_) => {}
             Err(error) => log::warn!("startup: import batch recovery failed: {error}"),
         }
-        match crate::modules::ingestion::adapters::outbound::sqlite::import_batch::list_terminal_batch_ids_for_staging_cleanup(&pool).await {
+        match crate::modules::ingestion::adapters::sqlite::import_batch::list_terminal_batch_ids_for_staging_cleanup(&pool).await {
             Ok(batch_ids) => match app.path().app_data_dir() {
                 Ok(app_data) => {
                     let staging_root = app_data.join("import-staging");

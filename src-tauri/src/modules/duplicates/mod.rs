@@ -4,5 +4,5 @@ pub mod domain;
 pub mod facade;
 
 // DupScanState is managed by Tauri via .manage() in lib.rs
-pub(crate) use adapters::inbound::tauri::DupScanState;
+pub(crate) use adapters::tauri::tauri::DupScanState;
 

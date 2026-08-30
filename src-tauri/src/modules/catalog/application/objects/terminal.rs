@@ -13,7 +13,7 @@ use crate::modules::workspace::domain::normalizer::is_disabled_folder;
 use crate::shared::path_key::{canonical_name_key, folder_path_key, resolve_collection_path};
 use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::catalog::domain::objects::ObjectSummary;
-use crate::modules::catalog::adapters::outbound::sqlite::object::{ObjectCountCandidate, TerminalDescriptor};
+use crate::modules::catalog::adapters::sqlite::object::{ObjectCountCandidate, TerminalDescriptor};
 
 pub(crate) struct TerminalCounts {
     pub total: i64,

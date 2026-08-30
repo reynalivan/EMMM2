@@ -11,7 +11,7 @@ use crate::modules::collections::domain::collection::{
 };
 use crate::shared::errors::CollectionError;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
-use crate::modules::collections::adapters::outbound::sqlite as collection;
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::settings::application::config::AppSettings;
 use crate::modules::workspace::application::projected_state;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;

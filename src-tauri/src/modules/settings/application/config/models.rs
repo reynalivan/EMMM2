@@ -1,4 +1,4 @@
-use crate::modules::games::adapters::outbound::sqlite::game;
+use crate::modules::games::adapters::sqlite::game;
 use crate::modules::automation::application::hotkeys::{HotkeyConfig, KeyViewerConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

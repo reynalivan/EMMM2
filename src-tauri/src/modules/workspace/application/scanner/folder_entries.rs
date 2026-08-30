@@ -22,7 +22,7 @@ pub async fn list_folder_entries(
 ) -> Result<Vec<FolderEntry>, ScannerError> {
     use std::path::Path;
 
-    let mods_path = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, game_id)
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| ScannerError::Validation("Failed to fetch game mods path".to_string()))?;
 

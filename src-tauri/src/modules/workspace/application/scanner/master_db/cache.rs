@@ -71,7 +71,7 @@ pub async fn get_cached(
 /// they were written to the `objects` table and never read back by the matcher,
 /// so they changed nothing. This is the read half.
 async fn load_user_aliases(pool: &sqlx::SqlitePool) -> HashMap<String, Vec<String>> {
-    let blobs = match crate::modules::catalog::adapters::outbound::sqlite::object::get_user_alias_blobs(pool).await {
+    let blobs = match crate::modules::catalog::adapters::sqlite::object::get_user_alias_blobs(pool).await {
         Ok(rows) => rows,
         Err(error) => {
             log::warn!("user aliases unavailable, matching with bundled aliases only: {error}");

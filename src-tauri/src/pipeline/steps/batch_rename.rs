@@ -120,7 +120,7 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
 
 async fn load_object_plans(ctx: &ApplyContext) -> Result<Vec<ObjectTogglePlan>, CollectionError> {
     let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::modules::catalog::adapters::outbound::sqlite::object::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
+    let rows = crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
     drop(conn);
     let by_id = rows
         .into_iter()
@@ -203,7 +203,7 @@ async fn load_targets_by_key(
     ctx: &ApplyContext,
 ) -> Result<HashMap<String, RuntimeToggleTarget>, CollectionError> {
     let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::modules::library::adapters::outbound::sqlite::mods::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
+    let rows = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut conn, &ctx.game_id).await?;
     drop(conn);
     let mods_path = ctx.mods_path.to_string_lossy().to_string();
     let mut by_key = HashMap::with_capacity(rows.len() * 2);

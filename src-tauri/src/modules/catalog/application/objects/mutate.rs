@@ -23,7 +23,7 @@ pub async fn create_object_cmd_inner(
     let mut pending_thumbnail_copy = None;
     let mut previous_thumbnail = None;
 
-    let mods_path = crate::modules::games::adapters::outbound::sqlite::game::get_configured_mods_path(pool, &input.game_id)
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, &input.game_id)
         .await
         .map_err(|e| AppError::Db(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
@@ -95,7 +95,7 @@ pub async fn create_object_cmd_inner(
         crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate(dest);
     }
 
-    let res = crate::modules::catalog::adapters::outbound::sqlite::object::create_object(
+    let res = crate::modules::catalog::adapters::sqlite::object::create_object(
         pool,
         &id,
         &input.game_id,
@@ -113,7 +113,7 @@ pub async fn create_object_cmd_inner(
 
     match res {
         Ok(_) => {
-            crate::modules::workspace::adapters::outbound::sqlite::runtime_projection::refresh_object_projection(
+            crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_object_projection(
                 pool,
                 &input.game_id,
                 &id,
@@ -243,7 +243,7 @@ pub async fn toggle_pin_object(
     id: &str,
     pin: bool,
 ) -> Result<(), AppError> {
-    Ok(crate::modules::catalog::adapters::outbound::sqlite::object::set_is_pinned(pool, id, pin).await?)
+    Ok(crate::modules::catalog::adapters::sqlite::object::set_is_pinned(pool, id, pin).await?)
 }
 
 /// Update an object, returning a user-friendly error on unique-name conflicts.
@@ -253,11 +253,11 @@ pub async fn update_object(
     updates: &UpdateObjectInput,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    let object_game_id = crate::modules::catalog::adapters::outbound::sqlite::object::get_game_id_conn(&mut tx, id).await?;
+    let object_game_id = crate::modules::catalog::adapters::sqlite::object::get_game_id_conn(&mut tx, id).await?;
     let update_result = async {
-        crate::modules::catalog::adapters::outbound::sqlite::object::update_object(&mut *tx, id, updates).await?;
+        crate::modules::catalog::adapters::sqlite::object::update_object(&mut *tx, id, updates).await?;
         if let Some(game_id) = object_game_id.as_deref() {
-            crate::modules::workspace::adapters::outbound::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
+            crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
                 &mut tx,
                 game_id,
                 [id.to_string()],
@@ -289,7 +289,7 @@ pub async fn set_object_and_mods_category(
     }
 
     let mut tx = pool.begin().await?;
-    let object_updated = crate::modules::catalog::adapters::outbound::sqlite::object::update_object_type_for_game(
+    let object_updated = crate::modules::catalog::adapters::sqlite::object::update_object_type_for_game(
         &mut *tx, game_id, object_id, category,
     )
     .await?;
@@ -300,9 +300,9 @@ pub async fn set_object_and_mods_category(
     }
 
     let child_updated =
-        crate::modules::library::adapters::outbound::sqlite::mods::set_object_type_for_object(&mut *tx, game_id, object_id, category)
+        crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(&mut *tx, game_id, object_id, category)
             .await?;
-    crate::modules::workspace::adapters::outbound::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
+    crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
         &mut tx,
         game_id,
         [object_id.to_string()],
@@ -325,14 +325,14 @@ pub async fn delete_object(
         crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(&watcher_state.suppressor);
     // 1. Fetch object from DB to get game_id and folder_path
     let (obj_game_id, obj_folder_path) =
-        crate::modules::catalog::adapters::outbound::sqlite::object::get_game_id_and_folder_path(pool, id)
+        crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool, id)
             .await
             .map_err(|e| AppError::Db(e.to_string()))?
             .ok_or_else(|| AppError::NotFound(format!("Object not found: {}", id)))?;
 
     let mut target_dir_opt: Option<std::path::PathBuf> = None;
 
-    let mods_path = crate::modules::games::adapters::outbound::sqlite::game::get_configured_mods_path(pool, &obj_game_id)
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, &obj_game_id)
         .await
         .map_err(|e| AppError::Db(e.to_string()))?;
 
@@ -341,7 +341,7 @@ pub async fn delete_object(
     }
 
     // 1.5. Safety Guard: Check if the object has any mods
-    let count = crate::modules::catalog::adapters::outbound::sqlite::object::get_mod_count_for_object(pool, id).await?;
+    let count = crate::modules::catalog::adapters::sqlite::object::get_mod_count_for_object(pool, id).await?;
     if count > 0 && !force {
         return Err(AppError::ObjectHasMods(count as i32));
     }

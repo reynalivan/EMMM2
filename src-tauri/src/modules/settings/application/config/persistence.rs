@@ -1,6 +1,6 @@
 use crate::shared::errors::AppError;
-use crate::modules::games::adapters::outbound::sqlite::game;
-use crate::modules::system::adapters::outbound::sqlite::settings;
+use crate::modules::games::adapters::sqlite::game;
+use crate::modules::system::adapters::sqlite::settings;
 use sqlx::SqlitePool;
 
 use super::models::{config_to_game_row, game_row_to_config, AiConfig, AppSettings, SafetyConfig};

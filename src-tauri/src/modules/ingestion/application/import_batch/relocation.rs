@@ -31,10 +31,10 @@ pub async fn preview_relocation_batch(
             "Select at least one folder to relocate".to_string(),
         ));
     }
-    let mods_root = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(db, &input.game_id)
+    let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?;
-    let page = crate::modules::catalog::adapters::outbound::sqlite::object::get_filtered_objects(
+    let page = crate::modules::catalog::adapters::sqlite::object::get_filtered_objects(
         db,
         &crate::modules::catalog::domain::objects::ObjectFilter {
             game_id: input.game_id.clone(),

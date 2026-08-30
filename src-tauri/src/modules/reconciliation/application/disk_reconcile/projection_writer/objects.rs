@@ -4,7 +4,7 @@ use crate::shared::errors::AppError;
 use std::collections::HashMap;
 
 use crate::modules::games::domain::models::ItemStatus;
-use crate::modules::catalog::adapters::outbound::sqlite::object::ReconcileObjectRow as DbObjectRow;
+use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow as DbObjectRow;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{DiskObjectEntry, DiskProjection};
 use crate::modules::reconciliation::application::disk_reconcile::path_updates::push_path_update;
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathKind;
@@ -57,7 +57,7 @@ async fn sync_existing_object(
         return Ok(());
     }
 
-    crate::modules::catalog::adapters::outbound::sqlite::object::update_object_disk_identity_by_id(
+    crate::modules::catalog::adapters::sqlite::object::update_object_disk_identity_by_id(
         &mut *conn,
         &existing.id,
         &disk_object.name,
@@ -166,20 +166,20 @@ pub(super) async fn apply_disk_objects(
             )
             .await?
         };
-        crate::modules::catalog::adapters::outbound::sqlite::object::update_object_runtime_state_by_id(
+        crate::modules::catalog::adapters::sqlite::object::update_object_runtime_state_by_id(
             &mut *conn,
             &object_id,
             &disk_object.folder_path,
             expected_status,
         )
         .await?;
-        crate::modules::catalog::adapters::outbound::sqlite::object::set_filesystem_identity_tx(
+        crate::modules::catalog::adapters::sqlite::object::set_filesystem_identity_tx(
             &mut *conn,
             &object_id,
             disk_object.filesystem_identity.as_deref(),
         )
         .await?;
-        crate::modules::collections::adapters::outbound::sqlite::rebind_object_references(
+        crate::modules::collections::adapters::sqlite::rebind_object_references(
             &mut *conn,
             game_id,
             &disk_object.folder_path_key,

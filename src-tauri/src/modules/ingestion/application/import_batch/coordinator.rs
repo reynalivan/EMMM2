@@ -4,7 +4,7 @@ use super::types::{
     StableCategory, TargetMode,
 };
 use crate::shared::errors::AppError;
-use crate::modules::ingestion::adapters::outbound::sqlite::import_batch::{self, CreateImportBatchRecord, NewImportItemRecord};
+use crate::modules::ingestion::adapters::sqlite::import_batch::{self, CreateImportBatchRecord, NewImportItemRecord};
 use sqlx::SqlitePool;
 use std::path::Path;
 use std::str::FromStr;
@@ -145,7 +145,7 @@ pub async fn set_import_item_decision(
         let batch = import_batch::get_batch(db, &item.batch_id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-        let object = crate::modules::catalog::adapters::outbound::sqlite::object::get_game_object_by_id(db, object_id)
+        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, object_id)
             .await?
             .filter(|object| object.game_id == batch.game_id)
             .ok_or_else(|| {
@@ -160,7 +160,7 @@ pub async fn set_import_item_decision(
                 "Keep-specific-target can only select the batch's original target".to_string(),
             ));
         }
-        let mods_root = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(db, &batch.game_id)
+        let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)
             .await?
             .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
         input.destination_path = Some(
@@ -234,10 +234,10 @@ pub async fn refresh_import_item_suggestions(
     let batch = import_batch::get_batch(db, &item.batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-    let mods_root = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(db, &batch.game_id)
+    let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)
         .await?
         .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
-    let page = crate::modules::catalog::adapters::outbound::sqlite::object::get_filtered_objects(
+    let page = crate::modules::catalog::adapters::sqlite::object::get_filtered_objects(
         db,
         &crate::modules::catalog::domain::objects::ObjectFilter {
             game_id: batch.game_id.clone(),
@@ -320,7 +320,7 @@ pub async fn refresh_import_item_suggestions(
 }
 
 async fn configured_workspace_roots(db: &SqlitePool) -> Result<Vec<std::path::PathBuf>, AppError> {
-    let games = crate::modules::games::adapters::outbound::sqlite::game::get_all_games(db).await?;
+    let games = crate::modules::games::adapters::sqlite::game::get_all_games(db).await?;
     Ok(games
         .into_iter()
         .filter_map(|game| {
@@ -413,7 +413,7 @@ async fn validate_create_input(
             "One import batch can contain at most 500 sources".to_string(),
         ));
     }
-    if crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(db, &input.game_id)
+    if crate::modules::games::adapters::sqlite::game::get_mod_path(db, &input.game_id)
         .await?
         .is_none()
     {

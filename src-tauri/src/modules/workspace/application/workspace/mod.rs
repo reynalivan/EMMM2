@@ -22,7 +22,7 @@ use crate::modules::workspace::application::workspace_read_model::selection::{
 };
 
 async fn load_game_mods_path(pool: &sqlx::SqlitePool, game_id: &str) -> Result<String, AppError> {
-    crate::modules::games::adapters::outbound::sqlite::game::get_configured_mods_path(pool, game_id)
+    crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::Internal(format!("Game '{}' has no mods_path", game_id)))
 }

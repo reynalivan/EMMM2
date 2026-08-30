@@ -10,7 +10,7 @@ pub async fn resolve_mod_inbox_root(
     path_override: Option<&str>,
 ) -> Result<PathBuf, AppError> {
     let (game_name, configured_path) =
-        crate::modules::games::adapters::outbound::sqlite::game::get_ready_to_move_config(db, game_id)
+        crate::modules::games::adapters::sqlite::game::get_ready_to_move_config(db, game_id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}'")))?;
     Ok(
@@ -37,7 +37,7 @@ pub async fn validate_mod_inbox_root(
     game_id: &str,
     root: &Path,
 ) -> Result<(), AppError> {
-    let Some(mods_path) = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(db, game_id).await? else {
+    let Some(mods_path) = crate::modules::games::adapters::sqlite::game::get_mod_path(db, game_id).await? else {
         return Ok(());
     };
     let mods_root = Path::new(&mods_path).canonicalize().map_err(|error| {

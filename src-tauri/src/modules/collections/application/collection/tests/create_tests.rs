@@ -62,7 +62,7 @@ async fn saving_last_changes_as_a_collection_consumes_the_draft() {
         .await
         .expect("persist draft state");
     let mut tx = ctx.pool.begin().await.expect("begin runtime transaction");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(&mut tx, "game-1", &draft.id, None)
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(&mut tx, "game-1", &draft.id, None)
         .await
         .expect("set draft pointer");
     tx.commit().await.expect("commit runtime transaction");
@@ -80,7 +80,7 @@ async fn saving_last_changes_as_a_collection_consumes_the_draft() {
     .expect("save draft as named collection");
     assert_eq!(saved.name, "Recovered changes");
 
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-1")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-1")
         .await
         .expect("load runtime")
         .expect("runtime exists");
@@ -122,7 +122,7 @@ async fn save_current_rejects_a_draft_referenced_by_an_open_apply() {
     )
     .await
     .expect("create draft");
-    crate::modules::collections::adapters::outbound::sqlite::runtime::set_draft_tx(
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
         &mut ctx.pool.acquire().await.expect("runtime connection"),
         "game-save-protected",
         &draft.id,
@@ -130,7 +130,7 @@ async fn save_current_rejects_a_draft_referenced_by_an_open_apply() {
     )
     .await
     .expect("set draft pointer");
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_task_with_rollback_intent(
+    crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &ctx.pool,
         "open-save-rollback",
         "game-save-protected",
@@ -141,7 +141,7 @@ async fn save_current_rejects_a_draft_referenced_by_an_open_apply() {
     )
     .await
     .expect("create open task");
-    assert!(crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status(
+    assert!(crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
         &ctx.pool,
         "open-save-rollback",
         crate::modules::workspace::domain::task::TaskStatus::Pending,
@@ -163,7 +163,7 @@ async fn save_current_rejects_a_draft_referenced_by_an_open_apply() {
     .expect_err("save current must retain a referenced rollback draft");
 
     assert!(format!("{error}").contains("recovery"));
-    let runtime = crate::modules::collections::adapters::outbound::sqlite::runtime::get(&ctx.pool, "game-save-protected")
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-save-protected")
         .await
         .expect("load runtime")
         .expect("runtime exists");

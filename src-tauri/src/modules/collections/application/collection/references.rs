@@ -8,7 +8,7 @@ use super::path_transition::{
 use super::projection::{persist_projected_state, refresh_projected_state_preserving_signature};
 use crate::modules::collections::domain::collection::{CollectionPathRewrite, CollectionReferenceImpact};
 use crate::shared::errors::CollectionError;
-use crate::modules::collections::adapters::outbound::sqlite as collection;
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::workspace::application::projected_state;
 use sqlx::SqlitePool;
 

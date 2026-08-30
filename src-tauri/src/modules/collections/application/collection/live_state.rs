@@ -3,7 +3,7 @@
 use crate::modules::workspace::domain::normalizer::is_disabled_folder;
 use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
 use crate::shared::errors::CollectionError;
-use crate::modules::collections::adapters::outbound::sqlite as collection;
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::collections::application::collection::preview_tree::resolve_preview_terminal_metadata;
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::HashMap;
@@ -88,7 +88,7 @@ pub(crate) async fn live_runtime_is_safe(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<bool, CollectionError> {
-    let unsafe_count = crate::modules::library::adapters::outbound::sqlite::mods::count_active_unsafe_mods(pool, game_id).await?;
+    let unsafe_count = crate::modules::library::adapters::sqlite::mods::count_active_unsafe_mods(pool, game_id).await?;
 
     Ok(unsafe_count == 0)
 }
@@ -97,7 +97,7 @@ pub(crate) async fn load_game_mods_path(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Option<String>, CollectionError> {
-    Ok(crate::modules::games::adapters::outbound::sqlite::game::get_configured_mods_path(pool, game_id).await?)
+    Ok(crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, game_id).await?)
 }
 
 pub(crate) struct LiveRuntimeSummary {
@@ -176,5 +176,5 @@ pub(crate) async fn missing_collection_member_count_tx(
     game_id: &str,
     collection_id: &str,
 ) -> Result<usize, CollectionError> {
-    crate::modules::collections::adapters::outbound::sqlite::count_missing_mods_tx(conn, game_id, collection_id).await
+    crate::modules::collections::adapters::sqlite::count_missing_mods_tx(conn, game_id, collection_id).await
 }

@@ -87,13 +87,13 @@ async fn apply_collection_with_finalization(
             Some(request.collection_id.to_string())
         }
         ActiveCollectionFinalization::RequestDefault => {
-            crate::modules::collections::adapters::outbound::sqlite::runtime::get(request.pool, request.game_id)
+            crate::modules::collections::adapters::sqlite::runtime::get(request.pool, request.game_id)
                 .await?
                 .and_then(|runtime| runtime.active_collection_id)
         }
     };
     let task_id = uuid::Uuid::new_v4().to_string();
-    crate::modules::workspace::adapters::outbound::sqlite::task::create_claimed_task_with_final_active(
+    crate::modules::workspace::adapters::sqlite::task::create_claimed_task_with_final_active(
         request.pool,
         &task_id,
         request.game_id,
@@ -107,7 +107,7 @@ async fn apply_collection_with_finalization(
     let mut ctx = match prepare_apply_context(request, &task_id).await {
         Ok(ctx) => ctx,
         Err(error) => {
-            let _ = crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status(
+            let _ = crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
                 pool,
                 &task_id,
                 TaskStatus::Running,
@@ -130,7 +130,7 @@ async fn prepare_apply_context(
 ) -> Result<crate::pipeline::apply_pipeline::ApplyContext, CollectionError> {
     let capture_last_changes = request.capture_last_changes;
     let rollback_active_collection_id =
-        crate::modules::collections::adapters::outbound::sqlite::runtime::get(request.pool, request.game_id)
+        crate::modules::collections::adapters::sqlite::runtime::get(request.pool, request.game_id)
             .await?
             .and_then(|runtime| runtime.active_collection_id);
     let captured_draft_id = if capture_last_changes {
@@ -140,7 +140,7 @@ async fn prepare_apply_context(
     };
     let rollback_collection_id =
         captured_draft_id.or_else(|| rollback_active_collection_id.clone());
-    crate::modules::workspace::adapters::outbound::sqlite::task::update_rollback_intent(
+    crate::modules::workspace::adapters::sqlite::task::update_rollback_intent(
         request.pool,
         task_id,
         rollback_collection_id.as_deref(),

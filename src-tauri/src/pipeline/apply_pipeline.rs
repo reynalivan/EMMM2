@@ -137,14 +137,14 @@ async fn finalize_apply(
     let outcome: Result<(), sqlx::Error> = async {
         let mut tx = ctx.pool.begin().await?;
         if ctx.finalize_active_collection {
-            crate::modules::collections::adapters::outbound::sqlite::runtime::set_active_tx(
+            crate::modules::collections::adapters::sqlite::runtime::set_active_tx(
                 &mut tx,
                 &ctx.game_id,
                 ctx.final_active_collection_id.as_deref(),
             )
             .await?;
         }
-        let completed = crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status_tx(
+        let completed = crate::modules::workspace::adapters::sqlite::task::compare_and_set_status_tx(
             &mut tx,
             task_id,
             expected_status,
@@ -172,7 +172,7 @@ async fn settle_normal_apply_failure(ctx: &ApplyContext, task_id: &str) {
     } else {
         TaskStatus::Failed
     };
-    if let Err(error) = crate::modules::workspace::adapters::outbound::sqlite::task::compare_and_set_status(
+    if let Err(error) = crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
         &ctx.pool,
         task_id,
         TaskStatus::Running,
@@ -332,7 +332,7 @@ mod tests {
         .await
         .expect("seed game");
         for (id, name) in [("baseline-before", "Before"), ("baseline-after", "After")] {
-            crate::modules::collections::adapters::outbound::sqlite::create(
+            crate::modules::collections::adapters::sqlite::create(
                 &test_db.pool,
                 id,
                 "game-atomic-finalize",
@@ -343,14 +343,14 @@ mod tests {
             .await
             .expect("seed collection");
         }
-        crate::modules::collections::adapters::outbound::sqlite::runtime::set_active(
+        crate::modules::collections::adapters::sqlite::runtime::set_active(
             &test_db.pool,
             "game-atomic-finalize",
             Some("baseline-before"),
         )
         .await
         .expect("seed active baseline");
-        crate::modules::workspace::adapters::outbound::sqlite::task::create_claimed_task(
+        crate::modules::workspace::adapters::sqlite::task::create_claimed_task(
             &test_db.pool,
             "task-atomic-finalize",
             "game-atomic-finalize",
@@ -387,7 +387,7 @@ mod tests {
         assert!(matches!(error, CollectionError::Db(_)));
 
         let runtime =
-            crate::modules::collections::adapters::outbound::sqlite::runtime::get(&test_db.pool, "game-atomic-finalize")
+            crate::modules::collections::adapters::sqlite::runtime::get(&test_db.pool, "game-atomic-finalize")
                 .await
                 .expect("load runtime")
                 .expect("runtime exists");
@@ -396,7 +396,7 @@ mod tests {
             Some("baseline-before"),
             "active baseline update must roll back with failed task completion"
         );
-        let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(&test_db.pool, "task-atomic-finalize")
+        let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&test_db.pool, "task-atomic-finalize")
             .await
             .expect("load task")
             .expect("task exists");

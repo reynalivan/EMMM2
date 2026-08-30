@@ -35,7 +35,7 @@ async fn resolve_mod_target_path(
     target_value: &str,
     desired_enabled: bool,
 ) -> Result<(String, Vec<String>), AppError> {
-    let mods_path = crate::modules::games::adapters::outbound::sqlite::game::get_mod_path(pool, game_id)
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
     let mods_root = Path::new(&mods_path);
@@ -59,7 +59,7 @@ async fn resolve_mod_target_path(
 
     let mut changed_object_ids = Vec::new();
     if let Some((_, Some(object_id), _)) =
-        crate::modules::library::adapters::outbound::sqlite::mods::get_mod_id_and_status_by_path(pool, &relative_path, game_id).await?
+        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(pool, &relative_path, game_id).await?
     {
         changed_object_ids.push(object_id);
     }

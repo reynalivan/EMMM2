@@ -1,6 +1,6 @@
 use super::types::{ImportBatch, ImportBatchStatus, ImportItemStatus};
 use crate::shared::errors::AppError;
-use crate::modules::ingestion::adapters::outbound::sqlite::import_batch::{self, StagedRootRecord};
+use crate::modules::ingestion::adapters::sqlite::import_batch::{self, StagedRootRecord};
 use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 

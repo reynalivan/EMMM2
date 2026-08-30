@@ -3,8 +3,8 @@ use std::{collections::HashMap, path::Path};
 use crate::shared::path_key::folder_path_key;
 use crate::shared::errors::AppError;
 use crate::modules::catalog::domain::objects::ObjectRuntimeDescriptor;
-use crate::modules::library::adapters::outbound::sqlite::mods::get_safety_by_folder_path_key;
-use crate::modules::catalog::adapters::outbound::sqlite::object::get_runtime_descriptors;
+use crate::modules::library::adapters::sqlite::mods::get_safety_by_folder_path_key;
+use crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors;
 
 use super::grid::{list_mod_folders_inner, list_mod_folders_inner_shallow};
 
@@ -82,7 +82,7 @@ fn enrich_owner_metadata(
 }
 
 fn aggregate_safety(
-    known_safety: &HashMap<String, crate::modules::library::adapters::outbound::sqlite::mods::SafetyClassification>,
+    known_safety: &HashMap<String, crate::modules::library::adapters::sqlite::mods::SafetyClassification>,
 ) -> HashMap<&str, (bool, bool)> {
     let mut aggregate_safety = HashMap::<&str, (bool, bool)>::new();
     for (key, classification) in known_safety {
@@ -109,7 +109,7 @@ fn aggregate_safety(
 
 fn enrich_safety(
     response: &mut crate::modules::workspace::application::explorer::types::FolderGridResponse,
-    known_safety: &HashMap<String, crate::modules::library::adapters::outbound::sqlite::mods::SafetyClassification>,
+    known_safety: &HashMap<String, crate::modules::library::adapters::sqlite::mods::SafetyClassification>,
     mods_path: &str,
 ) {
     let aggregate_safety = aggregate_safety(known_safety);
@@ -159,7 +159,7 @@ pub async fn list_mod_folders_for_game_shallow(
 #[cfg(test)]
 mod tests {
     use super::aggregate_safety;
-    use crate::modules::library::adapters::outbound::sqlite::mods::SafetyClassification;
+    use crate::modules::library::adapters::sqlite::mods::SafetyClassification;
     use std::collections::HashMap;
 
     #[test]

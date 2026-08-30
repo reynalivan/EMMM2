@@ -183,7 +183,7 @@ async fn removing_game_survives_config_reload() {
 async fn non_authoritative_empty_snapshot_cannot_delete_persisted_game_children() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let persisted_game = game("C:/Mods/A");
-    crate::modules::games::adapters::outbound::sqlite::game::upsert_game(
+    crate::modules::games::adapters::sqlite::game::upsert_game(
         &pool,
         &crate::modules::settings::application::config::models::config_to_game_row(&persisted_game),
     )
@@ -278,7 +278,7 @@ async fn database_reset_serializes_with_paused_settings_writer() {
 async fn snapshot_captured_before_reset_cannot_resurrect_legacy_revision_zero_data() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let persisted_game = game("C:/Mods/A");
-    crate::modules::games::adapters::outbound::sqlite::game::upsert_game(
+    crate::modules::games::adapters::sqlite::game::upsert_game(
         &pool,
         &crate::modules::settings::application::config::models::config_to_game_row(&persisted_game),
     )
@@ -306,13 +306,13 @@ async fn snapshot_captured_before_reset_cannot_resurrect_legacy_revision_zero_da
 async fn late_reset_delete_failure_rolls_back_database_and_preserves_memory() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let persisted_game = game("C:/Mods/A");
-    crate::modules::games::adapters::outbound::sqlite::game::upsert_game(
+    crate::modules::games::adapters::sqlite::game::upsert_game(
         &pool,
         &crate::modules::settings::application::config::models::config_to_game_row(&persisted_game),
     )
     .await
     .expect("game fixture should persist");
-    crate::modules::system::adapters::outbound::sqlite::settings::set_setting(&pool, "theme", "light")
+    crate::modules::system::adapters::sqlite::settings::set_setting(&pool, "theme", "light")
         .await
         .expect("theme fixture should persist");
     sqlx::query(

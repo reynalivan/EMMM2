@@ -4,7 +4,7 @@ use super::{get_collection_runtime_descriptor, get_collection_runtime_state};
 use crate::modules::collections::domain::collection::{CreateCollectionInput, CreateCollectionMode};
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::workspace::domain::runtime_state::{LastChangesSource, RuntimeStatus};
-use crate::modules::collections::adapters::outbound::sqlite as collection;
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,

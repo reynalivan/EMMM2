@@ -4,7 +4,7 @@ mod common;
 mod tests {
     use super::common::init_test_db;
     use emmm_lib::modules::games::domain::models::GameType;
-    use emmm_lib::modules::games::adapters::outbound::sqlite::game::{upsert_game, GameRow};
+    use emmm_lib::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
     use emmm_lib::modules::settings::application::config::ConfigService;
     use emmm_lib::modules::library::application::mods::bulk;
     use emmm_lib::modules::library::application::mods::core_ops::toggle_mod_inner;
