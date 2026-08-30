@@ -53,7 +53,7 @@ export function ModInboxHeader({
 
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn btn-ghost btn-sm gap-2" onClick={onSettings}>
-            <Settings size={16} /> {t('actions.settings')}
+            <FolderInput size={16} /> {t('actions.choose_location')}
           </button>
           <button
             type="button"

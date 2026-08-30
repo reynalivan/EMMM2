@@ -215,11 +215,6 @@ export default function ModInboxPage() {
     }
   };
 
-  const openInboxSettings = () => {
-    setSettingsTab('games');
-    setWorkspaceView('settings');
-  };
-
   if (!activeGameId) {
     return <NoGameState />;
   }
@@ -229,7 +224,7 @@ export default function ModInboxPage() {
       <ModInboxHeader
         snapshot={snapshot}
         loading={loading}
-        onSettings={openInboxSettings}
+        onSettings={() => void chooseInboxLocation()}
         onOpen={() => {
           if (snapshot) void modInboxCommands.openModInboxFolder(activeGameId);
         }}
