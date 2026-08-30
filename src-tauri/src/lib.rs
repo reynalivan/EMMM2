@@ -11,7 +11,6 @@ pub mod shared;
 pub mod pipeline;
 #[cfg(test)]
 pub mod test_utils;
-pub mod types;
 
 /// Standard prefix for disabled mod folders. Shared across commands.
 pub const DISABLED_PREFIX: &str = "DISABLED ";

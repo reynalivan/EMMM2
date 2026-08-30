@@ -4,7 +4,7 @@
 //! `snapshot`, and the content hashing in `hashing`; this module reads their
 //! output and turns it into a score plus the signals that explain it.
 
-use crate::types::dup_scan::DupScanSignal;
+use crate::modules::duplicates::domain::dup_scan::DupScanSignal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::hashing::HashProfile;

@@ -14,7 +14,6 @@ import {
   reconcileFolderConflictDraftState,
   type FolderConflictDraftState,
 } from './folderConflictDrafts';
-import FolderConflictActionSummary from './FolderConflictActionSummary';
 import FolderConflictCandidateCard from './FolderConflictCandidateCard';
 import FolderConflictCompletion from './FolderConflictCompletion';
 import FolderConflictTrashDialog from './FolderConflictTrashDialog';
@@ -250,34 +249,36 @@ export default function FolderConflictManager() {
 
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[240px_1fr]">
           <nav
-            className="max-h-48 overflow-y-auto border-b border-base-content/10 bg-base-200/40 p-3 lg:max-h-none lg:border-b-0 lg:border-r"
+            className="max-h-48 overflow-y-auto border-b border-base-content/10 bg-base-200/40 p-2 lg:max-h-none lg:border-b-0 lg:border-r"
             aria-label={t('conflict_manager.groups')}
           >
-            <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-base-content/50">
-              {progress}
-            </p>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {completedGroups.map((group) => (
                 <div
                   key={group.fingerprint}
-                  className="flex min-h-8 items-center gap-2 px-2 py-1.5 text-left text-base-content/50"
+                  className="flex min-h-8 items-center gap-2 px-3 py-2 text-left text-base-content/40"
                 >
-                  <CheckCircle2 size={15} className="shrink-0 text-success" aria-hidden="true" />
-                  <span className="truncate text-sm line-through">{group.display_name}</span>
+                  <CheckCircle2 size={14} className="shrink-0 text-success/60" aria-hidden="true" />
+                  <span className="truncate text-xs line-through">{group.display_name}</span>
                 </div>
               ))}
-              {groups.map((group, index) => (
-                <button
-                  key={group.group_id}
-                  className={`btn btn-sm h-auto w-full justify-start py-2 text-left ${group.group_id === selected?.group_id ? 'btn-warning' : 'btn-ghost'}`}
-                  onClick={() => setSelectedId(group.group_id)}
-                >
-                  <span className="truncate">
-                    {completedGroups.length + index + 1}. {group.display_name}
-                  </span>
-                  <span className="badge badge-sm ml-auto">{group.candidates.length}</span>
-                </button>
-              ))}
+              {groups.map((group) => {
+                const isActive = group.group_id === selected?.group_id;
+                return (
+                  <button
+                    key={group.group_id}
+                    className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+                      isActive ? 'bg-base-content/10 text-base-content font-medium' : 'text-base-content/70 hover:bg-base-content/5'
+                    }`}
+                    onClick={() => setSelectedId(group.group_id)}
+                  >
+                    <span className="truncate text-sm flex-1">{group.display_name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-base-content/20' : 'bg-base-content/10'}`}>
+                      {group.candidates.length}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </nav>
 
@@ -304,48 +305,61 @@ export default function FolderConflictManager() {
               </div>
             )}
             {!loadingDetails && !detailsError && selected && (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {selected.candidates.map((candidate) => (
-                  <FolderConflictCandidateCard
-                    key={candidate.path}
-                    candidate={candidate}
-                    detail={details[candidate.path]}
-                    isKeep={candidate.path === keepPath}
-                    value={drafts[candidate.path] ?? candidate.base_name}
-                    error={errors[candidate.path]}
-                    disabled={submitting}
-                    inputRef={(element) => {
-                      inputRefs.current[candidate.path] = element;
-                    }}
-                    onKeep={() => {
-                      keepPathRef.current = candidate.path;
-                      setKeepPath(candidate.path);
-                      setDrafts((current) => ({
-                        ...current,
-                        [candidate.path]: candidate.base_name,
-                      }));
-                      setErrors({});
-                    }}
-                    onChange={(value) =>
-                      setDrafts((current) => ({ ...current, [candidate.path]: value }))
-                    }
-                    onTrash={(returnFocus) => setConfirmTrash({ candidate, returnFocus })}
-                  />
-                ))}
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-base-content/80">Select one folder to keep its current base name.</p>
+                  <p className="text-xs text-base-content/50">The remaining folders must be renamed or moved to trash.</p>
+                </div>
+                
+                <div className="flex flex-col gap-3 overflow-y-auto pb-4">
+                  {selected.candidates.map((candidate) => (
+                    <FolderConflictCandidateCard
+                      key={candidate.path}
+                      candidate={candidate}
+                      detail={details[candidate.path]}
+                      isKeep={candidate.path === keepPath}
+                      value={drafts[candidate.path] ?? candidate.base_name}
+                      error={errors[candidate.path]}
+                      disabled={submitting}
+                      inputRef={(element) => {
+                        inputRefs.current[candidate.path] = element;
+                      }}
+                      onKeep={() => {
+                        keepPathRef.current = candidate.path;
+                        setKeepPath(candidate.path);
+                        setDrafts((current) => ({
+                          ...current,
+                          [candidate.path]: candidate.base_name,
+                        }));
+                        setErrors({});
+                      }}
+                      onChange={(value) =>
+                        setDrafts((current) => ({ ...current, [candidate.path]: value }))
+                      }
+                      onTrash={(returnFocus) => setConfirmTrash({ candidate, returnFocus })}
+                    />
+                  ))}
+                </div>
+
+                {!isComplete && (
+                  <div className="mt-auto flex flex-col gap-3 border-t border-base-content/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                       <p className="text-[11px] text-base-content/45">{t('conflict_manager.prefix_note')}</p>
+                    </div>
+                    <button
+                      className="btn btn-warning btn-sm shrink-0"
+                      disabled={submitting || !selected}
+                      onClick={resolveSelected}
+                    >
+                      {submitting && <Loader2 size={15} className="animate-spin motion-reduce:animate-none" />}
+                      {t('conflict_manager.apply_renames', { count: Math.max(0, selected.candidates.length - 1) })}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </section>
         </div>
-
-        {!isComplete && (
-          <FolderConflictActionSummary
-            group={selected}
-            keepPath={keepPath}
-            drafts={drafts}
-            submitting={submitting}
-            onResolve={resolveSelected}
-          />
-        )}
 
         {confirmTrash && (
           <FolderConflictTrashDialog

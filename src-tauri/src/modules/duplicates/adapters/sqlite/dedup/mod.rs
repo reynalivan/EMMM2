@@ -1,6 +1,6 @@
 use crate::modules::workspace::domain::conflicts::WhitelistEntry;
 use crate::shared::errors::ScannerError;
-use crate::types::dup_scan::{DupScanGroup, DupScanReport};
+use crate::modules::duplicates::domain::dup_scan::{DupScanGroup, DupScanReport};
 use sqlx::SqlitePool;
 
 pub async fn persist_completed_report(

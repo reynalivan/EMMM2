@@ -10,7 +10,7 @@ use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::modules::reconciliation::application::disk_reconcile::emit;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::duplicates::adapters::sqlite::dedup;
-use crate::types::dup_scan::{DupScanEvent, DupScanReport};
+use crate::modules::duplicates::domain::dup_scan::{DupScanEvent, DupScanReport};
 use crate::modules::workspace::domain::conflicts::WhitelistEntry;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};

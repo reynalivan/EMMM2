@@ -198,7 +198,7 @@ fn canonical_request_paths(
 }
 
 fn group_member_paths(
-    group: &crate::types::dup_scan::DupScanGroup,
+    group: &crate::modules::duplicates::domain::dup_scan::DupScanGroup,
 ) -> Result<Vec<PathBuf>, ScannerError> {
     group
         .members

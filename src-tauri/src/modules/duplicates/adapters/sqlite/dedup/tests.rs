@@ -181,13 +181,13 @@ async fn completed_report_round_trips_per_game() {
         .unwrap();
     }
 
-    let report = crate::types::dup_scan::DupScanReport {
+    let report = crate::modules::duplicates::domain::dup_scan::DupScanReport {
         scan_id: "scan-g1".to_string(),
         game_id: "g1".to_string(),
         root_path: "/game/Mods".to_string(),
         total_groups: 1,
         total_members: 2,
-        groups: vec![crate::types::dup_scan::DupScanGroup {
+        groups: vec![crate::modules::duplicates::domain::dup_scan::DupScanGroup {
             group_id: "scan-g1:group-1".to_string(),
             confidence_score: 100,
             match_reason: "Exact hash match".to_string(),
@@ -199,7 +199,7 @@ async fn completed_report_round_trips_per_game() {
             ]
             .into_iter()
             .map(
-                |(mod_id, folder_path, display_name)| crate::types::dup_scan::DupScanMember {
+                |(mod_id, folder_path, display_name)| crate::modules::duplicates::domain::dup_scan::DupScanMember {
                     mod_id: Some(mod_id.to_string()),
                     version: None,
                     folder_path: folder_path.to_string(),

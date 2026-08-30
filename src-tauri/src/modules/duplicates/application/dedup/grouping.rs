@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::shared::path_key::canonical_path_key_for_path;
-use crate::types::dup_scan::{DupScanGroup, DupScanMember, DupScanSignal};
+use crate::modules::duplicates::domain::dup_scan::{DupScanGroup, DupScanMember, DupScanSignal};
 
 use super::snapshot::ModSnapshot;
 

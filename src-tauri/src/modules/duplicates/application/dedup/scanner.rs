@@ -1,6 +1,6 @@
 use crate::shared::errors::ScannerError;
 use crate::modules::workspace::application::scanner::core::walker::{self, ModCandidate};
-use crate::types::dup_scan::DupScanGroup;
+use crate::modules::duplicates::domain::dup_scan::DupScanGroup;
 use rayon::prelude::*;
 
 use sqlx::SqlitePool;

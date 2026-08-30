@@ -78,7 +78,7 @@ async fn seed_dedup_group(
     .await
     .unwrap();
 
-    let group = crate::types::dup_scan::DupScanGroup {
+    let group = crate::modules::duplicates::domain::dup_scan::DupScanGroup {
         group_id: group_id.to_string(),
         confidence_score: 100,
         match_reason: "Exact hash match".to_string(),
@@ -86,7 +86,7 @@ async fn seed_dedup_group(
         signals: Vec::new(),
         members: [folder_a, folder_b]
             .into_iter()
-            .map(|folder_path| crate::types::dup_scan::DupScanMember {
+            .map(|folder_path| crate::modules::duplicates::domain::dup_scan::DupScanMember {
                 mod_id: None,
                 version: None,
                 folder_path: folder_path.to_string(),
@@ -337,7 +337,7 @@ async fn keep_rejects_a_persisted_non_exact_group() {
             .fetch_one(&context.pool)
             .await
             .unwrap();
-    let mut group: crate::types::dup_scan::DupScanGroup =
+    let mut group: crate::modules::duplicates::domain::dup_scan::DupScanGroup =
         serde_json::from_str(&group_json).unwrap();
     group.confidence_score = 85;
     sqlx::query("UPDATE dedup_groups SET reasons_json = ? WHERE id = ?")

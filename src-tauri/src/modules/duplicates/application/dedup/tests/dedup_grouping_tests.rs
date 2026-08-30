@@ -1,7 +1,7 @@
 use super::{build_groups, ScoredPair};
 use crate::modules::workspace::application::scanner::core::walker::ModCandidate;
 use crate::modules::duplicates::application::dedup::snapshot::{FileEntry, ModSnapshot};
-use crate::types::dup_scan::DupScanSignal;
+use crate::modules::duplicates::domain::dup_scan::DupScanSignal;
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
