@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../shared/i18n/config', () => ({
+vi.mock('@/shared/i18n/config', () => ({
   default: {
     t: (key: string, options?: Record<string, unknown>) =>
       options ? `${key}|${JSON.stringify(options)}` : key,
   },
 }));
 
-vi.mock('../../shared/lib/appError', () => ({
+vi.mock('@/shared/lib/appError', () => ({
   formatAppError: (error: unknown) => `formatted:${String(error)}`,
 }));
 

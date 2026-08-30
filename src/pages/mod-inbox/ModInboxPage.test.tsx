@@ -214,11 +214,11 @@ describe('ModInboxPage', () => {
           mod_path: 'mods',
           ready_to_move_path: null,
           game_exe: 'game.exe',
-        loader_exe: null,
-        launch_args: null,
-        
+          loader_exe: null,
+          launch_args: null,
         },
       ],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     vi.mocked(modInboxCommands.saveSettings).mockResolvedValueOnce(undefined as any);
 

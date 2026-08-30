@@ -268,12 +268,16 @@ export default function FolderConflictManager() {
                   <button
                     key={group.group_id}
                     className={`flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
-                      isActive ? 'bg-base-content/10 text-base-content font-medium' : 'text-base-content/70 hover:bg-base-content/5'
+                      isActive
+                        ? 'bg-base-content/10 text-base-content font-medium'
+                        : 'text-base-content/70 hover:bg-base-content/5'
                     }`}
                     onClick={() => setSelectedId(group.group_id)}
                   >
                     <span className="truncate text-sm flex-1">{group.display_name}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-base-content/20' : 'bg-base-content/10'}`}>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-base-content/20' : 'bg-base-content/10'}`}
+                    >
                       {group.candidates.length}
                     </span>
                   </button>
@@ -307,10 +311,14 @@ export default function FolderConflictManager() {
             {!loadingDetails && !detailsError && selected && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="mb-4">
-                  <p className="text-sm font-medium text-base-content/80">Select one folder to keep its current base name.</p>
-                  <p className="text-xs text-base-content/50">The remaining folders must be renamed or moved to trash.</p>
+                  <p className="text-sm font-medium text-base-content/80">
+                    Select one folder to keep its current base name.
+                  </p>
+                  <p className="text-xs text-base-content/50">
+                    The remaining folders must be renamed or moved to trash.
+                  </p>
                 </div>
-                
+
                 <div className="flex flex-col gap-3 overflow-y-auto pb-4">
                   {selected.candidates.map((candidate) => (
                     <FolderConflictCandidateCard
@@ -344,15 +352,21 @@ export default function FolderConflictManager() {
                 {!isComplete && (
                   <div className="mt-auto flex flex-col gap-3 border-t border-base-content/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                       <p className="text-[11px] text-base-content/45">{t('conflict_manager.prefix_note')}</p>
+                      <p className="text-[11px] text-base-content/45">
+                        {t('conflict_manager.prefix_note')}
+                      </p>
                     </div>
                     <button
                       className="btn btn-warning btn-sm shrink-0"
                       disabled={submitting || !selected}
                       onClick={resolveSelected}
                     >
-                      {submitting && <Loader2 size={15} className="animate-spin motion-reduce:animate-none" />}
-                      {t('conflict_manager.apply_renames', { count: Math.max(0, selected.candidates.length - 1) })}
+                      {submitting && (
+                        <Loader2 size={15} className="animate-spin motion-reduce:animate-none" />
+                      )}
+                      {t('conflict_manager.apply_renames', {
+                        count: Math.max(0, selected.candidates.length - 1),
+                      })}
                     </button>
                   </div>
                 )}

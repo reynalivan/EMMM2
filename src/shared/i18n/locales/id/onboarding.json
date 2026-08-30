@@ -54,6 +54,18 @@
     "preparing": "Menyiapkan library…",
     "progress_label": "Progres pengindeksan",
     "estimating": "Mengestimasi waktu tersisa…",
-    "estimated_remaining": "Sekitar {{duration}} tersisa"
+    "estimated_remaining": "Sekitar {{duration}} tersisa",
+    "phases": {
+      "discovering": "1/4 Mencari Folder",
+      "scanning": "2/4 Memindai Metadata",
+      "projecting": "3/4 Sinkronisasi Database",
+      "finalizing": "4/4 Finalisasi",
+      "completed": "Selesai",
+      "failed": "Gagal",
+      "starting": "Memulai Mesin..."
+    },
+    "finishing_up": "Menyelesaikan proses...",
+    "initializing": "Menginisialisasi workspace...",
+    "processing": "Memproses {{game}}"
   }
 }

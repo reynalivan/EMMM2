@@ -1,5 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { publishRuntimeDescriptor, type QueryRefetchType } from '@/features/runtime-sync/queryRefresh';
+import {
+  publishRuntimeDescriptor,
+  type QueryRefetchType,
+} from '@/features/runtime-sync/queryRefresh';
 import { buildRefreshDescriptor } from '@/features/workspace-runtime/optimistic/descriptorBuilders';
 import type { RuntimeRefreshEvent } from '../../../shared/lib/runtimeEffects';
 import type {

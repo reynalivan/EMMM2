@@ -1595,7 +1595,7 @@ export type FolderConflictMutationResult = { reconcile: DiskReconcileResult | nu
  * One requested new base name for every candidate in a conflict group.
  */
 export type FolderConflictRename = { path: string; base_name: string }
-export type FolderConflictSummary = { path: string; folder_name: string; is_enabled: boolean; total_size: number; file_count: number; partial: boolean; warnings: string[] }
+export type FolderConflictSummary = { path: string; folder_name: string; is_enabled: boolean; total_size: number; file_count: number; partial: boolean; warnings: string[]; created_at: number | null; modified_at: number | null; files: string[]; thumbnail_path: string | null }
 /**
  * A single item in a folder listing (used by the Scan Review hover tooltip).
  */

@@ -93,6 +93,7 @@ export default function ContextControls() {
                   </li>
                 ) : (
                   <div className="max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     {collections.map((c: any) => (
                       <li key={c.id}>
                         <button

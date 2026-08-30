@@ -3,7 +3,10 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '@/entities/game-object/model/object';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
 import { useAppStore } from '../../../app/store/useAppStore';
-import { publishQueryInvalidations, publishQueryScopes } from '@/features/runtime-sync/queryRefresh';
+import {
+  publishQueryInvalidations,
+  publishQueryScopes,
+} from '@/features/runtime-sync/queryRefresh';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 
 export interface IniFileEntry {

@@ -4,7 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
 import { runObjectBatchMutation } from '@/widgets/object-sidebar/hooks/objectQueryCache';
-import { useDeleteObject, useUpdateObject } from '@/widgets/object-sidebar/hooks/useObjectMutations';
+import {
+  useDeleteObject,
+  useUpdateObject,
+} from '@/widgets/object-sidebar/hooks/useObjectMutations';
 import { toast } from '../../../app/store/useToastStore';
 import type { GameSchema } from '@/entities/game-object/model/object';
 import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';

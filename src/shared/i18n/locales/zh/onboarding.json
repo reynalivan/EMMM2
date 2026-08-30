@@ -54,6 +54,18 @@
     "preparing": "正在准备模组库…",
     "progress_label": "索引进度",
     "estimating": "正在估算剩余时间…",
-    "estimated_remaining": "预计还需 {{duration}}"
+    "estimated_remaining": "预计还需 {{duration}}",
+    "phases": {
+      "discovering": "1/4 正在查找文件夹",
+      "scanning": "2/4 正在扫描元数据",
+      "projecting": "3/4 正在同步数据库",
+      "finalizing": "4/4 正在完成",
+      "completed": "已完成",
+      "failed": "失败",
+      "starting": "正在启动引擎..."
+    },
+    "finishing_up": "即将完成...",
+    "initializing": "正在初始化工作区...",
+    "processing": "正在处理 {{game}}"
   }
 }

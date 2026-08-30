@@ -21,6 +21,10 @@ pub struct FolderConflictSummary {
     pub file_count: usize,
     pub partial: bool,
     pub warnings: Vec<String>,
+    pub created_at: Option<u64>,
+    pub modified_at: Option<u64>,
+    pub files: Vec<String>,
+    pub thumbnail_path: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -274,6 +278,10 @@ fn scan_folder_summary(
         file_count: scan.file_count,
         partial: scan.partial,
         warnings: scan.warnings,
+        created_at: scan.created_at,
+        modified_at: scan.modified_at,
+        files: scan.files,
+        thumbnail_path: scan.thumbnail_path,
     })
 }
 
@@ -294,6 +302,10 @@ struct FolderScan {
     file_count: usize,
     partial: bool,
     warnings: Vec<String>,
+    created_at: Option<u64>,
+    modified_at: Option<u64>,
+    files: Vec<String>,
+    thumbnail_path: Option<String>,
 }
 
 fn scan_folder(path: &Path) -> Result<FolderScan, AppError> {
@@ -302,6 +314,14 @@ fn scan_folder(path: &Path) -> Result<FolderScan, AppError> {
     let mut file_count = 0usize;
     let mut partial = false;
     let mut warnings = Vec::new();
+    let mut files = Vec::new();
+    let mut thumbnail_path = None;
+
+    let (created_at, modified_at) = path.metadata().ok().map(|m| {
+        let created = m.created().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64);
+        let modified = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64);
+        (created, modified)
+    }).unwrap_or((None, None));
 
     for entry in walkdir::WalkDir::new(path).follow_links(false) {
         let entry = match entry {
@@ -331,6 +351,17 @@ fn scan_folder(path: &Path) -> Result<FolderScan, AppError> {
             .unwrap_or(entry_path)
             .to_string_lossy()
             .to_string();
+            
+        let name_lower = name.to_lowercase();
+        if thumbnail_path.is_none() && (name_lower == "preview.png" || name_lower == "preview.jpg" || name_lower == "thumbnail.png" || name_lower == "thumbnail.jpg") {
+            if !name.contains('/') && !name.contains('\\') {
+                thumbnail_path = Some(entry_path.to_string_lossy().to_string());
+            }
+        }
+        if files.len() < 15 {
+            files.push(name.clone());
+        }
+
         let size = match entry.metadata() {
             Ok(metadata) => metadata.len(),
             Err(error) => {
@@ -349,6 +380,10 @@ fn scan_folder(path: &Path) -> Result<FolderScan, AppError> {
         file_count,
         partial,
         warnings,
+        created_at,
+        modified_at,
+        files,
+        thumbnail_path,
     })
 }
 

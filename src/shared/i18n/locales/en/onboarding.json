@@ -54,6 +54,18 @@
     "preparing": "Preparing library…",
     "progress_label": "Indexing progress",
     "estimating": "Estimating remaining time…",
-    "estimated_remaining": "About {{duration}} remaining"
+    "estimated_remaining": "About {{duration}} remaining",
+    "phases": {
+      "discovering": "1/4 Discovering Folders",
+      "scanning": "2/4 Scanning Metadata",
+      "projecting": "3/4 Syncing Database",
+      "finalizing": "4/4 Finalizing",
+      "completed": "Completed",
+      "failed": "Failed",
+      "starting": "Starting Engine..."
+    },
+    "finishing_up": "Finishing up...",
+    "initializing": "Initializing workspace...",
+    "processing": "Processing {{game}}"
   }
 }

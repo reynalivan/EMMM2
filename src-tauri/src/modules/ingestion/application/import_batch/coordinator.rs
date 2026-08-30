@@ -80,7 +80,7 @@ async fn prepare_import_batch(
 }
 
 async fn reload_created_batch(db: &SqlitePool, batch_id: &str) -> Result<ImportBatch, AppError> {
-    import_batch::get_batch(db, &batch_id)
+    import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| AppError::Internal("Created import batch could not be reloaded".to_string()))
 }

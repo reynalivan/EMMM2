@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../shared/api/tauri/bindings';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle, Globe } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { GameConfig } from '@/entities/game/model/game';
 import { pathsEqual } from '../../shared/lib/pathKey';
@@ -29,7 +29,7 @@ export default function WelcomeScreen({
 }: {
   onComplete: (games: GameConfig[]) => void;
 }) {
-  const { t } = useTranslation(['welcome', 'onboarding']);
+  const { t, i18n } = useTranslation(['welcome', 'onboarding']);
   const [view, setView] = useState<Screen>('welcome');
   const [isScanning, setIsScanning] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
@@ -160,6 +160,49 @@ export default function WelcomeScreen({
       <div className="h-screen w-full bg-transparent overflow-y-auto overflow-x-hidden relative flex flex-col items-center justify-center p-6 z-0">
         <div className="fixed inset-0 z-[-1]">
           <AuroraBackground />
+        </div>
+
+        {/* Language Selector */}
+        <div className="absolute top-6 right-6 z-50">
+          <div className="dropdown dropdown-end">
+            <div
+              tabIndex={0}
+              role="button"
+              className="btn btn-ghost btn-sm btn-circle text-base-content/70 hover:text-base-content"
+              aria-label="Change Language"
+            >
+              <Globe size={18} />
+            </div>
+            <ul
+              tabIndex={0}
+              className="dropdown-content menu bg-base-200/90 backdrop-blur-md rounded-box z-[1] w-32 p-2 shadow-xl border border-base-content/5 mt-2"
+            >
+              <li>
+                <button
+                  onClick={() => i18n.changeLanguage('en')}
+                  className={i18n.language.startsWith('en') ? 'active' : ''}
+                >
+                  English
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => i18n.changeLanguage('id')}
+                  className={i18n.language.startsWith('id') ? 'active' : ''}
+                >
+                  Indonesia
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => i18n.changeLanguage('zh')}
+                  className={i18n.language.startsWith('zh') ? 'active' : ''}
+                >
+                  中文
+                </button>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <motion.div
@@ -310,41 +353,92 @@ export default function WelcomeScreen({
     const rootProgress = diskProgress?.total_units === null ? null : diskProgress;
     const completed = rootProgress?.completed_units ?? progress.completed;
     const total = rootProgress?.total_units ?? progress.total;
-    const percent = Math.round((completed / total) * 100);
+    const percent = Math.min(100, Math.max(0, Math.round((completed / total) * 100))) || 0;
     const remaining = rootProgress?.eta_ms ?? estimatedRemainingMs(progress);
+
+    const phaseLabel = diskProgress?.phase
+      ? {
+          DiscoveringRoots: t('onboarding:indexing.phases.discovering'),
+          ScanningRoots: t('onboarding:indexing.phases.scanning'),
+          Projecting: t('onboarding:indexing.phases.projecting'),
+          Finalizing: t('onboarding:indexing.phases.finalizing'),
+          Completed: t('onboarding:indexing.phases.completed'),
+          Failed: t('onboarding:indexing.phases.failed'),
+        }[diskProgress.phase]
+      : t('onboarding:indexing.phases.starting');
+
     return (
       <div className="min-h-screen bg-base-100 flex items-center justify-center">
-        <div className="w-full max-w-sm px-6 text-center space-y-6">
-          <Loader2 className="w-12 h-12 text-primary animate-spin motion-reduce:animate-none mx-auto" />
-          <div>
-            <h2 className="text-2xl font-semibold">{t('onboarding:indexing.title')}</h2>
-            <p className="text-base-content/60 mt-2">{t('onboarding:indexing.subtitle')}</p>
-          </div>
-          <div className="space-y-2 text-left" aria-live="polite">
-            <div className="flex items-center justify-between text-sm text-base-content/70">
-              <span className="truncate">
-                {diskProgress?.current_root ??
-                  progress.currentGame ??
-                  t('onboarding:indexing.preparing')}
-              </span>
-              <span>{percent}%</span>
+        <div className="w-full max-w-md px-8 text-center">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="relative w-16 h-16 mx-auto mb-6">
+              <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping motion-reduce:animate-none" />
+              <div className="relative bg-base-100 rounded-full w-full h-full flex items-center justify-center shadow-lg border border-base-content/10">
+                <Loader2 className="w-8 h-8 text-primary animate-spin motion-reduce:animate-none" />
+              </div>
             </div>
-            <progress
-              className="progress progress-primary h-3 w-full"
-              value={completed}
-              max={total}
-              role="progressbar"
-              aria-label={t('onboarding:indexing.progress_label')}
-              aria-valuemin={0}
-              aria-valuemax={total}
-              aria-valuenow={completed}
-            />
-            <p className="text-center text-xs text-base-content/50">
+            <h2 className="text-2xl font-bold bg-linear-to-r from-primary to-secondary bg-clip-text text-transparent">
+              {t('onboarding:indexing.title')}
+            </h2>
+            <p className="text-base-content/60 mt-2 text-sm font-medium">
+              {progress.currentGame
+                ? t('onboarding:indexing.processing', { game: progress.currentGame })
+                : t('onboarding:indexing.subtitle')}
+            </p>
+          </div>
+
+          {/* Progress Section */}
+          <div
+            className="bg-base-200/50 rounded-2xl p-6 shadow-sm border border-base-content/5 space-y-4"
+            aria-live="polite"
+          >
+            {/* Phase & Stats */}
+            <div className="flex items-end justify-between text-xs">
+              <div className="text-left">
+                <span className="font-bold text-primary uppercase tracking-wider text-[10px] block mb-1">
+                  {phaseLabel}
+                </span>
+                <span className="text-base-content/60 font-mono">
+                  {completed.toLocaleString()} / {total.toLocaleString()}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-light text-base-content tracking-tighter">
+                  {percent}
+                  <span className="text-sm text-base-content/50 ml-0.5">%</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Custom Animated Bar */}
+            <div className="h-2 w-full bg-base-300/50 rounded-full overflow-hidden shadow-inner relative">
+              <div
+                className="absolute top-0 bottom-0 left-0 bg-primary transition-all duration-300 ease-out"
+                style={{ width: `${percent}%` }}
+              >
+                <div className="absolute inset-0 bg-white/20 animate-pulse motion-reduce:animate-none" />
+              </div>
+            </div>
+
+            {/* Terminal Log View */}
+            <div className="bg-neutral text-neutral-content rounded-lg p-2.5 text-left h-10 overflow-hidden relative shadow-inner">
+              <div className="absolute top-0 left-0 bottom-0 w-1 bg-primary/80" />
+              <div className="text-[10px] font-mono truncate pl-2 opacity-70 flex items-center h-full">
+                <span className="mr-2 text-primary opacity-50">&gt;</span>
+                {diskProgress?.current_root ?? t('onboarding:indexing.initializing')}
+              </div>
+            </div>
+
+            {/* ETA */}
+            <p className="text-center text-[11px] font-medium text-base-content/40 uppercase tracking-wide pt-1">
               {remaining === null
                 ? t('onboarding:indexing.estimating')
-                : t('onboarding:indexing.estimated_remaining', {
-                    duration: formatEstimatedDuration(remaining),
-                  })}
+                : remaining < 2000
+                  ? t('onboarding:indexing.finishing_up')
+                  : t('onboarding:indexing.estimated_remaining', {
+                      duration: formatEstimatedDuration(remaining),
+                    })}
             </p>
           </div>
         </div>
