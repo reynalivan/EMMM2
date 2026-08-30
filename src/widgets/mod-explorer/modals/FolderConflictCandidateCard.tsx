@@ -40,16 +40,20 @@ export default function FolderConflictCandidateCard({
           : 'border-base-content/10 bg-base-200/50'
       }`}
     >
-      <div className="flex items-start gap-3">
-        <label className="cursor-pointer mt-0.5" aria-label={t('conflict_manager.keep_instead')}>
+      <div 
+        className={`flex items-start gap-3 ${!isKeep ? 'cursor-pointer' : ''}`}
+        onClick={!isKeep ? onKeep : undefined}
+      >
+        <div className="mt-0.5">
           <input
             type="radio"
             className={`radio radio-sm ${isKeep ? 'radio-success' : 'radio-neutral/40'}`}
             checked={isKeep}
-            onChange={onKeep}
+            readOnly
             disabled={disabled}
+            aria-label={t('conflict_manager.keep_instead')}
           />
-        </label>
+        </div>
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
@@ -84,9 +88,9 @@ export default function FolderConflictCandidateCard({
       </div>
 
       {!isKeep && (
-        <div className="mt-4 ml-8 pl-4 border-l-2 border-base-content/10 flex flex-col gap-3 pb-1">
+        <div className="mt-4 ml-8 pl-4 border-l-2 border-base-content/10 flex flex-col gap-4 pb-1">
           <label className="form-control max-w-md">
-            <div className="label pt-0 pb-1">
+            <div className="label pt-0 pb-1.5">
               <span className="label-text flex items-center gap-1.5 text-xs font-medium text-warning">
                 <Pencil size={13} aria-hidden />
                 {t('conflict_manager.rename_folder')}
@@ -103,11 +107,10 @@ export default function FolderConflictCandidateCard({
             {error && <span className="mt-1 text-xs text-error">{error}</span>}
           </label>
           
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs font-medium text-base-content/40">ATAU</span>
+          <div>
             <button
               type="button"
-              className="btn btn-xs btn-outline btn-error"
+              className="btn btn-xs btn-outline btn-error opacity-80 hover:opacity-100"
               onClick={(e) => onTrash(e.currentTarget)}
               disabled={disabled}
             >

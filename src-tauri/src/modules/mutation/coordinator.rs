@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::app::runtime::operation_journal::{OperationJournal, OperationStatus};
+use crate::modules::mutation::journal::{OperationJournal, OperationStatus};
 use crate::platform::fs::operation_lock::{OperationLock, OpGuard};
 use crate::shared::errors::AppError;
 

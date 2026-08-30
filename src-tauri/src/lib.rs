@@ -4,7 +4,6 @@ use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
 
-pub mod app;
 pub mod modules;
 pub mod platform;
 pub mod shared;
@@ -249,8 +248,8 @@ pub fn run() {
         .manage(crate::modules::duplicates::DupScanState::new())
         .manage(crate::modules::library::adapters::tauri::mod_bulk_cmds::BulkCancelState::new())
         .manage(crate::platform::fs::operation_lock::OperationLock::new())
-        .manage(crate::app::runtime::operation_journal::OperationJournal::new())
-        .manage(crate::modules::mutation::coordinator::MutationCoordinator::new(std::sync::Arc::new(crate::app::runtime::operation_journal::OperationJournal::new())))
+        .manage(crate::modules::mutation::journal::OperationJournal::new())
+        .manage(crate::modules::mutation::coordinator::MutationCoordinator::new(std::sync::Arc::new(crate::modules::mutation::journal::OperationJournal::new())))
 
         .manage(crate::modules::workspace::application::scanner::master_db::MasterDbCache::default())
         .invoke_handler(builder.invoke_handler())
