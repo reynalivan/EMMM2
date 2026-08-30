@@ -148,7 +148,7 @@ pub async fn commit_import_batch(
     let master_db = crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
-    crate::modules::workspace::application::workspace_mutation::import_commit::commit_import_batch(
+    crate::modules::mutation::application::workspace_mutation::import_commit::commit_import_batch(
         &app,
         pool.inner(),
         input,
@@ -418,7 +418,7 @@ pub async fn apply_object_classification_batch(
         crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(&app).await;
     }
     if disable_after_apply {
-        match crate::modules::workspace::application::workspace_mutation::object_status::disable_object_roots(
+        match crate::modules::mutation::application::workspace_mutation::object_status::disable_object_roots(
             &app,
             pool.inner(),
             &game_id,
@@ -446,12 +446,12 @@ async fn settle_classification_runtime_effects(
     pool: &sqlx::SqlitePool,
     game_id: &str,
 ) {
-    let Some(config) = app.try_state::<crate::modules::system::application::config::ConfigService>() else {
+    let Some(config) = app.try_state::<crate::modules::settings::application::config::ConfigService>() else {
         log::warn!("Classification completed but ConfigService is unavailable");
         return;
     };
     let Some(state) =
-        app.try_state::<crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>()
+        app.try_state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
     else {
         log::warn!("Classification completed but DiskReconcileState is unavailable");
         return;

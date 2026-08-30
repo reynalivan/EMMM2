@@ -110,7 +110,7 @@ pub async fn create_collection(
         None => source_collection_id.is_none(),
     };
     let operation_guard = if captures_current_state {
-        crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(
+        crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
             &app,
             pool.inner(),
             &game_id,
@@ -141,7 +141,7 @@ pub async fn save_current_runtime_as_collection(
     game_id: String,
     name: String,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
         .await?;
     let _guard = op_lock.acquire().await?;
     Ok(collection::create_collection(
@@ -162,9 +162,9 @@ pub async fn save_current_runtime_as_collection(
 pub async fn apply_collection(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     watcher_state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
-    disk_reconcile: State<'_, crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     collection_id: String,
@@ -183,7 +183,7 @@ pub async fn apply_collection(
     let mods_path = game.mod_path.clone();
     let preflight_paths =
         collection_preflight_paths(pool.inner(), &collection_id, &mods_path).await?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -232,7 +232,7 @@ pub async fn replace_collection_with_current_state(
     game_id: String,
     collection_id: String,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
         .await?;
     let operation_guard = op_lock.acquire().await?;
     let result = collection::replace_collection_with_current_state(
@@ -250,13 +250,13 @@ pub async fn replace_collection_with_current_state(
 pub async fn save_collection_changes(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     collection_id: String,
     confirm_remove_missing: bool,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
         .await?;
     let _guard = op_lock.acquire().await?;
     let mods_path = config
@@ -312,13 +312,13 @@ pub async fn clear_last_changes(
 pub async fn restore_last_changes(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     watcher_state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
-    disk_reconcile: State<'_, crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
 ) -> Result<ApplyResult, AppError> {
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
         .await?;
     let mutation_lease = disk_reconcile
         .acquire_mutation_lease(&game_id, op_lock.inner())
@@ -356,7 +356,7 @@ pub async fn restore_last_changes(
     )
     .await?;
     drop(mutation_lease);
-    let reconcile = crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+    let reconcile = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
         &app,
         pool.inner(),
         &game_id,
@@ -367,9 +367,9 @@ pub async fn restore_last_changes(
 
 fn settle_restore_reconcile(
     mut result: ApplyResult,
-    reconcile: Result<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult, AppError>,
+    reconcile: Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError>,
 ) -> ApplyResult {
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(reconcile);
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(reconcile);
     result.sync_warning = settlement.sync_warning;
     result
 }
@@ -390,7 +390,7 @@ pub async fn delete_collection(
 #[specta::specta]
 pub async fn get_collection_preview(
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     collection_id: String,
     game_id: String,
 ) -> Result<CollectionPreview, AppError> {
@@ -415,7 +415,7 @@ pub async fn get_collection_preview(
 #[specta::specta]
 pub async fn preview_apply_collection(
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     game_id: String,
     collection_id: String,
 ) -> Result<ApplyPreview, AppError> {
@@ -450,9 +450,9 @@ pub async fn app_startup_check(
 pub async fn resolve_recovery_task(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     watcher_state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
-    disk_reconcile: State<'_, crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     task_id: String,
     action: crate::modules::workspace::domain::task::RecoveryAction,
@@ -473,7 +473,7 @@ pub async fn resolve_recovery_task(
     let task = crate::modules::workspace::adapters::outbound::sqlite::task::get_task_by_id(pool.inner(), &task_id)
         .await?
         .ok_or_else(|| AppError::Validation(format!("Task {task_id} not found")))?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         &app,
         pool.inner(),
         &task.game_id,
@@ -501,7 +501,7 @@ pub async fn resolve_recovery_task(
 mod tests {
     use crate::modules::collections::domain::collection::ApplyResult;
     use crate::shared::errors::AppError;
-    use crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
+    use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
 
     #[test]
     fn normal_apply_command_has_no_fallible_reconcile_after_service_commit() {

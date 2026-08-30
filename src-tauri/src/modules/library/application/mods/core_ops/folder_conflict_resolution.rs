@@ -9,8 +9,8 @@ use specta::Type;
 use super::naming::validate_folder_base_name;
 use crate::modules::workspace::domain::normalizer::is_disabled_folder;
 use crate::shared::errors::AppError;
-use crate::modules::workspace::application::disk_reconcile::disk_snapshot::collect_disk_identity_census;
-use crate::modules::workspace::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census;
+use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_disk_identity_census;
+use crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
 
 /// One requested new base name for every candidate in a conflict group.
@@ -312,7 +312,7 @@ mod tests {
 
     fn conflict_group(
         root: &Path,
-    ) -> crate::modules::workspace::application::disk_reconcile::types::FolderNameConflictGroup {
+    ) -> crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup {
         detect_folder_name_conflicts_from_census(
             "game",
             &collect_disk_identity_census(root).unwrap(),

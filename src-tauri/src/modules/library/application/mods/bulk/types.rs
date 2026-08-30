@@ -26,7 +26,7 @@ pub struct BulkResult {
     pub failures: Vec<BulkActionError>,
     pub collection_impact: CollectionReferenceImpact,
     pub path_rewrites: Vec<WorkspacePathRewrite>,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 impl BulkResult {

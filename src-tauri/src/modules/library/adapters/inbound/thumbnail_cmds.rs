@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
@@ -38,7 +38,7 @@ pub async fn delete_mod_thumbnail(
 
     let path = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [path.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,

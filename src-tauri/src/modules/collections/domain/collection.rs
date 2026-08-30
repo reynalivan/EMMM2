@@ -165,7 +165,7 @@ pub struct ApplyResult {
     pub partial_apply: bool,
     pub skipped_missing_paths: Vec<String>,
     pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]

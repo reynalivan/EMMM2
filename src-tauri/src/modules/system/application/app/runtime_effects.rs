@@ -1,7 +1,7 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
-use crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState;
-use crate::modules::workspace::application::disk_reconcile::types::PendingRuntimeEffects;
+use crate::modules::settings::application::config::ConfigService;
+use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
+use crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects;
 use std::future::Future;
 
 async fn retry_once<T, F, Fut>(mut operation: F) -> Result<T, AppError>
@@ -127,8 +127,8 @@ async fn finalize_runtime_side_effects_once(
 mod tests {
     use super::{retry_once, settle_committed_runtime_effects_with};
     use crate::shared::errors::AppError;
-    use crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState;
-    use crate::modules::workspace::application::disk_reconcile::types::PendingRuntimeEffects;
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
+    use crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects;
     use std::sync::Arc;
     use tokio::sync::Barrier;
 

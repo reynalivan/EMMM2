@@ -1,7 +1,7 @@
 use crate::shared::path_key::folder_path_key;
 use crate::shared::errors::AppError;
 use crate::modules::games::domain::models::GameType;
-use crate::modules::system::application::config::{ConfigService, GameConfig};
+use crate::modules::settings::application::config::{ConfigService, GameConfig};
 use crate::modules::games::application::game::validator;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;

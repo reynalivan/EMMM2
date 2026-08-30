@@ -1,5 +1,5 @@
 use super::*;
-use crate::modules::workspace::application::scanner::deep_matcher::{Evidence, Reason};
+use crate::modules::matching::application::deep_matcher::{Evidence, Reason};
 
 fn candidate(name: &str, confidence: Confidence) -> Candidate {
     Candidate {

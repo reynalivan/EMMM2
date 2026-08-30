@@ -106,7 +106,7 @@ pub struct ExtractionResult {
     pub error: Option<String>,
     pub aborted: bool,
     pub collisions: Vec<crate::modules::workspace::application::scanner::core::types::CollisionInfo>,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 /// Read-only import staging outcome. The source archive is never moved or deleted.

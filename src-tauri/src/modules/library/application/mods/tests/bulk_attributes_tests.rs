@@ -166,7 +166,7 @@ async fn bulk_safety_expands_nested_parent_and_supports_unsafe_to_safe_reversal(
         .unwrap();
     }
     let config =
-        crate::modules::system::application::config::ConfigService::new_for_test_async(context.pool.clone()).await;
+        crate::modules::settings::application::config::ConfigService::new_for_test_async(context.pool.clone()).await;
     let selected = crate::platform::fs::guard::validate_paths(
         &config,
         "g-safety",

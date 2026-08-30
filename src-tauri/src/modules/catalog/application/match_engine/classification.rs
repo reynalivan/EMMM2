@@ -2,11 +2,11 @@ use crate::modules::ingestion::application::import_batch::types::{
     CategorySuggestion, ConfidenceTier, MatchEvidence, StableCategory,
 };
 use crate::modules::workspace::application::scanner::core::walker::{scan_folder_content, ModCandidate};
-use crate::modules::workspace::application::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig;
-use crate::modules::workspace::application::scanner::deep_matcher::analysis::content::PreparedTokenFilters;
-use crate::modules::workspace::application::scanner::deep_matcher::models::result_summary::score_to_percentage;
-use crate::modules::workspace::application::scanner::deep_matcher::StagedMatchResult;
-use crate::modules::workspace::application::scanner::deep_matcher::{match_folder_phased, MasterDb};
+use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
+use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
+use crate::modules::matching::application::deep_matcher::models::result_summary::score_to_percentage;
+use crate::modules::matching::application::deep_matcher::StagedMatchResult;
+use crate::modules::matching::application::deep_matcher::{match_folder_phased, MasterDb};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;

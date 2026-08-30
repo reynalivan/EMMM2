@@ -6,7 +6,7 @@ use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
 use crate::modules::library::application::mods::core_ops::FolderConflictRename;
 
@@ -25,14 +25,14 @@ pub struct FolderConflictSummary {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct FolderConflictMutationResult {
-    pub reconcile: Option<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult>,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub reconcile: Option<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 fn settle_committed_conflict_trash(
-    outcome: Result<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult, AppError>,
+    outcome: Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError>,
 ) -> FolderConflictMutationResult {
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(outcome);
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(outcome);
     FolderConflictMutationResult {
         reconcile: settlement.reconcile,
         sync_warning: settlement.sync_warning,
@@ -85,12 +85,12 @@ pub async fn resolve_folder_name_conflict(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
-    disk_reconcile: State<'_, crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     group_id: String,
     renames: Vec<FolderConflictRename>,
-) -> Result<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
     let paths = renames
         .iter()
         .map(|rename| rename.path.clone())
@@ -137,11 +137,11 @@ pub async fn resolve_folder_name_conflict(
                 .to_string_lossy()
                 .to_string();
             let kind = if Path::new(&from).components().count() == 1 {
-                crate::modules::workspace::application::disk_reconcile::types::DiskReconcilePathKind::Object
+                crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathKind::Object
             } else {
-                crate::modules::workspace::application::disk_reconcile::types::DiskReconcilePathKind::Mod
+                crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathKind::Mod
             };
-            Ok(crate::modules::workspace::application::disk_reconcile::types::DiskReconcilePathUpdate { from, to, kind })
+            Ok(crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathUpdate { from, to, kind })
         })
         .collect::<Result<Vec<_>, AppError>>()
     {
@@ -156,7 +156,7 @@ pub async fn resolve_folder_name_conflict(
         }
     };
     let mut result =
-        match crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+        match crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
             &app,
             pool.inner(),
             &game_id,
@@ -186,7 +186,7 @@ pub async fn trash_folder_conflict_candidate(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
-    disk_reconcile: State<'_, crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, OperationLock>,
     game_id: String,
     path: String,
@@ -204,12 +204,12 @@ pub async fn trash_folder_conflict_candidate(
     let census_candidate_path = candidate_path.clone();
     let belongs_to_active_conflict = tokio::task::spawn_blocking(move || {
         let census =
-            crate::modules::workspace::application::disk_reconcile::disk_snapshot::collect_disk_identity_census(
+            crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_disk_identity_census(
                 &census_root,
             )
             .map_err(|error| AppError::Internal(error.into_message()))?;
         Ok::<_, AppError>(
-            crate::modules::workspace::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census(
+            crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census(
                 &census_game_id,
                 &census,
             )
@@ -233,7 +233,7 @@ pub async fn trash_folder_conflict_candidate(
     })
     .await??;
     Ok(settle_committed_conflict_trash(
-        crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
             &app,
             pool.inner(),
             &game_id,
@@ -389,7 +389,7 @@ pub async fn list_ignored_object_conflicts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
+    use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
 
     #[test]
     fn conflict_membership_accepts_ordinary_and_canonical_path_spellings() {

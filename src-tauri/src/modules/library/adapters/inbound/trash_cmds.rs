@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
 use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::library::application::mods::trash;
@@ -22,7 +22,7 @@ pub async fn delete_mod(
     // absolute path the caller sent.
     let validated = validate_path(&config, &game_id, &path)?;
     let preflight_paths = [validated.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -36,8 +36,8 @@ pub async fn delete_mod(
 
     // Convergence: reconcile the deleted root so DB matches disk even if a
     // manual sync step missed a case.
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
             &app,
             pool.inner(),
             &game_id,

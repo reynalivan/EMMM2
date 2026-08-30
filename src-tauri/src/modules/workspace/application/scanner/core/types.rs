@@ -1,4 +1,4 @@
-use crate::modules::workspace::application::scanner::deep_matcher::{
+use crate::modules::matching::application::deep_matcher::{
     Candidate, Confidence, MatchStatus, StagedMatchResult,
 };
 use serde::{Deserialize, Serialize};

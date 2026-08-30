@@ -104,27 +104,27 @@ async fn process_event_loop(
     // drive reconnect, webview reload, or explicit stop/start). Verify the
     // whole source before trusting the first scoped event from this session.
     let disk_reconcile_state =
-        app.state::<crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>();
-    let config = app.state::<crate::modules::system::application::config::ConfigService>();
+        app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
+    let config = app.state::<crate::modules::settings::application::config::ConfigService>();
     let operation_lock = app.state::<crate::platform::fs::operation_lock::OperationLock>();
-    let session_recovery = crate::modules::workspace::application::disk_reconcile::orchestrator::reconcile_disk_state(
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileContext {
+    let session_recovery = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: &pool,
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: suppressor.clone(),
             operation_lock: operation_lock.inner(),
             progress_reporter: Some(std::sync::Arc::new(
-                crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),
                     game_id.clone(),
-                    crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
+                    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
                 ),
             )),
         },
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
             game_id.clone(),
-            crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
+            crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
             Vec::new(),
             true,
         )
@@ -177,26 +177,26 @@ async fn process_event_loop(
         }
 
         let changed_paths =
-            crate::modules::workspace::application::disk_reconcile::watcher_batch::collect_changed_paths(&batch);
+            crate::modules::reconciliation::application::disk_reconcile::watcher_batch::collect_changed_paths(&batch);
         let disk_reconcile_state =
-            app.state::<crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>();
-        let config = app.state::<crate::modules::system::application::config::ConfigService>();
+            app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
+        let config = app.state::<crate::modules::settings::application::config::ConfigService>();
         let operation_lock =
             app.state::<crate::platform::fs::operation_lock::OperationLock>();
-        let context = crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileContext {
+        let context = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: &pool,
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: suppressor.clone(),
             operation_lock: operation_lock.inner(),
             progress_reporter: Some(std::sync::Arc::new(
-                crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),
                     game_id.clone(),
                     if events_lost {
-                        crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::ManualRepair
+                        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair
                     } else {
-                        crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::WatcherBatch
+                        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::WatcherBatch
                     },
                 ),
             )),
@@ -204,11 +204,11 @@ async fn process_event_loop(
 
         // Disk Reconcile only. Watcher must never invoke the Deep Match Scanner pipeline.
         let result = if events_lost {
-            crate::modules::workspace::application::disk_reconcile::orchestrator::reconcile_disk_state(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
                 context,
-                crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
                     game_id.clone(),
-                    crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
+                    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
                     Vec::new(),
                     true,
                 )
@@ -216,7 +216,7 @@ async fn process_event_loop(
             )
             .await
         } else {
-            crate::modules::workspace::application::disk_reconcile::orchestrator::reconcile_disk_state_from_watcher_batch(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_from_watcher_batch(
                 context,
                 game_id.clone(),
                 changed_paths,

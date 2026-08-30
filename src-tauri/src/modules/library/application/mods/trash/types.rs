@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DeleteModResult {
     pub collection_impact: CollectionReferenceImpact,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 #[cfg(test)]
@@ -18,8 +18,8 @@ mod tests {
         let result = DeleteModResult {
             collection_impact: CollectionReferenceImpact::default(),
             sync_warning: Some(
-                crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning {
-                    kind: crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarningKind::ReconcileFailed,
+                crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning {
+                    kind: crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind::ReconcileFailed,
                     message: "retry projection".to_string(),
                 },
             ),

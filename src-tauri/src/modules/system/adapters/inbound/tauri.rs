@@ -45,7 +45,7 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn reset_database(
     app: tauri::AppHandle,
-    config: tauri::State<'_, crate::modules::system::application::config::ConfigService>,
+    config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<(), AppError> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
@@ -68,18 +68,18 @@ mod tests;
 
 // --- From commands/app/settings_cmds.rs ---
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::{AppSettings, ConfigService};
+use crate::modules::settings::application::config::{AppSettings, ConfigService};
 use tauri::{Emitter, State};
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct SaveSettingsResult {
     pub settings: AppSettings,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 fn completed_settings_save(
     settings: AppSettings,
-    sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 ) -> SaveSettingsResult {
     SaveSettingsResult {
         settings,
@@ -95,7 +95,7 @@ pub async fn get_settings(
     pool: State<'_, sqlx::SqlitePool>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
 ) -> Result<AppSettings, AppError> {
     let _activation_guard = disk_reconcile_state.activation_guard().await;
@@ -107,7 +107,7 @@ pub async fn get_settings(
         // Frontend store initialization fans out into workspace, collection,
         // and runtime queries. Hold that fan-out until startup recovery has a
         // terminal result so none of those caches can race the disk scan.
-        let outcome = crate::modules::workspace::application::disk_reconcile::emit::ensure_initial_disk_recovery(
+        let outcome = crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_disk_recovery(
             &app,
             pool.inner(),
             disk_reconcile_state.inner(),
@@ -115,11 +115,11 @@ pub async fn get_settings(
         )
         .await;
         match outcome {
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
                 result,
             ) => {
                 if result.status
-                    != crate::modules::workspace::application::disk_reconcile::types::DiskReconcileStatus::Applied
+                    != crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileStatus::Applied
                 {
                     if let Err(error) = app.emit("disk_reconcile:result", result) {
                         log::warn!(
@@ -128,7 +128,7 @@ pub async fn get_settings(
                     }
                 }
             }
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
                 error,
             ) => {
                 return Err(AppError::Io(format!(
@@ -151,7 +151,7 @@ pub async fn save_settings(
     pool: State<'_, sqlx::SqlitePool>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
 ) -> Result<SaveSettingsResult, AppError> {
     let _activation_guard = disk_reconcile_state.activation_guard().await;
@@ -165,8 +165,8 @@ pub async fn save_settings(
     let mut sync_warning = None;
     if saved.safety.keywords != previous.safety.keywords {
         if let Some(game_id) = saved.active_game_id.as_deref() {
-            let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-                crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+            let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+                crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
                     &app,
                     pool.inner(),
                     game_id,
@@ -197,7 +197,7 @@ pub async fn set_active_game(
     pool: State<'_, sqlx::SqlitePool>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
 ) -> Result<(), AppError> {
     let _activation_guard = disk_reconcile_state.activation_guard().await;
@@ -207,7 +207,7 @@ pub async fn set_active_game(
         // DB projection that may predate changes made while the game was idle.
         disk_reconcile_state.reset_initial_recovery(game_id);
         let recovery_result =
-            match crate::modules::workspace::application::disk_reconcile::emit::ensure_initial_disk_recovery(
+            match crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_disk_recovery(
                 &app,
                 pool.inner(),
                 disk_reconcile_state.inner(),
@@ -215,10 +215,10 @@ pub async fn set_active_game(
             )
             .await
             {
-                crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
                     result,
                 ) => Ok(result),
-                crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
                     error,
                 ) => Err(AppError::Io(format!(
                     "Disk recovery failed while activating game '{game_id}': {error}"
@@ -231,7 +231,7 @@ pub async fn set_active_game(
                 // no stale-snapshot rollback at all.
                 state.set_active_game(Some(game_id.to_string()))?;
                 if result.status
-                    != crate::modules::workspace::application::disk_reconcile::types::DiskReconcileStatus::Applied
+                    != crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileStatus::Applied
                 {
                     if let Err(error) = app.emit("disk_reconcile:result", result) {
                         log::warn!(
@@ -287,9 +287,9 @@ pub async fn clear_old_thumbnails() -> Result<u64, AppError> {
 #[cfg(test)]
 mod tests {
     use super::completed_settings_save;
-    use crate::modules::system::application::config::AppSettings;
-    use crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile;
-    use crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
+    use crate::modules::settings::application::config::AppSettings;
+    use crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile;
+    use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
 
     #[test]
     fn persisted_settings_remain_success_when_follow_up_reconcile_fails() {
@@ -416,7 +416,7 @@ pub async fn delete_custom_theme(app_handle: AppHandle, id: String) -> Result<()
 
 // --- From commands/app/update_cmds.rs ---
 use crate::shared::errors::AppError;
-use crate::modules::system::application::update::{asset_fetch, metadata_sync};
+use crate::modules::updates::application::update::{asset_fetch, metadata_sync};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
 

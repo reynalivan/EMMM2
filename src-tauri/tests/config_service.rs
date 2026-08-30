@@ -1,4 +1,4 @@
-use emmm_lib::modules::system::application::config::ConfigService;
+use emmm_lib::modules::settings::application::config::ConfigService;
 use sqlx::SqlitePool;
 
 mod common;
@@ -59,7 +59,7 @@ async fn save_settings_can_overwrite_existing() {
 // Test that games persist through save_settings
 #[tokio::test(flavor = "multi_thread")]
 async fn test_games_persist_in_db() {
-    use emmm_lib::modules::system::application::config::GameConfig;
+    use emmm_lib::modules::settings::application::config::GameConfig;
     use std::path::PathBuf;
 
     let pool = setup_pool().await;

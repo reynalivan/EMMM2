@@ -5,7 +5,7 @@ use crate::shared::errors::ScannerError;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::modules::workspace::application::scanner::deep_matcher;
+use crate::modules::matching::application::deep_matcher;
 
 /// Parsed MasterDB per game type, so a 5 MB JSON is read and parsed once.
 #[derive(Default)]

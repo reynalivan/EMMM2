@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct CanonicalIdentity {
     pub entry_key: String,
     pub name: String,
-    pub entry_kind: crate::modules::workspace::application::scanner::deep_matcher::EntryKind,
+    pub entry_kind: crate::modules::matching::application::deep_matcher::EntryKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]

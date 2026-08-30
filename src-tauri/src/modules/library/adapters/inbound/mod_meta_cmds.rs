@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
 use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::library::application::mods::{info_json, metadata};
@@ -43,10 +43,10 @@ pub async fn toggle_mod_safe(
     game_id: String,
     folder_path: String,
     safe: bool,
-) -> Result<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationResult, AppError> {
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -58,8 +58,8 @@ pub async fn toggle_mod_safe(
     metadata::toggle_mod_safe(pool.inner(), &game_id, &folder, safe).await?;
     drop(suppression);
     drop(lock);
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
             &app,
             pool.inner(),
             &game_id,
@@ -68,7 +68,7 @@ pub async fn toggle_mod_safe(
         .await,
     );
     Ok(
-        crate::modules::workspace::application::disk_reconcile::types::CommittedMutationResult {
+        crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult {
             sync_warning: settlement.sync_warning,
         },
     )
@@ -123,7 +123,7 @@ pub async fn update_mod_info(
     }
     let path = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [path.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -142,7 +142,7 @@ pub async fn update_mod_info(
     let info = info_json::update_info_json(&path, &update)?;
     drop(guard);
     drop(lock);
-    let reconcile = crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+    let reconcile = crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
         &app,
         pool.inner(),
         &game_id,
@@ -165,7 +165,7 @@ pub async fn update_mod_info(
         let rollback = restore_info_json(&info_path, previous.as_deref());
         drop(rollback_guard);
         drop(rollback_lock);
-        let repair = crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+        let repair = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
             &app,
             pool.inner(),
             &game_id,
@@ -197,7 +197,7 @@ pub async fn set_mod_category(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     disk_reconcile_state: tauri::State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
     op_lock: tauri::State<'_, OperationLock>,
     game_id: String,
@@ -206,7 +206,7 @@ pub async fn set_mod_category(
 ) -> Result<(), AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -246,7 +246,7 @@ pub async fn set_object_mods_category(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     disk_reconcile_state: tauri::State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
     op_lock: tauri::State<'_, OperationLock>,
     game_id: String,
@@ -254,7 +254,7 @@ pub async fn set_object_mods_category(
     category: String,
 ) -> Result<usize, AppError> {
     let preflight_paths = [object_absolute_path(pool.inner(), &game_id, &object_id).await?];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -325,7 +325,7 @@ pub async fn move_mods_to_object(
     op_lock: tauri::State<'_, OperationLock>,
     disk_reconcile_state: tauri::State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
     watcher: tauri::State<'_, WatcherState>,
     input: MoveModsToObjectInput,
@@ -341,7 +341,7 @@ pub async fn move_mods_to_object(
         .collect::<Vec<_>>();
     preflight_paths
         .push(object_absolute_path(pool.inner(), &input.game_id, &input.target_object_id).await?);
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &input.game_id,
@@ -388,8 +388,8 @@ pub async fn move_mods_to_object(
         }
     }
     // Quiet: the move's caller publishes its own refresh from the result.
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile_with_path_hints_under_lease(
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile_with_path_hints_under_lease(
             &app,
             pool.inner(),
             &input.game_id,

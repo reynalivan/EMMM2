@@ -1,5 +1,5 @@
 // use super::*;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 
 use std::fs;
 use std::path::{Path, PathBuf};

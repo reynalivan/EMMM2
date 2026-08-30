@@ -10,7 +10,7 @@ use crate::modules::workspace::domain::workspace::{
     WorkspaceSwitchInput, WorkspaceSwitchResolution, WorkspaceSwitchResult, WorkspaceSwitchStatus,
     WorkspaceSwitchTargetKind,
 };
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
 fn map_duplicates(

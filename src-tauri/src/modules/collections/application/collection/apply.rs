@@ -13,7 +13,7 @@ pub struct ApplyCollectionRequest<'a> {
     pub mods_path: std::path::PathBuf,
     pub suppressor: std::sync::Arc<crate::modules::workspace::application::scanner::watcher::WatcherSuppressor>,
     pub ignore_missing: bool,
-    pub settings: crate::modules::system::application::config::AppSettings,
+    pub settings: crate::modules::settings::application::config::AppSettings,
 }
 
 #[cfg(test)]

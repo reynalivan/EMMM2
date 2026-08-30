@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
 use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
@@ -70,7 +70,7 @@ async fn ensure_path_can_be_opened(
     game_id: &str,
     path: &Path,
 ) -> Result<(), AppError> {
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_open_path_preflight(app, game_id, path).await
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_open_path_preflight(app, game_id, path).await
 }
 
 async fn resolve_and_heal_db_path(
@@ -135,7 +135,7 @@ pub async fn rename_mod_folder(
 ) -> Result<RenameResult, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -157,8 +157,8 @@ pub async fn rename_mod_folder(
 
     // Convergence: scoped disk reconcile guarantees DB matches disk even if a
     // manual sync step missed a case.
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
             &app,
             pool.inner(),
             &game_id,

@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
 use crate::platform::fs::operation_lock::OperationLock;
 use crate::platform::images::thumbnail_cache::ThumbnailCache;
@@ -21,7 +21,7 @@ pub async fn update_mod_thumbnail(
 ) -> Result<String, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -53,7 +53,7 @@ pub async fn paste_thumbnail(
 ) -> Result<String, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,

@@ -3,7 +3,7 @@
 //! Tauri commands for hotkey management — bindings, conflicts, and config updates.
 
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::modules::automation::application::hotkeys::manager::HotkeyManager;
 use tauri::State;
 

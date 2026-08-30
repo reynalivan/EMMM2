@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::library::application::mods::bulk;
 use crate::modules::library::application::mods::info_json;
@@ -33,7 +33,7 @@ impl BulkCancelState {
 
 fn apply_committed_reconcile(
     result: &mut bulk::BulkResult,
-    settlement: crate::modules::workspace::application::disk_reconcile::emit::CommittedReconcileSettlement,
+    settlement: crate::modules::reconciliation::application::disk_reconcile::emit::CommittedReconcileSettlement,
 ) {
     if let Some(reconcile) = settlement.reconcile {
         result
@@ -68,7 +68,7 @@ pub async fn bulk_toggle_mods(
 ) -> Result<bulk::BulkResult, AppError> {
     // Security validation for all paths
     crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -80,8 +80,8 @@ pub async fn bulk_toggle_mods(
     let mut result = bulk::bulk_toggle(&app, &state, paths, enable, cancel_state.begin()).await?;
     drop(lock);
     if !result.success.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,
@@ -111,7 +111,7 @@ pub async fn bulk_delete_mods(
     // inside, and the game whose index rows may be pruned. Optional, it let a
     // caller skip containment entirely.
     crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -123,8 +123,8 @@ pub async fn bulk_delete_mods(
     let mut result = bulk::bulk_delete(&app, &state, paths, cancel_state.begin()).await?;
     drop(lock);
     if !result.success.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,
@@ -156,7 +156,7 @@ pub async fn bulk_update_info(
         ));
     }
     let validated = crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -171,8 +171,8 @@ pub async fn bulk_update_info(
     drop(suppression);
     drop(lock);
     if !result.success.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,
@@ -200,7 +200,7 @@ pub async fn bulk_set_mod_safety(
     safe: bool,
 ) -> Result<bulk::BulkResult, AppError> {
     let validated = crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -221,8 +221,8 @@ pub async fn bulk_set_mod_safety(
     drop(lock);
 
     if !result.success.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,
@@ -250,7 +250,7 @@ pub async fn bulk_toggle_favorite(
 ) -> Result<bulk::BulkResult, AppError> {
     let validated =
         crate::platform::fs::guard::validate_paths(&config, &game_id, &folder_paths)?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -266,8 +266,8 @@ pub async fn bulk_toggle_favorite(
     drop(suppression);
     drop(lock);
     if !result.success.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,
@@ -295,7 +295,7 @@ pub async fn bulk_pin_mods(
 ) -> Result<bulk::BulkResult, AppError> {
     let validated =
         crate::platform::fs::guard::validate_paths(&config, &game_id, &folder_paths)?;
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -310,8 +310,8 @@ pub async fn bulk_pin_mods(
     drop(suppression);
     drop(lock);
     if !result.success.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,

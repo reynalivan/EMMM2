@@ -6,7 +6,7 @@ use super::naming::{
 };
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::ValidatedPath;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub struct RenameResult {
     pub new_path: String,
     pub new_name: String,
     pub collection_impact: CollectionReferenceImpact,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 pub async fn rename_mod_folder_inner(

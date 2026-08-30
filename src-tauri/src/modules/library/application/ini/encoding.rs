@@ -7,6 +7,8 @@ const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
 pub enum IniEncoding {
     Utf8,
     ShiftJis,
+    Gbk,
+    Utf16Le,
     LossyUtf8,
 }
 
@@ -33,6 +35,25 @@ pub fn decode_ini_source(bytes: &[u8]) -> DecodedIni {
         bytes
     };
 
+    let utf16_bom = bytes.starts_with(&[0xFF, 0xFE]);
+    let content_utf16 = if utf16_bom {
+        &bytes[2..]
+    } else {
+        bytes
+    };
+
+    if utf16_bom {
+        let (decoded, _encoding, had_errors) = encoding_rs::UTF_16LE.decode(content_utf16);
+        if !had_errors {
+            return DecodedIni {
+                text: decoded.into_owned(),
+                had_bom: utf16_bom,
+                clean: true,
+                encoding: IniEncoding::Utf16Le,
+            };
+        }
+    }
+
     match String::from_utf8(content.to_vec()) {
         Ok(text) => DecodedIni {
             text,
@@ -48,6 +69,26 @@ pub fn decode_ini_source(bytes: &[u8]) -> DecodedIni {
                     had_bom,
                     clean: true,
                     encoding: IniEncoding::ShiftJis,
+                };
+            }
+
+            let (decoded, _encoding, had_errors) = encoding_rs::GBK.decode(content);
+            if !had_errors {
+                return DecodedIni {
+                    text: decoded.into_owned(),
+                    had_bom,
+                    clean: true,
+                    encoding: IniEncoding::Gbk,
+                };
+            }
+
+            let (decoded, _encoding, had_errors) = encoding_rs::UTF_16LE.decode(content);
+            if !had_errors {
+                return DecodedIni {
+                    text: decoded.into_owned(),
+                    had_bom: false,
+                    clean: true,
+                    encoding: IniEncoding::Utf16Le,
                 };
             }
 
@@ -135,6 +176,24 @@ pub fn encode_ini_text(
             }
             encoded.into_owned()
         }
+        IniEncoding::Gbk => {
+            let (encoded, _encoding, had_errors) = encoding_rs::GBK.encode(text);
+            if had_errors {
+                return Err(AppError::Validation(
+                    "Edited text contains characters that GBK cannot represent".to_string(),
+                ));
+            }
+            encoded.into_owned()
+        }
+        IniEncoding::Utf16Le => {
+            let (encoded, _encoding, had_errors) = encoding_rs::UTF_16LE.encode(text);
+            if had_errors {
+                return Err(AppError::Validation(
+                    "Edited text contains characters that UTF-16LE cannot represent".to_string(),
+                ));
+            }
+            encoded.into_owned()
+        }
         IniEncoding::LossyUtf8 => {
             return Err(AppError::Validation(
                 "Cannot encode an INI decoded with data loss".to_string(),
@@ -143,9 +202,15 @@ pub fn encode_ini_text(
     };
 
     if had_bom {
-        let mut with_bom = UTF8_BOM.to_vec();
-        with_bom.append(&mut output);
-        return Ok(with_bom);
+        if encoding == IniEncoding::Utf16Le {
+            let mut with_bom = vec![0xFF, 0xFE];
+            with_bom.append(&mut output);
+            return Ok(with_bom);
+        } else {
+            let mut with_bom = UTF8_BOM.to_vec();
+            with_bom.append(&mut output);
+            return Ok(with_bom);
+        }
     }
     Ok(output)
 }

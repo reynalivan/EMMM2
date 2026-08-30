@@ -116,7 +116,7 @@ pub fn resolve_destination_candidates(
     }
 
     if let Some(canonical) = context.canonical.filter(|identity| {
-        identity.entry_kind == crate::modules::workspace::application::scanner::deep_matcher::EntryKind::Canonical
+        identity.entry_kind == crate::modules::matching::application::deep_matcher::EntryKind::Canonical
     }) {
         if !context.existing.iter().any(|target| {
             target.canonical_entry_key.as_deref() == Some(canonical.entry_key.as_str())

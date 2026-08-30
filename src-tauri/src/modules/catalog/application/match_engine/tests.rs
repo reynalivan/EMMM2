@@ -112,12 +112,12 @@ fn create_folder_is_offered_only_for_canonical_identity() {
     let taxonomy = CanonicalIdentity {
         entry_key: "weapon".to_string(),
         name: "Weapon".to_string(),
-        entry_kind: crate::modules::workspace::application::scanner::deep_matcher::EntryKind::Taxonomy,
+        entry_kind: crate::modules::matching::application::deep_matcher::EntryKind::Taxonomy,
     };
     let canonical = CanonicalIdentity {
         entry_key: "ayaka".to_string(),
         name: "Ayaka".to_string(),
-        entry_kind: crate::modules::workspace::application::scanner::deep_matcher::EntryKind::Canonical,
+        entry_kind: crate::modules::matching::application::deep_matcher::EntryKind::Canonical,
     };
 
     let taxonomy_result = resolve_destination_candidates(DestinationContext {

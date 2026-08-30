@@ -99,12 +99,12 @@ macro_rules! emmm_collect_commands {
             modules::ingestion::adapters::inbound::tauri::preview_object_classification_batch,
             modules::ingestion::adapters::inbound::tauri::apply_object_classification_batch,
             modules::ingestion::adapters::inbound::tauri::preview_relocation_batch,
-            crate::modules::system::adapters::inbound::settings_cmds::get_settings,
-            crate::modules::system::adapters::inbound::settings_cmds::save_settings,
-            crate::modules::system::adapters::inbound::settings_cmds::set_active_game,
-            crate::modules::system::adapters::inbound::settings_cmds::set_auto_close_launcher,
-            crate::modules::system::adapters::inbound::settings_cmds::run_maintenance,
-            crate::modules::system::adapters::inbound::settings_cmds::clear_old_thumbnails,
+            crate::modules::settings::adapters::inbound::settings_cmds::get_settings,
+            crate::modules::settings::adapters::inbound::settings_cmds::save_settings,
+            crate::modules::settings::adapters::inbound::settings_cmds::set_active_game,
+            crate::modules::settings::adapters::inbound::settings_cmds::set_auto_close_launcher,
+            crate::modules::settings::adapters::inbound::settings_cmds::run_maintenance,
+            crate::modules::settings::adapters::inbound::settings_cmds::clear_old_thumbnails,
             crate::modules::system::adapters::inbound::theme_cmds::list_custom_themes,
             crate::modules::system::adapters::inbound::theme_cmds::load_custom_theme,
             crate::modules::system::adapters::inbound::theme_cmds::save_custom_theme,
@@ -132,20 +132,20 @@ macro_rules! emmm_collect_commands {
             modules::collections::adapters::inbound::tauri::get_collection_preview,
             modules::collections::adapters::inbound::tauri::preview_apply_collection,
             crate::modules::workspace::adapters::inbound::folder_entries_cmds::list_folder_entries_cmd,
-            crate::modules::workspace::adapters::inbound::disk_reconcile_cmds::apply_game_mods_directory,
-            crate::modules::workspace::adapters::inbound::disk_reconcile_cmds::reconcile_disk_state_cmd,
-            crate::modules::workspace::adapters::inbound::disk_reconcile_cmds::inspect_game_mods_directory,
-            crate::modules::workspace::adapters::inbound::disk_reconcile_cmds::resolve_rename_confirmations,
+            crate::modules::reconciliation::adapters::inbound::disk_reconcile_cmds::apply_game_mods_directory,
+            crate::modules::reconciliation::adapters::inbound::disk_reconcile_cmds::reconcile_disk_state_cmd,
+            crate::modules::reconciliation::adapters::inbound::disk_reconcile_cmds::inspect_game_mods_directory,
+            crate::modules::reconciliation::adapters::inbound::disk_reconcile_cmds::resolve_rename_confirmations,
             crate::modules::workspace::adapters::inbound::watcher_cmds::start_watcher,
             crate::modules::workspace::adapters::inbound::watcher_cmds::stop_watcher,
-            modules::storage_optimizer::adapters::inbound::tauri::dup_scan_start,
-            modules::storage_optimizer::adapters::inbound::tauri::dup_scan_cancel,
-            modules::storage_optimizer::adapters::inbound::tauri::dup_scan_get_report,
-            modules::storage_optimizer::adapters::inbound::tauri::dup_resolve_batch,
-            modules::storage_optimizer::adapters::inbound::tauri::get_ignored_pairs,
-            modules::storage_optimizer::adapters::inbound::tauri::remove_ignored_pair,
-            crate::modules::system::adapters::inbound::update_cmds::check_metadata_update,
-            crate::modules::system::adapters::inbound::update_cmds::fetch_missing_asset,
+            crate::modules::duplicates::adapters::inbound::tauri::dup_scan_start,
+            crate::modules::duplicates::adapters::inbound::tauri::dup_scan_cancel,
+            crate::modules::duplicates::adapters::inbound::tauri::dup_scan_get_report,
+            crate::modules::duplicates::adapters::inbound::tauri::dup_resolve_batch,
+            crate::modules::duplicates::adapters::inbound::tauri::get_ignored_pairs,
+            crate::modules::duplicates::adapters::inbound::tauri::remove_ignored_pair,
+            crate::modules::updates::adapters::inbound::update_cmds::check_metadata_update,
+            crate::modules::updates::adapters::inbound::update_cmds::fetch_missing_asset,
             crate::modules::automation::adapters::inbound::hotkey_cmds::update_hotkey_config,
             crate::modules::automation::adapters::inbound::hotkey_cmds::get_reload_key,
             modules::browser::adapters::inbound::tauri::browser_open_tab,
@@ -212,7 +212,7 @@ pub fn run() {
         )
         .manage(crate::modules::workspace::application::scanner::watcher::WatcherState::new())
         .manage(crate::modules::ingestion::application::import_batch::mod_inbox_watcher::ModInboxWatcherState::new())
-        .manage(crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState::new())
+        .manage(crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new())
         .setup(move |app| {
             let app_handle = app.handle();
 
@@ -229,12 +229,12 @@ pub fn run() {
             }
 
             let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
-            app.manage(crate::modules::system::application::config::ConfigService::init(
+            app.manage(crate::modules::settings::application::config::ConfigService::init(
                 app_handle,
                 pool_ref.inner().clone(),
             ));
 
-            let config_ref: tauri::State<'_, crate::modules::system::application::config::ConfigService> = app.state();
+            let config_ref: tauri::State<'_, crate::modules::settings::application::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
             app.manage(crate::modules::system::application::app::bootstrap::init_hotkey_manager(
                 app_handle,
@@ -247,11 +247,11 @@ pub fn run() {
 
             Ok(())
         })
-        .manage(modules::storage_optimizer::DupScanState::new())
+        .manage(crate::modules::duplicates::DupScanState::new())
         .manage(crate::modules::library::adapters::inbound::mod_bulk_cmds::BulkCancelState::new())
         .manage(crate::platform::fs::operation_lock::OperationLock::new())
         .manage(crate::app::runtime::operation_journal::OperationJournal::new())
-        .manage(crate::app::runtime::mutation_coordinator::MutationCoordinator::new(std::sync::Arc::new(crate::app::runtime::operation_journal::OperationJournal::new())))
+        .manage(crate::modules::mutation::coordinator::MutationCoordinator::new(std::sync::Arc::new(crate::app::runtime::operation_journal::OperationJournal::new())))
 
         .manage(crate::modules::workspace::application::scanner::master_db::MasterDbCache::default())
         .invoke_handler(builder.invoke_handler())

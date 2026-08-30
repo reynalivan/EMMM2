@@ -239,7 +239,7 @@ pub async fn run_post_apply_tasks(ctx: PostApplyContext) -> Result<(), AppError>
 /// Useful when settings (hotkeys or classification keywords) change without a mod mutation.
 pub async fn trigger_overlay_refresh_for_game(
     pool: &SqlitePool,
-    config: &crate::modules::system::application::config::ConfigService,
+    config: &crate::modules::settings::application::config::ConfigService,
     game_id: &str,
 ) -> Result<(), AppError> {
     let settings = config.get_settings();
@@ -263,7 +263,7 @@ pub async fn trigger_overlay_refresh_for_game(
 /// Useful when settings (hotkeys or classification keywords) change without a mod mutation.
 pub async fn trigger_overlay_refresh(
     pool: &SqlitePool,
-    config: &crate::modules::system::application::config::ConfigService,
+    config: &crate::modules::settings::application::config::ConfigService,
 ) -> Result<(), AppError> {
     let game_id = config
         .with_settings(|settings| settings.active_game_id.clone())

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use tauri::Manager;
 
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::modules::automation::application::keyviewer::generator::StatusFields;
 
 use super::actions::{self, CycleDirection};
@@ -76,14 +76,14 @@ pub(super) async fn execute_cycle_preset(
         .find(|collection| collection.name == target_name)
         .ok_or_else(|| AppError::Internal(format!("Target preset '{target_name}' not found")))?;
 
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         app,
         pool_state.inner(),
         game_id,
     )
     .await?;
     let disk_reconcile = require::<
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >(app, "DiskReconcileState")?;
     let mutation_lease = disk_reconcile
         .acquire_mutation_lease(game_id, op_lock.inner())
@@ -104,7 +104,7 @@ pub(super) async fn execute_cycle_preset(
     .await?;
 
     drop(mutation_lease);
-    crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+    crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
         app,
         pool_state.inner(),
         game_id,

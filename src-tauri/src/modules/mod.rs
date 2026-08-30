@@ -1,7 +1,6 @@
 pub mod collections;
 pub mod browser;
 pub mod ingestion;
-pub mod storage_optimizer;
 pub mod system;
 pub mod dashboard;
 pub mod games;
@@ -9,3 +8,9 @@ pub mod automation;
 pub mod workspace;
 pub mod library;
 pub mod catalog;
+pub mod duplicates;
+pub mod settings;
+pub mod updates;
+pub mod matching;
+pub mod reconciliation;
+pub mod mutation;

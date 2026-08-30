@@ -68,5 +68,5 @@ pub struct WorkspaceSwitchResult {
     pub changed_object_ids: Vec<String>,
     pub duplicates: Vec<WorkspaceSwitchDuplicate>,
     pub impact: WorkspaceImpact,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }

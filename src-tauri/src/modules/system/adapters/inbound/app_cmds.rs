@@ -43,7 +43,7 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn reset_database(
     app: tauri::AppHandle,
-    config: tauri::State<'_, crate::modules::system::application::config::ConfigService>,
+    config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<(), AppError> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;

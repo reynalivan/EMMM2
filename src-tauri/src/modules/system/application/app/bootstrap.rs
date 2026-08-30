@@ -204,11 +204,11 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
     });
 
     let startup_game = app
-        .state::<crate::modules::system::application::config::ConfigService>()
+        .state::<crate::modules::settings::application::config::ConfigService>()
         .with_settings(|settings| settings.active_game().cloned())
         .filter(|game| !game.mod_path.as_os_str().is_empty());
     let startup_recovery_generation = startup_game.as_ref().map(|game| {
-        app.state::<crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>()
+        app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
             .mark_initial_recovery_pending(&game.id)
     });
 
@@ -218,30 +218,30 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         };
         let recovery_generation = startup_recovery_generation
             .expect("startup game and recovery generation are created together");
-        let config = app.state::<crate::modules::system::application::config::ConfigService>();
+        let config = app.state::<crate::modules::settings::application::config::ConfigService>();
         let watcher_state = app.state::<crate::modules::workspace::application::scanner::watcher::WatcherState>();
         let disk_reconcile_state =
-            app.state::<crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState>();
+            app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
         let operation_lock = app.state::<crate::platform::fs::operation_lock::OperationLock>();
 
-        let reconcile_result = crate::modules::workspace::application::disk_reconcile::orchestrator::reconcile_disk_state(
-            crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileContext {
+        let reconcile_result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
                 pool: &pool,
                 config: config.inner(),
                 state: disk_reconcile_state.inner(),
                 watcher_suppressor: watcher_state.suppressor.clone(),
                 operation_lock: operation_lock.inner(),
                 progress_reporter: Some(std::sync::Arc::new(
-                    crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
+                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                         app.clone(),
                         game.id.clone(),
-                        crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
+                        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
                     ),
                 )),
             },
-            crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
                 game.id.clone(),
-                crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
+                crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
                 Vec::new(),
                 true,
             ),
@@ -249,7 +249,7 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         .await;
         let recovery_outcome = match reconcile_result {
             Ok(result) => {
-                crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(Box::new(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(Box::new(
                     result,
                 ))
             }
@@ -259,16 +259,16 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                     game.name,
                     error
                 );
-                crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
                     error.to_string(),
                 )
             }
         };
         let completed_result = match &recovery_outcome {
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(result) => {
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(result) => {
                 Some((**result).clone())
             }
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(_) => None,
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(_) => None,
         };
         disk_reconcile_state.finish_initial_recovery(
             &game.id,

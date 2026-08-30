@@ -79,8 +79,8 @@ pub struct ApplyObjectClassificationBatchResult {
 pub async fn preview_object_classification_batch(
     db: &SqlitePool,
     input: &PreviewObjectClassificationBatchInput,
-    master_db: &crate::modules::workspace::application::scanner::deep_matcher::MasterDb,
-    filters: &crate::modules::workspace::application::scanner::deep_matcher::analysis::content::PreparedTokenFilters,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+    filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
     match_extensions: &[String],
 ) -> Result<Vec<ObjectClassificationPreviewItem>, AppError> {
     if input.object_ids.is_empty() {
@@ -147,7 +147,7 @@ pub async fn preview_object_classification_batch(
 pub async fn apply_object_classification_batch(
     db: &SqlitePool,
     input: ApplyObjectClassificationBatchInput,
-    master_db: &crate::modules::workspace::application::scanner::deep_matcher::MasterDb,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
     match_extensions: &[String],
 ) -> Result<ApplyObjectClassificationBatchResult, AppError> {
     if input.items.is_empty() {
@@ -230,7 +230,7 @@ pub async fn apply_object_classification_batch(
 }
 
 fn validate_canonical_selection(
-    master_db: &crate::modules::workspace::application::scanner::deep_matcher::MasterDb,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
     category: StableCategory,
     entry_key: Option<String>,
     alias_name: Option<String>,
@@ -255,7 +255,7 @@ fn validate_canonical_selection(
                 "Canonical entry '{entry_key}' does not exist in the active game database"
             ))
         })?;
-    if entry.entry_kind != crate::modules::workspace::application::scanner::deep_matcher::EntryKind::Canonical {
+    if entry.entry_kind != crate::modules::matching::application::deep_matcher::EntryKind::Canonical {
         return Err(AppError::Validation(format!(
             "Canonical entry '{entry_key}' is taxonomy-only"
         )));

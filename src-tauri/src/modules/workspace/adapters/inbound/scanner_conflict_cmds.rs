@@ -35,7 +35,7 @@ pub async fn detect_conflicts_cmd(ini_paths: Vec<String>) -> Result<Vec<Conflict
 #[tauri::command]
 pub async fn detect_conflicts_in_folder_cmd(
     mods_path: String,
-    config: tauri::State<'_, crate::modules::system::application::config::ConfigService>,
+    config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<Vec<ConflictInfo>, AppError> {
     let path =
         crate::platform::fs::guard::validate_dir_in_configured_roots(&config, &mods_path)?;

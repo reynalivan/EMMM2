@@ -4,8 +4,8 @@ use crate::shared::errors::AppError;
 use crate::modules::workspace::domain::workspace::{
     WorkspaceSwitchInput, WorkspaceSwitchResult, WorkspaceViewModel, WorkspaceViewModelInput,
 };
-use crate::modules::system::application::config::ConfigService;
-use crate::app::runtime::mutation_coordinator::MutationCoordinator;
+use crate::modules::settings::application::config::ConfigService;
+use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
 #[tauri::command]
@@ -16,11 +16,11 @@ pub async fn get_workspace_view_model(
     pool: State<'_, sqlx::SqlitePool>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
 ) -> Result<WorkspaceViewModel, AppError> {
     let game_id = input.filter.game_id.clone();
-    let recovery_readiness = crate::modules::workspace::application::disk_reconcile::emit::start_initial_disk_recovery(
+    let recovery_readiness = crate::modules::reconciliation::application::disk_reconcile::emit::start_initial_disk_recovery(
         &app,
         pool.inner(),
         disk_reconcile_state.inner(),
@@ -32,8 +32,8 @@ pub async fn get_workspace_view_model(
         input,
         matches!(
             recovery_readiness,
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Syncing { .. }
-                | crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Unstarted { .. }
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Syncing { .. }
+                | crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Unstarted { .. }
         ),
     )
     .await?;
@@ -42,10 +42,10 @@ pub async fn get_workspace_view_model(
 }
 
 fn workspace_recovery_status(
-    readiness: crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness,
+    readiness: crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness,
 ) -> crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus {
     use crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus;
-    use crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
 
     match readiness {
         InitialRecoveryReadiness::Ready { .. } => WorkspaceRecoveryStatus::Ready,
@@ -66,7 +66,7 @@ pub async fn execute_workspace_switch(
     watcher_state: State<'_, WatcherState>,
     op_lock: State<'_, MutationCoordinator>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         &app,
         pool.inner(),
         &input.game_id,
@@ -87,7 +87,7 @@ pub async fn execute_workspace_switch(
         Ok(result) => result,
         Err(error) => {
             let reconcile =
-                crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+                crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
                     &app,
                     pool.inner(),
                     &game_id,
@@ -102,8 +102,8 @@ pub async fn execute_workspace_switch(
         }
     };
     if !result.changed_folder_paths.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,
@@ -119,7 +119,7 @@ pub async fn execute_workspace_switch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
 
     #[test]
     fn pending_recovery_maps_to_syncing_workspace_runtime() {

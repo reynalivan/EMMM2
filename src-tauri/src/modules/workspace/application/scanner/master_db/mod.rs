@@ -8,10 +8,10 @@ use crate::shared::errors::ScannerError;
 use std::path::Path;
 
 use crate::modules::games::application::game::schema_loader;
-use crate::modules::workspace::application::scanner::deep_matcher::analysis::content::{
+use crate::modules::matching::application::deep_matcher::analysis::content::{
     IniTokenizationConfig, PreparedTokenFilters,
 };
-use crate::modules::workspace::application::scanner::deep_matcher::{DbEntry, EntryKind, MasterDb};
+use crate::modules::matching::application::deep_matcher::{DbEntry, EntryKind, MasterDb};
 use serde::Deserialize;
 
 #[derive(Deserialize)]

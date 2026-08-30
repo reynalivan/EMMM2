@@ -10,7 +10,7 @@ use crate::modules::workspace::domain::task::TaskStatus;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::modules::system::application::app::post_apply::PostApplyContext;
 use crate::modules::collections::application::collection::ApplyCollectionRequest;
-use crate::modules::system::application::config::AppSettings;
+use crate::modules::settings::application::config::AppSettings;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
 
 // ---------------------------------------------------------------------------

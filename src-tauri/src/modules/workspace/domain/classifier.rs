@@ -109,7 +109,7 @@ impl fmt::Display for ClassificationError {
             }
             Self::InvalidIniEncoding { path } => write!(
                 formatter,
-                "Unsupported INI encoding in '{}'; use UTF-8 or Shift-JIS",
+                "Unsupported INI encoding in '{}'; use UTF-8, Shift-JIS, GBK, or UTF-16LE",
                 path.display()
             ),
         }

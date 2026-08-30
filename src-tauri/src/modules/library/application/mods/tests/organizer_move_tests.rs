@@ -1,6 +1,6 @@
 use super::*;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
-use crate::modules::system::application::config::{AppSettings, ConfigService, GameConfig};
+use crate::modules::settings::application::config::{AppSettings, ConfigService, GameConfig};
 use crate::platform::fs::guard::validate_path;
 use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
@@ -183,20 +183,20 @@ async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_
         .path_hints
         .iter()
         .map(
-            |hint| crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcilePathHint {
+            |hint| crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcilePathHint {
                 old_path: hint.old_path.clone(),
                 new_path: hint.new_path.clone(),
                 target_object_id: hint.target_object_id.clone(),
             },
         )
         .collect::<Vec<_>>();
-    crate::modules::workspace::application::disk_reconcile::reconcile::reconcile_disk_projection(
-        crate::modules::workspace::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+    crate::modules::reconciliation::application::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
             pool: &pool,
             game_id: "game",
             mods_path: mods_root,
             safe_mode_keywords: &[],
-            reason: &crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            reason: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
             changed_paths: &changed_paths,
             force_full: false,
             watcher_events: None,

@@ -25,7 +25,7 @@ async fn absolute_object_path(
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct CreateObjectResult {
     pub id: String,
-    pub sync_warning: Option<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }
 
 #[tauri::command]
@@ -73,7 +73,7 @@ pub async fn create_object_cmd(
     let game_id = input.game_id.clone();
     let folder_path = input.folder_path.as_deref().unwrap_or(&input.name);
     let preflight_paths = [absolute_object_path(pool.inner(), &game_id, folder_path).await?];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -86,7 +86,7 @@ pub async fn create_object_cmd(
         crate::modules::catalog::application::objects::mutate::create_object_cmd_inner(&pool, Some(&app), input).await;
     drop(guard);
     drop(lock);
-    let reconcile = crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+    let reconcile = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
         &app,
         pool.inner(),
         &game_id,
@@ -95,7 +95,7 @@ pub async fn create_object_cmd(
     match result {
         Ok(id) => {
             let settlement =
-                crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(reconcile);
+                crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(reconcile);
             Ok(CreateObjectResult {
                 id,
                 sync_warning: settlement.sync_warning,
@@ -119,7 +119,7 @@ pub async fn update_object_cmd(
     app: tauri::AppHandle,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
     op_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
 ) -> Result<(), AppError> {
@@ -130,7 +130,7 @@ pub async fn update_object_cmd(
     let folder_path =
         folder_path.ok_or_else(|| AppError::NotFound(format!("Object folder not found: {id}")))?;
     let preflight_paths = [absolute_object_path(pool.inner(), &game_id, &folder_path).await?];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -162,7 +162,7 @@ pub async fn delete_object_cmd(
     pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
     op_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
-) -> Result<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationResult, AppError> {
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult, AppError> {
     let (game_id, folder_path) =
         crate::modules::catalog::adapters::outbound::sqlite::object::get_game_id_and_folder_path(pool.inner(), &id)
             .await?
@@ -170,7 +170,7 @@ pub async fn delete_object_cmd(
     let folder_path =
         folder_path.ok_or_else(|| AppError::NotFound(format!("Object folder not found: {id}")))?;
     let preflight_paths = [absolute_object_path(pool.inner(), &game_id, &folder_path).await?];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -180,8 +180,8 @@ pub async fn delete_object_cmd(
     let op_guard = op_lock.acquire().await?;
     crate::modules::catalog::application::objects::mutate::delete_object(&pool, &id, force, &state, &op_guard).await?;
     drop(op_guard);
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
             &app,
             pool.inner(),
             &game_id,
@@ -189,7 +189,7 @@ pub async fn delete_object_cmd(
         .await,
     );
     Ok(
-        crate::modules::workspace::application::disk_reconcile::types::CommittedMutationResult {
+        crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult {
             sync_warning: settlement.sync_warning,
         },
     )

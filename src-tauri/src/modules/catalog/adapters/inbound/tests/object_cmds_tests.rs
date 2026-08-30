@@ -31,13 +31,13 @@ async fn setup_test_db() -> (TempDir, SqlitePool, String) {
 }
 
 async fn reconcile_test_disk(pool: &SqlitePool, game_id: &str, mods_path: &std::path::Path) {
-    crate::modules::workspace::application::disk_reconcile::reconcile::reconcile_disk_projection(
-        crate::modules::workspace::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+    crate::modules::reconciliation::application::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
             pool,
             game_id,
             mods_path,
             safe_mode_keywords: &[],
-            reason: &crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            reason: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
             changed_paths: &[],
             force_full: true,
             watcher_events: None,
@@ -334,7 +334,7 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
 async fn committed_object_mutation_stages_runtime_effects_when_finalization_fails(
 ) -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
-    let state = crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState::new();
+    let state = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new();
     insert_test_object(
         &pool,
         &TestObjectFixture {
@@ -358,7 +358,7 @@ async fn committed_object_mutation_stages_runtime_effects_when_finalization_fail
     let settlement = crate::modules::system::application::app::runtime_effects::settle_committed_runtime_effects_with(
         &state,
         &game_id,
-        crate::modules::workspace::application::disk_reconcile::types::PendingRuntimeEffects {
+        crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
             collections_dirty: true,
             overlay_refresh: true,
         },
@@ -377,7 +377,7 @@ async fn committed_object_mutation_stages_runtime_effects_when_finalization_fail
     assert_eq!(category, "Character");
     assert_eq!(
         settlement.pending_runtime_effects,
-        crate::modules::workspace::application::disk_reconcile::types::PendingRuntimeEffects {
+        crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
             collections_dirty: true,
             overlay_refresh: true,
         }
@@ -387,7 +387,7 @@ async fn committed_object_mutation_stages_runtime_effects_when_finalization_fail
     assert_eq!(
         state.stage_runtime_effects(
             &game_id,
-            crate::modules::workspace::application::disk_reconcile::types::PendingRuntimeEffects::default(),
+            crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects::default(),
         ),
         settlement.pending_runtime_effects,
         "the existing reconcile state retains the failed post-commit intent"
@@ -398,15 +398,15 @@ async fn committed_object_mutation_stages_runtime_effects_when_finalization_fail
 
 #[test]
 fn object_command_results_distinguish_committed_mutation_from_sync_warning() {
-    let warning = crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarning {
-        kind: crate::modules::workspace::application::disk_reconcile::types::CommittedMutationSyncWarningKind::ReconcileFailed,
+    let warning = crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning {
+        kind: crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind::ReconcileFailed,
         message: "projection pending".to_string(),
     };
     let created = CreateObjectResult {
         id: "object-1".to_string(),
         sync_warning: Some(warning.clone()),
     };
-    let deleted = crate::modules::workspace::application::disk_reconcile::types::CommittedMutationResult {
+    let deleted = crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult {
         sync_warning: Some(warning),
     };
 

@@ -118,7 +118,7 @@ fn rejects_ambiguous_or_controller_only_reload_bindings() {
 #[test]
 fn resolves_package_config_before_executable_fallback() {
     use crate::modules::games::domain::models::GameType;
-    use crate::modules::system::application::config::GameConfig;
+    use crate::modules::settings::application::config::GameConfig;
 
     let dir = TempDir::new().unwrap();
     let package_root = dir.path().join("Package");

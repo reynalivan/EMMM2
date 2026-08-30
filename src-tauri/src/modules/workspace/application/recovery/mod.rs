@@ -7,8 +7,8 @@ use sqlx::SqlitePool;
 
 use crate::shared::errors::AppError;
 use crate::modules::workspace::domain::task::{PipelineTask, RecoveryAction, TaskStatus, TASK_TYPE_APPLY_COLLECTION};
-use crate::modules::system::application::config::models::AppSettings;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::models::AppSettings;
+use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
 pub struct RecoveryTaskRequest<'a> {

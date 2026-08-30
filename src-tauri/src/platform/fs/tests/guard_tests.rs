@@ -1,5 +1,5 @@
 use super::{validate_dir_in_configured_roots, validate_mods_root, validate_path};
-use crate::modules::system::application::config::{ConfigService, GameConfig};
+use crate::modules::settings::application::config::{ConfigService, GameConfig};
 use std::fs;
 use tempfile::TempDir;
 

@@ -178,13 +178,13 @@ async fn setup_test_db() -> sqlx::SqlitePool {
 }
 
 async fn reconcile_test_disk(pool: &sqlx::SqlitePool, mods_path: &std::path::Path) {
-    crate::modules::workspace::application::disk_reconcile::reconcile::reconcile_disk_projection(
-        crate::modules::workspace::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+    crate::modules::reconciliation::application::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
             pool,
             game_id: "g1",
             mods_path,
             safe_mode_keywords: &[],
-            reason: &crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            reason: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
             changed_paths: &[],
             force_full: true,
             watcher_events: None,

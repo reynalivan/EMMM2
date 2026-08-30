@@ -1,7 +1,7 @@
 
 
 use crate::shared::errors::AppError;
-use crate::modules::workspace::application::scanner::deep_matcher::CustomSkin;
+use crate::modules::matching::application::deep_matcher::CustomSkin;
 
 const STABLE_CATEGORIES: [&str; 4] = ["Character", "Weapon", "UI", "Other"];
 

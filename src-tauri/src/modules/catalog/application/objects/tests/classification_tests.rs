@@ -117,7 +117,7 @@ async fn classification_writer_commits_metadata_children_projection_and_user_ali
             .fetch_one(&pool)
             .await
             .expect("custom skins");
-    let skins: Vec<crate::modules::workspace::application::scanner::deep_matcher::CustomSkin> =
+    let skins: Vec<crate::modules::matching::application::deep_matcher::CustomSkin> =
         serde_json::from_str(&aliases_json).expect("custom skins array");
     let user = skins
         .iter()
@@ -144,7 +144,7 @@ async fn classification_writer_is_idempotent() {
             .fetch_one(&pool)
             .await
             .expect("custom skins");
-    let skins: Vec<crate::modules::workspace::application::scanner::deep_matcher::CustomSkin> =
+    let skins: Vec<crate::modules::matching::application::deep_matcher::CustomSkin> =
         serde_json::from_str(&aliases_json).expect("normalized custom skins array");
     let learned: Vec<&String> = skins
         .iter()
@@ -295,7 +295,7 @@ async fn classification_batch_preflights_every_item_before_writing_any_item() {
             })
             .collect(),
         },
-        &crate::modules::workspace::application::scanner::deep_matcher::MasterDb::new(Vec::new()),
+        &crate::modules::matching::application::deep_matcher::MasterDb::new(Vec::new()),
         &["ini".to_string()],
     )
     .await
@@ -317,7 +317,7 @@ async fn classification_batch_revalidates_canonical_identity_against_master_db()
         apply_object_classification_batch, ApplyObjectClassificationBatchInput,
         ApplyObjectClassificationItem,
     };
-    use crate::modules::workspace::application::scanner::deep_matcher::{DbEntry, MasterDb};
+    use crate::modules::matching::application::deep_matcher::{DbEntry, MasterDb};
 
     let context = crate::test_utils::init_test_db().await;
     let workspace = tempfile::tempdir().unwrap();

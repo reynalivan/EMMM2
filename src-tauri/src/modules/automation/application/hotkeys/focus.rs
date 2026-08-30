@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::modules::system::application::config::AppSettings;
+use crate::modules::settings::application::config::AppSettings;
 
 pub fn is_active_game_focused(settings: &AppSettings) -> bool {
     let Some(active_game) = settings.active_game() else {

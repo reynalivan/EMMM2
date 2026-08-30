@@ -16,7 +16,7 @@ use tauri::Manager;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use crate::shared::sync::lock;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 
 use super::actions::{self, ActionResult, CycleDirection};
 use super::cycle_preset::execute_cycle_preset;

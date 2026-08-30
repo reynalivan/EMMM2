@@ -1,5 +1,5 @@
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::ConfigService;
+use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
 use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::library::application::ini::document::IniDocument;
@@ -50,10 +50,10 @@ pub async fn write_mod_ini(
     file_name: String,
     expected_source_hash: String,
     line_updates: Vec<IniLineUpdate>,
-) -> Result<crate::modules::workspace::application::disk_reconcile::types::CommittedMutationResult, AppError> {
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult, AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -73,8 +73,8 @@ pub async fn write_mod_ini(
     .await?;
     drop(op_guard);
     drop(guard);
-    let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
             &app,
             pool.inner(),
             &game_id,
@@ -83,7 +83,7 @@ pub async fn write_mod_ini(
         .await,
     );
     Ok(
-        crate::modules::workspace::application::disk_reconcile::types::CommittedMutationResult {
+        crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult {
             sync_warning: settlement.sync_warning,
         },
     )
@@ -118,7 +118,7 @@ pub async fn save_mod_preview_image(
 
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -148,7 +148,7 @@ pub async fn remove_mod_preview_image(
 ) -> Result<(), AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
@@ -181,7 +181,7 @@ pub async fn clear_mod_preview_images(
 ) -> Result<Vec<String>, AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,

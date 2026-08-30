@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::shared::errors::{AppError, CollectionError};
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::pipeline::apply_pipeline::ApplyContext;
-use crate::modules::workspace::application::workspace_mutation::engine::{
+use crate::modules::mutation::application::workspace_mutation::engine::{
     toggle_mods_mixed, RuntimeToggleBatchRequest, RuntimeToggleOperation, RuntimeToggleTarget,
 };
 
@@ -85,14 +85,14 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     // retains its game-first mutation lease across this inline projection, so
     // it cannot interleave with a queued reconcile for the same game.
     if !changed_paths.is_empty() {
-        let reconcile = crate::modules::workspace::application::disk_reconcile::reconcile::reconcile_disk_projection(
-            crate::modules::workspace::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+        let reconcile = crate::modules::reconciliation::application::disk_reconcile::reconcile::reconcile_disk_projection(
+            crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
                 pool: &ctx.pool,
                 game_id: &ctx.game_id,
                 mods_path: &ctx.mods_path,
                 safe_mode_keywords: &ctx.settings.safety.keywords,
                 reason:
-                    &crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+                    &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
                 changed_paths: &changed_paths,
                 force_full: false,
                 watcher_events: None,
@@ -172,13 +172,13 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
         .iter()
         .flat_map(|rewrite| [rewrite.old_path.clone(), rewrite.new_path.clone()])
         .collect::<Vec<_>>();
-    let outcome = crate::modules::workspace::application::disk_reconcile::reconcile::reconcile_disk_projection(
-        crate::modules::workspace::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+    let outcome = crate::modules::reconciliation::application::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
             pool: &ctx.pool,
             game_id: &ctx.game_id,
             mods_path: &ctx.mods_path,
             safe_mode_keywords: &ctx.settings.safety.keywords,
-            reason: &crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
+            reason: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::InternalMutation,
             changed_paths: &changed_paths,
             force_full: true,
             watcher_events: (!rename_events.is_empty()).then_some(rename_events.as_slice()),

@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use super::attach_user_aliases;
 use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
-use crate::modules::workspace::application::scanner::deep_matcher::analysis::ai_rerank::AiRerankConfig;
-use crate::modules::workspace::application::scanner::deep_matcher::analysis::content::IniTokenizationConfig;
-use crate::modules::workspace::application::scanner::deep_matcher::match_folder_phased;
-use crate::modules::workspace::application::scanner::deep_matcher::models::types::{CustomSkin, DbEntry, MatchStatus};
-use crate::modules::workspace::application::scanner::deep_matcher::state::master_db::MasterDb;
+use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
+use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
+use crate::modules::matching::application::deep_matcher::match_folder_phased;
+use crate::modules::matching::application::deep_matcher::models::types::{CustomSkin, DbEntry, MatchStatus};
+use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
 use crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key;
 
 /// "Beelzebul" is a real nickname for Raiden Shogun and shares no substring
@@ -45,7 +45,7 @@ fn user_aliases(name: &str, aliases: &[&str]) -> HashMap<String, Vec<String>> {
 fn match_folder(
     db: &MasterDb,
     folder: &str,
-) -> crate::modules::workspace::application::scanner::deep_matcher::StagedMatchResult {
+) -> crate::modules::matching::application::deep_matcher::StagedMatchResult {
     let candidate = ModCandidate {
         path: format!("mods/{folder}").into(),
         raw_name: folder.to_string(),

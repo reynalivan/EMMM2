@@ -203,8 +203,8 @@ pub async fn set_import_item_decision(
 pub async fn refresh_import_item_suggestions(
     db: &SqlitePool,
     item_id: &str,
-    master_db: &crate::modules::workspace::application::scanner::deep_matcher::MasterDb,
-    ini_filters: &crate::modules::workspace::application::scanner::deep_matcher::analysis::content::PreparedTokenFilters,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+    ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
 ) -> Result<ImportItem, AppError> {
     let item = require_item(db, item_id).await?;
     if !item.status.can_refresh_object_suggestions() {
@@ -352,7 +352,7 @@ fn reject_workspace_source(
 fn rerank_with_metadata(
     suggestions: &mut [crate::modules::ingestion::application::import_batch::types::CanonicalSuggestion],
     user_metadata: &serde_json::Value,
-    master_db: &crate::modules::workspace::application::scanner::deep_matcher::MasterDb,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
 ) {
     let Some(user_fields) = user_metadata.as_object() else {
         return;

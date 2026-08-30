@@ -6,8 +6,8 @@ use crate::shared::errors::AppError;
 use crate::modules::workspace::domain::workspace::{
     WorkspaceSwitchInput, WorkspaceSwitchResult, WorkspaceViewModel, WorkspaceViewModelInput,
 };
-use crate::modules::system::application::config::ConfigService;
-use crate::app::runtime::mutation_coordinator::MutationCoordinator;
+use crate::modules::settings::application::config::ConfigService;
+use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
 #[tauri::command]
@@ -18,11 +18,11 @@ pub async fn get_workspace_view_model(
     pool: State<'_, sqlx::SqlitePool>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
 ) -> Result<WorkspaceViewModel, AppError> {
     let game_id = input.filter.game_id.clone();
-    let recovery_readiness = crate::modules::workspace::application::disk_reconcile::emit::start_initial_disk_recovery(
+    let recovery_readiness = crate::modules::reconciliation::application::disk_reconcile::emit::start_initial_disk_recovery(
         &app,
         pool.inner(),
         disk_reconcile_state.inner(),
@@ -34,8 +34,8 @@ pub async fn get_workspace_view_model(
         input,
         matches!(
             recovery_readiness,
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Syncing { .. }
-                | crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Unstarted { .. }
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Syncing { .. }
+                | crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Unstarted { .. }
         ),
     )
     .await?;
@@ -44,10 +44,10 @@ pub async fn get_workspace_view_model(
 }
 
 fn workspace_recovery_status(
-    readiness: crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness,
+    readiness: crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness,
 ) -> crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus {
     use crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus;
-    use crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
 
     match readiness {
         InitialRecoveryReadiness::Ready { .. } => WorkspaceRecoveryStatus::Ready,
@@ -68,7 +68,7 @@ pub async fn execute_workspace_switch(
     watcher_state: State<'_, WatcherState>,
     op_lock: State<'_, MutationCoordinator>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
-    crate::modules::workspace::application::disk_reconcile::emit::ensure_mutation_preflight(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         &app,
         pool.inner(),
         &input.game_id,
@@ -89,7 +89,7 @@ pub async fn execute_workspace_switch(
         Ok(result) => result,
         Err(error) => {
             let reconcile =
-                crate::modules::workspace::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+                crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
                     &app,
                     pool.inner(),
                     &game_id,
@@ -104,8 +104,8 @@ pub async fn execute_workspace_switch(
         }
     };
     if !result.changed_folder_paths.is_empty() {
-        let settlement = crate::modules::workspace::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::workspace::application::disk_reconcile::emit::run_internal_disk_reconcile(
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
                 &app,
                 pool.inner(),
                 &game_id,
@@ -121,7 +121,7 @@ pub async fn execute_workspace_switch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
 
     #[test]
     fn pending_recovery_maps_to_syncing_workspace_runtime() {
@@ -138,8 +138,8 @@ use crate::shared::errors::AppError;
 use std::path::{Component, Path};
 use tauri::State;
 
-use crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
-use crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason;
+use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
+use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
 
 fn checked_resolution_path(root: &Path, relative: &str) -> Result<String, AppError> {
     let path = Path::new(relative);
@@ -171,9 +171,9 @@ pub async fn inspect_game_mods_directory(
     game_id: String,
     candidate_path: String,
     pool: State<'_, sqlx::SqlitePool>,
-) -> Result<crate::modules::workspace::application::disk_reconcile::source_recovery::GameModsDirectoryInspection, AppError>
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::source_recovery::GameModsDirectoryInspection, AppError>
 {
-    crate::modules::workspace::application::disk_reconcile::source_recovery::inspect_game_mods_directory(
+    crate::modules::reconciliation::application::disk_reconcile::source_recovery::inspect_game_mods_directory(
         pool.inner(),
         &game_id,
         Path::new(&candidate_path),
@@ -185,23 +185,23 @@ pub async fn inspect_game_mods_directory(
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
 pub async fn apply_game_mods_directory(
-    request: crate::modules::workspace::application::disk_reconcile::source_recovery::ApplyGameModsDirectoryRequest,
+    request: crate::modules::reconciliation::application::disk_reconcile::source_recovery::ApplyGameModsDirectoryRequest,
     pool: State<'_, sqlx::SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    operation_lock: State<'_, crate::app::runtime::mutation_coordinator::MutationCoordinator>,
-) -> Result<crate::modules::workspace::application::disk_reconcile::source_recovery::ApplyGameModsDirectoryResult, AppError>
+    operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::source_recovery::ApplyGameModsDirectoryResult, AppError>
 {
     let _activation_guard = disk_reconcile_state.activation_guard().await;
     let game_lock = disk_reconcile_state.game_lock(&request.game_id);
     let game_guard = game_lock.lock().await;
     let operation_guard = operation_lock.acquire().await?;
-    let result = crate::modules::workspace::application::disk_reconcile::source_recovery::apply_game_mods_directory(
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileContext {
+    let result = crate::modules::reconciliation::application::disk_reconcile::source_recovery::apply_game_mods_directory(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
             config: config.inner(),
             state: disk_reconcile_state.inner(),
@@ -227,25 +227,25 @@ pub async fn apply_game_mods_directory(
 pub async fn reconcile_disk_state_cmd(
     app: tauri::AppHandle,
     game_id: String,
-    reason: crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason,
+    reason: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason,
     changed_paths: Option<Vec<String>>,
     force_full: Option<bool>,
     pool: State<'_, sqlx::SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    operation_lock: State<'_, crate::app::runtime::mutation_coordinator::MutationCoordinator>,
-) -> Result<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+    operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
     // Opening Mods can race the workspace query which starts initial recovery.
     // Reuse that single pass instead of queueing a second full scan behind it.
     if should_wait_for_initial_recovery(
         &reason,
         disk_reconcile_state.initial_recovery_readiness(&game_id),
     ) {
-        return match crate::modules::workspace::application::disk_reconcile::emit::ensure_initial_disk_recovery(
+        return match crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_disk_recovery(
             &app,
             pool.inner(),
             disk_reconcile_state.inner(),
@@ -253,23 +253,23 @@ pub async fn reconcile_disk_state_cmd(
         )
         .await
         {
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
                 result,
             ) => Ok(*result),
-            crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
                 error,
             ) => Err(AppError::Io(error)),
         };
     }
     let progress_reporter = std::sync::Arc::new(
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
             app,
             game_id.clone(),
             reason.clone(),
         ),
     );
-    crate::modules::workspace::application::disk_reconcile::orchestrator::reconcile_disk_state(
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileContext {
+    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
             config: config.inner(),
             state: disk_reconcile_state.inner(),
@@ -277,7 +277,7 @@ pub async fn reconcile_disk_state_cmd(
             operation_lock: operation_lock.inner().inner_lock(),
             progress_reporter: Some(progress_reporter),
         },
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
             game_id,
             reason,
             changed_paths.unwrap_or_default(),
@@ -292,16 +292,16 @@ pub async fn reconcile_disk_state_cmd(
 #[allow(clippy::too_many_arguments)]
 pub async fn resolve_rename_confirmations(
     game_id: String,
-    resolutions: Vec<crate::modules::workspace::application::disk_reconcile::types::RenameConfirmationResolution>,
+    resolutions: Vec<crate::modules::reconciliation::application::disk_reconcile::types::RenameConfirmationResolution>,
     pool: State<'_, sqlx::SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
     watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
     disk_reconcile_state: State<
         '_,
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    operation_lock: State<'_, crate::app::runtime::mutation_coordinator::MutationCoordinator>,
-) -> Result<crate::modules::workspace::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+    operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
+) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
     if resolutions.is_empty() {
         return Err(AppError::Validation(
             "At least one rename confirmation resolution is required".to_string(),
@@ -318,7 +318,7 @@ pub async fn resolve_rename_confirmations(
         .map(|resolution| {
             let apply_as_rename = matches!(
                 resolution.action,
-                crate::modules::workspace::application::disk_reconcile::types::RenameConfirmationResolutionAction::Rename
+                crate::modules::reconciliation::application::disk_reconcile::types::RenameConfirmationResolutionAction::Rename
             );
             let (from, to) = if apply_as_rename {
                 let previous = resolution.previous_path.as_deref().ok_or_else(|| {
@@ -349,8 +349,8 @@ pub async fn resolve_rename_confirmations(
         })
         .collect::<Result<Vec<_>, AppError>>()?;
 
-    crate::modules::workspace::application::disk_reconcile::orchestrator::reconcile_disk_state(
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileContext {
+    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
             config: config.inner(),
             state: disk_reconcile_state.inner(),
@@ -358,7 +358,7 @@ pub async fn resolve_rename_confirmations(
             operation_lock: operation_lock.inner().inner_lock(),
             progress_reporter: None,
         },
-        crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileRequest::rename_resolutions(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::rename_resolutions(
             game_id, events,
         ),
     )
@@ -368,8 +368,8 @@ pub async fn resolve_rename_confirmations(
 #[cfg(test)]
 mod tests {
     use super::{checked_resolution_path, should_wait_for_initial_recovery};
-    use crate::modules::workspace::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
-    use crate::modules::workspace::application::disk_reconcile::types::DiskReconcileReason;
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
+    use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
 
     #[test]
     fn rename_confirmation_paths_must_be_relative_and_contained() {
@@ -438,7 +438,7 @@ pub async fn start_watcher(
     game_id: String,
     state: State<'_, WatcherState>,
     pool: State<'_, sqlx::SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<(), AppError> {
     let configured_root =
         crate::platform::fs::guard::validate_mods_root(&config, &game_id, &path)?;

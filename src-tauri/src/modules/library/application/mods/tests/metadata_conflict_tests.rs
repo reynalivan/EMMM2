@@ -267,7 +267,7 @@ fn shader_replacement_inside_a_nested_disabled_folder_does_not_conflict() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn update_thumbnail_rejects_non_image_source_without_creating_a_file() {
-    use crate::modules::system::application::config::{ConfigService, GameConfig};
+    use crate::modules::settings::application::config::{ConfigService, GameConfig};
     use crate::platform::fs::guard::validate_path;
 
     let temp = TempDir::new().unwrap();

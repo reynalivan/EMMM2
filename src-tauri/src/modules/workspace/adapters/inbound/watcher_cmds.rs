@@ -18,7 +18,7 @@ pub async fn start_watcher(
     game_id: String,
     state: State<'_, WatcherState>,
     pool: State<'_, sqlx::SqlitePool>,
-    config: State<'_, crate::modules::system::application::config::ConfigService>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<(), AppError> {
     let configured_root =
         crate::platform::fs::guard::validate_mods_root(&config, &game_id, &path)?;

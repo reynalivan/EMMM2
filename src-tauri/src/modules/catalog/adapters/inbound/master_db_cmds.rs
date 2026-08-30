@@ -47,7 +47,7 @@ pub async fn get_object(
 /// When hash_db is present in source, merges hashes into matching entries.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<Vec<crate::modules::workspace::application::scanner::deep_matcher::DbEntry>, AppError> {
+pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<Vec<crate::modules::matching::application::deep_matcher::DbEntry>, AppError> {
     let resource_dir = resource_dir(&app)?;
     Ok(crate::modules::workspace::application::scanner::master_db::load_master_db_entries(
         &resource_dir,

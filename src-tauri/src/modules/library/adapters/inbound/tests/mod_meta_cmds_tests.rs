@@ -377,7 +377,7 @@ async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
 #[tokio::test]
 async fn committed_metadata_mutation_stages_runtime_effects_when_finalization_fails() {
     let pool = setup_object_mods_fixture().await;
-    let state = crate::modules::workspace::application::disk_reconcile::orchestrator::DiskReconcileState::new();
+    let state = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new();
 
     sqlx::query("UPDATE mods SET object_type = 'Weapon' WHERE id = 'm1'")
         .execute(&pool)
@@ -387,7 +387,7 @@ async fn committed_metadata_mutation_stages_runtime_effects_when_finalization_fa
     let settlement = crate::modules::system::application::app::runtime_effects::settle_committed_runtime_effects_with(
         &state,
         "g_object_mods",
-        crate::modules::workspace::application::disk_reconcile::types::PendingRuntimeEffects {
+        crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
             collections_dirty: false,
             overlay_refresh: true,
         },
@@ -410,7 +410,7 @@ async fn committed_metadata_mutation_stages_runtime_effects_when_finalization_fa
     assert_eq!(
         state.stage_runtime_effects(
             "g_object_mods",
-            crate::modules::workspace::application::disk_reconcile::types::PendingRuntimeEffects::default(),
+            crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects::default(),
         ),
         settlement.pending_runtime_effects,
         "the existing reconcile state retains the failed post-commit intent"

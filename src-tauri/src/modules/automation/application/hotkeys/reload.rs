@@ -4,7 +4,7 @@ use enigo::{
 };
 
 use crate::shared::errors::AppError;
-use crate::modules::system::application::config::AppSettings;
+use crate::modules::settings::application::config::AppSettings;
 use crate::modules::automation::application::hotkeys::manager::normalize_shortcut;
 use crate::modules::automation::application::keyviewer::generator;
 
