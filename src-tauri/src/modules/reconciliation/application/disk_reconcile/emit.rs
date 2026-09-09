@@ -17,6 +17,9 @@ use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcileResult, DiskReconcileStatus,
 };
 
+const FOLDER_CONFLICT_MUTATION_MESSAGE: &str =
+    "Resolve folder name conflicts affecting this mod before modifying it";
+
 pub struct CommittedReconcileSettlement {
     pub reconcile: Option<DiskReconcileResult>,
     pub sync_warning: Option<CommittedMutationSyncWarning>,
@@ -105,6 +108,10 @@ pub(crate) fn conflicts_intersect_paths(
                 .any(|candidate| path_is_within_conflict_scope(path, &candidate.path))
         })
     })
+}
+
+pub(crate) fn folder_conflict_mutation_error() -> AppError {
+    AppError::Io(FOLDER_CONFLICT_MUTATION_MESSAGE.to_string())
 }
 
 /// Scoped `InternalMutation` reconcile without the frontend event. For flows
@@ -539,6 +546,21 @@ pub async fn ensure_mutation_preflight_for_paths(
     game_id: &str,
     paths: Option<&[String]>,
 ) -> Result<(), AppError> {
+    let result = mutation_preflight_report_for_paths(app, pool, game_id, paths).await?;
+    if result.status == DiskReconcileStatus::AppliedWithFolderConflicts
+        && paths.is_none_or(|paths| conflicts_intersect_paths(&result.folder_conflicts, paths))
+    {
+        return Err(folder_conflict_mutation_error());
+    }
+    Ok(())
+}
+
+pub async fn mutation_preflight_report_for_paths(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    paths: Option<&[String]>,
+) -> Result<DiskReconcileResult, AppError> {
     if let Some(state) = app.try_state::<DiskReconcileState>() {
         if !initial_recovery_allows_mutation(state.initial_recovery_readiness(game_id)) {
             return Err(AppError::Io(
@@ -555,11 +577,6 @@ pub async fn ensure_mutation_preflight_for_paths(
     };
     if result.status == DiskReconcileStatus::AppliedWithFolderConflicts {
         app.emit("disk_reconcile:result", &result)?;
-        if paths.is_none_or(|paths| conflicts_intersect_paths(&result.folder_conflicts, paths)) {
-            return Err(AppError::Io(
-                "Resolve folder name conflicts affecting this mod before modifying it".to_string(),
-            ));
-        }
     }
     if result.status == DiskReconcileStatus::NeedsRenameConfirmation {
         app.emit("disk_reconcile:result", &result)?;
@@ -572,10 +589,11 @@ pub async fn ensure_mutation_preflight_for_paths(
         return Err(AppError::Io(
             result
                 .error_message
+                .clone()
                 .unwrap_or_else(|| "Mods folder is unavailable".to_string()),
         ));
     }
-    Ok(())
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -638,19 +656,26 @@ mod tests {
     }
 
     #[test]
-    fn path_scoped_mutation_preflight_does_not_use_full_reconcile() {
-        let source = include_str!("emit.rs");
-        let start = source
-            .find("pub async fn ensure_mutation_preflight_for_paths(")
-            .expect("preflight source");
-        let end = source
-            .find("#[cfg(test)]")
-            .expect("preflight test boundary");
-        let preflight = &source[start..end];
+    fn conflict_scope_classifies_mixed_mutation_targets_independently() {
+        use crate::modules::reconciliation::application::disk_reconcile::types::{
+            FolderNameConflictCandidate, FolderNameConflictGroup,
+        };
 
-        assert!(
-            preflight.contains("run_internal_disk_reconcile(app, pool, game_id, paths.to_vec())"),
-            "path-scoped preflight must classify its affected roots only"
-        );
+        let conflicts = vec![FolderNameConflictGroup {
+            group_id: "alice-blue".to_string(),
+            identity: "alice/blue".to_string(),
+            display_name: "Blue".to_string(),
+            candidates: vec![FolderNameConflictCandidate {
+                path: "E:/Mods/Alice/DISABLED Blue".to_string(),
+                folder_name: "DISABLED Blue".to_string(),
+                base_name: "Blue".to_string(),
+                is_enabled: false,
+            }],
+        }];
+        let conflicted = vec!["E:/Mods/Alice/DISABLED Blue".to_string()];
+        let safe = vec!["E:/Mods/Bob/DISABLED Red".to_string()];
+
+        assert!(conflicts_intersect_paths(&conflicts, &conflicted));
+        assert!(!conflicts_intersect_paths(&conflicts, &safe));
     }
 }

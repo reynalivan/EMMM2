@@ -70,10 +70,11 @@ pub async fn execute_workspace_switch(
     >,
     op_lock: State<'_, MutationCoordinator>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
+    let preflight = crate::modules::reconciliation::application::disk_reconcile::emit::mutation_preflight_report_for_paths(
         &app,
         pool.inner(),
         &input.game_id,
+        None,
     )
     .await?;
     let game_id = input.game_id.clone();
@@ -87,8 +88,25 @@ pub async fn execute_workspace_switch(
     if let Some(result) = prepared.immediate_result() {
         return Ok(result);
     }
-    let journal_steps = prepared
-        .journal_steps()
+    let planned_renames = prepared.journal_steps();
+    let preflight_paths = planned_renames
+        .iter()
+        .flat_map(|(_, old_path, new_path)| {
+            [
+                old_path.to_string_lossy().into_owned(),
+                new_path.to_string_lossy().into_owned(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    if crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
+        &preflight.folder_conflicts,
+        &preflight_paths,
+    ) {
+        return Err(
+            crate::modules::reconciliation::application::disk_reconcile::emit::folder_conflict_mutation_error(),
+        );
+    }
+    let journal_steps = planned_renames
         .into_iter()
         .map(|(sequence, old_path, new_path)| {
             crate::modules::mutation::api::PlannedStep::rename(sequence, old_path, new_path)

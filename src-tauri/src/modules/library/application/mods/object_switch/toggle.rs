@@ -1,6 +1,6 @@
 //! Explicit enable/disable of an object root folder (Workspace Switch).
 
-use super::resolve::resolve_object_root_path;
+use super::resolve::{heal_object_root_path, resolve_object_root_path};
 use crate::modules::library::application::mods::core_ops::{
     plan_toggle_rename, rename_toggle_on_disk, ToggleRenamePlan,
 };
@@ -119,6 +119,19 @@ pub async fn toggle_object_root_service(
 ) -> Result<ObjectSwitchOutcome, AppError> {
     let (object, mods_path, current_absolute_path) =
         resolve_object_root_path(pool, game_id, object_id).await?;
+    let current_relative_path = Path::new(&current_absolute_path)
+        .strip_prefix(Path::new(&mods_path))
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| current_absolute_path.clone());
+    heal_object_root_path(
+        pool,
+        game_id,
+        &object.folder_path,
+        &current_relative_path,
+        &mods_path,
+    )
+    .await?;
     // Toggle rename keeps identity, so one path-scoped entry covers both
     // spellings, through the async event tail after return.
     let _guard = watcher_state

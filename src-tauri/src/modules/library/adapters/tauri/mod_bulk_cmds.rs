@@ -69,15 +69,35 @@ pub async fn bulk_toggle_mods(
 ) -> Result<bulk::BulkResult, AppError> {
     // Security validation for all paths
     let validated = crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    let preflight_paths = validated
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let preflight = crate::modules::reconciliation::application::disk_reconcile::emit::mutation_preflight_report_for_paths(
         &app,
         pool.inner(),
         &game_id,
-        Some(&paths),
+        Some(&preflight_paths),
     )
     .await?;
+    let (blocked, validated): (Vec<_>, Vec<_>) = validated
+        .into_iter()
+        .partition(|path| {
+            let canonical_path = path.to_string_lossy().into_owned();
+            crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
+                &preflight.folder_conflicts,
+                std::slice::from_ref(&canonical_path),
+            )
+        });
+    let preflight_failures = blocked
+        .into_iter()
+        .map(|path| bulk::BulkActionError {
+            path: path.original().to_string(),
+            error: crate::modules::reconciliation::application::disk_reconcile::emit::folder_conflict_mutation_error(),
+        })
+        .collect::<Vec<_>>();
     if validated.is_empty() {
-        return Ok(bulk::BulkResult::new(Vec::new(), Vec::new()));
+        return Ok(bulk::BulkResult::new(Vec::new(), preflight_failures));
     }
 
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
@@ -93,13 +113,11 @@ pub async fn bulk_toggle_mods(
                 crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata,
             )
             .await?;
-        return Ok(bulk::execute_prepared_bulk_toggle(
-            &app,
-            &state,
-            &prepared,
-            cancel_state.begin(),
-        )
-        .result);
+        let mut result =
+            bulk::execute_prepared_bulk_toggle(&app, &state, &prepared, cancel_state.begin())
+                .result;
+        result.failures.extend(preflight_failures);
+        return Ok(result);
     }
 
     let planned_sequences = prepared.planned_sequences();
@@ -122,6 +140,7 @@ pub async fn bulk_toggle_mods(
     );
     let mut execution =
         bulk::execute_prepared_bulk_toggle(&app, &state, &prepared, cancel_state.begin());
+    execution.result.failures.extend(preflight_failures);
 
     for sequence in &planned_sequences {
         if execution.applied_sequences.contains(sequence) {

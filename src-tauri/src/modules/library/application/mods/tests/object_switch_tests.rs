@@ -1,4 +1,4 @@
-use super::toggle_object_root_service;
+use super::{prepare_object_root_switch, toggle_object_root_service};
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::operation_lock::OperationLock;
@@ -73,4 +73,53 @@ async fn object_switch_reports_rewrite_when_db_disabled_but_disk_enabled() {
         .unwrap();
     assert_eq!(row.0, "Alice");
     assert_eq!(row.1, ItemStatus::Disabled as i64);
+}
+
+#[tokio::test]
+async fn preparing_object_switch_does_not_heal_the_stored_path() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp_dir.path().join("mods");
+    std::fs::create_dir_all(mods_path.join("Alice")).expect("object folder should exist");
+
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g_object_switch_prepare",
+            name: "ZZZ",
+            game_type: GameType::GIMI,
+            path: "/game_object_switch_prepare",
+            mods_path: Some(mods_path.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "o_object_switch_prepare",
+            game_id: "g_object_switch_prepare",
+            name: "Alice",
+            folder_path: "DISABLED Alice",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    prepare_object_root_switch(
+        &pool,
+        "g_object_switch_prepare",
+        "o_object_switch_prepare",
+        true,
+    )
+    .await
+    .unwrap();
+
+    let stored_path: String = sqlx::query_scalar("SELECT folder_path FROM objects WHERE id = ?")
+        .bind("o_object_switch_prepare")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored_path, "DISABLED Alice");
 }

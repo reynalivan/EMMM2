@@ -64,7 +64,7 @@ fn find_matching_object_root(mods_path: &Path, object_name: &str) -> Option<Stri
     None
 }
 
-async fn heal_object_root_path(
+pub(super) async fn heal_object_root_path(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     old_folder_path: &str,
@@ -135,37 +135,11 @@ pub(super) async fn resolve_object_root_path(
 
     for candidate in build_object_path_candidates(mods_root, &object.folder_path, &object.name) {
         if Path::new(&candidate).exists() {
-            let relative_candidate = Path::new(&candidate)
-                .strip_prefix(mods_root)
-                .ok()
-                .map(|value| value.to_string_lossy().to_string())
-                .unwrap_or(candidate.clone());
-            heal_object_root_path(
-                pool,
-                game_id,
-                &object.folder_path,
-                &relative_candidate,
-                &mods_path,
-            )
-            .await?;
             return Ok((object, mods_path, candidate));
         }
     }
 
     if let Some(found_path) = find_matching_object_root(mods_root, &object.name) {
-        let relative_candidate = Path::new(&found_path)
-            .strip_prefix(mods_root)
-            .ok()
-            .map(|value| value.to_string_lossy().to_string())
-            .unwrap_or(found_path.clone());
-        heal_object_root_path(
-            pool,
-            game_id,
-            &object.folder_path,
-            &relative_candidate,
-            &mods_path,
-        )
-        .await?;
         return Ok((object, mods_path, found_path));
     }
 
