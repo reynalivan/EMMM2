@@ -1,7 +1,7 @@
 use super::inspection::normalized_match_name;
 use super::types::CanonicalIdentity;
 use crate::modules::ingestion::application::import_batch::types::{
-    ConfidenceTier, DestinationKind, DestinationSuggestion, StableCategory,
+    ConfidenceTier, DestinationKind, DestinationMatchMethod, DestinationSuggestion, StableCategory,
 };
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -46,15 +46,34 @@ pub struct DestinationContext<'a> {
     pub enforce_category: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DestinationScore {
+    value: u8,
+    method: DestinationMatchMethod,
+}
+
 pub fn resolve_destination_candidates(
     context: DestinationContext<'_>,
+) -> Vec<DestinationSuggestion> {
+    resolve_destination_candidates_inner(context, false)
+}
+
+pub fn resolve_all_destination_candidates(
+    context: DestinationContext<'_>,
+) -> Vec<DestinationSuggestion> {
+    resolve_destination_candidates_inner(context, true)
+}
+
+fn resolve_destination_candidates_inner(
+    context: DestinationContext<'_>,
+    include_all: bool,
 ) -> Vec<DestinationSuggestion> {
     let source_key = normalized_match_name(context.source_name);
     let mut suggestions = Vec::new();
     let mut seen_objects = BTreeSet::new();
 
     if let Some(target) = context.specific_target {
-        let warning = (target.category != context.category).then(|| {
+        let warning = (context.enforce_category && target.category != context.category).then(|| {
             format!(
                 "Specific target category '{}' differs from confirmed category '{}'",
                 target.category.as_str(),
@@ -66,57 +85,71 @@ pub fn resolve_destination_candidates(
             target,
             context.mods_root,
             DestinationKind::SpecificTarget,
-            name_score(&source_key, target),
+            destination_score(
+                &source_key,
+                target,
+                context.enforce_category.then_some(context.category),
+            ),
             warning,
         ));
     }
 
     if let Some(canonical) = context.canonical {
         for target in context.existing.iter().filter(|target| {
-            (!context.enforce_category || target.category == context.category)
-                && target.canonical_entry_key.as_deref() == Some(canonical.entry_key.as_str())
+            target.canonical_entry_key.as_deref() == Some(canonical.entry_key.as_str())
         }) {
             if seen_objects.insert(target.object_id.clone()) {
                 suggestions.push(existing_suggestion(
                     target,
                     context.mods_root,
                     DestinationKind::ExistingObject,
-                    96,
-                    None,
+                    DestinationScore {
+                        value: 96,
+                        method: DestinationMatchMethod::CanonicalIdentity,
+                    },
+                    category_warning(&context, target),
                 ));
             }
         }
     }
 
-    let mut folder_matches = context
+    let mut scored_existing = context
         .existing
         .iter()
-        .filter_map(|target| {
-            if context.enforce_category && target.category != context.category {
-                return None;
-            }
-            let score = name_score(&source_key, target);
-            (score >= 45 && !seen_objects.contains(&target.object_id)).then_some((target, score))
+        .filter(|target| !seen_objects.contains(&target.object_id))
+        .map(|target| {
+            (
+                target,
+                destination_score(
+                    &source_key,
+                    target,
+                    context.enforce_category.then_some(context.category),
+                ),
+            )
         })
         .collect::<Vec<_>>();
-    folder_matches.sort_by(|(left, left_score), (right, right_score)| {
+    scored_existing.sort_by(|(left, left_score), (right, right_score)| {
         right_score
-            .cmp(left_score)
+            .value
+            .cmp(&left_score.value)
             .then_with(|| left.name.cmp(&right.name))
     });
-    for (target, score) in folder_matches {
-        seen_objects.insert(target.object_id.clone());
-        suggestions.push(existing_suggestion(
-            target,
-            context.mods_root,
-            DestinationKind::ExistingObject,
-            score,
-            None,
-        ));
+    for &(target, score) in &scored_existing {
+        if score.value >= 45 && seen_objects.insert(target.object_id.clone())
+        {
+            suggestions.push(existing_suggestion(
+                target,
+                context.mods_root,
+                DestinationKind::ExistingObject,
+                score,
+                category_warning(&context, target),
+            ));
+        }
     }
 
     if let Some(canonical) = context.canonical.filter(|identity| {
-        identity.entry_kind == crate::modules::matching::application::deep_matcher::EntryKind::Canonical
+        identity.entry_kind
+            == crate::modules::matching::application::deep_matcher::EntryKind::Canonical
     }) {
         if !context.existing.iter().any(|target| {
             target.canonical_entry_key.as_deref() == Some(canonical.entry_key.as_str())
@@ -132,19 +165,48 @@ pub fn resolve_destination_candidates(
                     .into_owned(),
                 confidence_percentage: 75,
                 confidence_tier: ConfidenceTier::High,
+                match_method: DestinationMatchMethod::CanonicalIdentity,
                 warning: None,
             });
+        }
+    }
+
+    if include_all {
+        for (target, score) in scored_existing {
+            if !seen_objects.insert(target.object_id.clone()) {
+                continue;
+            }
+            suggestions.push(existing_suggestion(
+                target,
+                context.mods_root,
+                DestinationKind::ExistingObject,
+                score,
+                category_warning(&context, target),
+            ));
         }
     }
 
     suggestions
 }
 
+fn category_warning(
+    context: &DestinationContext<'_>,
+    target: &ExistingDestination,
+) -> Option<String> {
+    (context.enforce_category && target.category != context.category).then(|| {
+        format!(
+            "Destination category '{}' differs from confirmed category '{}'",
+            target.category.as_str(),
+            context.category.as_str()
+        )
+    })
+}
+
 fn existing_suggestion(
     target: &ExistingDestination,
     mods_root: &str,
     kind: DestinationKind,
-    score: u8,
+    score: DestinationScore,
     warning: Option<String>,
 ) -> DestinationSuggestion {
     DestinationSuggestion {
@@ -156,34 +218,106 @@ fn existing_suggestion(
             .join(&target.folder_name)
             .to_string_lossy()
             .into_owned(),
-        confidence_percentage: score,
-        confidence_tier: ConfidenceTier::from_percentage(score),
+        confidence_percentage: score.value,
+        confidence_tier: ConfidenceTier::from_percentage(score.value),
+        match_method: score.method,
         warning,
     }
 }
 
-fn name_score(source_key: &str, target: &ExistingDestination) -> u8 {
-    let mut terms = vec![target.name.as_str(), target.folder_name.as_str()];
-    terms.extend(target.aliases.iter().map(String::as_str));
-    terms
-        .into_iter()
-        .filter(|term| !term.trim().is_empty())
-        .map(|raw_term| {
-            let term = normalized_match_name(raw_term);
-            if source_key == term {
-                95
-            } else if source_key.contains(&term) || term.contains(source_key) {
-                82
+fn destination_score(
+    source_key: &str,
+    target: &ExistingDestination,
+    source_category: Option<StableCategory>,
+) -> DestinationScore {
+    let mut best = score_term(
+        source_key,
+        &target.name,
+        DestinationMatchMethod::ExactName,
+        DestinationMatchMethod::NameSubstring,
+    );
+    best = best.max_by_value(score_term(
+        source_key,
+        &target.folder_name,
+        DestinationMatchMethod::ExactName,
+        DestinationMatchMethod::NameSubstring,
+    ));
+    for alias in &target.aliases {
+        best = best.max_by_value(score_term(
+            source_key,
+            alias,
+            DestinationMatchMethod::ExactAlias,
+            DestinationMatchMethod::AliasSubstring,
+        ));
+    }
+    if best.value > 0 {
+        if let Some(category) = source_category.filter(|category| *category != StableCategory::Other)
+        {
+            best.value = if target.category == category {
+                best.value.saturating_add(5).min(100)
             } else {
-                deunicode::deunicode(raw_term)
-                    .split(|character: char| !character.is_alphabetic())
-                    .map(normalized_match_name)
-                    .filter(|token| token.len() >= 3 && source_key.contains(token))
-                    .map(|_| 72)
-                    .max()
-                    .unwrap_or(0)
-            }
-        })
-        .max()
-        .unwrap_or(0)
+                best.value.saturating_sub(15)
+            };
+        }
+    }
+    best
+}
+
+fn score_term(
+    source_key: &str,
+    raw_term: &str,
+    exact_method: DestinationMatchMethod,
+    substring_method: DestinationMatchMethod,
+) -> DestinationScore {
+    if raw_term.trim().is_empty() {
+        return DestinationScore::none();
+    }
+    let term = normalized_match_name(raw_term);
+    if source_key == term {
+        return DestinationScore {
+            value: 95,
+            method: exact_method,
+        };
+    }
+    if source_key.contains(&term) || term.contains(source_key) {
+        return DestinationScore {
+            value: 82,
+            method: substring_method,
+        };
+    }
+    if deunicode::deunicode(raw_term)
+        .split(|character: char| !character.is_alphabetic())
+        .map(normalized_match_name)
+        .any(|token| token.len() >= 3 && source_key.contains(&token))
+    {
+        return DestinationScore {
+            value: 72,
+            method: DestinationMatchMethod::TokenSubstring,
+        };
+    }
+    let fuzzy_similarity = strsim::jaro_winkler(source_key, &term);
+    if fuzzy_similarity >= 0.55 {
+        return DestinationScore {
+            value: (fuzzy_similarity * 44.0).round() as u8,
+            method: DestinationMatchMethod::FuzzyName,
+        };
+    }
+    DestinationScore::none()
+}
+
+impl DestinationScore {
+    fn none() -> Self {
+        Self {
+            value: 0,
+            method: DestinationMatchMethod::NoNameMatch,
+        }
+    }
+
+    fn max_by_value(self, other: Self) -> Self {
+        if other.value > self.value {
+            other
+        } else {
+            self
+        }
+    }
 }

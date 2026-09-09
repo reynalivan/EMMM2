@@ -2,7 +2,7 @@ import { formatAppError } from '../../../shared/lib/appError';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { validateKeyBinding } from '../utils/keybindingValidator';
-import { toast } from '../../../app/store/useToastStore';
+import { toast } from '@/shared/ui/toast';
 import {
   buildKeyBindSections,
   getConflictingKeys,
@@ -13,7 +13,7 @@ import { useMetadataDraft } from './useMetadataDraft';
 import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntimeSelector,
-} from '@/features/workspace-runtime/state/workspaceStoreBridge';
+} from '@/features/workspace-runtime';
 import { usePreviewRuntime } from './usePreviewRuntime';
 
 function areFieldMapsEqual(left: Record<string, string>, right: Record<string, string>): boolean {

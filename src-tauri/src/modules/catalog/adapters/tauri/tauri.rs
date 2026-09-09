@@ -68,7 +68,8 @@ pub async fn create_object_cmd(
     pool: State<'_, sqlx::SqlitePool>,
     app: tauri::AppHandle,
     watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
-    op_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
+    op_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
 ) -> Result<CreateObjectResult, AppError> {
     let game_id = input.game_id.clone();
     let folder_path = input.folder_path.as_deref().unwrap_or(&input.name);
@@ -80,33 +81,53 @@ pub async fn create_object_cmd(
         Some(&preflight_paths),
     )
     .await?;
-    let lock = op_lock.acquire().await?;
+    let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    let prepared = crate::modules::catalog::application::objects::mutate::prepare_object_create(pool.inner(), &input).await?;
+    prepared.prepare()?;
+    let operation_guard = match op_lock.acquire_operation(
+        crate::modules::mutation::journal::OperationPlan::new(
+            "object-create",
+            &game_id,
+            vec![prepared.journal_step()],
+        ),
+    ).await {
+        Ok(guard) => guard,
+        Err(error) => {
+            prepared.rollback()?;
+            return Err(error);
+        }
+    };
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(game_guard, operation_guard);
     let guard = crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(&watcher.suppressor);
+    if let Err(error) = prepared.promote() {
+        mutation_lease.begin_rollback()?;
+        prepared.rollback()?;
+        mutation_lease.mark_step_rolled_back(0)?;
+        mutation_lease.finish_rollback()?;
+        return Err(error);
+    }
+    mutation_lease.mark_step_applied(0)?;
     let result =
         crate::modules::catalog::application::objects::mutate::create_object_cmd_inner(&pool, Some(&app), input).await;
     drop(guard);
-    drop(lock);
-    let reconcile = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
-        &app,
-        pool.inner(),
-        &game_id,
-    )
-    .await;
     match result {
         Ok(id) => {
-            let settlement =
-                crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(reconcile);
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(&app, pool.inner(), &game_id, &mutation_lease).await?;
+            mutation_lease.mark_db_committed()?;
+            mutation_lease.commit()?;
             Ok(CreateObjectResult {
                 id,
-                sync_warning: settlement.sync_warning,
+                sync_warning: None,
             })
         }
-        Err(error) => match reconcile {
-            Ok(_) => Err(error),
-            Err(reconcile_error) => Err(AppError::Io(format!(
-                "{error}; convergence also failed: {reconcile_error}"
-            ))),
-        },
+        Err(error) => {
+            mutation_lease.begin_rollback()?;
+            prepared.rollback()?;
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(&app, pool.inner(), &game_id, &mutation_lease).await?;
+            mutation_lease.mark_step_rolled_back(0)?;
+            mutation_lease.finish_rollback()?;
+            Err(error)
+        }
     }
 }
 
@@ -121,7 +142,7 @@ pub async fn update_object_cmd(
         '_,
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    op_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
+    _op_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
 ) -> Result<(), AppError> {
     let (game_id, folder_path) =
         crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool.inner(), &id)
@@ -140,9 +161,7 @@ pub async fn update_object_cmd(
     let touches_aliases = updates.custom_skins.is_some();
     let game_lock = disk_reconcile_state.game_lock(&game_id);
     let game_guard = game_lock.lock().await;
-    let operation_guard = op_lock.acquire_for_reconcile().await;
     crate::modules::catalog::application::objects::mutate::update_object(&pool, &id, &updates).await?;
-    drop(operation_guard);
     drop(game_guard);
 
     // The MasterDB is cached parsed, with user aliases already folded in, so an
@@ -161,7 +180,8 @@ pub async fn delete_object_cmd(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
-    op_lock: State<'_, crate::platform::fs::operation_lock::OperationLock>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
+    op_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
 ) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult, AppError> {
     let (game_id, folder_path) =
         crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool.inner(), &id)
@@ -177,20 +197,40 @@ pub async fn delete_object_cmd(
         Some(&preflight_paths),
     )
     .await?;
-    let op_guard = op_lock.acquire().await?;
-    crate::modules::catalog::application::objects::mutate::delete_object(&pool, &id, force, &state, &op_guard).await?;
-    drop(op_guard);
-    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
-            &app,
-            pool.inner(),
+    let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    let prepared = crate::modules::catalog::application::objects::mutate::prepare_object_delete(pool.inner(), &id, force).await?;
+    let Some(prepared) = prepared else {
+        drop(game_guard);
+        let op_guard = op_lock
+            .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::CatalogProjection)
+            .await?;
+        crate::modules::catalog::application::objects::mutate::delete_object(&pool, &id, force, &state, op_guard.op_guard()).await?;
+        drop(op_guard);
+        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(&app, pool.inner(), &game_id).await,
+        );
+        return Ok(crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult { sync_warning: settlement.sync_warning });
+    };
+    let operation_guard = op_lock.acquire_operation(
+        crate::modules::mutation::journal::OperationPlan::new(
+            "object-delete",
             &game_id,
-        )
-        .await,
-    );
+            vec![prepared.journal_step()],
+        ),
+    ).await?;
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(game_guard, operation_guard);
+    prepared.execute(&state)?;
+    mutation_lease.mark_step_applied(0)?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(&app, pool.inner(), &game_id, &mutation_lease).await?;
+    mutation_lease.mark_db_committed()?;
+    mutation_lease.commit()?;
+    let sync_warning = prepared.finalize().err().map(|error| crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning {
+        kind: crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind::CleanupPending,
+        message: error.to_string(),
+    });
     Ok(
         crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult {
-            sync_warning: settlement.sync_warning,
+            sync_warning,
         },
     )
 }

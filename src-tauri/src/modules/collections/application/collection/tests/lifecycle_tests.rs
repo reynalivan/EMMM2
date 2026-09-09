@@ -143,10 +143,13 @@ async fn save_current_state_becomes_the_game_runtime_baseline() {
     )
     .await
     .expect("save current state");
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-save-no-pointer")
-        .await
-        .expect("load runtime")
-        .expect("runtime row exists");
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(
+        &ctx.pool,
+        "game-save-no-pointer",
+    )
+    .await
+    .expect("load runtime")
+    .expect("runtime row exists");
 
     assert!(saved.is_active);
     assert_eq!(
@@ -513,10 +516,11 @@ async fn clean_runtime_does_not_create_or_replace_last_changes() {
         .expect("capture decision");
 
     assert!(captured.is_none());
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-clean-draft")
-        .await
-        .expect("runtime state")
-        .expect("runtime row");
+    let runtime =
+        crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-clean-draft")
+            .await
+            .expect("runtime state")
+            .expect("runtime row");
     assert!(runtime.draft_collection_id.is_none());
 }
 
@@ -546,10 +550,13 @@ async fn unsaved_runtime_creates_one_last_changes_draft_without_baseline() {
         .await
         .expect("capture draft")
         .expect("draft id");
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-unsaved-draft")
-        .await
-        .expect("runtime state")
-        .expect("runtime row");
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(
+        &ctx.pool,
+        "game-unsaved-draft",
+    )
+    .await
+    .expect("runtime state")
+    .expect("runtime row");
 
     assert_eq!(
         runtime.draft_collection_id.as_deref(),
@@ -650,16 +657,21 @@ async fn clear_last_changes_rejects_a_draft_referenced_by_an_open_apply() {
     .await
     .expect("create open task");
 
-    let error =
-        crate::modules::collections::application::collection::clear_last_changes(&ctx.pool, "game-clear-protected")
-            .await
-            .expect_err("open recovery task must protect its rollback draft");
+    let error = crate::modules::collections::application::collection::clear_last_changes(
+        &ctx.pool,
+        "game-clear-protected",
+    )
+    .await
+    .expect_err("open recovery task must protect its rollback draft");
 
     assert!(format!("{error}").contains("recovery"));
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-clear-protected")
-        .await
-        .expect("load runtime")
-        .expect("runtime exists");
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(
+        &ctx.pool,
+        "game-clear-protected",
+    )
+    .await
+    .expect("load runtime")
+    .expect("runtime exists");
     assert_eq!(
         runtime.draft_collection_id.as_deref(),
         Some(draft.id.as_str())

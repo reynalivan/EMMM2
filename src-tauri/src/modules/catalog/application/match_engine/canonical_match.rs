@@ -1,11 +1,13 @@
 use crate::modules::ingestion::application::import_batch::types::{
     CanonicalSuggestion, ConfidenceTier, MatchEvidence, StableCategory,
 };
-use crate::modules::workspace::application::scanner::core::walker::{scan_folder_content, ModCandidate};
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::modules::matching::application::deep_matcher::models::result_summary::score_to_percentage;
 use crate::modules::matching::application::deep_matcher::{match_folder_phased, MasterDb, Reason};
+use crate::modules::workspace::application::scanner::core::walker::{
+    scan_folder_content, ModCandidate,
+};
 use std::path::Path;
 
 pub fn match_canonical_objects(
@@ -20,7 +22,8 @@ pub fn match_canonical_objects(
             .entries
             .iter()
             .filter(|entry| {
-                entry.entry_kind == crate::modules::matching::application::deep_matcher::EntryKind::Canonical
+                entry.entry_kind
+                    == crate::modules::matching::application::deep_matcher::EntryKind::Canonical
                     && entry.object_type == category.as_str()
             })
             .cloned()
@@ -32,8 +35,13 @@ pub fn match_canonical_objects(
     let candidate = ModCandidate {
         path: source_path.to_path_buf(),
         raw_name: planned_name.to_string(),
-        display_name: crate::modules::workspace::domain::normalizer::normalize_display_name(planned_name).into_owned(),
-        is_disabled: crate::modules::workspace::domain::normalizer::is_disabled_folder(planned_name),
+        display_name: crate::modules::workspace::domain::normalizer::normalize_display_name(
+            planned_name,
+        )
+        .into_owned(),
+        is_disabled: crate::modules::workspace::domain::normalizer::is_disabled_folder(
+            planned_name,
+        ),
     };
     let content = scan_folder_content(source_path, 3);
     let result = match_folder_phased(

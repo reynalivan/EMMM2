@@ -1,6 +1,11 @@
-use crate::shared::errors::AppError;
 use crate::modules::settings::application::config::{AppSettings, ConfigService};
+use crate::shared::errors::AppError;
+use secrecy::ExposeSecret;
+use std::time::Duration;
 use tauri::{Emitter, State};
+
+const AI_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_AI_BASE_URL: &str = "https://api.openai.com/v1";
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct SaveSettingsResult {
@@ -176,7 +181,11 @@ pub async fn set_active_game(
             }
         }
         if let Err(error) =
-            crate::modules::system::application::app::post_apply::trigger_overlay_refresh(pool.inner(), &state).await
+            crate::modules::system::application::app::post_apply::trigger_overlay_refresh(
+                pool.inner(),
+                &state,
+            )
+            .await
         {
             log::warn!("Active game changed but overlay refresh failed: {error}");
         }
@@ -203,8 +212,11 @@ pub async fn run_maintenance(
 ) -> Result<u64, AppError> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
-    crate::modules::system::application::app::maintenance_service::run_maintenance_counts(pool.inner(), &app_data_dir)
-        .await
+    crate::modules::system::application::app::maintenance_service::run_maintenance_counts(
+        pool.inner(),
+        &app_data_dir,
+    )
+    .await
 }
 
 #[specta::specta]
@@ -215,12 +227,162 @@ pub async fn clear_old_thumbnails() -> Result<u64, AppError> {
     Ok(pruned as u64)
 }
 
+#[specta::specta]
+#[tauri::command]
+pub fn set_ai_api_key(
+    api_key: String,
+    credentials: State<'_, crate::platform::security::credential_store::CredentialStore>,
+    state: State<'_, ConfigService>,
+) -> Result<AppSettings, AppError> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err(AppError::Validation(
+            "AI API key cannot be empty".to_string(),
+        ));
+    }
+    if api_key.len() > 8_192 {
+        return Err(AppError::Validation(
+            "AI API key exceeds the maximum supported length".to_string(),
+        ));
+    }
+    if api_key.contains('\0') {
+        return Err(AppError::Validation(
+            "AI API key contains an invalid null character".to_string(),
+        ));
+    }
+
+    credentials.set_ai_api_key(&secrecy::SecretString::from(api_key.to_owned()))?;
+    state.set_ai_key_status(true);
+    Ok(state.get_settings())
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn delete_ai_api_key(
+    credentials: State<'_, crate::platform::security::credential_store::CredentialStore>,
+    state: State<'_, ConfigService>,
+) -> Result<AppSettings, AppError> {
+    credentials.delete_ai_api_key()?;
+    state.set_ai_key_status(false);
+    Ok(state.get_settings())
+}
+
+/// Verify that the configured AI endpoint is reachable and does not reject the stored key.
+///
+/// The deliberately incomplete payload exercises authentication and routing without invoking a
+/// model. Response bodies and transport errors are not returned because they may contain secrets.
+#[specta::specta]
+#[tauri::command]
+pub async fn test_ai_connection(
+    credentials: State<'_, crate::platform::security::credential_store::CredentialStore>,
+    state: State<'_, ConfigService>,
+) -> Result<(), AppError> {
+    let settings = state.get_settings();
+    let configured_url = settings
+        .ai
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_AI_BASE_URL);
+    let mut url = reqwest::Url::parse(configured_url)
+        .map_err(|_| AppError::Validation("AI base URL is invalid".to_string()))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::Validation(
+            "AI base URL must use HTTP or HTTPS".to_string(),
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(AppError::Validation(
+            "AI base URL must not contain embedded credentials".to_string(),
+        ));
+    }
+    let host = url.host_str().unwrap_or_default();
+    let loopback_host = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    if url.scheme() == "http" && !loopback_host {
+        return Err(AppError::Validation(
+            "AI base URL must use HTTPS unless it targets localhost".to_string(),
+        ));
+    }
+    let base_path = url.path().trim_end_matches('/');
+    let models_path = if let Some(prefix) = base_path.strip_suffix("/chat/completions") {
+        format!("{prefix}/models")
+    } else if let Some(prefix) = base_path.strip_suffix("/responses") {
+        format!("{prefix}/models")
+    } else {
+        format!("{base_path}/models")
+    };
+    url.set_path(&models_path);
+
+    let api_key = credentials.get_ai_api_key()?.ok_or_else(|| {
+        AppError::Validation("Configure an AI API key before testing the connection".to_string())
+    })?;
+    let bearer = secrecy::SecretString::from(format!("Bearer {}", api_key.expose_secret()));
+    let mut authorization = reqwest::header::HeaderValue::from_bytes(
+        bearer.expose_secret().as_bytes(),
+    )
+    .map_err(|_| AppError::Validation("AI API key is not a valid HTTP header".to_string()))?;
+    authorization.set_sensitive(true);
+
+    let client = reqwest::Client::builder()
+        .timeout(AI_CONNECTION_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| AppError::Internal("Could not initialize AI connection test".to_string()))?;
+    let response = client
+        .get(url)
+        .header(reqwest::header::AUTHORIZATION, authorization)
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                AppError::Io("AI connection test timed out".to_string())
+            } else {
+                AppError::Io("Could not reach the AI service".to_string())
+            }
+        })?;
+
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    if matches!(
+        status,
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+    ) {
+        return Err(AppError::Validation(
+            "AI service rejected the configured API key".to_string(),
+        ));
+    }
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Err(AppError::Validation(
+            "AI endpoint was not found".to_string(),
+        ));
+    }
+    if status.is_server_error() || status == reqwest::StatusCode::REQUEST_TIMEOUT {
+        return Err(AppError::Internal(format!(
+            "AI service is unavailable (HTTP {status})"
+        )));
+    }
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(AppError::Validation(
+            "AI service rate limit prevented the connection test".to_string(),
+        ));
+    }
+    Err(AppError::Validation(format!(
+        "AI service rejected the connection test (HTTP {status})"
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::completed_settings_save;
-    use crate::modules::settings::application::config::AppSettings;
     use crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile;
     use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
+    use crate::modules::settings::application::config::AppSettings;
 
     #[test]
     fn persisted_settings_remain_success_when_follow_up_reconcile_fails() {

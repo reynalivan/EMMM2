@@ -1,4 +1,4 @@
-import type { BrowserTab } from '@/app/store/useBrowserStore';
+import type { BrowserTab } from '@/entities/browser';
 
 const LOADING_TITLE = 'Loading...';
 

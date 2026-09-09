@@ -11,9 +11,13 @@ async fn rollback_expectations_distinguish_clean_modified_and_unsaved_state() {
         create_empty_collection(&pool, id, name, is_unsaved).await;
     }
     let mut connection = pool.acquire().await.expect("acquire runtime connection");
-    crate::modules::collections::adapters::sqlite::runtime::set_active_tx(&mut connection, "g1", Some("clean"))
-        .await
-        .expect("set unrelated current baseline");
+    crate::modules::collections::adapters::sqlite::runtime::set_active_tx(
+        &mut connection,
+        "g1",
+        Some("clean"),
+    )
+    .await
+    .expect("set unrelated current baseline");
     drop(connection);
 
     let mut actual = Vec::new();
@@ -37,17 +41,22 @@ async fn rollback_expectations_distinguish_clean_modified_and_unsaved_state() {
         )
         .await
         .expect("create rollback task");
-        let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, task_id)
-            .await
-            .expect("load rollback task")
-            .expect("rollback task exists");
+        let task =
+            crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, task_id)
+                .await
+                .expect("load rollback task")
+                .expect("rollback task exists");
         let rollback = resolve_rollback_target(&pool, &task)
             .await
             .expect("resolve stored rollback");
         actual.push((rollback.collection_id, rollback.active_baseline_id));
-        crate::modules::workspace::adapters::sqlite::task::update_status(&pool, task_id, TaskStatus::Completed)
-            .await
-            .expect("settle characterization task");
+        crate::modules::workspace::adapters::sqlite::task::update_status(
+            &pool,
+            task_id,
+            TaskStatus::Completed,
+        )
+        .await
+        .expect("settle characterization task");
     }
     let expected = vec![
         ("clean".to_string(), Some("clean".to_string())),

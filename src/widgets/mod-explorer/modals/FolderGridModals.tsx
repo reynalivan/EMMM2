@@ -1,11 +1,10 @@
-import type { MoveStatus } from '@/entities/mod/model/mod';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import MoveToObjectDialog from '@/widgets/object-sidebar/modals/MoveToObjectDialog';
+import type { MoveStatus } from '@/entities/mod';
+import type { ModFolder } from '@/entities/game-object';
+import { MoveToObjectDialog } from '@/features/mod-runtime';
 import ConfirmDialog from '../../../shared/ui/components/ui/ConfirmDialog';
 import IgnoreManagementModal from './IgnoreManagementModal';
-import BulkTagModal from '@/features/mod-runtime/modals/BulkTagModal';
-import ActiveModContextDialog from '@/features/mod-runtime/modals/ActiveModContextDialog';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
+import { ActiveModContextDialog, BulkTagModal } from '@/features/mod-runtime';
+import type { ObjectSummary } from '@/entities/game-object';
 import { useTranslation } from 'react-i18next';
 
 export interface FolderGridModalsProps {
@@ -127,6 +126,7 @@ export default function FolderGridModals({
         onClose={() => setIsIgnoreManagementOpen(false)}
       />
 
+      {/* Shared active-context dialog: keep one viewport-level instance only. */}
       <ActiveModContextDialog
         key={activeContextDialog.folder?.path || 'dialog-hidden'}
         open={activeContextDialog.open}

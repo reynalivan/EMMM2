@@ -1,15 +1,95 @@
 //! Explicit enable/disable of an object root folder (Workspace Switch).
 
 use super::resolve::resolve_object_root_path;
-use crate::shared::errors::AppError;
-use crate::modules::library::application::mods::core_ops::rename_toggle_on_disk;
+use crate::modules::library::application::mods::core_ops::{
+    plan_toggle_rename, rename_toggle_on_disk, ToggleRenamePlan,
+};
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::shared::errors::AppError;
 use std::path::Path;
 
 pub struct ObjectSwitchOutcome {
     pub object_id: String,
     pub original_path: String,
     pub next_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedObjectSwitch {
+    object_id: String,
+    original_path: String,
+    current_path: std::path::PathBuf,
+    plan: Option<ToggleRenamePlan>,
+}
+
+impl PreparedObjectSwitch {
+    pub fn journal_steps(&self) -> Vec<(u32, std::path::PathBuf, std::path::PathBuf)> {
+        self.plan
+            .as_ref()
+            .map(|plan| {
+                vec![(
+                    0,
+                    plan.old_path().to_path_buf(),
+                    plan.new_path().to_path_buf(),
+                )]
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn execute(&self, watcher: &WatcherState) -> Result<ObjectSwitchOutcome, AppError> {
+        let paths = self
+            .plan
+            .as_ref()
+            .map(|plan| vec![plan.old_path(), plan.new_path()])
+            .unwrap_or_else(|| vec![self.current_path.as_path()]);
+        let _suppression = watcher.suppressor.suppress_paths(paths);
+        if let Some(plan) = &self.plan {
+            plan.apply("object folder")?;
+        }
+        Ok(ObjectSwitchOutcome {
+            object_id: self.object_id.clone(),
+            original_path: self.original_path.clone(),
+            next_path: self
+                .plan
+                .as_ref()
+                .map(|plan| plan.new_path())
+                .unwrap_or(&self.current_path)
+                .to_string_lossy()
+                .into_owned(),
+        })
+    }
+
+    pub fn rollback(&self, watcher: &WatcherState) -> Result<(), AppError> {
+        let Some(plan) = &self.plan else {
+            return Ok(());
+        };
+        let _suppression = watcher
+            .suppressor
+            .suppress_paths([plan.old_path(), plan.new_path()]);
+        plan.rollback("object folder")
+    }
+}
+
+pub async fn prepare_object_root_switch(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    object_id: &str,
+    enable: bool,
+) -> Result<PreparedObjectSwitch, AppError> {
+    let (object, mods_path, current_absolute_path) =
+        resolve_object_root_path(pool, game_id, object_id).await?;
+    let current_path = std::path::PathBuf::from(&current_absolute_path);
+    let original_path = Path::new(&mods_path)
+        .join(&object.folder_path)
+        .to_string_lossy()
+        .into_owned();
+    let plan = plan_toggle_rename(&current_path, enable)?;
+    Ok(PreparedObjectSwitch {
+        object_id: object_id.to_string(),
+        original_path,
+        current_path,
+        plan,
+    })
 }
 
 /// Rename one resolved object root without changing projection state.

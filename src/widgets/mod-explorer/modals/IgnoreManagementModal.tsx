@@ -3,12 +3,12 @@ import { formatAppError } from '../../../shared/lib/appError';
 import { useRef } from 'react';
 import { X, Trash2, ShieldAlert, Ghost, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { toast } from '../../../app/store/useToastStore';
+import { toast } from '@/shared/ui/toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { IgnoredConflict } from '@/entities/workspace/model/scanner';
-import { applyRuntimeMutationResult } from '@/features/workspace-runtime/actions/sharedRuntimeResultMapper';
+import type { IgnoredConflict } from '@/entities/workspace';
+import { applyRuntimeMutationResult } from '@/features/workspace-runtime';
 
 interface IgnoreManagementModalProps {
   open: boolean;

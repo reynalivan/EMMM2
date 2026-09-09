@@ -7,15 +7,15 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use crate::modules::workspace::domain::normalizer::normalize_display_name;
-use crate::shared::path_key::{
-    canonical_collection_path_key, canonical_name_key, resolve_collection_path,
-};
+use crate::modules::collections::application::collection::preview_tree::resolve_preview_terminal_metadata;
 use crate::modules::collections::domain::collection::{
     CollectionMod, CollectionObject, ProjectedActiveRoot, ProjectedCollectionState,
     ProjectedObjectState, ProjectedStateSummary,
 };
-use crate::modules::collections::application::collection::preview_tree::resolve_preview_terminal_metadata;
+use crate::modules::workspace::domain::normalizer::normalize_display_name;
+use crate::shared::path_key::{
+    canonical_collection_path_key, canonical_name_key, resolve_collection_path,
+};
 
 mod members;
 

@@ -1,9 +1,13 @@
+use crate::modules::catalog::application::objects::query::{
+    get_category_counts_service, get_object_by_id_service,
+};
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::reconciliation::application::disk_reconcile::reconcile::{
     reconcile_disk_projection, ReconcileDiskProjectionRequest,
 };
-use crate::modules::reconciliation::application::disk_reconcile::types::{DiskReconcileReason, DiskReconcileStatus};
-use crate::modules::catalog::application::objects::query::{get_category_counts_service, get_object_by_id_service};
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcileReason, DiskReconcileStatus,
+};
 use crate::test_utils::{
     insert_test_game, insert_test_mod, insert_test_object, TestGameFixture, TestModFixture,
     TestObjectFixture,

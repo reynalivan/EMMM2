@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from './hooks/useSettings';
-import { useAppStore } from '../../app/store/useAppStore'; // Import Store
+import { useAppStore } from '@/app/store'; // Import Store
 import GamesTab from './components/tabs/GamesTab';
 import PrivacyTab from './components/tabs/PrivacyTab';
 import MaintenanceTab from './components/tabs/MaintenanceTab';
@@ -69,7 +69,7 @@ export default function SettingsPage() {
   const ActiveTabComponent = TABS.find((tab) => tab.id === activeTab)?.Component ?? GeneralTab;
 
   return (
-    <div className="h-full flex flex-col bg-base-100 overflow-hidden">
+    <div className="h-full flex flex-col bg-base-100 overflow-hidden" data-testid="settings-page">
       <div className="navbar bg-base-200 min-h-12 px-4 border-b border-base-300 gap-4">
         <button className="btn btn-ghost btn-circle btn-sm" onClick={handleBack}>
           <ArrowLeft className="w-5 h-5" />
@@ -86,6 +86,7 @@ export default function SettingsPage() {
                 {'dividerBefore' in tab && <div className="divider my-1"></div>}
                 <li>
                   <button
+                    data-testid={`settings-tab-${tab.id}`}
                     aria-current={activeTab === tab.id ? 'page' : undefined}
                     className={`gap-3 ${activeTab === tab.id ? 'active font-medium' : 'text-base-content/70'}`}
                     onClick={() => handleTabChange(tab.id)}

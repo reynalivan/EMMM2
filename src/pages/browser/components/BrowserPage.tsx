@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { listen } from '@tauri-apps/api/event';
 import { Webview } from '@tauri-apps/api/webview';
-import { useBrowserStore } from '@/app/store/useBrowserStore';
+import { useBrowserStore } from '@/entities/browser';
 import { useDownloads } from '../hooks/useDownloads';
 import { useWebviewSync } from '../hooks/useWebviewSync';
 import { normalizeBrowserUrl } from '../utils/browserUrl';
@@ -28,6 +28,7 @@ export function BrowserPage() {
   const {
     openDownloadPanel,
     isDownloadPanelOpen,
+    isDownloadConfirmationOpen,
     tabs,
     activeTabId,
     addTab,
@@ -37,6 +38,7 @@ export function BrowserPage() {
     useShallow((state) => ({
       openDownloadPanel: state.openDownloadPanel,
       isDownloadPanelOpen: state.isDownloadPanelOpen,
+      isDownloadConfirmationOpen: state.isDownloadConfirmationOpen,
       tabs: state.tabs,
       activeTabId: state.activeTabId,
       addTab: state.addTab,
@@ -47,9 +49,12 @@ export function BrowserPage() {
 
   // Native webviews always paint above the DOM, so any overlay that must sit
   // on top of the page content requires hiding them while it's open.
-  const overlayOpen = isDownloadPanelOpen;
+  const overlayOpen = isDownloadPanelOpen || isDownloadConfirmationOpen;
 
-  const { finishedCount } = useDownloads();
+  const { activeCount, queuedCount } = useDownloads({
+    showFeedback: true,
+    onOpenDownloads: openDownloadPanel,
+  });
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -212,7 +217,8 @@ export function BrowserPage() {
         activeTabId={activeTabId}
         isNavigating={isNavigating}
         isRefreshing={isRefreshing}
-        finishedCount={finishedCount}
+        activeDownloadCount={activeCount}
+        queuedDownloadCount={queuedCount}
         onGoBack={handleGoBack}
         onGoForward={handleGoForward}
         onReload={handleReload}

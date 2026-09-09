@@ -1,4 +1,6 @@
-use crate::modules::ingestion::application::import_batch::types::{MatchEvidence, SourceFingerprint};
+use crate::modules::ingestion::application::import_batch::types::{
+    MatchEvidence, SourceFingerprint,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

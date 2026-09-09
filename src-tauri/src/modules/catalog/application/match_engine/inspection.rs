@@ -1,6 +1,8 @@
 use super::types::SourceInspection;
+use crate::modules::ingestion::application::import_batch::types::{
+    MatchEvidence, SourceFingerprint,
+};
 use crate::shared::errors::ScannerError;
-use crate::modules::ingestion::application::import_batch::types::{MatchEvidence, SourceFingerprint};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;

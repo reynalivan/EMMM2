@@ -1,7 +1,8 @@
-import type { SortField, SortOrder, ViewMode } from '@/entities/mod/model/mod';
+import type { SortField, SortOrder, ViewMode } from '@/entities/mod';
+import type { SafetyFilter } from '@/shared/ui/components/ui/SafetyFilterControl';
 import type { AppSliceCreator } from './sliceTypes';
 
-export type SafetyFilter = 'all' | 'safe' | 'unsafe';
+export type { SafetyFilter } from '@/shared/ui/components/ui/SafetyFilterControl';
 
 export interface ExplorerSlice {
   // Epic 4: Explorer State

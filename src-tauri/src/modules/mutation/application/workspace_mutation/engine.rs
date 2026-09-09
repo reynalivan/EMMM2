@@ -5,10 +5,10 @@
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-use crate::shared::errors::{AppError, CollectionError};
+use crate::modules::library::application::mods::core_ops::standardize_prefix;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::platform::fs::file_utils::rename_cross_drive_fallback;
-use crate::modules::library::application::mods::core_ops::standardize_prefix;
+use crate::shared::errors::{AppError, CollectionError};
 
 #[derive(Debug)]
 pub struct RuntimeToggleFailure {
@@ -61,17 +61,56 @@ pub struct RuntimeToggleResult {
 }
 
 #[derive(Debug, Clone)]
-struct RenamePlan {
+pub struct RuntimeRenamePlan {
     old_abs: PathBuf,
     requested_abs: PathBuf,
     new_abs: PathBuf,
     target_enabled: bool,
 }
 
+impl RuntimeRenamePlan {
+    pub(crate) fn new(
+        old_abs: PathBuf,
+        requested_abs: PathBuf,
+        new_abs: PathBuf,
+        target_enabled: bool,
+    ) -> Self {
+        Self {
+            old_abs,
+            requested_abs,
+            new_abs,
+            target_enabled,
+        }
+    }
+
+    pub fn old_path(&self) -> &Path {
+        &self.old_abs
+    }
+    pub fn new_path(&self) -> &Path {
+        &self.new_abs
+    }
+    pub fn requested_path(&self) -> &Path {
+        &self.requested_abs
+    }
+    pub fn target_enabled(&self) -> bool {
+        self.target_enabled
+    }
+    pub fn apply(&self) -> std::io::Result<()> {
+        rename_cross_drive_fallback(&self.old_abs, &self.new_abs)
+    }
+    pub fn rollback(&self) -> std::io::Result<()> {
+        rename_cross_drive_fallback(&self.new_abs, &self.old_abs)
+    }
+}
+
 /// Map a failed folder rename to a structured error, so a locked folder keeps
 /// its `FileInUse` / `PathBusy` classification all the way to the UI.
 fn classify_rename_failure(src: &std::path::Path, error: std::io::Error) -> CollectionError {
-    match crate::modules::library::application::mods::core_ops::map_toggle_error(src, "mod folder", error) {
+    match crate::modules::library::application::mods::core_ops::map_toggle_error(
+        src,
+        "mod folder",
+        error,
+    ) {
         AppError::FileInUse { path, processes } => CollectionError::FileInUse { path, processes },
         AppError::PathBusy { path } => CollectionError::PathBusy { path },
         other => CollectionError::Io(other.to_string()),
@@ -87,20 +126,10 @@ pub async fn toggle_mods_mixed(
 
     // Planning either yields a plan, skips a no-op, or aborts the whole batch —
     // it never produces warnings, so an empty plan set is just an empty result.
-    let mut plans = Vec::new();
-    for operation in &request.operations {
-        match build_plan(&request.mods_path, operation) {
-            Ok(Some(plan)) => plans.push(plan),
-            Ok(None) => {}
-            Err(error) => return Err(failure(CollectionError::Validation(error.to_string()))),
-        }
-    }
-
+    let plans = plan_runtime_toggles(&request)?;
     if plans.is_empty() {
         return Ok(empty_result());
     }
-    validate_plans(&plans)
-        .map_err(|error| failure(CollectionError::Validation(error.to_string())))?;
 
     // Only rollback populates warnings, and rollback cannot run before this point.
     let mut warnings = Vec::new();
@@ -153,6 +182,22 @@ pub async fn toggle_mods_mixed(
     })
 }
 
+pub fn plan_runtime_toggles(
+    request: &RuntimeToggleBatchRequest,
+) -> Result<Vec<RuntimeRenamePlan>, RuntimeToggleFailure> {
+    let mut plans = Vec::new();
+    for operation in &request.operations {
+        match build_plan(&request.mods_path, operation) {
+            Ok(Some(plan)) => plans.push(plan),
+            Ok(None) => {}
+            Err(error) => return Err(failure(CollectionError::Validation(error.to_string()))),
+        }
+    }
+    validate_plans(&plans)
+        .map_err(|error| failure(CollectionError::Validation(error.to_string())))?;
+    Ok(plans)
+}
+
 fn empty_result() -> RuntimeToggleResult {
     RuntimeToggleResult {
         enabled_count: 0,
@@ -166,16 +211,17 @@ fn empty_result() -> RuntimeToggleResult {
 fn build_plan(
     mods_path: &Path,
     operation: &RuntimeToggleOperation,
-) -> Result<Option<RenamePlan>, AppError> {
+) -> Result<Option<RuntimeRenamePlan>, AppError> {
     validate_relative_path(&operation.folder_path)?;
 
     let requested_abs = mods_path.join(&operation.folder_path);
-    let old_abs = crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
-        mods_path,
-        &requested_abs,
-        operation.target_enabled,
-    )
-    .unwrap_or_else(|| requested_abs.clone());
+    let old_abs =
+        crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
+            mods_path,
+            &requested_abs,
+            operation.target_enabled,
+        )
+        .unwrap_or_else(|| requested_abs.clone());
     if !old_abs.exists() {
         return Err(AppError::Internal(format!(
             "Mod folder does not exist: {}",
@@ -210,15 +256,15 @@ fn build_plan(
         )));
     }
 
-    Ok(Some(RenamePlan {
+    Ok(Some(RuntimeRenamePlan::new(
         old_abs,
         requested_abs,
         new_abs,
-        target_enabled: operation.target_enabled,
-    }))
+        operation.target_enabled,
+    )))
 }
 
-fn validate_plans(plans: &[RenamePlan]) -> Result<(), AppError> {
+fn validate_plans(plans: &[RuntimeRenamePlan]) -> Result<(), AppError> {
     let mut old_paths = HashSet::new();
     let mut new_paths = HashSet::new();
 
@@ -245,7 +291,7 @@ fn normalize_for_collision(path: &Path) -> String {
     path.to_string_lossy().to_lowercase()
 }
 
-fn rollback_successes(plans: &[RenamePlan], warnings: &mut Vec<String>) {
+fn rollback_successes(plans: &[RuntimeRenamePlan], warnings: &mut Vec<String>) {
     for plan in plans.iter().rev() {
         if plan.old_abs == plan.new_abs {
             continue;

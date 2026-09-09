@@ -3,14 +3,14 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamesTab from './GamesTab';
 import { useSettings } from '../../hooks/useSettings';
-import { useAppStore } from '../../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { commands } from '../../../../shared/api/tauri/bindings';
 
 vi.mock('../../hooks/useSettings', () => ({
   useSettings: vi.fn(),
 }));
 
-vi.mock('../../../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: vi.fn(),
 }));
 
@@ -22,7 +22,7 @@ vi.mock('../../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../file-watcher/hooks/useFileWatcher', () => ({
+vi.mock('@/features/file-watcher/hooks/useFileWatcher', () => ({
   applyDiskReconcileResult: vi.fn(),
 }));
 
@@ -77,8 +77,16 @@ describe('GamesTab (TC-02)', () => {
         selector({
           activeGameId: null,
           setActiveGameId: mockSetActiveGameId,
+          setWorkspaceView: vi.fn(),
         }),
     );
+    Object.assign(useAppStore, {
+      getState: vi.fn(() => ({
+        activeGameId: null,
+        setActiveGameId: mockSetActiveGameId,
+        setWorkspaceView: vi.fn(),
+      })),
+    });
 
     window.confirm = vi.fn(() => true);
     vi.mocked(commands.inspectGameModsDirectory).mockResolvedValue({
@@ -129,7 +137,7 @@ describe('GamesTab (TC-02)', () => {
       safety: {
         keywords: [],
       },
-      ai: { enabled: false, api_key: null, base_url: null },
+      ai: { enabled: false, has_api_key: false, base_url: null },
       auto_close_launcher: false,
     });
   });

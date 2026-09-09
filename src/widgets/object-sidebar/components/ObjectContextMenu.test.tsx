@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
-import type { WorkspaceCapabilities } from '@/entities/workspace/model/workspace';
+import type { WorkspaceCapabilities } from '@/entities/workspace';
 
 // Mock inner components to simplify
 vi.mock('../../../shared/ui/components/ui/ContextMenu', () => ({

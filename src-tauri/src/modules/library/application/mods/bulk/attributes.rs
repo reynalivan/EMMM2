@@ -1,8 +1,8 @@
 //! Bulk attribute updates: info.json fields plus favorite/pin flags.
 
 use super::types::{BulkActionError, BulkResult};
-use crate::shared::errors::AppError;
 use crate::modules::library::application::mods::info_json;
+use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
 use std::path::Path;
@@ -107,7 +107,9 @@ pub async fn resolve_safety_targets(
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found or has no mods_path".to_string()))?;
     let root = Path::new(&mods_root).canonicalize()?;
-    let stored_paths = crate::modules::library::adapters::sqlite::mods::get_folder_paths_for_game(pool, game_id).await?;
+    let stored_paths =
+        crate::modules::library::adapters::sqlite::mods::get_folder_paths_for_game(pool, game_id)
+            .await?;
     let candidates = stored_paths
         .into_iter()
         .filter_map(|stored_path| {
@@ -183,8 +185,13 @@ pub async fn bulk_set_safety(
         .filter(|target| successful.contains(&target.disk_path))
         .map(|target| target.stored_path.clone())
         .collect::<Vec<_>>();
-    if let Err(error) =
-        crate::modules::library::adapters::sqlite::mods::batch_set_safety(pool, game_id, &stored_paths, safe).await
+    if let Err(error) = crate::modules::library::adapters::sqlite::mods::batch_set_safety(
+        pool,
+        game_id,
+        &stored_paths,
+        safe,
+    )
+    .await
     {
         let warnings = restore_info_writes(&backups);
         return Err(AppError::Io(format!(
@@ -212,8 +219,10 @@ pub async fn bulk_toggle_favorite(
     };
     let (result, backups) = write_info_with_backups(folder_paths, &update);
     let relatives = relative_to_mods_root(pool, &game_id, &result.success).await?;
-    if let Err(error) =
-        crate::modules::library::adapters::sqlite::mods::batch_set_favorite(pool, &game_id, &relatives, favorite).await
+    if let Err(error) = crate::modules::library::adapters::sqlite::mods::batch_set_favorite(
+        pool, &game_id, &relatives, favorite,
+    )
+    .await
     {
         let warnings = restore_info_writes(&backups);
         return Err(AppError::Io(format!(
@@ -240,8 +249,10 @@ pub async fn bulk_pin(
     };
     let (result, backups) = write_info_with_backups(folder_paths, &update);
     let relatives = relative_to_mods_root(pool, &game_id, &result.success).await?;
-    if let Err(error) =
-        crate::modules::library::adapters::sqlite::mods::batch_set_pinned(pool, &game_id, &relatives, pin).await
+    if let Err(error) = crate::modules::library::adapters::sqlite::mods::batch_set_pinned(
+        pool, &game_id, &relatives, pin,
+    )
+    .await
     {
         let warnings = restore_info_writes(&backups);
         return Err(AppError::Io(format!(

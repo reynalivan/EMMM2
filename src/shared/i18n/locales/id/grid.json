@@ -1,6 +1,13 @@
 {
   "toolbar": {
-    "sort_title": "Urutkan berdasarkan {{label}} {{order}}",
+    "sort_by": "Urutkan berdasarkan",
+    "sort_label": "Urutkan mod",
+    "sort_name_asc": "Nama (A–Z)",
+    "sort_name_desc": "Nama (Z–A)",
+    "sort_date_asc": "Tanggal (Terlama)",
+    "sort_date_desc": "Tanggal (Terbaru)",
+    "sort_size_asc": "Ukuran (Terkecil)",
+    "sort_size_desc": "Ukuran (Terbesar)",
     "search_placeholder": "Cari mod...",
     "item_count_one": "{{count}} item",
     "item_count_other": "{{count}} item",
@@ -94,6 +101,8 @@
     "confirm": "Aktifkan \"{{name}}\""
   },
   "context": {
+    "favorite": "Favoritkan",
+    "unfavorite": "Batal Favorit",
     "select_all": "Pilih Semua",
     "open_explorer": "Buka di Explorer",
     "rename": "Ubah Nama",
@@ -122,6 +131,7 @@
     "clear_selection": "Bersihkan pilihan",
     "selected": "Terpilih",
     "toggle_status": "Ganti Status",
+    "more_actions": "Tindakan lainnya",
     "enable": "Aktifkan",
     "disable": "Nonaktifkan",
     "pin_title": "Sematkan ke Objek",

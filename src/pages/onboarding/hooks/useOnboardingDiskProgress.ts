@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import type { DiskReconcileProgress } from '../../../shared/api/tauri/bindings';
-import type { GameConfig } from '@/entities/game/model/game';
+import type { GameConfig } from '@/entities/game';
 
 export function useOnboardingDiskProgress(
   isIndexing: boolean,

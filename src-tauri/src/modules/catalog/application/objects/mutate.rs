@@ -1,8 +1,130 @@
 use tauri::Manager;
 use uuid::Uuid;
 
-use crate::shared::errors::AppError;
 use crate::modules::catalog::domain::objects::{CreateObjectInput, UpdateObjectInput};
+use crate::shared::errors::AppError;
+
+pub struct PreparedObjectCreate {
+    stage: std::path::PathBuf,
+    target: std::path::PathBuf,
+}
+
+impl PreparedObjectCreate {
+    pub fn prepare(&self) -> Result<(), AppError> {
+        std::fs::create_dir(&self.stage).map_err(AppError::from)
+    }
+
+    pub fn journal_step(&self) -> crate::modules::mutation::journal::PlannedStep {
+        crate::modules::mutation::journal::PlannedStep::rename(
+            0,
+            self.stage.clone(),
+            self.target.clone(),
+        )
+    }
+
+    pub fn promote(&self) -> Result<(), AppError> {
+        std::fs::rename(&self.stage, &self.target).map_err(AppError::from)
+    }
+
+    pub fn rollback(&self) -> Result<(), AppError> {
+        if self.target.exists() && !self.stage.exists() {
+            std::fs::rename(&self.target, &self.stage)?;
+        }
+        if self.stage.exists() {
+            std::fs::remove_dir_all(&self.stage)?;
+        }
+        Ok(())
+    }
+}
+
+pub async fn prepare_object_create(
+    pool: &sqlx::SqlitePool,
+    input: &CreateObjectInput,
+) -> Result<PreparedObjectCreate, AppError> {
+    let folder_path = input.folder_path.as_deref().unwrap_or(&input.name);
+    validate_relative_object_folder(folder_path)?;
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(
+        pool,
+        &input.game_id,
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
+    let target = std::path::Path::new(&mods_path).join(folder_path);
+    if target.exists() {
+        return Err(AppError::Validation(format!(
+            "Object folder already exists: {}",
+            target.display()
+        )));
+    }
+    let stage = target.with_file_name(format!(".emmm-object-create-{}", Uuid::new_v4().simple()));
+    Ok(PreparedObjectCreate { stage, target })
+}
+
+pub struct PreparedObjectDelete {
+    source: std::path::PathBuf,
+    quarantine: std::path::PathBuf,
+}
+
+impl PreparedObjectDelete {
+    pub fn journal_step(&self) -> crate::modules::mutation::journal::PlannedStep {
+        crate::modules::mutation::journal::PlannedStep::quarantine(
+            0,
+            self.source.clone(),
+            self.quarantine.clone(),
+        )
+    }
+
+    pub fn execute(
+        &self,
+        watcher: &crate::modules::workspace::application::scanner::watcher::WatcherState,
+    ) -> Result<(), AppError> {
+        let _guard = watcher
+            .suppressor
+            .suppress_paths([self.source.as_path(), self.quarantine.as_path()]);
+        std::fs::rename(&self.source, &self.quarantine).map_err(AppError::from)
+    }
+
+    pub fn finalize(&self) -> Result<(), AppError> {
+        if self.quarantine.exists() {
+            crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&self.quarantine)
+                .map_err(|error| AppError::Io(error.to_string()))?;
+        }
+        Ok(())
+    }
+}
+
+pub async fn prepare_object_delete(
+    pool: &sqlx::SqlitePool,
+    id: &str,
+    force: bool,
+) -> Result<Option<PreparedObjectDelete>, AppError> {
+    let (game_id, folder_path) =
+        crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool, id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Object not found: {id}")))?;
+    let count =
+        crate::modules::catalog::adapters::sqlite::object::get_mod_count_for_object(pool, id)
+            .await?;
+    if count > 0 && !force {
+        return Err(AppError::ObjectHasMods(count as i32));
+    }
+    let Some(folder_path) = folder_path else {
+        return Ok(None);
+    };
+    let Some(mods_path) =
+        crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, &game_id)
+            .await?
+    else {
+        return Ok(None);
+    };
+    let source = std::path::Path::new(&mods_path).join(folder_path);
+    if !source.exists() {
+        return Ok(None);
+    }
+    let quarantine =
+        source.with_file_name(format!(".emmm-object-delete-{}", Uuid::new_v4().simple()));
+    Ok(Some(PreparedObjectDelete { source, quarantine }))
+}
 
 pub async fn create_object_cmd_inner(
     pool: &sqlx::SqlitePool,
@@ -23,20 +145,25 @@ pub async fn create_object_cmd_inner(
     let mut pending_thumbnail_copy = None;
     let mut previous_thumbnail = None;
 
-    let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, &input.game_id)
-        .await
-        .map_err(|e| AppError::Db(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(
+        pool,
+        &input.game_id,
+    )
+    .await
+    .map_err(|e| AppError::Db(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
     let target_dir = std::path::Path::new(&mods_path).join(&folder_path);
     if let Some((attempted_path, existing_path, base_name)) = find_new_path_identity_conflict(
         std::path::Path::new(&mods_path),
         std::path::Path::new(&folder_path),
     ) {
-        return Err(crate::modules::library::application::mods::core_ops::rename_conflict_error(
-            &attempted_path,
-            &existing_path,
-            &base_name,
-        ));
+        return Err(
+            crate::modules::library::application::mods::core_ops::rename_conflict_error(
+                &attempted_path,
+                &existing_path,
+                &base_name,
+            ),
+        );
     }
 
     if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
@@ -167,11 +294,13 @@ fn find_new_path_identity_conflict(
         };
         let target_name = name.to_string_lossy();
         let attempted_path = parent.join(name);
-        let Some(existing_path) = crate::modules::library::application::mods::core_ops::find_sibling_identity_collision(
-            &parent,
-            &target_name,
-            None,
-        ) else {
+        let Some(existing_path) =
+            crate::modules::library::application::mods::core_ops::find_sibling_identity_collision(
+                &parent,
+                &target_name,
+                None,
+            )
+        else {
             parent = attempted_path;
             continue;
         };
@@ -183,7 +312,8 @@ fn find_new_path_identity_conflict(
         return Some((
             attempted_path,
             existing_path,
-            crate::modules::workspace::domain::normalizer::normalize_display_name(&target_name).into_owned(),
+            crate::modules::workspace::domain::normalizer::normalize_display_name(&target_name)
+                .into_owned(),
         ));
     }
     None
@@ -253,7 +383,8 @@ pub async fn update_object(
     updates: &UpdateObjectInput,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    let object_game_id = crate::modules::catalog::adapters::sqlite::object::get_game_id_conn(&mut tx, id).await?;
+    let object_game_id =
+        crate::modules::catalog::adapters::sqlite::object::get_game_id_conn(&mut tx, id).await?;
     let update_result = async {
         crate::modules::catalog::adapters::sqlite::object::update_object(&mut *tx, id, updates).await?;
         if let Some(game_id) = object_game_id.as_deref() {
@@ -289,10 +420,11 @@ pub async fn set_object_and_mods_category(
     }
 
     let mut tx = pool.begin().await?;
-    let object_updated = crate::modules::catalog::adapters::sqlite::object::update_object_type_for_game(
-        &mut *tx, game_id, object_id, category,
-    )
-    .await?;
+    let object_updated =
+        crate::modules::catalog::adapters::sqlite::object::update_object_type_for_game(
+            &mut *tx, game_id, object_id, category,
+        )
+        .await?;
     if object_updated == 0 {
         return Err(AppError::NotFound(format!(
             "Object '{object_id}' was not found for game '{game_id}'"
@@ -300,8 +432,10 @@ pub async fn set_object_and_mods_category(
     }
 
     let child_updated =
-        crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(&mut *tx, game_id, object_id, category)
-            .await?;
+        crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(
+            &mut *tx, game_id, object_id, category,
+        )
+        .await?;
     crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
         &mut tx,
         game_id,
@@ -321,8 +455,9 @@ pub async fn delete_object(
     watcher_state: &crate::modules::workspace::application::scanner::watcher::WatcherState,
     _op_guard: &crate::platform::fs::operation_lock::OpGuard,
 ) -> Result<(), AppError> {
-    let _guard =
-        crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(&watcher_state.suppressor);
+    let _guard = crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(
+        &watcher_state.suppressor,
+    );
     // 1. Fetch object from DB to get game_id and folder_path
     let (obj_game_id, obj_folder_path) =
         crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool, id)
@@ -332,16 +467,19 @@ pub async fn delete_object(
 
     let mut target_dir_opt: Option<std::path::PathBuf> = None;
 
-    let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, &obj_game_id)
-        .await
-        .map_err(|e| AppError::Db(e.to_string()))?;
+    let mods_path =
+        crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, &obj_game_id)
+            .await
+            .map_err(|e| AppError::Db(e.to_string()))?;
 
     if let (Some(mods_path), Some(folder_path)) = (mods_path, obj_folder_path.as_ref()) {
         target_dir_opt = Some(std::path::Path::new(&mods_path).join(folder_path));
     }
 
     // 1.5. Safety Guard: Check if the object has any mods
-    let count = crate::modules::catalog::adapters::sqlite::object::get_mod_count_for_object(pool, id).await?;
+    let count =
+        crate::modules::catalog::adapters::sqlite::object::get_mod_count_for_object(pool, id)
+            .await?;
     if count > 0 && !force {
         return Err(AppError::ObjectHasMods(count as i32));
     }
@@ -350,14 +488,16 @@ pub async fn delete_object(
     if let Some(target_dir) = target_dir_opt {
         if target_dir.exists() {
             log::info!("delete_object: moving {:?} to trash", target_dir);
-            crate::modules::library::application::mods::trash::move_to_trash(&target_dir).map_err(|e| {
-                log::error!("delete_object: trash move failed: {}", e);
-                AppError::Io(format!(
-                    "Failed to move folder '{}' to trash. {}",
-                    target_dir.display(),
-                    e
-                ))
-            })?;
+            crate::modules::library::application::mods::trash::move_to_trash(&target_dir).map_err(
+                |e| {
+                    log::error!("delete_object: trash move failed: {}", e);
+                    AppError::Io(format!(
+                        "Failed to move folder '{}' to trash. {}",
+                        target_dir.display(),
+                        e
+                    ))
+                },
+            )?;
             log::info!("delete_object: successfully trashed {:?}", target_dir);
         } else {
             log::info!(

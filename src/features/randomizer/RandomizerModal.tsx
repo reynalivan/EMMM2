@@ -4,14 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { commands, type RandomModProposal } from '../../shared/api/tauri/bindings';
 import { RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { publishRuntimeDescriptor } from '../runtime-sync/queryRefresh';
-import { applyRuntimeEffects } from '../workspace-runtime/optimistic/applyOptimisticEffects';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
+import { applyRuntimeEffects } from '@/features/workspace-runtime/@x/randomizer';
 import {
   buildRuntimeMutationDescriptor,
   buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
-} from '../workspace-runtime/optimistic/descriptorBuilders';
-import type { WorkspaceImpact } from '@/entities/workspace/model/workspace';
+} from '@/features/workspace-runtime/@x/randomizer';
+import type { WorkspaceImpact } from '@/entities/workspace';
 
 interface RandomizerModalProps {
   open: boolean;

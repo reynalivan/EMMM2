@@ -74,7 +74,9 @@ pub async fn execute_workspace_switch(
         &input.game_id,
     )
     .await?;
-    let op_guard = op_lock.acquire().await?;
+    let op_guard = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration)
+        .await?;
     let game_id = input.game_id.clone();
     let result = crate::modules::workspace::application::workspace::switch::execute_switch(
         input,
@@ -199,7 +201,9 @@ pub async fn apply_game_mods_directory(
     let _activation_guard = disk_reconcile_state.activation_guard().await;
     let game_lock = disk_reconcile_state.game_lock(&request.game_id);
     let game_guard = game_lock.lock().await;
-    let operation_guard = operation_lock.acquire().await?;
+    let operation_guard = operation_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Reconciliation)
+        .await?;
     let result = crate::modules::reconciliation::application::disk_reconcile::source_recovery::apply_game_mods_directory(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),

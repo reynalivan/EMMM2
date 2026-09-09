@@ -1,7 +1,5 @@
-
-
-use crate::shared::errors::AppError;
 use crate::modules::matching::application::deep_matcher::CustomSkin;
+use crate::shared::errors::AppError;
 
 const STABLE_CATEGORIES: [&str; 4] = ["Character", "Weapon", "UI", "Other"];
 
@@ -82,19 +80,20 @@ pub async fn apply_object_classification_tx(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let metadata_json = serde_json::to_string(&input.metadata)?;
-    let current = crate::modules::catalog::adapters::sqlite::object::get_classification_object_state_tx(
-        tx,
-        input.game_id.trim(),
-        input.object_id.trim(),
-    )
-    .await?
-    .ok_or_else(|| {
-        AppError::NotFound(format!(
-            "Object '{}' was not found for game '{}'",
+    let current =
+        crate::modules::catalog::adapters::sqlite::object::get_classification_object_state_tx(
+            tx,
+            input.game_id.trim(),
             input.object_id.trim(),
-            input.game_id.trim()
-        ))
-    })?;
+        )
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "Object '{}' was not found for game '{}'",
+                input.object_id.trim(),
+                input.game_id.trim()
+            ))
+        })?;
 
     let (custom_skins_json, aliases_changed) = match source_alias {
         Some(alias) => {
@@ -107,19 +106,23 @@ pub async fn apply_object_classification_tx(
         }
         None => (None, false),
     };
+    let matched_source = canonical_match
+        .map(|matched| matched.source.trim())
+        .or(Some("classification_wizard_custom"));
 
-    let object_updated = crate::modules::catalog::adapters::sqlite::object::apply_classification_fields_tx(
-        tx,
-        input.game_id.trim(),
-        input.object_id.trim(),
-        crate::modules::catalog::adapters::sqlite::object::ClassificationFields {
-            category,
-            subcategory,
-            metadata_json: &metadata_json,
-            custom_skins_json: custom_skins_json.as_deref(),
-        },
-    )
-    .await?;
+    let object_updated =
+        crate::modules::catalog::adapters::sqlite::object::apply_classification_fields_tx(
+            tx,
+            input.game_id.trim(),
+            input.object_id.trim(),
+            crate::modules::catalog::adapters::sqlite::object::ClassificationFields {
+                category,
+                subcategory,
+                metadata_json: &metadata_json,
+                custom_skins_json: custom_skins_json.as_deref(),
+            },
+        )
+        .await?;
     if object_updated == 0 {
         return Err(AppError::NotFound(format!(
             "Object '{}' was not found for game '{}'",
@@ -135,17 +138,18 @@ pub async fn apply_object_classification_tx(
         canonical_match.and_then(|matched| non_empty(matched.alias_name.as_deref())),
         canonical_match.and_then(|matched| matched.confidence),
         canonical_match.and_then(|matched| non_empty(matched.reason.as_deref())),
-        canonical_match.map(|matched| matched.source.trim()),
+        matched_source,
     )
     .await?;
 
-    let child_mods_updated = crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(
-        &mut **tx,
-        input.game_id.trim(),
-        input.object_id.trim(),
-        category,
-    )
-    .await?;
+    let child_mods_updated =
+        crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(
+            &mut **tx,
+            input.game_id.trim(),
+            input.object_id.trim(),
+            category,
+        )
+        .await?;
     crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
         tx,
         input.game_id.trim(),

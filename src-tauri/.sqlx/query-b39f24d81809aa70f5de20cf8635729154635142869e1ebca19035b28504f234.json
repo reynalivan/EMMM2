@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT game_type AS \"game_type: GameType\" FROM games WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "game_type: GameType",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b39f24d81809aa70f5de20cf8635729154635142869e1ebca19035b28504f234"
+}

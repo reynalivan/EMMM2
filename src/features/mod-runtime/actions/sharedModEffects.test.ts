@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { runSharedModActiveContextToggle } from './sharedModEffects';
 
 const toggleModSafeMock = vi.fn();
@@ -19,12 +19,12 @@ vi.mock('../../folder-grid/hooks/folderCache', () => ({
   updateFolderCache: (...args: unknown[]) => updateFolderCacheMock(...args),
 }));
 
-vi.mock('../../workspace-runtime/actions/sharedRuntimeResultMapper', () => ({
+vi.mock('@/features/workspace-runtime/@x/mod-runtime', () => ({
   applyRuntimePathInvalidationMutationResult: (...args: unknown[]) =>
     applyRuntimePathInvalidationMutationResultMock(...args),
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccessMock(...args),
   },

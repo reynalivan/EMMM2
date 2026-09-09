@@ -1,9 +1,9 @@
 use super::*;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::settings::application::config::{AppSettings, ConfigService, GameConfig};
+use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::guard::validate_path;
 use crate::platform::fs::operation_lock::OperationLock;
-use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::test_utils::{
     insert_test_collection, insert_test_game, insert_test_mod, insert_test_object,
     TestCollectionFixture, TestGameFixture, TestModFixture, TestObjectFixture,

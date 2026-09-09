@@ -1,12 +1,12 @@
 //! Mod pass: applies every mod found on disk to the `mods` table.
 
-use crate::shared::safety_constants::{SAFETY_SOURCE_MANUAL, SAFETY_SOURCE_UNKNOWN};
-use crate::shared::errors::AppError;
-use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id_from_key;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskProjection;
 use crate::modules::reconciliation::application::disk_reconcile::helpers::load_runtime_mod_metadata;
 use crate::modules::reconciliation::application::disk_reconcile::path_updates::push_path_update;
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathKind;
+use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id_from_key;
+use crate::shared::errors::AppError;
+use crate::shared::safety_constants::{SAFETY_SOURCE_MANUAL, SAFETY_SOURCE_UNKNOWN};
 
 use super::index::DbIndex;
 use super::keys::{is_runtime_prefix_transition, runtime_logical_path_key};

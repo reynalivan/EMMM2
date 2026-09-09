@@ -1,13 +1,11 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import FolderCardContextMenu from './FolderCardContextMenu';
-import type {
-  WorkspaceCapabilities,
-  WorkspaceExplorerNode,
-} from '@/entities/workspace/model/workspace';
+import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '@/entities/workspace';
 
 // Mock Lucide icons
-vi.mock('lucide-react', () => ({
+vi.mock('lucide-react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('lucide-react')>()),
   Star: () => <div data-testid="icon-star" />,
   ExternalLink: () => <div data-testid="icon-external-link" />,
   Pencil: () => <div data-testid="icon-pencil" />,
@@ -20,6 +18,10 @@ vi.mock('lucide-react', () => ({
   ShieldCheck: () => <div data-testid="icon-shield-check" />,
   ShieldOff: () => <div data-testid="icon-shield-off" />,
   ClipboardPaste: () => <div data-testid="icon-clipboard-paste" />,
+  CheckCircle: () => <div data-testid="icon-check-circle" />,
+  AlertCircle: () => <div data-testid="icon-alert-circle" />,
+  Info: () => <div data-testid="icon-info" />,
+  X: () => <div data-testid="icon-x" />,
 }));
 
 // Mock custom hooks
@@ -85,7 +87,7 @@ vi.mock('../hooks/useModContextMenuItems', () => ({
   },
 }));
 
-vi.mock('../../mod-runtime/actions/useModContextMenuActions', () => ({
+vi.mock('@/features/mod-runtime/actions/useModContextMenuActions', () => ({
   useModContextMenuActions: () => ({
     openExplorer: vi.fn(),
     pasteThumbnailFromClipboard: vi.fn(),

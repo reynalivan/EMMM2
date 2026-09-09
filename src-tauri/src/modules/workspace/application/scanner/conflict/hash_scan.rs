@@ -64,9 +64,9 @@ pub fn detect_conflicts(ini_files: &[(PathBuf, PathBuf)]) -> Vec<ConflictInfo> {
 
 /// Discover INI files that GIMI can load from one enabled mod root.
 ///
-/// The runtime recursively includes mod content but excludes every descendant
-/// directory whose name starts with `DISABLED`. Keeping this policy beside the
-/// ShaderFixes traversal prevents the two conflict sources from drifting.
+/// The runtime recursively includes mod content but excludes descendant entries
+/// whose name starts with `DISABLED`. Keeping this policy beside the ShaderFixes
+/// traversal prevents the two conflict sources from drifting.
 pub fn discover_runtime_ini_files(mod_root: &Path) -> Vec<PathBuf> {
     runtime_entries(mod_root)
         .filter(|entry| entry.file_type().is_file())
@@ -190,7 +190,9 @@ fn indices_can_overlap(left: Option<u32>, right: Option<u32>) -> bool {
 
 fn path_is_active(path: &str) -> bool {
     Path::new(path).components().all(|component| {
-        !crate::modules::workspace::domain::normalizer::is_disabled_folder(&component.as_os_str().to_string_lossy())
+        !crate::modules::workspace::domain::normalizer::is_disabled_folder(
+            &component.as_os_str().to_string_lossy(),
+        )
     })
 }
 
@@ -202,7 +204,8 @@ fn parse_ini_hashes(ini_path: &Path, mod_root: &Path) -> Vec<HashEntry> {
             return Vec::new();
         }
     };
-    let (content, _, _) = crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
+    let (content, _, _) =
+        crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
     let namespace = content
         .lines()
         .find_map(|line| property(line, "namespace").map(str::to_string));
@@ -346,7 +349,6 @@ fn runtime_entries(mod_root: &Path) -> impl Iterator<Item = DirEntry> + '_ {
         .into_iter()
         .filter_entry(move |entry| {
             entry.path() == mod_root
-                || !entry.file_type().is_dir()
                 || !crate::modules::workspace::domain::normalizer::is_disabled_folder(
                     &entry.file_name().to_string_lossy(),
                 )

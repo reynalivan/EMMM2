@@ -1,7 +1,7 @@
+use crate::modules::duplicates::domain::dup_scan::{DupScanGroup, DupScanReport};
 use crate::modules::workspace::domain::conflicts::WhitelistEntry;
 use crate::shared::errors::ScannerError;
-use crate::modules::duplicates::domain::dup_scan::{DupScanGroup, DupScanReport};
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 
 pub async fn persist_completed_report(
     pool: &SqlitePool,
@@ -133,7 +133,7 @@ pub async fn get_whitelist_detailed(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<WhitelistEntry>, sqlx::Error> {
-    sqlx::query_as(
+    let rows = sqlx::query(
         r#"
         SELECT 
             w.id,
@@ -152,7 +152,20 @@ pub async fn get_whitelist_detailed(
     )
     .bind(game_id)
     .fetch_all(pool)
-    .await
+    .await?;
+    rows.iter()
+        .map(|row| {
+            Ok(WhitelistEntry {
+                id: row.try_get("id")?,
+                folder_a_id: row.try_get("folder_a_id")?,
+                folder_b_id: row.try_get("folder_b_id")?,
+                folder_a_name: row.try_get("folder_a_name")?,
+                folder_b_name: row.try_get("folder_b_name")?,
+                reason: row.try_get("reason")?,
+                ignored_at: row.try_get("ignored_at")?,
+            })
+        })
+        .collect()
 }
 
 pub async fn delete_whitelist_entry(pool: &SqlitePool, entry_id: &str) -> Result<u64, sqlx::Error> {

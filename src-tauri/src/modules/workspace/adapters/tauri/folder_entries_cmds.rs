@@ -8,7 +8,10 @@ pub async fn list_folder_entries_cmd(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     folder_path: String,
     game_id: String,
-) -> Result<Vec<crate::modules::workspace::application::scanner::folder_entries::FolderEntry>, AppError> {
+) -> Result<
+    Vec<crate::modules::workspace::application::scanner::folder_entries::FolderEntry>,
+    AppError,
+> {
     Ok(
         crate::modules::workspace::application::scanner::folder_entries::list_folder_entries(
             pool.inner(),

@@ -1,19 +1,17 @@
 use super::{
-    create_batch, get_batch,
-    recover_interrupted_batch_states, rename_planned_item,
-    restore_item_after_rollback, store_decision, store_match_suggestions, transition_item_status,
+    begin_batch_commit, create_batch, get_batch, mark_batch_review_started,
+    recover_interrupted_batch_states, rename_planned_item, restore_item_after_rollback,
+    store_decision, store_match_suggestions, transition_item_status,
     CreateImportBatchRecord, NewImportItemRecord,
 };
 use crate::modules::ingestion::application::import_batch::types::{
-    ImportDecision, ImportFlow, ImportItemStatus, ImportSourceKind, SetImportItemDecisionInput,
-    TargetMode,
+    CanonicalSuggestion, ConfidenceTier, DestinationKind, DestinationMatchMethod,
+    DestinationSuggestion, ImportDecision, ImportFlow, ImportItemStatus, ImportSourceKind,
+    SetImportItemDecisionInput, TargetMode,
 };
 use crate::test_utils::{
-    init_test_db, insert_test_game, insert_test_object, TestGameFixture,
-    TestObjectFixture,
+    init_test_db, insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture,
 };
-
-
 
 type ClearedPlanFields = (
     Option<String>,
@@ -68,6 +66,154 @@ async fn batch_and_items_round_trip_without_frontend_owned_scoring() {
     assert_eq!(batch.items[0].status, ImportItemStatus::Discovered);
     assert!(batch.items[0].category_suggestions.is_empty());
     assert!(batch.items[0].destination_suggestions.is_empty());
+}
+
+#[tokio::test]
+async fn stores_only_scored_destinations_and_uses_the_default_destination_score() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    create_batch(
+        &context.pool,
+        &CreateImportBatchRecord {
+            id: "batch-scores".to_string(),
+            game_id: "gimi".to_string(),
+            flow: ImportFlow::AutoImport,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            source_archive_path: None,
+        },
+        &[NewImportItemRecord {
+            id: "item-scores".to_string(),
+            source_kind: ImportSourceKind::Folder,
+            source_path: "C:/Downloads/Ayaka".to_string(),
+            staging_path: None,
+            planned_name: "Ayaka".to_string(),
+        }],
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE import_jobs SET status = 'awaiting_destination' WHERE id = 'item-scores'")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    let canonical = [CanonicalSuggestion {
+        entry_key: "ayaka".to_string(),
+        name: "Ayaka".to_string(),
+        matched_alias: None,
+        confidence_percentage: 92,
+        confidence_tier: ConfidenceTier::High,
+        evidence: Vec::new(),
+    }];
+    let destinations = [
+        DestinationSuggestion {
+            kind: DestinationKind::ExistingObject,
+            object_id: Some("object-ayaka".to_string()),
+            canonical_entry_key: Some("ayaka".to_string()),
+            folder_name: "Ayaka".to_string(),
+            target_path: "C:/Games/Genshin/Mods/Ayaka".to_string(),
+            confidence_percentage: 75,
+            confidence_tier: ConfidenceTier::High,
+            match_method: DestinationMatchMethod::NameSubstring,
+            warning: None,
+        },
+        DestinationSuggestion {
+            kind: DestinationKind::ExistingObject,
+            object_id: Some("object-zero".to_string()),
+            canonical_entry_key: None,
+            folder_name: "Unrelated".to_string(),
+            target_path: "C:/Games/Genshin/Mods/Unrelated".to_string(),
+            confidence_percentage: 0,
+            confidence_tier: ConfidenceTier::NoMatch,
+            match_method: DestinationMatchMethod::NoNameMatch,
+            warning: None,
+        },
+    ];
+    assert!(store_match_suggestions(
+        &context.pool,
+        "item-scores",
+        &canonical,
+        &destinations,
+        &[],
+    )
+    .await
+    .unwrap());
+
+    let batch = get_batch(&context.pool, "batch-scores").await.unwrap().unwrap();
+    let item = &batch.items[0];
+    assert_eq!(item.confidence_percentage, 75);
+    assert_eq!(item.confidence_tier, ConfidenceTier::High);
+    assert_eq!(item.destination_suggestions.len(), 1);
+    assert_eq!(item.destination_suggestions[0].object_id.as_deref(), Some("object-ayaka"));
+}
+
+#[tokio::test]
+async fn batch_commit_requires_a_durable_review_marker() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    create_batch(
+        &context.pool,
+        &CreateImportBatchRecord {
+            id: "batch-review".to_string(),
+            game_id: "gimi".to_string(),
+            flow: ImportFlow::AutoImport,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            source_archive_path: None,
+        },
+        &[NewImportItemRecord {
+            id: "item-review".to_string(),
+            source_kind: ImportSourceKind::Folder,
+            source_path: "C:/Downloads/Ayaka".to_string(),
+            staging_path: None,
+            planned_name: "Ayaka".to_string(),
+        }],
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE import_batches SET status = 'awaiting_review' WHERE id = 'batch-review'")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE import_jobs SET status = 'ready' WHERE id = 'item-review'")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    let item_ids = vec!["item-review".to_string()];
+    assert!(!begin_batch_commit(&context.pool, "batch-review", &item_ids)
+        .await
+        .unwrap());
+    assert!(mark_batch_review_started(&context.pool, "batch-review")
+        .await
+        .unwrap());
+    assert!(begin_batch_commit(&context.pool, "batch-review", &item_ids)
+        .await
+        .unwrap());
 }
 
 #[tokio::test]
@@ -189,6 +335,8 @@ async fn replacing_a_decision_clears_stale_canonical_identity() {
             canonical_entry_key: Some("ayaka".to_string()),
             matched_alias: Some("Kamisato Ayaka".to_string()),
         },
+        75,
+        ConfidenceTier::High,
     )
     .await
     .unwrap());
@@ -202,6 +350,8 @@ async fn replacing_a_decision_clears_stale_canonical_identity() {
             canonical_entry_key: None,
             matched_alias: None,
         },
+        0,
+        ConfidenceTier::NoMatch,
     )
     .await
     .unwrap());
@@ -569,4 +719,3 @@ async fn startup_recovers_analysis_completed_commits_and_pending_ready_to_move_a
     assert_eq!(direct.items[0].status, ImportItemStatus::Partial);
     assert_eq!(direct.items[0].result.as_deref(), Some("archive_pending"));
 }
-

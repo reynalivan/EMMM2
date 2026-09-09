@@ -1,6 +1,10 @@
 {
   "resume_import": "继续导入（{{count}} 项）",
   "title": "匹配向导",
+  "review_title": "检查导入匹配",
+  "review_summary": "{{count}} 个模组 · {{ready}} 个继续 · {{skipped}} 个跳过 · {{errors}} 个错误",
+  "search_placeholder": "搜索来源模组…",
+  "no_filtered_items": "没有符合此筛选条件的导入项。",
   "classification_title": "分类并匹配现有对象",
   "classification_no_move": "除非您明确选择禁用，否则会保留现有状态。",
   "classification_disable_after_apply": "将已分类的对象文件夹设为禁用",
@@ -8,44 +12,208 @@
   "classification_match_objects": "匹配标准对象",
   "classification_apply": "应用分类",
   "classification_applied": "已应用 {{count}} 个分类，并更新 {{mods}} 个子模组。",
+  "library_preflight": {
+    "title": "发现 {{count}} 个可识别对象",
+    "summary": "{{high}} 个高置信度 · {{medium}} 个中等置信度",
+    "later": "24 小时后提醒",
+    "review": "检查 {{count}} 个",
+    "refresh_failed": "对象库已更新，但无法刷新导入匹配：{{error}}"
+  },
   "batch_summary": "{{count}} 个项目 · {{flow}}",
+  "flows": {
+    "auto_import": "自动导入",
+    "specific_import": "导入到指定目标",
+    "browser": "浏览器导入",
+    "ready_to_move": "准备移动"
+  },
   "analyzing": "正在检查来源并生成分类依据…",
-  "steps": {
-    "sources": "来源",
-    "category": "分类和元数据",
-    "destination": "对象和目标",
-    "validation": "验证",
+  "checking_library": "正在检查对象库准备状态…",
+  "refreshing_matches": "正在刷新导入匹配…",
+  "extraction": {
+    "progress": "正在解压第 {{current}} 个文件，共 {{total}} 个"
+  },
+  "archive_password": {
+    "title": "需要压缩包密码",
+    "description": "请输入压缩包密码以重试解压。密码仅用于本次尝试。",
+    "label": "压缩包密码",
+    "cancel": "取消导入",
+    "retry": "重试解压"
+  },
+  "summary": {
+    "label": "批次状态",
+    "needs_review": "{{count}} 个待检查",
+    "ready": "{{count}} 个已准备",
+    "skipped": "{{count}} 个已跳过",
+    "completed": "{{count}} 个已完成"
+  },
+  "bulk": {
+    "title": "快速检查",
+    "description": "{{high}} 个高置信度 · {{other}} 个待检查"
+  },
+  "filters": {
+    "all": "全部",
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+    "no_match": "无匹配",
+    "errors": "错误"
+  },
+  "sort": {
+    "label": "排序导入匹配",
+    "review": "待检查优先",
+    "confidence_desc": "置信度最高",
+    "name": "来源名称"
+  },
+  "selection": {
+    "all": "全选",
+    "none": "取消全选",
+    "count": "已选择 {{count}} 项",
+    "item": "选择 {{name}}"
+  },
+  "destination": {
+    "search_hint": "搜索目标",
+    "search_placeholder": "搜索名称、别名、类型或标签…",
+    "potential": "潜在匹配",
+    "all": "所有目标",
+    "no_results": "未找到目标。"
+  },
+  "source_preview": {
+    "summary": "{{folders}} 个文件夹 · {{files}} 个文件 · {{size}}",
+    "unavailable": "来源预览不可用。",
+    "more": "更多文件…"
+  },
+  "sections": {
+    "match": "分类与匹配",
+    "destination": "目标",
+    "details": "详情"
+  },
+  "fields": {
+    "planned_name": "计划名称",
+    "category": "分类",
+    "subcategory": "子分类",
+    "optional": "可选",
+    "canonical": "标准对象",
+    "manual_target": "手动选择",
+    "selected_target": "已选目标",
+    "decision": "决定",
     "result": "结果"
   },
+  "categories": {
+    "Character": "角色",
+    "Weapon": "武器",
+    "UI": "界面",
+    "Other": "其他",
+    "unknown": "未分类"
+  },
+  "confidence": {
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+    "no_match": "无匹配"
+  },
+  "confidence_value": "{{value}}% · {{label}}",
+  "decisions": {
+    "pending": "待处理",
+    "confirm": "已确认",
+    "keep_specific_target": "保留目标",
+    "reallocate": "重新分配",
+    "create_canonical": "创建标准对象",
+    "skip": "已跳过"
+  },
+  "destination_hint": "选择建议的目标，或手动选择已有目标。",
   "columns": {
-    "source": "来源 / 计划名称",
+    "source": "来源模组",
     "category": "分类",
     "canonical": "标准对象",
     "destination": "目标",
     "confidence": "置信度 / 依据",
-    "decision": "决定 / 结果",
+    "decision": "决定",
     "actions": "操作"
   },
   "actions": {
-    "confirm_high": "确认高置信度",
-    "skip_medium_low": "跳过中低置信度",
+    "confirm_high": "接受 {{count}} 个高置信度项目",
+    "skip_medium_low": "跳过 {{count}} 个低置信度项目",
     "confirm": "确认分类",
-    "rename": "修改计划名称",
-    "use_target": "使用目标",
+    "rename": "编辑名称",
+    "save_name": "保存名称",
+    "use_target": "使用此目标",
     "skip": "跳过",
+    "proceed": "继续",
+    "set_proceed": "设为继续",
+    "set_skip": "设为跳过",
+    "view_destination": "查看目标",
     "retry": "重新生成建议",
+    "resume": "继续导入",
     "open": "在资源管理器中打开",
-    "commit": "提交 {{count}} 个项目"
+    "more": "更多操作",
+    "import": "导入 {{count}} 个项目"
+  },
+  "footer": {
+    "finished": "此批次已完成。",
+    "resolve_first": "仍有 {{count}} 个项目需要决定。",
+    "ready": "{{count}} 个项目已准备导入。",
+    "recovery": "{{count}} 个已放置项目需要恢复元数据。",
+    "no_items": "尚未选择要导入的项目。"
   },
   "choose_existing": "选择已有目标…",
   "specific_warning": "目标匹配度不足，需要明确确认",
   "no_match": "没有标准匹配",
   "no_destination": "尚未选择目标",
   "evidence": "依据",
+  "evidence_none": "没有匹配依据",
+  "match_column": "匹配",
+  "import_as_column": "导入为",
+  "source": {
+    "identified": "识别为 {{name}} · {{score}}%",
+    "matching_by_name": "按名称匹配",
+    "edit_name": "编辑导入后的文件夹名称",
+    "destination_preview": "将放置到：{{destination}}/{{name}}",
+    "source_unchanged": "来源压缩包或文件夹不会被修改"
+  },
+  "match_methods": {
+    "canonical_identity": "标准身份匹配",
+    "exact_name": "名称完全匹配",
+    "exact_alias": "别名完全匹配",
+    "name_substring": "名称子字符串匹配",
+    "alias_substring": "别名子字符串匹配",
+    "token_substring": "名称词元匹配",
+    "fuzzy_name": "名称模糊相似",
+    "no_name_match": "没有明显的名称相似性"
+  },
+  "match_tooltip": {
+    "manual": "手动选择",
+    "category_warning": "目标类型与检测到的来源类型不同",
+    "score": "匹配分数"
+  },
+  "evidence_sources": {
+    "deep_matcher": "内容分析",
+    "manual": "手动目标",
+    "other": "匹配信号"
+  },
+  "evidence_messages": {
+    "hash_overlap": "{{overlap}} 个相同哈希（{{unique}} 个唯一）",
+    "alias": "别名“{{value}}”完全匹配",
+    "name": "名称包含“{{value}}”",
+    "similarity": "名称相似度 {{percent}}%",
+    "deep_name": "在文件或文件夹名称中发现“{{value}}”",
+    "ini_section": "在 INI 节中发现“{{value}}”",
+    "ini_content": "在 INI 内容中发现“{{value}}”",
+    "ai_score": "AI 相关度 {{percent}}%",
+    "conflict": "{{count}} 个强信号冲突",
+    "substring": "在 {{source}} 中发现“{{value}}”",
+    "folder_name": "文件夹名称包含“{{value}}”",
+    "fuzzy_name": "文件夹名称类似“{{value}}”（{{percent}}%）",
+    "manual_selected": "已手动选择“{{name}}”"
+  },
   "result_summary": "已移动 {{moved}}，重新分配 {{reallocated}}，新建 {{created}}，跳过 {{skipped}}，冲突 {{collisions}}，元数据待处理 {{pending}}，失败 {{failed}}。",
   "errors": {
+    "archive": {
+      "dictionary_too_large": "此压缩包使用的压缩字典过大，无法安全解压。请使用标准设置重新压缩，或手动解压后导入文件夹。",
+      "unsupported_compression": "此压缩包使用了不支持的压缩设置。请使用标准 ZIP、7Z 或 RAR 设置重新压缩，或手动解压后导入文件夹。"
+    },
     "launch": "无法打开匹配向导：{{error}}",
     "update": "无法更新项目：{{error}}",
-    "commit": "无法提交批次：{{error}}"
+    "commit": "无法提交批次：{{error}}",
+    "metadata_pending": "文件已放置。请继续导入以完成元数据。"
   }
 }

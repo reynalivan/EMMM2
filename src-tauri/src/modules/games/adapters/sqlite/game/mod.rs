@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use sqlx::{Executor, QueryBuilder, Sqlite, SqliteConnection, SqlitePool};
 
+use crate::modules::games::domain::models::GameType;
+
 /// Game configuration row stored in the `games` table.
 /// Uses the extended columns from migration 012.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -21,8 +23,21 @@ pub struct GameRow {
 
 /// Get all configured games.
 pub async fn get_all_games(pool: &SqlitePool) -> Result<Vec<GameRow>, sqlx::Error> {
-    let rows = sqlx::query_as::<_, GameRow>(
-        "SELECT id, name, game_type, path, mods_path, ready_to_move_path, game_exe, launcher_path, loader_exe, launch_args FROM games ORDER BY name"
+    let rows = sqlx::query_as!(
+        GameRow,
+        r#"SELECT
+            id,
+            name,
+            game_type AS "game_type: GameType",
+            path,
+            mods_path,
+            ready_to_move_path,
+            game_exe,
+            launcher_path,
+            loader_exe,
+            launch_args
+        FROM games
+        ORDER BY name"#
     )
     .fetch_all(pool)
     .await?;
@@ -40,7 +55,7 @@ pub async fn upsert_game<'e, E>(executor: E, game: &GameRow) -> Result<(), sqlx:
 where
     E: Executor<'e, Database = Sqlite>,
 {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO games (id, name, game_type, path, mods_path, ready_to_move_path, game_exe, launcher_path, loader_exe, launch_args, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(id) DO UPDATE SET
@@ -53,17 +68,17 @@ where
            launcher_path = excluded.launcher_path,
            loader_exe = excluded.loader_exe,
            launch_args = excluded.launch_args",
+        game.id,
+        game.name,
+        game.game_type,
+        game.path,
+        game.mods_path,
+        game.ready_to_move_path,
+        game.game_exe,
+        game.launcher_path,
+        game.loader_exe,
+        game.launch_args,
     )
-    .bind(&game.id)
-    .bind(&game.name)
-    .bind(game.game_type)
-    .bind(&game.path)
-    .bind(&game.mods_path)
-    .bind(&game.ready_to_move_path)
-    .bind(&game.game_exe)
-    .bind(&game.launcher_path)
-    .bind(&game.loader_exe)
-    .bind(&game.launch_args)
     .execute(executor)
     .await?;
     Ok(())
@@ -92,10 +107,9 @@ pub async fn delete_games_by_ids(
 
 /// Count total games (used for check_config_status).
 pub async fn count_games(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM games")
+    sqlx::query_scalar!("SELECT COUNT(*) FROM games")
         .fetch_one(pool)
-        .await?;
-    Ok(row.0)
+        .await
 }
 
 /// Get the mod path for a specific game by ID.
@@ -105,75 +119,74 @@ pub async fn get_configured_mods_path(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Option<String>, sqlx::Error> {
-    let value: Option<Option<String>> =
-        sqlx::query_scalar("SELECT mods_path FROM games WHERE id = ?")
-            .bind(game_id)
-            .fetch_optional(pool)
-            .await?;
-    Ok(value.flatten())
-}
-
-/// Raw `game_type` discriminant, used to pick the matching Master DB resource file.
-pub async fn get_game_type_raw(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar!("SELECT game_type FROM games WHERE id = ?", game_id)
+    let value = sqlx::query_scalar!("SELECT mods_path FROM games WHERE id = ?", game_id)
         .fetch_optional(pool)
-        .await
+        .await?;
+    Ok(value)
 }
 
 pub async fn get_game_type(
     pool: &SqlitePool,
     game_id: &str,
-) -> Result<Option<crate::modules::games::domain::models::GameType>, sqlx::Error> {
-    sqlx::query_scalar("SELECT game_type FROM games WHERE id = ?")
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await
+) -> Result<Option<GameType>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT game_type AS "game_type: GameType" FROM games WHERE id = ?"#,
+        game_id
+    )
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn get_mod_path(pool: &SqlitePool, game_id: &str) -> Result<Option<String>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT COALESCE(NULLIF(mods_path, ''), path) AS mods_path FROM games WHERE id = ?",
+    sqlx::query_scalar!(
+        r#"SELECT COALESCE(NULLIF(mods_path, ''), path) AS "mods_path!: String" FROM games WHERE id = ?"#,
+        game_id
     )
-    .bind(game_id)
     .fetch_optional(pool)
-    .await?;
-
-    if let Some(r) = row {
-        use sqlx::Row;
-        Ok(r.try_get("mods_path").ok())
-    } else {
-        Ok(None)
-    }
+    .await
 }
 
 pub async fn get_ready_to_move_config(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
-    sqlx::query_as("SELECT name, ready_to_move_path FROM games WHERE id = ?")
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await
+    let config = sqlx::query_as!(
+        ReadyToMoveConfig,
+        "SELECT name, ready_to_move_path FROM games WHERE id = ?",
+        game_id
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(config.map(Into::into))
+}
+
+#[derive(Debug)]
+struct ReadyToMoveConfig {
+    name: String,
+    ready_to_move_path: Option<String>,
+}
+
+impl From<ReadyToMoveConfig> for (String, Option<String>) {
+    fn from(value: ReadyToMoveConfig) -> Self {
+        (value.name, value.ready_to_move_path)
+    }
 }
 
 pub async fn ensure_game_exists(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     game_name: &str,
-    game_type: crate::modules::games::domain::models::GameType,
+    game_type: GameType,
     mods_path: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT OR IGNORE INTO games (id, name, game_type, path, mods_path) VALUES (?, ?, ?, ?, ?)",
+        game_id,
+        game_name,
+        game_type,
+        mods_path,
+        mods_path,
     )
-    .bind(game_id)
-    .bind(game_name)
-    .bind(game_type)
-    .bind(mods_path)
-    .bind(mods_path)
     .execute(conn)
     .await?;
     Ok(())

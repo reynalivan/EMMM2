@@ -1,11 +1,17 @@
 use std::sync::Arc;
 
-use crate::modules::reconciliation::application::disk_reconcile::types::{DiskReconcileReason, DiskReconcileStatus};
-use crate::modules::workspace::application::scanner::watcher::{ModWatchEvent, WatcherState, WatcherSuppressor};
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcileReason, DiskReconcileStatus,
+};
+use crate::modules::workspace::application::scanner::watcher::{
+    ModWatchEvent, WatcherState, WatcherSuppressor,
+};
 
 use super::*;
 
-fn applied_result(game_id: &str) -> crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult {
+fn applied_result(
+    game_id: &str,
+) -> crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult {
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult {
         game_id: game_id.to_string(),
         reason: DiskReconcileReason::StartupBoot,
@@ -550,22 +556,28 @@ async fn reconcile_and_collection_apply_do_not_deadlock_on_inverted_locks() {
     let operation_lock = OperationLock::new();
     let suppressor = Arc::new(WatcherSuppressor::new(false));
     let game_lock = state.game_lock("game-1");
-    let mut apply_context = crate::pipeline::apply_pipeline::ApplyContext::new(
-        crate::modules::collections::application::collection::ApplyCollectionRequest {
-            pool: &ctx.pool,
-            game_id: "game-1",
-            collection_id: "collection-1",
-            capture_last_changes: false,
-            mods_path: mods_path.clone(),
-            suppressor: suppressor.clone(),
-            ignore_missing: false,
-            settings: config.get_settings(),
-        },
-    );
+    let mut apply_context =
+        crate::modules::collections::application::apply::apply_pipeline::ApplyContext::new(
+            crate::modules::collections::application::collection::ApplyCollectionRequest {
+                pool: &ctx.pool,
+                game_id: "game-1",
+                collection_id: "collection-1",
+                capture_last_changes: false,
+                mods_path: mods_path.clone(),
+                suppressor: suppressor.clone(),
+                ignore_missing: false,
+                settings: config.get_settings(),
+            },
+        );
     apply_context.to_enable = vec![crate::shared::path_key::folder_path_key(
         "Alice/Blue Dress",
         Some(&mods_path_text),
     )];
+    crate::modules::collections::application::apply::steps::batch_rename::prepare(
+        &mut apply_context,
+    )
+    .await
+    .expect("prepare collection rename");
 
     // Match the collection command boundary: it owns the operation lease
     // before the pipeline reaches its inline per-game reconcile.
@@ -603,7 +615,10 @@ async fn reconcile_and_collection_apply_do_not_deadlock_on_inverted_locks() {
             tokio::task::yield_now().await;
         }
 
-        let result = crate::pipeline::steps::batch_rename::rename(&mut apply_context).await;
+        let result = crate::modules::collections::application::apply::steps::batch_rename::rename(
+            &mut apply_context,
+        )
+        .await;
         drop(operation_guard);
         result
     };

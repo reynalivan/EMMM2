@@ -1,9 +1,10 @@
 //! Staged full-scoring match for a single mod folder.
 
-use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::maybe_apply_ai_rerank;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
-use crate::modules::matching::application::deep_matcher::analysis::gamebanana::{self, GameBananaConfig};
+use crate::modules::matching::application::deep_matcher::analysis::gamebanana::{
+    self, GameBananaConfig,
+};
 use crate::modules::matching::application::deep_matcher::analysis::mechanical_rerank::{
     self, MechanicalRerankConfig,
 };
@@ -17,6 +18,7 @@ use crate::modules::matching::application::deep_matcher::state::master_db::Maste
 use crate::modules::matching::application::deep_matcher::{
     Confidence, MatchMode, MatchStatus, ScoreState, StagedMatchResult,
 };
+use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
 use std::collections::{HashMap, HashSet};
 
 use super::scoring_stages::{
@@ -43,7 +45,8 @@ pub fn match_folder_full(
     gb_config: &GameBananaConfig,
 ) -> StagedMatchResult {
     let mut local_cache =
-        crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache::new();
+        crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache::new(
+        );
     match_folder_full_cached(
         candidate,
         db,

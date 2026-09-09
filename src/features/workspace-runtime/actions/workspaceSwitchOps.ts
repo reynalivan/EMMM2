@@ -8,22 +8,22 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { extractFileInUsePayload, formatAppError } from '../../../shared/lib/appError';
-import { toast } from '../../../app/store/useToastStore';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { toast } from '@/shared/ui/toast';
+import { useAppStore } from '@/app/store';
 import type {
   WorkspaceImpact,
   WorkspaceNode,
   WorkspaceObjectNode,
   WorkspaceSwitchInput,
   WorkspaceSwitchResult,
-} from '@/entities/workspace/model/workspace';
+} from '@/entities/workspace';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
 import {
   buildRuntimeMutationDescriptor,
   buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../optimistic/descriptorBuilders';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import {
   openFolderConflictManagerDialog,
   openRenameConfirmationDialog,

@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createWrapper } from '../../../tests/testing/test-utils';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { useToastStore } from '../../../app/store/useToastStore';
+import { useAppStore } from '@/app/store';
+import { useToastStore } from '@/shared/ui/toast';
 import {
   useModInfo,
   useModIniFiles,
@@ -165,7 +165,7 @@ describe('usePreviewData hooks', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'warning',
-          message: expect.stringContaining('projection pending'),
+          message: 'Disk changes were applied, but runtime refresh is still pending.',
         }),
       ]),
     );

@@ -77,10 +77,14 @@ async fn setup_object_mods_fixture() -> sqlx::SqlitePool {
 async fn test_set_object_type_for_object_updates_only_target_object_mods() {
     let pool = setup_object_mods_fixture().await;
 
-    let updated =
-        crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(&pool, "g_object_mods", "obj1", "Weapon")
-            .await
-            .unwrap();
+    let updated = crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(
+        &pool,
+        "g_object_mods",
+        "obj1",
+        "Weapon",
+    )
+    .await
+    .unwrap();
 
     assert_eq!(updated, 2);
 
@@ -287,7 +291,8 @@ async fn test_suggest_random_mods() {
                 object_id,
                 actual_name,
                 folder_path,
-                status: crate::modules::games::domain::models::ItemStatus::from_str(status).unwrap(),
+                status: crate::modules::games::domain::models::ItemStatus::from_str(status)
+                    .unwrap(),
                 is_safe,
                 object_type: Some("Other"),
                 mods_path: Some("/Mods"),

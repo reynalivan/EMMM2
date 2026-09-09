@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { open } from '@tauri-apps/plugin-dialog';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import WorkspaceSourceUnavailableDialog from './WorkspaceSourceUnavailableDialog';
 
 const fixtures = vi.hoisted(() => ({
@@ -23,10 +23,10 @@ const fixtures = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({ activeGame: fixtures.activeGame }),
 }));
-vi.mock('../../settings/hooks/useSettings', () => ({
+vi.mock('@/entities/settings', () => ({
   useSettings: () => ({
     settings: fixtures.settings,
     saveSettingsAsync: fixtures.saveSettingsAsync,
@@ -42,11 +42,14 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
     reconcileDiskStateCmd: vi.fn(),
   },
 }));
-vi.mock('../../file-watcher/hooks/useFileWatcher', () => ({ applyDiskReconcileResult: vi.fn() }));
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/features/file-watcher/hooks/useFileWatcher', () => ({
+  applyDiskReconcileResult: vi.fn(),
+}));
+vi.mock('@/shared/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
@@ -103,7 +106,7 @@ describe('WorkspaceSourceUnavailableDialog', () => {
       safety: {
         keywords: [],
       },
-      ai: { enabled: false, api_key: null, base_url: null },
+      ai: { enabled: false, has_api_key: false, base_url: null },
       auto_close_launcher: false,
     });
     vi.mocked(fixtures.saveSettingsAsync).mockResolvedValue(undefined);

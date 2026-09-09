@@ -253,19 +253,7 @@ pub async fn launch_game(
 
                 #[cfg(target_os = "windows")]
                 {
-                    // Use PowerShell to elevate privileges on Windows (US-10.1 requirement)
-                    std::process::Command::new("powershell")
-                        .arg("-NoProfile")
-                        .arg("-Command")
-                        .arg(format!(
-                            "Start-Process -FilePath '{}' -WorkingDirectory '{}' -Verb RunAs",
-                            launcher_path.display(),
-                            launcher_dir.display()
-                        ))
-                        .spawn()
-                        .map_err(|e| {
-                            AppError::Io(format!("Failed to start loader as Admin: {e}"))
-                        })?;
+                    crate::platform::process::launch_elevated(launcher_path, launcher_dir)?;
                 }
 
                 #[cfg(not(target_os = "windows"))]

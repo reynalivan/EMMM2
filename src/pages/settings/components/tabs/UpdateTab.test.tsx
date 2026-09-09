@@ -9,13 +9,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../../tests/testing/test-utils';
 import UpdateTab from './UpdateTab';
 
-// Mock Tauri plugin-updater and plugin-process
-vi.mock('@tauri-apps/plugin-updater', () => ({
-  check: vi.fn(),
-}));
-vi.mock('@tauri-apps/plugin-process', () => ({
-  relaunch: vi.fn(),
-}));
 vi.mock('@tauri-apps/api/app', () => ({
   getVersion: vi.fn().mockResolvedValue('1.2.3'),
 }));
@@ -27,7 +20,7 @@ vi.mock('../../hooks/useAppUpdater', () => ({
 vi.mock('../../hooks/useMetadataSync', () => ({
   useMetadataSyncMutation: vi.fn(),
 }));
-vi.mock('../../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   useToastStore: () => ({
     addToast: vi.fn(),
   }),

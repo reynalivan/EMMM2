@@ -1,6 +1,6 @@
 use super::*;
-use crate::modules::workspace::domain::task::{RecoveryAction, TaskStatus};
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::modules::workspace::domain::task::{RecoveryAction, TaskStatus};
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
 
 async fn setup() -> (sqlx::SqlitePool, ConfigService, WatcherState) {
@@ -57,10 +57,20 @@ async fn resolve(
     task_id: &str,
     action: RecoveryAction,
 ) -> Result<(), crate::shared::errors::AppError> {
+    let journal_dir = tempfile::tempdir().expect("create mutation journal directory");
+    let journal = std::sync::Arc::new(crate::modules::mutation::journal::OperationJournal::open(
+        journal_dir.path().join("mutation-journal.json"),
+        32,
+    )?);
+    let coordinator = crate::modules::mutation::coordinator::MutationCoordinator::with_lock(
+        crate::platform::fs::operation_lock::OperationLock::new(),
+        journal,
+    );
     resolve_recovery_task(RecoveryTaskRequest {
         pool,
         config,
         watcher_state: watcher,
+        coordinator: &coordinator,
         task_id,
         action,
     })
@@ -70,19 +80,36 @@ async fn resolve(
 #[tokio::test]
 async fn pending_startup_tasks_lists_only_open_work() {
     let (pool, _config, _watcher) = setup().await;
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t-done", "g1", "apply_collection", Some("c1"))
-        .await
-        .expect("create done task");
-    crate::modules::workspace::adapters::sqlite::task::update_status(&pool, "t-done", TaskStatus::Completed)
-        .await
-        .expect("complete task");
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t-open", "g1", "apply_collection", Some("c1"))
-        .await
-        .expect("create open task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "t-done",
+        "g1",
+        "apply_collection",
+        Some("c1"),
+    )
+    .await
+    .expect("create done task");
+    crate::modules::workspace::adapters::sqlite::task::update_status(
+        &pool,
+        "t-done",
+        TaskStatus::Completed,
+    )
+    .await
+    .expect("complete task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "t-open",
+        "g1",
+        "apply_collection",
+        Some("c1"),
+    )
+    .await
+    .expect("create open task");
 
-    let pending = crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&pool)
-        .await
-        .expect("list pending");
+    let pending =
+        crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&pool)
+            .await
+            .expect("list pending");
 
     let ids: Vec<_> = pending.iter().map(|task| task.id.as_str()).collect();
     assert_eq!(ids, vec!["t-open"]);
@@ -102,9 +129,15 @@ async fn missing_task_is_rejected() {
 #[tokio::test]
 async fn ignore_marks_the_task_failed_without_touching_the_filesystem() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t1", "g1", "apply_collection", Some("c1"))
-        .await
-        .expect("create task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "t1",
+        "g1",
+        "apply_collection",
+        Some("c1"),
+    )
+    .await
+    .expect("create task");
 
     resolve(&pool, &config, &watcher, "t1", RecoveryAction::Ignore)
         .await
@@ -116,18 +149,25 @@ async fn ignore_marks_the_task_failed_without_touching_the_filesystem() {
         .expect("task exists");
     assert_eq!(task.status, TaskStatus::Failed);
     // An ignored task must not stay in the startup queue.
-    let pending = crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&pool)
-        .await
-        .expect("list pending");
+    let pending =
+        crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&pool)
+            .await
+            .expect("list pending");
     assert!(pending.is_empty());
 }
 
 #[tokio::test]
 async fn retry_rejects_an_unsupported_task_type() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t1", "g1", "something_else", None)
-        .await
-        .expect("create task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "t1",
+        "g1",
+        "something_else",
+        None,
+    )
+    .await
+    .expect("create task");
 
     let error = resolve(&pool, &config, &watcher, "t1", RecoveryAction::Retry)
         .await
@@ -146,9 +186,15 @@ async fn retry_rejects_an_unsupported_task_type() {
 #[tokio::test]
 async fn retry_requires_a_target_collection() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "t1", "g1", "apply_collection", None)
-        .await
-        .expect("create task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "t1",
+        "g1",
+        "apply_collection",
+        None,
+    )
+    .await
+    .expect("create task");
 
     let error = resolve(&pool, &config, &watcher, "t1", RecoveryAction::Retry)
         .await
@@ -184,7 +230,8 @@ async fn successful_retry_promotes_the_applied_collection_to_active_baseline() {
     )
     .await
     .expect("create collection");
-    let empty_state = crate::modules::workspace::application::projected_state::empty_projected_state();
+    let empty_state =
+        crate::modules::workspace::application::projected_state::empty_projected_state();
     crate::modules::collections::application::collection::persist_projected_state(
         &ctx.pool,
         &target.id,
@@ -224,10 +271,11 @@ async fn successful_retry_promotes_the_applied_collection_to_active_baseline() {
         runtime.active_collection_id.as_deref(),
         Some(target.id.as_str())
     );
-    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&ctx.pool, "retry-task")
-        .await
-        .expect("load task")
-        .expect("task exists");
+    let task =
+        crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&ctx.pool, "retry-task")
+            .await
+            .expect("load task")
+            .expect("task exists");
     assert_eq!(task.status, TaskStatus::Completed);
     let task_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE game_id = 'g-retry' AND task_type = 'apply_collection'",
@@ -280,18 +328,22 @@ async fn retrying_a_restore_task_uses_its_stored_final_baseline_not_the_draft_ta
     .await
     .expect("retry restore task");
 
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-restore-retry")
-        .await
-        .expect("load runtime")
-        .expect("runtime exists");
+    let runtime =
+        crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-restore-retry")
+            .await
+            .expect("load runtime")
+            .expect("runtime exists");
     assert_eq!(
         runtime.active_collection_id.as_deref(),
         Some("restore-baseline")
     );
-    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "restore-retry-task")
-        .await
-        .expect("load task")
-        .expect("task exists");
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(
+        &pool,
+        "restore-retry-task",
+    )
+    .await
+    .expect("load task")
+    .expect("task exists");
     assert_eq!(
         task.final_active_collection_id.as_deref(),
         Some("restore-baseline")
@@ -305,9 +357,13 @@ async fn retry_finalization_failure_keeps_original_task_and_active_baseline() {
     for (id, name) in [("baseline", "Baseline"), ("target", "Target")] {
         create_empty_collection_for_game(&pool, "g-retry-atomic", id, name, false).await;
     }
-    crate::modules::collections::adapters::sqlite::runtime::set_active(&pool, "g-retry-atomic", Some("baseline"))
-        .await
-        .expect("set baseline");
+    crate::modules::collections::adapters::sqlite::runtime::set_active(
+        &pool,
+        "g-retry-atomic",
+        Some("baseline"),
+    )
+    .await
+    .expect("set baseline");
     crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &pool,
         "retry-original",
@@ -339,15 +395,17 @@ async fn retry_finalization_failure_keeps_original_task_and_active_baseline() {
     .await
     .expect_err("task finalization failure must fail recovery");
 
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-retry-atomic")
-        .await
-        .expect("load runtime")
-        .expect("runtime exists");
+    let runtime =
+        crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-retry-atomic")
+            .await
+            .expect("load runtime")
+            .expect("runtime exists");
     assert_eq!(runtime.active_collection_id.as_deref(), Some("baseline"));
-    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "retry-original")
-        .await
-        .expect("load task")
-        .expect("task exists");
+    let task =
+        crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "retry-original")
+            .await
+            .expect("load task")
+            .expect("task exists");
     assert_eq!(task.status, TaskStatus::Pending);
     let task_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE game_id = 'g-retry-atomic' AND task_type = 'apply_collection'",
@@ -368,9 +426,13 @@ async fn rollback_finalization_failure_keeps_pre_recovery_active_pointer() {
     ] {
         create_empty_collection_for_game(&pool, "g-rollback-atomic", id, name, is_draft).await;
     }
-    crate::modules::collections::adapters::sqlite::runtime::set_active(&pool, "g-rollback-atomic", Some("target"))
-        .await
-        .expect("set target active");
+    crate::modules::collections::adapters::sqlite::runtime::set_active(
+        &pool,
+        "g-rollback-atomic",
+        Some("target"),
+    )
+    .await
+    .expect("set target active");
     crate::modules::workspace::adapters::sqlite::task::create_task_with_rollback_intent(
         &pool,
         "rollback-original",
@@ -402,15 +464,19 @@ async fn rollback_finalization_failure_keeps_pre_recovery_active_pointer() {
     .await
     .expect_err("task finalization failure must fail recovery");
 
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-rollback-atomic")
-        .await
-        .expect("load runtime")
-        .expect("runtime exists");
+    let runtime =
+        crate::modules::collections::adapters::sqlite::runtime::get(&pool, "g-rollback-atomic")
+            .await
+            .expect("load runtime")
+            .expect("runtime exists");
     assert_eq!(runtime.active_collection_id.as_deref(), Some("target"));
-    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(&pool, "rollback-original")
-        .await
-        .expect("load task")
-        .expect("task exists");
+    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(
+        &pool,
+        "rollback-original",
+    )
+    .await
+    .expect("load task")
+    .expect("task exists");
     assert_eq!(task.status, TaskStatus::Pending);
     let task_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE game_id = 'g-rollback-atomic' AND task_type = 'apply_collection'",
@@ -424,9 +490,15 @@ async fn rollback_finalization_failure_keeps_pre_recovery_active_pointer() {
 #[tokio::test]
 async fn concurrent_ignore_actions_have_exactly_one_winner() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "claim-once", "g1", "apply_collection", None)
-        .await
-        .expect("create task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "claim-once",
+        "g1",
+        "apply_collection",
+        None,
+    )
+    .await
+    .expect("create task");
 
     let (first, second) = tokio::join!(
         resolve(
@@ -451,9 +523,15 @@ async fn concurrent_ignore_actions_have_exactly_one_winner() {
 #[tokio::test]
 async fn running_or_settled_tasks_reject_additional_recovery_actions() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "claimed", "g1", "apply_collection", None)
-        .await
-        .expect("create claimed task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "claimed",
+        "g1",
+        "apply_collection",
+        None,
+    )
+    .await
+    .expect("create claimed task");
     sqlx::query("UPDATE tasks SET status = 'RUNNING' WHERE id = 'claimed'")
         .execute(&pool)
         .await
@@ -464,16 +542,30 @@ async fn running_or_settled_tasks_reject_additional_recovery_actions() {
     resolve(&pool, &config, &watcher, "claimed", RecoveryAction::Retry)
         .await
         .expect_err("a claimed task must reject an opposing retry");
-    crate::modules::workspace::adapters::sqlite::task::update_status(&pool, "claimed", TaskStatus::Completed)
-        .await
-        .expect("settle claimed task");
+    crate::modules::workspace::adapters::sqlite::task::update_status(
+        &pool,
+        "claimed",
+        TaskStatus::Completed,
+    )
+    .await
+    .expect("settle claimed task");
 
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "settled", "g1", "apply_collection", None)
-        .await
-        .expect("create settled task");
-    crate::modules::workspace::adapters::sqlite::task::update_status(&pool, "settled", TaskStatus::Completed)
-        .await
-        .expect("settle task");
+    crate::modules::workspace::adapters::sqlite::task::create_task(
+        &pool,
+        "settled",
+        "g1",
+        "apply_collection",
+        None,
+    )
+    .await
+    .expect("create settled task");
+    crate::modules::workspace::adapters::sqlite::task::update_status(
+        &pool,
+        "settled",
+        TaskStatus::Completed,
+    )
+    .await
+    .expect("settle task");
     resolve(&pool, &config, &watcher, "settled", RecoveryAction::Ignore)
         .await
         .expect_err("a settled task must reject Ignore");
@@ -491,17 +583,25 @@ async fn running_or_settled_tasks_reject_additional_recovery_actions() {
 #[tokio::test]
 async fn startup_check_is_read_only_and_backend_boot_reclaims_crashed_recovery() {
     let (pool, config, watcher) = setup().await;
-    crate::modules::workspace::adapters::sqlite::task::create_task(&pool, "crashed", "g1", "apply_collection", None)
-        .await
-        .expect("create task");
-    assert!(crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
+    crate::modules::workspace::adapters::sqlite::task::create_task(
         &pool,
         "crashed",
-        TaskStatus::Pending,
-        TaskStatus::Running,
+        "g1",
+        "apply_collection",
+        None,
     )
     .await
-    .expect("claim task"));
+    .expect("create task");
+    assert!(
+        crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
+            &pool,
+            "crashed",
+            TaskStatus::Pending,
+            TaskStatus::Running,
+        )
+        .await
+        .expect("claim task")
+    );
     resolve(&pool, &config, &watcher, "crashed", RecoveryAction::Ignore)
         .await
         .expect_err("same-session action must reject a running task");
@@ -515,9 +615,10 @@ async fn startup_check_is_read_only_and_backend_boot_reclaims_crashed_recovery()
         .await
         .expect_err("repeatable startup check must not revoke a live claim");
 
-    let reclaimed_count = crate::modules::workspace::adapters::sqlite::task::reclaim_interrupted_apply_tasks(&pool)
-        .await
-        .expect("backend boot should reclaim interrupted tasks");
+    let reclaimed_count =
+        crate::modules::workspace::adapters::sqlite::task::reclaim_interrupted_apply_tasks(&pool)
+            .await
+            .expect("backend boot should reclaim interrupted tasks");
     assert_eq!(reclaimed_count, 1);
     let reclaimed = get_startup_recovery_tasks(&pool)
         .await

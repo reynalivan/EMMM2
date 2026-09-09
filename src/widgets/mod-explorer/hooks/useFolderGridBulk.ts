@@ -13,9 +13,9 @@ import {
   useBulkSafety,
   useBulkFavorite,
   useBulkPin,
-} from '@/features/mod-runtime/hooks/useBulkModMutations';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import type { ModFolder } from '@/entities/game-object/model/object';
+} from '@/features/mod-runtime';
+import { useActiveGame } from '@/entities/game';
+import type { ModFolder } from '@/entities/game-object';
 
 interface FolderGridBulkOptions {
   gridSelection: Set<string>;

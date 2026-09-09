@@ -1,13 +1,14 @@
 use super::classify::{collect_loose_files_recursive, find_mod_roots};
 use super::destination::{
-    check_disk_space, move_to_extracted_dir, parent_dir_join, remove_existing_dest,
+    check_disk_space, effective_archive_limits, move_to_extracted_dir, parent_dir_join,
+    remove_existing_dest, ARCHIVE_DISK_RESERVE_BYTES,
 };
-use super::extractors::{extract_to_dir, unpack_nested_archives};
+use super::extractors::{extract_to_dir_with_budget, unpack_nested_archives};
 use super::progress::aborted_result;
 use super::staging::{cleanup_temp_extract_parent, TempDirGuard};
-use super::types::{ArchiveFormat, ExtractionEvent, ExtractionResult};
-use crate::shared::errors::AppError;
+use super::types::{ExtractionEvent, ExtractionResult};
 use crate::platform::fs::file_utils::rename_cross_drive_fallback;
+use crate::shared::errors::AppError;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -70,17 +71,25 @@ pub fn extract_archive(
         before_commit,
         on_progress,
     } = options;
-    let format = ArchiveFormat::detect(archive_path).ok_or_else(|| {
-        AppError::Internal(format!(
-            "Unsupported archive format: {}",
-            archive_path.display()
-        ))
-    })?;
     let archive_name = archive_display_name(archive_path, custom_name);
-    crate::modules::library::application::mods::core_ops::validate_folder_name_component(&archive_name)?;
+    crate::modules::library::application::mods::core_ops::validate_folder_name_component(
+        &archive_name,
+    )?;
 
-    let analysis = crate::modules::library::application::mods::archive::analyze_archive(archive_path)?;
-    check_disk_space(mods_dir, analysis.uncompressed_size + (50 * 1024 * 1024))?;
+    let analysis = match super::analyze::analyze_archive_with_limits(
+        archive_path,
+        super::security::ArchiveLimits::default(),
+        cancel_token.clone(),
+    ) {
+        Ok(analysis) => analysis,
+        Err(AppError::Cancelled) => return Ok(aborted_result(archive_name, 0)),
+        Err(error) => return Err(error),
+    };
+    let required_space = analysis
+        .uncompressed_size
+        .checked_add(ARCHIVE_DISK_RESERVE_BYTES)
+        .ok_or_else(|| AppError::Validation("Archive staging size overflow".to_string()))?;
+    check_disk_space(mods_dir, required_space)?;
 
     let temp_path = mods_dir
         .join(".temp_extract")
@@ -88,15 +97,20 @@ pub fn extract_archive(
     fs::create_dir_all(&temp_path)?;
     let mut guard = TempDirGuard::new(temp_path.clone());
 
-    let mut files_extracted = match extract_to_dir(
+    let effective_limits =
+        effective_archive_limits(mods_dir, super::security::ArchiveLimits::default())?;
+    let mut budget =
+        super::security::ExtractionBudget::new(effective_limits, analysis.file_size_bytes);
+    let mut files_extracted = match extract_to_dir_with_budget(
         archive_path,
         guard.path(),
         password,
-        format,
+        analysis.format,
         cancel_token.clone(),
         on_progress,
+        &mut budget,
     ) {
-        Ok(count) => count,
+        Ok(result) => result,
         Err(AppError::Cancelled) => return Ok(aborted_result(archive_name, 0)),
         Err(error) => return Err(error),
     };
@@ -106,7 +120,11 @@ pub fn extract_archive(
     }
 
     if unpack_nested {
-        files_extracted += unpack_nested_archives(guard.path(), 0, 2, &cancel_token);
+        match unpack_nested_archives(guard.path(), 0, 2, &cancel_token, password, &mut budget) {
+            Ok(count) => files_extracted += count,
+            Err(AppError::Cancelled) => return Ok(aborted_result(archive_name, files_extracted)),
+            Err(error) => return Err(error),
+        }
     }
 
     let mod_roots = find_mod_roots(guard.path(), 5);
@@ -192,7 +210,9 @@ fn move_mod_roots(
             .file_name()
             .map(|value| value.to_string_lossy().to_string())
             .unwrap_or_else(|| archive_name.to_string());
-        crate::modules::library::application::mods::core_ops::validate_folder_name_component(&name)?;
+        crate::modules::library::application::mods::core_ops::validate_folder_name_component(
+            &name,
+        )?;
         let destination_name = final_destination_name(&name, disable_after);
         let dest = destination_for(
             mods_dir,
@@ -256,12 +276,13 @@ fn destination_for(
             format!("{name} ({counter})")
         };
         let candidate = parent_dir_join(mods_dir, &candidate_name);
-        let sibling_collision = crate::modules::library::application::mods::core_ops::find_sibling_identity_collision(
-            mods_dir,
-            &candidate_name,
-            None,
-        )
-        .is_some();
+        let sibling_collision =
+            crate::modules::library::application::mods::core_ops::find_sibling_identity_collision(
+                mods_dir,
+                &candidate_name,
+                None,
+            )
+            .is_some();
         if !sibling_collision && !contains_planned_identity(planned_destinations, &candidate) {
             return Ok(candidate);
         }

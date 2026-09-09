@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 /// Global overview statistics for the dashboard tiles.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, specta::Type)]
 pub struct DashboardStats {
     #[specta(type = f64)]
     pub total_mods: i64,
@@ -24,7 +24,7 @@ pub struct DashboardStats {
 }
 
 /// A single slice of the category distribution pie chart.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, specta::Type)]
 pub struct CategorySlice {
     pub category: String,
     #[specta(type = f64)]
@@ -32,7 +32,7 @@ pub struct CategorySlice {
 }
 
 /// A single bar of the game distribution bar chart.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, specta::Type)]
 pub struct GameSlice {
     pub game_id: String,
     pub game_name: String,
@@ -41,7 +41,7 @@ pub struct GameSlice {
 }
 
 /// A recently indexed mod for the activity widget.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, specta::Type)]
 pub struct RecentMod {
     pub id: String,
     pub name: String,

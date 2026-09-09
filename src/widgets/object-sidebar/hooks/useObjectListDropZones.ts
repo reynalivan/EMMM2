@@ -3,9 +3,9 @@ import type { DragPosition } from '../../../shared/lib/hooks/useFileDrop';
 import { classifyDroppedPaths, validateDropForZone, type DropZone } from '../utils/dropUtils';
 
 export type { DropZone } from '../utils/dropUtils';
-import { toast } from '../../../app/store/useToastStore';
-import type { GameType } from '@/entities/game/model/game';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import { toast } from '@/shared/ui/toast';
+import type { GameType } from '@/entities/game';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 
 export interface UseObjectListDropZonesProps {
   activeGame:

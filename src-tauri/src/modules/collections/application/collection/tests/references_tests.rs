@@ -6,10 +6,9 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
     seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let old_mod = CollectionMod {
         kind: MemberKind::Mod,
         collection_id: collection.id.clone(),
@@ -87,10 +86,9 @@ async fn auto_heal_returns_collection_reference_impact() {
     seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let old_mod = test_collection_mod(&collection.id, "AINOZ/Old Mod", "Old Mod");
     let object = test_collection_object(&collection.id);
     let old_state = projected_state::build_projected_state(
@@ -121,10 +119,9 @@ async fn runtime_prefix_toggle_does_not_rewrite_saved_collection_references() {
     seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let object = test_collection_object(&collection.id);
     let projected_state = projected_state::build_projected_state(
@@ -166,10 +163,9 @@ async fn object_runtime_prefix_toggle_does_not_rewrite_saved_collection_referenc
     seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let object = test_collection_object(&collection.id);
     let projected_state = projected_state::build_projected_state(
@@ -210,10 +206,9 @@ async fn missing_collection_member_is_preserved_and_reported_as_missing() {
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
     create_flat_mod_folder(mods_root.path(), "AINOZ/Blue");
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let mod_member = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let object = test_collection_object(&collection.id);
     let projected_state = projected_state::build_projected_state(

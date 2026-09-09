@@ -3,9 +3,11 @@
 use crate::shared::errors::AppError;
 use std::collections::HashMap;
 
-use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow as DbObjectRow;
-use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{DiskObjectEntry, DiskProjection};
+use crate::modules::games::domain::models::ItemStatus;
+use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
+    DiskObjectEntry, DiskProjection,
+};
 use crate::modules::reconciliation::application::disk_reconcile::path_updates::push_path_update;
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathKind;
 
@@ -74,13 +76,14 @@ async fn sync_existing_object(
     if !identity_was_staged
         && !is_runtime_prefix_transition(&existing.folder_path, &disk_object.folder_path)
     {
-        let impact = crate::modules::collections::application::collection::handle_object_renamed_tx(
-            &mut *conn,
-            game_id,
-            &persisted.folder_path,
-            &disk_object.folder_path,
-        )
-        .await?;
+        let impact =
+            crate::modules::collections::application::collection::handle_object_renamed_tx(
+                &mut *conn,
+                game_id,
+                &persisted.folder_path,
+                &disk_object.folder_path,
+            )
+            .await?;
         state.collection_reference_impact.merge(impact);
     }
 

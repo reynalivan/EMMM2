@@ -1,9 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import type {
-  CollectionRuntimeDescriptor,
-  CollectionRuntimeSnapshot,
-} from '@/entities/collection/model/collection';
+import type { CollectionRuntimeDescriptor, CollectionRuntimeSnapshot } from '@/entities/collection';
 import { collectionRuntimeKeys } from '../queryKeys';
 
 export function useCollectionRuntime(gameId: string | null) {

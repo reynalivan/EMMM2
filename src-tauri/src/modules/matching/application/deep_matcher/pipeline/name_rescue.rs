@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 
-use crate::modules::workspace::domain::normalizer;
 use crate::modules::matching::application::deep_matcher::analysis::content::FolderSignals;
 use crate::modules::matching::application::deep_matcher::analysis::scoring::push_reason_capped;
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
@@ -14,6 +13,7 @@ use crate::modules::matching::application::deep_matcher::{
     sort_candidates_deterministic, Candidate, Confidence, MatchStatus, Reason, ScoreState,
     StagedMatchResult,
 };
+use crate::modules::workspace::domain::normalizer;
 
 /// Minimum term length for substring matching (avoids false positives like "ai", "hu").
 const MIN_TERM_LEN: usize = 3;

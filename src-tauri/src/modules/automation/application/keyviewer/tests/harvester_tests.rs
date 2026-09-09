@@ -4,7 +4,9 @@ use std::fs;
 use std::io::Write;
 use tempfile::TempDir;
 
-use crate::modules::automation::application::keyviewer::harvester::{harvest_hashes_from_ini, harvest_hashes_from_mod};
+use crate::modules::automation::application::keyviewer::harvester::{
+    harvest_hashes_from_ini, harvest_hashes_from_mod,
+};
 
 /// Helper to create a temp INI file with given content.
 fn write_ini(dir: &TempDir, name: &str, content: &str) -> std::path::PathBuf {

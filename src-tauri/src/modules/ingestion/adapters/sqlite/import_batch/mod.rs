@@ -493,6 +493,36 @@ pub async fn set_batch_status(
     Ok(())
 }
 
+pub async fn has_batch_review_started(
+    db: &SqlitePool,
+    batch_id: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM import_batches
+            WHERE id = ? AND review_started_at IS NOT NULL
+        )",
+    )
+    .bind(batch_id)
+    .fetch_one(db)
+    .await
+}
+
+pub async fn mark_batch_review_started(
+    db: &SqlitePool,
+    batch_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE import_batches
+         SET review_started_at = COALESCE(review_started_at, CURRENT_TIMESTAMP)
+         WHERE id = ?",
+    )
+    .bind(batch_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 pub async fn store_inspection(
     db: &SqlitePool,
     item_id: &str,
@@ -526,7 +556,10 @@ pub async fn store_inspection(
 pub async fn get_stored_inspection(
     db: &SqlitePool,
     item_id: &str,
-) -> Result<Option<crate::modules::catalog::application::match_engine::types::SourceInspection>, sqlx::Error> {
+) -> Result<
+    Option<crate::modules::catalog::application::match_engine::types::SourceInspection>,
+    sqlx::Error,
+> {
     let raw: Option<String> =
         sqlx::query_scalar("SELECT source_inspection FROM import_jobs WHERE id = ?")
             .bind(item_id)
@@ -572,13 +605,25 @@ pub async fn store_match_suggestions(
     let canonical_json = serde_json::to_string(canonical).map_err(|error| {
         decode_error(format!("could not encode canonical suggestions: {error}"))
     })?;
-    let destination_json = serde_json::to_string(destinations).map_err(|error| {
+    // Every object is scored once during analysis, but a missing entry is
+    // semantically a zero-score result in the UI. Persisting those entries
+    // duplicates the full object library for every import item.
+    let stored_destinations = destinations
+        .iter()
+        .filter(|suggestion| {
+            suggestion.confidence_percentage > 0 || suggestion.object_id.is_none()
+        })
+        .collect::<Vec<_>>();
+    let destination_json = serde_json::to_string(&stored_destinations).map_err(|error| {
         decode_error(format!("could not encode destination suggestions: {error}"))
     })?;
     let evidence_json = serde_json::to_string(evidence)
         .map_err(|error| decode_error(format!("could not encode match evidence: {error}")))?;
-    let (confidence, tier) = canonical
+    let default_destination = canonical
         .first()
+        .filter(|suggestion| matches!(suggestion.confidence_tier, ConfidenceTier::High | ConfidenceTier::Medium))
+        .and_then(|_| stored_destinations.first().copied());
+    let (confidence, tier) = default_destination
         .map(|suggestion| {
             (
                 f64::from(suggestion.confidence_percentage),
@@ -586,13 +631,34 @@ pub async fn store_match_suggestions(
             )
         })
         .unwrap_or((0.0, ConfidenceTier::NoMatch));
+    let (decision, status, destination_object_id, destination_path, canonical_entry_key) =
+        if let Some(destination) = default_destination {
+            let kind = serde_json::to_value(&destination.kind).map_err(|error| {
+                decode_error(format!("could not encode destination kind: {error}"))
+            })?;
+            let decision = match kind.as_str() {
+                Some("specific_target") => "keep_specific_target",
+                Some("existing_object") => "reallocate",
+                Some("create_canonical") => "create_canonical",
+                _ => "confirm",
+            };
+            (
+                decision,
+                "ready",
+                destination.object_id.as_deref(),
+                Some(destination.target_path.as_str()),
+                destination.canonical_entry_key.as_deref(),
+            )
+        } else {
+            ("skip", "skipped", None, None, None)
+        };
     let result = sqlx::query(
         "UPDATE import_jobs
          SET canonical_suggestions_json = ?, destination_suggestions_json = ?, evidence_json = ?,
-             match_confidence = ?, confidence_tier = ?, decision = 'pending',
-             match_entry_key = NULL, match_alias_name = NULL, match_object_id = NULL,
-             destination_object_id = NULL, destination_path = NULL, placed_path = NULL,
-             result = NULL, error_msg = NULL, status = 'awaiting_destination',
+             match_confidence = ?, confidence_tier = ?, decision = ?,
+             match_entry_key = ?, match_alias_name = NULL, match_object_id = ?,
+             destination_object_id = ?, destination_path = ?, placed_path = NULL,
+             result = NULL, error_msg = NULL, status = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
     )
@@ -601,6 +667,12 @@ pub async fn store_match_suggestions(
     .bind(evidence_json)
     .bind(confidence)
     .bind(tier.as_str())
+    .bind(decision)
+    .bind(canonical_entry_key)
+    .bind(destination_object_id)
+    .bind(destination_object_id)
+    .bind(destination_path)
+    .bind(status)
     .bind(item_id)
     .execute(db)
     .await?;
@@ -633,6 +705,8 @@ pub async fn rename_planned_item(
 pub async fn store_decision(
     db: &SqlitePool,
     input: &crate::modules::ingestion::application::import_batch::types::SetImportItemDecisionInput,
+    confidence: u8,
+    tier: ConfidenceTier,
 ) -> Result<bool, sqlx::Error> {
     let next_status = if input.decision == ImportDecision::Skip {
         ImportItemStatus::Skipped
@@ -642,7 +716,8 @@ pub async fn store_decision(
     let result = sqlx::query(
         "UPDATE import_jobs
          SET decision = ?, destination_object_id = ?, destination_path = ?,
-             match_entry_key = ?, match_alias_name = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+             match_entry_key = ?, match_alias_name = ?, match_confidence = ?, confidence_tier = ?,
+             status = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
     )
     .bind(input.decision.as_str())
@@ -650,6 +725,8 @@ pub async fn store_decision(
     .bind(&input.destination_path)
     .bind(&input.canonical_entry_key)
     .bind(&input.matched_alias)
+    .bind(f64::from(confidence))
+    .bind(tier.as_str())
     .bind(next_status.as_str())
     .bind(&input.item_id)
     .execute(db)
@@ -725,7 +802,9 @@ pub async fn begin_batch_commit(
     let mut tx = db.begin().await?;
     let batch = sqlx::query(
         "UPDATE import_batches SET status = 'committing'
-         WHERE id = ? AND status IN ('awaiting_review', 'ready', 'partial')",
+         WHERE id = ?
+           AND status IN ('awaiting_review', 'ready', 'partial')
+           AND review_started_at IS NOT NULL",
     )
     .bind(batch_id)
     .execute(&mut *tx)
@@ -871,6 +950,14 @@ pub async fn recover_interrupted_batch_states(db: &SqlitePool) -> Result<u64, sq
     .execute(&mut *tx)
     .await?
     .rows_affected();
+    let completed_metadata = sqlx::query(
+        "UPDATE import_jobs
+         SET error_msg = NULL, result = COALESCE(result, 'done'), updated_at = CURRENT_TIMESTAMP
+         WHERE status = 'done' AND error_msg = 'Interrupted while finalizing metadata'",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
     let archive_pending = sqlx::query(
         "UPDATE import_jobs
          SET status = 'partial', result = 'archive_pending',
@@ -916,7 +1003,7 @@ pub async fn recover_interrupted_batch_states(db: &SqlitePool) -> Result<u64, sq
     .await?
     .rows_affected();
     tx.commit().await?;
-    Ok(metadata + archive_pending + analyzing + metadata_batches + completed)
+    Ok(metadata + completed_metadata + archive_pending + analyzing + metadata_batches + completed)
 }
 
 pub async fn reset_failed_item_for_staging(
@@ -976,6 +1063,21 @@ pub async fn list_terminal_batch_ids_for_staging_cleanup(
 ) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT id FROM import_batches WHERE status IN ('done', 'cancelled') ORDER BY updated_at",
+    )
+    .fetch_all(db)
+    .await
+}
+
+/// Returns paths that must survive startup staging cleanup because a resumable
+/// import batch still references them.
+pub async fn list_active_staging_paths(db: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT j.staging_path
+         FROM import_jobs j
+         JOIN import_batches b ON b.id = j.batch_id
+         WHERE b.status NOT IN ('done', 'cancelled')
+           AND j.staging_path IS NOT NULL
+           AND j.staging_path <> ''",
     )
     .fetch_all(db)
     .await

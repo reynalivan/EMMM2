@@ -25,10 +25,12 @@ fn build_object_path_candidates(
     candidates.push(mods_path.join(object_name).to_string_lossy().to_string());
     candidates.push(
         mods_path
-            .join(crate::modules::library::application::mods::core_ops::standardize_prefix(
-                object_name,
-                false,
-            ))
+            .join(
+                crate::modules::library::application::mods::core_ops::standardize_prefix(
+                    object_name,
+                    false,
+                ),
+            )
             .to_string_lossy()
             .to_string(),
     );
@@ -122,9 +124,10 @@ pub(super) async fn resolve_object_root_path(
     ),
     AppError,
 > {
-    let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, object_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Object not found: {object_id}")))?;
+    let object =
+        crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, object_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Object not found: {object_id}")))?;
     let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;

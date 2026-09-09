@@ -22,9 +22,10 @@ pub async fn resolve_mod_path_for_object(
     object_id: &str,
     mods_root: &Path,
 ) -> Option<String> {
-    let (mod_id, stored_path) = crate::modules::library::adapters::sqlite::mods::get_mod_by_object_id(pool, object_id)
-        .await
-        .ok()??;
+    let (mod_id, stored_path) =
+        crate::modules::library::adapters::sqlite::mods::get_mod_by_object_id(pool, object_id)
+            .await
+            .ok()??;
 
     let path = stored_path.resolve(mods_root);
     if path.exists() {

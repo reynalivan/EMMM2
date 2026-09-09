@@ -11,7 +11,7 @@ import {
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
-import type { WorkspaceView } from '../../../app/store/appStore/navigationSlice';
+import type { WorkspaceView } from '@/app/store';
 
 interface DashboardQuickActionsProps {
   activeGameId: string | null;

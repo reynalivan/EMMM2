@@ -7,7 +7,9 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
-use crate::modules::workspace::application::scanner::core::walker::{scan_folder_content, ModCandidate};
+use crate::modules::workspace::application::scanner::core::walker::{
+    scan_folder_content, ModCandidate,
+};
 
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;

@@ -11,13 +11,13 @@ import {
   useUpdateModCategory,
   useUpdateModInfo,
   useUpdateModThumbnail,
-} from '@/widgets/mod-explorer/hooks/useFolderMutations';
-import { useRenameMod } from '@/widgets/mod-explorer/hooks/useFolderCoreMutations';
-import { type JsonValue, type ModInfo } from '@/entities/game-object/model/object';
+} from '@/features/mod-runtime';
+import { useRenameMod } from '@/features/mod-runtime';
+import { type JsonValue, type ModInfo } from '@/entities/game-object';
 import type { GameObject } from '../../../shared/api/tauri/bindings';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import type { ObjectSummary } from '@/entities/game-object';
+import type { ModFolder } from '@/entities/game-object';
+import { useActiveGame } from '@/entities/game';
 
 export const schema = z
   .object({

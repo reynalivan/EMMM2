@@ -2,9 +2,9 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use crate::shared::errors::AppError;
-use crate::modules::settings::application::config::GameConfig;
 use crate::modules::library::application::ini::document::decode_ini_bytes;
+use crate::modules::settings::application::config::GameConfig;
+use crate::shared::errors::AppError;
 
 // ─── d3dx.ini Reload Key Discovery ──────────────────────────────────────────
 

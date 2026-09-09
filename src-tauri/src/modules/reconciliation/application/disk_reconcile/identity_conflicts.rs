@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id_from_key;
+use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
 
 use super::disk_snapshot::{DiskIdentityCensus, DiskProjection};
 use super::types::{FolderNameConflictCandidate, FolderNameConflictGroup};

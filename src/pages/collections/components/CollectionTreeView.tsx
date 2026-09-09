@@ -9,7 +9,7 @@ import {
   Package,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { PreviewTreeNode } from '@/entities/collection/model/collection';
+import type { PreviewTreeNode } from '@/entities/collection';
 import { buildCollectionPreviewNodeSemantics } from '../collectionPreviewSemantics';
 
 interface CollectionTreeViewProps {

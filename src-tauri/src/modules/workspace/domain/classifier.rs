@@ -233,7 +233,8 @@ fn scan_ini_file(path: &Path) -> IniScan {
     let Ok(bytes) = fs::read(path) else {
         return scan;
     };
-    let (content, _, _) = crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
+    let (content, _, _) =
+        crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
 
     let (is_mod, referenced_subs) = scan_ini_content(&content);
     scan.is_mod = is_mod;
@@ -261,7 +262,8 @@ fn scan_ini_file_strict(path: &Path) -> Result<IniScan, ClassificationError> {
         path: path.to_path_buf(),
         source,
     })?;
-    let (content, _, clean) = crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
+    let (content, _, clean) =
+        crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
     if !clean {
         return Err(ClassificationError::InvalidIniEncoding {
             path: path.to_path_buf(),

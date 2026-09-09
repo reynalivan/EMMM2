@@ -1,10 +1,10 @@
 import React from 'react';
 import { MoreVertical } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
-import { useModContextMenuItems } from '@/widgets/mod-explorer/hooks/useModContextMenuItems';
-import { useModContextMenuActions } from '@/features/mod-runtime/actions/useModContextMenuActions';
+import type { ModFolder } from '@/entities/game-object';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import { useModContextMenuItems } from '@/features/mod-runtime';
+import { useModContextMenuActions } from '@/features/mod-runtime';
 
 interface PreviewPanelContextMenuProps {
   folder: WorkspaceExplorerNode;

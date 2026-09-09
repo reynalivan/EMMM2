@@ -8,15 +8,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
 import { Channel } from '@tauri-apps/api/core';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { toast } from '../../../app/store/useToastStore';
-import type {
-  DupScanReport,
-  ResolutionRequest,
-  DupScanEvent,
-} from '@/entities/workspace/model/scanner';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
-import { buildRuntimeMutationDescriptor } from '../../workspace-runtime/optimistic/descriptorBuilders';
-import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
+import { toast } from '@/shared/ui/toast';
+import type { DupScanReport, ResolutionRequest, DupScanEvent } from '@/entities/workspace';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '@/features/workspace-runtime/@x/scanner';
+import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 
 /**
  * Query key factory for dedup cache management.

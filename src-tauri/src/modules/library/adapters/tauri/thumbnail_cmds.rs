@@ -1,7 +1,7 @@
-use crate::shared::errors::AppError;
 use crate::modules::settings::application::config::ConfigService;
-use crate::platform::fs::guard::validate_path;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::guard::validate_path;
+use crate::shared::errors::AppError;
 
 #[cfg(test)]
 #[path = "tests/thumbnail_cmds_tests.rs"]
@@ -29,12 +29,12 @@ pub async fn delete_mod_thumbnail(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     watcher: tauri::State<'_, WatcherState>,
-    op_lock: tauri::State<'_, crate::platform::fs::operation_lock::OperationLock>,
+    op_lock: tauri::State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
     game_id: String,
     folder_path: String,
 ) -> Result<(), AppError> {
-    use crate::platform::images::thumbnail_cache::ThumbnailCache;
     use crate::modules::workspace::application::scanner::core::thumbnail::find_thumbnail;
+    use crate::platform::images::thumbnail_cache::ThumbnailCache;
 
     let path = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [path.to_string_lossy().to_string()];
@@ -46,7 +46,9 @@ pub async fn delete_mod_thumbnail(
     )
     .await?;
 
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
+        .await?;
     let guard = watcher.suppressor.suppress_paths([path.as_ref()]);
     if let Some(thumb_path) = find_thumbnail(&path) {
         crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&thumb_path)?;

@@ -4,10 +4,10 @@ import { AlertTriangle, FolderSearch, RotateCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { applyDiskReconcileResult } from '@/features/file-watcher/hooks/useFileWatcher';
-import { toast } from '../../../app/store/useToastStore';
-import { openWorkspaceSourceRecoveryDialog } from '@/features/workspace-runtime/state/workspaceDialogs';
+import { useActiveGame } from '@/entities/game';
+import { applyDiskReconcileResult } from '@/features/file-watcher';
+import { toast } from '@/shared/ui/toast';
+import { openWorkspaceSourceRecoveryDialog } from '@/features/workspace-runtime';
 
 interface WorkspaceSourceUnavailableBannerProps {
   message: string;

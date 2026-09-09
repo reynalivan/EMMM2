@@ -3,13 +3,10 @@ import { useCallback } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
-import {
-  usePasteThumbnail,
-  useUpdateModThumbnail,
-} from '@/widgets/mod-explorer/hooks/useFolderMutations';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { toast } from '../../../app/store/useToastStore';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import { usePasteThumbnail, useUpdateModThumbnail } from '../hooks/useFolderMutations';
+import { useActiveGame } from '@/entities/game';
+import { toast } from '@/shared/ui/toast';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 
 export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
   const { t } = useTranslation(['grid', 'preview', 'common']);

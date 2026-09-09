@@ -1,7 +1,7 @@
 import { Box, Gamepad2, HardDrive, Layers } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { DashboardStats as DashboardStatsPayload } from '@/pages/dashboard/model/dashboard';
+import type { DashboardStats as DashboardStatsPayload } from '../model/dashboard';
 import { formatBytes } from '../../../shared/lib/utils/formatters';
 
 interface DashboardStatsProps {

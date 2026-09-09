@@ -1,22 +1,23 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import LaunchBar from './LaunchBar';
-import { exit } from '@tauri-apps/plugin-process';
-import type { ConflictInfo } from '@/entities/workspace/model/scanner';
+import type { ConflictInfo } from '@/entities/workspace';
 
 const launchGame = vi.fn();
+const exitApp = vi.fn();
 let activeConflicts: ConflictInfo[] = [];
 
-vi.mock('../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
 }));
-vi.mock('../folder-grid/hooks/useFolderMutations', () => ({
+vi.mock('@/features/mod-runtime', () => ({
   useActiveConflicts: vi.fn(() => ({ data: activeConflicts })),
 }));
-vi.mock('../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: vi.fn(() => ({ autoCloseLauncher: true })),
 }));
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string) => {
       const labels: Record<string, string> = {
@@ -34,21 +35,19 @@ vi.mock('../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     launchGame: (...args: unknown[]) => launchGame(...args),
+    exitApp: (...args: unknown[]) => exitApp(...args),
   },
-}));
-vi.mock('@tauri-apps/plugin-process', () => ({
-  exit: vi.fn(),
 }));
 
 // Mock inner modals so they don't break rendering
-vi.mock('../randomizer/RandomizerModal', () => ({
-  default: () => <div data-testid="randomizer-modal"></div>,
+vi.mock('@/features/randomizer', () => ({
+  RandomizerModal: () => <div data-testid="randomizer-modal"></div>,
 }));
-vi.mock('../conflict-report/ConflictModal', () => ({
-  default: () => <div data-testid="conflict-modal"></div>,
+vi.mock('@/features/conflict-report', () => ({
+  ConflictModal: () => <div data-testid="conflict-modal"></div>,
 }));
-vi.mock('../scanner/components/ConflictToast', () => ({
-  default: ({ onDismiss }: { onDismiss: () => void }) => (
+vi.mock('@/features/scanner', () => ({
+  ConflictToast: ({ onDismiss }: { onDismiss: () => void }) => (
     <button data-testid="conflict-toast" onClick={onDismiss}>
       Dismiss conflict
     </button>
@@ -72,6 +71,7 @@ describe('LaunchBar', () => {
   beforeEach(() => {
     activeConflicts = [];
     launchGame.mockReset();
+    exitApp.mockReset();
   });
 
   it('launches game and triggers exit if autoClose is true', async () => {
@@ -83,7 +83,7 @@ describe('LaunchBar', () => {
       expect(launchGame).toHaveBeenCalledWith('game-1');
     });
 
-    expect(exit).toHaveBeenCalledWith(0);
+    expect(exitApp).toHaveBeenCalledOnce();
   });
 
   it('handles launch error gracefully', async () => {

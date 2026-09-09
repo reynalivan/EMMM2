@@ -31,7 +31,6 @@ describe('Game Management (req-02)', () => {
 
   it('TC-02-05: Manual Add Game (Settings) & Launch', async () => {
     await browser.url('http://tauri.localhost/');
-    await browser.pause(2000);
 
     // Always seed a persisted game rather than branching on what the previous
     // spec left behind: without one, AppRouter parks on /welcome and the App
@@ -62,14 +61,20 @@ describe('Game Management (req-02)', () => {
     await appMenuBtn.waitForClickable({ timeout: 20000 });
     await appMenuBtn.click();
 
-    const settingsMenu = await $('span=Settings');
+    const settingsMenu = await $('[data-testid="nav-settings"]');
     await settingsMenu.waitForClickable({ timeout: 2000 });
     await settingsMenu.click();
+    await settingsMenu.waitForDisplayed({ reverse: true, timeout: 5000 });
+    await $('[data-testid="settings-page"]').waitForDisplayed({ timeout: 10000 });
+    const gamesTab = await $('[data-testid="settings-tab-games"]');
+    await gamesTab.waitForClickable({ timeout: 10000 });
+    await gamesTab.click();
 
     // Both the tab action and the modal submit read "Add Game", and each carries
     // an icon so their text nodes are not exact matches — target the testids.
     const addGameBtn = await $('[data-testid="games-add"]');
-    await addGameBtn.waitForClickable({ timeout: 10000 });
+    await addGameBtn.waitForDisplayed({ timeout: 10000 });
+    await addGameBtn.waitForEnabled({ timeout: 10000 });
     await addGameBtn.click();
 
     // Fill out the modal

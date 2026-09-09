@@ -2,18 +2,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, FolderOpen, Loader2, Split, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { formatAppError } from '../../../shared/lib/appError';
 import {
   commands,
   type RenameConfirmationGroup,
   type RenameConfirmationResolution,
 } from '../../../shared/api/tauri/bindings';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { toast } from '../../../app/store/useToastStore';
-import { applyDiskReconcileResult } from '@/features/file-watcher/hooks/useFileWatcher';
-import { closeWorkspaceDialog } from '@/features/workspace-runtime/state/workspaceDialogs';
-import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime/state/workspaceStoreBridge';
+import { useAppStore } from '@/app/store';
+import { toast } from '@/shared/ui/toast';
+import { applyDiskReconcileResult } from '@/features/file-watcher';
+import { closeWorkspaceDialog } from '@/features/workspace-runtime';
+import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime';
 
 const EMPTY_GROUPS: never[] = [];
 

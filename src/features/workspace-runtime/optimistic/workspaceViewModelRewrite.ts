@@ -1,4 +1,4 @@
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { recordInternalWorkspacePathRewrites } from '../utils/selectionReconciliation';
 import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
 import type { RuntimeEffectDescriptor } from '../../../shared/lib/runtimeEffects';

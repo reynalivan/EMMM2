@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '../../../tests/testing/test-utils';
 import DuplicateTable from './DuplicateTable';
-import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace/model/scanner';
+import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace';
 
 describe('DuplicateTable', () => {
   const mockGroups: DupScanGroup[] = [

@@ -8,7 +8,8 @@ interface BrowserToolbarProps {
   activeTabId: string | null;
   isNavigating: boolean;
   isRefreshing: boolean;
-  finishedCount: number;
+  activeDownloadCount: number;
+  queuedDownloadCount: number;
   onGoBack: () => void;
   onGoForward: () => void;
   onReload: () => void;
@@ -24,7 +25,8 @@ export function BrowserToolbar({
   activeTabId,
   isNavigating,
   isRefreshing,
-  finishedCount,
+  activeDownloadCount,
+  queuedDownloadCount,
   onGoBack,
   onGoForward,
   onReload,
@@ -33,6 +35,7 @@ export function BrowserToolbar({
   onOpenDownloads,
 }: BrowserToolbarProps) {
   const { t } = useTranslation(['browser']);
+  const pendingDownloadCount = activeDownloadCount + queuedDownloadCount;
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 bg-base-100 border-b border-base-200 shrink-0 z-10 relative shadow-sm">
@@ -115,9 +118,9 @@ export function BrowserToolbar({
           title={t('tabs.open_downloads')}
         >
           <Download size={18} />
-          {finishedCount > 0 && (
+          {pendingDownloadCount > 0 && (
             <span className="badge badge-primary badge-xs absolute -top-1 -right-1">
-              {finishedCount}
+              {pendingDownloadCount}
             </span>
           )}
         </button>

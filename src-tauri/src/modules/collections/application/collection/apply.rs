@@ -1,8 +1,8 @@
 //! Entry point that hands an apply request to the apply pipeline.
 
 use crate::modules::collections::domain::collection::ApplyResult;
-use crate::shared::errors::{AppError, CollectionError};
 use crate::modules::workspace::domain::task::{TaskStatus, TASK_TYPE_APPLY_COLLECTION};
+use crate::shared::errors::{AppError, CollectionError};
 use sqlx::SqlitePool;
 
 pub struct ApplyCollectionRequest<'a> {
@@ -11,7 +11,8 @@ pub struct ApplyCollectionRequest<'a> {
     pub collection_id: &'a str,
     pub capture_last_changes: bool,
     pub mods_path: std::path::PathBuf,
-    pub suppressor: std::sync::Arc<crate::modules::workspace::application::scanner::watcher::WatcherSuppressor>,
+    pub suppressor:
+        std::sync::Arc<crate::modules::workspace::application::scanner::watcher::WatcherSuppressor>,
     pub ignore_missing: bool,
     pub settings: crate::modules::settings::application::config::AppSettings,
 }
@@ -54,7 +55,20 @@ async fn wait_for_apply_execution_barrier(game_id: &str) {
 pub async fn apply_collection(
     request: ApplyCollectionRequest<'_>,
 ) -> Result<ApplyResult, CollectionError> {
-    apply_collection_with_finalization(request, ActiveCollectionFinalization::RequestDefault).await
+    apply_collection_with_finalization(request, ActiveCollectionFinalization::RequestDefault, None)
+        .await
+}
+
+pub async fn apply_collection_durable(
+    request: ApplyCollectionRequest<'_>,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+) -> Result<ApplyResult, CollectionError> {
+    apply_collection_with_finalization(
+        request,
+        ActiveCollectionFinalization::RequestDefault,
+        Some(coordinator),
+    )
+    .await
 }
 
 /// Apply the Last changes draft while restoring its original active baseline.
@@ -67,6 +81,20 @@ pub async fn restore_collection_with_baseline(
     apply_collection_with_finalization(
         request,
         ActiveCollectionFinalization::Explicit(active_baseline_id),
+        None,
+    )
+    .await
+}
+
+pub async fn restore_collection_with_baseline_durable(
+    request: ApplyCollectionRequest<'_>,
+    active_baseline_id: Option<String>,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+) -> Result<ApplyResult, CollectionError> {
+    apply_collection_with_finalization(
+        request,
+        ActiveCollectionFinalization::Explicit(active_baseline_id),
+        Some(coordinator),
     )
     .await
 }
@@ -79,6 +107,7 @@ enum ActiveCollectionFinalization {
 async fn apply_collection_with_finalization(
     request: ApplyCollectionRequest<'_>,
     finalization: ActiveCollectionFinalization,
+    coordinator: Option<&crate::modules::mutation::coordinator::MutationCoordinator>,
 ) -> Result<ApplyResult, CollectionError> {
     let pool = request.pool;
     let final_active_collection_id = match finalization {
@@ -87,9 +116,12 @@ async fn apply_collection_with_finalization(
             Some(request.collection_id.to_string())
         }
         ActiveCollectionFinalization::RequestDefault => {
-            crate::modules::collections::adapters::sqlite::runtime::get(request.pool, request.game_id)
-                .await?
-                .and_then(|runtime| runtime.active_collection_id)
+            crate::modules::collections::adapters::sqlite::runtime::get(
+                request.pool,
+                request.game_id,
+            )
+            .await?
+            .and_then(|runtime| runtime.active_collection_id)
         }
     };
     let task_id = uuid::Uuid::new_v4().to_string();
@@ -121,13 +153,23 @@ async fn apply_collection_with_finalization(
     ctx.final_active_collection_id = final_active_collection_id;
     #[cfg(test)]
     wait_for_apply_execution_barrier(&ctx.game_id).await;
-    crate::pipeline::apply_pipeline::execute(&mut ctx, &task_id, TaskStatus::Running, true).await
+    crate::modules::collections::application::apply::apply_pipeline::execute(
+        &mut ctx,
+        &task_id,
+        TaskStatus::Running,
+        true,
+        coordinator,
+    )
+    .await
 }
 
 async fn prepare_apply_context(
     request: ApplyCollectionRequest<'_>,
     task_id: &str,
-) -> Result<crate::pipeline::apply_pipeline::ApplyContext, CollectionError> {
+) -> Result<
+    crate::modules::collections::application::apply::apply_pipeline::ApplyContext,
+    CollectionError,
+> {
     let capture_last_changes = request.capture_last_changes;
     let rollback_active_collection_id =
         crate::modules::collections::adapters::sqlite::runtime::get(request.pool, request.game_id)
@@ -149,7 +191,8 @@ async fn prepare_apply_context(
     )
     .await
     .map_err(task_error)?;
-    let mut ctx = crate::pipeline::apply_pipeline::ApplyContext::new(request);
+    let mut ctx =
+        crate::modules::collections::application::apply::apply_pipeline::ApplyContext::new(request);
     ctx.rollback_collection_id = rollback_collection_id;
     ctx.rollback_active_collection_id = rollback_active_collection_id;
     Ok(ctx)
@@ -159,11 +202,20 @@ pub(crate) async fn apply_collection_with_existing_task(
     request: ApplyCollectionRequest<'_>,
     task_id: &str,
     final_active_collection_id: Option<String>,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
 ) -> Result<ApplyResult, CollectionError> {
-    let mut ctx = crate::pipeline::apply_pipeline::ApplyContext::new(request);
+    let mut ctx =
+        crate::modules::collections::application::apply::apply_pipeline::ApplyContext::new(request);
     ctx.finalize_active_collection = true;
     ctx.final_active_collection_id = final_active_collection_id;
-    crate::pipeline::apply_pipeline::execute(&mut ctx, task_id, TaskStatus::Running, false).await
+    crate::modules::collections::application::apply::apply_pipeline::execute(
+        &mut ctx,
+        task_id,
+        TaskStatus::Running,
+        false,
+        Some(coordinator),
+    )
+    .await
 }
 
 fn task_error(error: AppError) -> CollectionError {

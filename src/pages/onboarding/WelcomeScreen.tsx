@@ -5,7 +5,7 @@ import { commands } from '../../shared/api/tauri/bindings';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle, Globe } from 'lucide-react';
 import { motion } from 'motion/react';
-import type { GameConfig } from '@/entities/game/model/game';
+import type { GameConfig } from '@/entities/game';
 import { pathsEqual } from '../../shared/lib/pathKey';
 import { usePrefersReducedMotion } from '../../shared/lib/hooks/usePrefersReducedMotion';
 import { ManualSetupForm } from './components/ManualSetupForm';
@@ -169,7 +169,7 @@ export default function WelcomeScreen({
               tabIndex={0}
               role="button"
               className="btn btn-ghost btn-sm btn-circle text-base-content/70 hover:text-base-content"
-              aria-label="Change Language"
+              aria-label={t('onboarding:welcome.language.change')}
             >
               <Globe size={18} />
             </div>
@@ -182,7 +182,7 @@ export default function WelcomeScreen({
                   onClick={() => i18n.changeLanguage('en')}
                   className={i18n.language.startsWith('en') ? 'active' : ''}
                 >
-                  English
+                  {t('onboarding:welcome.language.options.en')}
                 </button>
               </li>
               <li>
@@ -190,7 +190,7 @@ export default function WelcomeScreen({
                   onClick={() => i18n.changeLanguage('id')}
                   className={i18n.language.startsWith('id') ? 'active' : ''}
                 >
-                  Indonesia
+                  {t('onboarding:welcome.language.options.id')}
                 </button>
               </li>
               <li>
@@ -198,7 +198,7 @@ export default function WelcomeScreen({
                   onClick={() => i18n.changeLanguage('zh')}
                   className={i18n.language.startsWith('zh') ? 'active' : ''}
                 >
-                  中文
+                  {t('onboarding:welcome.language.options.zh')}
                 </button>
               </li>
             </ul>
@@ -412,7 +412,14 @@ export default function WelcomeScreen({
             </div>
 
             {/* Custom Animated Bar */}
-            <div className="h-2 w-full bg-base-300/50 rounded-full overflow-hidden shadow-inner relative">
+            <div
+              className="h-2 w-full bg-base-300/50 rounded-full overflow-hidden shadow-inner relative"
+              role="progressbar"
+              aria-label={t('onboarding:indexing.progress_label')}
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={completed}
+            >
               <div
                 className="absolute top-0 bottom-0 left-0 bg-primary transition-all duration-300 ease-out"
                 style={{ width: `${percent}%` }}

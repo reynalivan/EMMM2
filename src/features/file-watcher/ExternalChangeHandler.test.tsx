@@ -3,9 +3,9 @@ import { listen } from '@tauri-apps/api/event';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands, type DiskReconcileResult } from '../../shared/api/tauri/bindings';
-import { useAppStore } from '../../app/store/useAppStore';
-import { GameType, type GameConfig } from '@/entities/game/model/game';
-import { runtimeQueryKeys } from '../runtime-sync/queryRefresh';
+import { useAppStore } from '@/app/store';
+import { GameType, type GameConfig } from '@/entities/game';
+import { runtimeQueryKeys } from '@/shared/lib/queryRefresh';
 import { ExternalChangeHandler } from './ExternalChangeHandler';
 
 const activeGameFixture = vi.hoisted((): { current: GameConfig } => ({
@@ -33,11 +33,15 @@ vi.mock('../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../dashboard/hooks/useActiveGame', () => ({
-  useActiveGame: () => ({
-    activeGame: activeGameFixture.current,
-  }),
-}));
+vi.mock('@/entities/game', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/entities/game')>();
+  return {
+    ...actual,
+    useActiveGame: () => ({
+      activeGame: activeGameFixture.current,
+    }),
+  };
+});
 
 type EventHandler = (event: { payload: DiskReconcileResult }) => void;
 

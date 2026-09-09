@@ -115,7 +115,9 @@ fn collect_ini_files(
 
         if file_type.is_dir() {
             let name = entry.file_name();
-            if crate::modules::workspace::domain::normalizer::is_disabled_folder(&name.to_string_lossy()) {
+            if crate::modules::workspace::domain::normalizer::is_disabled_folder(
+                &name.to_string_lossy(),
+            ) {
                 continue;
             }
             collect_ini_files(root, &path, output)?;

@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { PreviewTreeNode } from '@/entities/collection/model/collection';
+import type { PreviewTreeNode } from '@/entities/collection';
 
 export interface CollectionPreviewNodeSemantics {
   typeLabelKey: string | null;

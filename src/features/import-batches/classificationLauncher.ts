@@ -1,6 +1,12 @@
+import type { ObjectClassificationPreviewItem } from '@/shared/api/tauri/bindings.gen';
+
+export type ObjectClassificationLaunchResult = 'applied' | 'cancelled';
+
 export type ObjectClassificationLaunchRequest = {
   gameId: string;
   objectIds: string[];
+  initialItems?: ObjectClassificationPreviewItem[];
+  onComplete?: (result: ObjectClassificationLaunchResult) => void;
 };
 
 type Listener = (request: ObjectClassificationLaunchRequest) => void;

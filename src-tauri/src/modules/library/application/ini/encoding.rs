@@ -36,11 +36,7 @@ pub fn decode_ini_source(bytes: &[u8]) -> DecodedIni {
     };
 
     let utf16_bom = bytes.starts_with(&[0xFF, 0xFE]);
-    let content_utf16 = if utf16_bom {
-        &bytes[2..]
-    } else {
-        bytes
-    };
+    let content_utf16 = if utf16_bom { &bytes[2..] } else { bytes };
 
     if utf16_bom {
         let (decoded, _encoding, had_errors) = encoding_rs::UTF_16LE.decode(content_utf16);

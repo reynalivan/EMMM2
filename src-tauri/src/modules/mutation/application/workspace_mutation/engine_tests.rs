@@ -172,12 +172,7 @@ fn incomplete_rollback_is_reported_for_reconciliation() {
     let new_abs = temp.path().join("DISABLED Variant");
     std::fs::create_dir_all(&old_abs).expect("old path");
     std::fs::create_dir_all(&new_abs).expect("new path");
-    let plan = RenamePlan {
-        old_abs: old_abs.clone(),
-        requested_abs: old_abs,
-        new_abs,
-        target_enabled: false,
-    };
+    let plan = RuntimeRenamePlan::new(old_abs.clone(), old_abs, new_abs, false);
     let mut warnings = Vec::new();
 
     rollback_successes(&[plan], &mut warnings);

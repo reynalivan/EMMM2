@@ -1,8 +1,8 @@
-use crate::shared::path_key::folder_path_key;
-use crate::shared::errors::AppError;
+use crate::modules::games::application::game::validator;
 use crate::modules::games::domain::models::GameType;
 use crate::modules::settings::application::config::{ConfigService, GameConfig};
-use crate::modules::games::application::game::validator;
+use crate::shared::errors::AppError;
+use crate::shared::path_key::folder_path_key;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -12,7 +12,9 @@ fn canonical_game_path_key(path: &str) -> String {
 
 #[specta::specta]
 #[tauri::command]
-pub fn resolve_game_folder(path: String) -> Result<crate::modules::games::domain::models::GameInfo, AppError> {
+pub fn resolve_game_folder(
+    path: String,
+) -> Result<crate::modules::games::domain::models::GameInfo, AppError> {
     validator::validate_instance(Path::new(&path)).map(|(info, _warnings)| info)
 }
 
@@ -251,19 +253,7 @@ pub async fn launch_game(
 
                 #[cfg(target_os = "windows")]
                 {
-                    // Use PowerShell to elevate privileges on Windows (US-10.1 requirement)
-                    std::process::Command::new("powershell")
-                        .arg("-NoProfile")
-                        .arg("-Command")
-                        .arg(format!(
-                            "Start-Process -FilePath '{}' -WorkingDirectory '{}' -Verb RunAs",
-                            launcher_path.display(),
-                            launcher_dir.display()
-                        ))
-                        .spawn()
-                        .map_err(|e| {
-                            AppError::Io(format!("Failed to start loader as Admin: {e}"))
-                        })?;
+                    crate::platform::process::launch_elevated(launcher_path, launcher_dir)?;
                 }
 
                 #[cfg(not(target_os = "windows"))]

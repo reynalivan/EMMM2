@@ -1,5 +1,5 @@
 import { commands } from '../../shared/api/tauri/bindings';
-import { useAppStore } from '../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import type { ProcessedModInboxDestination } from './types';
 
 export async function openProcessedDestinationInApp(

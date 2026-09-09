@@ -1,10 +1,12 @@
 use super::import_commit::{
     finalize_ready_to_move_archives, fingerprint_matches, rollback_move_journal, MoveJournalEntry,
 };
+use crate::modules::catalog::application::match_engine::inspection::{
+    inspect_source, InspectionRequest,
+};
 use crate::modules::ingestion::application::import_batch::types::{
     ImportBatchStatus, ImportFlow, ImportSourceKind, TargetMode,
 };
-use crate::modules::catalog::application::match_engine::inspection::{inspect_source, InspectionRequest};
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
 
 #[test]
@@ -125,18 +127,20 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
-            id: "item-archive".to_string(),
-            source_kind: ImportSourceKind::ReadyToMove,
-            source_path: archive.to_string_lossy().into_owned(),
-            staging_path: Some(
-                root.path()
-                    .join("staged/Ayaka")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-            planned_name: "DISABLED Ayaka".to_string(),
-        }],
+        &[
+            crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
+                id: "item-archive".to_string(),
+                source_kind: ImportSourceKind::ReadyToMove,
+                source_path: archive.to_string_lossy().into_owned(),
+                staging_path: Some(
+                    root.path()
+                        .join("staged/Ayaka")
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                planned_name: "DISABLED Ayaka".to_string(),
+            },
+        ],
     )
     .await
     .unwrap();
@@ -159,10 +163,13 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
     )
     .await
     .unwrap();
-    let pending = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(&context.pool, "batch-archive")
-        .await
-        .unwrap()
-        .unwrap();
+    let pending = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        &context.pool,
+        "batch-archive",
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(pending.status, ImportBatchStatus::Partial);
     assert_eq!(pending.items[0].result.as_deref(), Some("archive_pending"));
     assert!(archive.exists());
@@ -178,9 +185,12 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
     .await
     .unwrap();
     assert_eq!(
-        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(&context.pool, "batch-archive",)
-            .await
-            .unwrap(),
+        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+            &context.pool,
+            "batch-archive",
+        )
+        .await
+        .unwrap(),
         ImportBatchStatus::Done
     );
     assert!(!archive.exists());
@@ -231,18 +241,20 @@ async fn ready_to_move_folder_pack_is_retained_in_processed_with_history() {
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
-            id: "item-pack".to_string(),
-            source_kind: ImportSourceKind::ReadyToMove,
-            source_path: pack.to_string_lossy().into_owned(),
-            staging_path: Some(
-                root.path()
-                    .join("staged/Ayaka")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-            planned_name: "DISABLED Ayaka".to_string(),
-        }],
+        &[
+            crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
+                id: "item-pack".to_string(),
+                source_kind: ImportSourceKind::ReadyToMove,
+                source_path: pack.to_string_lossy().into_owned(),
+                staging_path: Some(
+                    root.path()
+                        .join("staged/Ayaka")
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                planned_name: "DISABLED Ayaka".to_string(),
+            },
+        ],
     )
     .await
     .unwrap();
@@ -304,18 +316,20 @@ async fn ready_to_move_finalization_recovers_a_crash_after_the_source_move() {
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
-            id: "item-crash".to_string(),
-            source_kind: ImportSourceKind::ReadyToMove,
-            source_path: source.to_string_lossy().into_owned(),
-            staging_path: Some(
-                root.path()
-                    .join("staged/mod")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-            planned_name: "DISABLED Crash".to_string(),
-        }],
+        &[
+            crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
+                id: "item-crash".to_string(),
+                source_kind: ImportSourceKind::ReadyToMove,
+                source_path: source.to_string_lossy().into_owned(),
+                staging_path: Some(
+                    root.path()
+                        .join("staged/mod")
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                planned_name: "DISABLED Crash".to_string(),
+            },
+        ],
     )
     .await
     .unwrap();

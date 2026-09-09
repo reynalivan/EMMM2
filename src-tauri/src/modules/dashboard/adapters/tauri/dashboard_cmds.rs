@@ -1,5 +1,7 @@
+use crate::modules::system::application::app::dashboard::{
+    self, ActiveKeyBinding, DashboardPayload,
+};
 use crate::shared::errors::AppError;
-use crate::modules::system::application::app::dashboard::{self, ActiveKeyBinding, DashboardPayload};
 
 /// Fetch all dashboard data in a single command for minimal IPC overhead.
 ///

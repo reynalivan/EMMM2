@@ -1,5 +1,13 @@
-use crate::shared::errors::AppError;
 use crate::modules::games::domain::models::ConfigStatus;
+use crate::shared::errors::AppError;
+
+/// Exit the application successfully.
+#[specta::specta]
+#[tauri::command]
+pub fn exit_app(app: tauri::AppHandle) -> Result<(), AppError> {
+    app.exit(0);
+    Ok(())
+}
 
 /// Check if the app has any games configured (determines which screen to show on startup).
 #[specta::specta]
@@ -44,11 +52,15 @@ pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), AppError> {
 pub async fn reset_database(
     app: tauri::AppHandle,
     config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
+    credentials: tauri::State<'_, crate::platform::security::credential_store::CredentialStore>,
 ) -> Result<(), AppError> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
 
-    config.reset_database(&app_data_dir)
+    config.reset_database(&app_data_dir)?;
+    credentials.delete_ai_api_key()?;
+    config.set_ai_key_status(false);
+    Ok(())
 }
 
 /// Check if a given absolute path exists on the disk.

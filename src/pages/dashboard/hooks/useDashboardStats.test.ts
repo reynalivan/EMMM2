@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDashboardStats } from './useDashboardStats';
 import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../tests/testing/test-utils';
-import type { DashboardPayload } from '@/pages/dashboard/model/dashboard';
+import type { DashboardPayload } from '../model/dashboard';
 
 // Restore real @tanstack/react-query — the global setupTests stub
 // replaces useQuery with a no-op, which prevents queryFn from running.

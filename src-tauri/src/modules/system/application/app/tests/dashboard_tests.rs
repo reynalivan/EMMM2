@@ -1,5 +1,7 @@
 use crate::modules::games::domain::models::{GameType, ItemStatus};
-use crate::modules::system::application::app::dashboard::{get_active_keybindings_service, get_dashboard_payload};
+use crate::modules::system::application::app::dashboard::{
+    get_active_keybindings_service, get_dashboard_payload,
+};
 use std::fs;
 use tempfile::TempDir;
 

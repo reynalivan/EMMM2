@@ -5,16 +5,19 @@
 
 use sqlx::SqlitePool;
 
-use crate::shared::errors::AppError;
-use crate::modules::workspace::domain::task::{PipelineTask, RecoveryAction, TaskStatus, TASK_TYPE_APPLY_COLLECTION};
 use crate::modules::settings::application::config::models::AppSettings;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::modules::workspace::domain::task::{
+    PipelineTask, RecoveryAction, TaskStatus, TASK_TYPE_APPLY_COLLECTION,
+};
+use crate::shared::errors::AppError;
 
 pub struct RecoveryTaskRequest<'a> {
     pub pool: &'a SqlitePool,
     pub config: &'a ConfigService,
     pub watcher_state: &'a WatcherState,
+    pub coordinator: &'a crate::modules::mutation::coordinator::MutationCoordinator,
     pub task_id: &'a str,
     pub action: RecoveryAction,
 }
@@ -43,6 +46,7 @@ pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(
         pool,
         config,
         watcher_state,
+        coordinator,
         task_id,
         action,
     } = request;
@@ -73,7 +77,8 @@ pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(
         )));
     }
 
-    let result = resolve_claimed_task(pool, config, watcher_state, &task, action).await;
+    let result =
+        resolve_claimed_task(pool, config, watcher_state, coordinator, &task, action).await;
     if result.is_err() {
         match crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
             pool,
@@ -115,6 +120,7 @@ async fn resolve_claimed_task(
     pool: &SqlitePool,
     config: &ConfigService,
     watcher_state: &WatcherState,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
     task: &PipelineTask,
     action: RecoveryAction,
 ) -> Result<(), AppError> {
@@ -135,8 +141,8 @@ async fn resolve_claimed_task(
     };
 
     match action {
-        RecoveryAction::Retry => retry_task(apply_context, task).await,
-        RecoveryAction::Rollback => rollback_task(apply_context, task).await,
+        RecoveryAction::Retry => retry_task(apply_context, task, coordinator).await,
+        RecoveryAction::Rollback => rollback_task(apply_context, task, coordinator).await,
         RecoveryAction::Ignore => Err(AppError::Validation(
             "Ignore does not run through the claimed recovery path".to_string(),
         )),
@@ -152,6 +158,7 @@ fn target_collection_id(task: &PipelineTask) -> Result<&str, AppError> {
 async fn retry_task(
     context: RecoveryApplyContext<'_>,
     task: &PipelineTask,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
 ) -> Result<(), AppError> {
     match task.task_type.as_str() {
         TASK_TYPE_APPLY_COLLECTION => {
@@ -178,6 +185,7 @@ async fn retry_task(
                 },
                 &task.id,
                 final_active_collection_id,
+                coordinator,
             )
             .await?;
             Ok(())
@@ -192,6 +200,7 @@ async fn retry_task(
 async fn rollback_task(
     context: RecoveryApplyContext<'_>,
     task: &PipelineTask,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
 ) -> Result<(), AppError> {
     match task.task_type.as_str() {
         TASK_TYPE_APPLY_COLLECTION => {
@@ -210,6 +219,7 @@ async fn rollback_task(
                 },
                 &task.id,
                 rollback.active_baseline_id,
+                coordinator,
             )
             .await?;
             Ok(())
@@ -228,20 +238,22 @@ async fn resolve_rollback_target(
     let collection_id = task.rollback_collection_id.clone().ok_or_else(|| {
         AppError::Validation("Recovery task has no stored rollback collection".to_string())
     })?;
-    let rollback_exists = crate::modules::collections::adapters::sqlite::get_by_id(pool, &collection_id)
-        .await?
-        .is_some_and(|collection| collection.game_id == task.game_id);
+    let rollback_exists =
+        crate::modules::collections::adapters::sqlite::get_by_id(pool, &collection_id)
+            .await?
+            .is_some_and(|collection| collection.game_id == task.game_id);
     if !rollback_exists {
         return Err(AppError::Validation(format!(
             "Stored rollback collection does not exist: {collection_id}"
         )));
     }
-    let active_baseline_id = crate::modules::collections::application::collection::valid_active_baseline(
-        pool,
-        &task.game_id,
-        task.rollback_active_collection_id.as_deref(),
-    )
-    .await?;
+    let active_baseline_id =
+        crate::modules::collections::application::collection::valid_active_baseline(
+            pool,
+            &task.game_id,
+            task.rollback_active_collection_id.as_deref(),
+        )
+        .await?;
 
     Ok(RecoveryRollbackTarget {
         collection_id,

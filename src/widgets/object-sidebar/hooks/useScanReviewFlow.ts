@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { applyDiskReconcileResult } from '@/features/file-watcher/hooks/useFileWatcher';
-import { openObjectClassificationWizard } from '@/features/import-batches/classificationLauncher';
+import { useActiveGame } from '@/entities/game';
+import { applyDiskReconcileResult } from '@/features/file-watcher';
+import { openObjectClassificationWizard } from '@/features/import-batches';
 
 export function useScanReviewFlow(objectIds: string[]) {
   const { activeGame } = useActiveGame();

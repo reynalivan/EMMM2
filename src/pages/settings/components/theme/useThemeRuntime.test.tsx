@@ -2,10 +2,10 @@ import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useThemeRuntime } from '../../hooks/useThemeRuntime';
 
-const mockUseSettings = vi.fn();
+const mockUseResolvedTheme = vi.fn();
 
-vi.mock('../../hooks/useSettings', () => ({
-  useSettings: () => mockUseSettings(),
+vi.mock('@/entities/settings', () => ({
+  useResolvedTheme: () => mockUseResolvedTheme(),
 }));
 
 function ThemeProbe() {
@@ -20,11 +20,7 @@ describe('useThemeRuntime', () => {
   });
 
   it('applies data-theme from settings.theme on mount', () => {
-    mockUseSettings.mockReturnValue({
-      settings: {
-        theme: 'cyberpunk',
-      },
-    });
+    mockUseResolvedTheme.mockReturnValue('cyberpunk');
 
     render(<ThemeProbe />);
 
@@ -45,11 +41,7 @@ describe('useThemeRuntime', () => {
       } as MediaQueryList;
     });
 
-    mockUseSettings.mockReturnValue({
-      settings: {
-        theme: 'system',
-      },
-    });
+    mockUseResolvedTheme.mockReturnValue('onyx');
 
     render(<ThemeProbe />);
 

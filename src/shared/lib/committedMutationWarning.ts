@@ -1,4 +1,4 @@
-import { toast } from '../../app/store/useToastStore';
+import { toast } from '@/shared/ui/toast';
 import i18next from './i18n';
 
 type CommittedMutationResult = {
@@ -28,7 +28,11 @@ export function notifyCommittedMutationSyncWarning(
   }
 
   toast.warning(
-    i18next.t('common:reconcile.runtime_effects_pending', { error: warning.message }),
+    i18next.t(
+      warning.kind === 'CleanupPending'
+        ? 'common:reconcile.cleanup_pending'
+        : 'common:reconcile.runtime_effects_pending',
+    ),
     7000,
   );
 }

@@ -2,9 +2,9 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Pool, Sqlite};
 use std::sync::Once;
 
-use crate::shared::path_key::{canonical_name_key, folder_path_key};
 use crate::modules::collections::domain::collection::ProjectedCollectionState;
 use crate::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
+use crate::shared::path_key::{canonical_name_key, folder_path_key};
 
 static INIT: Once = Once::new();
 
@@ -147,9 +147,13 @@ pub async fn set_test_collection_snapshot(
     collection_id: &str,
     state: &ProjectedCollectionState,
 ) -> Result<(), sqlx::Error> {
-    let snapshot_json = crate::modules::workspace::application::projected_state::serialize_snapshot_json(state)
-        .unwrap_or_default();
-    let signature = crate::modules::workspace::application::projected_state::signature_for_projected_state(state);
+    let snapshot_json =
+        crate::modules::workspace::application::projected_state::serialize_snapshot_json(state)
+            .unwrap_or_default();
+    let signature =
+        crate::modules::workspace::application::projected_state::signature_for_projected_state(
+            state,
+        );
     let active_root_count = state.summary.active_root_count as i32;
 
     sqlx::query(
@@ -175,7 +179,11 @@ pub async fn update_test_mod_path_and_status(
     sqlx::query("UPDATE mods SET folder_path = ?, folder_path_key = ?, status = ? WHERE id = ?")
         .bind(folder_path)
         .bind(folder_path_key(folder_path, mods_path))
-        .bind(status.parse::<crate::modules::games::domain::models::ItemStatus>().unwrap() as i64)
+        .bind(
+            status
+                .parse::<crate::modules::games::domain::models::ItemStatus>()
+                .unwrap() as i64,
+        )
         .bind(mod_id)
         .execute(pool)
         .await?;

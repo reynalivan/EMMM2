@@ -1,7 +1,7 @@
 use super::*;
-use crate::shared::path_key::folder_path_key;
-use crate::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
 use crate::modules::catalog::adapters::sqlite::object::create_object;
+use crate::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
+use crate::shared::path_key::folder_path_key;
 use sqlx::SqlitePool;
 
 async fn setup_pool() -> SqlitePool {

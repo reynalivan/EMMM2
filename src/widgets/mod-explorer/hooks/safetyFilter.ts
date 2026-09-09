@@ -1,5 +1,5 @@
-import type { SafetyFilter } from '../../../app/store/appStore/explorerSlice';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { SafetyFilter } from '@/app/store';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 
 export function filterFoldersBySafety(
   folders: WorkspaceExplorerNode[],

@@ -1,14 +1,14 @@
-use crate::shared::errors::AppError;
-use crate::modules::settings::application::config::ConfigService;
-use crate::platform::fs::guard::validate_path;
-use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::library::application::ini::document::IniDocument;
 use crate::modules::library::application::mods::preview_ops::{
     clear_mod_preview_images_inner, ensure_image_size, list_mod_ini_files_inner,
     list_mod_preview_images_inner, read_mod_ini_inner, remove_mod_preview_image_inner,
     resolve_image_path, save_mod_preview_image_inner, write_mod_ini_locked_inner,
 };
+use crate::modules::mutation::coordinator::MutationCoordinator;
+use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::guard::validate_path;
+use crate::shared::errors::AppError;
 use tauri::State;
 
 pub use crate::modules::library::application::mods::preview_ops::{IniFileEntry, IniLineUpdate};
@@ -43,14 +43,17 @@ pub async fn write_mod_ini(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     watcher: State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
     file_name: String,
     expected_source_hash: String,
     line_updates: Vec<IniLineUpdate>,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult,
+    AppError,
+> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
@@ -61,10 +64,12 @@ pub async fn write_mod_ini(
     )
     .await?;
     let changed_path = mod_root.join(&file_name).to_string_lossy().to_string();
-    let op_guard = op_lock.acquire().await?;
+    let op_guard = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::PreviewFile)
+        .await?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     write_mod_ini_locked_inner(
-        &op_guard,
+        op_guard.op_guard(),
         &mod_root,
         &file_name,
         &expected_source_hash,
@@ -107,7 +112,7 @@ pub async fn save_mod_preview_image(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     watcher: State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
@@ -125,7 +130,9 @@ pub async fn save_mod_preview_image(
         Some(&preflight_paths),
     )
     .await?;
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
+        .await?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let saved = save_mod_preview_image_inner(&mod_root, &object_name, &image_data)?;
     drop(lock);
@@ -140,7 +147,7 @@ pub async fn remove_mod_preview_image(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     watcher: State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
@@ -156,7 +163,9 @@ pub async fn remove_mod_preview_image(
     )
     .await?;
     resolve_image_path(&mod_root, &image_path)?;
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
+        .await?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     remove_mod_preview_image_inner(&mod_root, &image_path)?;
     crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate_folder(
@@ -174,7 +183,7 @@ pub async fn clear_mod_preview_images(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     watcher: State<'_, WatcherState>,
     game_id: String,
     folder_path: String,
@@ -188,7 +197,9 @@ pub async fn clear_mod_preview_images(
         Some(&preflight_paths),
     )
     .await?;
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
+        .await?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let removed = clear_mod_preview_images_inner(&mod_root)?;
     crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate_folder(

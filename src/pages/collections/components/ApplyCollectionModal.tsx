@@ -9,12 +9,12 @@ import {
   useApplyProgress,
   useReplaceCollectionWithCurrentState,
 } from '../hooks/useCollections';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { CollectionTreeView } from './CollectionTreeView';
-import type { PreviewTreeNode } from '@/entities/collection/model/collection';
+import type { PreviewTreeNode } from '@/entities/collection';
 import { ApplyCollectionActions } from './ApplyCollectionActions';
 import { extractMissingModsPayload, formatAppError } from '../../../shared/lib/appError';
-import type { ApplyResult } from '@/entities/collection/model/collection';
+import type { ApplyResult } from '@/entities/collection';
 
 interface ApplyCollectionModalProps {
   collectionId: string;

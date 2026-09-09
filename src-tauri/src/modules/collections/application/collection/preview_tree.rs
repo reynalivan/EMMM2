@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
 use crate::modules::workspace::domain::classifier::{classify_folder, NodeType};
 use crate::shared::path_key::{canonical_name_key, resolve_collection_path};
-use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
 
 #[derive(Debug, Clone)]
 pub struct PreviewTerminalMetadata {

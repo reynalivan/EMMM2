@@ -1,10 +1,10 @@
-use crate::shared::errors::AppError;
-use crate::modules::settings::application::config::ConfigService;
-use crate::platform::fs::guard::validate_path;
-use crate::platform::fs::operation_lock::OperationLock;
-use crate::platform::images::thumbnail_cache::ThumbnailCache;
 use crate::modules::library::application::mods::metadata;
+use crate::modules::mutation::coordinator::MutationCoordinator;
+use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::guard::validate_path;
+use crate::platform::images::thumbnail_cache::ThumbnailCache;
+use crate::shared::errors::AppError;
 
 #[specta::specta]
 #[tauri::command]
@@ -14,7 +14,7 @@ pub async fn update_mod_thumbnail(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     watcher: tauri::State<'_, WatcherState>,
-    op_lock: tauri::State<'_, OperationLock>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
     folder_path: String,
     source_path: String,
@@ -28,7 +28,9 @@ pub async fn update_mod_thumbnail(
         Some(&preflight_paths),
     )
     .await?;
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
+        .await?;
     let guard = watcher.suppressor.suppress_paths([folder.as_ref()]);
     let abs_path = metadata::update_mod_thumbnail(&folder, &source_path)?;
     drop(lock);
@@ -46,7 +48,7 @@ pub async fn paste_thumbnail(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     watcher: tauri::State<'_, WatcherState>,
-    op_lock: tauri::State<'_, OperationLock>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
     folder_path: String,
     image_data: Vec<u8>,
@@ -60,7 +62,9 @@ pub async fn paste_thumbnail(
         Some(&preflight_paths),
     )
     .await?;
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
+        .await?;
     let guard = watcher.suppressor.suppress_paths([folder.as_ref()]);
     let saved_path =
         paste_thumbnail_inner(&config, game_id.clone(), folder_path, image_data).await?;

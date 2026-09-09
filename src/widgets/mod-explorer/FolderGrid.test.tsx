@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import FolderGrid from './FolderGrid';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { createWrapper } from '../../tests/testing/test-utils';
-import { ModFolder } from '@/entities/game-object/model/object';
+import { ModFolder } from '@/entities/game-object';
 
 // Mock the hook!
 const mockUseFolderGrid = vi.fn();
@@ -15,7 +15,7 @@ const mockAppStoreState = {
   setActivePane: vi.fn(),
 };
 
-vi.mock('../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: Object.assign(
     vi.fn((selector) => (selector ? selector(mockAppStoreState) : mockAppStoreState)),
     { getState: () => mockAppStoreState },

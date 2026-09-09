@@ -1,6 +1,13 @@
 {
   "toolbar": {
-    "sort_title": "按 {{label}} {{order}} 排序",
+    "sort_by": "排序方式",
+    "sort_label": "排序模组",
+    "sort_name_asc": "名称（A–Z）",
+    "sort_name_desc": "名称（Z–A）",
+    "sort_date_asc": "日期（最早）",
+    "sort_date_desc": "日期（最新）",
+    "sort_size_asc": "大小（最小）",
+    "sort_size_desc": "大小（最大）",
     "search_placeholder": "搜索模组...",
     "item_count_one": "{{count}} 个项目",
     "item_count_other": "{{count}} 个项目",
@@ -94,6 +101,8 @@
     "confirm": "启用 \"{{name}}\""
   },
   "context": {
+    "favorite": "收藏",
+    "unfavorite": "取消收藏",
     "select_all": "全选",
     "open_explorer": "在资源管理器中打开",
     "rename": "重命名",
@@ -122,6 +131,7 @@
     "clear_selection": "清除选择",
     "selected": "已选择",
     "toggle_status": "切换状态",
+    "more_actions": "更多操作",
     "enable": "启用",
     "disable": "禁用",
     "pin_title": "固定到对象",

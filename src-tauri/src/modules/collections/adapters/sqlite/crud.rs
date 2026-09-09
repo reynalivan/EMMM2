@@ -3,9 +3,9 @@
 use sqlx::{SqliteConnection, SqlitePool};
 
 use super::mapping::row_to_collection;
-use crate::shared::path_key::canonical_name_key;
 use crate::modules::collections::domain::collection::Collection;
 use crate::shared::errors::CollectionError;
+use crate::shared::path_key::canonical_name_key;
 
 pub struct CreateCollectionRow<'a> {
     pub id: &'a str,
@@ -108,7 +108,10 @@ pub async fn create(
     )
     .await?;
     if is_draft {
-        crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(&mut tx, game_id, id, None).await?;
+        crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
+            &mut tx, game_id, id, None,
+        )
+        .await?;
     }
     tx.commit().await?;
 

@@ -9,6 +9,7 @@ pub(crate) fn canonical_collection_path_key(
 }
 
 pub(crate) fn canonical_path_key_for_path(path: &Path) -> String {
+    let path = normalize_verbatim_path(path);
     // Built into one buffer: `Components` already normalizes, so the previous
     // `normalize_path(path).components()` allocated a whole `PathBuf` only to
     // re-iterate it, then a `Vec<String>` only to `join` it away.
@@ -18,20 +19,37 @@ pub(crate) fn canonical_path_key_for_path(path: &Path) -> String {
             key.push('/');
         }
         let raw = component.as_os_str().to_string_lossy();
-        let normalized = crate::modules::workspace::domain::normalizer::normalize_display_name(&raw);
+        let normalized =
+            crate::modules::workspace::domain::normalizer::normalize_display_name(&raw);
         key.extend(normalized.chars().map(|ch| ch.to_ascii_lowercase()));
     }
     key
 }
 
+fn normalize_verbatim_path(path: &Path) -> PathBuf {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let display_path = if let Some(unc_path) = normalized.strip_prefix("//?/UNC/") {
+        format!("//{unc_path}")
+    } else if let Some(path) = normalized.strip_prefix("//?/") {
+        path.to_string()
+    } else {
+        normalized
+    };
+
+    PathBuf::from(display_path)
+}
+
 pub(crate) fn canonical_name_key(value: &str) -> String {
-    crate::modules::workspace::domain::normalizer::normalize_display_name(value).to_ascii_lowercase()
+    crate::modules::workspace::domain::normalizer::normalize_display_name(value)
+        .to_ascii_lowercase()
 }
 
 pub(crate) fn names_equal_by_key(left: &str, right: &str) -> bool {
     // Compare without allocating either key.
     crate::modules::workspace::domain::normalizer::normalize_display_name(left)
-        .eq_ignore_ascii_case(&crate::modules::workspace::domain::normalizer::normalize_display_name(right))
+        .eq_ignore_ascii_case(
+            &crate::modules::workspace::domain::normalizer::normalize_display_name(right),
+        )
 }
 
 pub fn folder_path_key(folder_path: &str, mods_path: Option<&str>) -> String {
@@ -150,6 +168,14 @@ mod tests {
         assert!(key.contains("character"));
         assert!(key.contains("한글모드"));
         assert!(!key.contains("CHARACTER"));
+    }
+
+    #[test]
+    fn canonical_path_key_treats_windows_verbatim_and_regular_paths_as_equal() {
+        let regular = canonical_path_key_for_path(std::path::Path::new(r"C:\Mods\Alice"));
+        let verbatim = canonical_path_key_for_path(std::path::Path::new(r"\\?\C:\Mods\Alice"));
+
+        assert_eq!(verbatim, regular);
     }
 
     #[test]

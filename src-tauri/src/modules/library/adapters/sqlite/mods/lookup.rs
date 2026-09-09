@@ -1,8 +1,8 @@
 //! Single-row lookups addressed by folder path or object id.
 
 use super::paths::get_game_mod_path;
-use crate::shared::path_key::folder_path_key;
 use crate::modules::system::domain::mod_path::ModFolderPath;
+use crate::shared::path_key::folder_path_key;
 use sqlx::{Row, SqlitePool};
 
 pub async fn get_mod_by_object_id(

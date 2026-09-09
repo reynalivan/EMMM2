@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ConflictInfo } from '@/entities/workspace/model/scanner';
+import type { ConflictInfo } from '@/entities/workspace';
 import ConflictModal from './ConflictModal';
 
 const mocks = vi.hoisted(() => ({

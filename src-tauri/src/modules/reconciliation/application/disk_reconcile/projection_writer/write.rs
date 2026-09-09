@@ -5,7 +5,9 @@ use crate::shared::errors::AppError;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::modules::collections::domain::collection::{CollectionPathRewrite, CollectionReferenceImpact};
+use crate::modules::collections::domain::collection::{
+    CollectionPathRewrite, CollectionReferenceImpact,
+};
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskProjection;
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathUpdate;
@@ -21,8 +23,10 @@ use super::state::ProjectionWriteState;
 
 #[derive(Default)]
 pub(super) struct IdentityTransitionState {
-    pub(super) original_objects: HashMap<String, crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow>,
-    pub(super) original_mods: HashMap<String, crate::modules::library::adapters::sqlite::mods::ReconcileModRow>,
+    pub(super) original_objects:
+        HashMap<String, crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow>,
+    pub(super) original_mods:
+        HashMap<String, crate::modules::library::adapters::sqlite::mods::ReconcileModRow>,
     mod_final_ids: HashMap<String, String>,
     collection_ids_to_refresh: Vec<String>,
 }
@@ -57,12 +61,13 @@ async fn record_and_delete_displaced_object(
         .filter(|row| row.object_id.as_deref() == Some(object.id.as_str()))
     {
         if !disk_mod_keys.contains(child.folder_path_key.as_str()) {
-            let impact = crate::modules::collections::application::collection::handle_mod_missing_tx(
-                &mut *conn,
-                game_id,
-                &child.folder_path,
-            )
-            .await?;
+            let impact =
+                crate::modules::collections::application::collection::handle_mod_missing_tx(
+                    &mut *conn,
+                    game_id,
+                    &child.folder_path,
+                )
+                .await?;
             state.collection_reference_impact.merge(impact);
         }
         state.change_summary.record_mod_removed(&child.actual_name);
@@ -79,11 +84,9 @@ async fn record_and_delete_displaced_object(
     state.touched_object_ids.insert(object.id.clone());
     state.objects_changed = true;
     state.folders_changed = true;
-    state
-        .change_summary
-        .record_object_removed(&crate::modules::workspace::domain::normalizer::normalize_display_name(
-            &object.folder_path,
-        ));
+    state.change_summary.record_object_removed(
+        &crate::modules::workspace::domain::normalizer::normalize_display_name(&object.folder_path),
+    );
     Ok(())
 }
 
@@ -158,7 +161,10 @@ async fn prepare_identity_transitions(
 
     for (position, source) in transitions.original_objects.values().enumerate() {
         let stage = format!("{OBJECT_STAGE_PREFIX}{position}-{}", uuid::Uuid::new_v4());
-        crate::modules::catalog::adapters::sqlite::object::stage_object_identity_tx(&mut *conn, &source.id, &stage).await?;
+        crate::modules::catalog::adapters::sqlite::object::stage_object_identity_tx(
+            &mut *conn, &source.id, &stage,
+        )
+        .await?;
     }
 
     let after_objects = DbIndex::load(&mut *conn, game_id).await?;
@@ -188,7 +194,11 @@ async fn prepare_identity_transitions(
                 .as_deref()
                 .is_some_and(|value| mod_identities.contains(value));
             if occupant.id != source.id && !occupant_is_elsewhere {
-                crate::modules::library::adapters::sqlite::mods::delete_mod_tx(&mut *conn, &occupant.id).await?;
+                crate::modules::library::adapters::sqlite::mods::delete_mod_tx(
+                    &mut *conn,
+                    &occupant.id,
+                )
+                .await?;
                 state.folders_changed = true;
                 state
                     .change_summary
@@ -236,17 +246,23 @@ async fn prepare_identity_transitions(
     // path-derived ID namespace. Foreign keys are repaired before commit.
     crate::modules::library::adapters::sqlite::mods::defer_foreign_keys_tx(&mut *conn).await?;
     for (position, (source, final_id)) in mod_sources.into_iter().enumerate() {
-        crate::modules::collections::adapters::sqlite::detach_mod_runtime_id(&mut *conn, game_id, &source.id)
-            .await?;
+        crate::modules::collections::adapters::sqlite::detach_mod_runtime_id(
+            &mut *conn, game_id, &source.id,
+        )
+        .await?;
         let temp_id = format!(
             "emmm-reconcile-mod-stage-{position}-{}",
             uuid::Uuid::new_v4()
         );
         let temp_path = format!(".emmm-reconcile-mod-stage/{temp_id}");
-        crate::modules::library::adapters::sqlite::mods::stage_mod_identity_tx(&mut *conn, &temp_id, &temp_path, &source.id)
-            .await?;
-        crate::modules::library::adapters::sqlite::mods::rewrite_dependent_mod_ids_tx(&mut *conn, &source.id, &temp_id)
-            .await?;
+        crate::modules::library::adapters::sqlite::mods::stage_mod_identity_tx(
+            &mut *conn, &temp_id, &temp_path, &source.id,
+        )
+        .await?;
+        crate::modules::library::adapters::sqlite::mods::rewrite_dependent_mod_ids_tx(
+            &mut *conn, &source.id, &temp_id,
+        )
+        .await?;
         transitions.original_mods.insert(temp_id.clone(), source);
         transitions.mod_final_ids.insert(temp_id, final_id);
     }
@@ -259,7 +275,10 @@ async fn finalize_mod_reference_transitions(
     transitions: &IdentityTransitionState,
 ) -> Result<(), AppError> {
     for (temp_id, final_id) in &transitions.mod_final_ids {
-        crate::modules::library::adapters::sqlite::mods::rewrite_dependent_mod_ids_tx(&mut *conn, temp_id, final_id).await?;
+        crate::modules::library::adapters::sqlite::mods::rewrite_dependent_mod_ids_tx(
+            &mut *conn, temp_id, final_id,
+        )
+        .await?;
     }
     Ok(())
 }

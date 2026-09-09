@@ -57,7 +57,8 @@ pub(crate) fn validate_folder_name_component(name: &str) -> Result<(), AppError>
 }
 
 pub fn standardize_prefix(folder_name: &str, target_enabled: bool) -> String {
-    let clean_name = crate::modules::workspace::domain::normalizer::normalize_display_name(folder_name);
+    let clean_name =
+        crate::modules::workspace::domain::normalizer::normalize_display_name(folder_name);
     let valid_name = if clean_name.is_empty() {
         folder_name.trim()
     } else {
@@ -84,7 +85,8 @@ pub(crate) fn find_sibling_identity_collision(
     target_name: &str,
     source_path: Option<&Path>,
 ) -> Option<PathBuf> {
-    let target_identity = crate::modules::workspace::domain::normalizer::normalize_display_name(target_name);
+    let target_identity =
+        crate::modules::workspace::domain::normalizer::normalize_display_name(target_name);
     let entries = std::fs::read_dir(parent).ok()?;
     for entry in entries.flatten() {
         let entry_path = entry.path();

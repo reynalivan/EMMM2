@@ -169,6 +169,7 @@ pub struct DiskReconcileWarning {
 pub enum CommittedMutationSyncWarningKind {
     ReconcileFailed,
     ReconcileBlocked,
+    CleanupPending,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]

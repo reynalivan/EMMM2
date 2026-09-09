@@ -1,5 +1,5 @@
-use crate::shared::errors::AppError;
 use crate::modules::catalog::domain::objects::{GetObjectsResult, ObjectFilter};
+use crate::shared::errors::AppError;
 
 /// Objects from the DB index, with cold projection rows filled in from disk.
 ///
@@ -10,14 +10,19 @@ pub async fn get_filtered_objects_with_conflict_check(
     pool: &sqlx::SqlitePool,
     filter: &ObjectFilter,
 ) -> Result<GetObjectsResult, AppError> {
-    let page = crate::modules::catalog::adapters::sqlite::object::get_filtered_objects(pool, filter).await?;
+    let page =
+        crate::modules::catalog::adapters::sqlite::object::get_filtered_objects(pool, filter)
+            .await?;
     let mut objects = page.objects;
 
     if !page.cold_object_ids.is_empty() {
         patch_cold_counts(pool, filter, &mut objects, &page.cold_object_ids).await?;
     }
 
-    crate::modules::catalog::adapters::sqlite::object::apply_status_filter(&mut objects, filter.status_filter);
+    crate::modules::catalog::adapters::sqlite::object::apply_status_filter(
+        &mut objects,
+        filter.status_filter,
+    );
 
     Ok(GetObjectsResult {
         objects,
@@ -40,13 +45,18 @@ async fn patch_cold_counts(
         .cloned()
         .collect();
 
-    let mods_path = crate::modules::catalog::adapters::sqlite::object::load_game_mods_path(pool, &filter.game_id).await?;
-    let candidates = crate::modules::catalog::adapters::sqlite::object::load_object_count_candidates(
+    let mods_path = crate::modules::catalog::adapters::sqlite::object::load_game_mods_path(
         pool,
         &filter.game_id,
-        &cold_objects,
     )
     .await?;
+    let candidates =
+        crate::modules::catalog::adapters::sqlite::object::load_object_count_candidates(
+            pool,
+            &filter.game_id,
+            &cold_objects,
+        )
+        .await?;
 
     // Classifying a terminal reads directories and parses INI headers, so it
     // runs off the async runtime rather than stalling a Tokio worker.
@@ -82,12 +92,18 @@ pub async fn get_category_counts_service(
     pool: &sqlx::SqlitePool,
     game_id: &str,
 ) -> Result<Vec<crate::modules::catalog::domain::objects::CategoryCount>, AppError> {
-    Ok(crate::modules::catalog::adapters::sqlite::object::get_category_counts(pool, game_id).await?)
+    Ok(
+        crate::modules::catalog::adapters::sqlite::object::get_category_counts(pool, game_id)
+            .await?,
+    )
 }
 
 pub async fn get_object_by_id_service(
     pool: &sqlx::SqlitePool,
     id: &str,
-) -> Result<Option<crate::modules::workspace::application::scanner::core::types::GameObject>, AppError> {
+) -> Result<
+    Option<crate::modules::workspace::application::scanner::core::types::GameObject>,
+    AppError,
+> {
     Ok(crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, id).await?)
 }

@@ -163,7 +163,13 @@ pub async fn get_kv_matching_objects(
     let mut result = Vec::new();
     for row in rows {
         let name: String = row.try_get("name")?;
-        let hash_db: crate::modules::games::domain::models::HashDbPayload = row.try_get("hash_db")?;
+        let hash_db_json: Option<String> = row.try_get("hash_db")?;
+        let hash_db = match hash_db_json.as_deref().map(str::trim) {
+            None | Some("") => Default::default(),
+            Some(json) => {
+                serde_json::from_str(json).map_err(|error| sqlx::Error::Decode(Box::new(error)))?
+            }
+        };
         result.push((name, hash_db));
     }
     Ok(result)

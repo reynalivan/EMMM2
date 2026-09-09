@@ -1,12 +1,12 @@
 use tauri::State;
 
-use crate::shared::errors::AppError;
+use crate::modules::mutation::coordinator::MutationCoordinator;
+use crate::modules::settings::application::config::ConfigService;
+use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::modules::workspace::domain::workspace::{
     WorkspaceSwitchInput, WorkspaceSwitchResult, WorkspaceViewModel, WorkspaceViewModelInput,
 };
-use crate::modules::settings::application::config::ConfigService;
-use crate::modules::mutation::coordinator::MutationCoordinator;
-use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::shared::errors::AppError;
 
 #[tauri::command]
 #[specta::specta]
@@ -44,8 +44,8 @@ pub async fn get_workspace_view_model(
 fn workspace_recovery_status(
     readiness: crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness,
 ) -> crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus {
-    use crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus;
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
+    use crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus;
 
     match readiness {
         InitialRecoveryReadiness::Ready { .. } => WorkspaceRecoveryStatus::Ready,
@@ -64,6 +64,10 @@ pub async fn execute_workspace_switch(
     config: State<'_, ConfigService>,
     pool: State<'_, sqlx::SqlitePool>,
     watcher_state: State<'_, WatcherState>,
+    disk_reconcile_state: State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
     op_lock: State<'_, MutationCoordinator>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
@@ -72,48 +76,98 @@ pub async fn execute_workspace_switch(
         &input.game_id,
     )
     .await?;
-    let op_guard = op_lock.acquire().await?;
     let game_id = input.game_id.clone();
-    let result = crate::modules::workspace::application::workspace::switch::execute_switch(
-        input,
+    let game_guard = disk_reconcile_state.game_lock(&game_id).lock_owned().await;
+    let prepared = crate::modules::workspace::application::workspace::switch::prepare_switch(
+        &input,
         config.inner(),
         pool.inner(),
-        watcher_state.inner(),
-        op_guard.op_guard(),
     )
-    .await;
-    drop(op_guard);
-    let mut result = match result {
+    .await?;
+    if let Some(result) = prepared.immediate_result() {
+        return Ok(result);
+    }
+    let journal_steps = prepared
+        .journal_steps()
+        .into_iter()
+        .map(|(sequence, old_path, new_path)| {
+            crate::modules::mutation::api::PlannedStep::rename(sequence, old_path, new_path)
+        })
+        .collect::<Vec<_>>();
+    if journal_steps.is_empty() {
+        let _guard = op_lock
+            .acquire_exempt(
+                crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
+            )
+            .await?;
+        return prepared.execute(&app, &watcher_state);
+    }
+    let operation_guard = op_lock
+        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
+            "workspace-switch",
+            game_id.clone(),
+            journal_steps,
+        ))
+        .await?;
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+        game_guard,
+        operation_guard,
+    );
+    let result = match prepared.execute(&app, &watcher_state) {
         Ok(result) => result,
         Err(error) => {
-            let reconcile =
-                crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
-                    &app,
-                    pool.inner(),
-                    &game_id,
-                )
-                .await;
-            return match reconcile {
-                Ok(_) => Err(error),
-                Err(reconcile_error) => Err(AppError::Io(format!(
-                    "{error}; convergence also failed: {reconcile_error}"
-                ))),
-            };
+            for (sequence, _, _) in prepared.journal_steps() {
+                mutation_lease.mark_step_rolled_back(sequence)?;
+            }
+            mutation_lease.begin_rollback()?;
+            mutation_lease.finish_rollback()?;
+            return Err(error);
         }
     };
-    if !result.changed_folder_paths.is_empty() {
-        let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
+    for (sequence, _, _) in prepared.journal_steps() {
+        mutation_lease.mark_step_applied(sequence)?;
+    }
+    match crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+        &app,
+        pool.inner(),
+        &game_id,
+        &mutation_lease,
+    )
+    .await
+    {
+        Ok(reconcile) if reconcile.status.applied() => {
+            mutation_lease.mark_db_committed()?;
+            mutation_lease.commit()?;
+            Ok(result)
+        }
+        outcome => {
+            let error = match outcome {
+                Ok(reconcile) => AppError::Io(format!(
+                    "Workspace reconcile requires attention: {:?}",
+                    reconcile.status
+                )),
+                Err(error) => error,
+            };
+            mutation_lease.begin_rollback()?;
+            if let Err(rollback_error) = prepared.rollback(&watcher_state) {
+                let combined = format!("{error}; workspace rollback failed: {rollback_error}");
+                mutation_lease.fail(combined.clone())?;
+                return Err(AppError::Io(combined));
+            }
+            for (sequence, _, _) in prepared.journal_steps() {
+                mutation_lease.mark_step_rolled_back(sequence)?;
+            }
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
                 &app,
                 pool.inner(),
                 &game_id,
-                result.changed_folder_paths.clone(),
+                &mutation_lease,
             )
-            .await,
-        );
-        result.sync_warning = settlement.sync_warning;
+            .await?;
+            mutation_lease.finish_rollback()?;
+            Err(error)
+        }
     }
-    Ok(result)
 }
 
 #[cfg(test)]

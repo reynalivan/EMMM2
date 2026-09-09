@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { useThumbnail } from '@/pages/dashboard/hooks/useThumbnail';
-import { formatWorkspaceWarning } from '@/features/workspace-runtime/utils/workspaceSemantics';
-import { buildWorkspaceSwitchPolicy } from '@/features/workspace-runtime/actions/workspaceSwitchPolicy';
-import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime/actions/workspaceActionAvailability';
+import { useAppStore } from '@/app/store';
+import { useThumbnail } from '@/entities/mod';
+import { formatWorkspaceWarning } from '@/features/workspace-runtime';
+import { buildWorkspaceSwitchPolicy } from '@/features/workspace-runtime';
+import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime';
 import { getFolderTypeChip } from '../utils/FolderTypeChip';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 
 interface FolderNodeBulkHandlers {
   onBulkToggle?: (enable: boolean) => void;

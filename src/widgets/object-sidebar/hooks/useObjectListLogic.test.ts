@@ -45,7 +45,7 @@ const appStoreState: {
   safetyFilter: 'all',
 };
 
-vi.mock('../../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: Object.assign(
     vi.fn(() => appStoreState),
     {
@@ -66,11 +66,11 @@ vi.mock('./useObjectQueries', () => ({
 const useWorkspaceViewModelMock = vi.fn<
   () => { data: unknown; isLoading: boolean; isError: boolean }
 >(() => ({ data: { objects: [] }, isLoading: false, isError: false }));
-vi.mock('../../workspace-runtime/hooks/useWorkspaceViewModel', () => ({
+vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => ({
   useWorkspaceViewModel: () => useWorkspaceViewModelMock(),
 }));
 
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: null })),
 }));
 

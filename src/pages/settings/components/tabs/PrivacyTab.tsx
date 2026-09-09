@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Shield, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../hooks/useSettings';
-import { useToastStore } from '../../../../app/store/useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
 import { formatAppError } from '../../../../shared/lib/appError';
 
 function normalizeKeywords(values: string[]): string[] {

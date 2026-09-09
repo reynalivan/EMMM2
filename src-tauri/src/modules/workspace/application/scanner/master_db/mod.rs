@@ -20,7 +20,10 @@ struct MasterDbPayload {
 }
 
 /// Load and parse the MasterDB JSON for a given game type from `resource_dir`.
-pub fn load_master_db_entries(resource_dir: &Path, game_type: i32) -> Result<Vec<DbEntry>, ScannerError> {
+pub fn load_master_db_entries(
+    resource_dir: &Path,
+    game_type: i32,
+) -> Result<Vec<DbEntry>, ScannerError> {
     let canonical = schema_loader::normalize_game_type(game_type);
     let db_path = resource_dir
         .join("databases")
@@ -38,27 +41,30 @@ pub fn load_master_db_entries(resource_dir: &Path, game_type: i32) -> Result<Vec
     let json_content = std::fs::read_to_string(&db_path)?;
 
     // Only accept strict object format
-    let payload: MasterDbPayload = serde_json::from_str(&json_content)
-        .map_err(|e| ScannerError::Parse {
+    let payload: MasterDbPayload =
+        serde_json::from_str(&json_content).map_err(|e| ScannerError::Parse {
             what: "MasterDB".to_string(),
             detail: format!("expected an object with an 'entries' key: {}", e),
         })?;
 
     let mut entries = payload.entries;
     for entry in entries.iter_mut() {
-        // We can reuse the `absolutize_thumbnails` logic by swapping out the entry 
+        // We can reuse the `absolutize_thumbnails` logic by swapping out the entry
         // with an empty dummy, transforming it, and placing it back.
         // A cleaner way since `absolutize_thumbnails` takes ownership:
-        let old = std::mem::replace(entry, DbEntry {
-            name: String::new(),
-            aliases: vec![],
-            object_type: String::new(),
-            entry_kind: Default::default(),
-            custom_skins: vec![],
-            thumbnail_path: None,
-            metadata: None,
-            hash_db: Default::default(),
-        });
+        let old = std::mem::replace(
+            entry,
+            DbEntry {
+                name: String::new(),
+                aliases: vec![],
+                object_type: String::new(),
+                entry_kind: Default::default(),
+                custom_skins: vec![],
+                thumbnail_path: None,
+                metadata: None,
+                hash_db: Default::default(),
+            },
+        );
         *entry = absolutize_thumbnails(old, resource_dir);
     }
 

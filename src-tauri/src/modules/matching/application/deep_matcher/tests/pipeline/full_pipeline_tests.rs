@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
-use crate::modules::workspace::application::scanner::core::walker::{scan_folder_content, ModCandidate};
+use crate::modules::workspace::application::scanner::core::walker::{
+    scan_folder_content, ModCandidate,
+};
 
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
@@ -10,7 +12,9 @@ use crate::modules::matching::application::deep_matcher::analysis::content::FULL
 
 use super::match_folder_full;
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
-use crate::modules::matching::application::deep_matcher::{CustomSkin, DbEntry, MatchStatus, Reason};
+use crate::modules::matching::application::deep_matcher::{
+    CustomSkin, DbEntry, MatchStatus, Reason,
+};
 
 fn candidate_for(path: PathBuf, display_name: &str) -> ModCandidate {
     ModCandidate {

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT mods_path FROM games WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "mods_path",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "24c3694d030d7591a9bb11a4fa8ae125f346b7318626b76664411d580413291c"
+}

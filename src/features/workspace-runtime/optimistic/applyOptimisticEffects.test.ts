@@ -8,9 +8,9 @@ import {
   buildQueryRemovalDescriptor,
 } from './descriptorBuilders';
 import { mergeRuntimeEffectDescriptors } from './descriptor';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { thumbnailKeys } from '@/pages/dashboard/hooks/useThumbnail';
-import { detailsKeys } from '@/widgets/mod-preview/hooks/usePreviewData';
+import { useAppStore } from '@/app/store';
+import { thumbnailKeys } from '@/entities/mod';
+import { detailsKeys } from '@/entities/mod';
 
 describe('applyRuntimeEffects', () => {
   let queryClient: QueryClient;

@@ -7,7 +7,7 @@
  * in-memory guards, kept out of the hook so it can be tested directly.
  */
 
-import type { WorkspaceSelection } from '@/entities/workspace/model/workspace';
+import type { WorkspaceSelection } from '@/entities/workspace';
 import type { WorkspaceRuntimeEvent } from '../state/workspaceEvents';
 import {
   normalizeWorkspacePath,

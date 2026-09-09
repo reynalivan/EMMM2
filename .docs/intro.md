@@ -61,14 +61,14 @@ To categorize raw, messy user folders (e.g., `[V1.2]_Cool_Hu_Tao_Mod_by_Author`)
 
 ## 🚀 Scope of Capabilities
 
-EMMM's capabilities are thoroughly documented across **42 dedicated requirement specifications**, grouped into major feature domains:
+EMMM's capabilities are thoroughly documented across **44 dedicated requirement specifications**, grouped into major feature domains:
 
 - **Bootstrap & Game Management (req-01 to req-05):** Single-instance guards, DB migrations, and auto-discovery of game installations.
 - **Object Schema & ObjectList Navigation (req-06 to req-09):** Schema-driven categories, dynamic element/rarity filtering, and a virtualized object tree.
 - **Folder Grid & Core Operations (req-10 to req-14):** Thumbnail virtualization, instant search via Web Workers, bulk toggling, and fast renaming.
 - **Preview & Metadata Editing (req-16 to req-19):** INI inspection, image gallery auto-detection, and JSON metadata editing.
 - **Scan Engine & Storage (req-22 to req-28):** Multi-threaded scanning, Trash safety, deep archive extraction, and deduplication (hashing).
-- **Advanced Features (req-30 to req-43):** Privacy Safe Mode, Collections (Presets), Dashboard analytics, Smart Randomizers, and In-Game Hotkey integration.
+- **Advanced Features (req-30 to req-45):** Privacy Safe Mode, Collections (Presets), Dashboard analytics, Smart Randomizers, In-Game Hotkey integration, Discover smart import, and the pre-review Object Library readiness gate.
 
 ---
 

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { GameType } from '@/entities/game/model/game';
+import { GameType } from '@/entities/game';
 import GameFormModal from './GameFormModal';
 
 vi.mock('../../../shared/lib/hooks/useDialogSync', () => ({ useDialogSync: vi.fn() }));

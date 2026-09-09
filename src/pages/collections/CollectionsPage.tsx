@@ -12,7 +12,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { History, Layers, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useActiveGame } from '../dashboard/hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 
 import {
   useClearLastChanges,
@@ -36,7 +36,7 @@ import {
   type CollectionSaveRequest,
   type CollectionWorkspaceSource,
 } from './types';
-import { useAppStore } from '../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { SafetyFilterControl } from '../../shared/ui/components/ui/SafetyFilterControl';
 import { extractMissingModsPayload } from '../../shared/lib/appError';
 

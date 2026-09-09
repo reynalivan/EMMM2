@@ -1,13 +1,15 @@
 //! Per-game reconcile locks, activation cache, and runtime-effect state.
 
-use crate::shared::sync::lock;
 use crate::shared::errors::AppError;
+use crate::shared::sync::lock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
-use crate::modules::reconciliation::application::disk_reconcile::types::{DiskReconcileResult, PendingRuntimeEffects};
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcileResult, PendingRuntimeEffects,
+};
 
 #[derive(Debug, Default, Clone)]
 struct GameSyncState {
@@ -42,12 +44,104 @@ pub struct DiskReconcileState {
 /// only supported order: per-game first, then the global operation lock.
 pub struct DiskMutationLease {
     _game_guard: OwnedMutexGuard<()>,
-    _operation_guard: crate::platform::fs::operation_lock::OpGuard,
+    operation_guard: DiskMutationOperationGuard,
+}
+
+enum DiskMutationOperationGuard {
+    LockOnly {
+        _guard: crate::platform::fs::operation_lock::OpGuard,
+    },
+    Durable(crate::modules::mutation::coordinator::MutationGuard),
 }
 
 impl DiskMutationLease {
+    pub(crate) fn from_durable_guard(
+        game_guard: OwnedMutexGuard<()>,
+        operation_guard: crate::modules::mutation::coordinator::MutationGuard,
+    ) -> Self {
+        Self {
+            _game_guard: game_guard,
+            operation_guard: DiskMutationOperationGuard::Durable(operation_guard),
+        }
+    }
+
     pub(crate) fn operation_guard(&self) -> &crate::platform::fs::operation_lock::OpGuard {
-        &self._operation_guard
+        match &self.operation_guard {
+            DiskMutationOperationGuard::LockOnly { _guard } => _guard,
+            DiskMutationOperationGuard::Durable(guard) => guard.op_guard(),
+        }
+    }
+
+    pub(crate) fn mark_step_applied(&self, sequence: u32) -> Result<(), AppError> {
+        match &self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.mark_step_applied(sequence),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn mark_step_skipped(&self, sequence: u32) -> Result<(), AppError> {
+        match &self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.mark_step_skipped(sequence),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn mark_db_committed(&self) -> Result<(), AppError> {
+        match &self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.mark_db_committed(),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn begin_rollback(&self) -> Result<(), AppError> {
+        match &self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.begin_rollback(),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn mark_step_rolled_back(&self, sequence: u32) -> Result<(), AppError> {
+        match &self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.mark_step_rolled_back(sequence),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn finish_rollback(self) -> Result<(), AppError> {
+        match self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.finish_rollback(),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn commit(self) -> Result<(), AppError> {
+        match self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.commit(),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn fail(self, error: impl Into<String>) -> Result<(), AppError> {
+        match self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.fail(error),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
     }
 }
 
@@ -117,16 +211,37 @@ impl DiskReconcileState {
         Self::default()
     }
 
+    pub async fn acquire_nested_mutation_lease(
+        &self,
+        game_id: &str,
+        coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    ) -> Result<DiskMutationLease, AppError> {
+        let game_guard = self.lock_for_game(game_id).lock_owned().await;
+        let operation_guard = coordinator.acquire_nested_operation_lock().await?;
+        Ok(DiskMutationLease {
+            _game_guard: game_guard,
+            operation_guard: DiskMutationOperationGuard::LockOnly {
+                _guard: operation_guard,
+            },
+        })
+    }
+
     pub async fn acquire_mutation_lease(
         &self,
         game_id: &str,
         operation_lock: &crate::platform::fs::operation_lock::OperationLock,
     ) -> Result<DiskMutationLease, AppError> {
         let game_guard = self.lock_for_game(game_id).lock_owned().await;
-        let operation_guard = operation_lock.acquire().await?;
+        let operation_guard =
+            crate::modules::mutation::coordinator::MutationCoordinator::acquire_nested_operation_on(
+                operation_lock,
+            )
+            .await?;
         Ok(DiskMutationLease {
             _game_guard: game_guard,
-            _operation_guard: operation_guard,
+            operation_guard: DiskMutationOperationGuard::LockOnly {
+                _guard: operation_guard,
+            },
         })
     }
 

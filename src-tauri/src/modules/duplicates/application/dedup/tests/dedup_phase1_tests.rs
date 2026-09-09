@@ -6,10 +6,10 @@
 //! whatever the new code happens to do.
 
 use super::phase1_candidate_filtering;
-use crate::modules::workspace::application::scanner::core::walker::ModCandidate;
 use crate::modules::duplicates::application::dedup::signals::weights as w;
 use crate::modules::duplicates::application::dedup::size_ratio;
 use crate::modules::duplicates::application::dedup::snapshot::{FileEntry, ModSnapshot};
+use crate::modules::workspace::application::scanner::core::walker::ModCandidate;
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 

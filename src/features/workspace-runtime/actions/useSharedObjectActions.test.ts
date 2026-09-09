@@ -2,8 +2,8 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../app/store/useAppStore';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import { useAppStore } from '@/app/store';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { useSharedObjectActions } from './useSharedObjectActions';
 
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
@@ -23,6 +23,7 @@ const switchSetNodeEnabled = vi.fn();
 const switchIsNodePending = vi.fn((_node?: unknown) => false);
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, vars?: Record<string, unknown>) => {
       if (vars?.name && typeof vars.name === 'string') {
@@ -34,7 +35,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'game-1',
@@ -48,11 +49,11 @@ vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   }),
 }));
 
-vi.mock('../../object-list/hooks/objectQueryCache', () => ({
+vi.mock('./objectMutationCache', () => ({
   runObjectBatchMutation: (...args: unknown[]) => runObjectBatchMutation(...args),
 }));
 
-vi.mock('../../object-list/hooks/useObjectMutations', () => ({
+vi.mock('./useObjectMutations', () => ({
   useDeleteObject: () => ({
     mutateAsync: deleteObjectMutateAsync,
   }),
@@ -83,7 +84,7 @@ vi.mock('./useSharedObjectSyncActions', () => ({
   }),
 }));
 
-vi.mock('../../runtime-sync/queryRefresh', () => ({
+vi.mock('@/shared/lib/queryRefresh', () => ({
   publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
 }));
 
@@ -94,7 +95,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),

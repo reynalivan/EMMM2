@@ -39,7 +39,7 @@ This application uses a _hybrid_ architecture that combines _native_ execution s
 - **Database:** **`sqlx`** (Async SQLite with compile-time query verification).
 - **Async Runtime:** **`tokio`** (For non-blocking I/O operations).
 - **File Watcher:** **`notify`** v7 via **`notify-debouncer-full`** (500 ms debounce, rename From/To stitching via Windows file IDs; error/overflow degrades to a force-full reconcile).
-- **Archive:** Pure Rust implementation using **`zip`** v2, **`sevenz-rust`** v0.6, and **`rar`** v0.4. Supports magic byte detection and password-protected archives. No C-dependencies.
+- **Archive:** **`compress-tools`** v0.16 over statically linked libarchive, wrapped by an EMMM-owned secure iterator that enforces path containment, entry/byte/ratio limits, progress, cancellation, staging cleanup, and password-aware errors.
 - **Image Proc:** **`image`** (Resize & Convert to WebP thumbnails).
 - **Hashing:** **`blake3`** (Super-fast content hashing for deduplication).
 - **System Ops:** Custom soft-delete to `./app_data/trash/` (Safe Trash System).
@@ -132,7 +132,7 @@ Standard INI parser crates cannot be used because 3DMigoto syntax is unique (dup
 
 ### 4.4 Modern Archive Extraction (`req-37`)
 
-- **Pure Rust Architecture**: Completely eliminated C-dependent libraries (libarchive/compress-tools) to ensure lightning-fast, zero-bottleneck compilation.
+- **Hardened Archive Boundary**: Archive decoding is delegated to statically linked libarchive through `compress-tools`; EMMM retains ownership of entry validation, quotas, cancellation, progress, and all filesystem writes.
 - **Robust Format Detection**: Uses Magic Byte (file signature) detection (ZIP, 7z, RAR4, RAR5) with file extension fallback for 100% reliable identification.
 - **Atomic Cleanup (RAII)**: Implements `TempDirGuard` to ensure `.temp_extract/` subfolders are automatically wiped on any error, cancellation, or panic.
 - **IPC Performance**: Throttled progress streaming (250ms interval) prevents frontend IPC flooding while maintaining smooth progress bars.

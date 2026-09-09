@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use crate::shared::errors::AppError;
-use crate::modules::games::domain::models::GameType;
 use crate::modules::automation::application::keyviewer::matcher::MatchResult;
+use crate::modules::games::domain::models::GameType;
+use crate::shared::errors::AppError;
 
 use super::atomic::atomic_write;
 

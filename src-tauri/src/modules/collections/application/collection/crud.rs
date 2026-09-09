@@ -5,13 +5,13 @@ use super::projection::{
     collection_members_from_projected_state, load_projected_collection_state,
     persist_projected_state, require_collection, require_game_match,
 };
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::collections::domain::collection::{
     CollectionMod, CollectionObject, CollectionSummary, CreateCollectionInput,
     CreateCollectionMode, UpdateCollectionInput,
 };
-use crate::shared::errors::CollectionError;
-use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::workspace::application::projected_state;
+use crate::shared::errors::CollectionError;
 use sqlx::SqlitePool;
 
 /// List every named collection for a game. Safety is display metadata only.
@@ -28,8 +28,7 @@ pub async fn list_collections(
     for collection in named_collections {
         let mut current = collection.clone();
         let safety =
-            collection::member_safety_summary(pool, &collection.game_id, &collection.id)
-                .await?;
+            collection::member_safety_summary(pool, &collection.game_id, &collection.id).await?;
         current.is_safe = !safety.contains_unsafe;
         let mut summary = collection::to_summary(&current, active_id.as_deref());
         summary.is_safety_classified = safety.is_fully_classified;
@@ -197,7 +196,6 @@ pub async fn update_collection(
         collection::rename(pool, &collection, name).await?;
     }
     let collection = require_collection(pool, &input.id).await?;
-
 
     Ok(collection::to_summary(&collection, None))
 }

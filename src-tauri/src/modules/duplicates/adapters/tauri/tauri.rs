@@ -1,24 +1,24 @@
-use crate::shared::errors::AppError;
-use crate::modules::mutation::coordinator::MutationCoordinator;
-use crate::platform::fs::guard;
-use crate::modules::workspace::application::scanner::core::walker;
+use crate::modules::duplicates::adapters::sqlite::dedup;
 use crate::modules::duplicates::application::dedup::resolver::{
     ResolutionProgress, ResolutionRequest, ResolutionSummary,
 };
 use crate::modules::duplicates::application::dedup::scanner::DedupScanStatus;
-use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::modules::duplicates::domain::dup_scan::{DupScanEvent, DupScanReport};
+use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::reconciliation::application::disk_reconcile::emit;
 use crate::modules::settings::application::config::ConfigService;
-use crate::modules::duplicates::adapters::sqlite::dedup;
-use crate::modules::duplicates::domain::dup_scan::{DupScanEvent, DupScanReport};
+use crate::modules::workspace::application::scanner::core::walker;
+use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::modules::workspace::domain::conflicts::WhitelistEntry;
+use crate::platform::fs::guard;
+use crate::shared::errors::AppError;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::State;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter};
+use tauri::State;
+use tauri::{AppHandle, Emitter, Manager};
 
 pub struct DupScanState {
     pub(crate) is_running: Arc<AtomicBool>,
@@ -111,27 +111,28 @@ pub async fn dup_scan_start(
             total_folders,
         });
 
-        let outcome = match crate::modules::duplicates::application::dedup::scanner::scan_duplicates(
-            Path::new(&mods_root_for_task),
-            &game_id_for_task,
-            &db_for_task,
-            Arc::clone(&cancel_flag),
-        )
-        .await
-        {
-            Ok(data) => data,
-            Err(error) => {
-                let message = error.to_string();
-                let _ = on_event.send(DupScanEvent::Failed {
-                    scan_id,
-                    processed_folders: 0,
-                    total_folders,
-                    message: message.clone(),
-                });
-                log::warn!("Duplicate scan failed: {message}");
-                return;
-            }
-        };
+        let outcome =
+            match crate::modules::duplicates::application::dedup::scanner::scan_duplicates(
+                Path::new(&mods_root_for_task),
+                &game_id_for_task,
+                &db_for_task,
+                Arc::clone(&cancel_flag),
+            )
+            .await
+            {
+                Ok(data) => data,
+                Err(error) => {
+                    let message = error.to_string();
+                    let _ = on_event.send(DupScanEvent::Failed {
+                        scan_id,
+                        processed_folders: 0,
+                        total_folders,
+                        message: message.clone(),
+                    });
+                    log::warn!("Duplicate scan failed: {message}");
+                    return;
+                }
+            };
 
         match outcome.status {
             DedupScanStatus::Cancelled => {
@@ -243,31 +244,66 @@ pub async fn dup_resolve_batch(
     requests: Vec<ResolutionRequest>,
     game_id: String,
     watcher_state: State<'_, WatcherState>,
+    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, MutationCoordinator>,
-    config: State<'_, ConfigService>,
     db: State<'_, sqlx::SqlitePool>,
 ) -> Result<ResolutionSummary, AppError> {
+    let config = app.state::<ConfigService>();
     let all_folders: Vec<String> = requests
         .iter()
         .flat_map(|request| [request.folder_a.clone(), request.folder_b.clone()])
         .collect();
     guard::validate_paths(&config, &game_id, &all_folders)?;
-    emit::ensure_mutation_preflight_for_paths(&app, db.inner(), &game_id, Some(&all_folders)).await?;
+    emit::ensure_mutation_preflight_for_paths(&app, db.inner(), &game_id, Some(&all_folders))
+        .await?;
 
-    let op_guard = op_lock.acquire().await?;
-    let result = crate::modules::duplicates::application::dedup::resolver::resolve_batch(
+    let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    let prepared = crate::modules::duplicates::application::dedup::resolver::prepare_durable_batch(
         requests,
-        game_id.clone(),
+        &game_id,
         db.inner(),
-        op_guard.op_guard(),
+    )
+    .await?;
+    let Some(operation_plan) = prepared.operation_plan(&game_id) else {
+        drop(game_guard);
+        let op_guard = op_lock
+            .acquire_exempt(
+                crate::modules::mutation::coordinator::MutationExemption::DuplicateIgnoreRules,
+            )
+            .await?;
+        return crate::modules::duplicates::application::dedup::resolver::resolve_batch(
+            prepared.requests(),
+            game_id,
+            db.inner(),
+            op_guard.op_guard(),
+            &watcher_state.suppressor,
+            |progress: ResolutionProgress| {
+                let _ = app.emit("dup-resolve-progress", &progress);
+            },
+        )
+        .await;
+    };
+    let operation_guard = op_lock.acquire_operation(operation_plan).await?;
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+        game_guard,
+        operation_guard,
+    );
+    let result = crate::modules::duplicates::application::dedup::resolver::resolve_durable_batch(
+        &prepared,
+        &game_id,
+        db.inner(),
+        &mutation_lease,
         &watcher_state.suppressor,
         |progress: ResolutionProgress| {
             let _ = app.emit("dup-resolve-progress", &progress);
         },
     )
     .await?;
-    drop(op_guard);
-    emit::run_full_internal_disk_reconcile(&app, db.inner(), &game_id).await?;
+    emit::run_full_internal_disk_reconcile_under_lease(&app, db.inner(), &game_id, &mutation_lease)
+        .await?;
+    mutation_lease.mark_db_committed()?;
+    mutation_lease.commit()?;
+    prepared.finalize();
     Ok(result)
 }
 

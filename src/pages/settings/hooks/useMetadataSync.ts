@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import type { MetadataSyncResult } from '@/entities/workspace/model/scanner';
+import type { MetadataSyncResult } from '@/entities/workspace';
 
 export const metadataSyncKeys = {
   sync: ['metadata-sync'] as const,

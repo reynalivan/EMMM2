@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use super::types::{Mod, ReconcileModRow};
-use crate::modules::system::domain::mod_path::ModFolderPath;
 use crate::modules::games::domain::models::ItemStatus;
+use crate::modules::system::domain::mod_path::ModFolderPath;
 use sqlx::SqlitePool;
 
 fn is_effectively_enabled_path(folder_path: &str) -> bool {

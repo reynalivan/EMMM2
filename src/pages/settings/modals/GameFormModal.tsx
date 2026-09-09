@@ -8,7 +8,7 @@ import { X, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { GameConfig } from '../hooks/useSettings';
-import { GameType } from '@/entities/game/model/game';
+import { GameType } from '@/entities/game';
 import { pathsEqual } from '../../../shared/lib/pathKey';
 import { formatAppError } from '../../../shared/lib/appError';
 

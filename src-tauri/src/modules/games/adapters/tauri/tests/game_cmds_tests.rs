@@ -29,12 +29,14 @@ async fn test_auto_detect_games() {
     // Create valid GIMI
     create_valid_instance(&root.join("GIMI"));
 
-    let results =
-        super::auto_detect_games_inner(&service, &root.to_string_lossy())
-            .await
-            .unwrap();
+    let results = super::auto_detect_games_inner(&service, &root.to_string_lossy())
+        .await
+        .unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].game_type, crate::modules::games::domain::models::GameType::GIMI);
+    assert_eq!(
+        results[0].game_type,
+        crate::modules::games::domain::models::GameType::GIMI
+    );
 
     // Persist to DB/Settings
     super::save_onboarding_games_inner(&service, results)
@@ -56,12 +58,7 @@ async fn test_add_game_manual_and_duplicate() {
     create_valid_instance(&game_dir);
 
     // Initial add
-    let result = super::add_game_manual_inner(
-        &service,
-        "GIMI",
-        &game_dir.to_string_lossy(),
-    )
-    .await;
+    let result = super::add_game_manual_inner(&service, "GIMI", &game_dir.to_string_lossy()).await;
     assert!(result.is_ok());
     let game = result.unwrap();
 
@@ -71,12 +68,8 @@ async fn test_add_game_manual_and_duplicate() {
         .unwrap();
 
     // Duplicate add should fail
-    let dup_result = super::add_game_manual_inner(
-        &service,
-        "GIMI",
-        &game_dir.to_string_lossy(),
-    )
-    .await;
+    let dup_result =
+        super::add_game_manual_inner(&service, "GIMI", &game_dir.to_string_lossy()).await;
     assert!(dup_result.is_err());
     assert!(
         dup_result
@@ -97,13 +90,9 @@ async fn test_add_game_manual_persists_selected_mods_subfolder() {
     let selected = game_dir.join("Mods").join("character");
     fs::create_dir_all(selected.join("Aether")).unwrap();
 
-    let game = super::add_game_manual_inner(
-        &service,
-        "GIMI",
-        &selected.to_string_lossy(),
-    )
-    .await
-    .unwrap();
+    let game = super::add_game_manual_inner(&service, "GIMI", &selected.to_string_lossy())
+        .await
+        .unwrap();
 
     assert_eq!(game.game_exe, game_dir);
     assert_eq!(game.mod_path, selected);
@@ -128,13 +117,9 @@ async fn test_add_game_manual_rejects_unicode_duplicate_with_ascii_case_and_slas
     let game_dir = tmp.path().join("My日本語GIMI");
     create_valid_instance(&game_dir);
 
-    let game = super::add_game_manual_inner(
-        &service,
-        "GIMI",
-        &game_dir.to_string_lossy(),
-    )
-    .await
-    .unwrap();
+    let game = super::add_game_manual_inner(&service, "GIMI", &game_dir.to_string_lossy())
+        .await
+        .unwrap();
 
     super::save_onboarding_games_inner(&service, vec![game])
         .await
@@ -146,12 +131,7 @@ async fn test_add_game_manual_rejects_unicode_duplicate_with_ascii_case_and_slas
         .replace("My", "my")
         .replace("GIMI", "gimi");
 
-    let dup_result = super::add_game_manual_inner(
-        &service,
-        "GIMI",
-        &duplicate_variant,
-    )
-    .await;
+    let dup_result = super::add_game_manual_inner(&service, "GIMI", &duplicate_variant).await;
 
     assert!(dup_result.is_err());
     assert!(dup_result

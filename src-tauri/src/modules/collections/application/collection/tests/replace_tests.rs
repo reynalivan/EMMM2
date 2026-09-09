@@ -10,10 +10,9 @@ async fn partial_apply_blocks_when_mods_root_is_unavailable_even_when_ignoring_m
     seed_game(&ctx.pool, "game-1", Some(&mods_path)).await;
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let target_mod = test_collection_mod(&collection.id, "AINOZ/Blue", "Blue");
     let target_object = test_collection_object(&collection.id);
     let projected_state = projected_state::build_projected_state(
@@ -78,20 +77,16 @@ async fn replace_collection_with_current_state_drops_missing_partial_apply_membe
     .await
     .expect("insert enabled mod");
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let target_mods = vec![
         test_collection_mod(&collection.id, "AINOZ/Blue", "Blue"),
         test_collection_mod(&collection.id, "AINOZ/Missing Mod", "Missing Mod"),
     ];
     let target_objects = vec![test_collection_object(&collection.id)];
-    let projected_state = projected_state::build_projected_state(
-        &target_mods,
-        &target_objects,
-        Some(&mods_path),
-    );
+    let projected_state =
+        projected_state::build_projected_state(&target_mods, &target_objects, Some(&mods_path));
     persist_projected_state(
         &ctx.pool,
         &collection.id,

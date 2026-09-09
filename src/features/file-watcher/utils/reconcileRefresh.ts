@@ -1,10 +1,10 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,
   type RuntimeMutationClass,
-} from '../../workspace-runtime/optimistic/descriptorBuilders';
+} from '@/features/workspace-runtime/@x/file-watcher';
 
 export function publishDiskReconcileRefresh(
   queryClient: QueryClient,

@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '../../../tests/testing/test-utils';
 import { CollectionList } from './CollectionList';
 import { buildCollectionWorkspaceRows, filterCollectionRowsBySafety } from '../types';
-import type {
-  CollectionRuntimeSnapshot,
-  CollectionSummary,
-} from '@/entities/collection/model/collection';
+import type { CollectionRuntimeSnapshot, CollectionSummary } from '@/entities/collection';
 import type { CollectionListRow } from '../types';
 
 vi.mock('react-i18next', () => ({

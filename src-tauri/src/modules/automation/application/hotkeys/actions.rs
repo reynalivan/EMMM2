@@ -13,8 +13,8 @@
 //! result types so callers can wire them to real services.
 
 use super::HotkeyAction;
-use crate::shared::path_key::canonical_name_key;
 use crate::modules::automation::application::keyviewer::generator::StatusFields;
+use crate::shared::path_key::canonical_name_key;
 
 // ─── Action Result ───────────────────────────────────────────────────────────
 

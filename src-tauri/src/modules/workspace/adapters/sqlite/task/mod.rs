@@ -1,5 +1,7 @@
+use crate::modules::workspace::domain::task::{
+    PipelineTask, TaskStatus, TASK_TYPE_APPLY_COLLECTION,
+};
 use crate::shared::errors::AppError;
-use crate::modules::workspace::domain::task::{PipelineTask, TaskStatus, TASK_TYPE_APPLY_COLLECTION};
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
 /// Columns every `PipelineTask` read selects, in the order `row_to_task` expects.

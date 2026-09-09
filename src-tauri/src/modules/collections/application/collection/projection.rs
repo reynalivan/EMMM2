@@ -1,11 +1,11 @@
 //! Projected-state loading and signature computation for a collection.
 
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::collections::domain::collection::{
     Collection, CollectionMod, CollectionObject, ProjectedCollectionState,
 };
-use crate::shared::errors::CollectionError;
-use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::workspace::application::projected_state;
+use crate::shared::errors::CollectionError;
 use sqlx::SqlitePool;
 
 pub(crate) async fn load_projected_collection_state(

@@ -1,6 +1,6 @@
 import { Lock, CheckCircle2, PowerOff, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 
 interface EnableParentDialogProps {
   open: boolean;

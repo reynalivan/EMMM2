@@ -116,7 +116,10 @@ pub async fn run_internal_disk_reconcile(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     changed_paths: Vec<String>,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     run_internal_disk_reconcile_with_options(
         app,
         pool,
@@ -134,7 +137,10 @@ pub async fn run_full_internal_disk_reconcile(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     game_id: &str,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     run_internal_disk_reconcile_with_options(
         app,
         pool,
@@ -156,7 +162,10 @@ pub async fn run_full_internal_disk_reconcile_under_lease(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     let config = app
         .try_state::<crate::modules::settings::application::config::ConfigService>()
         .ok_or_else(|| {
@@ -169,9 +178,9 @@ pub async fn run_full_internal_disk_reconcile_under_lease(
         AppError::Internal("DiskReconcileState missing for disk reconcile".to_string())
     })?;
     let operation_lock = app
-        .try_state::<crate::platform::fs::operation_lock::OperationLock>()
+        .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
         .ok_or_else(|| {
-            AppError::Internal("OperationLock missing for disk reconcile".to_string())
+            AppError::Internal("MutationCoordinator missing for disk reconcile".to_string())
         })?;
     let reason = DiskReconcileReason::InternalMutation;
 
@@ -181,7 +190,7 @@ pub async fn run_full_internal_disk_reconcile_under_lease(
             config: config.inner(),
             state: state.inner(),
             watcher_suppressor: watcher.suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner_lock(),
             progress_reporter: Some(std::sync::Arc::new(
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),
@@ -204,9 +213,14 @@ pub async fn run_internal_disk_reconcile_with_path_hints_under_lease(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     changed_paths: Vec<String>,
-    path_hints: Vec<crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint>,
+    path_hints: Vec<
+        crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint,
+    >,
     lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     let config = app
         .try_state::<crate::modules::settings::application::config::ConfigService>()
         .ok_or_else(|| {
@@ -219,9 +233,9 @@ pub async fn run_internal_disk_reconcile_with_path_hints_under_lease(
         AppError::Internal("DiskReconcileState missing for disk reconcile".to_string())
     })?;
     let operation_lock = app
-        .try_state::<crate::platform::fs::operation_lock::OperationLock>()
+        .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
         .ok_or_else(|| {
-            AppError::Internal("OperationLock missing for disk reconcile".to_string())
+            AppError::Internal("MutationCoordinator missing for disk reconcile".to_string())
         })?;
     let reason = DiskReconcileReason::InternalMutation;
     let request = DiskReconcileRequest::manual_with_path_hints(
@@ -246,7 +260,7 @@ pub async fn run_internal_disk_reconcile_with_path_hints_under_lease(
             config: config.inner(),
             state: state.inner(),
             watcher_suppressor: watcher.suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner_lock(),
             progress_reporter: Some(std::sync::Arc::new(
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),
@@ -265,7 +279,10 @@ async fn run_initial_disk_reconcile(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     game_id: &str,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     run_internal_disk_reconcile_with_options(
         app,
         pool,
@@ -310,7 +327,7 @@ pub fn start_initial_disk_recovery(
     pool: &sqlx::SqlitePool,
     state: &DiskReconcileState,
     game_id: &str,
-) -> crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness {
+) -> crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness{
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
         InitialRecoveryReadiness, InitialRecoveryStart,
     };
@@ -357,7 +374,10 @@ async fn run_internal_disk_reconcile_with_options(
     force_full: bool,
     emit_when_blocked: bool,
     path_hints: Vec<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcilePathHint>,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     let config = app
         .try_state::<crate::modules::settings::application::config::ConfigService>()
         .ok_or_else(|| {
@@ -370,9 +390,9 @@ async fn run_internal_disk_reconcile_with_options(
         AppError::Internal("DiskReconcileState missing for disk reconcile".to_string())
     })?;
     let operation_lock = app
-        .try_state::<crate::platform::fs::operation_lock::OperationLock>()
+        .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
         .ok_or_else(|| {
-            AppError::Internal("OperationLock missing for disk reconcile".to_string())
+            AppError::Internal("MutationCoordinator missing for disk reconcile".to_string())
         })?;
 
     let result = reconcile_disk_state(
@@ -381,7 +401,7 @@ async fn run_internal_disk_reconcile_with_options(
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: watcher.suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner_lock(),
             progress_reporter: Some(std::sync::Arc::new(
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),
@@ -416,8 +436,13 @@ pub async fn run_internal_disk_reconcile_with_path_hints(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     changed_paths: Vec<String>,
-    path_hints: Vec<crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint>,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+    path_hints: Vec<
+        crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint,
+    >,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     run_internal_disk_reconcile_with_options(
         app,
         pool,

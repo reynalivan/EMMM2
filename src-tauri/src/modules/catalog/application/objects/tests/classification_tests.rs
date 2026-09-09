@@ -221,12 +221,14 @@ async fn classification_writer_requires_canonical_match_before_learning_alias() 
 
 #[tokio::test]
 async fn classification_batch_preflights_every_item_before_writing_any_item() {
-    use crate::modules::ingestion::application::import_batch::types::StableCategory;
-    use crate::modules::catalog::application::match_engine::inspection::{inspect_source, InspectionRequest};
+    use crate::modules::catalog::application::match_engine::inspection::{
+        inspect_source, InspectionRequest,
+    };
     use crate::modules::catalog::application::objects::classification_batch::{
         apply_object_classification_batch, ApplyObjectClassificationBatchInput,
         ApplyObjectClassificationItem,
     };
+    use crate::modules::ingestion::application::import_batch::types::StableCategory;
 
     let context = crate::test_utils::init_test_db().await;
     let workspace = tempfile::tempdir().unwrap();
@@ -311,12 +313,14 @@ async fn classification_batch_preflights_every_item_before_writing_any_item() {
 
 #[tokio::test]
 async fn classification_batch_revalidates_canonical_identity_against_master_db() {
-    use crate::modules::ingestion::application::import_batch::types::StableCategory;
-    use crate::modules::catalog::application::match_engine::inspection::{inspect_source, InspectionRequest};
+    use crate::modules::catalog::application::match_engine::inspection::{
+        inspect_source, InspectionRequest,
+    };
     use crate::modules::catalog::application::objects::classification_batch::{
         apply_object_classification_batch, ApplyObjectClassificationBatchInput,
         ApplyObjectClassificationItem,
     };
+    use crate::modules::ingestion::application::import_batch::types::StableCategory;
     use crate::modules::matching::application::deep_matcher::{DbEntry, MasterDb};
 
     let context = crate::test_utils::init_test_db().await;

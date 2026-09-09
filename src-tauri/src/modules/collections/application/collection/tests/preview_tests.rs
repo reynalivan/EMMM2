@@ -10,10 +10,9 @@ async fn preview_apply_blocks_when_mods_root_is_unavailable() {
     seed_game(&ctx.pool, "game-1", Some(&mods_path)).await;
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
 
     let result = preview_apply(&ctx.pool, "game-1", &collection.id, Some(&mods_path)).await;
 
@@ -66,10 +65,9 @@ async fn get_collection_preview_rejects_cross_game_collection() {
         .expect("insert game");
     }
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
 
     let result = get_collection_preview(&ctx.pool, "game-2", &collection.id, Some("E:/Mods")).await;
 

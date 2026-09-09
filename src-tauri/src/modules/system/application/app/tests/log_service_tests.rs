@@ -1,4 +1,6 @@
-use crate::modules::system::application::app::log_service::{open_log_folder_service, read_last_n_lines};
+use crate::modules::system::application::app::log_service::{
+    open_log_folder_service, read_last_n_lines,
+};
 use std::fs;
 use tempfile::TempDir;
 

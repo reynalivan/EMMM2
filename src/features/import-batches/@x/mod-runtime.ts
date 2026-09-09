@@ -1,0 +1,1 @@
+export { openObjectClassificationWizard } from '../classificationLauncher';

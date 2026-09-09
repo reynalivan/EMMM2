@@ -1,384 +1,131 @@
-//! Architecture gates (.docs/knowledge/architecture-refactor-plan.md).
-//!
-//! Unlike `dal_audit.rs`, these are not shrinking baselines: the app is
-//! pre-release, so each gate goes to zero in the step that introduces it and
-//! stays there. A failure means a layer contract was broken, not that a
-//! number needs updating.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn is_test_source(path: &Path) -> bool {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    if file_name == "tests.rs" || file_name.ends_with("_tests.rs") {
-        return true;
-    }
-    path.components()
-        .any(|component| component.as_os_str() == "tests")
-}
+#[test]
+fn production_state_consumers_do_not_bypass_mutation_coordinator() {
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut rust_files = Vec::new();
+    collect_rust_files(&source_root, &mut rust_files);
 
-fn collect_rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir).unwrap_or_else(|error| {
-        panic!("failed to read {}: {error}", dir.display());
-    });
-    for entry in entries {
-        let path = entry.expect("readable dir entry").path();
-        if path.is_dir() {
-            collect_rust_sources(&path, out);
+    let mut violations = Vec::new();
+    for path in rust_files {
+        if is_test_source(&path) {
             continue;
         }
-        if path.extension().is_some_and(|ext| ext == "rs") && !is_test_source(&path) {
-            out.push(path);
-        }
-    }
-}
-
-fn violations(dir: &str, needles: &[&str]) -> Vec<String> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
-    let mut files = Vec::new();
-    collect_rust_sources(&root, &mut files);
-
-    let mut found = Vec::new();
-    for path in files {
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-        for (idx, line) in source.lines().enumerate() {
-            if needles.iter().any(|needle| line.contains(needle)) {
-                found.push(format!("{}:{}: {}", path.display(), idx + 1, line.trim()));
-            }
-        }
-    }
-    found
-}
-
-/// The operation lock is acquired at entry points only (commands, hotkey
-/// handlers, queue workers); services prove they hold it by taking `&OpGuard`.
-/// A service that acquires internally reintroduces the two-altitude split —
-/// and the re-acquire deadlock — that `OpGuard` exists to prevent.
-#[test]
-#[ignore]
-fn services_never_acquire_the_operation_lock() {
-    let allowed = [
-        // Entry points with no command above them.
-        "cycle_preset.rs",   // hotkey handler
-        "placement.rs",      // browser import queue worker
-        "operation_lock.rs", // the lock itself
-    ];
-    let found: Vec<String> = violations("src/modules", &["op_lock.acquire()", ".acquire().await"])
-        .into_iter()
-        .filter(|line| {
-            // Semaphores and sqlx pools have their own acquire; only the
-            // operation lock is gated.
-            line.contains("op_lock")
-                && !allowed.iter().any(|entry_point| line.contains(entry_point))
-        })
-        .collect();
-    assert!(
-        found.is_empty(),
-        "services must take &OpGuard instead of acquiring the operation lock:\n{}",
-        found.join("\n")
-    );
-}
-
-/// A service that receives a path takes `&ValidatedPath`, so the containment
-/// check cannot be skipped by a caller. The guard is still called where a path
-/// is *derived* rather than received — those sites are listed here, and a new
-/// one has to be argued for rather than added silently.
-#[test]
-#[ignore]
-fn services_only_validate_paths_they_derive() {
-    let allowed = [
-        "guard.rs", // the guard itself
-        // Resolves the client's switch target against the DB, then proves it.
-        "workspace/switch.rs", "workspace\\switch.rs",
-        // Import/download flows build their own target directory.
-        "placement.rs",
-        "jobs.rs",
-    ];
-    let found: Vec<String> = violations("src/modules", &["validate_path(", "validate_paths("])
-        .into_iter()
-        .filter(|line| !allowed.iter().any(|site| line.contains(site)))
-        .collect();
-    assert!(
-        found.is_empty(),
-        "services must accept &ValidatedPath instead of validating a path they \
-         were handed:\n{}",
-        found.join("\n")
-    );
-}
-
-/// The data-access layer does not define the IPC contract.
-///
-/// A `specta::Type` in `repo/` makes the SQL result-set shape the generated
-/// TypeScript type, so the frontend imports its vocabulary from whichever
-/// module happens to run the query. Those types live in `domain/` now.
-///
-/// Note this does not by itself decouple column names from the wire: the
-/// domain types still derive `sqlx::FromRow` where the row and wire shapes
-/// coincide. Splitting a table into a row struct plus a DTO is worth doing
-/// per table, when one actually diverges — not pre-emptively for all of them.
-#[test]
-#[ignore]
-fn repos_do_not_define_ipc_types() {
-    let found = violations("src/modules", &["specta::Type", "specta(type"]);
-    assert!(
-        found.is_empty(),
-        "types the frontend consumes belong in domain/, not in the repo that \
-         queries them:\n{}",
-        found.join("\n")
-    );
-}
-
-/// The data-access layer does not read the disk.
-///
-/// `object::counts` used to resolve terminal nodes by walking
-/// directories and parsing INI headers — once per row per ancestor, with no
-/// memo, from inside a repo. Those rules now live in
-/// `services::objects::terminal`, where the walk can be cached and kept off
-/// the async runtime.
-#[test]
-#[ignore]
-fn repos_never_touch_the_filesystem() {
-    let found = violations(
-        "src/modules",
-        &["std::fs", "read_dir(", "classify_folder", "File::open"],
-    );
-    assert!(
-        found.is_empty(),
-        "repos issue SQL; disk access belongs in a service:\n{}",
-        found.join("\n")
-    );
-}
-
-/// The data-access layer does not decide what an object *is*.
-///
-/// `ensure_object_exists` used to resolve identity from inside the repo: match
-/// by name key, else by folder key, refuse a folder another row holds, and
-/// decide which fields a re-match may overwrite. Every scan and every disk
-/// reconcile runs those rules, and getting one wrong silently merges two
-/// objects or splits one in two — which is why they belong somewhere they can
-/// be read on their own, `services::objects::reconcile`.
-///
-/// The repo still runs the lookups and the UPDATEs. What it must not hold is
-/// the choice between them.
-#[test]
-#[ignore]
-fn repos_do_not_decide_object_identity() {
-    let found = violations(
-        "src/modules",
-        &["type_is_authoritative", "fn ensure_object_exists"],
-    );
-    assert!(
-        found.is_empty(),
-        "identity resolution and merge policy belong in \
-         services::objects::reconcile, not in the repo that stores the row:\n{}",
-        found.join("\n")
-    );
-}
-
-/// A stored mod path cannot be mistaken for a filesystem path.
-///
-/// `mods.folder_path` is relative to the game's mods root. Six readers treated
-/// it as a complete path, and every one failed identically and silently: the
-/// path resolves against the process working directory, the check says "not
-/// there", and the code takes its nothing-found branch. Conflict detection
-/// reported no conflicts, the duplicate scanner reported no folders, and the
-/// stale-mod resolver concluded the folder was gone and deleted the row.
-///
-/// `ModFolderPath` makes that a compile error by having no conversion to a
-/// path — `resolve(mods_root)` is the only way through, and it cannot be
-/// called without naming a root. This gate guards the absence: adding any of
-/// these impls quietly restores the whole bug family.
-#[test]
-#[ignore]
-fn the_stored_mod_path_has_no_silent_path_conversion() {
-    let source =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/domain/mod_path.rs"))
-            .expect("modules/system/domain/mod_path.rs");
-
-    let banned = [
-        "impl AsRef<Path> for ModFolderPath",
-        "impl AsRef<std::path::Path> for ModFolderPath",
-        "impl AsRef<OsStr> for ModFolderPath",
-        "impl Deref for ModFolderPath",
-        "impl std::ops::Deref for ModFolderPath",
-        "impl From<ModFolderPath> for PathBuf",
-        "impl From<ModFolderPath> for std::path::PathBuf",
-    ];
-    let found: Vec<&str> = banned
-        .iter()
-        .copied()
-        .filter(|impl_line| source.contains(impl_line))
-        .collect();
-
-    assert!(
-        found.is_empty(),
-        "ModFolderPath must not convert to a path implicitly; resolve(mods_root) \
-         is the way through:\n{}",
-        found.join("\n")
-    );
-}
-
-/// One owner settles a mutation.
-///
-/// The runtime projection is a read-model: DB-only object mutations update it
-/// in the same transaction so a projection failure cannot commit half a
-/// mutation. Disk mutations remain owned by reconcile.
-///
-/// The listed files are the projection maintaining itself (a cold-projection
-/// self-heal and two whole-library rebuilds), not mutations forgetting to.
-#[test]
-#[ignore]
-fn projection_refresh_has_explicit_owners() {
-    let allowed = [
-        "objects\\matching.rs", // canonical match + projection transaction
-        "objects/matching.rs",
-        "objects\\mutate.rs", // object/category + projection transaction
-        "objects/mutate.rs",
-        "objects\\classification.rs", // classification + child mods + projection transaction
-        "objects/classification.rs",
-        // Reads, not mutations: these ask the projection to catch up with
-        // rows it has not built yet, or rebuild it wholesale.
-        "objects\\query.rs", // self-heal when the projection is cold
-        "objects/query.rs",
-        "post_apply.rs", // whole-library rebuild after an apply
-        "reconcile.rs",  // whole-library rebuild after disk reconcile
-        // A selected conflict group must update its projection in the same
-        // transaction while unrelated groups keep generic reconcile blocked.
-        "folder_conflict_resolution.rs",
-    ];
-    let mut found = violations(
-        "src/modules",
-        &[
-            "rebuild_game_projection",
-            "refresh_projection_for_object_ids",
-        ],
-    );
-    found.extend(violations(
-        "src/commands",
-        &[
-            "rebuild_game_projection",
-            "refresh_projection_for_object_ids",
-        ],
-    ));
-    let found: Vec<String> = found
-        .into_iter()
-        .filter(|line| !allowed.iter().any(|owner| line.contains(owner)))
-        .collect();
-    assert!(
-        found.is_empty(),
-        "projection refresh must stay transactionally owned by DB mutation or reconcile:\n{}",
-        found.join("\n")
-    );
-}
-
-/// No service returns a stringly error.
-///
-/// `Result<_, String>` cannot carry a discriminant, so a service on that path
-/// can never produce `FileInUse`, `PathBusy` or any other variant the frontend
-/// matches on — every error it raises collapses into one opaque string.
-#[test]
-#[ignore]
-fn services_have_no_string_errors() {
-    let found: Vec<String> = violations("src/modules", &[", String>"])
-        .into_iter()
-        .filter(|line| line.contains("Result<"))
-        .collect();
-    assert!(
-        found.is_empty(),
-        "services return a typed error (a subsystem enum, or AppError); do not \
-         reintroduce Result<_, String>:\n{}",
-        found.join("\n")
-    );
-}
-
-/// Commands surface the service's error, not a flattened string.
-///
-/// `map_err(AppError::Internal)` throws away whatever variant the service
-/// produced, which is the discriminant the frontend switches on.
-#[test]
-#[ignore]
-fn commands_never_flatten_service_errors() {
-    let found = violations("src/commands", &["map_err(AppError::Internal)"]);
-    assert!(
-        found.is_empty(),
-        "let the service's typed error through with `?` instead of collapsing \
-         it into Internal:\n{}",
-        found.join("\n")
-    );
-}
-
-/// `mods.status` / `objects.status` and the stored folder paths are a
-/// projection of the filesystem — disk reconcile is their single writer.
-/// A service that calls a status-writing repo function directly
-/// reintroduces the dual-writer drift this architecture removed: enable /
-/// disable is a rename on disk plus a scoped reconcile, never a direct
-/// UPDATE.
-#[test]
-#[ignore]
-fn status_is_written_by_disk_reconcile_only() {
-    let writer_fns = [
-        "update_mod_sync_row(",
-        "update_mod_identity_tx(",
-        "insert_mod_tx(",
-        "update_object_runtime_state_by_path(",
-        "update_object_runtime_state_by_id(",
-    ];
-    let allowed_paths = [
-        // The definitions themselves.
-        r"repo\mods",
-        "repo/mods",
-        r"repo\object",
-        "repo/object",
-        // The single writer.
-        "disk_reconcile",
-    ];
-    let found: Vec<String> = violations("src", &writer_fns)
-        .into_iter()
-        .filter(|line| !allowed_paths.iter().any(|path| line.contains(path)))
-        .collect();
-    assert!(
-        found.is_empty(),
-        "status/path projection columns are written by disk reconcile only; \
-         mutate the filesystem and enqueue a scoped reconcile instead:\n{}",
-        found.join("\n")
-    );
-}
-
-/// Commands that already validated concrete filesystem targets must scope the
-/// conflict preflight to those targets. A game-wide preflight here makes an
-/// unrelated naming conflict freeze every otherwise-safe mod operation.
-#[test]
-#[ignore]
-fn targeted_mod_commands_use_path_scoped_mutation_preflight() {
-    let command_files = [
-        "src/modules/library/adapters/inbound/thumbnail_cmds.rs",
-        "src/modules/storage_optimizer/adapters/inbound/tauri.rs",
-        "src/modules/library/adapters/inbound/mod_meta_cmds.rs",
-        "src/modules/library/adapters/inbound/mod_thumbnail_cmds.rs",
-        "src/modules/library/adapters/inbound/preview_cmds.rs",
-        "src/modules/library/adapters/inbound/trash_cmds.rs",
-        "src/modules/catalog/adapters/inbound/object_cmds.rs",
-    ];
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut found = Vec::new();
-    for relative_path in command_files {
-        let path = root.join(relative_path);
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        let source = fs::read_to_string(&path).unwrap();
         for (index, line) in source.lines().enumerate() {
-            if line.contains("::ensure_mutation_preflight(") {
-                found.push(format!("{}:{}: {}", path.display(), index + 1, line.trim()));
+            let compact: String = line
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect();
+            let consumes_state = compact.contains("State<")
+                || compact.contains("state::<")
+                || compact.contains("try_state::<")
+                || compact.contains("require::<");
+            if consumes_state && compact.contains("OperationLock") {
+                violations.push(format!(
+                    "{}:{}: {}",
+                    path.strip_prefix(&source_root).unwrap().display(),
+                    index + 1,
+                    line.trim()
+                ));
             }
         }
     }
 
     assert!(
-        found.is_empty(),
-        "targeted mod commands must use ensure_mutation_preflight_for_paths:\n{}",
-        found.join("\n")
+        violations.is_empty(),
+        "production code must resolve MutationCoordinator instead of OperationLock:\n{}",
+        violations.join("\n")
     );
+}
+
+#[test]
+fn frontend_has_no_direct_filesystem_plugin_or_broad_capability() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("src-tauri must be inside the workspace root");
+    let package_source = fs::read_to_string(workspace_root.join("package.json"))
+        .expect("read frontend package manifest");
+    let capability_source = fs::read_to_string(manifest_dir.join("capabilities/default.json"))
+        .expect("read default Tauri capability");
+    let backend_source =
+        fs::read_to_string(manifest_dir.join("src/lib.rs")).expect("read Tauri bootstrap");
+
+    let mut violations = Vec::new();
+    if package_source.contains("@tauri-apps/plugin-fs") {
+        violations.push("package.json depends on @tauri-apps/plugin-fs".to_string());
+    }
+    for forbidden in ["fs:default", "fs:read-all", "fs:write-all"] {
+        if capability_source.contains(forbidden) {
+            violations.push(format!("capabilities/default.json grants {forbidden}"));
+        }
+    }
+    if backend_source.contains("tauri_plugin_fs::init") {
+        violations.push("src-tauri/src/lib.rs initializes tauri-plugin-fs".to_string());
+    }
+
+    let frontend_root = workspace_root.join("src");
+    let mut frontend_files = Vec::new();
+    collect_frontend_sources(&frontend_root, &mut frontend_files);
+    for path in frontend_files {
+        if is_frontend_test_source(&path) {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("read frontend source");
+        if source.contains("@tauri-apps/plugin-fs") {
+            violations.push(format!(
+                "{} imports @tauri-apps/plugin-fs",
+                path.strip_prefix(workspace_root).unwrap().display()
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "frontend filesystem access must be mediated by Rust commands:\n{}",
+        violations.join("\n")
+    );
+}
+
+fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_rust_files(&path, files);
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            files.push(path);
+        }
+    }
+}
+
+fn collect_frontend_sources(directory: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_frontend_sources(&path, files);
+        } else if path.extension().is_some_and(|extension| {
+            matches!(extension.to_str(), Some("ts" | "tsx" | "js" | "jsx"))
+        }) {
+            files.push(path);
+        }
+    }
+}
+
+fn is_test_source(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "tests")
+        || path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with("_tests.rs"))
+}
+
+fn is_frontend_test_source(path: &Path) -> bool {
+    path.components()
+        .any(|component| matches!(component.as_os_str().to_str(), Some("tests" | "__tests__")))
+        || path.file_name().is_some_and(|name| {
+            let name = name.to_string_lossy();
+            name.contains(".test.") || name.contains(".spec.")
+        })
 }

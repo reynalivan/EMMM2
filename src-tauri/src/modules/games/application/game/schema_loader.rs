@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::shared::errors::AppError;
 use crate::modules::games::domain::models::GameType;
+use crate::shared::errors::AppError;
 
 /// Game schema defines available categories and filter fields per game type.
 /// Loaded from bundled JSON resources, with fallback to defaults.

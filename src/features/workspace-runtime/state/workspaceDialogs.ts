@@ -1,4 +1,4 @@
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import type { WorkspaceFileInUseDialogData, WorkspaceDialogState } from './workspaceState';
 import { dispatchWorkspaceRuntimeEvent } from './workspaceStoreBridge';
 

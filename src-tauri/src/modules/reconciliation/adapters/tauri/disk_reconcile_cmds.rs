@@ -63,7 +63,11 @@ pub async fn apply_game_mods_directory(
     let _activation_guard = disk_reconcile_state.activation_guard().await;
     let game_lock = disk_reconcile_state.game_lock(&request.game_id);
     let game_guard = game_lock.lock().await;
-    let operation_guard = operation_lock.acquire().await?;
+    let operation_guard = operation_lock
+        .acquire_exempt(
+            crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
+        )
+        .await?;
     let result = crate::modules::reconciliation::application::disk_reconcile::source_recovery::apply_game_mods_directory(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
@@ -102,7 +106,10 @@ pub async fn reconcile_disk_state_cmd(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
     operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     // Opening Mods can race the workspace query which starts initial recovery.
     // Reuse that single pass instead of queueing a second full scan behind it.
     if should_wait_for_initial_recovery(
@@ -165,7 +172,10 @@ pub async fn resolve_rename_confirmations(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
     operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
-) -> Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError> {
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     if resolutions.is_empty() {
         return Err(AppError::Validation(
             "At least one rename confirmation resolution is required".to_string(),

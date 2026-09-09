@@ -3,7 +3,7 @@
 use crate::shared::errors::AppError;
 use crate::modules::settings::application::config::ConfigService;
 use crate::platform::fs::guard::validate_path;
-use crate::platform::fs::operation_lock::OperationLock;
+use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::library::application::mods::{info_json, metadata};
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
@@ -41,7 +41,7 @@ pub async fn toggle_mod_safe(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     watcher: tauri::State<'_, WatcherState>,
-    op_lock: tauri::State<'_, OperationLock>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
     folder_path: String,
     safe: bool,
@@ -55,7 +55,9 @@ pub async fn toggle_mod_safe(
         Some(&preflight_paths),
     )
     .await?;
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
+        .await?;
     let suppression = watcher.suppressor.suppress_paths([folder.as_ref()]);
     metadata::toggle_mod_safe(pool.inner(), &game_id, &folder, safe).await?;
     drop(suppression);
@@ -113,7 +115,7 @@ pub async fn update_mod_info(
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
-    op_lock: tauri::State<'_, OperationLock>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
     folder_path: String,
     update: info_json::ModInfoUpdate,
@@ -134,7 +136,9 @@ pub async fn update_mod_info(
     .await?;
     let info_path = path.join("info.json");
     let changed_path = info_path.to_string_lossy().to_string();
-    let lock = op_lock.acquire().await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
+        .await?;
     let guard = state.suppressor.suppress_paths([path.as_ref()]);
     let previous = match std::fs::read(&info_path) {
         Ok(bytes) => Some(bytes),
@@ -162,7 +166,9 @@ pub async fn update_mod_info(
         Err(error) => Some(error),
     };
     if let Some(failure) = failure {
-        let rollback_lock = op_lock.acquire().await?;
+        let rollback_lock = op_lock
+            .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
+            .await?;
         let rollback_guard = state.suppressor.suppress_paths([path.as_ref()]);
         let rollback = restore_info_json(&info_path, previous.as_deref());
         drop(rollback_guard);
@@ -201,7 +207,7 @@ pub async fn set_mod_category(
         '_,
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    op_lock: tauri::State<'_, OperationLock>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
     folder_path: String,
     category: String,
@@ -217,7 +223,9 @@ pub async fn set_mod_category(
     .await?;
     let game_lock = disk_reconcile_state.game_lock(&game_id);
     let game_guard = game_lock.lock().await;
-    let operation_guard = op_lock.acquire_for_reconcile().await;
+    let operation_guard = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
+        .await?;
     metadata::set_mod_category(&pool, &game_id, &folder, &category).await?;
     drop(operation_guard);
     drop(game_guard);
@@ -250,7 +258,7 @@ pub async fn set_object_mods_category(
         '_,
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    op_lock: tauri::State<'_, OperationLock>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
     object_id: String,
     category: String,
@@ -265,7 +273,9 @@ pub async fn set_object_mods_category(
     .await?;
     let game_lock = disk_reconcile_state.game_lock(&game_id);
     let game_guard = game_lock.lock().await;
-    let operation_guard = op_lock.acquire_for_reconcile().await;
+    let operation_guard = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
+        .await?;
     let updated = crate::modules::catalog::application::objects::mutate::set_object_and_mods_category(
         pool.inner(),
         &game_id,
@@ -324,7 +334,7 @@ pub async fn move_mods_to_object(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
-    op_lock: tauri::State<'_, OperationLock>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
     disk_reconcile_state: tauri::State<
         '_,
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
@@ -351,7 +361,7 @@ pub async fn move_mods_to_object(
     )
     .await?;
     let mutation_lease = disk_reconcile_state
-        .acquire_mutation_lease(&input.game_id, op_lock.inner())
+        .acquire_mutation_lease(&input.game_id, op_lock.inner_lock())
         .await?;
     let organizer = crate::modules::library::application::mods::organizer_ext::move_mods_to_object_service(
         pool.inner(),

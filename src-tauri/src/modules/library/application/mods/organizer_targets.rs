@@ -21,9 +21,10 @@ pub async fn list_move_targets_for_object_service(
     let game_mod_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
-    let target_obj = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, object_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Target object not found".to_string()))?;
+    let target_obj =
+        crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, object_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Target object not found".to_string()))?;
 
     if target_obj.game_id != game_id {
         return Err(AppError::Validation(format!(
@@ -108,7 +109,8 @@ fn is_hidden_dir(path: &Path) -> bool {
 }
 
 fn is_move_container(path: &Path) -> bool {
-    let (node_type, _reasons, _warnings) = crate::modules::workspace::domain::classifier::classify_folder(path);
+    let (node_type, _reasons, _warnings) =
+        crate::modules::workspace::domain::classifier::classify_folder(path);
     node_type == crate::modules::workspace::domain::classifier::NodeType::ContainerFolder
 }
 

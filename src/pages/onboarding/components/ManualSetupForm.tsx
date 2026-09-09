@@ -7,8 +7,8 @@ import { z } from 'zod';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ArrowLeft, FolderOpen, Loader2, AlertCircle } from 'lucide-react';
-import type { GameConfig } from '@/entities/game/model/game';
-import { GAME_OPTIONS } from '@/entities/game/model/game';
+import type { GameConfig } from '@/entities/game';
+import { GAME_OPTIONS } from '@/entities/game';
 
 interface ManualSetupFormProps {
   onBack: () => void;

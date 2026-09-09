@@ -4,6 +4,34 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
+fn ini_editor_path_accepts_existing_ini_file() {
+    let tmp = TempDir::new().unwrap();
+    let ini = tmp.path().join("config.ini");
+    fs::write(&ini, "[Constants]").unwrap();
+
+    assert_eq!(
+        resolve_ini_editor_path(tmp.path(), "config.ini").unwrap(),
+        ini.canonicalize().unwrap()
+    );
+}
+
+#[test]
+fn ini_editor_path_rejects_nested_or_traversal_names() {
+    let tmp = TempDir::new().unwrap();
+
+    assert!(resolve_ini_editor_path(tmp.path(), "nested/config.ini").is_err());
+    assert!(resolve_ini_editor_path(tmp.path(), "..\\config.ini").is_err());
+}
+
+#[test]
+fn ini_editor_path_rejects_non_ini_files() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("notes.txt"), "notes").unwrap();
+
+    assert!(resolve_ini_editor_path(tmp.path(), "notes.txt").is_err());
+}
+
+#[test]
 fn open_folder_preflight_uses_containment_and_conflict_validation_without_reconcile() {
     let source = include_str!("../mod_core_cmds.rs");
     let start = source

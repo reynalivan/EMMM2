@@ -4,12 +4,12 @@ import { Plus, Edit2, Trash2, Play, Inbox } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings, GameConfig } from '../../hooks/useSettings';
 import GameFormModal from '../../modals/GameFormModal';
-import { useAppStore } from '../../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../../shared/api/tauri/bindings';
 import type { GameModsDirectoryInspection } from '../../../../shared/api/tauri/bindings';
 import { pathsEqual } from '../../../../shared/lib/pathKey';
-import { applyDiskReconcileResult } from '@/features/file-watcher/hooks/useFileWatcher';
+import { applyDiskReconcileResult } from '@/features/file-watcher';
 
 interface PendingSourceChange {
   game: GameConfig;

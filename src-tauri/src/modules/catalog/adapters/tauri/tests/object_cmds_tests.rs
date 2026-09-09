@@ -1,5 +1,7 @@
 use super::*;
-use crate::modules::catalog::domain::objects::{CreateObjectInput, ObjectFilter, UpdateObjectInput};
+use crate::modules::catalog::domain::objects::{
+    CreateObjectInput, ObjectFilter, UpdateObjectInput,
+};
 use crate::test_utils::{insert_test_mod, insert_test_object, TestModFixture, TestObjectFixture};
 type CommandResult<T> = Result<T, crate::shared::errors::AppError>;
 use sqlx::SqlitePool;
@@ -156,7 +158,10 @@ async fn test_create_object_cmd() -> CommandResult<()> {
     };
 
     let obj_id_result =
-        crate::modules::catalog::application::objects::mutate::create_object_cmd_inner(&pool, None, payload).await?;
+        crate::modules::catalog::application::objects::mutate::create_object_cmd_inner(
+            &pool, None, payload,
+        )
+        .await?;
 
     // Verify it exists in DB
     let filter = ObjectFilter {
@@ -217,7 +222,8 @@ async fn test_update_object_cmd() -> CommandResult<()> {
         custom_skins: None,
     };
 
-    crate::modules::catalog::application::objects::mutate::update_object(&pool, obj_id, &payload).await?;
+    crate::modules::catalog::application::objects::mutate::update_object(&pool, obj_id, &payload)
+        .await?;
 
     let filter = ObjectFilter {
         game_id: game_id.clone(),
@@ -239,7 +245,8 @@ async fn test_update_object_cmd() -> CommandResult<()> {
 async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
     let mods_path = _tmp.path().join("Mods");
-    let watcher_state = crate::modules::workspace::application::scanner::watcher::WatcherState::default();
+    let watcher_state =
+        crate::modules::workspace::application::scanner::watcher::WatcherState::default();
     let op_lock = crate::platform::fs::operation_lock::OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
 

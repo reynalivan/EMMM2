@@ -1,16 +1,15 @@
 import { formatAppError } from '../../shared/lib/appError';
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { useActiveConflicts } from '@/widgets/mod-explorer/hooks/useFolderMutations';
-import { useAppStore } from '../../app/store/useAppStore';
+import { useActiveGame } from '@/entities/game';
+import { useActiveConflicts } from '@/features/mod-runtime';
+import { useAppStore } from '@/app/store';
 import { commands } from '../../shared/api/tauri/bindings';
-import { exit } from '@tauri-apps/plugin-process';
-import RandomizerModal from '@/features/randomizer/RandomizerModal';
-import ConflictModal from '@/features/conflict-report/ConflictModal';
-import ConflictToast from '@/features/scanner/components/ConflictToast';
+import { RandomizerModal } from '@/features/randomizer';
+import { ConflictModal } from '@/features/conflict-report';
+import { ConflictToast } from '@/features/scanner';
 import { useTranslation } from 'react-i18next';
-import type { ConflictInfo } from '@/entities/workspace/model/scanner';
+import type { ConflictInfo } from '@/entities/workspace';
 
 function buildConflictSignature(conflicts: ConflictInfo[]): string | null {
   if (conflicts.length === 0) return null;
@@ -68,7 +67,7 @@ export default function LaunchBar() {
       await commands.launchGame(activeGame.id);
 
       if (autoCloseLauncher) {
-        await exit(0);
+        await commands.exitApp();
       }
     } catch (e) {
       setError(formatAppError(e));

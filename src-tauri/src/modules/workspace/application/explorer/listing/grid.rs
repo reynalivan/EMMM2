@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
-use crate::shared::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
-use crate::shared::errors::AppError;
 use crate::modules::workspace::application::explorer::types::ConflictMember;
+use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
+use crate::shared::errors::AppError;
+use crate::shared::path_key::{canonical_name_key, names_equal_by_key, path_file_name_lossy};
 
 use super::scan::{find_disabled_ancestor, scan_fs_folders, scan_fs_folders_shallow};
 
@@ -289,9 +289,11 @@ fn list_mod_folders_blocking(
     } else {
         crate::modules::workspace::domain::classifier::classify_folder(&target)
     };
-    let self_is_mod = self_node_type == crate::modules::workspace::domain::classifier::NodeType::FlatModRoot
+    let self_is_mod = self_node_type
+        == crate::modules::workspace::domain::classifier::NodeType::FlatModRoot
         || self_node_type == crate::modules::workspace::domain::classifier::NodeType::ModPackRoot
-        || self_node_type == crate::modules::workspace::domain::classifier::NodeType::VariantContainer;
+        || self_node_type
+            == crate::modules::workspace::domain::classifier::NodeType::VariantContainer;
 
     // Determine self_is_enabled based on the final path directory component prefix
     let self_is_enabled = if sub_path.as_ref().is_some_and(|sp| !sp.is_empty()) {
@@ -317,16 +319,18 @@ fn list_mod_folders_blocking(
         ancestor_disabled_path = Some(base.to_string_lossy().to_string());
     }
 
-    Ok(crate::modules::workspace::application::explorer::types::FolderGridResponse {
-        self_node_type: Some(self_node_type.as_str().to_string()),
-        self_is_mod,
-        self_is_enabled,
-        self_owner_object_id: None,
-        self_owner_object_folder_path: None,
-        self_classification_reasons,
-        children: folders,
-        conflicts,
-        ancestor_disabled_by,
-        ancestor_disabled_path,
-    })
+    Ok(
+        crate::modules::workspace::application::explorer::types::FolderGridResponse {
+            self_node_type: Some(self_node_type.as_str().to_string()),
+            self_is_mod,
+            self_is_enabled,
+            self_owner_object_id: None,
+            self_owner_object_folder_path: None,
+            self_classification_reasons,
+            children: folders,
+            conflicts,
+            ancestor_disabled_by,
+            ancestor_disabled_path,
+        },
+    )
 }

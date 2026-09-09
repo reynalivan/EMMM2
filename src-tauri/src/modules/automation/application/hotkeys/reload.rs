@@ -3,10 +3,10 @@ use enigo::{
     Enigo, Key, Keyboard, Settings,
 };
 
-use crate::shared::errors::AppError;
-use crate::modules::settings::application::config::AppSettings;
 use crate::modules::automation::application::hotkeys::manager::normalize_shortcut;
 use crate::modules::automation::application::keyviewer::generator;
+use crate::modules::settings::application::config::AppSettings;
+use crate::shared::errors::AppError;
 
 pub fn trigger_reload_fixes(settings: &AppSettings) -> Result<String, AppError> {
     let Some(active_game) = settings.active_game() else {

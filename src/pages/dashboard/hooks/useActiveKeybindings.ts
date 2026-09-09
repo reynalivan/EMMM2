@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import type { ActiveKeyBinding } from '@/pages/settings/model/settings';
+import type { ActiveKeyBinding } from '@/entities/settings';
 import { useActiveGame } from './useActiveGame';
 
 /**

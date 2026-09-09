@@ -2,18 +2,7 @@ import { expect } from '@wdio/globals';
 import { createMockGame, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
-
-/** Minimal AppSettings subset this phase mutates. */
-interface AppSettings {
-  theme: string;
-  language: string;
-  safe_mode: { enabled?: boolean; keywords: string[] };
-  [key: string]: unknown;
-}
-interface GameConfig {
-  id: string;
-  [key: string]: unknown;
-}
+import type { AppSettings, GameConfig } from '../../src/shared/api/tauri/bindings.gen.js';
 
 /**
  * Fase 1 — Gerbang masuk (Settings + Game Management).
@@ -46,22 +35,21 @@ describe('Fase 1 — Gates (Settings & Game Management)', () => {
     expect(after.language).toBe('id');
   });
 
-  it('TC-04-02: Safe-mode toggle + keyword persist', async () => {
+  it('TC-04-02: Safety keyword persist', async () => {
     const before = await invokeInApp<AppSettings>('get_settings');
     await invokeInApp('save_settings', {
       settings: {
         ...before,
-        safe_mode: { ...before.safe_mode, enabled: true, keywords: ['nsfw'] },
+        safety: { ...before.safety, keywords: ['nsfw'] },
       },
     });
 
     const after = await invokeInApp<AppSettings>('get_settings');
-    expect(after.safe_mode.enabled).toBe(true);
-    expect(after.safe_mode.keywords).toContain('nsfw');
+    expect(after.safety.keywords).toContain('nsfw');
 
-    // Reset so later phases run in normal mode.
+    // Restore the complete snapshot so this spec does not leak settings.
     await invokeInApp('save_settings', {
-      settings: { ...after, safe_mode: { ...after.safe_mode, enabled: false } },
+      settings: { ...after, safety: before.safety },
     });
   });
 

@@ -7,6 +7,66 @@
 
 use tauri::{Emitter, Manager};
 
+const MUTATION_JOURNAL_HISTORY_LIMIT: usize = 256;
+
+async fn initialize_mutation_coordinator(
+    app: &tauri::AppHandle,
+) -> Result<Vec<String>, crate::shared::errors::AppError> {
+    let app_data_dir = app.path().app_data_dir()?;
+    let journal_path = app_data_dir.join("mutation-journal.json");
+    let journal = std::sync::Arc::new(crate::modules::mutation::journal::OperationJournal::open(
+        journal_path,
+        MUTATION_JOURNAL_HISTORY_LIMIT,
+    )?);
+    let game_roots = app
+        .state::<crate::modules::settings::application::config::ConfigService>()
+        .with_settings(|settings| {
+            settings
+                .games
+                .iter()
+                .map(|game| (game.id.clone(), game.mod_path.clone()))
+                .collect::<std::collections::HashMap<_, _>>()
+        });
+    let roots = crate::modules::mutation::recovery::RecoveryRoots::new(
+        game_roots.clone(),
+        app_data_dir.join("import-staging"),
+    );
+    let recovered = crate::modules::mutation::recovery::RecoveryRunner::new(journal.clone(), roots)
+        .run_recovery()
+        .await?;
+    let recorded_quarantines = journal
+        .entries()
+        .into_iter()
+        .filter(|operation| {
+            matches!(
+                operation.kind.as_str(),
+                "delete-mod" | "bulk-delete" | "trash-folder-conflict-candidate"
+            ) && operation.status == crate::modules::mutation::journal::OperationStatus::Completed
+                && operation.database_projection_status
+                    == crate::modules::mutation::journal::DatabaseProjectionStatus::Committed
+        })
+        .flat_map(|operation| {
+            let game_root = game_roots.get(&operation.game_id).cloned();
+            operation.steps.into_iter().filter_map(move |step| {
+                let path = (step.status == crate::modules::mutation::journal::StepStatus::Applied)
+                    .then_some(step.new_path)
+                    .flatten()?;
+                game_root
+                    .as_ref()
+                    .is_some_and(|root| path.starts_with(root))
+                    .then_some(path)
+            })
+        })
+        .collect::<Vec<_>>();
+    for warning in crate::modules::library::application::mods::trash::finalize_recorded_quarantines(
+        recorded_quarantines,
+    ) {
+        log::warn!("Pending trash quarantine cleanup failed: {warning}");
+    }
+    app.state::<crate::modules::mutation::coordinator::MutationCoordinator>()
+        .configure(journal)?;
+    Ok(recovered)
+}
 
 /// Re-centers the main window when it was restored onto a monitor that no longer
 /// exists (disconnected display).
@@ -100,7 +160,10 @@ pub fn init_pool(app_data_dir: &std::path::Path) -> sqlx::SqlitePool {
             }
         };
 
-        if let Err(e) = crate::modules::system::adapters::sqlite::utils::unicode_keys::ensure_unicode_keys(&p).await {
+        if let Err(e) =
+            crate::modules::system::adapters::sqlite::utils::unicode_keys::ensure_unicode_keys(&p)
+                .await
+        {
             log::warn!("Unicode key backfill skipped: {e}");
         }
         p
@@ -114,7 +177,9 @@ pub fn init_hotkey_manager(
     app_handle: &tauri::AppHandle,
     hotkey_config: &crate::modules::automation::application::hotkeys::HotkeyConfig,
 ) -> crate::modules::automation::application::hotkeys::manager::HotkeyManager {
-    let hk_manager = crate::modules::automation::application::hotkeys::manager::HotkeyManager::new(hotkey_config);
+    let hk_manager = crate::modules::automation::application::hotkeys::manager::HotkeyManager::new(
+        hotkey_config,
+    );
     if let Err(error) = hk_manager.update_bindings(app_handle, hotkey_config) {
         log::warn!("startup: hotkey registration failed, continuing disabled: {error}");
     }
@@ -126,7 +191,8 @@ pub fn init_hotkey_manager(
 /// a restart, so without this they stay `in_progress`/`extracting` forever and the
 /// user can never retry them.
 async fn recover_interrupted_transfers(pool: &sqlx::SqlitePool) {
-    match crate::modules::browser::adapters::sqlite::browser::fail_interrupted_downloads(pool).await {
+    match crate::modules::browser::adapters::sqlite::browser::fail_interrupted_downloads(pool).await
+    {
         Ok(count) if count > 0 => log::info!("startup: failed {count} interrupted download(s)"),
         Ok(_) => {}
         Err(error) => log::warn!("startup: download recovery failed: {error}"),
@@ -155,7 +221,25 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
     let pool = app.state::<sqlx::SqlitePool>().inner().clone();
 
     block_on(async {
-        match crate::modules::workspace::adapters::sqlite::task::reclaim_interrupted_apply_tasks(&pool).await {
+        match initialize_mutation_coordinator(&app).await {
+            Ok(recovered) if !recovered.is_empty() => {
+                log::warn!(
+                    "startup: recovered or isolated {} interrupted mutation(s): {}",
+                    recovered.len(),
+                    recovered.join(", ")
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                log::error!("startup: mutation coordinator initialization failed: {error}")
+            }
+        }
+
+        match crate::modules::workspace::adapters::sqlite::task::reclaim_interrupted_apply_tasks(
+            &pool,
+        )
+        .await
+        {
             Ok(reclaimed) if reclaimed > 0 => {
                 log::info!("startup: reclaimed {reclaimed} interrupted collection apply task(s)");
             }
@@ -182,24 +266,39 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
             Ok(_) => {}
             Err(error) => log::warn!("startup: import batch recovery failed: {error}"),
         }
-        match crate::modules::ingestion::adapters::sqlite::import_batch::list_terminal_batch_ids_for_staging_cleanup(&pool).await {
-            Ok(batch_ids) => match app.path().app_data_dir() {
-                Ok(app_data) => {
-                    let staging_root = app_data.join("import-staging");
-                    for batch_id in batch_ids {
-                        if let Err(error) = crate::modules::ingestion::application::import_batch::staging::cleanup_batch_staging(
-                            &staging_root,
-                            &batch_id,
-                        ) {
-                            log::warn!(
-                                "startup: batch staging cleanup failed for {batch_id}: {error}"
-                            );
+        match app.path().app_data_dir() {
+            Ok(app_data) => {
+                let staging_root = app_data.join("import-staging");
+                match crate::modules::ingestion::adapters::sqlite::import_batch::list_terminal_batch_ids_for_staging_cleanup(&pool).await {
+                    Ok(batch_ids) => {
+                        for batch_id in batch_ids {
+                            if let Err(error) = crate::modules::ingestion::application::import_batch::staging::cleanup_batch_staging(
+                                &staging_root,
+                                &batch_id,
+                            ) {
+                                log::warn!(
+                                    "startup: batch staging cleanup failed for {batch_id}: {error}"
+                                );
+                            }
                         }
                     }
+                    Err(error) => log::warn!("startup: terminal batch cleanup lookup failed: {error}"),
                 }
-                Err(error) => log::warn!("startup: app data path unavailable: {error}"),
-            },
-            Err(error) => log::warn!("startup: terminal batch cleanup lookup failed: {error}"),
+                match crate::modules::ingestion::adapters::sqlite::import_batch::list_active_staging_paths(&pool).await {
+                    Ok(paths) => match crate::modules::ingestion::application::import_batch::staging::cleanup_orphaned_staging(
+                        &staging_root,
+                        &paths,
+                    ) {
+                        Ok(removed) if removed > 0 => {
+                            log::info!("startup: removed {removed} orphaned import staging attempt(s)");
+                        }
+                        Ok(_) => {}
+                        Err(error) => log::warn!("startup: orphaned staging cleanup failed: {error}"),
+                    },
+                    Err(error) => log::warn!("startup: active staging lookup failed: {error}"),
+                }
+            }
+            Err(error) => log::warn!("startup: app data path unavailable: {error}"),
         }
     });
 
@@ -219,10 +318,12 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         let recovery_generation = startup_recovery_generation
             .expect("startup game and recovery generation are created together");
         let config = app.state::<crate::modules::settings::application::config::ConfigService>();
-        let watcher_state = app.state::<crate::modules::workspace::application::scanner::watcher::WatcherState>();
+        let watcher_state =
+            app.state::<crate::modules::workspace::application::scanner::watcher::WatcherState>();
         let disk_reconcile_state =
             app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
-        let operation_lock = app.state::<crate::platform::fs::operation_lock::OperationLock>();
+        let mutation_coordinator =
+            app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
 
         let reconcile_result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
@@ -230,7 +331,7 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 config: config.inner(),
                 state: disk_reconcile_state.inner(),
                 watcher_suppressor: watcher_state.suppressor.clone(),
-                operation_lock: operation_lock.inner(),
+                operation_lock: mutation_coordinator.inner_lock(),
                 progress_reporter: Some(std::sync::Arc::new(
                     crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                         app.clone(),

@@ -2,12 +2,12 @@ import { stripTypedDisabledPrefix } from '../../../shared/lib/disabledPrefix';
 import { useState, memo, useCallback } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { ContextMenu } from '../../../shared/ui/components/ui/ContextMenu';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { ModFolder } from '@/entities/game-object';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import FolderCardContextMenu from './FolderCardContextMenu';
 import BulkContextMenu from './BulkContextMenu';
-import { WorkspaceSwitchControl } from '@/features/workspace-runtime/components/WorkspaceSwitchControl';
-import { WorkspaceSwitchLabel } from '@/features/workspace-runtime/components/WorkspaceSwitchLabel';
+import { WorkspaceSwitchControl } from '@/features/workspace-runtime';
+import { WorkspaceSwitchLabel } from '@/features/workspace-runtime';
 import { useFolderNodeView } from '../hooks/useFolderNodeView';
 import FolderCardThumbnail from './FolderCardThumbnail';
 

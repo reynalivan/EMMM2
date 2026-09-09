@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { toast } from '../../../app/store/useToastStore';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
-import { openImportBatchWizard } from '@/features/import-batches/launcher';
+import { useActiveGame } from '@/entities/game';
+import { toast } from '@/shared/ui/toast';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
+import { openImportBatchWizard } from '@/features/import-batches';
 
 interface DropDeps {
   objects: WorkspaceObjectNode[];

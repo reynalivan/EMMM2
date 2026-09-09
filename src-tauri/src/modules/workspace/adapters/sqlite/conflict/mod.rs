@@ -1,5 +1,5 @@
 use crate::modules::workspace::domain::conflicts::IgnoredConflict;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 
 /// Fetches all ignored conflicts for a game, enriched with object and mod names.
@@ -7,7 +7,7 @@ pub async fn list_ignored_object_conflicts(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<IgnoredConflict>, sqlx::Error> {
-    let mut list = sqlx::query_as::<_, IgnoredConflict>(
+    let rows = sqlx::query(
         "SELECT ic.*, o.name as object_name 
          FROM ignored_object_conflicts ic
          LEFT JOIN objects o ON ic.object_id = o.id
@@ -17,6 +17,20 @@ pub async fn list_ignored_object_conflicts(
     .bind(game_id)
     .fetch_all(pool)
     .await?;
+    let mut list = rows
+        .iter()
+        .map(|row| {
+            Ok(IgnoredConflict {
+                id: row.try_get("id")?,
+                game_id: row.try_get("game_id")?,
+                object_id: row.try_get("object_id")?,
+                object_name: row.try_get("object_name")?,
+                mod_ids: row.try_get("mod_ids")?,
+                mod_names: Vec::new(),
+                created_at: row.try_get("created_at")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
 
     // Resolve every referenced mod id to its name in one pass. Rows whose
     // `mod_ids` is not valid JSON simply contribute no names, matching the

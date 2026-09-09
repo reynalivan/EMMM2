@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { commands } from '../../../../shared/api/tauri/bindings';
 import { formatAppError } from '../../../../shared/lib/appError';
 import { ExternalLink, RefreshCcw } from 'lucide-react';
-import { useToastStore } from '../../../../app/store/useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
 
 type LogLevel = 'ALL' | 'INFO' | 'WARN' | 'ERROR';
 

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ImportBatch, ImportItem } from '../../shared/api/tauri/bindings.gen';
 import { ImportBatchWizard } from './ImportBatchWizard';
 
+vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => path }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: { count?: number }) =>
@@ -15,11 +16,11 @@ function item(overrides: Partial<ImportItem> = {}): ImportItem {
     id: 'item-1',
     batchId: 'batch-1',
     sourceKind: 'folder',
-    sourcePath: 'C:/Downloads/DISABLED unknown-mod',
+    sourcePath: 'C:/Users/Test/Downloads/unknown-mod',
     stagingPath: null,
-    plannedName: 'DISABLED unknown-mod',
-    status: 'awaiting_category',
-    matchCategory: null,
+    plannedName: 'unknown-mod',
+    status: 'awaiting_destination',
+    matchCategory: 'Other',
     subCategory: null,
     classificationMetadata: {},
     categorySuggestions: [],
@@ -40,7 +41,7 @@ function item(overrides: Partial<ImportItem> = {}): ImportItem {
   };
 }
 
-function batch(batchItem: ImportItem): ImportBatch {
+function batch(batchItem: ImportItem, additionalItems: ImportItem[] = []): ImportBatch {
   return {
     id: 'batch-1',
     gameId: 'game-1',
@@ -50,7 +51,7 @@ function batch(batchItem: ImportItem): ImportBatch {
     targetSubpath: null,
     status: 'awaiting_review',
     sourceArchivePath: null,
-    items: [batchItem],
+    items: [batchItem, ...additionalItems],
     createdAt: '2026-08-28T00:00:00Z',
     updatedAt: '2026-08-28T00:00:00Z',
   };
@@ -72,7 +73,25 @@ function handlers() {
 }
 
 describe('ImportBatchWizard', () => {
-  it('requires a category decision and accepts Other as metadata, not a destination', async () => {
+  it('renders one review table without classification controls', () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(item())}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByText('…/Downloads/unknown-mod')).toBeInTheDocument();
+    expect(screen.queryByText('sections.match')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /filters.no_match/ })).toBeInTheDocument();
+  });
+
+  it('edits the source mod name inline and requests rematching', async () => {
     const batchItem = item();
     const callbacks = handlers();
     render(
@@ -86,40 +105,30 @@ describe('ImportBatchWizard', () => {
       />,
     );
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Other' } });
-    fireEvent.click(screen.getByRole('button', { name: 'actions.confirm' }));
+    fireEvent.click(screen.getByRole('button', { name: 'source.edit_name' }));
+    fireEvent.change(screen.getByDisplayValue('unknown-mod'), { target: { value: 'Renamed mod' } });
+    fireEvent.click(screen.getByRole('button', { name: 'actions.save_name' }));
 
-    await waitFor(() =>
-      expect(callbacks.onClassify).toHaveBeenCalledWith(batchItem, 'Other', null, {}),
-    );
-    expect(screen.queryByText(/Mods[/\\]Other/)).not.toBeInTheDocument();
-    expect(callbacks.onCommit).not.toHaveBeenCalled();
+    await waitFor(() => expect(callbacks.onRename).toHaveBeenCalledWith(batchItem, 'Renamed mod'));
   });
 
-  it('bulk confirms only high-confidence destination suggestions without auto-commit', async () => {
+  it('supports select-all, select-none, and bulk proceed', async () => {
     const suggestion = {
       kind: 'existing_object' as const,
       objectId: 'object-ayaka',
       canonicalEntryKey: 'ayaka',
       folderName: 'Ayaka',
-      targetPath: 'C:/Mods/Ayaka/DISABLED ayaka-12319mods',
+      targetPath: 'C:/Mods/Ayaka/skin',
       confidencePercentage: 91,
       confidenceTier: 'high' as const,
       warning: null,
     };
-    const batchItem = item({
-      sourcePath: 'C:/Downloads/DISABLED ayaka-12319mods',
-      plannedName: 'DISABLED ayaka-12319mods',
-      status: 'awaiting_destination',
-      matchCategory: 'Character',
-      confidencePercentage: 91,
-      confidenceTier: 'high',
-      destinationSuggestions: [suggestion],
-    });
+    const first = item({ destinationSuggestions: [suggestion] });
+    const second = item({ id: 'item-2', plannedName: 'second', sourcePath: 'C:/Mods/second' });
     const callbacks = handlers();
     render(
       <ImportBatchWizard
-        batch={batch(batchItem)}
+        batch={batch(first, [second])}
         schema={null}
         objects={[]}
         busyItemId={null}
@@ -128,28 +137,32 @@ describe('ImportBatchWizard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'actions.confirm_high' }));
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'actions.set_proceed' }));
 
     await waitFor(() =>
-      expect(callbacks.onChooseDestination).toHaveBeenCalledWith(batchItem, suggestion, 'confirm'),
+      expect(callbacks.onChooseDestination).toHaveBeenCalledWith(first, suggestion, 'confirm'),
     );
     expect(callbacks.onCommit).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true, shiftKey: true });
+    expect(screen.queryByRole('button', { name: 'actions.set_skip' })).not.toBeInTheDocument();
   });
 
-  it('lets a skipped item resume by choosing a destination again', async () => {
+  it('selects a ranked destination from the searchable dropdown', async () => {
     const suggestion = {
       kind: 'existing_object' as const,
       objectId: 'object-raiden',
       canonicalEntryKey: 'raiden-shogun',
       folderName: 'Raiden Shogun',
-      targetPath: 'C:/Mods/Raiden Shogun/DISABLED shogun32114',
+      targetPath: 'C:/Mods/Raiden Shogun/skin',
       confidencePercentage: 72,
       confidenceTier: 'medium' as const,
       warning: null,
     };
     const batchItem = item({
       status: 'skipped',
-      matchCategory: 'Character',
       decision: 'skip',
       destinationSuggestions: [suggestion],
     });
@@ -165,22 +178,23 @@ describe('ImportBatchWizard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Raiden Shogun' }));
+    fireEvent.click(screen.getByRole('button', { name: /Raiden Shogun/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: /Raiden Shogun/ })[1]);
 
     await waitFor(() =>
       expect(callbacks.onChooseDestination).toHaveBeenCalledWith(batchItem, suggestion, 'confirm'),
     );
   });
 
-  it('keeps partial and metadata-pending items resumable from the wizard', async () => {
+  it('keeps recovery items commit-ready', async () => {
     const callbacks = handlers();
     render(
       <ImportBatchWizard
         batch={batch(
           item({
             status: 'metadata_pending',
-            matchCategory: 'Character',
-            destinationPath: 'C:/Mods/Ayaka/DISABLED skin',
+            decision: 'confirm',
+            destinationPath: 'C:/Mods/Ayaka/skin',
             error: 'metadata write interrupted',
           }),
         )}
@@ -192,8 +206,29 @@ describe('ImportBatchWizard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'actions.commit:1' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'actions.resume' })[1]);
     await waitFor(() => expect(callbacks.onCommit).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole('button', { name: 'actions.retry' })).not.toBeInTheDocument();
+  });
+
+  it('localizes archive errors without exposing OS diagnostics', () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({
+            status: 'failed',
+            error:
+              "Validation error: Unsupported archive: Extraction error: OS Error 42 (FormatMessageW returned error 317) 'Declared dictionary size is not supported'",
+          }),
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.getByText('errors.archive.dictionary_too_large')).toBeInTheDocument();
+    expect(screen.queryByText(/FormatMessageW/)).not.toBeInTheDocument();
   });
 });

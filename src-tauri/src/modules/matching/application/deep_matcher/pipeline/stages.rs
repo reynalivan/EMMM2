@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::modules::workspace::domain::normalizer;
 use crate::modules::matching::application::deep_matcher::analysis::content::FolderSignals;
 use crate::modules::matching::application::deep_matcher::analysis::indexes::MatcherIndexes;
 use crate::modules::matching::application::deep_matcher::analysis::scoring::{
@@ -10,6 +9,7 @@ use crate::modules::matching::application::deep_matcher::analysis::scoring::{
 };
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
 use crate::modules::matching::application::deep_matcher::ScoreState;
+use crate::modules::workspace::domain::normalizer;
 
 pub const DEFAULT_SEED_CAP: usize = 200;
 pub const DEFAULT_MIN_POOL: usize = 5;

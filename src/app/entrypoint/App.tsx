@@ -2,16 +2,30 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { initLogger } from '@/shared/lib/logger';
-import { useAppStore } from '@/app/store/useAppStore';
-import { useSettings } from '@/pages/settings/hooks/useSettings';
+import { useAppStore } from '@/app/store';
+import { useSettings } from '@/entities/settings';
 import i18n from '@/shared/i18n/config';
-import { useThemeRuntime } from '@/pages/settings/hooks/useThemeRuntime';
-import type { PipelineTask } from '@/entities/task/model/task';
-import { RecoveryDialog } from '@/pages/collections/components/RecoveryDialog';
-import MainLayout from '@/shared/ui/components/layout/MainLayout';
-import WelcomeScreen from '@/pages/onboarding/WelcomeScreen';
+import { useThemeRuntime, DynamicThemeInjector } from '@/pages/settings';
+import type { PipelineTask } from '@/entities/task';
+import { RecoveryDialog } from '@/pages/collections';
+import { WelcomeScreen } from '@/pages/onboarding';
 import { commands } from '@/shared/api/tauri/bindings';
-import { publishQueryScopes } from '@/features/runtime-sync/queryRefresh';
+import { publishQueryScopes } from '@/shared/lib/queryRefresh';
+import { AppShell } from '@/widgets/app-shell';
+import { TopBar } from '@/widgets/top-bar';
+import { Dashboard } from '@/pages/dashboard';
+import { CollectionContextControls, CollectionsPage } from '@/pages/collections';
+import { SettingsPage } from '@/pages/settings';
+import { ModInboxPage } from '@/pages/mod-inbox';
+import { StorageOptimizerPage } from '@/features/scanner';
+import { ExternalChangeHandler } from '@/features/file-watcher';
+import { ImportBatchWizardHost } from '@/features/import-batches';
+import { ObjectClassificationWizardHost } from '@/features/match-wizard';
+import { FolderGrid, ExplorerEmptyState } from '@/widgets/mod-explorer';
+import { PreviewPanel } from '@/widgets/mod-preview';
+import { ObjectList } from '@/widgets/object-sidebar';
+import { LaunchBar } from '@/widgets/launch-bar';
+import { BrowserPage, DownloadConfirmationHost, DownloadsPage } from '@/pages/browser';
 
 /** Duration of the splash fade-out; must match the `#splash` transition in `index.html`. */
 const SPLASH_FADE_MS = 220;
@@ -141,18 +155,50 @@ function AppRouter() {
           />
         }
       />
-      <Route path="/dashboard" element={<MainLayout />} />
+      <Route path="/dashboard" element={<DashboardWorkspace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }
 
-import { ToastContainer } from '@/shared/ui/components/ui/Toast';
-import { DynamicThemeInjector } from '@/pages/settings/components/theme/DynamicThemeInjector';
-import { FileInUseDialog } from '@/features/file-watcher/dialogs/FileInUseDialog';
-import WorkspaceSourceUnavailableDialog from '@/widgets/mod-explorer/components/WorkspaceSourceUnavailableDialog';
-import FolderConflictManager from '@/widgets/mod-explorer/modals/FolderConflictManager';
-import RenameConfirmationManager from '@/widgets/mod-explorer/modals/RenameConfirmationManager';
+function DashboardWorkspace() {
+  const workspaceView = useAppStore((state) => state.workspaceView);
+  const selectedObjectFolderPath = useAppStore((state) => state.selectedObjectFolderPath);
+
+  return (
+    <AppShell
+      workspaceView={workspaceView}
+      selectedObjectFolderPath={selectedObjectFolderPath}
+      topBar={<TopBar launchBar={<LaunchBar />} contextControls={<CollectionContextControls />} />}
+      runtimeHosts={
+        <>
+          <ExternalChangeHandler />
+          <ImportBatchWizardHost />
+          <ObjectClassificationWizardHost />
+        </>
+      }
+      dashboard={<Dashboard />}
+      collections={<CollectionsPage />}
+      settings={<SettingsPage />}
+      browser={<BrowserPage />}
+      downloads={<DownloadsPage />}
+      storageOptimizer={<StorageOptimizerPage />}
+      modInbox={<ModInboxPage />}
+      objectList={<ObjectList />}
+      folderGrid={<FolderGrid />}
+      previewPanel={<PreviewPanel />}
+      explorerEmptyState={<ExplorerEmptyState />}
+    />
+  );
+}
+
+import { ToastContainer } from '@/shared/ui/toast';
+import { FileInUseDialog } from '@/features/file-watcher';
+import {
+  FolderConflictManager,
+  RenameConfirmationManager,
+  WorkspaceSourceUnavailableDialog,
+} from '@/widgets/mod-explorer';
 
 export default function App() {
   useThemeRuntime();
@@ -167,6 +213,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-base-100 text-base-content overflow-hidden font-sans antialiased selection:bg-primary selection:text-primary-content">
       <AppRouter />
+      <DownloadConfirmationHost />
       <DynamicThemeInjector />
       <ToastContainer />
       <FolderConflictManager />

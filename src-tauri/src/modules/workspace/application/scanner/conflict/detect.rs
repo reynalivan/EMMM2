@@ -1,8 +1,8 @@
-use crate::shared::errors::ScannerError;
 use crate::modules::workspace::application::scanner::conflict::{
     detect_conflicts_with_roots, discover_runtime_ini_files, ConflictInfo,
 };
 use crate::modules::workspace::application::scanner::core::walker;
+use crate::shared::errors::ScannerError;
 use std::path::Path;
 
 /// Detect conflicts by scanning the entire mods folder for INI files.

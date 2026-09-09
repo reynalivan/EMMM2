@@ -6,9 +6,9 @@
 //! silently merges two objects, or splits one into two. These pin each arm
 //! before the policy moves out of the repo.
 
-use crate::modules::games::domain::models::GameType;
-use crate::modules::catalog::domain::objects::{EnsureObjectInput, MatchSource};
 use crate::modules::catalog::application::objects::reconcile::ensure_object_exists;
+use crate::modules::catalog::domain::objects::{EnsureObjectInput, MatchSource};
+use crate::modules::games::domain::models::GameType;
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
 use sqlx::SqlitePool;
 

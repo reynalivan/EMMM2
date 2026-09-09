@@ -5,9 +5,9 @@
  * review, and import (drop → optional archive extraction → review).
  */
 
-import type { GameSchema } from '@/entities/game-object/model/object';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
-import { useSharedObjectActions } from '@/features/workspace-runtime/actions/useSharedObjectActions';
+import type { GameSchema } from '@/entities/game-object';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
+import { useSharedObjectActions } from '@/features/workspace-runtime';
 import { useScanReviewFlow } from './useScanReviewFlow';
 import { useDropImportFlow } from './useDropImportFlow';
 import { useObjectBulkActions } from './useObjectBulkActions';

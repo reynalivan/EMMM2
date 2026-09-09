@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { QueryRefetchType } from '../../runtime-sync/queryRefresh';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import type { QueryRefetchType } from '@/shared/lib/queryRefresh';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import { applyRuntimeEffects } from '../optimistic/applyOptimisticEffects';
 import {
   buildPathInvalidationDescriptor,

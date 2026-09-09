@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { Keyboard, Eye, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../../shared/api/tauri/bindings';
-import type { HotkeyConfig, KeyViewerConfig } from '@/pages/settings/model/settings';
+import type { HotkeyConfig, KeyViewerConfig } from '@/entities/settings';
 import { useSettings } from '../../hooks/useSettings';
-import { useToastStore } from '../../../../app/store/useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
 import { detectConflicts, type ReservedBinding } from '../../utils/hotkeyConflicts';
 
 /** Default hotkey config values — unified overlay toggle F7. */

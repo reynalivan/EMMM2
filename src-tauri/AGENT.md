@@ -10,7 +10,7 @@ EMMM2's backend is a **Modular Monolith** using **Strict Vertical Slices**.
 - **Strict Encapsulation:** Internal module layers (`domain`, `application`, `adapters`) are explicitly marked as `pub(crate)` in `mod.rs`. 
 - **The API Boundary:** Modules can **only** communicate with each other or expose functions to integration tests via their explicit `api.rs` facade. Never bypass `api.rs`.
 - **Tauri Segregation:** Tauri IPC endpoints live exclusively inside `adapters/tauri/`. Core business logic (`application/`) must never import or depend on `tauri`.
-- **Atomic Operations:** Direct filesystem manipulation by the frontend is forbidden. All disk writes and structural changes must go through the `MutationCoordinator` (which locks the watcher).
+- **Atomic Operations:** Direct filesystem manipulation by the frontend is forbidden. All disk writes and structural changes must go through the single app-managed `MutationCoordinator`. It owns the shared `OperationLock`, persistent operation journal, and active task registry; production command state must never manage or inject a second `OperationLock`.
 
 ## 2. Core Topology
 - `src/modules/` -> The 16 Vertical Slices (The heart of the application).
@@ -38,5 +38,8 @@ EMMM2's backend is a **Modular Monolith** using **Strict Vertical Slices**.
 
 ## 4. Key Data Flows
 - **File System Watcher:** `notify-rs` detects changes -> Triggers `Disk Reconcile` (Reconciliation Module) -> Emits UI updates. (Suppressed during controlled mutations).
-- **Mod Ingestion:** `Ingestion` receives ZIP -> Extracts to staging -> Hands off to `Matching` for metadata -> Hands off to `Mutation` to commit to disk -> `Workspace` refreshes.
+- **Mod Ingestion:** `Ingestion` receives an archive -> validates space and analyzes/extracts it through the `compress-tools` secure iterator into staging (including entry path/type validation, byte and ratio quotas, nested archives, password, progress, and cancellation) -> hands off to `Matching` for metadata -> hands off to `Mutation` to commit to disk -> `Workspace` refreshes. Per-batch extraction state serializes analysis and makes cancellation wait for extraction to stop before staging cleanup.
+- **Frontend Filesystem Boundary:** React has no `plugin-fs` capability. User-selected theme import/export dialogs and all resulting reads/writes are owned by validated Rust commands.
+- **Mutation Recovery:** Durable operations write every filesystem step to `mutation-journal.json` before mutation, explicitly commit only after the database projection succeeds, and remain recoverable when their guard drops without a terminal action. Startup validates journal paths against configured game/staging roots, rolls back only unambiguous disk states, and isolates ambiguous states as `FailedNeedsRepair` before configuring the app-managed `MutationCoordinator`.
+- **Durable Slice Migration:** Folder-conflict group rename is the first durable slice: it plans old/stage/target paths while holding the game lease, journals them before the first rename, keeps watcher suppression around apply/compensation, and commits only after Disk Reconcile projects the final disk state. Other mutation slices remain on the lock-only compatibility path until migrated explicitly.
 - **Frontend Commands:** React calls IPC -> Routed to `modules/*/adapters/tauri/` -> Calls `application/` use cases -> Accesses DB via `adapters/sqlite/` -> Returns `Specta` generated types back to React.

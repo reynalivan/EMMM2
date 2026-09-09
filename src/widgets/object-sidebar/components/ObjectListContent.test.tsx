@@ -3,10 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import ObjectListContent from './ObjectListContent';
 import { buildObjectContextMenuTarget } from './ObjectContextMenuTarget';
 import type { FlatItem } from '../hooks/useObjectListVirtualizer';
-import type {
-  WorkspaceCapabilities,
-  WorkspaceObjectNode,
-} from '@/entities/workspace/model/workspace';
+import type { WorkspaceCapabilities, WorkspaceObjectNode } from '@/entities/workspace';
 import { useObjectBulkSelect } from '../hooks/useObjectBulkSelect';
 
 vi.mock('../../../shared/ui/components/ui/ContextMenu', () => ({

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import RenameConfirmationManager from './RenameConfirmationManager';
 
 vi.mock('@tauri-apps/api/core', () => ({

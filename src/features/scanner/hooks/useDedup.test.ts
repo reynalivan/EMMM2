@@ -13,13 +13,9 @@ import {
   useResolveDuplicates,
 } from './useDedup';
 import { commands } from '../../../shared/api/tauri/bindings';
-import type {
-  DupScanReport,
-  DupScanEvent,
-  ResolutionSummary,
-} from '@/entities/workspace/model/scanner';
+import type { DupScanReport, DupScanEvent, ResolutionSummary } from '@/entities/workspace';
 import { createWrapper } from '../../../tests/testing/test-utils';
-import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
+import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 
 vi.unmock('@tanstack/react-query');
 
@@ -42,7 +38,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
 }));
 
 // Mock toast store
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -51,7 +47,7 @@ vi.mock('../../../app/store/useToastStore', () => ({
   },
 }));
 
-vi.mock('../../runtime-sync/queryRefresh', () => ({
+vi.mock('@/shared/lib/queryRefresh', () => ({
   publishQueryScopes: vi.fn().mockResolvedValue(undefined),
   publishRuntimeDescriptor: vi.fn(),
 }));
@@ -159,7 +155,7 @@ describe('useDedup hooks', () => {
     });
 
     it('handles scan error with toast notification', async () => {
-      const { toast } = await import('../../../app/store/useToastStore');
+      const { toast } = await import('@/shared/ui/toast');
       const error = new Error('Scan failed: invalid path');
       vi.mocked(commands.dupScanStart).mockRejectedValue(error);
 
@@ -241,7 +237,7 @@ describe('useDedup hooks', () => {
     });
 
     it('shows success toast on cancel', async () => {
-      const { toast } = await import('../../../app/store/useToastStore');
+      const { toast } = await import('@/shared/ui/toast');
       vi.mocked(commands.dupScanCancel).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => useCancelDedupScan(), {
@@ -255,7 +251,7 @@ describe('useDedup hooks', () => {
     });
 
     it('handles cancel error with toast', async () => {
-      const { toast } = await import('../../../app/store/useToastStore');
+      const { toast } = await import('@/shared/ui/toast');
       const error = new Error('Cancel failed');
       vi.mocked(commands.dupScanCancel).mockRejectedValue(error);
 
@@ -302,7 +298,7 @@ describe('useDedup hooks', () => {
     });
 
     it('shows success toast with resolution summary', async () => {
-      const { toast } = await import('../../../app/store/useToastStore');
+      const { toast } = await import('@/shared/ui/toast');
       const mockSummary: ResolutionSummary = {
         total: 3,
         successful: 3,
@@ -323,7 +319,7 @@ describe('useDedup hooks', () => {
     });
 
     it('shows warning toast when some resolutions fail', async () => {
-      const { toast } = await import('../../../app/store/useToastStore');
+      const { toast } = await import('@/shared/ui/toast');
       const mockSummary: ResolutionSummary = {
         total: 3,
         successful: 2,
@@ -344,7 +340,7 @@ describe('useDedup hooks', () => {
     });
 
     it('handles resolution error with toast', async () => {
-      const { toast } = await import('../../../app/store/useToastStore');
+      const { toast } = await import('@/shared/ui/toast');
       const error = new Error('Resolution service unavailable');
       vi.mocked(commands.dupResolveBatch).mockRejectedValue(error);
 

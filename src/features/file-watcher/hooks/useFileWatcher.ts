@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { QueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
-import { useAppStore } from '../../../app/store/useAppStore';
-import type { GameConfig } from '@/entities/game/model/game';
+import { useAppStore } from '@/app/store';
+import type { GameConfig } from '@/entities/game';
 import {
   commands,
   type DiskReconcileReason,
@@ -17,14 +17,14 @@ import {
   isPreviewAffected,
 } from '../utils/reconcileSelection';
 import { maybeShowExternalChangeToast } from '../utils/reconcileToast';
-import { applyWorkspacePathRewrites } from '../../workspace-runtime/optimistic/workspaceViewModelRewrite';
-import { toast } from '../../../app/store/useToastStore';
+import { applyWorkspacePathRewrites } from '@/features/workspace-runtime/@x/file-watcher';
+import { toast } from '@/shared/ui/toast';
 import {
   openFolderConflictManagerDialog,
   openRenameConfirmationDialog,
-} from '../../workspace-runtime/state/workspaceDialogs';
+} from '@/features/workspace-runtime/@x/file-watcher';
 import { useWatcherLifecycle } from '../utils/watcherLifecycle';
-import { workspaceKeys } from '../../workspace-runtime/hooks/useWorkspaceViewModel';
+import { workspaceKeys } from '@/features/workspace-runtime/@x/file-watcher';
 import { useDiskReconcileProgress } from '../utils/reconcileProgress';
 import { isDuplicateWatcherError, type WatchErrorPayload } from '../utils/watcherError';
 
@@ -71,10 +71,9 @@ function maybeShowRuntimeEffectsWarning(result: DiskReconcileResult) {
     { key: warningKey, at: now },
     AUTO_OPEN_REPORT_MAX_GAMES,
   );
-  const fallback = `Disk changes were applied, but runtime refresh is still pending: ${warning.message}`;
+  const fallback = 'Disk changes were applied, but runtime refresh is still pending.';
   toast.warning(
     i18next.t('common:reconcile.runtime_effects_pending', {
-      error: warning.message,
       defaultValue: fallback,
     }) || fallback,
   );
@@ -90,6 +89,7 @@ export function applyDiskReconcileResult(
   result: DiskReconcileResult,
   queryClient: QueryClient,
   activeGame: GameConfig | null,
+  presentRepairDialogs = true,
 ) {
   // Disk Reconcile owns filesystem truth and global runtime refresh for disk-backed changes.
   const appStore = useAppStore.getState();
@@ -120,16 +120,18 @@ export function applyDiskReconcileResult(
       })
       .sort()
       .join('|');
-    if (autoOpenedConflictReportByGame.get(result.game_id) !== reportKey) {
+    if (
+      presentRepairDialogs &&
+      activeGame?.id === result.game_id &&
+      autoOpenedConflictReportByGame.get(result.game_id) !== reportKey
+    ) {
       setBoundedMapEntry(
         autoOpenedConflictReportByGame,
         result.game_id,
         reportKey,
         AUTO_OPEN_REPORT_MAX_GAMES,
       );
-      if (activeGame?.id === result.game_id) {
-        openFolderConflictManagerDialog();
-      }
+      openFolderConflictManagerDialog();
     }
   }
 
@@ -144,16 +146,18 @@ export function applyDiskReconcileResult(
       )
       .sort()
       .join('|');
-    if (autoOpenedRenameReportByGame.get(result.game_id) !== reportKey) {
+    if (
+      presentRepairDialogs &&
+      activeGame?.id === result.game_id &&
+      autoOpenedRenameReportByGame.get(result.game_id) !== reportKey
+    ) {
       setBoundedMapEntry(
         autoOpenedRenameReportByGame,
         result.game_id,
         reportKey,
         AUTO_OPEN_REPORT_MAX_GAMES,
       );
-      if (activeGame?.id === result.game_id) {
-        openRenameConfirmationDialog();
-      }
+      openRenameConfirmationDialog();
     }
     return;
   }
@@ -285,7 +289,7 @@ export function useDiskReconcileCoordinator(
             null,
             currentRefresh.forceFull,
           );
-          applyDiskReconcileResult(result, queryClient, activeGame);
+          applyDiskReconcileResult(result, queryClient, activeGame, workspaceView === 'mods');
           recordReconcileOutcome(result);
         } catch (error) {
           console.error('[DiskReconcile] Refresh failed:', error);
@@ -309,6 +313,7 @@ export function useDiskReconcileCoordinator(
       recordReconcileOutcome,
       setDiskReconcileProgress,
       shouldSync,
+      workspaceView,
     ],
   );
 
@@ -358,14 +363,14 @@ export function useDiskReconcileCoordinator(
         return;
       }
 
-      applyDiskReconcileResult(event.payload, queryClient, activeGame);
+      applyDiskReconcileResult(event.payload, queryClient, activeGame, workspaceView === 'mods');
       recordReconcileOutcome(event.payload);
     });
 
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome]);
+  }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome, workspaceView]);
 
   useEffect(() => {
     if (!activeGame?.id) {

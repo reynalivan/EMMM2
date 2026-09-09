@@ -1,5 +1,5 @@
-use crate::shared::errors::AppError;
 use crate::modules::library::application::mods::core_ops::standardize_prefix;
+use crate::shared::errors::AppError;
 use std::path::Path;
 
 pub async fn disable_target_duplicates(
@@ -13,9 +13,13 @@ pub async fn disable_target_duplicates(
 ) -> Result<(), AppError> {
     use crate::modules::workspace::domain::normalizer::is_disabled_folder;
 
-    let siblings =
-        crate::modules::library::adapters::sqlite::mods::get_enabled_duplicates(pool, target_object_id, game_id, new_rel)
-            .await?;
+    let siblings = crate::modules::library::adapters::sqlite::mods::get_enabled_duplicates(
+        pool,
+        target_object_id,
+        game_id,
+        new_rel,
+    )
+    .await?;
     for (_id, sibling_rel, _name) in siblings {
         let sibling_path = sibling_rel.resolve(base_path);
         let Some(sibling_name) = sibling_path.file_name().and_then(|value| value.to_str()) else {

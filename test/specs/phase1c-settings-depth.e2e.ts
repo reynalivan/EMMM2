@@ -2,13 +2,7 @@ import { expect } from '@wdio/globals';
 import { createMockGame, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
-
-interface AppSettings {
-  keyviewer: Record<string, unknown>;
-  hotkeys: Record<string, unknown>;
-  language: string;
-  [key: string]: unknown;
-}
+import type { AppSettings } from '../../src/shared/api/tauri/bindings.gen.js';
 
 /**
  * Fase 1c — Settings depth (tc-04 edges). Maintenance, thumbnail cleanup,
@@ -26,11 +20,9 @@ describe('Fase 1c — Settings Depth', () => {
     await removeMockGame(game);
   });
 
-  it('TC-04-10: Run maintenance completes and returns a summary', async () => {
-    // Returns a (scanned, reclaimed) pair, not a prose summary.
-    const result = await invokeInApp<[number, number]>('run_maintenance');
-    expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBe(2);
+  it('TC-04-10: Run maintenance completes and returns the reclaimed count', async () => {
+    const result = await invokeInApp<number>('run_maintenance');
+    expect(typeof result).toBe('number');
   });
 
   it('TC-04-11: Clear old thumbnails completes', async () => {
@@ -39,21 +31,35 @@ describe('Fase 1c — Settings Depth', () => {
   });
 
   it('TC-04-12: Hotkey config update is accepted', async () => {
-    await invokeInApp('update_hotkey_config', { config: { toggle_overlay: 'F8' } });
+    const before = await invokeInApp<AppSettings>('get_settings');
+    if (!before.hotkeys) throw new Error('E2E settings did not include hotkey configuration');
+
+    // Global shortcuts belong to the OS, so the E2E process must not compete
+    // with a developer's running application for the shipped default keys.
+    await invokeInApp('save_settings', {
+      settings: { ...before, hotkeys: { ...before.hotkeys, enabled: false } },
+    });
+    await invokeInApp('update_hotkey_config');
     const settings = await invokeInApp<AppSettings>('get_settings');
-    expect(settings.hotkeys).toBeDefined();
+    expect(settings.hotkeys?.enabled).toBe(false);
   });
 
   it('TC-04-13: Keyviewer config persists through save/reload', async () => {
     const before = await invokeInApp<AppSettings>('get_settings');
     await invokeInApp('save_settings', {
-      settings: { ...before, keyviewer: { ...before.keyviewer, enabled: true } },
+      settings: {
+        ...before,
+        keyviewer: { ...(before.keyviewer ?? { enabled: false }), enabled: true },
+      },
     });
     const after = await invokeInApp<AppSettings>('get_settings');
-    expect(after.keyviewer.enabled).toBe(true);
+    expect(after.keyviewer?.enabled).toBe(true);
 
     await invokeInApp('save_settings', {
-      settings: { ...after, keyviewer: { ...after.keyviewer, enabled: false } },
+      settings: {
+        ...after,
+        keyviewer: { ...(after.keyviewer ?? { enabled: true }), enabled: false },
+      },
     });
   });
 });

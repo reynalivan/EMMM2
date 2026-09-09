@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useActiveConflicts } from './useFolderMutations';
-import { useAppStore } from '../../../app/store/useAppStore';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
-import { normalizeWorkspacePath } from '@/features/workspace-runtime/utils/pathRewrite';
+import { useAppStore } from '@/app/store';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import { normalizeWorkspacePath } from '@/features/workspace-runtime';
 
 interface UseFolderGridViewModelInput {
   sortedFolders: WorkspaceExplorerNode[];

@@ -423,6 +423,20 @@ pub enum DestinationKind {
     CreateCanonical,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DestinationMatchMethod {
+    CanonicalIdentity,
+    ExactName,
+    ExactAlias,
+    NameSubstring,
+    AliasSubstring,
+    TokenSubstring,
+    FuzzyName,
+    #[default]
+    NoNameMatch,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DestinationSuggestion {
@@ -433,6 +447,8 @@ pub struct DestinationSuggestion {
     pub target_path: String,
     pub confidence_percentage: u8,
     pub confidence_tier: ConfidenceTier,
+    #[serde(default)]
+    pub match_method: DestinationMatchMethod,
     pub warning: Option<String>,
 }
 
@@ -463,6 +479,34 @@ pub struct ImportItem {
     pub fingerprint: Option<SourceFingerprint>,
     pub result: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSourcePreviewEntryKind {
+    File,
+    Folder,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSourcePreviewEntry {
+    pub relative_path: String,
+    pub kind: ImportSourcePreviewEntryKind,
+    pub depth: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSourcePreview {
+    pub item_id: String,
+    pub thumbnail_path: Option<String>,
+    pub image_thumbnails: Vec<String>,
+    pub entries: Vec<ImportSourcePreviewEntry>,
+    pub folder_count: u32,
+    pub file_count: u32,
+    pub total_size_bytes: u64,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -497,6 +541,14 @@ pub struct CreateImportBatchInput {
     pub target_object_id: Option<String>,
     pub target_subpath: Option<String>,
     pub sources: Vec<ImportSourceInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyzeImportBatchOptions {
+    pub batch_id: String,
+    pub password: Option<String>,
+    pub unpack_nested: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]

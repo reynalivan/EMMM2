@@ -1,5 +1,5 @@
-use crate::shared::errors::AppError;
 use crate::modules::games::domain::models::{GameInfo, GameType};
+use crate::shared::errors::AppError;
 use std::path::{Path, PathBuf};
 
 /// Files 3DMigoto needs in the game root. Missing ones are soft warnings.

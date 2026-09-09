@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: windows-latest
+    env:
+      SQLX_OFFLINE: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -20,6 +22,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Prepare native dependencies
+        run: pnpm native:prepare
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -30,8 +35,15 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Architecture lint
+        run: pnpm lint:arch
+
       - name: Frontend tests
         run: pnpm vitest run
+
+      - name: Rust format
+        working-directory: src-tauri
+        run: cargo fmt --check
 
       - name: Backend tests
         working-directory: src-tauri
@@ -46,17 +58,25 @@ jobs:
 
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: SQLx metadata drift guard
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo install sqlx-cli --version 0.8.6 --no-default-features --features sqlite --locked
+          $env:DATABASE_URL = "sqlite://.sqlx-ci.db"
+          $env:SQLX_OFFLINE = "false"
+          cargo sqlx database create
+          cargo sqlx migrate run
+          cargo sqlx prepare --check -- --all-targets --all-features
+          Remove-Item -LiteralPath .sqlx-ci.db -Force -ErrorAction SilentlyContinue
 
       - name: Build
         run: pnpm build
 
   e2e:
     runs-on: windows-latest
-    # The WDIO suite drives the real Tauri binary through tauri-driver +
-    # msedgedriver. It has no green history on CI yet, so it reports without
-    # blocking the pipeline; drop this flag once it has proven stable.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +88,9 @@ jobs:
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare native dependencies
+        run: pnpm native:prepare
 
       - uses: Swatinem/rust-cache@v2
         with:

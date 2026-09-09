@@ -2,7 +2,7 @@ import { FolderInput, FolderPlus } from 'lucide-react';
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DropZone } from '../hooks/useObjectListDropZones';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 
 interface ObjectListDropIndicatorsProps {
   isDragging: boolean;

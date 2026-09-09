@@ -1,7 +1,7 @@
 //! Blocking, fail-safe GameBanana API client.
 
-use crate::shared::sync::lock;
 use crate::shared::errors::ScannerError;
+use crate::shared::sync::lock;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -94,7 +94,9 @@ pub fn fetch_gamebanana_metadata(
                     if description_keywords.is_empty() {
                         // Strip basic HTML tags before tokenizing
                         let clean_desc = strip_html_tags(desc);
-                        let tokens = crate::modules::workspace::domain::normalizer::preprocess_text(&clean_desc);
+                        let tokens = crate::modules::workspace::domain::normalizer::preprocess_text(
+                            &clean_desc,
+                        );
                         description_keywords.extend(tokens.into_iter().filter(|w| w.len() >= 3));
                     }
                 }

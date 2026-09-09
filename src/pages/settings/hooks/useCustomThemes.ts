@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { publishQueryInvalidations } from '@/features/runtime-sync/queryRefresh';
+import { publishQueryInvalidations } from '@/shared/lib/queryRefresh';
 import { commands, type CustomTheme, type ThemeMetadata } from '../../../shared/api/tauri/bindings';
 
 export const themeKeys = {

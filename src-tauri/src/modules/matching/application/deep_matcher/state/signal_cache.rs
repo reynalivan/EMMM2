@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::modules::workspace::application::scanner::core::walker::FolderContent;
 use crate::modules::matching::application::deep_matcher::analysis::content::{
     collect_deep_signals, FolderSignals, PreparedTokenFilters,
 };
 use crate::modules::matching::application::deep_matcher::MatchMode;
+use crate::modules::workspace::application::scanner::core::walker::FolderContent;
 
 /// In-memory cache for `FolderSignals` keyed by `(folder_path, mode)`.
 ///

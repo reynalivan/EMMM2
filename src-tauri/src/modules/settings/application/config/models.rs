@@ -1,5 +1,5 @@
-use crate::modules::games::adapters::sqlite::game;
 use crate::modules::automation::application::hotkeys::{HotkeyConfig, KeyViewerConfig};
+use crate::modules::games::adapters::sqlite::game;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -36,7 +36,7 @@ impl Default for SafetyConfig {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, specta::Type)]
 pub struct AiConfig {
     pub enabled: bool,
-    pub api_key: Option<String>,
+    pub has_api_key: bool,
     pub base_url: Option<String>,
 }
 

@@ -4,11 +4,11 @@
 
 use std::collections::HashMap;
 
-use crate::shared::path_key::canonical_name_key;
 use crate::modules::collections::domain::collection::{
     CollectionMod, CollectionObject, MemberKind, PreviewTreeNode, PreviewTreeNodeKind,
     ProjectedActiveRoot, ProjectedCollectionState,
 };
+use crate::shared::path_key::canonical_name_key;
 
 pub fn build_preview_tree_from_projected_state(
     state: &ProjectedCollectionState,

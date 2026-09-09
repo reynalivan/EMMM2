@@ -46,6 +46,20 @@ describe('folder conflict queue', () => {
     expect(selectNextFolderConflictGroup(previous, current, 'two')).toBe('two');
   });
 
+  it('does not mark every group resolved when a report briefly becomes empty', () => {
+    const previous = [group('one', ['one/a']), group('two', ['two/a'])];
+
+    expect(reconcileFolderConflictQueue(previous, [], [])).toEqual([]);
+  });
+
+  it('marks only the explicitly resolved group when the final report is empty', () => {
+    const previous = [group('one', ['one/a']), group('two', ['two/a'])];
+
+    expect(reconcileFolderConflictQueue(previous, [], [], 'one')).toEqual([
+      { group_id: 'one', fingerprint: 'one:one/a:1', display_name: 'one' },
+    ]);
+  });
+
   it('starts a fresh checklist when a new conflict episode begins', () => {
     const completed = [{ group_id: 'old', fingerprint: 'old:old/a:1', display_name: 'old' }];
 

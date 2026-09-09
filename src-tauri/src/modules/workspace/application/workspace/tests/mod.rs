@@ -1,6 +1,6 @@
 use super::{get_workspace_view_model, get_workspace_view_model_with_listing_mode};
-use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::catalog::domain::objects::ObjectFilter;
+use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::workspace::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceNode, WorkspaceNodeKind, WorkspaceReasonCode,
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,

@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use super::naming::validate_folder_base_name;
-use crate::modules::workspace::domain::normalizer::is_disabled_folder;
-use crate::shared::errors::AppError;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_disk_identity_census;
 use crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
+use crate::modules::workspace::domain::normalizer::is_disabled_folder;
+use crate::shared::errors::AppError;
 
 /// One requested new base name for every candidate in a conflict group.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -28,18 +28,59 @@ pub struct FolderPathRename {
     pub new_path: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PendingRename {
     old_path: PathBuf,
     stage_path: PathBuf,
     target_path: PathBuf,
 }
 
-/// Compatibility hook for reconcile startup. Folder conflict batches no longer
-/// persist recovery journals, so there is no durable state to replay.
+#[derive(Debug, Clone)]
+pub struct FolderConflictRenamePlan {
+    pending: Vec<PendingRename>,
+}
+
+impl FolderConflictRenamePlan {
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    pub fn journal_paths(&self) -> Vec<(PathBuf, PathBuf, PathBuf)> {
+        self.pending
+            .iter()
+            .map(|rename| {
+                (
+                    rename.old_path.clone(),
+                    rename.stage_path.clone(),
+                    rename.target_path.clone(),
+                )
+            })
+            .collect()
+    }
+
+    pub fn rewrites(&self) -> Vec<FolderPathRename> {
+        self.pending
+            .iter()
+            .map(|rename| FolderPathRename {
+                old_path: rename.old_path.to_string_lossy().to_string(),
+                new_path: rename.target_path.to_string_lossy().to_string(),
+            })
+            .collect()
+    }
+
+    pub fn is_rolled_back(&self) -> bool {
+        self.pending.iter().all(|rename| {
+            rename.old_path.exists() && !rename.stage_path.exists() && !rename.target_path.exists()
+        })
+    }
+}
+
+/// Compatibility hook retained for callers predating the central mutation journal.
 pub fn recover_folder_conflict_journals(
     _mods_root: &Path,
-    _suppressor: &std::sync::Arc<crate::modules::workspace::application::scanner::watcher::WatcherSuppressor>,
+    _suppressor: &std::sync::Arc<
+        crate::modules::workspace::application::scanner::watcher::WatcherSuppressor,
+    >,
 ) -> Result<(), AppError> {
     Ok(())
 }
@@ -161,13 +202,12 @@ pub fn rollback_folder_conflict_renames(
 
 /// Rename one complete current conflict group on disk and return every exact
 /// rewrite. It deliberately does not touch SQLite or collection references.
-pub fn apply_folder_conflict_renames(
+pub fn plan_folder_conflict_renames(
     mods_root: &Path,
     game_id: &str,
-    suppressor: &Arc<WatcherSuppressor>,
     group_id: &str,
     renames: &[FolderConflictRename],
-) -> Result<Vec<FolderPathRename>, AppError> {
+) -> Result<FolderConflictRenamePlan, AppError> {
     let canonical_root = canonical(mods_root)?;
     let census = collect_disk_identity_census(&canonical_root)
         .map_err(|error| AppError::Internal(error.into_message()))?;
@@ -259,14 +299,22 @@ pub fn apply_folder_conflict_renames(
             target_path: target_path.clone(),
         })
         .collect::<Vec<_>>();
-    let suppressed = pending
+    Ok(FolderConflictRenamePlan { pending })
+}
+
+pub fn apply_folder_conflict_rename_plan(
+    suppressor: &Arc<WatcherSuppressor>,
+    plan: &FolderConflictRenamePlan,
+) -> Result<Vec<FolderPathRename>, AppError> {
+    let suppressed = plan
+        .pending
         .iter()
         .flat_map(|rename| [&rename.old_path, &rename.stage_path, &rename.target_path]);
     let _guard = suppressor.suppress_paths(suppressed);
 
-    for (index, rename) in pending.iter().enumerate() {
+    for (index, rename) in plan.pending.iter().enumerate() {
         if let Err(error) = fs::rename(&rename.old_path, &rename.stage_path) {
-            return match rollback_pending(&pending[..index]) {
+            return match rollback_pending(&plan.pending[..index]) {
                 Ok(()) => Err(AppError::Io(format!(
                     "Failed to stage conflict rename: {error}"
                 ))),
@@ -276,9 +324,9 @@ pub fn apply_folder_conflict_renames(
             };
         }
     }
-    for rename in &pending {
+    for rename in &plan.pending {
         if let Err(error) = fs::rename(&rename.stage_path, &rename.target_path) {
-            return match rollback_pending(&pending) {
+            return match rollback_pending(&plan.pending) {
                 Ok(()) => Err(AppError::Io(format!(
                     "Failed to apply conflict rename: {error}"
                 ))),
@@ -289,13 +337,30 @@ pub fn apply_folder_conflict_renames(
         }
     }
 
-    Ok(planned
-        .into_iter()
-        .map(|(old_path, new_path)| FolderPathRename {
-            old_path: old_path.to_string_lossy().to_string(),
-            new_path: new_path.to_string_lossy().to_string(),
-        })
-        .collect())
+    Ok(plan.rewrites())
+}
+
+pub fn rollback_folder_conflict_rename_plan(
+    suppressor: &Arc<WatcherSuppressor>,
+    plan: &FolderConflictRenamePlan,
+) -> Result<(), AppError> {
+    let suppressed = plan
+        .pending
+        .iter()
+        .flat_map(|rename| [&rename.old_path, &rename.stage_path, &rename.target_path]);
+    let _guard = suppressor.suppress_paths(suppressed);
+    rollback_pending(&plan.pending)
+}
+
+pub fn apply_folder_conflict_renames(
+    mods_root: &Path,
+    game_id: &str,
+    suppressor: &Arc<WatcherSuppressor>,
+    group_id: &str,
+    renames: &[FolderConflictRename],
+) -> Result<Vec<FolderPathRename>, AppError> {
+    let plan = plan_folder_conflict_renames(mods_root, game_id, group_id, renames)?;
+    apply_folder_conflict_rename_plan(suppressor, &plan)
 }
 
 #[cfg(test)]
@@ -312,7 +377,8 @@ mod tests {
 
     fn conflict_group(
         root: &Path,
-    ) -> crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup {
+    ) -> crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup
+    {
         detect_folder_name_conflicts_from_census(
             "game",
             &collect_disk_identity_census(root).unwrap(),

@@ -4,6 +4,7 @@ import CreateObjectModal from './CreateObjectModal';
 import { useCreateObject } from '../hooks/useObjectMutations';
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string) => {
       const labels: Record<string, string> = {
@@ -26,10 +27,10 @@ vi.mock('../hooks/useObjectQueries', () => ({
     data: { categories: [{ name: 'Character', label: 'Characters', filters: [] }] },
   })),
 }));
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
 }));
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 

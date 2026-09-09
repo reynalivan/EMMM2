@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '../../../tests/testing/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApplyCollectionModal } from './ApplyCollectionModal';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 
 const mutateAsync = vi.fn();
 const replaceMutateAsync = vi.fn();
 const replaceMutate = vi.fn();
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, fallbackOrOptions?: string | { count?: number }) => {
       if (typeof fallbackOrOptions === 'string') {

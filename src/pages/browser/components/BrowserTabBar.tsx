@@ -1,6 +1,6 @@
 import { Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { BrowserTab } from '@/app/store/useBrowserStore';
+import type { BrowserTab } from '@/entities/browser';
 import { tabDisplayLabel } from '../utils/browserUrl';
 
 interface BrowserTabBarProps {

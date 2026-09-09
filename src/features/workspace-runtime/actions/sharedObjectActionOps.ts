@@ -1,8 +1,8 @@
 import { commands } from '../../../shared/api/tauri/bindings';
 import type { QueryClient, UseMutateAsyncFunction } from '@tanstack/react-query';
-import type { GameConfig } from '@/entities/game/model/game';
-import type { UpdateObjectInput } from '@/entities/game-object/model/object';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import type { GameConfig } from '@/entities/game';
+import type { UpdateObjectInput } from '@/entities/game-object';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../optimistic/descriptorBuilders';
 
 interface UpdateObjectVariables {

@@ -1,9 +1,11 @@
-use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
-use crate::modules::matching::application::deep_matcher::models::types::{CustomSkin, DbEntry, MatchStatus};
+use crate::modules::matching::application::deep_matcher::models::types::{
+    CustomSkin, DbEntry, MatchStatus,
+};
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
 use crate::modules::matching::application::deep_matcher::{match_folder_phased, Confidence};
+use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
 
 fn build_test_db() -> MasterDb {
     MasterDb::new(vec![

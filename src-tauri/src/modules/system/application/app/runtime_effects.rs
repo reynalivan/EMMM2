@@ -1,7 +1,7 @@
-use crate::shared::errors::AppError;
-use crate::modules::settings::application::config::ConfigService;
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
 use crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects;
+use crate::modules::settings::application::config::ConfigService;
+use crate::shared::errors::AppError;
 use std::future::Future;
 
 async fn retry_once<T, F, Fut>(mut operation: F) -> Result<T, AppError>
@@ -117,8 +117,10 @@ async fn finalize_runtime_side_effects_once(
         return Ok(false);
     }
 
-    crate::modules::system::application::app::post_apply::trigger_overlay_refresh_for_game(pool, config, game_id)
-        .await?;
+    crate::modules::system::application::app::post_apply::trigger_overlay_refresh_for_game(
+        pool, config, game_id,
+    )
+    .await?;
 
     Ok(true)
 }
@@ -126,9 +128,9 @@ async fn finalize_runtime_side_effects_once(
 #[cfg(test)]
 mod tests {
     use super::{retry_once, settle_committed_runtime_effects_with};
-    use crate::shared::errors::AppError;
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
     use crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects;
+    use crate::shared::errors::AppError;
     use std::sync::Arc;
     use tokio::sync::Barrier;
 

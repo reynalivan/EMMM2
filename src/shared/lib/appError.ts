@@ -13,6 +13,12 @@ type MissingModsPayload = {
   paths: string[];
 };
 
+export type ArchiveErrorKind = 'dictionary_too_large' | 'unsupported_compression';
+
+function isArchiveErrorKind(value: unknown): value is ArchiveErrorKind {
+  return value === 'dictionary_too_large' || value === 'unsupported_compression';
+}
+
 function normalizeStructuredError(value: unknown): StructuredError | null {
   if (!value) {
     return null;
@@ -113,9 +119,42 @@ function formatStructuredPayload(error: StructuredError): string | null {
       return typeof error.payload === 'object' && error.payload
         ? `File is in use: ${String((error.payload as Record<string, unknown>).path ?? '')}`
         : 'File is in use by another process';
+    case 'ArchiveUnsupported': {
+      const kind = extractArchiveErrorKind(error);
+      return kind
+        ? `Archive extraction is unsupported: ${kind}`
+        : 'Archive extraction is unsupported';
+    }
     default:
       return null;
   }
+}
+
+export function extractArchiveErrorKind(error: unknown): ArchiveErrorKind | null {
+  const structured = normalizeStructuredError(error);
+  if (!structured || structured.type !== 'ArchiveUnsupported') {
+    return null;
+  }
+  if (typeof structured.payload !== 'object' || structured.payload === null) {
+    return null;
+  }
+  const reason = (structured.payload as Record<string, unknown>).reason;
+  return isArchiveErrorKind(reason) ? reason : null;
+}
+
+export function archiveErrorKindFromStoredMessage(message: string | null): ArchiveErrorKind | null {
+  if (!message) return null;
+  const normalized = message.trim().toLowerCase();
+  if (
+    normalized === 'dictionary_too_large' ||
+    (normalized.includes('declared dictionary size') && normalized.includes('not supported'))
+  ) {
+    return 'dictionary_too_large';
+  }
+  if (normalized === 'unsupported_compression') {
+    return 'unsupported_compression';
+  }
+  return null;
 }
 
 export function extractFileInUsePayload(error: unknown): FileInUsePayload | null {

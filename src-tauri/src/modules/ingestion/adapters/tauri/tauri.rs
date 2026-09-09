@@ -1,9 +1,12 @@
-use crate::shared::errors::AppError;
 use crate::modules::ingestion::application::import_batch::types::{
-    CommitImportBatchInput, CreateImportBatchInput, CreateModInboxBatchInput,
-    DeleteProcessedModInboxSourcesInput, ImportBatch, ImportBatchReport, ModInboxSnapshot,
-    RenameImportItemInput, SetImportItemClassificationInput, SetImportItemDecisionInput,
+    AnalyzeImportBatchOptions, CommitImportBatchInput, CreateImportBatchInput,
+    CreateModInboxBatchInput, DeleteProcessedModInboxSourcesInput, ImportBatch, ImportBatchReport,
+    ImportSourcePreview, ModInboxSnapshot, RenameImportItemInput, SetImportItemClassificationInput,
+    SetImportItemDecisionInput,
 };
+use crate::modules::library::application::mods::archive::{ExtractionEvent, StagingExtractOptions};
+use crate::shared::errors::AppError;
+use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
 #[tauri::command]
@@ -12,7 +15,11 @@ pub async fn create_import_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: CreateImportBatchInput,
 ) -> Result<ImportBatch, AppError> {
-    crate::modules::ingestion::application::import_batch::coordinator::create_import_batch(pool.inner(), input).await
+    crate::modules::ingestion::application::import_batch::coordinator::create_import_batch(
+        pool.inner(),
+        input,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -32,7 +39,13 @@ pub async fn list_import_batches(
     pool: State<'_, sqlx::SqlitePool>,
     game_id: Option<String>,
 ) -> Result<Vec<ImportBatch>, AppError> {
-    Ok(crate::modules::ingestion::adapters::sqlite::import_batch::list_batches(pool.inner(), game_id.as_deref()).await?)
+    Ok(
+        crate::modules::ingestion::adapters::sqlite::import_batch::list_batches(
+            pool.inner(),
+            game_id.as_deref(),
+        )
+        .await?,
+    )
 }
 
 #[tauri::command]
@@ -40,14 +53,48 @@ pub async fn list_import_batches(
 pub async fn analyze_import_batch(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
+    extraction_state: State<'_, crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState>,
     batch_id: String,
 ) -> Result<ImportBatch, AppError> {
-    crate::modules::ingestion::application::import_batch::analyze::analyze_import_batch_for_app(
+    let lease = extraction_state.acquire(&batch_id)?;
+    let result = crate::modules::ingestion::application::import_batch::analyze::analyze_import_batch_for_app_with_options(
         &app,
         pool.inner(),
         &batch_id,
+        StagingExtractOptions {
+            cancel_token: Some(lease.cancel_token()),
+            ..Default::default()
+        },
     )
-    .await
+    .await;
+    drop(lease);
+    result
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn analyze_import_batch_with_options(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+    extraction_state: State<'_, crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState>,
+    input: AnalyzeImportBatchOptions,
+    on_progress: Channel<ExtractionEvent>,
+) -> Result<ImportBatch, AppError> {
+    let lease = extraction_state.acquire(&input.batch_id)?;
+    let result = crate::modules::ingestion::application::import_batch::analyze::analyze_import_batch_for_app_with_options(
+        &app,
+        pool.inner(),
+        &input.batch_id,
+        StagingExtractOptions {
+            password: input.password,
+            cancel_token: Some(lease.cancel_token()),
+            unpack_nested: input.unpack_nested.unwrap_or(true),
+            on_progress: Some(on_progress),
+        },
+    )
+    .await;
+    drop(lease);
+    result
 }
 
 #[tauri::command]
@@ -67,21 +114,29 @@ pub async fn refresh_import_item_suggestions(
     pool: State<'_, sqlx::SqlitePool>,
     item_id: String,
 ) -> Result<crate::modules::ingestion::application::import_batch::types::ImportItem, AppError> {
-    let item = crate::modules::ingestion::adapters::sqlite::import_batch::get_item(pool.inner(), &item_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Import item '{item_id}'")))?;
-    let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool.inner(), &item.batch_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-    let game_type = crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &batch.game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))?
-        as i32;
-    let master_db = crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+    let item =
+        crate::modules::ingestion::adapters::sqlite::import_batch::get_item(pool.inner(), &item_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Import item '{item_id}'")))?;
+    let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        pool.inner(),
+        &item.batch_id,
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
+    let game_type =
+        crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &batch.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
+    let master_db =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
-    let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(Some(&resource_dir), game_type);
+    let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(
+        Some(&resource_dir),
+        game_type,
+    );
     crate::modules::ingestion::application::import_batch::coordinator::refresh_import_item_suggestions(
         pool.inner(),
         &item_id,
@@ -93,11 +148,108 @@ pub async fn refresh_import_item_suggestions(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn preview_import_library_readiness(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+    batch_id: String,
+) -> Result<crate::modules::ingestion::application::import_batch::coordinator::ImportLibraryReadiness, AppError> {
+    let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        pool.inner(),
+        &batch_id,
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
+    let game_type =
+        crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &batch.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
+    let master_db =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+    let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
+    let schema = crate::modules::games::application::game::schema_loader::load_schema(
+        &resource_dir,
+        game_type,
+    );
+    let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(
+        Some(&resource_dir),
+        game_type,
+    );
+    crate::modules::ingestion::application::import_batch::coordinator::preview_import_library_readiness(
+        pool.inner(),
+        &batch_id,
+        &master_db,
+        &filters,
+        &schema.match_extensions,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn refresh_import_batch_matches(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+    batch_id: String,
+) -> Result<ImportBatch, AppError> {
+    let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        pool.inner(),
+        &batch_id,
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
+    let game_type =
+        crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &batch.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
+    let master_db =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+    let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
+    let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(
+        Some(&resource_dir),
+        game_type,
+    );
+    crate::modules::ingestion::application::import_batch::coordinator::refresh_import_batch_matches(
+        pool.inner(),
+        &batch_id,
+        &master_db,
+        &filters,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn mark_import_batch_review_started(
+    pool: State<'_, sqlx::SqlitePool>,
+    batch_id: String,
+) -> Result<(), AppError> {
+    if crate::modules::ingestion::adapters::sqlite::import_batch::mark_batch_review_started(
+        pool.inner(),
+        &batch_id,
+    )
+    .await?
+    {
+        Ok(())
+    } else {
+        Err(AppError::NotFound(format!("Import batch '{batch_id}'")))
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn set_import_item_decision(
     pool: State<'_, sqlx::SqlitePool>,
     input: SetImportItemDecisionInput,
 ) -> Result<crate::modules::ingestion::application::import_batch::types::ImportItem, AppError> {
-    crate::modules::ingestion::application::import_batch::coordinator::set_import_item_decision(pool.inner(), input).await
+    crate::modules::ingestion::application::import_batch::coordinator::set_import_item_decision(
+        pool.inner(),
+        input,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -106,7 +258,50 @@ pub async fn rename_import_item_plan(
     pool: State<'_, sqlx::SqlitePool>,
     input: RenameImportItemInput,
 ) -> Result<crate::modules::ingestion::application::import_batch::types::ImportItem, AppError> {
-    crate::modules::ingestion::application::import_batch::coordinator::rename_import_item_plan(pool.inner(), input).await
+    crate::modules::ingestion::application::import_batch::coordinator::rename_import_item_plan(
+        pool.inner(),
+        input,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_import_source_preview(
+    pool: State<'_, sqlx::SqlitePool>,
+    item_id: String,
+) -> Result<ImportSourcePreview, AppError> {
+    crate::modules::ingestion::application::import_batch::preview::get_import_source_preview(
+        pool.inner(),
+        &item_id,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reveal_import_source(
+    pool: State<'_, sqlx::SqlitePool>,
+    item_id: String,
+) -> Result<(), AppError> {
+    crate::modules::ingestion::application::import_batch::preview::reveal_import_source(
+        pool.inner(),
+        &item_id,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reveal_import_destination(
+    pool: State<'_, sqlx::SqlitePool>,
+    item_id: String,
+) -> Result<(), AppError> {
+    crate::modules::ingestion::application::import_batch::preview::reveal_import_destination(
+        pool.inner(),
+        &item_id,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -114,15 +309,26 @@ pub async fn rename_import_item_plan(
 pub async fn cancel_import_batch(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
+    extraction_state: State<'_, crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState>,
     batch_id: String,
 ) -> Result<(), AppError> {
-    if crate::modules::ingestion::adapters::sqlite::import_batch::cancel_batch(pool.inner(), &batch_id).await? {
+    let cancellation = extraction_state.cancel_and_wait(&batch_id).await;
+    if crate::modules::ingestion::adapters::sqlite::import_batch::cancel_batch(
+        pool.inner(),
+        &batch_id,
+    )
+    .await?
+    {
         let staging_root = app
             .path()
             .app_data_dir()
             .map_err(AppError::from)?
             .join("import-staging");
-        crate::modules::ingestion::application::import_batch::staging::cleanup_batch_staging(&staging_root, &batch_id)?;
+        crate::modules::ingestion::application::import_batch::staging::cleanup_batch_staging(
+            &staging_root,
+            &batch_id,
+        )?;
+        drop(cancellation);
         Ok(())
     } else {
         Err(AppError::Validation(format!(
@@ -138,16 +344,20 @@ pub async fn commit_import_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: CommitImportBatchInput,
 ) -> Result<ImportBatchReport, AppError> {
-    let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool.inner(), &input.batch_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
-    let game_type = crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &batch.game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))?
-        as i32;
-    let master_db = crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+    let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        pool.inner(),
+        &input.batch_id,
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
+    let game_type =
+        crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &batch.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
+    let master_db =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
     crate::modules::mutation::application::workspace_mutation::import_commit::commit_import_batch(
         &app,
         pool.inner(),
@@ -336,7 +546,12 @@ pub async fn start_mod_inbox_watcher(
         &root,
     )
     .await?;
-    crate::modules::ingestion::application::import_batch::mod_inbox_watcher::start(app, state.inner(), &game_id, &root)
+    crate::modules::ingestion::application::import_batch::mod_inbox_watcher::start(
+        app,
+        state.inner(),
+        &game_id,
+        &root,
+    )
 }
 
 #[tauri::command]
@@ -345,7 +560,10 @@ pub async fn stop_mod_inbox_watcher(
     state: State<'_, crate::modules::ingestion::application::import_batch::mod_inbox_watcher::ModInboxWatcherState>,
     game_id: String,
 ) -> Result<(), AppError> {
-    crate::modules::ingestion::application::import_batch::mod_inbox_watcher::stop(state.inner(), &game_id);
+    crate::modules::ingestion::application::import_batch::mod_inbox_watcher::stop(
+        state.inner(),
+        &game_id,
+    );
     Ok(())
 }
 
@@ -363,16 +581,23 @@ pub async fn preview_object_classification_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: PreviewObjectClassificationBatchInput,
 ) -> Result<Vec<ObjectClassificationPreviewItem>, AppError> {
-    let game_type = crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &input.game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?
-        as i32;
-    let master_db = crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+    let game_type =
+        crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &input.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))? as i32;
+    let master_db =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
-    let schema = crate::modules::games::application::game::schema_loader::load_schema(&resource_dir, game_type);
-    let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(Some(&resource_dir), game_type);
+    let schema = crate::modules::games::application::game::schema_loader::load_schema(
+        &resource_dir,
+        game_type,
+    );
+    let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(
+        Some(&resource_dir),
+        game_type,
+    );
     crate::modules::catalog::application::objects::classification_batch::preview_object_classification_batch(
         pool.inner(),
         &input,
@@ -390,15 +615,19 @@ pub async fn apply_object_classification_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: ApplyObjectClassificationBatchInput,
 ) -> Result<ApplyObjectClassificationBatchResult, AppError> {
-    let game_type = crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &input.game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?
-        as i32;
-    let master_db = crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+    let game_type =
+        crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &input.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))? as i32;
+    let master_db =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
-    let schema = crate::modules::games::application::game::schema_loader::load_schema(&resource_dir, game_type);
+    let schema = crate::modules::games::application::game::schema_loader::load_schema(
+        &resource_dir,
+        game_type,
+    );
     let game_id = input.game_id.clone();
     let disable_after_apply = input.disable_after_apply;
     let object_ids = input
@@ -415,7 +644,8 @@ pub async fn apply_object_classification_batch(
         )
         .await?;
     if result.aliases_changed {
-        crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(&app).await;
+        crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(&app)
+            .await;
     }
     if disable_after_apply {
         match crate::modules::mutation::application::workspace_mutation::object_status::disable_object_roots(
@@ -446,7 +676,9 @@ async fn settle_classification_runtime_effects(
     pool: &sqlx::SqlitePool,
     game_id: &str,
 ) {
-    let Some(config) = app.try_state::<crate::modules::settings::application::config::ConfigService>() else {
+    let Some(config) =
+        app.try_state::<crate::modules::settings::application::config::ConfigService>()
+    else {
         log::warn!("Classification completed but ConfigService is unavailable");
         return;
     };
@@ -477,6 +709,13 @@ async fn settle_classification_runtime_effects(
 pub async fn preview_relocation_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: crate::modules::ingestion::application::import_batch::relocation::PreviewRelocationBatchInput,
-) -> Result<Vec<crate::modules::ingestion::application::import_batch::relocation::RelocationPreviewItem>, AppError> {
-    crate::modules::ingestion::application::import_batch::relocation::preview_relocation_batch(pool.inner(), input).await
+) -> Result<
+    Vec<crate::modules::ingestion::application::import_batch::relocation::RelocationPreviewItem>,
+    AppError,
+> {
+    crate::modules::ingestion::application::import_batch::relocation::preview_relocation_batch(
+        pool.inner(),
+        input,
+    )
+    .await
 }

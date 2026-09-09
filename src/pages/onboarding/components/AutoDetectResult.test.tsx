@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '../../../tests/testing/test-utils';
 import { describe, it, expect, vi } from 'vitest';
 import { AutoDetectResult } from './AutoDetectResult';
-import type { GameConfig } from '@/entities/game/model/game';
+import type { GameConfig } from '@/entities/game';
 
 describe('AutoDetectResult (TC-03)', () => {
   const mockOnContinue = vi.fn();

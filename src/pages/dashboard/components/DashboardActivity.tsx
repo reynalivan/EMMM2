@@ -1,9 +1,9 @@
 import { Clock, Gamepad2, Keyboard, PlayCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
-import type { GameConfig } from '@/entities/game/model/game';
-import type { DashboardPayload } from '@/pages/dashboard/model/dashboard';
-import type { ActiveKeyBinding } from '@/pages/settings/model/settings';
+import type { GameConfig } from '@/entities/game';
+import type { DashboardPayload } from '../model/dashboard';
+import type { ActiveKeyBinding } from '@/entities/settings';
 import { formatRelativeDate } from '../../../shared/lib/utils/formatters';
 
 interface DashboardActivityProps {

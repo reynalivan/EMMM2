@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 
-use crate::shared::path_key::{canonical_name_key, folder_path_key};
 use crate::modules::games::domain::models::ItemStatus;
+use crate::shared::path_key::{canonical_name_key, folder_path_key};
 
 #[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
 pub async fn create_object(

@@ -12,3 +12,8 @@
 # environment still wins — that is what makes the line above work.
 [env]
 SQLX_OFFLINE = "true"
+# `pnpm tauri` provisions this project-owned tree from the pinned vcpkg
+# manifest before Cargo starts. This prevents vcpkg-rs from discovering an
+# unrelated or partially-installed global tree.
+VCPKG_ROOT = { value = ".vcpkg", relative = true, force = true }
+VCPKGRS_TRIPLET = { value = "x64-windows-static-md", force = true }

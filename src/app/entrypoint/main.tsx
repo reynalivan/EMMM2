@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import '@/shared/i18n/config'; // Initialize i18n early
-import { queryClient } from '@/app/providers/queryClient';
+import { queryClient } from '@/shared/lib/queryClient';
 import App from './App.tsx';
 import './App.css';
 

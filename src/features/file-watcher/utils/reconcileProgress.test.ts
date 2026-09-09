@@ -6,7 +6,7 @@ import { useDiskReconcileProgress } from './reconcileProgress';
 const setDiskReconcileProgress = vi.fn();
 const markDiskReconcilePending = vi.fn();
 
-vi.mock('../../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: (
     selector: (state: {
       setDiskReconcileProgress: typeof setDiskReconcileProgress;

@@ -3,7 +3,7 @@
  * Includes sticky selected-item indicator with solid bg. Extracted from ObjectList (350-line limit).
  */
 
-import { type RefObject } from 'react';
+import { type Ref } from 'react';
 import { type Virtualizer } from '@tanstack/react-virtual';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import ObjectRowItem from './ObjectRowItem';
@@ -12,10 +12,10 @@ import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
 import { buildObjectContextMenuTarget } from './ObjectContextMenuTarget';
 import { ContextMenu } from '../../../shared/ui/components/ui/ContextMenu';
 import type { FlatItem } from '../hooks/useObjectListVirtualizer';
-import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime/actions/workspaceActionAvailability';
+import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime';
 
 interface ContentProps {
-  parentRef: RefObject<HTMLDivElement | null>;
+  parentRef: Ref<HTMLDivElement>;
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
   flatObjectItems: FlatItem[];
   selectedObjectFolderPath: string | null;
@@ -36,9 +36,7 @@ interface ContentProps {
   isBulkSelected?: (id: string) => boolean;
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
   mutationsDisabled?: boolean;
-  isObjectSwitchPending?: (
-    node: import('@/entities/workspace/model/workspace').WorkspaceObjectNode,
-  ) => boolean;
+  isObjectSwitchPending?: (node: import('@/entities/workspace').WorkspaceObjectNode) => boolean;
 }
 
 /** Shared props for building ObjectContextMenu */

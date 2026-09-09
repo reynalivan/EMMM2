@@ -27,6 +27,7 @@
   "actions": {
     "back": "Back",
     "cancel": "Cancel",
+    "apply": "Apply",
     "confirm": "Confirm",
     "save": "Save",
     "delete": "Delete",
@@ -99,6 +100,14 @@
     }
   },
   "reconcile": {
-    "runtime_effects_pending": "Disk changes were applied, but runtime refresh is still pending: {{error}}"
+    "runtime_effects_pending": "Disk changes were applied, but runtime refresh is still pending.",
+    "cleanup_pending": "The item was removed, but moving its quarantined files to the Recycle Bin is still pending."
+  },
+  "bulk_progress": {
+    "enabling": "Enabling mods...",
+    "disabling": "Disabling mods...",
+    "deleting": "Moving mods to trash...",
+    "cancelled": "Cancelled",
+    "done": "Done"
   }
 }

@@ -7,7 +7,15 @@
     "manual_setup": "Tambah Game Manual",
     "description": "Deteksi otomatis memindai folder XXMI Launcher Anda untuk game yang terinstal.",
     "select_folder_title": "Pilih folder XXMI Launcher Anda",
-    "duplicate_error": "Folder game ini sudah ditambahkan sebagai \"{{name}}\"."
+    "duplicate_error": "Folder game ini sudah ditambahkan sebagai \"{{name}}\".",
+    "language": {
+      "change": "Ganti bahasa",
+      "options": {
+        "en": "English",
+        "id": "Bahasa Indonesia",
+        "zh": "中文"
+      }
+    }
   },
   "manual_setup": {
     "title": "Setup Manual",

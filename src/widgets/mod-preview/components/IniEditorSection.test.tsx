@@ -3,6 +3,14 @@ import { render, screen, waitFor } from '../../../tests/testing/test-utils';
 import IniEditorSection from './IniEditorSection';
 import type { KeyBindSectionGroup } from '../utils/previewPanelUtils';
 
+const commandMocks = vi.hoisted(() => ({
+  openIniInEditor: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../../shared/api/tauri/bindings', () => ({
+  commands: commandMocks,
+}));
+
 describe('IniEditorSection', () => {
   const mockKeyBindSections: KeyBindSectionGroup[] = [
     {
@@ -56,6 +64,7 @@ describe('IniEditorSection', () => {
 
   const defaultProps = {
     activePath: 'E:/Mods/TestMod',
+    activeGameId: 'game-1',
     activeObjectName: 'Test Object',
     selectedFolderName: 'test_folder_1',
     activeTab: 'keybind' as const,
@@ -88,6 +97,20 @@ describe('IniEditorSection', () => {
 
     expect(screen.getByText('Edit')).toBeInTheDocument();
     expect(screen.queryByText('Revert')).not.toBeInTheDocument();
+  });
+
+  it('opens an INI through the validated Rust command', async () => {
+    render(<IniEditorSection {...defaultProps} />);
+
+    screen.getByTitle('Open in default editor').click();
+
+    await waitFor(() => {
+      expect(commandMocks.openIniInEditor).toHaveBeenCalledWith(
+        'game-1',
+        'E:/Mods/TestMod',
+        'config.ini',
+      );
+    });
   });
 
   // Covers: TC-6.3-02 (INI field edit/save)

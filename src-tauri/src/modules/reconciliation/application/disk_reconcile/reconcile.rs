@@ -6,9 +6,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::modules::workspace::domain::normalizer::normalize_display_name;
-use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::catalog::domain::objects::ObjectRuntimeDescriptor;
+use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
     collect_scoped_disk_discovery_with_progress, DiskProjectionError, DiskSnapshotProgress,
@@ -30,13 +29,16 @@ use crate::modules::reconciliation::application::disk_reconcile::types::{
     FolderNameConflictGroup,
 };
 use crate::modules::workspace::application::scanner::watcher::ModWatchEvent;
+use crate::modules::workspace::domain::normalizer::normalize_display_name;
 
 #[derive(Debug, Clone)]
 pub struct ReconcileOutcome {
     pub status: DiskReconcileStatus,
     pub error_message: Option<String>,
     pub folder_conflicts: Vec<FolderNameConflictGroup>,
-    pub rename_confirmations: Vec<crate::modules::reconciliation::application::disk_reconcile::types::RenameConfirmationGroup>,
+    pub rename_confirmations: Vec<
+        crate::modules::reconciliation::application::disk_reconcile::types::RenameConfirmationGroup,
+    >,
     pub changed_roots: Vec<String>,
     pub thumbnail_roots: Vec<String>,
     pub objects_changed: bool,
@@ -298,7 +300,8 @@ pub async fn reconcile_disk_projection(
         || !changed_roots.is_empty();
 
     let before_descriptors =
-        crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(pool, game_id).await?;
+        crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(pool, game_id)
+            .await?;
 
     let mut objects_changed = false;
     let mut folders_changed = false;
@@ -504,7 +507,10 @@ pub async fn reconcile_disk_projection(
         folders_changed = write_outcome.folders_changed;
 
         let after_descriptors =
-            crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(pool, game_id).await?;
+            crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(
+                pool, game_id,
+            )
+            .await?;
 
         // Both the cleared-selection diff and the changed-root merge compare the
         // same two descriptor sets; build each set once.

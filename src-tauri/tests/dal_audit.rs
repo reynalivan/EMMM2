@@ -1,137 +1,150 @@
-//! DAL drift guardrail (AGENT.md: "Mandatory DAL separation").
-//!
-//! Raw `sqlx::query*` calls belong in `src/repo/`. This ratchet test pins the
-//! current violations in `src/services/` and forbids any raw SQL in
-//! `src/commands/`. When you move a query into a repo function, lower (or
-//! remove) the corresponding baseline entry. Never raise a number.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const RAW_QUERY_MARKER: &str = "sqlx::query";
+fn rust_sources(root: &Path) -> Vec<PathBuf> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut sources = Vec::new();
 
-/// (file path relative to src-tauri, allowed number of lines containing `sqlx::query`)
-/// Files under `src/services/` still allowed to contain raw SQL, with the
-/// exact statement count each may hold. The list only ever shrinks — a new
-/// entry means data access leaked out of `repo/`.
-///
-/// Now empty: `config/schema.rs` was a startup schema patcher that duplicated
-/// (and contradicted) `migrations/`, and has been deleted.
-const SERVICES_BASELINE: &[(&str, usize)] = &[];
-
-fn is_test_source(path: &Path) -> bool {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    if file_name == "tests.rs" || file_name.ends_with("_tests.rs") {
-        return true;
-    }
-    path.components()
-        .any(|component| component.as_os_str() == "tests")
-}
-
-fn collect_rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir).unwrap_or_else(|error| {
-        panic!("failed to read {}: {error}", dir.display());
-    });
-    for entry in entries {
-        let path = entry.expect("readable dir entry").path();
-        if path.is_dir() {
-            collect_rust_sources(&path, out);
-            continue;
-        }
-        if path.extension().is_some_and(|ext| ext == "rs") && !is_test_source(&path) {
-            out.push(path);
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()))
+        {
+            let path = entry.expect("failed to read source entry").path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|name| name == "tests") {
+                    continue;
+                }
+                pending.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs")
+                && path.file_name().is_none_or(|name| name != "tests.rs")
+            {
+                sources.push(path);
+            }
         }
     }
+
+    sources
 }
 
-fn count_raw_query_lines(path: &Path) -> usize {
-    let source = fs::read_to_string(path).unwrap_or_else(|error| {
-        panic!("failed to read {}: {error}", path.display());
-    });
-    source
-        .lines()
-        // In-file test modules sit below `#[cfg(test)]`; assertion SQL there is fine.
-        .take_while(|line| line.trim() != "#[cfg(test)]")
-        .filter(|line| line.contains(RAW_QUERY_MARKER))
-        .count()
-}
-
-fn normalized_relative_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .expect("source file under manifest dir")
-        .to_string_lossy()
-        .replace('\\', "/")
+fn modules_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/modules")
 }
 
 #[test]
-#[ignore]
-fn commands_layer_contains_no_raw_sql() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut sources = Vec::new();
-    collect_rust_sources(&root.join("src/commands"), &mut sources);
+fn domain_code_is_framework_and_storage_agnostic() {
+    let forbidden = ["sqlx::", "tauri::", "notify::"];
+    let mut violations = Vec::new();
 
-    let violations: Vec<String> = sources
-        .iter()
-        .filter(|path| count_raw_query_lines(path) > 0)
-        .map(|path| normalized_relative_path(&root, path))
-        .collect();
+    for path in rust_sources(&modules_root()) {
+        if !path
+            .components()
+            .any(|component| component.as_os_str() == "domain")
+        {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("failed to read domain source");
+        for dependency in forbidden {
+            if source.contains(dependency) {
+                violations.push(format!("{} imports {dependency}", path.display()));
+            }
+        }
+    }
 
     assert!(
         violations.is_empty(),
-        "raw `sqlx::query` in the command layer — commands must delegate to services/repo:\n{}",
-        violations.join("\n"),
+        "domain modules must not depend on frameworks or storage:\n{}",
+        violations.join("\n")
     );
 }
 
 #[test]
-#[ignore]
-fn services_raw_sql_never_grows() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut sources = Vec::new();
-    collect_rust_sources(&root.join("src/services"), &mut sources);
+fn inbound_adapters_do_not_own_sql() {
+    let raw_query_apis = [
+        "sqlx::query(",
+        "sqlx::query_as(",
+        "sqlx::query_scalar(",
+        "sqlx::query!(",
+        "sqlx::query_as!(",
+        "sqlx::query_scalar!(",
+    ];
+    let mut violations = Vec::new();
 
-    let mut errors = Vec::new();
-    for path in &sources {
-        let count = count_raw_query_lines(path);
-        let relative = normalized_relative_path(&root, path);
-        let baseline = SERVICES_BASELINE
-            .iter()
-            .find(|(file, _)| *file == relative)
-            .map(|(_, allowed)| *allowed);
-
-        match baseline {
-            None if count == 0 => {}
-            None => errors.push(format!(
-                "{relative}: {count} raw `sqlx::query` line(s) in a file with no baseline — put the query in src/repo/ instead",
-            )),
-            Some(allowed) if count > allowed => errors.push(format!(
-                "{relative}: raw `sqlx::query` lines grew from {allowed} to {count} — move new queries into src/repo/",
-            )),
-            Some(allowed) if count < allowed => errors.push(format!(
-                "{relative}: down to {count} raw `sqlx::query` line(s) (baseline {allowed}) — lower its SERVICES_BASELINE entry in {}",
-                file!(),
-            )),
-            Some(_) => {}
-        }
-    }
-
-    for (file, _) in SERVICES_BASELINE {
-        if !sources
-            .iter()
-            .any(|path| normalized_relative_path(&root, path) == *file)
+    for path in rust_sources(&modules_root()) {
+        let normalized = path.to_string_lossy().replace('\\', "/");
+        if !(normalized.contains("/adapters/tauri/")
+            || normalized.ends_with("/adapters/tauri.rs")
+            || normalized.contains("/adapters/inbound/"))
         {
-            errors.push(format!(
-                "{file}: listed in SERVICES_BASELINE but no longer exists — remove its entry",
-            ));
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("failed to read inbound adapter");
+        if raw_query_apis.iter().any(|api| source.contains(api)) {
+            violations.push(path.display().to_string());
         }
     }
 
     assert!(
-        errors.is_empty(),
-        "DAL ratchet violations:\n{}",
-        errors.join("\n")
+        violations.is_empty(),
+        "inbound adapters must delegate persistence through module APIs:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn cross_module_imports_do_not_reach_inbound_internals() {
+    let mut violations = Vec::new();
+
+    for path in rust_sources(&modules_root()) {
+        let normalized = path.to_string_lossy().replace('\\', "/");
+        let Some(after_modules) = normalized.split("/modules/").nth(1) else {
+            continue;
+        };
+        let Some(owner) = after_modules.split('/').next() else {
+            continue;
+        };
+        let source = fs::read_to_string(&path).expect("failed to read module source");
+
+        for line in source
+            .lines()
+            .filter(|line| line.contains("crate::modules::"))
+        {
+            let Some(imported) = line.split("crate::modules::").nth(1) else {
+                continue;
+            };
+            let imported_owner = imported
+                .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .next()
+                .unwrap_or_default();
+            if imported_owner != owner
+                && (imported.contains("::adapters::tauri")
+                    || imported.contains("::adapters::inbound"))
+            {
+                violations.push(format!("{}: {}", path.display(), line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "cross-module calls must use a facade, never inbound internals:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn legacy_horizontal_backend_layers_are_absent() {
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let legacy = ["commands", "services", "repo", "common", "domain", "types"];
+    let existing = legacy
+        .into_iter()
+        .map(|name| source_root.join(name))
+        .filter(|path| path.exists())
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+
+    assert!(
+        existing.is_empty(),
+        "legacy horizontal backend layers must stay removed:\n{}",
+        existing.join("\n")
     );
 }

@@ -3,13 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import MoveToObjectDialog from './MoveToObjectDialog';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
+import type { ObjectSummary } from '@/entities/game-object';
 
 vi.unmock('@tanstack/react-query');
 
 const listMoveTargetsForObject = vi.fn();
 
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({ activeGame: { id: 'g1' } }),
 }));
 
@@ -17,6 +17,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     listMoveTargetsForObject: (...args: unknown[]) => listMoveTargetsForObject(...args),
+    previewRelocationBatch: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -89,6 +90,14 @@ describe('MoveToObjectDialog', () => {
         display_path: 'Alpha/Variants',
         depth: 1,
       },
+      {
+        object_id: '2',
+        object_name: 'Alpha',
+        object_folder_path: 'Alpha',
+        target_subpath: 'Skins',
+        display_path: 'Alpha/Skins',
+        depth: 1,
+      },
     ]);
     const onSubmit = vi.fn();
 
@@ -105,6 +114,10 @@ describe('MoveToObjectDialog', () => {
 
     fireEvent.click(screen.getByText('Alpha'));
     await waitFor(() => expect(listMoveTargetsForObject).toHaveBeenCalledWith('g1', '2'));
+    fireEvent.change(screen.getByPlaceholderText('Search locations...'), {
+      target: { value: 'variants' },
+    });
+    expect(screen.queryByText('Alpha/Skins')).toBeNull();
     fireEvent.click(await screen.findByText('Alpha/Variants'));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Set moved mods to Disabled' }));
     fireEvent.click(screen.getByText('common:actions.move'));

@@ -1,4 +1,4 @@
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 
 export interface WorkspaceObjectActionPolicy {
   canEdit: boolean;

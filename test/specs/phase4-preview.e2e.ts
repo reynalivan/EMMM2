@@ -5,6 +5,7 @@ import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../su
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
 import { createObject, reconcile } from '../support/data.js';
+import type { IniDocument } from '../../src/shared/api/tauri/bindings.gen.js';
 
 /**
  * 1x1 RGBA PNG. Must stay a structurally complete PNG (IHDR/IDAT/IEND) — the
@@ -64,12 +65,19 @@ describe('Fase 4 — Preview & Editors', () => {
     });
     expect(files.map((f) => f.filename)).toContain('mod.ini');
 
+    const document = await invokeInApp<IniDocument>('read_mod_ini', {
+      gameId,
+      folderPath: modDir,
+      fileName: 'mod.ini',
+    });
+
     // The editor patches individual lines, it does not overwrite the file with
     // a blob. Line 1 of the seeded `mod.ini` is the `hash = ...` line.
     await invokeInApp('write_mod_ini', {
       gameId,
       folderPath: modDir,
       fileName: 'mod.ini',
+      expectedSourceHash: document.source_hash,
       lineUpdates: [{ line_idx: 1, content: 'global $active = 1' }],
     });
 

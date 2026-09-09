@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ShieldAlert, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -22,11 +22,20 @@ export default function ActiveModContextDialog({
   const { t } = useTranslation(['folder_grid', 'common']);
   const [isChecked, setIsChecked] = useState(false);
 
+  useEffect(() => {
+    if (!open) {
+      setIsChecked(false);
+    }
+  }, [open, modName, targetSafeStatus]);
+
   if (!open) return null;
 
   return (
-    <dialog className={`modal ${open ? 'modal-open' : ''} bg-base-300/80 backdrop-blur-sm`}>
-      <div className="modal-box border border-warning/20 shadow-2xl relative overflow-hidden">
+    <dialog
+      className={`modal modal-middle z-[100] ${open ? 'modal-open' : ''} bg-base-300/80 backdrop-blur-sm`}
+      aria-labelledby="active-mod-context-dialog-title"
+    >
+      <div className="modal-box w-full max-w-lg border border-warning/20 shadow-2xl relative overflow-hidden">
         {isProcessing && (
           <div className="absolute inset-0 bg-base-100/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
             <Loader2 size={32} className="animate-spin text-primary mb-4" />
@@ -36,7 +45,7 @@ export default function ActiveModContextDialog({
 
         <h3 className="font-bold text-lg flex items-center gap-2 text-warning mb-4">
           <ShieldAlert size={20} />
-          {t('context_dialog.title')}
+          <span id="active-mod-context-dialog-title">{t('context_dialog.title')}</span>
         </h3>
 
         <div className="bg-base-200/50 rounded-lg p-4 mb-6 border border-base-content/5">

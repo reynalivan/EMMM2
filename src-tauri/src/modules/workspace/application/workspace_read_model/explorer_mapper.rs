@@ -1,12 +1,12 @@
-use crate::modules::workspace::domain::classifier::NodeType;
-use crate::modules::workspace::domain::workspace::{
-    WorkspaceCapabilities, WorkspaceDisplayMode, WorkspaceExplorer, WorkspaceExplorerNode,
-    WorkspaceNodeKind, WorkspaceSwitchPolicyKey, WorkspaceSwitchState,
-};
 use crate::modules::workspace::application::explorer::types::{FolderGridResponse, ModFolder};
 use crate::modules::workspace::application::workspace_read_model::common::{
     build_disabled_by_container_reason, build_folder_warning, build_inactive_warning,
     map_display_mode, map_node_kind, map_type_chip, map_warning_state,
+};
+use crate::modules::workspace::domain::classifier::NodeType;
+use crate::modules::workspace::domain::workspace::{
+    WorkspaceCapabilities, WorkspaceDisplayMode, WorkspaceExplorer, WorkspaceExplorerNode,
+    WorkspaceNodeKind, WorkspaceSwitchPolicyKey, WorkspaceSwitchState,
 };
 
 fn build_folder_capabilities(

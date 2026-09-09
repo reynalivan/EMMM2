@@ -1,5 +1,5 @@
-use crate::shared::sync::lock;
 use crate::shared::errors::AppError;
+use crate::shared::sync::lock;
 use notify::RecursiveMode;
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache};
 use serde::Serialize;

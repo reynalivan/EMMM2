@@ -25,6 +25,59 @@ fn create_test_zip(dir: &Path, name: &str, files: &[(&str, &[u8])]) -> PathBuf {
 }
 
 #[test]
+fn staging_pre_cancelled_aborts_and_cleans_up() {
+    let dir = TempDir::new().unwrap();
+    let zip_path = create_test_zip(
+        dir.path(),
+        "cancelled-staging.zip",
+        &[("config.ini", b"[TextureOverride]\ndata")],
+    );
+    let staging_dir = dir.path().join("staging");
+    let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+    let error = extract_archive_to_staging_with_options(
+        &zip_path,
+        &staging_dir,
+        StagingExtractOptions {
+            cancel_token: Some(cancel_token),
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, AppError::Cancelled));
+    assert!(!staging_dir.exists());
+    assert!(zip_path.exists());
+}
+
+#[test]
+fn staging_unpacks_nested_archives_by_default() {
+    let dir = TempDir::new().unwrap();
+    let inner_zip = create_test_zip(
+        dir.path(),
+        "nested-inner.zip",
+        &[("NestedMod/config.ini", b"[TextureOverride]\nnested")],
+    );
+    let inner_bytes = fs::read(&inner_zip).unwrap();
+    let outer_zip = create_test_zip(
+        dir.path(),
+        "nested-outer.zip",
+        &[("nested-inner.zip", &inner_bytes)],
+    );
+    let staging_dir = dir.path().join("staging");
+
+    let staged = extract_archive_to_staging(&outer_zip, &staging_dir).unwrap();
+
+    assert_eq!(staged.mod_roots.len(), 1);
+    assert!(staging_dir
+        .join("nested-inner")
+        .join("NestedMod")
+        .join("config.ini")
+        .exists());
+    assert!(outer_zip.exists());
+}
+
+#[test]
 fn test_format_detection() {
     assert_eq!(
         ArchiveFormat::detect(Path::new("mod.zip")),
@@ -351,7 +404,79 @@ fn create_encrypted_zip(
     zip_path
 }
 
+#[test]
+fn staging_password_reaches_zip_extractor_and_reports_progress() {
+    let dir = TempDir::new().unwrap();
+    let zip_path = create_encrypted_zip(
+        dir.path(),
+        "staging-secret.zip",
+        "correct-password",
+        &[("SecretMod/config.ini", b"[TextureOverride]\nsecret")],
+    );
+    let staging_dir = dir.path().join("staging-secret");
+    let progress_seen = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let progress_for_channel = progress_seen.clone();
+    let on_progress = tauri::ipc::Channel::new(move |_| {
+        progress_for_channel.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    });
+
+    let staged = extract_archive_to_staging_with_options(
+        &zip_path,
+        &staging_dir,
+        StagingExtractOptions {
+            password: Some("correct-password".to_string()),
+            on_progress: Some(on_progress),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(staged.files_extracted, 1);
+    assert!(staging_dir.join("SecretMod").join("config.ini").exists());
+    assert!(progress_seen.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(zip_path.exists());
+}
+
 // Covers: TC-2.1-04 — ZIP password extraction
+#[test]
+fn staging_propagates_the_supplied_password_to_nested_archives() {
+    let dir = TempDir::new().unwrap();
+    let inner_zip = create_encrypted_zip(
+        dir.path(),
+        "nested-secret.zip",
+        "same-password",
+        &[("NestedSecret/config.ini", b"[TextureOverride]\nsecret")],
+    );
+    let inner_bytes = fs::read(inner_zip).unwrap();
+    let outer_zip = create_test_zip(
+        dir.path(),
+        "outer-secret.zip",
+        &[
+            ("OuterMod/config.ini", b"[TextureOverride]\nouter"),
+            ("nested-secret.zip", &inner_bytes),
+        ],
+    );
+    let staging_dir = dir.path().join("nested-secret-staging");
+
+    let staged = extract_archive_to_staging_with_options(
+        &outer_zip,
+        &staging_dir,
+        StagingExtractOptions {
+            password: Some("same-password".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(staged.files_extracted, 3);
+    assert!(staging_dir
+        .join("nested-secret")
+        .join("NestedSecret")
+        .join("config.ini")
+        .exists());
+}
+
 #[test]
 fn test_extract_zip_with_password() {
     let dir = TempDir::new().unwrap();

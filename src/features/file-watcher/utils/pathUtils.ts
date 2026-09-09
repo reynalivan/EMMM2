@@ -1,5 +1,5 @@
 import { pathsEqual, pathStartsWith } from '../../../shared/lib/pathKey';
-import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
+import { normalizeWorkspacePath } from '@/features/workspace-runtime/@x/file-watcher';
 
 export function joinModPath(modsPath: string, relativePath: string): string {
   const base = normalizeWorkspacePath(modsPath);

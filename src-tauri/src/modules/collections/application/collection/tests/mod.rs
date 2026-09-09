@@ -5,16 +5,16 @@ use super::{
     handle_object_renamed_tx, list_collections, preview_apply,
     replace_collection_with_current_state, update_collection, ApplyCollectionRequest,
 };
+use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::collections::domain::collection::{
     CollectionMod, CollectionObject, CreateCollectionInput, CreateCollectionMode, MemberKind,
     ProjectedCollectionState, ProjectedStateSummary, UpdateCollectionInput,
 };
-use crate::shared::errors::CollectionError;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
-use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::settings::application::config::AppSettings;
 use crate::modules::workspace::application::projected_state;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
+use crate::shared::errors::CollectionError;
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,

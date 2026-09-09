@@ -1,8 +1,10 @@
 //! Stale-safe INI save pipeline with recoverable replacement.
 
-use crate::shared::errors::AppError;
 use crate::modules::library::application::ini::document::{IniDocument, IniReadMode};
-use crate::modules::library::application::ini::encoding::{encode_ini_text, render_lines, source_fingerprint};
+use crate::modules::library::application::ini::encoding::{
+    encode_ini_text, render_lines, source_fingerprint,
+};
+use crate::shared::errors::AppError;
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;

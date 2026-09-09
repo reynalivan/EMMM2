@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
+import { normalizeWorkspacePath } from '@/features/workspace-runtime/@x/file-watcher';
 import { joinModPath, rewritePath } from './pathUtils';
 
 describe('workspace path normalization', () => {

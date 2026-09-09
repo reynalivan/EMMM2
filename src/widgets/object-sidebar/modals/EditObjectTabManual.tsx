@@ -1,7 +1,7 @@
 import { DynamicMetadataFields } from './DynamicMetadataFields';
 import { UseFormReturn, Controller } from 'react-hook-form';
 import type { EditObjectFormData } from '../hooks/useEditObjectForm';
-import type { GameSchema, FilterDef } from '@/entities/game-object/model/object';
+import type { GameSchema, FilterDef } from '@/entities/game-object';
 import { TagInput } from '../../../shared/ui/components/ui/TagInput';
 import { useTranslation } from 'react-i18next';
 

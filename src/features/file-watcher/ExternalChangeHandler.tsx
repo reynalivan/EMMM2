@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { useDiskReconcileCoordinator } from './hooks/useFileWatcher';
 
 /**

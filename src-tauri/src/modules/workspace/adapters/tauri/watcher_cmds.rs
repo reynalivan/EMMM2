@@ -1,8 +1,8 @@
 //! File system watcher commands.
 
-use crate::shared::sync::lock;
-use crate::shared::errors::AppError;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::shared::errors::AppError;
+use crate::shared::sync::lock;
 use tauri::State;
 
 /// Start the file watcher for a specific path.
@@ -20,16 +20,17 @@ pub async fn start_watcher(
     pool: State<'_, sqlx::SqlitePool>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<(), AppError> {
-    let configured_root =
-        crate::platform::fs::guard::validate_mods_root(&config, &game_id, &path)?;
+    let configured_root = crate::platform::fs::guard::validate_mods_root(&config, &game_id, &path)?;
     let db_pool = (*pool).clone();
-    Ok(crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
-        app,
-        &state,
-        db_pool,
-        configured_root.to_string_lossy().into_owned(),
-        game_id,
-    )?)
+    Ok(
+        crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
+            app,
+            &state,
+            db_pool,
+            configured_root.to_string_lossy().into_owned(),
+            game_id,
+        )?,
+    )
 }
 
 /// Stop the file watcher. Cleanly drops the `RecommendedWatcher`,

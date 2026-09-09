@@ -14,7 +14,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 const mockAddToast = vi.fn();
-vi.mock('../../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   useToastStore: () => ({
     addToast: mockAddToast,
   }),

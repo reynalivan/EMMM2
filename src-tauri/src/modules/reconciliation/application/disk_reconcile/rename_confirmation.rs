@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use crate::modules::library::adapters::sqlite::mods::ReconcileModRow;
 use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow;
+use crate::modules::library::adapters::sqlite::mods::ReconcileModRow;
 use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id_from_key;
 use crate::modules::workspace::application::scanner::watcher::ModWatchEvent;
 
@@ -566,8 +566,13 @@ pub(crate) async fn detect_rename_confirmations(
     watcher_events: &[ModWatchEvent],
 ) -> Result<RenameConfirmationDetection, crate::shared::errors::AppError> {
     let mut conn = pool.acquire().await?;
-    let objects = crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(&mut conn, game_id).await?;
-    let mods = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut conn, game_id).await?;
+    let objects = crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(
+        &mut conn, game_id,
+    )
+    .await?;
+    let mods =
+        crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut conn, game_id)
+            .await?;
     drop(conn);
     let (filtered_projection, filtered_objects, filtered_mods) =
         without_watcher_rename_evidence(mods_path, projection, &objects, &mods, watcher_events);
@@ -590,7 +595,9 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::modules::games::domain::models::ItemStatus;
-    use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{DiskModEntry, DiskObjectEntry};
+    use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
+        DiskModEntry, DiskObjectEntry,
+    };
     use crate::modules::reconciliation::application::disk_reconcile::types::{
         RenameConfirmationKind, RenameConfirmationReason,
     };

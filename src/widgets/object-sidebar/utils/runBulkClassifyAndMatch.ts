@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
-import type { GameConfig } from '@/entities/game/model/game';
-import { toast } from '../../../app/store/useToastStore';
-import { openObjectClassificationWizard } from '@/features/import-batches/classificationLauncher';
+import type { GameConfig } from '@/entities/game';
+import { toast } from '@/shared/ui/toast';
+import { openObjectClassificationWizard } from '@/features/import-batches';
 
 interface BulkClassifyAndMatchParams {
   ids: Set<string>;

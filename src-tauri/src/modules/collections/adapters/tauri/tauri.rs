@@ -3,15 +3,17 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
 
+use crate::modules::collections::application::collection;
+use crate::modules::collections::application::runtime as collection_runtime;
 use crate::modules::collections::domain::collection::{
     ApplyPreview, ApplyProgressSnapshot, ApplyResult, CollectionPreview, CollectionSummary,
     CreateCollectionInput, CreateCollectionMode, UpdateCollectionInput,
 };
+use crate::modules::mutation::coordinator::MutationCoordinator;
+use crate::modules::workspace::domain::runtime_state::{
+    CollectionRuntimeDescriptor, CollectionRuntimeSnapshot,
+};
 use crate::shared::errors::AppError;
-use crate::modules::workspace::domain::runtime_state::{CollectionRuntimeDescriptor, CollectionRuntimeSnapshot};
-use crate::platform::fs::operation_lock::OperationLock;
-use crate::modules::collections::application::collection;
-use crate::modules::collections::application::runtime as collection_runtime;
 
 // ============================================================================
 // Runtime state commands
@@ -23,8 +25,7 @@ pub async fn get_collection_runtime_state(
     pool: State<'_, SqlitePool>,
     game_id: String,
 ) -> Result<CollectionRuntimeSnapshot, AppError> {
-    let snapshot =
-        collection_runtime::get_collection_runtime_state(pool.inner(), &game_id).await?;
+    let snapshot = collection_runtime::get_collection_runtime_state(pool.inner(), &game_id).await?;
     Ok(snapshot)
 }
 
@@ -34,10 +35,7 @@ pub async fn get_collection_runtime_descriptor(
     pool: State<'_, SqlitePool>,
     game_id: String,
 ) -> Result<CollectionRuntimeDescriptor, AppError> {
-    Ok(
-        collection_runtime::get_collection_runtime_descriptor(pool.inner(), &game_id)
-            .await?,
-    )
+    Ok(collection_runtime::get_collection_runtime_descriptor(pool.inner(), &game_id).await?)
 }
 
 #[tauri::command]
@@ -45,7 +43,9 @@ pub async fn get_collection_runtime_descriptor(
 pub async fn get_apply_progress(
     game_id: String,
 ) -> Result<Option<ApplyProgressSnapshot>, AppError> {
-    Ok(crate::modules::library::application::apply_progress::get(&game_id))
+    Ok(crate::modules::library::application::apply_progress::get(
+        &game_id,
+    ))
 }
 
 // ============================================================================
@@ -98,7 +98,7 @@ pub async fn list_collections(
 pub async fn create_collection(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     game_id: String,
     name: String,
     save_mode: Option<CreateCollectionMode>,
@@ -116,7 +116,13 @@ pub async fn create_collection(
             &game_id,
         )
         .await?;
-        Some(op_lock.acquire().await?)
+        Some(
+            op_lock
+                .acquire_exempt(
+                    crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+                )
+                .await?,
+        )
     } else {
         None
     };
@@ -137,13 +143,21 @@ pub async fn create_collection(
 pub async fn save_current_runtime_as_collection(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     game_id: String,
     name: String,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
+        &app,
+        pool.inner(),
+        &game_id,
+    )
+    .await?;
+    let _guard = op_lock
+        .acquire_exempt(
+            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+        )
         .await?;
-    let _guard = op_lock.acquire().await?;
     Ok(collection::create_collection(
         pool.inner(),
         CreateCollectionInput {
@@ -163,9 +177,12 @@ pub async fn apply_collection(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
-    watcher_state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
+    watcher_state: State<
+        '_,
+        crate::modules::workspace::application::scanner::watcher::WatcherState,
+    >,
     disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     game_id: String,
     collection_id: String,
     ignore_missing: Option<bool>,
@@ -191,19 +208,22 @@ pub async fn apply_collection(
     )
     .await?;
     let mutation_lease = disk_reconcile
-        .acquire_mutation_lease(&game_id, op_lock.inner())
+        .acquire_nested_mutation_lease(&game_id, op_lock.inner())
         .await?;
 
-    let result = collection::apply_collection(collection::ApplyCollectionRequest {
-        pool: pool.inner(),
-        game_id: &game_id,
-        collection_id: &collection_id,
-        capture_last_changes: true,
-        mods_path,
-        suppressor: watcher_state.suppressor.clone(),
-        ignore_missing: ignore_missing.unwrap_or(false),
-        settings,
-    })
+    let result = collection::apply_collection_durable(
+        collection::ApplyCollectionRequest {
+            pool: pool.inner(),
+            game_id: &game_id,
+            collection_id: &collection_id,
+            capture_last_changes: true,
+            mods_path,
+            suppressor: watcher_state.suppressor.clone(),
+            ignore_missing: ignore_missing.unwrap_or(false),
+            settings,
+        },
+        op_lock.inner(),
+    )
     .await?;
 
     drop(mutation_lease);
@@ -228,19 +248,24 @@ pub async fn update_collection(
 pub async fn replace_collection_with_current_state(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     game_id: String,
     collection_id: String,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
-        .await?;
-    let operation_guard = op_lock.acquire().await?;
-    let result = collection::replace_collection_with_current_state(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
+        &app,
         pool.inner(),
         &game_id,
-        &collection_id,
     )
     .await?;
+    let operation_guard = op_lock
+        .acquire_exempt(
+            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+        )
+        .await?;
+    let result =
+        collection::replace_collection_with_current_state(pool.inner(), &game_id, &collection_id)
+            .await?;
     drop(operation_guard);
     Ok(result)
 }
@@ -251,14 +276,22 @@ pub async fn save_collection_changes(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     game_id: String,
     collection_id: String,
     confirm_remove_missing: bool,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
+        &app,
+        pool.inner(),
+        &game_id,
+    )
+    .await?;
+    let _guard = op_lock
+        .acquire_exempt(
+            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+        )
         .await?;
-    let _guard = op_lock.acquire().await?;
     let mods_path = config
         .get_settings()
         .games
@@ -286,22 +319,24 @@ pub async fn save_collection_changes(
         }
         .into());
     }
-    Ok(collection::replace_collection_with_current_state(
-        pool.inner(),
-        &game_id,
-        &collection_id,
+    Ok(
+        collection::replace_collection_with_current_state(pool.inner(), &game_id, &collection_id)
+            .await?,
     )
-    .await?)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn clear_last_changes(
     pool: State<'_, SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     game_id: String,
 ) -> Result<(), AppError> {
-    let _guard = op_lock.acquire().await?;
+    let _guard = op_lock
+        .acquire_exempt(
+            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+        )
+        .await?;
     collection::clear_last_changes(pool.inner(), &game_id).await?;
     Ok(())
 }
@@ -313,19 +348,27 @@ pub async fn restore_last_changes(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
-    watcher_state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
+    watcher_state: State<
+        '_,
+        crate::modules::workspace::application::scanner::watcher::WatcherState,
+    >,
     disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     game_id: String,
 ) -> Result<ApplyResult, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(&app, pool.inner(), &game_id)
-        .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
+        &app,
+        pool.inner(),
+        &game_id,
+    )
+    .await?;
     let mutation_lease = disk_reconcile
-        .acquire_mutation_lease(&game_id, op_lock.inner())
+        .acquire_nested_mutation_lease(&game_id, op_lock.inner())
         .await?;
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(pool.inner(), &game_id)
-        .await?
-        .ok_or_else(|| AppError::Validation("No Last changes snapshot exists".to_string()))?;
+    let runtime =
+        crate::modules::collections::adapters::sqlite::runtime::get(pool.inner(), &game_id)
+            .await?
+            .ok_or_else(|| AppError::Validation("No Last changes snapshot exists".to_string()))?;
     let draft_id = runtime
         .draft_collection_id
         .ok_or_else(|| AppError::Validation("No Last changes snapshot exists".to_string()))?;
@@ -341,7 +384,7 @@ pub async fn restore_last_changes(
         runtime.draft_base_collection_id.as_deref(),
     )
     .await?;
-    let result = collection::restore_collection_with_baseline(
+    let result = collection::restore_collection_with_baseline_durable(
         collection::ApplyCollectionRequest {
             pool: pool.inner(),
             game_id: &game_id,
@@ -353,6 +396,7 @@ pub async fn restore_last_changes(
             settings: settings.clone(),
         },
         restored_baseline,
+        op_lock.inner(),
     )
     .await?;
     drop(mutation_lease);
@@ -367,7 +411,10 @@ pub async fn restore_last_changes(
 
 fn settle_restore_reconcile(
     mut result: ApplyResult,
-    reconcile: Result<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult, AppError>,
+    reconcile: Result<
+        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+        AppError,
+    >,
 ) -> ApplyResult {
     let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(reconcile);
     result.sync_warning = settlement.sync_warning;
@@ -378,10 +425,14 @@ fn settle_restore_reconcile(
 #[specta::specta]
 pub async fn delete_collection(
     pool: State<'_, SqlitePool>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     id: String,
 ) -> Result<(), AppError> {
-    let _guard = op_lock.inner().acquire().await?;
+    let _guard = op_lock
+        .acquire_exempt(
+            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+        )
+        .await?;
     collection::delete_collection(pool.inner(), &id).await?;
     Ok(())
 }
@@ -426,13 +477,9 @@ pub async fn preview_apply_collection(
         .find(|g| g.id == game_id)
         .map(|g| g.mod_path.to_string_lossy().to_string());
 
-    let result = collection::preview_apply(
-        pool.inner(),
-        &game_id,
-        &collection_id,
-        mods_path.as_deref(),
-    )
-    .await?;
+    let result =
+        collection::preview_apply(pool.inner(), &game_id, &collection_id, mods_path.as_deref())
+            .await?;
     Ok(result)
 }
 
@@ -451,9 +498,12 @@ pub async fn resolve_recovery_task(
     app: AppHandle,
     pool: State<'_, SqlitePool>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
-    watcher_state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
+    watcher_state: State<
+        '_,
+        crate::modules::workspace::application::scanner::watcher::WatcherState,
+    >,
     disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
-    op_lock: State<'_, OperationLock>,
+    op_lock: State<'_, MutationCoordinator>,
     task_id: String,
     action: crate::modules::workspace::domain::task::RecoveryAction,
 ) -> Result<(), AppError> {
@@ -463,6 +513,7 @@ pub async fn resolve_recovery_task(
                 pool: pool.inner(),
                 config: config.inner(),
                 watcher_state: watcher_state.inner(),
+                coordinator: op_lock.inner(),
                 task_id: &task_id,
                 action,
             },
@@ -470,9 +521,10 @@ pub async fn resolve_recovery_task(
         .await;
     }
 
-    let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(pool.inner(), &task_id)
-        .await?
-        .ok_or_else(|| AppError::Validation(format!("Task {task_id} not found")))?;
+    let task =
+        crate::modules::workspace::adapters::sqlite::task::get_task_by_id(pool.inner(), &task_id)
+            .await?
+            .ok_or_else(|| AppError::Validation(format!("Task {task_id} not found")))?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         &app,
         pool.inner(),
@@ -480,7 +532,7 @@ pub async fn resolve_recovery_task(
     )
     .await?;
     let mutation_lease = disk_reconcile
-        .acquire_mutation_lease(&task.game_id, op_lock.inner())
+        .acquire_nested_mutation_lease(&task.game_id, op_lock.inner())
         .await?;
 
     crate::modules::workspace::application::recovery::resolve_recovery_task(
@@ -488,6 +540,7 @@ pub async fn resolve_recovery_task(
             pool: pool.inner(),
             config: config.inner(),
             watcher_state: watcher_state.inner(),
+            coordinator: op_lock.inner(),
             task_id: &task_id,
             action,
         },
@@ -500,8 +553,8 @@ pub async fn resolve_recovery_task(
 #[cfg(test)]
 mod tests {
     use crate::modules::collections::domain::collection::ApplyResult;
-    use crate::shared::errors::AppError;
     use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
+    use crate::shared::errors::AppError;
 
     #[test]
     fn normal_apply_command_has_no_fallible_reconcile_after_service_commit() {

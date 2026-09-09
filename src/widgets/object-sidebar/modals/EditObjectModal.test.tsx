@@ -10,7 +10,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import EditObjectModal from './EditObjectModal';
 import { useUpdateObject } from '../hooks/useObjectMutations';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
+import type { ObjectSummary } from '@/entities/game-object';
 import { createWrapper } from '../../../tests/testing/test-utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,7 +20,7 @@ import type { EditObjectFormData } from '../hooks/useEditObjectForm';
 // Mock dependencies
 vi.mock('../hooks/useObjectMutations');
 vi.mock('../hooks/useObjectQueries');
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(),
 }));
 
@@ -37,14 +37,14 @@ vi.mock('../hooks/useEditObjectForm', async (importOriginal) => {
 });
 
 // Mock folder mutations — real hooks use react-query + Tauri APIs that hang in jsdom.
-vi.mock('../../folder-grid/hooks/useFolderCoreMutations', () => ({
+vi.mock('@/features/mod-runtime', () => ({
   useRenameMod: () => ({
     mutateAsync: vi.fn().mockResolvedValue({ new_path: '/new/path' }),
     isPending: false,
   }),
 }));
 
-vi.mock('../../folder-grid/hooks/useFolderMutations', () => ({
+vi.mock('@/features/mod-runtime', () => ({
   useUpdateModCategory: () => ({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
@@ -65,11 +65,6 @@ vi.mock('../../folder-grid/hooks/useFolderMutations', () => ({
 // Prevent tauri dialog from hanging in jsdom
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn().mockResolvedValue(null),
-}));
-
-// Prevent tauri shell from hanging in jsdom
-vi.mock('@tauri-apps/plugin-shell', () => ({
-  open: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock invoke for data fetching
@@ -122,7 +117,7 @@ vi.mock('@tauri-apps/api/core', () => ({
     return Promise.resolve(null);
   }),
 }));
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { useGameSchema } from '../hooks/useObjectQueries';
 
 const mockUseUpdateObject = useUpdateObject as unknown as ReturnType<typeof vi.fn>;

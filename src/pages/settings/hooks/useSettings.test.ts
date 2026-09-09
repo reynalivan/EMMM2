@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { useSettings } from './useSettings';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
-import { useToastStore } from '../../../app/store/useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('@tanstack/react-query', () => {
@@ -22,7 +22,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../app/store/useToastStore', () => {
+vi.mock('@/shared/ui/toast', () => {
   return {
     useToastStore: vi.fn(),
   };
@@ -56,7 +56,7 @@ describe('useSettings', () => {
         games: [],
         active_game_id: null,
         safety: { keywords: [] },
-        ai: { enabled: false, api_key: null, base_url: null },
+        ai: { enabled: false, has_api_key: false, base_url: null },
       },
       isLoading: false,
       error: null,
@@ -135,7 +135,7 @@ describe('useSettings', () => {
       games: [],
       active_game_id: null,
       safety: { keywords: [] },
-      ai: { enabled: false, api_key: null, base_url: null },
+      ai: { enabled: false, has_api_key: false, base_url: null },
     });
     const { result } = renderHook(() => useSettings());
 
@@ -145,7 +145,7 @@ describe('useSettings', () => {
       games: [],
       active_game_id: null,
       safety: { keywords: ['private'] },
-      ai: { enabled: false, api_key: null, base_url: null },
+      ai: { enabled: false, has_api_key: false, base_url: null },
     } as never);
 
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({

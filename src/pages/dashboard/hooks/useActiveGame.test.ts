@@ -1,22 +1,11 @@
 import { renderHook } from '@testing-library/react';
 import { useQuery } from '@tanstack/react-query';
 import { useActiveGame } from './useActiveGame';
-import { useAppStore } from '../../../app/store/useAppStore';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('@tanstack/react-query', () => ({
   useQuery: vi.fn(),
 }));
-
-vi.mock('../../../app/store/useAppStore', () => ({
-  useAppStore: vi.fn(),
-}));
-
-function mockActiveGameId(activeGameId: string | null) {
-  vi.mocked(useAppStore).mockImplementation((selector: unknown) =>
-    (selector as (state: { activeGameId: string | null }) => unknown)({ activeGameId }),
-  );
-}
 
 function mockSettingsQuery(result: { data?: unknown; isLoading?: boolean; error?: unknown }) {
   vi.mocked(useQuery).mockReturnValue({
@@ -32,7 +21,6 @@ describe('useActiveGame', () => {
   });
 
   it('should return null activeGame when there is no activeGameId', () => {
-    mockActiveGameId(null);
     mockSettingsQuery({ data: null });
 
     const { result } = renderHook(() => useActiveGame());
@@ -43,9 +31,9 @@ describe('useActiveGame', () => {
   });
 
   it('should return the correct active game when found in settings', () => {
-    mockActiveGameId('game-2');
     mockSettingsQuery({
       data: {
+        active_game_id: 'game-2',
         games: [
           { id: 'game-1', name: 'Game 1' },
           { id: 'game-2', name: 'Game 2' },
@@ -60,9 +48,9 @@ describe('useActiveGame', () => {
   });
 
   it('should return null if activeGameId is set but game not found in settings', () => {
-    mockActiveGameId('game-3');
     mockSettingsQuery({
       data: {
+        active_game_id: 'game-3',
         games: [
           { id: 'game-1', name: 'Game 1' },
           { id: 'game-2', name: 'Game 2' },
@@ -76,7 +64,6 @@ describe('useActiveGame', () => {
   });
 
   it('should pass through isLoading and error from the settings query', () => {
-    mockActiveGameId(null);
     const mockError = new Error('test error');
     mockSettingsQuery({ data: null, isLoading: true, error: mockError });
 

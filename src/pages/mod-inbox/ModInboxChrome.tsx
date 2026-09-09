@@ -1,4 +1,6 @@
-import { FolderInput, FolderOpen, Inbox, RefreshCw, Settings } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { FolderInput, FolderOpen, Inbox, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ModInboxSnapshot } from './types';
 
@@ -30,51 +32,55 @@ export function ModInboxHeader({
   onRefresh: () => void;
 }) {
   const { t } = useTranslation('mod_inbox');
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
-  return (
-    <header className="border-b border-base-300 bg-base-200/60 px-5 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-primary/15 p-2 text-primary">
-              <Inbox size={22} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">{t('title')}</h1>
-              <p className="text-xs text-base-content/55">{t('subtitle')}</p>
-            </div>
-          </div>
-          {snapshot?.rootPath && (
-            <p className="mt-2 max-w-2xl truncate font-mono text-[11px] text-base-content/45">
-              {snapshot.rootPath}
-            </p>
-          )}
-        </div>
+  useEffect(() => {
+    setPortalTarget(document.getElementById('topbar-actions-portal'));
+  }, []);
 
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn btn-ghost btn-sm gap-2" onClick={onSettings}>
-            <FolderInput size={16} /> {t('actions.choose_location')}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm gap-2"
-            disabled={!snapshot || snapshot.rootState !== 'ready'}
-            onClick={onOpen}
-          >
-            <FolderOpen size={16} /> {t('actions.open_inbox')}
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline btn-sm gap-2"
-            disabled={loading}
-            onClick={onRefresh}
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            {t('actions.refresh')}
-          </button>
-        </div>
-      </div>
-    </header>
+  if (!portalTarget) return null;
+
+  return createPortal(
+    <>
+      {snapshot?.rootPath && (
+        <span
+          className="text-[10px] text-base-content/40 font-mono max-w-[150px] 2xl:max-w-[300px] truncate mr-2 hidden xl:block"
+          title={snapshot.rootPath}
+        >
+          {snapshot.rootPath}
+        </span>
+      )}
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm btn-square text-base-content/70 hover:text-primary hover:bg-base-content/5 tooltip tooltip-bottom"
+        data-tip={t('actions.choose_location')}
+        aria-label={t('actions.choose_location')}
+        onClick={onSettings}
+      >
+        <FolderInput size={18} />
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm btn-square text-base-content/70 hover:text-primary hover:bg-base-content/5 tooltip tooltip-bottom"
+        data-tip={t('actions.open_inbox')}
+        aria-label={t('actions.open_inbox')}
+        disabled={!snapshot || snapshot.rootState !== 'ready'}
+        onClick={onOpen}
+      >
+        <FolderOpen size={18} />
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm btn-square text-base-content/70 hover:text-primary hover:bg-base-content/5 tooltip tooltip-bottom"
+        data-tip={t('actions.refresh')}
+        aria-label={t('actions.refresh')}
+        disabled={loading}
+        onClick={onRefresh}
+      >
+        <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+      </button>
+    </>,
+    portalTarget,
   );
 }
 

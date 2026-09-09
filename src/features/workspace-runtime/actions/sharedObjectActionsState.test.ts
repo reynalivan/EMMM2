@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 import {
   buildSharedObjectActionState,
   buildSharedObjectDialogEvent,

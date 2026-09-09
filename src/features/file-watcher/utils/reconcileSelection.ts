@@ -1,9 +1,9 @@
 import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
-import { useAppStore } from '../../../app/store/useAppStore';
-import type { GameConfig } from '@/entities/game/model/game';
-import { dispatchWorkspaceRuntimeEvent } from '../../workspace-runtime/state/workspaceStoreBridge';
+import { useAppStore } from '@/app/store';
+import type { GameConfig } from '@/entities/game';
+import { dispatchWorkspaceRuntimeEvent } from '@/features/workspace-runtime/@x/file-watcher';
 import { pathStartsWith } from '../../../shared/lib/pathKey';
-import { normalizeWorkspacePath } from '../../workspace-runtime/utils/pathRewrite';
+import { normalizeWorkspacePath } from '@/features/workspace-runtime/@x/file-watcher';
 import { joinModPath, rewritePath } from './pathUtils';
 
 export function buildDiskReconcilePathRewrites(

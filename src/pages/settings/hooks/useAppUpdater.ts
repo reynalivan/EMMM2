@@ -1,7 +1,8 @@
 import { formatAppError } from '../../../shared/lib/appError';
 import { useState, useCallback } from 'react';
-import { check, type Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { Channel } from '@tauri-apps/api/core';
+import { commands } from '../../../shared/api/tauri/bindings';
+import type { AppUpdateInfo, AppUpdateProgress } from '../../../shared/api/tauri/bindings.gen';
 
 export interface UpdateProgress {
   downloaded: number;
@@ -10,7 +11,7 @@ export interface UpdateProgress {
 
 export function useAppUpdater() {
   const [isChecking, setIsChecking] = useState(false);
-  const [update, setUpdate] = useState<Update | null>(null);
+  const [update, setUpdate] = useState<AppUpdateInfo | null>(null);
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +20,7 @@ export function useAppUpdater() {
     setIsChecking(true);
     setError(null);
     try {
-      const found = await check();
+      const found = await commands.checkAppUpdate();
       setUpdate(found);
     } catch (e) {
       setError(formatAppError(e));
@@ -34,7 +35,8 @@ export function useAppUpdater() {
     setError(null);
     setProgress({ downloaded: 0, total: null });
     try {
-      await update.downloadAndInstall((event) => {
+      const progressChannel = new Channel<AppUpdateProgress>();
+      progressChannel.onmessage = (event) => {
         if (event.event === 'Started') {
           setProgress({ downloaded: 0, total: event.data.contentLength ?? null });
         } else if (event.event === 'Progress') {
@@ -48,9 +50,8 @@ export function useAppUpdater() {
             total: prev?.total ?? null,
           }));
         }
-      });
-      // Restart the app after install
-      await relaunch();
+      };
+      await commands.installAppUpdate(progressChannel);
     } catch (e) {
       setError(formatAppError(e));
       setIsInstalling(false);

@@ -11,9 +11,9 @@ import {
   useCollections,
   useRestoreLastChanges,
 } from './useCollections';
-import type { CollectionRuntimeSnapshot } from '@/entities/collection/model/collection';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { toast } from '../../../app/store/useToastStore';
+import type { CollectionRuntimeSnapshot } from '@/entities/collection';
+import { useAppStore } from '@/app/store';
+import { toast } from '@/shared/ui/toast';
 
 function createProjectedState() {
   return {
@@ -36,7 +36,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -226,7 +226,10 @@ describe('useCollections', () => {
     });
     expect(useAppStore.getState().selectedModPath).toBe('E:/Mods/ALBEDO/DISABLED Variant');
     expect(useAppStore.getState().gridSelection.has('E:/Mods/ALBEDO/DISABLED Variant')).toBe(true);
-    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('Projection refresh'), 7000);
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Disk changes were applied, but runtime refresh is still pending.',
+      7000,
+    );
   });
 
   it('restore last changes applies backend path rewrites to workspace selection', async () => {

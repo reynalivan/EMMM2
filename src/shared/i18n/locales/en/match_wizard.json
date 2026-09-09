@@ -1,5 +1,9 @@
 {
   "title": "Match Wizard",
+  "review_title": "Review Import Matches",
+  "review_summary": "{{count}} mods · {{ready}} proceed · {{skipped}} skipped · {{errors}} errors",
+  "search_placeholder": "Search source mods…",
+  "no_filtered_items": "No import items match this filter.",
   "resume_import": "Resume import ({{count}} item(s))",
   "classification_title": "Classify & Match Existing Objects",
   "classification_no_move": "Existing status is preserved unless you explicitly disable the object folders below.",
@@ -8,44 +12,208 @@
   "classification_match_objects": "Match canonical objects",
   "classification_apply": "Apply classifications",
   "classification_applied": "Applied {{count}} classification(s) and updated {{mods}} child mod(s).",
+  "library_preflight": {
+    "title": "{{count}} identifications found",
+    "summary": "{{high}} high confidence · {{medium}} medium confidence",
+    "later": "Remind me in 24h",
+    "review": "Review {{count}}",
+    "refresh_failed": "Object Library was updated, but import matches could not be refreshed: {{error}}"
+  },
   "batch_summary": "{{count}} item(s) · {{flow}}",
+  "flows": {
+    "auto_import": "Automatic import",
+    "specific_import": "Import to selected target",
+    "browser": "Browser import",
+    "ready_to_move": "Ready to move"
+  },
   "analyzing": "Inspecting sources and building category evidence…",
-  "steps": {
-    "sources": "Sources",
-    "category": "Category & metadata",
-    "destination": "Object & destination",
-    "validation": "Validation",
+  "checking_library": "Checking Object Library readiness…",
+  "refreshing_matches": "Refreshing import matches…",
+  "extraction": {
+    "progress": "Extracting {{current}} of {{total}}"
+  },
+  "archive_password": {
+    "title": "Archive password required",
+    "description": "Enter the archive password to retry extraction. The password is used only for this attempt.",
+    "label": "Archive password",
+    "cancel": "Cancel import",
+    "retry": "Retry extraction"
+  },
+  "summary": {
+    "label": "Batch status",
+    "needs_review": "{{count}} need review",
+    "ready": "{{count}} ready",
+    "skipped": "{{count}} skipped",
+    "completed": "{{count}} completed"
+  },
+  "bulk": {
+    "title": "Quick review",
+    "description": "{{high}} high-confidence · {{other}} need review"
+  },
+  "filters": {
+    "all": "All",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "no_match": "No match",
+    "errors": "Errors"
+  },
+  "sort": {
+    "label": "Sort import matches",
+    "review": "Needs review first",
+    "confidence_desc": "Highest confidence",
+    "name": "Source name"
+  },
+  "selection": {
+    "all": "Select all",
+    "none": "Select none",
+    "count": "{{count}} selected",
+    "item": "Select {{name}}"
+  },
+  "destination": {
+    "search_hint": "Search destinations",
+    "search_placeholder": "Search name, alias, type, or tag…",
+    "potential": "Potential matches",
+    "all": "All destinations",
+    "no_results": "No destinations found."
+  },
+  "source_preview": {
+    "summary": "{{folders}} folders · {{files}} files · {{size}}",
+    "unavailable": "Source preview is unavailable.",
+    "more": "More files…"
+  },
+  "sections": {
+    "match": "Classification & match",
+    "destination": "Destination",
+    "details": "Details"
+  },
+  "fields": {
+    "planned_name": "Planned name",
+    "category": "Category",
+    "subcategory": "Subcategory",
+    "optional": "Optional",
+    "canonical": "Canonical object",
+    "manual_target": "Choose manually",
+    "selected_target": "Selected target",
+    "decision": "Decision",
     "result": "Result"
   },
+  "categories": {
+    "Character": "Character",
+    "Weapon": "Weapon",
+    "UI": "UI",
+    "Other": "Other",
+    "unknown": "Not classified"
+  },
+  "confidence": {
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "no_match": "No match"
+  },
+  "confidence_value": "{{value}}% · {{label}}",
+  "decisions": {
+    "pending": "Pending",
+    "confirm": "Confirmed",
+    "keep_specific_target": "Keep target",
+    "reallocate": "Reallocate",
+    "create_canonical": "Create canonical",
+    "skip": "Skipped"
+  },
+  "destination_hint": "Choose a suggested destination or select an existing target manually.",
   "columns": {
-    "source": "Source / planned name",
+    "source": "Source mod",
     "category": "Category",
     "canonical": "Canonical object",
     "destination": "Destination",
     "confidence": "Confidence / evidence",
-    "decision": "Decision / result",
+    "decision": "Decision",
     "actions": "Actions"
   },
   "actions": {
-    "confirm_high": "Confirm High",
-    "skip_medium_low": "Skip Medium & Low",
+    "confirm_high": "Accept {{count}} high-confidence",
+    "skip_medium_low": "Skip {{count}} lower-confidence",
     "confirm": "Confirm category",
-    "rename": "Rename plan",
-    "use_target": "Use target",
+    "rename": "Edit name",
+    "save_name": "Save name",
+    "use_target": "Use this target",
     "skip": "Skip",
+    "proceed": "Proceed",
+    "set_proceed": "Set Proceed",
+    "set_skip": "Set Skip",
+    "view_destination": "View destination",
     "retry": "Retry suggestions",
+    "resume": "Resume import",
     "open": "Open in Explorer",
-    "commit": "Commit {{count}} item(s)"
+    "more": "More actions",
+    "import": "Import {{count}} item(s)"
+  },
+  "footer": {
+    "finished": "This batch is complete.",
+    "resolve_first": "{{count}} item(s) still need a decision.",
+    "ready": "{{count}} item(s) ready to import.",
+    "recovery": "{{count}} imported item(s) need metadata recovery.",
+    "no_items": "No items selected for import."
   },
   "choose_existing": "Choose existing target…",
   "specific_warning": "target does not strongly match; explicit confirmation required",
   "no_match": "No canonical match",
   "no_destination": "No destination selected",
   "evidence": "Evidence",
+  "evidence_none": "No match evidence",
+  "match_column": "Match",
+  "import_as_column": "Import as",
+  "source": {
+    "identified": "Identified as {{name}} · {{score}}%",
+    "matching_by_name": "Matching by name",
+    "edit_name": "Edit imported folder name",
+    "destination_preview": "Will be placed in: {{destination}}/{{name}}",
+    "source_unchanged": "The source archive or folder will remain unchanged"
+  },
+  "match_methods": {
+    "canonical_identity": "Canonical identity match",
+    "exact_name": "Exact name match",
+    "exact_alias": "Exact alias match",
+    "name_substring": "Name substring match",
+    "alias_substring": "Alias substring match",
+    "token_substring": "Name token match",
+    "fuzzy_name": "Fuzzy name similarity",
+    "no_name_match": "No meaningful name similarity"
+  },
+  "match_tooltip": {
+    "manual": "Selected manually",
+    "category_warning": "Destination type differs from the detected source type",
+    "score": "Match score"
+  },
+  "evidence_sources": {
+    "deep_matcher": "Content analysis",
+    "manual": "Manual destination",
+    "other": "Match signal"
+  },
+  "evidence_messages": {
+    "hash_overlap": "{{overlap}} shared hashes ({{unique}} unique)",
+    "alias": "Alias '{{value}}' matches exactly",
+    "name": "Name contains '{{value}}'",
+    "similarity": "Name similarity {{percent}}%",
+    "deep_name": "Found '{{value}}' in a file or folder name",
+    "ini_section": "Found '{{value}}' in an INI section",
+    "ini_content": "Found '{{value}}' in INI content",
+    "ai_score": "AI relevance {{percent}}%",
+    "conflict": "{{count}} conflicting strong signals",
+    "substring": "Found '{{value}}' in {{source}}",
+    "folder_name": "Folder name contains '{{value}}'",
+    "fuzzy_name": "Folder name resembles '{{value}}' ({{percent}}%)",
+    "manual_selected": "Selected '{{name}}' manually"
+  },
   "result_summary": "Moved {{moved}}, reallocated {{reallocated}}, created {{created}}, skipped {{skipped}}, collisions {{collisions}}, metadata pending {{pending}}, failed {{failed}}.",
   "errors": {
+    "archive": {
+      "dictionary_too_large": "This archive uses a compression dictionary that is too large to extract safely. Recompress it with standard settings, or extract it manually and import the folder.",
+      "unsupported_compression": "This archive uses unsupported compression settings. Recompress it with standard ZIP, 7Z, or RAR settings, or extract it manually and import the folder."
+    },
     "launch": "Could not open Match Wizard: {{error}}",
     "update": "Could not update the item: {{error}}",
-    "commit": "Could not commit the batch: {{error}}"
+    "commit": "Could not commit the batch: {{error}}",
+    "metadata_pending": "Files are in place. Resume import to finish metadata."
   }
 }

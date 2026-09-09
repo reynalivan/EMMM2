@@ -3,18 +3,18 @@ import { useCallback, useMemo } from 'react';
 import { join } from '@tauri-apps/api/path';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { toast } from '../../../app/store/useToastStore';
-import { useSharedModActions } from '@/features/mod-runtime/actions/useSharedModActions';
+import { useActiveGame } from '@/entities/game';
+import { toast } from '@/shared/ui/toast';
+import { useSharedModActions } from '@/features/mod-runtime';
 import {
   closeWorkspaceDialog,
   openWorkspaceEnableParentDialog,
-} from '@/features/workspace-runtime/state/workspaceDialogs';
-import { useWorkspaceSwitchActions } from '@/features/workspace-runtime/actions/useWorkspaceSwitchActions';
-import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime/state/workspaceStoreBridge';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
-import { applyRuntimeMutationResult } from '@/features/workspace-runtime/actions/sharedRuntimeResultMapper';
+} from '@/features/workspace-runtime';
+import { useWorkspaceSwitchActions } from '@/features/workspace-runtime';
+import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import type { ObjectSummary } from '@/entities/game-object';
+import { applyRuntimeMutationResult } from '@/features/workspace-runtime';
 
 interface UseFolderGridActionsOptions {
   activeGame: ReturnType<typeof useActiveGame>['activeGame'];

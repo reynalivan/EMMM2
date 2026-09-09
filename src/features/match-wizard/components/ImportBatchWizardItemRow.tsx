@@ -1,31 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Check, ExternalLink, Eye, FileArchive, Folder, Pencil, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
   DestinationSuggestion,
-  GameSchema,
+  DestinationMatchMethod,
   ImportBatch,
   ImportDecision,
   ImportItem,
-  JsonValue,
-  StableCategory,
+  ImportSourcePreview,
 } from '../../../shared/api/tauri/bindings.gen';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
+import type { ObjectSummary } from '@/entities/game-object';
+import { archiveErrorKindFromStoredMessage } from '../../../shared/lib/appError';
 import { destinationDecision } from '../utils/importBatchDecision';
-
-const CATEGORIES: StableCategory[] = ['Character', 'Weapon', 'UI', 'Other'];
+import { ImportBatchWizardDestinationPanel } from './ImportBatchWizardDestinationPanel';
+import { ImportSourcePreviewCard } from './ImportSourcePreviewCard';
+import { MatchScoreBadge } from './MatchScoreBadge';
 
 type Props = {
   batch: ImportBatch;
   item: ImportItem;
-  schema: GameSchema | null;
   objects: ObjectSummary[];
   busy: boolean;
-  onClassify: (
-    item: ImportItem,
-    category: StableCategory,
-    subCategory: string | null,
-    metadata: JsonValue,
-  ) => Promise<void>;
+  selected: boolean;
+  onToggleSelected: () => void;
   onChooseDestination: (
     item: ImportItem,
     suggestion: DestinationSuggestion,
@@ -35,14 +32,10 @@ type Props = {
   onSkip: (item: ImportItem) => Promise<void>;
   onRename: (item: ImportItem, plannedName: string) => Promise<void>;
   onRetry: (item: ImportItem) => Promise<void>;
-  onOpenInExplorer: (item: ImportItem) => Promise<void>;
+  onRevealSource: (item: ImportItem) => Promise<void>;
+  onRevealDestination?: (item: ImportItem) => Promise<void>;
+  onLoadSourcePreview?: (item: ImportItem) => Promise<ImportSourcePreview>;
 };
-
-function suggestedMetadata(item: ImportItem, category: StableCategory): JsonValue {
-  return (
-    item.categorySuggestions.find((suggestion) => suggestion.category === category)?.metadata ?? {}
-  );
-}
 
 export function ImportBatchWizardItemRow({
   batch,
@@ -51,32 +44,30 @@ export function ImportBatchWizardItemRow({
   objects,
   onChooseDestination,
   onChooseManualTarget,
-  onClassify,
-  onOpenInExplorer,
+  onLoadSourcePreview,
   onRename,
   onRetry,
+  onRevealDestination,
+  onRevealSource,
   onSkip,
-  schema,
+  onToggleSelected,
+  selected,
 }: Props) {
   const { t } = useTranslation('match_wizard');
-  const [manualTarget, setManualTarget] = useState('');
-  const [plannedName, setPlannedName] = useState(item.plannedName);
-  const [category, setCategory] = useState<StableCategory>(
-    item.matchCategory ?? item.categorySuggestions[0]?.category ?? 'Other',
-  );
-  const [subcategory, setSubcategory] = useState(
-    item.categorySuggestions.find((suggestion) => suggestion.category === category)?.subCategory ??
-      '',
-  );
-  const [metadata, setMetadata] = useState<Record<string, string>>({});
-  const categoryDef = schema?.categories.find((candidate) => candidate.name === category);
-  const suggested = suggestedMetadata(item, category);
-  const suggestedObject =
-    typeof suggested === 'object' && suggested !== null && !Array.isArray(suggested)
-      ? suggested
-      : {};
-  const canChooseDestination = item.status === 'awaiting_destination' || item.status === 'skipped';
-  const canEditPlan = [
+  const sourceDisplayName = withoutDisabledPrefix(item.plannedName);
+  const [plannedName, setPlannedName] = useState(sourceDisplayName);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => setPlannedName(withoutDisabledPrefix(item.plannedName)), [item.plannedName]);
+  const archiveSource = ['archive_root', 'browser_download'].includes(item.sourceKind);
+  const needsRecovery = [
+    'committing',
+    'reconciling',
+    'finalizing_metadata',
+    'partial',
+    'metadata_pending',
+  ].includes(item.status);
+  const proceed = !['pending', 'skip'].includes(item.decision) || item.status === 'ready';
+  const canEdit = [
     'discovered',
     'staged',
     'awaiting_category',
@@ -85,200 +76,281 @@ export function ImportBatchWizardItemRow({
     'skipped',
     'failed',
   ].includes(item.status);
+  const canRetry = [
+    'discovered',
+    'staged',
+    'awaiting_category',
+    'awaiting_destination',
+    'failed',
+    'partial',
+    'metadata_pending',
+    'finalizing_metadata',
+    'reconciling',
+    'committing',
+  ].includes(item.status);
+  const topSuggestion = item.destinationSuggestions[0] ?? null;
+  const archiveError = archiveErrorKindFromStoredMessage(item.error);
+  const errorText = needsRecovery
+    ? t('errors.metadata_pending')
+    : item.error
+      ? archiveError
+        ? t(`errors.archive.${archiveError}`)
+        : item.error
+      : null;
+  const selectedSuggestion = item.destinationSuggestions.find(
+    (suggestion) =>
+      (item.destinationObjectId !== null && suggestion.objectId === item.destinationObjectId) ||
+      (item.destinationPath !== null && suggestion.targetPath === item.destinationPath),
+  );
+  const selectedTopSuggestion =
+    selectedSuggestion !== undefined &&
+    topSuggestion !== null &&
+    selectedSuggestion.kind === topSuggestion.kind &&
+    selectedSuggestion.objectId === topSuggestion.objectId &&
+    selectedSuggestion.targetPath === topSuggestion.targetPath;
+  const hasManualDestination =
+    item.decision !== 'skip' &&
+    (item.destinationObjectId !== null || item.destinationPath !== null) &&
+    !selectedTopSuggestion;
+  const displayedConfidence = selectedSuggestion?.confidencePercentage ?? item.confidencePercentage;
+  const displayedTier = selectedSuggestion?.confidenceTier ?? item.confidenceTier;
+  const displayedMethod = effectiveMatchMethod(selectedSuggestion);
+  const selectedObjectName = item.destinationObjectId
+    ? objects.find((object) => object.id === item.destinationObjectId)?.name
+    : undefined;
+  const sourceIdentification = item.canonicalSuggestions.find(
+    (suggestion) => suggestion.confidenceTier === 'high' || suggestion.confidenceTier === 'medium',
+  );
+  const selectedDestinationName =
+    selectedObjectName ??
+    selectedSuggestion?.folderName ??
+    item.destinationPath ??
+    t('no_destination');
+
+  const saveName = async () => {
+    const next = plannedName.trim();
+    if (!next || next === sourceDisplayName) {
+      setPlannedName(sourceDisplayName);
+      setEditing(false);
+      return;
+    }
+    await onRename(item, next);
+    setEditing(false);
+  };
 
   return (
-    <tr>
-      <td className="min-w-52">
-        <div className="font-medium">{item.plannedName}</div>
-        <div className="text-xs opacity-50 max-w-56 truncate" title={item.sourcePath}>
-          {item.sourcePath}
-        </div>
-        <div className="join mt-1">
-          <input
-            className="input input-bordered input-xs join-item w-36"
-            value={plannedName}
-            onChange={(event) => setPlannedName(event.target.value)}
-          />
-          <button
-            className="btn btn-xs join-item"
-            disabled={!canEditPlan || busy || plannedName === item.plannedName}
-            onClick={() => void onRename(item, plannedName)}
-          >
-            {t('actions.rename')}
-          </button>
-        </div>
+    <tr className={selected ? 'bg-primary/5' : undefined}>
+      <td className="w-10 text-center align-middle">
+        <input
+          type="checkbox"
+          className="checkbox checkbox-sm checkbox-primary"
+          checked={selected}
+          onChange={onToggleSelected}
+          aria-label={t('selection.item', { name: item.plannedName })}
+        />
       </td>
-      <td className="min-w-44">
-        {item.status === 'awaiting_category' ? (
-          <>
-            <div className="join">
-              <select
-                className="select select-bordered select-xs join-item"
-                value={category}
-                onChange={(event) => {
-                  setCategory(event.target.value as StableCategory);
-                  setSubcategory('');
-                  setMetadata({});
-                }}
-              >
-                {CATEGORIES.map((candidate) => (
-                  <option key={candidate}>{candidate}</option>
-                ))}
-              </select>
-              {categoryDef?.subcategories && categoryDef.subcategories.length > 0 && (
-                <select
-                  className="select select-bordered select-xs join-item"
-                  value={subcategory}
-                  onChange={(event) => setSubcategory(event.target.value)}
+      <td className="min-w-0 align-middle">
+        <ImportSourcePreviewCard item={item} loadPreview={onLoadSourcePreview}>
+          <div className="group/source flex min-h-14 min-w-0 flex-col justify-center">
+            {editing ? (
+              <div className="min-w-0">
+                <div className="flex items-center gap-1">
+                  <input
+                    className="input input-sm input-bordered min-w-0 flex-1 font-semibold"
+                    value={plannedName}
+                    onChange={(event) => setPlannedName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void saveName();
+                      if (event.key === 'Escape') {
+                        setPlannedName(sourceDisplayName);
+                        setEditing(false);
+                      }
+                    }}
+                    disabled={busy}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-square btn-sm text-success"
+                    onClick={() => void saveName()}
+                    aria-label={t('actions.save_name')}
+                  >
+                    <Check size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-square btn-sm text-error"
+                    onClick={() => {
+                      setPlannedName(sourceDisplayName);
+                      setEditing(false);
+                    }}
+                    aria-label={t('common:actions.cancel')}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                <p
+                  className="mt-1 truncate text-[11px] text-base-content/55"
+                  title={t('source.source_unchanged')}
                 >
-                  <option value="" />
-                  {categoryDef.subcategories.map((candidate) => (
-                    <option key={candidate}>{candidate}</option>
-                  ))}
-                </select>
-              )}
-              <button
-                className="btn btn-primary btn-xs join-item"
-                disabled={busy}
-                onClick={() =>
-                  void onClassify(item, category, subcategory || null, {
-                    ...suggestedObject,
-                    ...metadata,
-                  })
-                }
-              >
-                {t('actions.confirm')}
-              </button>
-            </div>
-            {categoryDef?.filters?.map((filter) => (
-              <label className="block mt-1" key={filter.key}>
-                <span className="text-xs opacity-60">{filter.label}</span>
-                <select
-                  className="select select-bordered select-xs w-full"
-                  value={metadata[filter.key] ?? String(suggestedObject[filter.key] ?? '')}
-                  onChange={(event) =>
-                    setMetadata((current) => ({
-                      ...current,
-                      [filter.key]: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="" />
-                  {filter.options.map((option) => (
-                    <option key={option}>{option}</option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </>
-        ) : (
-          <>
-            <span className="badge badge-outline">{item.matchCategory}</span>
-            {item.subCategory && <span className="badge badge-ghost ml-1">{item.subCategory}</span>}
-          </>
-        )}
-      </td>
-      <td>
-        {item.canonicalSuggestions[0]?.name ?? t('no_match')}
-        {item.canonicalSuggestions[0]?.matchedAlias && (
-          <div className="text-xs opacity-60">{item.canonicalSuggestions[0].matchedAlias}</div>
-        )}
-      </td>
-      <td className="min-w-64">
-        {canChooseDestination ? (
-          <div className="space-y-1">
-            {item.destinationSuggestions.map((suggestion) => (
-              <button
-                key={[suggestion.kind, suggestion.objectId ?? suggestion.canonicalEntryKey].join(
-                  ':',
-                )}
-                className="btn btn-ghost btn-xs justify-start w-full"
-                disabled={busy}
-                onClick={() =>
-                  void onChooseDestination(item, suggestion, destinationDecision(batch, suggestion))
-                }
-                title={[suggestion.targetPath, suggestion.warning].filter(Boolean).join('\n')}
-              >
-                {suggestion.folderName}
-                {suggestion.warning
-                  ? ` — ${suggestion.warning}`
-                  : suggestion.kind === 'specific_target' &&
-                    suggestion.confidenceTier !== 'high' &&
-                    ' — ' + t('specific_warning')}
-              </button>
-            ))}
-            <div className="join w-full">
-              <select
-                className="select select-bordered select-xs join-item flex-1"
-                value={manualTarget}
-                onChange={(event) => setManualTarget(event.target.value)}
-              >
-                <option value="">{t('choose_existing')}</option>
-                {objects.map((object) => (
-                  <option key={object.id} value={object.id}>
-                    {object.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="btn btn-xs join-item"
-                disabled={!manualTarget || busy}
-                onClick={() => void onChooseManualTarget(item, manualTarget)}
-              >
-                {t('actions.use_target')}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <span title={item.destinationPath ?? undefined}>
-            {item.destinationPath ?? t('no_destination')}
-          </span>
-        )}
-      </td>
-      <td>
-        <span className="badge badge-outline">
-          {item.confidencePercentage}% {item.confidenceTier}
-        </span>
-        {item.evidence.length > 0 && (
-          <details className="text-xs mt-1">
-            <summary>{t('evidence')}</summary>
-            {item.evidence.map((evidence, index) => (
-              <div key={[evidence.source, index].join(':')}>
-                {evidence.source}: {evidence.value}
+                  {t('source.destination_preview', {
+                    destination: selectedDestinationName,
+                    name: plannedName.trim() || sourceDisplayName,
+                  })}
+                </p>
               </div>
-            ))}
-          </details>
+            ) : (
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="truncate font-semibold">{sourceDisplayName}</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-square btn-xs opacity-0 transition-opacity group-hover/source:opacity-100 focus:opacity-100"
+                  disabled={!canEdit || busy}
+                  onClick={() => setEditing(true)}
+                  aria-label={t('source.edit_name')}
+                  title={t('source.edit_name')}
+                >
+                  <Pencil size={13} />
+                </button>
+              </div>
+            )}
+            {!editing && (
+              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-base-content/50">
+                {archiveSource ? (
+                  <FileArchive size={13} className="shrink-0" aria-hidden="true" />
+                ) : (
+                  <Folder size={13} className="shrink-0" aria-hidden="true" />
+                )}
+                <button
+                  type="button"
+                  className="truncate text-left hover:text-primary hover:underline"
+                  title={item.sourcePath}
+                  onClick={() => void onRevealSource(item)}
+                >
+                  {shortPath(item.sourcePath)}
+                </button>
+                <ExternalLink
+                  size={11}
+                  className="shrink-0 opacity-0 group-hover/source:opacity-60"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
+            <p className="mt-0.5 truncate text-[11px] leading-4 text-base-content/60">
+              {sourceIdentification
+                ? t('source.identified', {
+                    name: sourceIdentification.name,
+                    score: sourceIdentification.confidencePercentage,
+                  })
+                : t('source.matching_by_name')}
+            </p>
+          </div>
+        </ImportSourcePreviewCard>
+        {errorText && (
+          <p className="mt-2 line-clamp-2 text-xs leading-snug text-error">{errorText}</p>
         )}
       </td>
-      <td>
-        <span className="badge badge-outline">{item.decision}</span>
-        <div className="text-xs mt-1">{item.result ?? item.error}</div>
+      <td className="min-w-0 align-middle">
+        <div className="flex min-h-14 min-w-0 items-center gap-1.5">
+          <div className="min-w-0 flex-1">
+            <ImportBatchWizardDestinationPanel
+              batch={batch}
+              busy={busy}
+              item={item}
+              objects={objects}
+              onChooseDestination={onChooseDestination}
+              onChooseManualTarget={onChooseManualTarget}
+            />
+          </div>
+          {item.destinationPath && onRevealDestination && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-square h-11 min-h-11 w-11 shrink-0"
+              onClick={() => void onRevealDestination(item)}
+              aria-label={t('actions.view_destination')}
+              title={t('actions.view_destination')}
+            >
+              <Eye size={16} />
+            </button>
+          )}
+        </div>
       </td>
-      <td>
-        <div className="flex flex-col gap-1">
-          {item.status === 'awaiting_destination' && (
-            <button
-              className="btn btn-ghost btn-xs"
-              disabled={busy}
-              onClick={() => void onSkip(item)}
-            >
-              {t('actions.skip')}
-            </button>
-          )}
-          {canEditPlan && (
-            <button
-              className="btn btn-ghost btn-xs"
-              disabled={busy}
-              onClick={() => void onRetry(item)}
-            >
-              {t('actions.retry')}
-            </button>
-          )}
-          <button className="btn btn-ghost btn-xs" onClick={() => void onOpenInExplorer(item)}>
-            {t('actions.open')}
+      <td className="min-w-0 align-middle">
+        <MatchScoreBadge
+          score={displayedConfidence}
+          tier={displayedTier}
+          destinationName={selectedDestinationName}
+          method={displayedMethod}
+          manual={hasManualDestination}
+          categoryWarning={
+            selectedSuggestion?.warning !== null && selectedSuggestion?.warning !== undefined
+          }
+        />
+      </td>
+      <td className="w-32 align-middle">
+        <div className="join join-vertical flex min-h-14 w-full flex-col justify-center">
+          <button
+            type="button"
+            className={`btn btn-xs join-item justify-start ${proceed ? 'btn-success' : 'btn-ghost'}`}
+            disabled={busy || (!proceed && !topSuggestion)}
+            onClick={() => {
+              if (!proceed && topSuggestion) {
+                void onChooseDestination(
+                  item,
+                  topSuggestion,
+                  destinationDecision(batch, topSuggestion),
+                );
+              }
+            }}
+          >
+            {t('actions.proceed')}
+          </button>
+          <button
+            type="button"
+            className={`btn btn-xs join-item justify-start ${
+              item.decision === 'skip' ? 'btn-warning' : 'btn-ghost'
+            }`}
+            disabled={busy}
+            onClick={() => void onSkip(item)}
+          >
+            {t('actions.skip')}
           </button>
         </div>
+        {canRetry && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs mt-1 gap-1"
+            disabled={busy}
+            onClick={() => void onRetry(item)}
+          >
+            <RefreshCw size={11} /> {needsRecovery ? t('actions.resume') : t('actions.retry')}
+          </button>
+        )}
       </td>
     </tr>
   );
+}
+
+function shortPath(path: string): string {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  if (parts.length <= 2) return parts.join('/');
+  return `…/${parts.slice(-2).join('/')}`;
+}
+
+function withoutDisabledPrefix(name: string): string {
+  return name.replace(/^disable(?:d)?[\s_-]+/i, '').trim() || name;
+}
+
+function effectiveMatchMethod(
+  suggestion: DestinationSuggestion | undefined,
+): DestinationMatchMethod {
+  if (!suggestion) return 'no_name_match';
+  if (
+    suggestion.matchMethod === 'no_name_match' &&
+    (suggestion.kind === 'create_canonical' ||
+      (suggestion.canonicalEntryKey !== null && suggestion.confidencePercentage >= 75))
+  ) {
+    return 'canonical_identity';
+  }
+  return suggestion.matchMethod ?? 'no_name_match';
 }

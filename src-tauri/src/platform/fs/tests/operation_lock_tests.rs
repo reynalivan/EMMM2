@@ -40,3 +40,14 @@ async fn test_lock_release_on_drop() {
     let result = lock.acquire().await;
     assert!(result.is_ok(), "Should succeed after guard is dropped");
 }
+
+#[tokio::test]
+async fn cloned_lock_handles_share_contention() {
+    let lock = OperationLock::new();
+    let shared = lock.clone();
+    let _guard = lock.acquire().await.unwrap();
+
+    let result = shared.acquire().await;
+
+    assert!(result.is_err(), "cloned handles must guard the same mutex");
+}

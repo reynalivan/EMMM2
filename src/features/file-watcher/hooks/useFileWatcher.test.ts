@@ -10,10 +10,10 @@ import {
 import { isPreviewAffected } from '../utils/reconcileSelection';
 import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { runtimeQueryKeys } from '../../runtime-sync/queryRefresh';
-import { GameType, type GameConfig } from '@/entities/game/model/game';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { workspaceKeys } from '../../workspace-runtime/hooks/useWorkspaceViewModel';
+import { runtimeQueryKeys } from '@/shared/lib/queryRefresh';
+import { GameType, type GameConfig } from '@/entities/game';
+import { useAppStore } from '@/app/store';
+import { workspaceKeys } from '@/features/workspace-runtime/@x/file-watcher';
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
@@ -24,7 +24,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../app/store/useAppStore', () => {
+vi.mock('@/app/store', () => {
   const state = {
     workspaceView: 'mods',
     explorerSubPath: undefined as string | undefined,
@@ -92,7 +92,7 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     info: vi.fn(),
     warning: vi.fn(),
@@ -475,7 +475,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('records unavailable disk source without refreshing runtime queries', async () => {
-    const { useAppStore } = await import('../../../app/store/useAppStore');
+    const { useAppStore } = await import('@/app/store');
     const state = useAppStore.getState();
 
     applyDiskReconcileResult(
@@ -504,7 +504,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('clears unavailable disk source after a successful applied result', async () => {
-    const { useAppStore } = await import('../../../app/store/useAppStore');
+    const { useAppStore } = await import('@/app/store');
     const state = useAppStore.getState();
 
     applyDiskReconcileResult(
@@ -559,7 +559,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('includes collection reference impact in the external change toast', async () => {
-    const { toast } = await import('../../../app/store/useToastStore');
+    const { toast } = await import('@/shared/ui/toast');
 
     applyDiskReconcileResult(
       createResult({
@@ -597,7 +597,7 @@ describe('applyDiskReconcileResult', () => {
   });
 
   it('surfaces a nonfatal warning when committed runtime effects remain pending', async () => {
-    const { toast } = await import('../../../app/store/useToastStore');
+    const { toast } = await import('@/shared/ui/toast');
 
     const result = createResult({
       pending_runtime_effects: {
@@ -624,7 +624,7 @@ describe('applyDiskReconcileResult', () => {
     );
 
     expect(toast.warning).toHaveBeenCalledWith(
-      expect.stringContaining('Collection runtime refresh will be retried'),
+      'Disk changes were applied, but runtime refresh is still pending.',
     );
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
@@ -741,7 +741,7 @@ describe('useDiskReconcileCoordinator', () => {
       .mockResolvedValueOnce(createResult({ reason: 'WindowRefocused' }));
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { toast } = await import('../../../app/store/useToastStore');
+    const { toast } = await import('@/shared/ui/toast');
     const state = useAppStore.getState();
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
 
@@ -772,7 +772,7 @@ describe('useDiskReconcileCoordinator', () => {
       createResult({}),
     );
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
-    const { toast } = await import('../../../app/store/useToastStore');
+    const { toast } = await import('@/shared/ui/toast');
 
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
     await waitFor(() => expect(eventHandlers['mod_watch:event']).toBeDefined());

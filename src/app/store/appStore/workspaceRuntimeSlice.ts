@@ -1,14 +1,15 @@
-import type { WorkspaceRuntimeEvent } from '@/features/workspace-runtime/state/workspaceEvents';
-import {
-  INITIAL_WORKSPACE_DIALOG_STATE,
-  INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-  type WorkspaceDialogState,
-  type WorkspacePreviewTransitionState,
-  type WorkspaceRuntimeState,
-} from '@/features/workspace-runtime/state/workspaceState';
+import type { WorkspaceRuntimeEvent } from '@/features/workspace-runtime';
+import type {
+  WorkspaceDialogState,
+  WorkspacePreviewTransitionState,
+  WorkspaceRuntimeState,
+} from '@/features/workspace-runtime';
 import type { AppState } from '../useAppStore';
 import type { AppSliceCreator } from './sliceTypes';
-import { reduceWorkspaceRuntimeState } from './workspaceRuntimeReducer';
+import {
+  reduceWorkspaceRuntimeState,
+  selectWorkspaceRuntimeState,
+} from '@/features/workspace-runtime/@x/app';
 
 export interface WorkspaceRuntimeSlice {
   // Workspace preview/dialog state, driven by dispatched runtime events.
@@ -17,19 +18,6 @@ export interface WorkspaceRuntimeSlice {
   workspaceDialogState: WorkspaceDialogState;
 
   dispatchWorkspaceRuntime: (event: WorkspaceRuntimeEvent) => WorkspaceRuntimeState;
-}
-
-export function selectWorkspaceRuntimeState(state: AppState): WorkspaceRuntimeState {
-  return {
-    selectedObjectFolderPath: state.selectedObjectFolderPath,
-    explorerSubPath: state.explorerSubPath,
-    currentPath: state.currentPath,
-    selectedModPath: state.selectedModPath,
-    mobileActivePane: state.mobileActivePane,
-    previewDirty: state.workspacePreviewDirty,
-    previewTransition: state.workspacePreviewTransition ?? INITIAL_WORKSPACE_PREVIEW_TRANSITION,
-    dialogState: state.workspaceDialogState ?? INITIAL_WORKSPACE_DIALOG_STATE,
-  };
 }
 
 function toAppStatePatch(runtimeState: WorkspaceRuntimeState): Partial<AppState> {

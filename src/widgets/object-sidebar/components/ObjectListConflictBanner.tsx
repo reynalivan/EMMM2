@@ -1,7 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { openFolderConflictManagerDialog } from '@/features/workspace-runtime/state/workspaceDialogs';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import { openFolderConflictManagerDialog } from '@/features/workspace-runtime';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 
 interface ObjectListConflictBannerProps {
   conflictObjects: WorkspaceObjectNode[];

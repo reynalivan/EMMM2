@@ -9,12 +9,12 @@ import type {
   StableCategory,
 } from '../../../shared/api/tauri/bindings.gen';
 import { formatAppError } from '../../../shared/lib/appError';
-import { toast } from '../../../app/store/useToastStore';
-import { publishQueryScopes } from '../../runtime-sync/queryRefresh';
+import { toast } from '@/shared/ui/toast';
+import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 import {
   subscribeObjectClassificationWizard,
   type ObjectClassificationLaunchRequest,
-} from '../../import-batches/classificationLauncher';
+} from '@/features/import-batches/@x/match-wizard';
 
 const CATEGORIES: StableCategory[] = ['Character', 'Weapon', 'UI', 'Other'];
 
@@ -43,11 +43,13 @@ export function ObjectClassificationWizardHost() {
       setPhase('category');
       setDisableAfterApply(false);
       try {
-        const preview = await commands.previewObjectClassificationBatch({
-          gameId: next.gameId,
-          objectIds: next.objectIds,
-          drafts: [],
-        });
+        const preview =
+          next.initialItems ??
+          (await commands.previewObjectClassificationBatch({
+            gameId: next.gameId,
+            objectIds: next.objectIds,
+            drafts: [],
+          }));
         const games = await commands.getGames();
         const game = games.find((candidate) => candidate.id === next.gameId);
         setSchema(game ? await commands.getGameSchema(game.game_type) : null);
@@ -71,6 +73,7 @@ export function ObjectClassificationWizardHost() {
       } catch (error) {
         toast.error(t('errors.launch', { error: formatAppError(error) }));
         setRequest(null);
+        next.onComplete?.('cancelled');
       } finally {
         setBusy(false);
       }
@@ -101,6 +104,17 @@ export function ObjectClassificationWizardHost() {
         })),
       });
       setItems(preview);
+      setDrafts((current) =>
+        Object.fromEntries(
+          preview.map((item) => [
+            item.objectId,
+            {
+              ...current[item.objectId],
+              canonicalIndex: item.canonicalSuggestions.length > 0 ? 0 : null,
+            },
+          ]),
+        ),
+      );
       setPhase('canonical');
     } catch (error) {
       toast.error(t('errors.update', { error: formatAppError(error) }));
@@ -141,7 +155,9 @@ export function ObjectClassificationWizardHost() {
         }),
       );
       if (result.disableWarning) toast.warning(result.disableWarning);
+      const onComplete = request.onComplete;
       setRequest(null);
+      onComplete?.('applied');
     } catch (error) {
       toast.error(t('errors.commit', { error: formatAppError(error) }));
     } finally {
@@ -305,7 +321,15 @@ export function ObjectClassificationWizardHost() {
           </table>
         </div>
         <div className="modal-action">
-          <button className="btn btn-ghost" disabled={busy} onClick={() => setRequest(null)}>
+          <button
+            className="btn btn-ghost"
+            disabled={busy}
+            onClick={() => {
+              const onComplete = request.onComplete;
+              setRequest(null);
+              onComplete?.('cancelled');
+            }}
+          >
             {t('common:actions.cancel')}
           </button>
           {phase === 'category' ? (

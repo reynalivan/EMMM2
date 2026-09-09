@@ -1,8 +1,5 @@
-import type {
-  CollectionRuntimeSnapshot,
-  CollectionSummary,
-} from '@/entities/collection/model/collection';
-import type { SafetyFilter } from '../../app/store/appStore/explorerSlice';
+import type { CollectionRuntimeSnapshot, CollectionSummary } from '@/entities/collection';
+import type { SafetyFilter } from '@/app/store';
 
 export type CollectionSaveMode = 'save_current_state' | 'clone_snapshot';
 

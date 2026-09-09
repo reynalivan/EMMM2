@@ -62,9 +62,11 @@ async fn saving_last_changes_as_a_collection_consumes_the_draft() {
         .await
         .expect("persist draft state");
     let mut tx = ctx.pool.begin().await.expect("begin runtime transaction");
-    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(&mut tx, "game-1", &draft.id, None)
-        .await
-        .expect("set draft pointer");
+    crate::modules::collections::adapters::sqlite::runtime::set_draft_tx(
+        &mut tx, "game-1", &draft.id, None,
+    )
+    .await
+    .expect("set draft pointer");
     tx.commit().await.expect("commit runtime transaction");
 
     let saved = create_collection(
@@ -141,14 +143,16 @@ async fn save_current_rejects_a_draft_referenced_by_an_open_apply() {
     )
     .await
     .expect("create open task");
-    assert!(crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
-        &ctx.pool,
-        "open-save-rollback",
-        crate::modules::workspace::domain::task::TaskStatus::Pending,
-        crate::modules::workspace::domain::task::TaskStatus::Running,
-    )
-    .await
-    .expect("claim open task"));
+    assert!(
+        crate::modules::workspace::adapters::sqlite::task::compare_and_set_status(
+            &ctx.pool,
+            "open-save-rollback",
+            crate::modules::workspace::domain::task::TaskStatus::Pending,
+            crate::modules::workspace::domain::task::TaskStatus::Running,
+        )
+        .await
+        .expect("claim open task")
+    );
 
     let error = create_collection(
         &ctx.pool,
@@ -163,10 +167,13 @@ async fn save_current_rejects_a_draft_referenced_by_an_open_apply() {
     .expect_err("save current must retain a referenced rollback draft");
 
     assert!(format!("{error}").contains("recovery"));
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-save-protected")
-        .await
-        .expect("load runtime")
-        .expect("runtime exists");
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(
+        &ctx.pool,
+        "game-save-protected",
+    )
+    .await
+    .expect("load runtime")
+    .expect("runtime exists");
     assert_eq!(
         runtime.draft_collection_id.as_deref(),
         Some(draft.id.as_str())

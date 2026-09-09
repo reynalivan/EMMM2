@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import {
   openFolderConflictManagerDialog,
   openRenameConfirmationDialog,
-} from '@/features/workspace-runtime/state/workspaceDialogs';
+} from '@/features/workspace-runtime';
 import WorkspaceSourceUnavailableBanner from './WorkspaceSourceUnavailableBanner';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 
 const EMPTY_DISK_CONFLICTS: never[] = [];
 

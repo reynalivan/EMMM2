@@ -1,8 +1,8 @@
 //! Tauri commands for hotkey management — bindings, conflicts, and config updates.
 
-use crate::shared::errors::AppError;
-use crate::modules::settings::application::config::ConfigService;
 use crate::modules::automation::application::hotkeys::manager::HotkeyManager;
+use crate::modules::settings::application::config::ConfigService;
+use crate::shared::errors::AppError;
 use tauri::State;
 
 /// Update hotkey config and re-register OS hotkeys.
@@ -22,7 +22,11 @@ pub async fn update_hotkey_config(
 
     // Sync in-game overlay artifacts
     if let Err(error) =
-        crate::modules::system::application::app::post_apply::trigger_overlay_refresh(pool.inner(), &config_state).await
+        crate::modules::system::application::app::post_apply::trigger_overlay_refresh(
+            pool.inner(),
+            &config_state,
+        )
+        .await
     {
         log::warn!("Hotkeys updated but overlay refresh failed: {error}");
     }

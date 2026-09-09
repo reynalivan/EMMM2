@@ -2,16 +2,20 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::maybe_apply_ai_rerank;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
-use crate::modules::matching::application::deep_matcher::models::acceptance::{finalize_review, FinalizeConfig};
+use crate::modules::matching::application::deep_matcher::models::acceptance::{
+    finalize_review, FinalizeConfig,
+};
 use crate::modules::matching::application::deep_matcher::pipeline::name_rescue;
 use crate::modules::matching::application::deep_matcher::pipeline::stages::{
     apply_direct_name_support_stage, ObservedTokenBuckets,
 };
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
-use crate::modules::matching::application::deep_matcher::{MatchMode, ScoreState, StagedMatchResult};
+use crate::modules::matching::application::deep_matcher::{
+    MatchMode, ScoreState, StagedMatchResult,
+};
+use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
 
 use super::scoring_stages::{
     apply_alias_recheck_stage, apply_hash_stage, apply_weighted_token_overlap_stage,

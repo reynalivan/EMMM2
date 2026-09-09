@@ -45,11 +45,11 @@ const sharedModActionsState = {
   hasPin: true,
 };
 
-vi.mock('../mod-runtime/actions/useSharedModActions', () => ({
+vi.mock('@/features/mod-runtime/actions/useSharedModActions', () => ({
   useSharedModActions: () => sharedModActionsState,
 }));
 
-vi.mock('../mod-runtime/actions/useModContextMenuActions', () => ({
+vi.mock('@/features/mod-runtime/actions/useModContextMenuActions', () => ({
   useModContextMenuActions: () => ({
     openExplorer: vi.fn(),
     pasteThumbnailFromClipboard: vi.fn(),
@@ -57,14 +57,14 @@ vi.mock('../mod-runtime/actions/useModContextMenuActions', () => ({
   }),
 }));
 
-vi.mock('../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(() => ({
     activeGame: { id: 'GIMI', name: 'Genshin Impact' },
     isLoading: false,
   })),
 }));
 
-vi.mock('../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: vi.fn((selector) => {
     const state = {
       activeGameId: 'GIMI',
@@ -75,7 +75,7 @@ vi.mock('../../app/store/useAppStore', () => ({
   }),
 }));
 
-vi.mock('../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   useToastStore: vi.fn(() => ({
     addToast: vi.fn(),
   })),

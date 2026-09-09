@@ -1,15 +1,15 @@
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useAppStore } from '@/app/store';
+import { useActiveGame } from '@/entities/game';
 import { useFolderGridNav } from './useFolderGridNav';
 import { useFolderGridBulk } from './useFolderGridBulk';
 import { useFolderGridImport } from './useFolderGridImport';
-import { useWorkspaceRuntime } from '@/features/workspace-runtime/state/workspaceStoreBridge';
+import { useWorkspaceRuntime } from '@/features/workspace-runtime';
 import { useFolderGridRuntime } from './useFolderGridRuntime';
 import { useFolderGridActions } from './useFolderGridActions';
 import { useFolderGridSelection } from './useFolderGridSelection';
-import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime/actions/workspaceActionAvailability';
+import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime';
 
 export function useFolderGrid() {
   // Selector-scoped: a bare useAppStore() here re-runs the whole grid
@@ -64,6 +64,7 @@ export function useFolderGrid() {
     workspace,
     rawResponse,
     rawFolders,
+    previousFolders,
     sortedFolders,
     isLoading,
     isError,
@@ -79,6 +80,7 @@ export function useFolderGrid() {
     cardWidth,
   } = useFolderGridRuntime({
     viewMode,
+    currentPath,
     explorerSubPath,
     explorerScrollOffset,
     setExplorerScrollOffset,
@@ -106,10 +108,6 @@ export function useFolderGrid() {
     currentPath,
     explorerSubPath,
     selectedObjectFolderPath,
-    sortField,
-    sortOrder,
-    setSortField,
-    setSortOrder,
   });
 
   const {
@@ -170,6 +168,7 @@ export function useFolderGrid() {
 
   return {
     rawFolders,
+    previousFolders,
     sortedFolders,
     isLoading,
     isError,
@@ -199,7 +198,8 @@ export function useFolderGrid() {
     explorerSearchQuery,
     sortField,
     sortOrder,
-    sortLabel: nav.sortLabel,
+    setSortField,
+    setSortOrder,
     viewMode,
     parentRef,
     virtualItems,
@@ -213,7 +213,6 @@ export function useFolderGrid() {
     setMobilePane,
     setViewMode,
     setExplorerSearch,
-    handleSortToggle: nav.handleSortToggle,
     handleKeyDown,
     focusedId,
     selectedModPath: runtime.state.selectedModPath,

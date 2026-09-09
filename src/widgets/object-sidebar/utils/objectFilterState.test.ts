@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FilterDef } from '@/entities/game-object/model/object';
+import type { FilterDef } from '@/entities/game-object';
 import { areObjectMetaFiltersEqual, sanitizeObjectMetaFilters } from './objectFilterState';
 
 describe('objectFilterState', () => {

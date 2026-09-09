@@ -1,10 +1,12 @@
 //! Collection runtime status tests.
 
 use super::{get_collection_runtime_descriptor, get_collection_runtime_state};
-use crate::modules::collections::domain::collection::{CreateCollectionInput, CreateCollectionMode};
+use crate::modules::collections::adapters::sqlite as collection;
+use crate::modules::collections::domain::collection::{
+    CreateCollectionInput, CreateCollectionMode,
+};
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::workspace::domain::runtime_state::{LastChangesSource, RuntimeStatus};
-use crate::modules::collections::adapters::sqlite as collection;
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,
@@ -207,10 +209,9 @@ async fn runtime_state_never_treats_last_changes_as_an_active_baseline() {
     .await
     .expect("insert game");
 
-    let unsaved =
-        collection::create(&ctx.pool, "unsaved-1", "game-1", "202603251217", true, true)
-            .await
-            .expect("create unsaved");
+    let unsaved = collection::create(&ctx.pool, "unsaved-1", "game-1", "202603251217", true, true)
+        .await
+        .expect("create unsaved");
     collection::runtime::set_active(&ctx.pool, "game-1", Some(&unsaved.id))
         .await
         .expect("set active pointer");

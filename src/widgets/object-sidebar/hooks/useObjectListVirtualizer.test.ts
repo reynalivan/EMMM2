@@ -1,17 +1,29 @@
 import { renderHook } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 
-vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: vi.fn(() => ({
-    measurementsCache: [],
-    scrollToIndex: vi.fn(),
-  })),
+const virtualizerState = vi.hoisted(() => ({
+  measurementsCache: [] as Array<{
+    index: number;
+    key: number;
+    start: number;
+    end: number;
+    size: number;
+    lane: number;
+  }>,
+  scrollToIndex: vi.fn(),
 }));
 
+vi.mock('@tanstack/react-virtual', () => ({ useVirtualizer: vi.fn(() => virtualizerState) }));
+
 describe('useObjectListVirtualizer', () => {
+  beforeEach(() => {
+    virtualizerState.measurementsCache.length = 0;
+    virtualizerState.scrollToIndex.mockClear();
+  });
+
   const mockSchema = {
     categories: [
       { name: 'Character', icon: 'User', color: 'primary' },
@@ -222,5 +234,37 @@ describe('useObjectListVirtualizer', () => {
     expect(result.current.flatObjectItems[2]).toEqual(
       expect.objectContaining({ type: 'row', obj: expect.objectContaining({ name: 'Beta' }) }),
     );
+  });
+
+  it('waits for the deferred scroll container before deciding the selected row is offscreen', () => {
+    const { result, rerender } = renderHook((props) => useObjectListVirtualizer(props), {
+      initialProps: {
+        objects: [] as WorkspaceObjectNode[],
+        schema: mockSchema as unknown as import('@/entities/game-object/model/object').GameSchema,
+        selectedObjectFolderPath: 'alpha',
+        isMobile: false,
+      },
+    });
+
+    const scrollContainer = document.createElement('div');
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 200 });
+    result.current.parentRef(scrollContainer);
+    virtualizerState.measurementsCache[1] = {
+      index: 1,
+      key: 1,
+      start: 28,
+      end: 98,
+      size: 70,
+      lane: 0,
+    };
+
+    rerender({
+      objects: [mockObjects[1]],
+      schema: mockSchema as unknown as import('@/entities/game-object/model/object').GameSchema,
+      selectedObjectFolderPath: 'alpha',
+      isMobile: false,
+    });
+
+    expect(result.current.stickyPosition).toBeNull();
   });
 });

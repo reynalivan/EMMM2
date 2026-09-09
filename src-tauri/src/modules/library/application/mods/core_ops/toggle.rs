@@ -4,10 +4,64 @@
 use super::naming::{
     find_existing_sibling_case_insensitive, rename_conflict_error, standardize_prefix,
 };
-use crate::shared::errors::AppError;
-use crate::platform::fs::guard::ValidatedPath;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::guard::ValidatedPath;
+use crate::shared::errors::AppError;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct ToggleRenamePlan {
+    old_path: PathBuf,
+    new_path: PathBuf,
+}
+
+impl ToggleRenamePlan {
+    pub fn old_path(&self) -> &Path {
+        &self.old_path
+    }
+
+    pub fn new_path(&self) -> &Path {
+        &self.new_path
+    }
+
+    pub fn apply(&self, noun: &str) -> Result<(), AppError> {
+        crate::platform::fs::file_utils::rename_cross_drive_fallback(&self.old_path, &self.new_path)
+            .map_err(|error| map_toggle_error(&self.old_path, noun, error))
+    }
+
+    pub fn rollback(&self, noun: &str) -> Result<(), AppError> {
+        crate::platform::fs::file_utils::rename_cross_drive_fallback(&self.new_path, &self.old_path)
+            .map_err(|error| map_toggle_error(&self.new_path, noun, error))
+    }
+}
+
+pub fn plan_toggle_rename(src: &Path, enable: bool) -> Result<Option<ToggleRenamePlan>, AppError> {
+    if !src.exists() || !src.is_dir() {
+        return Err(AppError::Io(format!(
+            "Mod folder does not exist: {}",
+            src.display()
+        )));
+    }
+    let old_name = src.file_name().unwrap_or_default().to_string_lossy();
+    let new_name = standardize_prefix(&old_name, enable);
+    if new_name == old_name {
+        return Ok(None);
+    }
+
+    let parent = src
+        .parent()
+        .ok_or_else(|| AppError::Io("Invalid path".to_string()))?;
+    let new_path = parent.join(&new_name);
+    if let Some(existing_path) = find_existing_sibling_case_insensitive(parent, &new_name, src) {
+        let base = crate::modules::workspace::domain::normalizer::normalize_display_name(&old_name);
+        return Err(rename_conflict_error(&new_path, &existing_path, &base));
+    }
+
+    Ok(Some(ToggleRenamePlan {
+        old_path: src.to_path_buf(),
+        new_path,
+    }))
+}
 
 /// Map a rename failure to a structured error, surfacing the locking
 /// processes when the folder is busy.
@@ -36,27 +90,11 @@ pub(crate) fn rename_toggle_on_disk(
     enable: bool,
     noun: &str,
 ) -> Result<Option<PathBuf>, AppError> {
-    let old_name = src.file_name().unwrap_or_default().to_string_lossy();
-    let new_name = standardize_prefix(&old_name, enable);
-    if new_name == old_name {
+    let Some(plan) = plan_toggle_rename(src, enable)? else {
         return Ok(None);
-    }
-
-    let parent = src
-        .parent()
-        .ok_or_else(|| AppError::Io("Invalid path".to_string()))?;
-    let new_path = parent.join(&new_name);
-
-    // Guard: target already exists → rename collision (both X and DISABLED X on disk)
-    if let Some(existing_path) = find_existing_sibling_case_insensitive(parent, &new_name, src) {
-        let base = crate::modules::workspace::domain::normalizer::normalize_display_name(&old_name);
-        return Err(rename_conflict_error(&new_path, &existing_path, &base));
-    }
-
-    crate::platform::fs::file_utils::rename_cross_drive_fallback(src, &new_path)
-        .map_err(|error| map_toggle_error(src, noun, error))?;
-
-    Ok(Some(new_path))
+    };
+    plan.apply(noun)?;
+    Ok(Some(plan.new_path))
 }
 
 pub async fn toggle_mod_inner(

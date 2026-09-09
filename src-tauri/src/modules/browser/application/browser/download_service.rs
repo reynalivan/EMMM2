@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 use crate::modules::browser::adapters::sqlite::browser;
-use crate::modules::browser::application::browser::download_handler;
+use crate::modules::browser::application::browser::{browser_service, download_handler};
 
 /// DTO for the frontend download list. Defined in `repo::browser`; re-exported
 /// so existing `download_service::BrowserDownloadDto` users keep compiling.
@@ -24,12 +24,38 @@ pub async fn create_download(
     file_path: &str,
 ) -> Result<String, BrowserError> {
     let id = Uuid::new_v4().to_string();
+    create_download_with_id(db, &id, session_id, filename, source_url, file_path, 0).await?;
+    Ok(id)
+}
+
+/// Insert a new `requested` row with an id reserved by the queue registry.
+/// Reserving first makes queue limits and duplicate URL checks atomic in memory.
+pub async fn create_download_with_id(
+    db: &SqlitePool,
+    id: &str,
+    session_id: Option<&str>,
+    filename: &str,
+    source_url: &str,
+    file_path: &str,
+    queue_order: i64,
+) -> Result<(), BrowserError> {
     let now = now_stamp();
 
-    browser::insert_download(db, &id, session_id, filename, source_url, file_path, &now)
-        .await?;
+    browser::insert_download(
+        db,
+        browser::NewDownloadRow {
+            id,
+            session_id,
+            filename,
+            source_url,
+            file_path,
+            queue_order,
+            started_at: &now,
+        },
+    )
+    .await?;
 
-    Ok(id)
+    Ok(())
 }
 
 /// Update download status + optional progress fields.
@@ -70,16 +96,11 @@ pub async fn delete_download(
     delete_file: bool,
 ) -> Result<(), BrowserError> {
     if delete_file {
-        let path = browser::get_file_path(db, download_id)
-            .await
-            .ok()
-            .flatten();
+        let path = browser::get_file_path(db, download_id).await.ok().flatten();
 
         if let Some(p) = path {
-            crate::platform::fs::recycle_bin::move_path_to_recycle_bin(std::path::Path::new(
-                &p,
-            ))
-            .map_err(|error| BrowserError::Io(error.to_string()))?;
+            crate::platform::fs::recycle_bin::move_path_to_recycle_bin(std::path::Path::new(&p))
+                .map_err(|error| BrowserError::Io(error.to_string()))?;
         }
     }
 
@@ -93,7 +114,7 @@ pub async fn cancel_download(
     download_id: &str,
     delete_file: Option<bool>,
 ) -> Result<(), BrowserError> {
-    if download_handler::request_cancel(download_id) {
+    if download_handler::request_cancel(download_id).is_some() {
         return Ok(());
     }
 
@@ -102,6 +123,65 @@ pub async fn cancel_download(
         delete_download(db, download_id, true).await?;
     }
     Ok(())
+}
+
+/// Cancel a download and immediately notify the UI if it was still queued.
+/// Active transfers report their terminal state from the worker after partial
+/// file cleanup has completed.
+pub async fn cancel_download_with_feedback(
+    db: &SqlitePool,
+    app: &AppHandle,
+    download_id: &str,
+    delete_file: Option<bool>,
+) -> Result<(), BrowserError> {
+    match download_handler::request_cancel(download_id) {
+        Some(download_handler::CancelRequest::InProgress) => Ok(()),
+        Some(download_handler::CancelRequest::Queued) => {
+            update_status(db, download_id, "canceled", None, None, None, None).await?;
+            if delete_file.unwrap_or(false) {
+                delete_download(db, download_id, true).await?;
+            }
+            let _ = app.emit(
+                "browser:download-status",
+                serde_json::json!({ "id": download_id, "status": "canceled" }),
+            );
+            Ok(())
+        }
+        None => {
+            cancel_download(db, download_id, delete_file).await?;
+            let _ = app.emit(
+                "browser:download-status",
+                serde_json::json!({ "id": download_id, "status": "canceled" }),
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Request confirmation for re-downloading a failed or canceled item. A retry
+/// remains subject to the same explicit user approval as a fresh browser link.
+pub async fn retry_download(
+    db: &SqlitePool,
+    app: &AppHandle,
+    download_id: &str,
+) -> Result<(), BrowserError> {
+    let row = browser::get_retryable_download(db, download_id)
+        .await?
+        .ok_or_else(|| {
+            BrowserError::Download("Only failed or canceled downloads can be retried".into())
+        })?;
+    let source_url = row
+        .source_url
+        .ok_or_else(|| BrowserError::Download("The original download URL is unavailable".into()))?;
+    let downloads_root = browser_service::get_downloads_root(app, db).await;
+
+    download_handler::request_download_confirmation(
+        app,
+        source_url,
+        row.filename,
+        downloads_root,
+        row.session_id,
+    )
 }
 
 /// Remove all downloads with status `imported`.
@@ -120,58 +200,34 @@ pub async fn clear_old_downloads(db: &SqlitePool) -> Result<u64, BrowserError> {
     Ok(browser::delete_older_than(db, retention).await?)
 }
 
-/// Called by `browser_service` when the download `Finished` event fires.
-/// Updates the DB record and optionally triggers the Smart Import pipeline.
-pub async fn on_download_finished(
+/// Persist one worker's terminal state by the id assigned at queue admission.
+/// This deliberately never searches by URL: retrying an identical URL must not
+/// let the older worker update the newer row.
+pub async fn mark_download_finished(
     db: &SqlitePool,
     app: &AppHandle,
-    source_url: &str,
-    file_path: Option<&str>,
-    success: bool,
-    tab_label: &str,
+    download_id: &str,
+    file_path: &str,
 ) -> Result<(), BrowserError> {
-    // Find the download by source_url + tab_label heuristic (most recent requested)
-    let row = browser::find_active_by_url(db, source_url).await?;
+    update_status(
+        db,
+        download_id,
+        "finished",
+        None,
+        None,
+        None,
+        Some(file_path),
+    )
+    .await?;
 
-    let (download_id, _session_id) = match row {
-        Some(r) => (r.id, r.session_id),
-        None => {
-            log::warn!("No download record found for URL: {source_url} (tab: {tab_label})");
-            return Ok(());
-        }
-    };
-
-    if success {
-        update_status(db, &download_id, "finished", None, None, None, file_path).await?;
-
-        // Emit status update event
-        let _ = app.emit(
-            "browser:download-status",
-            serde_json::json!({
-                "id": download_id,
-                "status": "finished",
-                "file_path": file_path,
-            }),
-        );
-    } else {
-        update_status(
-            db,
-            &download_id,
-            "failed",
-            None,
-            None,
-            Some("Download failed"),
-            None,
-        )
-        .await?;
-        let _ = app.emit(
-            "browser:download-status",
-            serde_json::json!({
-                "id": download_id,
-                "status": "failed",
-            }),
-        );
-    }
+    let _ = app.emit(
+        "browser:download-status",
+        serde_json::json!({
+            "id": download_id,
+            "status": "finished",
+            "file_path": file_path,
+        }),
+    );
 
     Ok(())
 }

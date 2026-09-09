@@ -11,7 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import type { DashboardPayload } from '@/pages/dashboard/model/dashboard';
+import type { DashboardPayload } from '../model/dashboard';
 
 interface DashboardChartsProps {
   categoryDistribution: DashboardPayload['category_distribution'];

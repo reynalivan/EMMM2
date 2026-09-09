@@ -38,4 +38,22 @@ describe('validateFolderConflictDrafts', () => {
       [candidates[1].path]: 'duplicate',
     });
   });
+
+  it('rejects keeping the original name for a folder being renamed', () => {
+    const distinctCandidates: FolderNameConflictCandidate[] = [
+      { ...candidates[0], base_name: 'Blue' },
+      { ...candidates[1], base_name: 'Green', folder_name: 'DISABLED Green' },
+    ];
+
+    expect(
+      validateFolderConflictDrafts(
+        distinctCandidates,
+        {
+          [distinctCandidates[0].path]: 'Blue',
+          [distinctCandidates[1].path]: 'Green',
+        },
+        distinctCandidates[1].path,
+      ),
+    ).toEqual({ [distinctCandidates[0].path]: 'unchanged' });
+  });
 });

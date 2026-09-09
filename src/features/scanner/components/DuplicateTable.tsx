@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle, Info, Trash2 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
-import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace/model/scanner';
+import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace';
 import { formatBytes } from '../../../shared/lib/utils/formatters';
 import { useTranslation } from 'react-i18next';
 

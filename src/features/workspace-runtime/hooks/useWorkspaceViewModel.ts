@@ -2,11 +2,11 @@ import { useShallow } from 'zustand/react/shallow';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { toast } from '../../../app/store/useToastStore';
-import { ItemStatus, type ObjectFilter } from '@/entities/game-object/model/object';
-import type { WorkspaceViewModel } from '@/entities/workspace/model/workspace';
+import { useActiveGame } from '@/entities/game';
+import { useAppStore } from '@/app/store';
+import { toast } from '@/shared/ui/toast';
+import { ItemStatus, type ObjectFilter } from '@/entities/game-object';
+import type { WorkspaceViewModel } from '@/entities/workspace';
 import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntimeSelector,
@@ -32,6 +32,8 @@ export interface WorkspaceViewModelFilterInput {
 
 interface UseWorkspaceViewModelOptions {
   filterOverrides?: Partial<WorkspaceViewModelFilterInput>;
+  selectionOverrides?: Partial<WorkspaceViewModelSelectionInput>;
+  enabled?: boolean;
 }
 
 export const workspaceKeys = {
@@ -108,7 +110,11 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
       objectStatusFilter: state.objectStatusFilter,
     })),
   );
-  const selection = useWorkspaceSelectionInput();
+  const currentSelection = useWorkspaceSelectionInput();
+  const selection = useMemo(
+    () => ({ ...currentSelection, ...options?.selectionOverrides }),
+    [currentSelection, options?.selectionOverrides],
+  );
   const filterInput = {
     gameId: options?.filterOverrides?.gameId ?? activeGame?.id ?? null,
     selectedObjectType: options?.filterOverrides?.selectedObjectType ?? selectedObjectType,
@@ -129,14 +135,14 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
       selection.selectedModPath,
     ),
     queryFn: () => commands.getWorkspaceViewModel(buildWorkspaceViewModelInput(filter, selection)),
-    enabled: !!filterInput.gameId,
+    enabled: !!filterInput.gameId && (options?.enabled ?? true),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     placeholderData: keepPreviousData,
   });
 
   useEffect(() => {
-    if (!query.data || query.isPlaceholderData) {
+    if (options?.selectionOverrides || !query.data || query.isPlaceholderData) {
       return;
     }
 
@@ -159,7 +165,13 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
     if (shouldShowSelectionReconciliationToast(selection, reconciledSelection, nowMs)) {
       toast.info(buildReconciliationMessage(reconciledSelection.reconciliation_reason), 4000);
     }
-  }, [filterInput.gameId, query.data, query.isPlaceholderData, selection]);
+  }, [
+    filterInput.gameId,
+    options?.selectionOverrides,
+    query.data,
+    query.isPlaceholderData,
+    selection,
+  ]);
 
   return query;
 }

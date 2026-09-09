@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "emmm-native-dependencies",
+  "version-string": "0.1.0",
+  "builtin-baseline": "abb6dda5cc32914d2e64d7d72b974dc301d1fc8a",
+  "dependencies": [
+    "libarchive"
+  ]
+}

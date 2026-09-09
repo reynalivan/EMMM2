@@ -6,9 +6,9 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatAppError } from '../../shared/lib/appError';
 import { commands } from '../../shared/api/tauri/bindings';
-import { useAppStore } from '../../app/store/useAppStore';
-import { toast } from '../../app/store/useToastStore';
-import { openImportBatchWizard } from '@/features/import-batches/launcher';
+import { useAppStore } from '@/app/store';
+import { toast } from '@/shared/ui/toast';
+import { openImportBatchWizard } from '@/features/import-batches';
 import { modInboxCommands } from './api';
 import {
   DeleteProcessedDialog,
@@ -24,8 +24,6 @@ import type { ModInboxSnapshot, ProcessedModInboxDestination } from './types';
 export default function ModInboxPage() {
   const { t } = useTranslation('mod_inbox');
   const activeGameId = useAppStore((state) => state.activeGameId);
-  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
-  const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const [snapshot, setSnapshot] = useState<ModInboxSnapshot | null>(null);
   const [activeTab, setActiveTab] = useState<'ready' | 'processed'>('ready');
   const [readySelection, setReadySelection] = useState<Set<string>>(() => new Set());

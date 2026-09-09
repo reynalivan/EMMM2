@@ -1,8 +1,8 @@
-use crate::modules::catalog::domain::objects::{CreateObjectInput, UpdateObjectInput};
 use crate::modules::catalog::application::objects::mutate::{
     create_object_cmd_inner, delete_object, set_object_and_mods_category, toggle_pin_object,
     update_object,
 };
+use crate::modules::catalog::domain::objects::{CreateObjectInput, UpdateObjectInput};
 
 #[tokio::test]
 async fn object_and_child_category_roll_back_together_when_child_update_fails() {
@@ -532,7 +532,8 @@ async fn test_delete_object_empty() {
     let mods_path = tmp.path().join("Mods");
     std::fs::create_dir(&mods_path).unwrap();
     let mods_path_string = mods_path.to_string_lossy().to_string();
-    let watcher_state = crate::modules::workspace::application::scanner::watcher::WatcherState::default();
+    let watcher_state =
+        crate::modules::workspace::application::scanner::watcher::WatcherState::default();
     let op_lock = crate::platform::fs::operation_lock::OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
 
@@ -581,7 +582,8 @@ async fn test_delete_object_cascade_mods() {
     let mods_path = tmp.path().join("Mods");
     std::fs::create_dir(&mods_path).unwrap();
     let mods_path_string = mods_path.to_string_lossy().to_string();
-    let watcher_state = crate::modules::workspace::application::scanner::watcher::WatcherState::default();
+    let watcher_state =
+        crate::modules::workspace::application::scanner::watcher::WatcherState::default();
     let op_lock = crate::platform::fs::operation_lock::OperationLock::new();
     let op_guard = op_lock.acquire().await.unwrap();
 

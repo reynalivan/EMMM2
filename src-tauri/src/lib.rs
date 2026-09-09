@@ -3,11 +3,9 @@ use tauri::Manager;
 #[cfg(not(test))]
 use tauri_plugin_log::{Target, TargetKind};
 
-
 pub mod modules;
 pub mod platform;
 pub mod shared;
-pub mod pipeline;
 #[cfg(test)]
 pub mod test_utils;
 
@@ -17,6 +15,7 @@ pub const DISABLED_PREFIX: &str = "DISABLED ";
 macro_rules! emmm_collect_commands {
     () => {
         tauri_specta::collect_commands![
+            crate::modules::system::adapters::tauri::app_cmds::exit_app,
             crate::modules::system::adapters::tauri::app_cmds::check_config_status,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_dashboard_stats,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_active_keybindings,
@@ -41,6 +40,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::workspace::adapters::tauri::scanner_conflict_cmds::detect_conflicts_in_folder_cmd,
             crate::modules::library::adapters::tauri::thumbnail_cmds::get_mod_thumbnail,
             crate::modules::library::adapters::tauri::mod_core_cmds::open_in_explorer,
+            crate::modules::library::adapters::tauri::mod_core_cmds::open_ini_in_editor,
             crate::modules::library::adapters::tauri::mod_core_cmds::reveal_object_in_explorer,
             crate::modules::library::adapters::tauri::conflict_cmds::get_folder_conflict_details,
             crate::modules::library::adapters::tauri::conflict_cmds::resolve_folder_name_conflict,
@@ -81,10 +81,17 @@ macro_rules! emmm_collect_commands {
             modules::ingestion::adapters::tauri::tauri::get_import_batch,
             modules::ingestion::adapters::tauri::tauri::list_import_batches,
             modules::ingestion::adapters::tauri::tauri::analyze_import_batch,
+            modules::ingestion::adapters::tauri::tauri::analyze_import_batch_with_options,
             modules::ingestion::adapters::tauri::tauri::set_import_item_classification,
             modules::ingestion::adapters::tauri::tauri::refresh_import_item_suggestions,
+            modules::ingestion::adapters::tauri::tauri::preview_import_library_readiness,
+            modules::ingestion::adapters::tauri::tauri::refresh_import_batch_matches,
+            modules::ingestion::adapters::tauri::tauri::mark_import_batch_review_started,
             modules::ingestion::adapters::tauri::tauri::set_import_item_decision,
             modules::ingestion::adapters::tauri::tauri::rename_import_item_plan,
+            modules::ingestion::adapters::tauri::tauri::get_import_source_preview,
+            modules::ingestion::adapters::tauri::tauri::reveal_import_source,
+            modules::ingestion::adapters::tauri::tauri::reveal_import_destination,
             modules::ingestion::adapters::tauri::tauri::cancel_import_batch,
             modules::ingestion::adapters::tauri::tauri::commit_import_batch,
             modules::ingestion::adapters::tauri::tauri::get_mod_inbox,
@@ -99,6 +106,9 @@ macro_rules! emmm_collect_commands {
             modules::ingestion::adapters::tauri::tauri::preview_relocation_batch,
             crate::modules::settings::adapters::tauri::settings_cmds::get_settings,
             crate::modules::settings::adapters::tauri::settings_cmds::save_settings,
+            crate::modules::settings::adapters::tauri::settings_cmds::set_ai_api_key,
+            crate::modules::settings::adapters::tauri::settings_cmds::delete_ai_api_key,
+            crate::modules::settings::adapters::tauri::settings_cmds::test_ai_connection,
             crate::modules::settings::adapters::tauri::settings_cmds::set_active_game,
             crate::modules::settings::adapters::tauri::settings_cmds::set_auto_close_launcher,
             crate::modules::settings::adapters::tauri::settings_cmds::run_maintenance,
@@ -107,6 +117,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::system::adapters::tauri::theme_cmds::load_custom_theme,
             crate::modules::system::adapters::tauri::theme_cmds::save_custom_theme,
             crate::modules::system::adapters::tauri::theme_cmds::delete_custom_theme,
+            crate::modules::system::adapters::tauri::theme_cmds::import_custom_theme,
+            crate::modules::system::adapters::tauri::theme_cmds::export_custom_theme,
             crate::modules::catalog::adapters::tauri::object_cmds::get_objects_cmd,
             crate::modules::catalog::adapters::tauri::object_cmds::get_category_counts_cmd,
             crate::modules::catalog::adapters::tauri::object_cmds::create_object_cmd,
@@ -144,6 +156,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::duplicates::adapters::tauri::tauri::remove_ignored_pair,
             crate::modules::updates::adapters::tauri::update_cmds::check_metadata_update,
             crate::modules::updates::adapters::tauri::update_cmds::fetch_missing_asset,
+            crate::modules::updates::adapters::tauri::update_cmds::check_app_update,
+            crate::modules::updates::adapters::tauri::update_cmds::install_app_update,
             crate::modules::automation::adapters::tauri::hotkey_cmds::update_hotkey_config,
             crate::modules::automation::adapters::tauri::hotkey_cmds::get_reload_key,
             modules::browser::adapters::tauri::tauri::browser_open_tab,
@@ -156,6 +170,9 @@ macro_rules! emmm_collect_commands {
             modules::browser::adapters::tauri::tauri::browser_set_homepage,
             modules::browser::adapters::tauri::tauri::browser_list_downloads,
             modules::browser::adapters::tauri::tauri::browser_cancel_download,
+            modules::browser::adapters::tauri::tauri::browser_confirm_download,
+            modules::browser::adapters::tauri::tauri::browser_reject_download,
+            modules::browser::adapters::tauri::tauri::browser_retry_download,
             modules::browser::adapters::tauri::tauri::browser_delete_download,
             modules::browser::adapters::tauri::tauri::browser_clear_imported,
             modules::browser::adapters::tauri::tauri::browser_clear_old_downloads,
@@ -169,16 +186,14 @@ pub fn run() {
     let builder = tauri_specta::Builder::<tauri::Wry>::new().commands(emmm_collect_commands!());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
                 let _ = window.unminimize();
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -210,7 +225,9 @@ pub fn run() {
         )
         .manage(crate::modules::workspace::application::scanner::watcher::WatcherState::new())
         .manage(crate::modules::ingestion::application::import_batch::mod_inbox_watcher::ModInboxWatcherState::new())
+        .manage(crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState::default())
         .manage(crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new())
+        .manage(crate::modules::mutation::coordinator::MutationCoordinator::unconfigured())
         .setup(move |app| {
             let app_handle = app.handle();
 
@@ -227,10 +244,22 @@ pub fn run() {
             }
 
             let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
-            app.manage(crate::modules::settings::application::config::ConfigService::init(
+            let credential_store =
+                crate::platform::security::credential_store::CredentialStore::default();
+            let has_ai_api_key = match credential_store.has_ai_api_key() {
+                Ok(has_api_key) => has_api_key,
+                Err(error) => {
+                    log::warn!("Could not read AI API credential status: {error}");
+                    false
+                }
+            };
+            let config_service = crate::modules::settings::application::config::ConfigService::init(
                 app_handle,
                 pool_ref.inner().clone(),
-            ));
+            );
+            config_service.set_ai_key_status(has_ai_api_key);
+            app.manage(credential_store);
+            app.manage(config_service);
 
             let config_ref: tauri::State<'_, crate::modules::settings::application::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
@@ -245,12 +274,8 @@ pub fn run() {
 
             Ok(())
         })
-        .manage(crate::modules::duplicates::DupScanState::new())
+        .manage(crate::modules::duplicates::api::DupScanState::new())
         .manage(crate::modules::library::adapters::tauri::mod_bulk_cmds::BulkCancelState::new())
-        .manage(crate::platform::fs::operation_lock::OperationLock::new())
-        .manage(crate::modules::mutation::journal::OperationJournal::new())
-        .manage(crate::modules::mutation::coordinator::MutationCoordinator::new(std::sync::Arc::new(crate::modules::mutation::journal::OperationJournal::new())))
-
         .manage(crate::modules::workspace::application::scanner::master_db::MasterDbCache::default())
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())

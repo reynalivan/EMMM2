@@ -2,10 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import FolderListRow from './FolderListRow';
-import type {
-  WorkspaceCapabilities,
-  WorkspaceExplorerNode,
-} from '@/entities/workspace/model/workspace';
+import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '@/entities/workspace';
 
 vi.mock('../../dashboard/hooks/useThumbnail', () => ({
   useThumbnail: vi.fn((_gameId: string, _path: string) => ({ data: null, isLoading: false })),

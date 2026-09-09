@@ -15,8 +15,7 @@ pub enum PreviewTreeNodeKind {
 }
 
 /// The kind of member in a collection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, specta::Type)]
-#[sqlx(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum MemberKind {
     Mod,
@@ -115,7 +114,7 @@ pub struct CollectionMod {
 }
 
 /// A single object member of a collection (from `collection_objects`).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CollectionObject {
     pub kind: MemberKind,
     pub collection_id: String,

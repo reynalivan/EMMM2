@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import { ChevronRight, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { WorkspaceExplorerNode, WorkspaceNode } from '@/entities/workspace/model/workspace';
-import { isWorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
-import type { useSharedModActions } from '@/features/mod-runtime/actions/useSharedModActions';
-import { buildWorkspaceSwitchPolicy } from '@/features/workspace-runtime/actions/workspaceSwitchPolicy';
-import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime/actions/workspaceActionAvailability';
-import { WorkspaceSwitchControl } from '@/features/workspace-runtime/components/WorkspaceSwitchControl';
-import { WorkspaceSwitchLabel } from '@/features/workspace-runtime/components/WorkspaceSwitchLabel';
+import type { WorkspaceExplorerNode, WorkspaceNode } from '@/entities/workspace';
+import { isWorkspaceExplorerNode } from '@/entities/workspace';
+import type { useSharedModActions } from '@/features/mod-runtime';
+import { buildWorkspaceSwitchPolicy } from '@/features/workspace-runtime';
+import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime';
+import { WorkspaceSwitchControl } from '@/features/workspace-runtime';
+import { WorkspaceSwitchLabel } from '@/features/workspace-runtime';
 import PreviewPanelContextMenu from './PreviewPanelContextMenu';
 
 type PreviewActions = ReturnType<typeof useSharedModActions>;

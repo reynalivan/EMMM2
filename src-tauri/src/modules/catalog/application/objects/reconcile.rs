@@ -7,9 +7,9 @@
 //! two objects or splits one in two. The repo now only looks rows up and
 //! writes them; the rules live here, where they can be read in one screen.
 
-use crate::shared::path_key::{canonical_name_key, folder_path_key};
-use crate::modules::catalog::domain::objects::EnsureObjectInput;
 use crate::modules::catalog::adapters::sqlite::object::{self, ObjectIdentityRow};
+use crate::modules::catalog::domain::objects::EnsureObjectInput;
+use crate::shared::path_key::{canonical_name_key, folder_path_key};
 
 /// Resolve `input` to an object id, creating the object if it is new.
 ///

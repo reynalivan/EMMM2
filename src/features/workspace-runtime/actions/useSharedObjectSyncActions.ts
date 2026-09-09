@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
-import type { GameConfig } from '@/entities/game/model/game';
-import { openObjectClassificationWizard } from '../../import-batches/classificationLauncher';
+import type { GameConfig } from '@/entities/game';
+import { openObjectClassificationWizard } from '@/features/import-batches/@x/workspace-runtime';
 
 export function useSharedObjectSyncActions(activeGame: GameConfig | null) {
   const handleSyncWithDb = useCallback(

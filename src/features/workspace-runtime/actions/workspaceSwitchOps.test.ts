@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import type { WorkspaceImpact, WorkspaceSwitchResult } from '@/entities/workspace/model/workspace';
+import type { WorkspaceImpact, WorkspaceSwitchResult } from '@/entities/workspace';
 import {
   applyWorkspaceSwitchEffects,
   buildNodePendingKey,
@@ -38,20 +38,20 @@ vi.mock('../state/workspaceDialogs', () => ({
   openWorkspaceFileInUseDialog: (...args: unknown[]) => openWorkspaceFileInUseDialog(...args),
 }));
 
-vi.mock('../../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: {
     getState: () => ({ setFolderConflicts, setRenameConfirmations }),
   },
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     error: (...args: unknown[]) => toastError(...args),
     info: (...args: unknown[]) => toastInfo(...args),
   },
 }));
 
-vi.mock('../../runtime-sync/queryRefresh', () => ({
+vi.mock('@/shared/lib/queryRefresh', () => ({
   publishRuntimeDescriptor: vi.fn(),
   publishQueryInvalidations: vi.fn(),
 }));

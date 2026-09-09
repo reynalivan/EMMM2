@@ -1,9 +1,9 @@
-import { collectionKeys, collectionRuntimeKeys } from '@/pages/collections/queryKeys';
+import { collectionKeys, collectionRuntimeKeys } from '@/entities/collection';
 import { listen } from '@tauri-apps/api/event';
 import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
-import { queryClient } from '@/app/providers/queryClient';
-import { settingsKeys } from '@/pages/settings/hooks/settingsQuery';
+import { queryClient } from '@/shared/lib/queryClient';
+import { settingsKeys } from '@/entities/settings';
 import { toast } from '../useToastStore';
 import type { AppSliceCreator } from './sliceTypes';
 import type {

@@ -15,7 +15,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccessMock(...args),
     error: (...args: unknown[]) => toastErrorMock(...args),

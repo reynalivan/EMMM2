@@ -1,5 +1,7 @@
-use crate::modules::dashboard::domain::dashboard::{CategorySlice, DashboardStats, GameSlice, RecentMod};
-use sqlx::SqlitePool;
+use crate::modules::dashboard::domain::dashboard::{
+    CategorySlice, DashboardStats, GameSlice, RecentMod,
+};
+use sqlx::{Row, SqlitePool};
 
 // ── Response Structs ────────────────────────────────────────────────────────
 
@@ -7,7 +9,7 @@ use sqlx::SqlitePool;
 
 /// Fetch global overview stats (total/enabled/disabled mods, size, games, collections).
 pub async fn fetch_global_stats(pool: &SqlitePool) -> Result<DashboardStats, sqlx::Error> {
-    let row = sqlx::query_as::<_, DashboardStats>(
+    let row = sqlx::query(
         r#"
         SELECT
             COALESCE(COUNT(*), 0)                                          AS total_mods,
@@ -22,7 +24,14 @@ pub async fn fetch_global_stats(pool: &SqlitePool) -> Result<DashboardStats, sql
     .fetch_one(pool)
     .await?;
 
-    Ok(row)
+    Ok(DashboardStats {
+        total_mods: row.try_get("total_mods")?,
+        enabled_mods: row.try_get("enabled_mods")?,
+        disabled_mods: row.try_get("disabled_mods")?,
+        total_size_bytes: row.try_get("total_size_bytes")?,
+        total_games: row.try_get("total_games")?,
+        total_collections: row.try_get("total_collections")?,
+    })
 }
 
 /// Fetch duplicate waste bytes from dedup scanner results.
@@ -48,7 +57,7 @@ pub async fn fetch_duplicate_waste(pool: &SqlitePool) -> Result<i64, sqlx::Error
 pub async fn fetch_category_distribution(
     pool: &SqlitePool,
 ) -> Result<Vec<CategorySlice>, sqlx::Error> {
-    sqlx::query_as::<_, CategorySlice>(
+    let rows = sqlx::query(
         r#"
         SELECT
             COALESCE(m.object_type, 'Uncategorized') AS category,
@@ -59,12 +68,20 @@ pub async fn fetch_category_distribution(
         "#,
     )
     .fetch_all(pool)
-    .await
+    .await?;
+    rows.iter()
+        .map(|row| {
+            Ok(CategorySlice {
+                category: row.try_get("category")?,
+                count: row.try_get("count")?,
+            })
+        })
+        .collect()
 }
 
 /// Fetch mod counts grouped by game for the game distribution bar chart.
 pub async fn fetch_game_distribution(pool: &SqlitePool) -> Result<Vec<GameSlice>, sqlx::Error> {
-    sqlx::query_as::<_, GameSlice>(
+    let rows = sqlx::query(
         r#"
         SELECT
             g.id   AS game_id,
@@ -77,7 +94,16 @@ pub async fn fetch_game_distribution(pool: &SqlitePool) -> Result<Vec<GameSlice>
         "#,
     )
     .fetch_all(pool)
-    .await
+    .await?;
+    rows.iter()
+        .map(|row| {
+            Ok(GameSlice {
+                game_id: row.try_get("game_id")?,
+                game_name: row.try_get("game_name")?,
+                count: row.try_get("count")?,
+            })
+        })
+        .collect()
 }
 
 /// Fetch the N most recently indexed mods for the activity widget.
@@ -85,7 +111,7 @@ pub async fn fetch_recent_mods(
     pool: &SqlitePool,
     limit: i64,
 ) -> Result<Vec<RecentMod>, sqlx::Error> {
-    sqlx::query_as::<_, RecentMod>(
+    let rows = sqlx::query(
         r#"
         SELECT
             m.id,
@@ -102,7 +128,18 @@ pub async fn fetch_recent_mods(
     )
     .bind(limit)
     .fetch_all(pool)
-    .await
+    .await?;
+    rows.iter()
+        .map(|row| {
+            Ok(RecentMod {
+                id: row.try_get("id")?,
+                name: row.try_get("name")?,
+                game_name: row.try_get("game_name")?,
+                object_name: row.try_get("object_name")?,
+                indexed_at: row.try_get("indexed_at")?,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

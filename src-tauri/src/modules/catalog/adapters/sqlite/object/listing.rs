@@ -1,11 +1,11 @@
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use super::types::*;
+use crate::modules::catalog::application::objects::terminal::split_segments;
+use crate::modules::catalog::domain::objects::{ObjectFilter, ObjectSummary};
+use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::workspace::domain::normalizer::is_disabled_folder;
 use crate::shared::path_key::canonical_name_key;
-use crate::modules::games::domain::models::ItemStatus;
-use crate::modules::catalog::domain::objects::{ObjectFilter, ObjectSummary};
-use crate::modules::catalog::application::objects::terminal::split_segments;
 
 pub async fn get_filtered_objects(
     pool: &SqlitePool,

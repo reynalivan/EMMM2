@@ -145,7 +145,7 @@ export default tseslint.config(
 
   // runtimeEffects is the shared leaf contract: no feature may leak into it.
   {
-    files: ['src/core/lib/runtimeEffects.ts'],
+    files: ['src/shared/lib/runtimeEffects.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -291,7 +291,7 @@ export default tseslint.config(
   {
     files: ['src/**/*.{ts,tsx}'],
     ignores: [
-      'src/features/runtime-sync/queryRefresh.ts',
+      'src/shared/lib/queryRefresh.ts',
       'src/features/workspace-runtime/optimistic/applyOptimisticEffects.ts',
       '**/*.test.{ts,tsx}',
     ],

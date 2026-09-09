@@ -1,5 +1,5 @@
-use crate::shared::sync::lock;
 use crate::shared::errors::ScannerError;
+use crate::shared::sync::lock;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Mutex;

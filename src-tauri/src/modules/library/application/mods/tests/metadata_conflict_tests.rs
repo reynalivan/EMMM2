@@ -189,6 +189,38 @@ fn an_ini_inside_a_nested_disabled_folder_does_not_conflict() {
 }
 
 #[test]
+fn a_disabled_ini_filename_does_not_conflict() {
+    let temp = TempDir::new().expect("tempdir");
+    let mods_root = temp.path();
+
+    let mod_a = mods_root.join("ModA");
+    fs::create_dir_all(&mod_a).expect("mod dir");
+    fs::write(
+        mod_a.join("mod.ini"),
+        "[TextureOverrideShared]\nhash = abcdef12\n",
+    )
+    .expect("mod ini");
+
+    let mod_b = mods_root.join("ModB");
+    fs::create_dir_all(&mod_b).expect("mod dir");
+    fs::write(
+        mod_b.join("DISABLEDStelle.ini"),
+        "[TextureOverrideShared]\nhash = abcdef12\n",
+    )
+    .expect("disabled mod ini");
+
+    let stored = vec![
+        ModFolderPath::from_stored("ModA"),
+        ModFolderPath::from_stored("ModB"),
+    ];
+
+    assert!(
+        conflicts_for_enabled_paths(mods_root, &stored).is_empty(),
+        "INI files whose name starts with DISABLED are not loaded at runtime"
+    );
+}
+
+#[test]
 fn unrelated_mods_do_not_conflict() {
     let temp = TempDir::new().expect("tempdir");
     let mods_root = temp.path();

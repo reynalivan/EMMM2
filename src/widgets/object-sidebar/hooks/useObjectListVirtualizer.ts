@@ -3,10 +3,10 @@
  * data-shaping logic extracted from useObjectListLogic to keep it cohesive.
  */
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { GameSchema, CategoryDef } from '@/entities/game-object/model/object';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { GameSchema, CategoryDef } from '@/entities/game-object';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 
 /** Discriminated union for flat list items in Object Mode */
 export type FlatItem =
@@ -40,7 +40,10 @@ export function useObjectListVirtualizer({
   selectedObjectFolderPath,
   isMobile,
 }: VirtualizerOptions) {
-  const parentRef = useRef<HTMLDivElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const parentRef = useCallback((element: HTMLDivElement | null) => {
+    setScrollElement(element);
+  }, []);
 
   // Group objects by category
   const groupedObjects = useMemo(() => {
@@ -143,7 +146,7 @@ export function useObjectListVirtualizer({
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: totalItems,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => scrollElement,
     estimateSize: (index) => {
       const item = flatObjectItems[index];
       if (item?.type === 'header') return 28;
@@ -158,23 +161,23 @@ export function useObjectListVirtualizer({
   const [containerHeight, setContainerHeight] = useState(0);
 
   useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
+    if (!scrollElement) return;
 
-    setContainerHeight(el.clientHeight);
+    const updateViewport = () => {
+      setScrollTop(scrollElement.scrollTop);
+      setContainerHeight(scrollElement.clientHeight);
+    };
+    updateViewport();
 
-    const onScroll = () => setScrollTop(el.scrollTop);
-    const onResize = () => setContainerHeight(el.clientHeight);
-
-    el.addEventListener('scroll', onScroll, { passive: true });
-    const ro = new ResizeObserver(onResize);
-    ro.observe(el);
+    scrollElement.addEventListener('scroll', updateViewport, { passive: true });
+    const ro = new ResizeObserver(updateViewport);
+    ro.observe(scrollElement);
 
     return () => {
-      el.removeEventListener('scroll', onScroll);
+      scrollElement.removeEventListener('scroll', updateViewport);
       ro.disconnect();
     };
-  }, []);
+  }, [scrollElement]);
 
   // Find selected item's index
   const selectedIndex = useMemo(() => {

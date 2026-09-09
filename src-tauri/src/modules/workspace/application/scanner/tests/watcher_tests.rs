@@ -258,6 +258,24 @@ fn test_watcher_keeps_deep_directory_events_but_filters_deep_asset_noise() {
     assert!(!should_keep_event_path(&deep_asset, root));
 }
 
+#[test]
+fn backend_rescan_flag_requests_full_reconcile() {
+    let root = Path::new(r"E:\Mods");
+    let state = WatcherState::new();
+    let session = state.begin_session(root);
+    let event = Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan);
+    let emitted = std::cell::RefCell::new(Vec::new());
+
+    classify_event(&event, root, &state.suppressor, &session, &|event| {
+        emitted.borrow_mut().push(event);
+    });
+
+    assert!(matches!(
+        emitted.into_inner().as_slice(),
+        [ModWatchEvent::Error(message)] if message.contains("full disk reconcile")
+    ));
+}
+
 // Regression: folders with dots in the name ("Mod v1.2") must not be
 // mistaken for files with irrelevant extensions and dropped.
 #[test]

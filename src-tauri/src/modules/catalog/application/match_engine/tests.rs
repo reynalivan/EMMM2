@@ -1,7 +1,12 @@
-use super::destination::{resolve_destination_candidates, DestinationContext, ExistingDestination};
+use super::destination::{
+    resolve_all_destination_candidates, resolve_destination_candidates, DestinationContext,
+    ExistingDestination,
+};
 use super::inspection::{inspect_source, InspectionRequest};
 use super::types::CanonicalIdentity;
-use crate::modules::ingestion::application::import_batch::types::{DestinationKind, StableCategory};
+use crate::modules::ingestion::application::import_batch::types::{
+    DestinationKind, StableCategory,
+};
 
 #[test]
 fn inspection_strips_disabled_and_limits_content_to_three_levels() {
@@ -145,7 +150,7 @@ fn create_folder_is_offered_only_for_canonical_identity() {
 }
 
 #[test]
-fn import_destination_matching_excludes_existing_objects_from_another_category() {
+fn import_destination_matching_keeps_name_match_from_another_category_with_warning() {
     let existing = vec![ExistingDestination::new(
         "weapon-ayaka",
         "Ayaka",
@@ -165,7 +170,34 @@ fn import_destination_matching_excludes_existing_objects_from_another_category()
         enforce_category: true,
     });
 
-    assert!(suggestions.is_empty());
+    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions[0].confidence_percentage, 67);
+    assert!(suggestions[0].warning.is_some());
+}
+
+#[test]
+fn all_destinations_keeps_another_category_with_a_warning() {
+    let existing = vec![ExistingDestination::new(
+        "weapon-ayaka",
+        "Ayaka",
+        "Ayaka",
+        None,
+        vec![],
+        StableCategory::Weapon,
+    )];
+
+    let suggestions = resolve_all_destination_candidates(DestinationContext {
+        source_name: "DISABLED ayaka skin",
+        category: StableCategory::Character,
+        specific_target: None,
+        existing: &existing,
+        canonical: None,
+        mods_root: "C:/Mods",
+        enforce_category: true,
+    });
+
+    assert_eq!(suggestions.len(), 1);
+    assert!(suggestions[0].warning.is_some());
 }
 
 #[test]

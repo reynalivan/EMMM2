@@ -1,5 +1,7 @@
+use crate::modules::mutation::application::workspace_mutation::import_commit::{
+    rollback_move_journal, MoveJournalEntry,
+};
 use crate::shared::errors::AppError;
-use crate::modules::mutation::application::workspace_mutation::import_commit::{rollback_move_journal, MoveJournalEntry};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager};
@@ -31,20 +33,23 @@ pub async fn disable_object_roots(
                 "Object IDs to disable must be unique".to_string(),
             ));
         }
-        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, object_id)
-            .await?
-            .filter(|object| object.game_id == game_id)
-            .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;
+        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(
+            pool, object_id,
+        )
+        .await?
+        .filter(|object| object.game_id == game_id)
+        .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;
         let stored = PathBuf::from(&object.folder_path);
         let raw_path = if stored.is_absolute() {
             stored
         } else {
             mods_root.join(stored)
         };
-        let source = crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
-            &mods_root, &raw_path, false,
-        )
-        .unwrap_or(raw_path);
+        let source =
+            crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
+                &mods_root, &raw_path, false,
+            )
+            .unwrap_or(raw_path);
         let source = source.canonicalize().map_err(|error| {
             AppError::Validation(format!("Object folder is unavailable: {error}"))
         })?;
@@ -58,9 +63,9 @@ pub async fn disable_object_roots(
             .file_name()
             .and_then(|value| value.to_str())
             .ok_or_else(|| AppError::Validation("Object folder name is invalid".to_string()))?;
-        let target = source.with_file_name(crate::modules::library::application::mods::core_ops::standardize_prefix(
-            name, false,
-        ));
+        let target = source.with_file_name(
+            crate::modules::library::application::mods::core_ops::standardize_prefix(name, false),
+        );
         if source == target {
             continue;
         }
@@ -76,15 +81,20 @@ pub async fn disable_object_roots(
         return Ok(ObjectDisableResult::default());
     }
 
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(app, pool, game_id).await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
+        app, pool, game_id,
+    )
+    .await?;
     let operation_lock = app
-        .try_state::<crate::platform::fs::operation_lock::OperationLock>()
-        .ok_or_else(|| AppError::Internal("OperationLock state is unavailable".to_string()))?;
+        .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
+        .ok_or_else(|| {
+            AppError::Internal("MutationCoordinator state is unavailable".to_string())
+        })?;
     let disk_state = app
         .try_state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
         .ok_or_else(|| AppError::Internal("DiskReconcileState is unavailable".to_string()))?;
     let lease = disk_state
-        .acquire_mutation_lease(game_id, operation_lock.inner())
+        .acquire_mutation_lease(game_id, operation_lock.inner_lock())
         .await?;
     let watcher = app
         .try_state::<crate::modules::workspace::application::scanner::watcher::WatcherState>()

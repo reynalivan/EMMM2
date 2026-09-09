@@ -1,11 +1,11 @@
 import { formatAppError } from '../../../../shared/lib/appError';
 import { Globe, HardDrive, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useBrowserStore } from '../../../../app/store/useBrowserStore';
+import { useBrowserStore } from '@/entities/browser';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../../shared/api/tauri/bindings';
-import { useToastStore } from '../../../../app/store/useToastStore';
-import { publishQueryScopes } from '@/features/runtime-sync/queryRefresh';
+import { useToastStore } from '@/shared/ui/toast';
+import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 
 export default function BrowserTab() {
   const { t } = useTranslation(['settings', 'common']);

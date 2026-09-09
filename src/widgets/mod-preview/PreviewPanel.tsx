@@ -1,25 +1,22 @@
 import { useCallback, useState } from 'react';
 import { Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import GallerySection from './components/GallerySection';
 import MetadataSection from './components/MetadataSection';
 import IniEditorSection from './components/IniEditorSection';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { usePreviewPanelState } from './hooks/usePreviewPanelState';
 import PreviewPanelModals from './components/PreviewPanelModals';
-import { useSharedModActions } from '@/features/mod-runtime/actions/useSharedModActions';
-import {
-  dispatchWorkspaceRuntimeEvent,
-  useWorkspaceRuntime,
-} from '@/features/workspace-runtime/state/workspaceStoreBridge';
-import { formatWorkspaceWarning } from '@/features/workspace-runtime/utils/workspaceSemantics';
+import { useSharedModActions } from '@/features/mod-runtime';
+import { dispatchWorkspaceRuntimeEvent, useWorkspaceRuntime } from '@/features/workspace-runtime';
+import { formatWorkspaceWarning } from '@/features/workspace-runtime';
 import { usePreviewActions } from './hooks/usePreviewActions';
 import { usePreviewEffects } from './hooks/usePreviewEffects';
 import PreviewEmptyState from './components/PreviewEmptyState';
 import PreviewConfirmDialogs from './components/PreviewConfirmDialogs';
 import PreviewHeader from './components/PreviewHeader';
-import { openFolderConflictManagerDialog } from '@/features/workspace-runtime/state/workspaceDialogs';
+import { openFolderConflictManagerDialog } from '@/features/workspace-runtime';
 import PreviewFolderConflictState from './components/PreviewFolderConflictState';
 
 export default function PreviewPanel() {
@@ -36,7 +33,6 @@ export default function PreviewPanel() {
     resolvedTitle,
     resolvedSubtitle,
     sourceUnavailableMessage,
-    availableObjects,
     images,
     currentImageIndex,
     setCurrentImageIndex,
@@ -257,6 +253,7 @@ export default function PreviewPanel() {
 
       <IniEditorSection
         activePath={activePath}
+        activeGameId={activeGame?.id ?? null}
         activeObjectName={selectedFolder?.name}
         selectedFolderName={selectedFolder?.folder_name}
         sections={keyBindSections}
@@ -291,11 +288,6 @@ export default function PreviewPanel() {
       </div>
 
       <PreviewPanelModals
-        moveDialog={actions.moveDialog}
-        closeMoveDialog={actions.closeMoveDialog}
-        handleMoveToObject={actions.handleMoveToObject}
-        objectId={selectedFolder?.id ?? undefined}
-        objects={availableObjects}
         deleteConfirm={actions.deleteConfirm}
         setDeleteConfirm={actions.setDeleteConfirm}
         handleDeleteConfirm={actions.handleDeleteConfirm}
@@ -306,9 +298,6 @@ export default function PreviewPanel() {
         handleDuplicateForceEnable={actions.handleDuplicateForceEnable}
         handleDuplicateEnableOnly={actions.handleDuplicateEnableOnly}
         handleDuplicateCancel={actions.handleDuplicateCancel}
-        activeContextDialog={actions.activeContextDialog}
-        handleActiveContextCancel={actions.handleActiveContextCancel}
-        handleActiveContextSubmit={actions.handleActiveContextSubmit}
       />
     </div>
   );

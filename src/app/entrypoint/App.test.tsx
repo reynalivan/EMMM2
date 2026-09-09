@@ -3,22 +3,22 @@ import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import App from './App';
-import * as appStore from '@/app/store/useAppStore';
+import * as appStore from '@/app/store';
 
 // Mock the components so we don't render the whole app
-vi.mock('../shared/ui/components/layout/MainLayout', () => ({
-  default: () => <div data-testid="dashboard">Dashboard</div>,
+vi.mock('@/widgets/app-shell', () => ({
+  AppShell: () => <div data-testid="dashboard">Dashboard</div>,
 }));
-vi.mock('../pages/onboarding/WelcomeScreen', () => ({
-  default: () => <div data-testid="welcome">Welcome</div>,
+vi.mock('@/pages/onboarding', () => ({
+  WelcomeScreen: () => <div data-testid="welcome">Welcome</div>,
 }));
-vi.mock('../widgets/mod-explorer/modals/FolderConflictManager', () => ({
+vi.mock('@/widgets/mod-explorer/modals/FolderConflictManager', () => ({
   default: () => <div data-testid="folder-conflict-manager" />,
 }));
-vi.mock('../widgets/mod-explorer/modals/RenameConfirmationManager', () => ({
+vi.mock('@/widgets/mod-explorer/modals/RenameConfirmationManager', () => ({
   default: () => <div data-testid="rename-confirmation-manager" />,
 }));
-vi.mock('../shared/ui/components/ui/Toast', () => ({
+vi.mock('@/shared/ui/components/ui/Toast', () => ({
   ToastContainer: () => null,
 }));
 
@@ -45,6 +45,7 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('FreshInstall');
       if (cmd === 'check_metadata_update') return Promise.resolve();
+      if (cmd === 'stop_watcher') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -67,6 +68,7 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('HasConfig');
       if (cmd === 'check_metadata_update') return Promise.resolve();
+      if (cmd === 'stop_watcher') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -83,11 +85,12 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
     expect(invoke).not.toHaveBeenCalledWith('check_boot_security', expect.anything());
   });
 
-  it('TC-01-10: Falls back to Dashboard on IPC timeout or error', async () => {
+  it('TC-01-10: Falls back to Welcome on IPC timeout or error', async () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.reject(new Error('Backend missing'));
       if (cmd === 'check_metadata_update') return Promise.resolve();
+      if (cmd === 'stop_watcher') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -98,8 +101,7 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
     );
 
     await waitFor(() => {
-      // Per implementation in App.tsx (Fallback for frontend-only dev mode)
-      expect(screen.getByTestId('dashboard')).toBeInTheDocument();
+      expect(screen.getByTestId('welcome')).toBeInTheDocument();
     });
   });
 });

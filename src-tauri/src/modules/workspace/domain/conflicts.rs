@@ -2,20 +2,19 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct IgnoredConflict {
     pub id: String,
     pub game_id: String,
     pub object_id: String,
     pub object_name: Option<String>,
     pub mod_ids: String, // JSON array
-    #[sqlx(skip)]
     #[serde(default)]
     pub mod_names: Vec<String>,
     pub created_at: String,
 }
 
-#[derive(Debug, serde::Serialize, specta::Type, sqlx::FromRow)]
+#[derive(Debug, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WhitelistEntry {
     pub id: String,

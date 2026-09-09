@@ -1,5 +1,7 @@
 use super::*;
-use crate::modules::library::application::ini::document::{read_ini_document, IniEncoding, NewlineStyle};
+use crate::modules::library::application::ini::document::{
+    read_ini_document, IniEncoding, NewlineStyle,
+};
 use std::fs;
 use tempfile::TempDir;
 

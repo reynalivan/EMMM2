@@ -1,4 +1,6 @@
-use crate::modules::reconciliation::application::disk_reconcile::types::{DiskReconcilePathKind, DiskReconcilePathUpdate};
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcilePathKind, DiskReconcilePathUpdate,
+};
 
 pub(crate) fn push_path_update(
     path_updates: &mut Vec<DiskReconcilePathUpdate>,

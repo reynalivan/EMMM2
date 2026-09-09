@@ -4,12 +4,8 @@ import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../su
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
 import { createObject, reconcile, getObjects, findObject } from '../support/data.js';
+import type { DbEntry, GameConfig } from '../../src/shared/api/tauri/bindings.gen.js';
 
-interface GameConfig {
-  id: string;
-  game_type: number;
-  [key: string]: unknown;
-}
 interface CategoryCount {
   [key: string]: unknown;
 }
@@ -80,8 +76,9 @@ describe('Fase 2 — Navigation & Read Surface', () => {
     const schema = await invokeInApp('get_game_schema', { gameType });
     expect(schema).toBeDefined();
 
-    const masterDb = await invokeInApp<string>('get_master_db', { gameType });
-    expect(typeof masterDb).toBe('string');
+    const masterDb = await invokeInApp<DbEntry[]>('get_master_db', { gameType });
+    expect(Array.isArray(masterDb)).toBe(true);
     expect(masterDb.length).toBeGreaterThan(0);
+    expect(masterDb.some((entry) => entry.name.length > 0)).toBe(true);
   });
 });

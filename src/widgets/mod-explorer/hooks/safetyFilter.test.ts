@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import { filterFoldersBySafety } from './safetyFilter';
 
 function folder(path: string, isSafe: boolean, classified = true): WorkspaceExplorerNode {

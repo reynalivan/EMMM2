@@ -5,10 +5,10 @@ use super::naming::{
     find_existing_sibling_case_insensitive, rename_conflict_error, validate_folder_base_name,
 };
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
-use crate::shared::errors::AppError;
 use crate::modules::settings::application::config::ConfigService;
-use crate::platform::fs::guard::ValidatedPath;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::guard::ValidatedPath;
+use crate::shared::errors::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -44,17 +44,19 @@ pub async fn rename_mod_folder_inner(
         .to_string_lossy()
         .to_string();
 
-    let new_folder_name = if crate::modules::workspace::domain::normalizer::is_disabled_folder(&old_folder_name) {
-        format!("{}{}", crate::DISABLED_PREFIX, new_name)
-    } else {
-        new_name.clone()
-    };
+    let new_folder_name =
+        if crate::modules::workspace::domain::normalizer::is_disabled_folder(&old_folder_name) {
+            format!("{}{}", crate::DISABLED_PREFIX, new_name)
+        } else {
+            new_name.clone()
+        };
 
     let new_path = parent.join(&new_folder_name);
     if let Some(existing_path) =
         find_existing_sibling_case_insensitive(parent, &new_folder_name, path)
     {
-        let base_name = crate::modules::workspace::domain::normalizer::normalize_display_name(&old_folder_name);
+        let base_name =
+            crate::modules::workspace::domain::normalizer::normalize_display_name(&old_folder_name);
         return Err(rename_conflict_error(&new_path, &existing_path, &base_name));
     }
 
@@ -62,24 +64,22 @@ pub async fn rename_mod_folder_inner(
     // the guard's tail keeps suppressing the async event pair after return.
     let _guard = state.suppressor.suppress_paths([path, new_path.as_path()]);
 
-    crate::platform::fs::file_utils::rename_cross_drive_fallback(path, &new_path).map_err(
-        |e| {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                let processes = crate::platform::fs::locking::get_locking_processes(path);
-                if !processes.is_empty() {
-                    return AppError::FileInUse {
-                        path: folder_path.clone(),
-                        processes,
-                    };
-                }
-
-                return AppError::PathBusy {
+    crate::platform::fs::file_utils::rename_cross_drive_fallback(path, &new_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            let processes = crate::platform::fs::locking::get_locking_processes(path);
+            if !processes.is_empty() {
+                return AppError::FileInUse {
                     path: folder_path.clone(),
+                    processes,
                 };
             }
-            AppError::Io(format!("Failed to rename folder: {e}"))
-        },
-    )?;
+
+            return AppError::PathBusy {
+                path: folder_path.clone(),
+            };
+        }
+        AppError::Io(format!("Failed to rename folder: {e}"))
+    })?;
 
     update_info_json_name(&new_path, &new_name);
 

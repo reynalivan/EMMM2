@@ -16,7 +16,6 @@ pub struct ImportJobMatch {
     pub reason: Option<String>,
 }
 
-
 /// Insert a fresh `queued` job.
 pub async fn insert_job(
     db: &SqlitePool,

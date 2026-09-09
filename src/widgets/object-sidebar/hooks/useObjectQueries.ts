@@ -1,16 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { getCategoryCounts } from '../services/objectService';
-import {
-  buildObjectListRefreshDescriptor,
-  objectKeys,
-  type CategoryCount,
-  type GameSchema,
-} from './objectQueryCache';
-import { publishRuntimeDescriptor } from '@/features/runtime-sync/queryRefresh';
-import type { GameType } from '@/entities/game/model/game';
+import { useActiveGame } from '@/entities/game';
+import { getCategoryCounts, type CategoryCount, type GameSchema } from '@/entities/game-object';
+import { objectKeys } from './objectQueryCache';
+import { useGameSwitch } from '@/features/workspace-runtime';
+import type { GameType } from '@/entities/game';
 
 export function useCategoryCounts() {
   const { activeGame } = useActiveGame();
@@ -37,26 +31,7 @@ export function useGameSchema() {
   });
 }
 
-export function useGameSwitch() {
-  const setActiveGameId = useAppStore((state) => state.setActiveGameId);
-  const queryClient = useQueryClient();
-
-  const switchGame = async (gameId: string) => {
-    await setActiveGameId(gameId);
-    await publishRuntimeDescriptor(
-      queryClient,
-      buildObjectListRefreshDescriptor({
-        includeFolders: true,
-        includeCollections: true,
-        includeRuntime: true,
-        includeDashboard: true,
-      }),
-      'active',
-    );
-  };
-
-  return { switchGame };
-}
+export { useGameSwitch };
 import type { DbEntry } from '../../../shared/api/tauri/bindings.gen';
 
 export function useMasterDb() {

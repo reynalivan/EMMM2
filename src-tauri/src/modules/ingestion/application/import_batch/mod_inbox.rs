@@ -3,8 +3,8 @@ use super::types::{
     ModInboxEntry, ModInboxEntryKind, ModInboxLayout, ModInboxRootState, ModInboxSnapshot,
     ProcessedModInboxDestination, ProcessedModInboxSource, TargetMode,
 };
-use crate::shared::errors::AppError;
 use crate::modules::ingestion::adapters::sqlite::import_batch;
+use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -173,9 +173,7 @@ pub async fn delete_processed_sources(
 
     for (source, canonical) in targets {
         crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&canonical)?;
-        if import_batch::mark_mod_inbox_source_deleted(db, game_id, &source.source_id).await?
-            == 0
-        {
+        if import_batch::mark_mod_inbox_source_deleted(db, game_id, &source.source_id).await? == 0 {
             return Err(AppError::Internal(format!(
                 "Processed source history '{}' could not be updated",
                 source.source_id
@@ -202,7 +200,10 @@ fn discover_entries(
         let kind = if canonical_path.is_dir() {
             ModInboxEntryKind::Folder
         } else if canonical_path.is_file()
-            && crate::modules::library::application::mods::archive::ArchiveFormat::detect(&canonical_path).is_some()
+            && crate::modules::library::application::mods::archive::ArchiveFormat::detect(
+                &canonical_path,
+            )
+            .is_some()
         {
             ModInboxEntryKind::Archive
         } else {
@@ -248,7 +249,8 @@ fn classify_layout(path: &Path, kind: ModInboxEntryKind) -> (ModInboxLayout, u32
     if kind == ModInboxEntryKind::Archive {
         return (ModInboxLayout::Unknown, 0);
     }
-    let roots = crate::modules::library::application::mods::archive::classify::find_mod_roots(path, 5);
+    let roots =
+        crate::modules::library::application::mods::archive::classify::find_mod_roots(path, 5);
     let count = roots.len() as u32;
     match roots.as_slice() {
         [] => (ModInboxLayout::Unknown, 0),

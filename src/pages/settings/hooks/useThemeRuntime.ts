@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useResolvedTheme } from '../../../shared/lib/hooks/useResolvedTheme';
+import { useResolvedTheme } from '@/entities/settings';
 import { BUILTIN_THEMES } from '../../../shared/lib/themeOptions';
 
 /** Applies the resolved theme to the document. Mounted once, at the app shell. */

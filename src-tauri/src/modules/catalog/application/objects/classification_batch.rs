@@ -1,11 +1,13 @@
-use crate::shared::errors::AppError;
-use crate::modules::ingestion::application::import_batch::types::{
-    CanonicalSuggestion, CategorySuggestion, SourceFingerprint, StableCategory,
+use crate::modules::catalog::application::match_engine::inspection::{
+    inspect_source, InspectionRequest,
 };
-use crate::modules::catalog::application::match_engine::inspection::{inspect_source, InspectionRequest};
 use crate::modules::catalog::application::objects::classification::{
     CanonicalClassificationMatch, ObjectClassificationInput,
 };
+use crate::modules::ingestion::application::import_batch::types::{
+    CanonicalSuggestion, CategorySuggestion, SourceFingerprint, StableCategory,
+};
+use crate::shared::errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::BTreeMap;
@@ -99,22 +101,24 @@ pub async fn preview_object_classification_batch(
     let mut result = Vec::with_capacity(input.object_ids.len());
 
     for object_id in &input.object_ids {
-        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, object_id)
-            .await?
-            .filter(|object| object.game_id == input.game_id)
-            .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;
+        let object =
+            crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, object_id)
+                .await?
+                .filter(|object| object.game_id == input.game_id)
+                .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;
         let source = Path::new(&mods_root).join(&object.folder_path);
         let inspection = inspect_source(&InspectionRequest {
             source_path: source.clone(),
             planned_name: Some(object.name.clone()),
             match_extensions: match_extensions.to_vec(),
         })?;
-        let categories = crate::modules::catalog::application::match_engine::classification::classify_source(
-            &source,
-            &object.name,
-            master_db,
-            filters,
-        );
+        let categories =
+            crate::modules::catalog::application::match_engine::classification::classify_source(
+                &source,
+                &object.name,
+                master_db,
+                filters,
+            );
         let canonical_suggestions = if let Some(draft) = drafts.get(object_id.as_str()) {
             if !draft.metadata.is_object() {
                 return Err(AppError::Validation(format!(
@@ -171,10 +175,13 @@ pub async fn apply_object_classification_batch(
     let mut prepared = Vec::with_capacity(input.items.len());
 
     for item in input.items {
-        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, &item.object_id)
-            .await?
-            .filter(|object| object.game_id == input.game_id)
-            .ok_or_else(|| AppError::NotFound(format!("Object '{}'", item.object_id)))?;
+        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(
+            db,
+            &item.object_id,
+        )
+        .await?
+        .filter(|object| object.game_id == input.game_id)
+        .ok_or_else(|| AppError::NotFound(format!("Object '{}'", item.object_id)))?;
         let source = Path::new(&mods_root).join(&object.folder_path);
         let current = inspect_source(&InspectionRequest {
             source_path: source,
@@ -248,14 +255,17 @@ fn validate_canonical_selection(
         .entries
         .iter()
         .find(|entry| {
-            crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(&entry.name) == entry_key
+            crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(
+                &entry.name,
+            ) == entry_key
         })
         .ok_or_else(|| {
             AppError::Validation(format!(
                 "Canonical entry '{entry_key}' does not exist in the active game database"
             ))
         })?;
-    if entry.entry_kind != crate::modules::matching::application::deep_matcher::EntryKind::Canonical {
+    if entry.entry_kind != crate::modules::matching::application::deep_matcher::EntryKind::Canonical
+    {
         return Err(AppError::Validation(format!(
             "Canonical entry '{entry_key}' is taxonomy-only"
         )));

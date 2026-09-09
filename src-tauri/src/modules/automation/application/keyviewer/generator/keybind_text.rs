@@ -2,8 +2,8 @@ use crate::shared::errors::AppError;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::modules::library::application::ini::document::KeyBinding;
 use crate::modules::automation::application::keyviewer::matcher::MatchResult;
+use crate::modules::library::application::ini::document::KeyBinding;
 
 use super::atomic::atomic_write;
 

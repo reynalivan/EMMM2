@@ -2,16 +2,18 @@
 //! Moved out of `commands::app::workspace_cmds` so the command layer stays a
 //! thin State-extraction wrapper over this service.
 
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
-use crate::shared::errors::AppError;
+use crate::modules::settings::application::config::ConfigService;
+use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::modules::workspace::domain::workspace::{
     WorkspaceImpact, WorkspacePathRewrite, WorkspaceRefreshScope, WorkspaceSwitchDuplicate,
     WorkspaceSwitchInput, WorkspaceSwitchResolution, WorkspaceSwitchResult, WorkspaceSwitchStatus,
     WorkspaceSwitchTargetKind,
 };
-use crate::modules::settings::application::config::ConfigService;
-use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::shared::errors::AppError;
 
 fn map_duplicates(
     duplicates: Vec<crate::modules::library::domain::mods::DuplicateModInfo>,
@@ -27,6 +29,257 @@ fn map_duplicates(
             parent_path: duplicate.parent_path,
         })
         .collect()
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedModSwitch {
+    target_path: String,
+    changed_object_ids: Vec<String>,
+    batches: Vec<crate::modules::library::application::mods::bulk::PreparedBulkToggle>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PreparedWorkspaceSwitch {
+    Immediate(WorkspaceSwitchResult),
+    Object(crate::modules::library::application::mods::object_switch::PreparedObjectSwitch),
+    Mod(PreparedModSwitch),
+}
+
+impl PreparedWorkspaceSwitch {
+    pub fn journal_steps(&self) -> Vec<(u32, PathBuf, PathBuf)> {
+        match self {
+            Self::Immediate(_) => Vec::new(),
+            Self::Object(prepared) => prepared.journal_steps(),
+            Self::Mod(prepared) => prepared
+                .batches
+                .iter()
+                .flat_map(|batch| batch.planned_steps())
+                .collect(),
+        }
+    }
+
+    pub fn immediate_result(&self) -> Option<WorkspaceSwitchResult> {
+        match self {
+            Self::Immediate(result) => Some(result.clone()),
+            Self::Object(_) | Self::Mod(_) => None,
+        }
+    }
+
+    pub fn execute(
+        &self,
+        app: &tauri::AppHandle,
+        watcher: &WatcherState,
+    ) -> Result<WorkspaceSwitchResult, AppError> {
+        match self {
+            Self::Immediate(result) => Ok(result.clone()),
+            Self::Object(prepared) => {
+                let outcome = prepared.execute(watcher)?;
+                let changed_folder_paths = if outcome.original_path == outcome.next_path {
+                    vec![outcome.next_path.clone()]
+                } else {
+                    vec![outcome.original_path.clone(), outcome.next_path.clone()]
+                };
+                let status = if outcome.original_path == outcome.next_path {
+                    WorkspaceSwitchStatus::Noop
+                } else {
+                    WorkspaceSwitchStatus::Applied
+                };
+                Ok(WorkspaceSwitchResult {
+                    status,
+                    primary_path: Some(outcome.next_path.clone()),
+                    changed_folder_paths: changed_folder_paths.clone(),
+                    changed_object_ids: vec![outcome.object_id.clone()],
+                    duplicates: Vec::new(),
+                    impact: build_switch_impact(
+                        Some(&outcome.original_path),
+                        Some(&outcome.next_path),
+                        &changed_folder_paths,
+                        std::slice::from_ref(&outcome.object_id),
+                    ),
+                    sync_warning: None,
+                })
+            }
+            Self::Mod(prepared) => {
+                let cancel = AtomicBool::new(false);
+                let mut executions: Vec<(
+                    &crate::modules::library::application::mods::bulk::PreparedBulkToggle,
+                    Vec<u32>,
+                )> = Vec::new();
+                let mut success = Vec::new();
+                let mut rewrites = Vec::new();
+                for batch in &prepared.batches {
+                    let execution = crate::modules::library::application::mods::bulk::execute_prepared_bulk_toggle(
+                        app,
+                        watcher,
+                        batch,
+                        &cancel,
+                    );
+                    if !execution.result.failures.is_empty() {
+                        for (rollback_batch, rollback_sequences) in executions.iter().rev() {
+                            crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
+                                watcher,
+                                rollback_batch,
+                                rollback_sequences,
+                            )?;
+                        }
+                        crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
+                            watcher,
+                            batch,
+                            &execution.applied_sequences,
+                        )?;
+                        return Err(execution.result.failures[0].error.clone());
+                    }
+                    success.extend(execution.result.success.iter().cloned());
+                    rewrites.extend(execution.result.path_rewrites.iter().cloned());
+                    executions.push((batch, execution.applied_sequences));
+                }
+
+                let primary_path = rewrites
+                    .iter()
+                    .find(|rewrite| rewrite.old_path == prepared.target_path)
+                    .map(|rewrite| rewrite.new_path.clone())
+                    .or_else(|| Some(prepared.target_path.clone()));
+                let mut seen = HashSet::new();
+                let changed_folder_paths = rewrites
+                    .iter()
+                    .flat_map(|rewrite| [rewrite.old_path.clone(), rewrite.new_path.clone()])
+                    .chain(success)
+                    .filter(|path| seen.insert(path.clone()))
+                    .collect::<Vec<_>>();
+                let status = if rewrites.is_empty() {
+                    WorkspaceSwitchStatus::Noop
+                } else {
+                    WorkspaceSwitchStatus::Applied
+                };
+                let mut impact = build_switch_impact(
+                    Some(&prepared.target_path),
+                    primary_path.as_deref(),
+                    &changed_folder_paths,
+                    &prepared.changed_object_ids,
+                );
+                impact.rewrites = rewrites;
+                Ok(WorkspaceSwitchResult {
+                    status,
+                    primary_path,
+                    changed_folder_paths,
+                    changed_object_ids: prepared.changed_object_ids.clone(),
+                    duplicates: Vec::new(),
+                    impact,
+                    sync_warning: None,
+                })
+            }
+        }
+    }
+
+    pub fn rollback(&self, watcher: &WatcherState) -> Result<(), AppError> {
+        match self {
+            Self::Immediate(_) => Ok(()),
+            Self::Object(prepared) => prepared.rollback(watcher),
+            Self::Mod(prepared) => {
+                for batch in prepared.batches.iter().rev() {
+                    crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
+                        watcher,
+                        batch,
+                        &batch.planned_sequences(),
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+pub async fn prepare_switch(
+    input: &WorkspaceSwitchInput,
+    config: &ConfigService,
+    pool: &sqlx::SqlitePool,
+) -> Result<PreparedWorkspaceSwitch, AppError> {
+    if matches!(input.target.kind, WorkspaceSwitchTargetKind::ObjectId) {
+        return Ok(PreparedWorkspaceSwitch::Object(
+            crate::modules::library::application::mods::object_switch::prepare_object_root_switch(
+                pool,
+                &input.game_id,
+                &input.target.value,
+                input.desired_enabled,
+            )
+            .await?,
+        ));
+    }
+
+    let (target_path, changed_object_ids) = resolve_mod_target_path(
+        pool,
+        &input.game_id,
+        &input.target.value,
+        input.desired_enabled,
+    )
+    .await?;
+    let validated_target =
+        crate::platform::fs::guard::validate_path(config, &input.game_id, &target_path)?;
+    let mut disable_paths = Vec::new();
+    if input.desired_enabled {
+        let mods_root = config
+            .mods_root_for(&input.game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+        let target_rel = Path::new(validated_target.original())
+            .strip_prefix(&mods_root)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| validated_target.original().to_string());
+        let duplicates = crate::modules::workspace::application::scanner::conflict::get_duplicates_for_mod_service(
+            pool,
+            &target_rel,
+            &input.game_id,
+        )
+        .await?;
+        if !duplicates.is_empty()
+            && matches!(
+                input.resolution,
+                WorkspaceSwitchResolution::Normal
+                    | WorkspaceSwitchResolution::EnableParentThenContinue
+            )
+        {
+            return Ok(PreparedWorkspaceSwitch::Immediate(WorkspaceSwitchResult {
+                status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
+                primary_path: None,
+                changed_folder_paths: Vec::new(),
+                changed_object_ids: changed_object_ids.clone(),
+                duplicates: map_duplicates(duplicates),
+                impact: build_switch_impact(None, None, &[], &changed_object_ids),
+                sync_warning: None,
+            }));
+        }
+        if matches!(
+            input.resolution,
+            WorkspaceSwitchResolution::ForceEnable | WorkspaceSwitchResolution::EnableOnlyThis
+        ) {
+            disable_paths.extend(
+                duplicates
+                    .into_iter()
+                    .map(|duplicate| mods_root.join(duplicate.folder_path)),
+            );
+        }
+    }
+
+    let mut batches = Vec::new();
+    let mut next_sequence = 0;
+    if !disable_paths.is_empty() {
+        let mut batch = crate::modules::library::application::mods::bulk::prepare_bulk_toggle(
+            &disable_paths,
+            false,
+        );
+        next_sequence = batch.resequence(next_sequence);
+        batches.push(batch);
+    }
+    let mut target_batch = crate::modules::library::application::mods::bulk::prepare_bulk_toggle(
+        &[validated_target.to_path_buf()],
+        input.desired_enabled,
+    );
+    target_batch.resequence(next_sequence);
+    batches.push(target_batch);
+    Ok(PreparedWorkspaceSwitch::Mod(PreparedModSwitch {
+        target_path,
+        changed_object_ids,
+        batches,
+    }))
 }
 
 async fn resolve_mod_target_path(
@@ -45,12 +298,13 @@ async fn resolve_mod_target_path(
     } else {
         mods_root.join(target_path)
     };
-    let resolved_target = crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
-        mods_root,
-        &absolute_target,
-        desired_enabled,
-    )
-    .unwrap_or(absolute_target);
+    let resolved_target =
+        crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
+            mods_root,
+            &absolute_target,
+            desired_enabled,
+        )
+        .unwrap_or(absolute_target);
     let relative_path = resolved_target
         .strip_prefix(mods_root)
         .ok()
@@ -59,7 +313,12 @@ async fn resolve_mod_target_path(
 
     let mut changed_object_ids = Vec::new();
     if let Some((_, Some(object_id), _)) =
-        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(pool, &relative_path, game_id).await?
+        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
+            pool,
+            &relative_path,
+            game_id,
+        )
+        .await?
     {
         changed_object_ids.push(object_id);
     }
@@ -78,13 +337,14 @@ async fn run_enable_only_this(
     game_id: &str,
     changed_object_ids: Vec<String>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
-    let result = crate::modules::workspace::application::scanner::conflict::enable_only_this_service(
-        pool,
-        watcher_state,
-        target_path,
-        game_id,
-    )
-    .await?;
+    let result =
+        crate::modules::workspace::application::scanner::conflict::enable_only_this_service(
+            pool,
+            watcher_state,
+            target_path,
+            game_id,
+        )
+        .await?;
     let changed_folder_paths = result.success;
     let primary_path = changed_folder_paths.last().cloned();
     let rewrites = result.path_rewrites.clone();
@@ -159,15 +419,16 @@ pub async fn execute_switch(
     // Workspace Switch owns explicit enable/disable actions.
     // Object targets must use object-switch semantics, never the mod-toggle service.
     if matches!(input.target.kind, WorkspaceSwitchTargetKind::ObjectId) {
-        let outcome = crate::modules::library::application::mods::object_switch::toggle_object_root_service(
-            pool,
-            watcher_state,
-            op_guard,
-            &input.game_id,
-            &input.target.value,
-            input.desired_enabled,
-        )
-        .await?;
+        let outcome =
+            crate::modules::library::application::mods::object_switch::toggle_object_root_service(
+                pool,
+                watcher_state,
+                op_guard,
+                &input.game_id,
+                &input.target.value,
+                input.desired_enabled,
+            )
+            .await?;
 
         let status = if outcome.next_path == outcome.original_path {
             WorkspaceSwitchStatus::Noop

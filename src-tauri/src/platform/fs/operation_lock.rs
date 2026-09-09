@@ -31,6 +31,7 @@ const CONTENTION_MESSAGE: &str = "Operation in progress. Please wait a moment an
 pub struct OpGuard(#[allow(dead_code)] OwnedMutexGuard<()>);
 
 /// Global lock for destructive file operations.
+#[derive(Clone)]
 pub struct OperationLock {
     lock: Arc<Mutex<()>>,
 }

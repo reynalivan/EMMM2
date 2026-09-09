@@ -2,8 +2,8 @@
 
 use sqlx::SqlitePool;
 
-use crate::shared::errors::BrowserError;
 use crate::modules::browser::adapters::sqlite::browser;
+use crate::shared::errors::BrowserError;
 
 /// Fetch the configured homepage URL from `browser_settings` table.
 /// Falls back to `https://www.google.com` if not set.

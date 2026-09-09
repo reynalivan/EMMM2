@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
 import { ChevronLeft, HardDrive, Play, StopCircle, EyeOff } from 'lucide-react';
-import { useAppStore } from '../../app/store/useAppStore';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useAppStore } from '@/app/store';
+import { useActiveGame } from '@/entities/game';
 import { useCancelDedupScan, useIgnoredPairs, useStartDedupScan } from './hooks/useDedup';
-import type { DupScanEvent } from '@/entities/workspace/model/scanner';
+import type { DupScanEvent } from '@/entities/workspace';
 import DedupFeature, { type DedupScanProgress } from './components/DedupFeature';
 import { IgnoredPairsModal } from './components/IgnoredPairsModal';
 import { useTranslation } from 'react-i18next';

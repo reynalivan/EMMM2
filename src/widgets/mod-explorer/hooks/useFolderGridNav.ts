@@ -5,27 +5,18 @@
  */
 
 import { useCallback } from 'react';
-import type { SortField, SortOrder } from '@/entities/mod/model/mod';
-import { useWorkspaceRuntime } from '@/features/workspace-runtime/state/workspaceStoreBridge';
+import { useWorkspaceRuntime } from '@/features/workspace-runtime';
 
 interface FolderGridNavOptions {
   currentPath: string[];
   explorerSubPath?: string;
   selectedObjectFolderPath: string | null;
-  sortField: SortField;
-  sortOrder: SortOrder;
-  setSortField: (field: SortField) => void;
-  setSortOrder: (order: SortOrder) => void;
 }
 
 export function useFolderGridNav({
   currentPath,
   explorerSubPath,
   selectedObjectFolderPath,
-  sortField,
-  sortOrder,
-  setSortField,
-  setSortOrder,
 }: FolderGridNavOptions) {
   const runtime = useWorkspaceRuntime();
 
@@ -82,25 +73,9 @@ export function useFolderGridNav({
     runtime.navigateExplorer([], undefined);
   }, [runtime, selectedObjectFolderPath]);
 
-  const handleSortToggle = useCallback(() => {
-    const fields = ['name', 'modified_at', 'size_bytes'] as const;
-    const currentIdx = fields.indexOf(sortField);
-    if (sortOrder === 'desc') {
-      const nextIdx = (currentIdx + 1) % fields.length;
-      setSortField(fields[nextIdx]);
-      setSortOrder('asc');
-    } else {
-      setSortOrder('desc');
-    }
-  }, [sortField, sortOrder, setSortField, setSortOrder]);
-
-  const sortLabel = sortField === 'name' ? 'Name' : sortField === 'modified_at' ? 'Date' : 'Size';
-
   return {
     handleNavigate,
     handleBreadcrumbClick,
     handleGoHome,
-    handleSortToggle,
-    sortLabel,
   };
 }

@@ -5,8 +5,8 @@
 
 use std::path::Path;
 
-use crate::shared::errors::AppError;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
+use crate::shared::errors::AppError;
 
 /// Find all enabled mods in the same object as `folder_path` (i.e. duplicates/conflicts).
 pub async fn get_duplicates_for_mod_service(
@@ -20,19 +20,27 @@ pub async fn get_duplicates_for_mod_service(
 
     // Resolve the object_id for the given folder
     let object_id =
-        crate::modules::library::adapters::sqlite::mods::get_object_id_by_folder_and_game(pool, folder_path, game_id)
-            .await
-            .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
+        crate::modules::library::adapters::sqlite::mods::get_object_id_by_folder_and_game(
+            pool,
+            folder_path,
+            game_id,
+        )
+        .await
+        .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
 
     let object_id = match object_id {
         Some(id) => id,
         None => return Ok(vec![]), // No object — no duplicates possible
     };
 
-    let duplicates =
-        crate::modules::library::adapters::sqlite::mods::get_enabled_duplicates(pool, &object_id, game_id, folder_path)
-            .await
-            .map_err(|e| AppError::Io(format!("DB duplicate query failed: {e}")))?;
+    let duplicates = crate::modules::library::adapters::sqlite::mods::get_enabled_duplicates(
+        pool,
+        &object_id,
+        game_id,
+        folder_path,
+    )
+    .await
+    .map_err(|e| AppError::Io(format!("DB duplicate query failed: {e}")))?;
 
     let mut result = Vec::new();
     let mut relevant_mod_ids: Vec<String> = Vec::new();
@@ -47,10 +55,13 @@ pub async fn get_duplicates_for_mod_service(
             Path::new(path.as_stored()).parent(),
         ) {
             if target_parent == dup_parent {
-                let (node_type, _, _) = crate::modules::workspace::domain::classifier::classify_folder(
-                    &Path::new(&mods_path).join(target_parent),
-                );
-                if node_type == crate::modules::workspace::domain::classifier::NodeType::VariantContainer {
+                let (node_type, _, _) =
+                    crate::modules::workspace::domain::classifier::classify_folder(
+                        &Path::new(&mods_path).join(target_parent),
+                    );
+                if node_type
+                    == crate::modules::workspace::domain::classifier::NodeType::VariantContainer
+                {
                     is_variant = true;
                     parent_path = target_parent.to_string_lossy().to_string();
                 }
@@ -70,7 +81,12 @@ pub async fn get_duplicates_for_mod_service(
 
     // Include the target mod ID in the set to check for ignores
     let target_mod_id_search: Result<Option<(String, Option<String>, i64)>, sqlx::Error> =
-        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(pool, folder_path, game_id).await;
+        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
+            pool,
+            folder_path,
+            game_id,
+        )
+        .await;
 
     let target_mod_id = match target_mod_id_search {
         Ok(Some((id, _, _))) => id,
@@ -124,19 +140,24 @@ pub async fn enable_only_this_service(
     let mut path_rewrites = Vec::new();
 
     let target_object_id =
-        crate::modules::library::adapters::sqlite::mods::get_object_id_by_folder_and_game(pool, &target_rel, game_id)
-            .await
-            .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
-
-    if let Some(object_id) = target_object_id {
-        let sibling_paths = crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
+        crate::modules::library::adapters::sqlite::mods::get_object_id_by_folder_and_game(
             pool,
-            &object_id,
-            game_id,
             &target_rel,
+            game_id,
         )
         .await
-        .map_err(|e| AppError::Io(format!("DB sibling query failed: {e}")))?;
+        .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
+
+    if let Some(object_id) = target_object_id {
+        let sibling_paths =
+            crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
+                pool,
+                &object_id,
+                game_id,
+                &target_rel,
+            )
+            .await
+            .map_err(|e| AppError::Io(format!("DB sibling query failed: {e}")))?;
 
         for sibling_rel in sibling_paths {
             let sibling_abs = Path::new(&mods_path)

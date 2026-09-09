@@ -1,12 +1,7 @@
 use std::path::Path;
 
-use crate::shared::errors::AppError;
-use crate::modules::workspace::domain::workspace::{
-    WorkspaceRuntime, WorkspaceSelection, WorkspaceSourceState, WorkspaceSourceStatus,
-    WorkspaceViewModel, WorkspaceViewModelInput,
-};
-use crate::modules::workspace::application::explorer::listing::list_mod_folders_for_game;
 use crate::modules::catalog::application::objects::query::get_filtered_objects_with_conflict_check;
+use crate::modules::workspace::application::explorer::listing::list_mod_folders_for_game;
 use crate::modules::workspace::application::workspace_read_model::explorer_mapper::{
     empty_workspace_explorer, map_workspace_explorer,
 };
@@ -20,6 +15,11 @@ use crate::modules::workspace::application::workspace_read_model::selection::{
     build_current_path, resolve_unavailable_workspace_selection, resolve_workspace_selection,
     ResolvedWorkspaceSelection,
 };
+use crate::modules::workspace::domain::workspace::{
+    WorkspaceRuntime, WorkspaceSelection, WorkspaceSourceState, WorkspaceSourceStatus,
+    WorkspaceViewModel, WorkspaceViewModelInput,
+};
+use crate::shared::errors::AppError;
 
 async fn load_game_mods_path(pool: &sqlx::SqlitePool, game_id: &str) -> Result<String, AppError> {
     crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, game_id)
@@ -41,7 +41,9 @@ fn unavailable_source_state(mods_path: &str) -> WorkspaceSourceState {
     }
 }
 
-fn include_unregistered_roots(filter: &crate::modules::catalog::domain::objects::ObjectFilter) -> bool {
+fn include_unregistered_roots(
+    filter: &crate::modules::catalog::domain::objects::ObjectFilter,
+) -> bool {
     filter.object_type.is_none()
         && filter.status_filter.is_none()
         && filter
@@ -109,7 +111,8 @@ pub async fn get_workspace_view_model_with_listing_mode(
             runtime: WorkspaceRuntime {
                 game_id,
                 source_state: unavailable_source_state(&mods_path),
-                recovery_status: crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus::Ready,
+                recovery_status:
+                    crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus::Ready,
             },
         });
     }
@@ -173,13 +176,13 @@ pub async fn get_workspace_view_model_with_listing_mode(
         runtime: WorkspaceRuntime {
             game_id,
             source_state: available_source_state(),
-            recovery_status: crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus::Ready,
+            recovery_status:
+                crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus::Ready,
         },
     })
 }
 
 #[cfg(test)]
-
 mod tests;
 
 pub mod switch;

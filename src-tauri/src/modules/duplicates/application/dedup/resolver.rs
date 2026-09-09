@@ -1,7 +1,9 @@
+use crate::modules::library::application::mods::trash;
+use crate::modules::workspace::application::scanner::watcher::{
+    SuppressionGuard, WatcherSuppressor,
+};
 use crate::shared::errors::AppError;
 use crate::shared::errors::ScannerError;
-use crate::modules::library::application::mods::trash;
-use crate::modules::workspace::application::scanner::watcher::{SuppressionGuard, WatcherSuppressor};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::BTreeMap;
@@ -60,6 +62,199 @@ pub struct ResolutionProgress {
     pub total: usize,
     pub group_id: String,
     pub action: ResolutionAction,
+}
+
+pub struct DurableResolutionBatch {
+    actions: Vec<DurableResolutionAction>,
+    steps: Vec<crate::modules::mutation::journal::PlannedStep>,
+}
+
+enum DurableResolutionAction {
+    Quarantine {
+        request: ResolutionRequest,
+        source: PathBuf,
+        quarantine: PathBuf,
+        sequence: u32,
+    },
+    Hardlink {
+        request: ResolutionRequest,
+        replacements: Vec<hardlink::PreparedHardlinkReplacement>,
+    },
+    Ignore(ResolutionRequest),
+}
+
+impl DurableResolutionBatch {
+    pub fn operation_plan(
+        &self,
+        game_id: &str,
+    ) -> Option<crate::modules::mutation::journal::OperationPlan> {
+        (!self.steps.is_empty()).then(|| {
+            crate::modules::mutation::journal::OperationPlan::new(
+                "duplicate-resolution",
+                game_id,
+                self.steps.clone(),
+            )
+        })
+    }
+
+    pub fn requests(&self) -> Vec<ResolutionRequest> {
+        self.actions
+            .iter()
+            .map(|action| match action {
+                DurableResolutionAction::Quarantine { request, .. }
+                | DurableResolutionAction::Hardlink { request, .. }
+                | DurableResolutionAction::Ignore(request) => request.clone(),
+            })
+            .collect()
+    }
+
+    pub fn finalize(&self) {
+        for action in &self.actions {
+            let result = match action {
+                DurableResolutionAction::Quarantine { quarantine, .. } if quarantine.exists() => {
+                    crate::platform::fs::recycle_bin::move_path_to_recycle_bin(quarantine)
+                        .map_err(|error| ScannerError::Io(error.to_string()))
+                }
+                DurableResolutionAction::Hardlink { replacements, .. } => replacements
+                    .iter()
+                    .try_for_each(hardlink::PreparedHardlinkReplacement::finalize),
+                _ => Ok(()),
+            };
+            if let Err(error) = result {
+                log::warn!("Duplicate resolution cleanup remains pending: {error}");
+            }
+        }
+    }
+}
+
+pub async fn prepare_durable_batch(
+    requests: Vec<ResolutionRequest>,
+    game_id: &str,
+    db: &SqlitePool,
+) -> Result<DurableResolutionBatch, AppError> {
+    let mut actions = Vec::with_capacity(requests.len());
+    let mut steps = Vec::new();
+    let mut sequence = 0u32;
+    for request in requests {
+        authorize_request(&request, game_id, db)
+            .await
+            .map_err(|error| AppError::Validation(error.to_string()))?;
+        match &request.action {
+            ResolutionAction::KeepA | ResolutionAction::KeepB => {
+                verify_full_folder_match(&request.folder_a, &request.folder_b)
+                    .map_err(|error| AppError::Validation(error.to_string()))?;
+                let source = PathBuf::from(if matches!(&request.action, ResolutionAction::KeepA) {
+                    &request.folder_b
+                } else {
+                    &request.folder_a
+                });
+                let quarantine = source.with_file_name(format!(
+                    ".emmm-duplicate-quarantine-{}",
+                    uuid::Uuid::new_v4().simple()
+                ));
+                steps.push(crate::modules::mutation::journal::PlannedStep::quarantine(
+                    sequence,
+                    source.clone(),
+                    quarantine.clone(),
+                ));
+                actions.push(DurableResolutionAction::Quarantine {
+                    request,
+                    source,
+                    quarantine,
+                    sequence,
+                });
+                sequence += 1;
+            }
+            ResolutionAction::Hardlink => {
+                verify_full_folder_match(&request.folder_a, &request.folder_b)
+                    .map_err(|error| AppError::Validation(error.to_string()))?;
+                let replacements = hardlink::prepare_hardlinks(
+                    &request.folder_a,
+                    &request.folder_b,
+                    &mut sequence,
+                )
+                .map_err(|error| AppError::Validation(error.to_string()))?;
+                steps.extend(
+                    replacements
+                        .iter()
+                        .map(|replacement| replacement.journal_step()),
+                );
+                actions.push(DurableResolutionAction::Hardlink {
+                    request,
+                    replacements,
+                });
+            }
+            ResolutionAction::Ignore => actions.push(DurableResolutionAction::Ignore(request)),
+        }
+    }
+    Ok(DurableResolutionBatch { actions, steps })
+}
+
+pub async fn resolve_durable_batch<F>(
+    batch: &DurableResolutionBatch,
+    game_id: &str,
+    db: &SqlitePool,
+    lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+    watcher_suppressor: &Arc<WatcherSuppressor>,
+    mut on_progress: F,
+) -> Result<ResolutionSummary, AppError>
+where
+    F: FnMut(ResolutionProgress),
+{
+    let _suppression_guard = SuppressionGuard::new(watcher_suppressor);
+    let total = batch.actions.len();
+    for (index, action) in batch.actions.iter().enumerate() {
+        let request = match action {
+            DurableResolutionAction::Quarantine { request, .. }
+            | DurableResolutionAction::Hardlink { request, .. }
+            | DurableResolutionAction::Ignore(request) => request,
+        };
+        on_progress(ResolutionProgress {
+            current: index + 1,
+            total,
+            group_id: request.group_id.clone(),
+            action: request.action.clone(),
+        });
+        match action {
+            DurableResolutionAction::Quarantine {
+                source,
+                quarantine,
+                sequence,
+                ..
+            } => {
+                std::fs::rename(source, quarantine)?;
+                lease.mark_step_applied(*sequence)?;
+                set_group_status(db, &request.group_id, "resolved")
+                    .await
+                    .map_err(|error| AppError::Db(error.to_string()))?;
+            }
+            DurableResolutionAction::Hardlink { replacements, .. } => {
+                for replacement in replacements {
+                    replacement
+                        .execute()
+                        .map_err(|error| AppError::Io(error.to_string()))?;
+                    lease.mark_step_applied(replacement.sequence)?;
+                }
+                set_group_status(db, &request.group_id, "resolved")
+                    .await
+                    .map_err(|error| AppError::Db(error.to_string()))?;
+            }
+            DurableResolutionAction::Ignore(_) => {
+                persist_whitelist_pair(db, game_id, &request.folder_a, &request.folder_b)
+                    .await
+                    .map_err(|error| AppError::Db(error.to_string()))?;
+                set_group_status(db, &request.group_id, "ignored")
+                    .await
+                    .map_err(|error| AppError::Db(error.to_string()))?;
+            }
+        }
+    }
+    Ok(ResolutionSummary {
+        total,
+        successful: total,
+        failed: 0,
+        errors: Vec::new(),
+    })
 }
 
 pub async fn resolve_batch<F>(
@@ -162,14 +357,18 @@ async fn authorize_request(
     db: &SqlitePool,
 ) -> Result<(), ScannerError> {
     let requested_paths = canonical_request_paths(request)?;
-    let group = crate::modules::duplicates::adapters::sqlite::dedup::load_pending_group(db, game_id, &request.group_id)
-        .await?
-        .ok_or_else(|| {
-            ScannerError::Validation(format!(
-                "Duplicate group is missing, stale, or already resolved: {}",
-                request.group_id
-            ))
-        })?;
+    let group = crate::modules::duplicates::adapters::sqlite::dedup::load_pending_group(
+        db,
+        game_id,
+        &request.group_id,
+    )
+    .await?
+    .ok_or_else(|| {
+        ScannerError::Validation(format!(
+            "Duplicate group is missing, stale, or already resolved: {}",
+            request.group_id
+        ))
+    })?;
     let member_paths = group_member_paths(&group)?;
     if !member_paths.contains(&requested_paths.0) || !member_paths.contains(&requested_paths.1) {
         return Err(ScannerError::Validation(
@@ -299,7 +498,13 @@ async fn persist_whitelist_pair(
 
     let (canonical_a, canonical_b) = canonicalize_pair(&folder_a_id, &folder_b_id);
 
-    crate::modules::duplicates::adapters::sqlite::dedup::insert_whitelist_pair(db, game_id, canonical_a, canonical_b).await?;
+    crate::modules::duplicates::adapters::sqlite::dedup::insert_whitelist_pair(
+        db,
+        game_id,
+        canonical_a,
+        canonical_b,
+    )
+    .await?;
 
     Ok(())
 }
@@ -309,14 +514,18 @@ async fn fetch_mod_id(
     game_id: &str,
     folder_path: &str,
 ) -> Result<String, ScannerError> {
-    crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(db, folder_path, game_id)
-        .await?
-        .map(|(id, _, _)| id)
-        .ok_or_else(|| {
-            ScannerError::Validation(format!(
-                "mod entry not found for game '{game_id}' and folder '{folder_path}'"
-            ))
-        })
+    crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
+        db,
+        folder_path,
+        game_id,
+    )
+    .await?
+    .map(|(id, _, _)| id)
+    .ok_or_else(|| {
+        ScannerError::Validation(format!(
+            "mod entry not found for game '{game_id}' and folder '{folder_path}'"
+        ))
+    })
 }
 
 async fn set_group_status(
@@ -325,8 +534,13 @@ async fn set_group_status(
     status: &str,
 ) -> Result<(), ScannerError> {
     let set_resolved_at = status == "resolved" || status == "ignored";
-    let rows_affected =
-        crate::modules::duplicates::adapters::sqlite::dedup::update_group_status(db, group_id, status, set_resolved_at).await?;
+    let rows_affected = crate::modules::duplicates::adapters::sqlite::dedup::update_group_status(
+        db,
+        group_id,
+        status,
+        set_resolved_at,
+    )
+    .await?;
 
     if rows_affected == 0 {
         return Err(ScannerError::Validation(format!(

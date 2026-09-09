@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ApplyResult } from '@/entities/collection/model/collection';
+import type { ApplyResult } from '@/entities/collection';
 
 interface ApplyCollectionActionsProps {
   result: ApplyResult | null;

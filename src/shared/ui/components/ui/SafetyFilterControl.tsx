@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { SafetyFilter } from '@/app/store/appStore/explorerSlice';
+export type SafetyFilter = 'all' | 'safe' | 'unsafe';
 
 interface SafetyFilterControlProps {
   value: SafetyFilter;

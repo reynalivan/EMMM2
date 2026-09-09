@@ -1,6 +1,6 @@
 import { Gamepad2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 
 export function DashboardLoadingState() {
   return (

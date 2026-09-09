@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import type { DashboardPayload } from '@/pages/dashboard/model/dashboard';
-import { publishQueryScopes } from '@/features/runtime-sync/queryRefresh';
+import type { DashboardPayload } from '../model/dashboard';
+import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 
 export const dashboardKeys = {
   all: ['dashboard-stats'] as const,

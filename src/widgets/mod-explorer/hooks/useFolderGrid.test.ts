@@ -1,9 +1,9 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useFolderGrid } from './useFolderGrid';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { createWrapper } from '../../../tests/testing/test-utils';
-import { ModFolder } from '@/entities/game-object/model/object';
+import { ModFolder } from '@/entities/game-object';
 
 // Provide element dimensions for virtualization
 globalThis.ResizeObserver = class ResizeObserver {
@@ -33,7 +33,7 @@ vi.mock('./useFolderMutations', () => ({
   useActiveConflicts: () => ({ data: [] }),
 }));
 
-vi.mock('../../mod-runtime/hooks/useBulkModMutations', () => ({
+vi.mock('@/features/mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutate: vi.fn() }),
   useBulkDelete: () => ({ mutate: vi.fn() }),
   useBulkUpdateInfo: () => ({ mutate: vi.fn() }),
@@ -42,8 +42,8 @@ vi.mock('../../mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkPin: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock('../../workspace-runtime/hooks/useWorkspaceViewModel', () => ({
-  useWorkspaceViewModel: () => ({
+const { mockUseWorkspaceViewModel } = vi.hoisted(() => ({
+  mockUseWorkspaceViewModel: vi.fn((_options?: unknown) => ({
     data: {
       explorer: {
         children: [
@@ -136,7 +136,11 @@ vi.mock('../../workspace-runtime/hooks/useWorkspaceViewModel', () => ({
     isLoading: false,
     isError: false,
     isPlaceholderData: false,
-  }),
+  })),
+}));
+
+vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => ({
+  useWorkspaceViewModel: (options?: unknown) => mockUseWorkspaceViewModel(options),
 }));
 
 vi.mock('../../../shared/lib/hooks/useFileDrop', () => ({
@@ -147,12 +151,13 @@ vi.mock('../../../shared/lib/hooks/useDragAutoScroll', () => ({
   useDragAutoScroll: vi.fn(),
 }));
 
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({ activeGame: { id: 'test-game', mod_path: '/mods' } }),
 }));
 
 describe('useFolderGrid array bounds (TC-14)', () => {
   beforeEach(() => {
+    mockUseWorkspaceViewModel.mockClear();
     useAppStore.setState({
       gridSelection: new Set(),
       selectedModPath: null,
@@ -186,5 +191,22 @@ describe('useFolderGrid array bounds (TC-14)', () => {
     expect(currentSelection).toContain('/Mod C');
     expect(currentSelection).not.toContain('/Mod D');
     expect(currentSelection.length).toBe(3);
+  });
+
+  it('loads the previous breadcrumb folder with a separate workspace selection', () => {
+    useAppStore.setState({
+      currentPath: ['SkinSelectImpact', 'Aglaea'],
+      explorerSubPath: 'SkinSelectImpact/Aglaea',
+    });
+
+    renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+
+    expect(mockUseWorkspaceViewModel).toHaveBeenCalledWith({
+      selectionOverrides: {
+        explorerSubPath: 'SkinSelectImpact',
+        selectedModPath: null,
+      },
+      enabled: true,
+    });
   });
 });

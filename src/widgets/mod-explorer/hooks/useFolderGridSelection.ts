@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import type { ModFolder } from '@/entities/game-object/model/object';
+import type { ModFolder } from '@/entities/game-object';
 import { useFolderNavigation } from './useFolderNavigation';
 import { useRangeSelection } from '../../../shared/lib/hooks/useRangeSelection';
-import { normalizeWorkspacePath } from '@/features/workspace-runtime/utils/pathRewrite';
+import { normalizeWorkspacePath } from '@/features/workspace-runtime';
 
 const getFolderPath = (folder: ModFolder) => folder.path;
 

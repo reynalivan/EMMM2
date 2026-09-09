@@ -1,17 +1,17 @@
 import { useShallow } from 'zustand/react/shallow';
 import { useMemo, useEffect, useCallback, useRef } from 'react';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { useGameSchema } from './useObjectQueries';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { useResponsive } from '../../../shared/lib/hooks/useResponsive';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 import { useObjectListHandlers } from './useObjectListHandlers';
 import { useObjectBulkSelect } from './useObjectBulkSelect';
-import type { FilterDef } from '@/entities/game-object/model/object';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
-import { useWorkspaceViewModel } from '@/features/workspace-runtime/hooks/useWorkspaceViewModel';
-import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime/actions/workspaceActionAvailability';
-import { useWorkspaceRuntime } from '@/features/workspace-runtime/state/workspaceStoreBridge';
+import type { FilterDef } from '@/entities/game-object';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
+import { useWorkspaceViewModel } from '@/features/workspace-runtime';
+import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime';
+import { useWorkspaceRuntime } from '@/features/workspace-runtime';
 import {
   areObjectMetaFiltersEqual,
   sanitizeObjectMetaFilters,

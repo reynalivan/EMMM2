@@ -1,6 +1,6 @@
 import { Folder, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ConflictInfo } from '@/entities/workspace/model/scanner';
+import type { ConflictInfo } from '@/entities/workspace';
 import { buildConflictKey, type ConflictDecisions } from './conflictResolution';
 
 interface ConflictGroupCardProps {

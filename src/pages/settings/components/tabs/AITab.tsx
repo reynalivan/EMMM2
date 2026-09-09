@@ -3,22 +3,24 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../hooks/useSettings';
 import { Eye, EyeOff } from 'lucide-react';
-import { useToastStore } from '../../../../app/store/useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
+import { commands } from '../../../../shared/api/tauri/bindings';
 
 export default function AITab() {
   const { t } = useTranslation(['settings', 'common']);
-  const { settings, updateAiConfig, isLoading } = useSettings();
+  const { settings, updateAiConfig, setAiApiKey, deleteAiApiKey, isLoading } = useSettings();
   const { addToast } = useToastStore();
   const [showKey, setShowKey] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
 
   // Local state for debouncing/cancel
-  const [apiKey, setApiKey] = useState(settings?.ai.api_key || '');
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
   const [baseUrl, setBaseUrl] = useState(settings?.ai.base_url || '');
 
   // Synchronize local state when settings loads initially
   React.useEffect(() => {
     if (settings) {
-      setApiKey(settings.ai.api_key || '');
       setBaseUrl(settings.ai.base_url || '');
     }
   }, [settings]);
@@ -47,7 +49,13 @@ export default function AITab() {
 
   const handleSave = async () => {
     try {
-      await updateAiConfig.mutateAsync({ api_key: apiKey, base_url: baseUrl });
+      await updateAiConfig.mutateAsync({ base_url: baseUrl });
+      if (apiKeyDirty && apiKey.trim()) {
+        await setAiApiKey(apiKey.trim());
+        setApiKey('');
+        setApiKeyDirty(false);
+        setShowKey(false);
+      }
       addToast('success', t('settings:ai.status.saved'));
     } catch (err) {
       addToast(
@@ -56,6 +64,40 @@ export default function AITab() {
           error: formatAppError(err),
         }),
       );
+    }
+  };
+
+  const handleRemoveKey = async () => {
+    try {
+      await deleteAiApiKey();
+      setApiKey('');
+      setApiKeyDirty(false);
+      setShowKey(false);
+      addToast('success', t('settings:ai.status.key_removed'));
+    } catch (err) {
+      addToast(
+        'error',
+        t('settings:ai.status.delete_failed', {
+          error: formatAppError(err),
+        }),
+      );
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    try {
+      await commands.testAiConnection();
+      addToast('success', t('settings:ai.status.test_success'));
+    } catch (err) {
+      addToast(
+        'error',
+        t('settings:ai.status.test_failed', {
+          error: formatAppError(err),
+        }),
+      );
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -107,10 +149,17 @@ export default function AITab() {
             <div className="join w-full">
               <input
                 type={showKey ? 'text' : 'password'}
-                placeholder={t('settings:ai.placeholder_key') || 'sk-...'}
+                placeholder={
+                  settings.ai.has_api_key
+                    ? t('settings:ai.stored_key_placeholder')
+                    : t('settings:ai.status.placeholder_key') || 'sk-...'
+                }
                 className="input input-bordered join-item w-full"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  setApiKeyDirty(true);
+                }}
               />
               <button
                 className="btn btn-square join-item"
@@ -122,12 +171,26 @@ export default function AITab() {
             </div>
             <label className="label">
               <span className="label-text-alt text-base-content/50">
-                {t('settings:ai.api_key_desc')}
+                {settings.ai.has_api_key
+                  ? t('settings:ai.api_key_stored')
+                  : t('settings:ai.api_key_desc')}
               </span>
             </label>
           </div>
 
           <div className="card-actions justify-end">
+            <button
+              className="btn btn-outline"
+              onClick={handleTestConnection}
+              disabled={!settings.ai.has_api_key || isTesting}
+            >
+              {isTesting ? t('settings:ai.testing') : t('settings:ai.test_connection')}
+            </button>
+            {settings.ai.has_api_key && (
+              <button className="btn btn-ghost text-error" onClick={handleRemoveKey}>
+                {t('settings:ai.remove_key')}
+              </button>
+            )}
             <button className="btn btn-primary" onClick={handleSave}>
               {t('settings:ai.save')}
             </button>

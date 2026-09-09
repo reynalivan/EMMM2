@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
-use crate::shared::safety_constants::SAFETY_SOURCE_MANUAL;
 use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::workspace::application::scanner::sync::helpers::classify_safety;
+use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
+use crate::shared::safety_constants::SAFETY_SOURCE_MANUAL;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeModMetadata {

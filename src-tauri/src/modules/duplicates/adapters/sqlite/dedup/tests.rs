@@ -198,8 +198,8 @@ async fn completed_report_round_trips_per_game() {
                 ("mod-b", "/game/Mods/B", "B"),
             ]
             .into_iter()
-            .map(
-                |(mod_id, folder_path, display_name)| crate::modules::duplicates::domain::dup_scan::DupScanMember {
+            .map(|(mod_id, folder_path, display_name)| {
+                crate::modules::duplicates::domain::dup_scan::DupScanMember {
                     mod_id: Some(mod_id.to_string()),
                     version: None,
                     folder_path: folder_path.to_string(),
@@ -209,8 +209,8 @@ async fn completed_report_round_trips_per_game() {
                     is_safe: true,
                     confidence_score: 100,
                     signals: Vec::new(),
-                },
-            )
+                }
+            })
             .collect(),
         }],
     };

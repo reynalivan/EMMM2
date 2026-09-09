@@ -27,6 +27,7 @@
   "actions": {
     "back": "Kembali",
     "cancel": "Batal",
+    "apply": "Terapkan",
     "confirm": "Konfirmasi",
     "save": "Simpan",
     "delete": "Hapus",
@@ -99,6 +100,14 @@
     }
   },
   "reconcile": {
-    "runtime_effects_pending": "Perubahan disk sudah diterapkan, tetapi pembaruan runtime masih tertunda: {{error}}"
+    "runtime_effects_pending": "Perubahan disk sudah diterapkan, tetapi pembaruan runtime masih tertunda.",
+    "cleanup_pending": "Item sudah dihapus, tetapi pemindahan file karantina ke Tempat Sampah masih tertunda."
+  },
+  "bulk_progress": {
+    "enabling": "Mengaktifkan mod...",
+    "disabling": "Menonaktifkan mod...",
+    "deleting": "Memindahkan mod ke tempat sampah...",
+    "cancelled": "Dibatalkan",
+    "done": "Selesai"
   }
 }

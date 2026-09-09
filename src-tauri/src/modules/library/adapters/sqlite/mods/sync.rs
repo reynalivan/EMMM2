@@ -1,8 +1,8 @@
 //! Writes driven by scanner sync, runtime toggles, and object (re)linking.
 
 use super::types::SyncModRowUpdate;
-use crate::shared::path_key::folder_path_key;
 use crate::modules::games::domain::models::ItemStatus;
+use crate::shared::path_key::folder_path_key;
 
 pub async fn update_mod_sync_row(
     conn: &mut sqlx::SqliteConnection,

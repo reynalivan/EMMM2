@@ -9,7 +9,9 @@ use crate::modules::reconciliation::application::disk_reconcile::reconcile::Reco
 use crate::modules::reconciliation::application::disk_reconcile::reconcile::{
     reconcile_disk_projection, ReconcileDiskProjectionRequest,
 };
-use crate::modules::reconciliation::application::disk_reconcile::types::{DiskReconcileReason, DiskReconcileStatus};
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcileReason, DiskReconcileStatus,
+};
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
 
 #[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
@@ -1125,12 +1127,13 @@ async fn offline_semantic_rename_without_identity_requires_confirmation_and_keep
         .expect("old row should remain");
     assert!(stored_path.ends_with("Alice\\Old") || stored_path.ends_with("Alice/Old"));
 
-    let resolution_event = crate::modules::workspace::application::scanner::watcher::ModWatchEvent::RenameResolution {
-        group_id: outcome.rename_confirmations[0].group_id.clone(),
-        from: Some(old_path.to_string_lossy().to_string()),
-        to: Some(new_path.to_string_lossy().to_string()),
-        apply_as_rename: true,
-    };
+    let resolution_event =
+        crate::modules::workspace::application::scanner::watcher::ModWatchEvent::RenameResolution {
+            group_id: outcome.rename_confirmations[0].group_id.clone(),
+            from: Some(old_path.to_string_lossy().to_string()),
+            to: Some(new_path.to_string_lossy().to_string()),
+            apply_as_rename: true,
+        };
     let resolved = reconcile_disk_projection(ReconcileDiskProjectionRequest {
         pool: &pool,
         game_id: "g_missing_identity",
@@ -1292,12 +1295,13 @@ async fn confirmed_separate_change_prunes_old_runtime_row_and_adds_current_folde
         true,
     )
     .await;
-    let resolution_event = crate::modules::workspace::application::scanner::watcher::ModWatchEvent::RenameResolution {
-        group_id: blocked.rename_confirmations[0].group_id.clone(),
-        from: None,
-        to: None,
-        apply_as_rename: false,
-    };
+    let resolution_event =
+        crate::modules::workspace::application::scanner::watcher::ModWatchEvent::RenameResolution {
+            group_id: blocked.rename_confirmations[0].group_id.clone(),
+            from: None,
+            to: None,
+            apply_as_rename: false,
+        };
     let resolved = reconcile_disk_projection(ReconcileDiskProjectionRequest {
         pool: &pool,
         game_id: "g_separate_change",

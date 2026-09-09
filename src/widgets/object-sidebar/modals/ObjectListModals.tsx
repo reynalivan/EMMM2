@@ -8,7 +8,7 @@ import EditObjectModal from './EditObjectModal';
 import CreateObjectModal from './CreateObjectModal';
 import AutoSetupModal from './AutoSetupModal';
 import { useTranslation } from 'react-i18next';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
+import type { ObjectSummary } from '@/entities/game-object';
 
 interface ModalsProps {
   /* Edit modal */

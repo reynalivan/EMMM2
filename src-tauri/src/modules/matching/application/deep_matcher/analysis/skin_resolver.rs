@@ -1,5 +1,7 @@
+use crate::modules::matching::application::deep_matcher::{
+    MasterDb, MatchStatus, StagedMatchResult,
+};
 use crate::modules::workspace::domain::normalizer;
-use crate::modules::matching::application::deep_matcher::{MasterDb, MatchStatus, StagedMatchResult};
 
 /// Detect skin/variant for a staged match result.
 ///

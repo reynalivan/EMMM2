@@ -9,18 +9,18 @@ import { formatAppError } from '../../../shared/lib/appError';
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
-import { toast } from '../../../app/store/useToastStore';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { toast } from '@/shared/ui/toast';
+import { useActiveGame } from '@/entities/game';
 import { runObjectBatchMutation } from './objectQueryCache';
 import { useDeleteObject } from './useObjectMutations';
 import { useTranslation } from 'react-i18next';
-import { publishRuntimeDescriptor } from '@/features/runtime-sync/queryRefresh';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,
   type RuntimeMutationClass,
-} from '@/features/workspace-runtime/optimistic/descriptorBuilders';
-import { useWorkspaceSwitchActions } from '@/features/workspace-runtime/actions/useWorkspaceSwitchActions';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+} from '@/features/workspace-runtime';
+import { useWorkspaceSwitchActions } from '@/features/workspace-runtime';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { runBulkClassifyAndMatch } from '../utils/runBulkClassifyAndMatch';
 import { parseTagList, resolveObjectNames } from '../utils/bulkSummary';
 import { truncateNameList } from '../../../shared/lib/hooks/bulkToastMessages';

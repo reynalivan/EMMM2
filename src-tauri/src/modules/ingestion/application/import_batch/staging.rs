@@ -1,7 +1,9 @@
 use super::types::{ImportBatch, ImportBatchStatus, ImportItemStatus};
-use crate::shared::errors::AppError;
 use crate::modules::ingestion::adapters::sqlite::import_batch::{self, StagedRootRecord};
+use crate::modules::library::application::mods::archive::StagingExtractOptions;
+use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub fn cleanup_batch_staging(staging_root: &Path, batch_id: &str) -> Result<bool, AppError> {
@@ -21,6 +23,115 @@ pub fn cleanup_batch_staging(staging_root: &Path, batch_id: &str) -> Result<bool
     }
     std::fs::remove_dir_all(canonical_target)?;
     Ok(true)
+}
+
+/// Removes incomplete staging attempts left by a crash without touching roots
+/// still referenced by a resumable import batch. The UUID-only traversal keeps
+/// cleanup confined to the layout owned by the import pipeline.
+pub fn cleanup_orphaned_staging(
+    staging_root: &Path,
+    referenced_staging_paths: &[String],
+) -> Result<usize, AppError> {
+    if !staging_root.exists() {
+        return Ok(0);
+    }
+
+    let root = staging_root.canonicalize()?;
+    let retained_attempts = referenced_attempt_directories(&root, referenced_staging_paths)?;
+    let mut removed = 0;
+
+    for batch in owned_uuid_directories(&root)? {
+        for item in owned_uuid_directories(&batch)? {
+            for attempt in owned_uuid_directories(&item)? {
+                if retained_attempts.contains(&attempt) {
+                    continue;
+                }
+                std::fs::remove_dir_all(&attempt)?;
+                removed += 1;
+            }
+            remove_dir_if_empty(&item)?;
+        }
+        remove_dir_if_empty(&batch)?;
+    }
+
+    Ok(removed)
+}
+
+fn referenced_attempt_directories(
+    root: &Path,
+    referenced_staging_paths: &[String],
+) -> Result<HashSet<PathBuf>, AppError> {
+    let mut attempts = HashSet::new();
+
+    for staging_path in referenced_staging_paths {
+        let path = Path::new(staging_path);
+        if !path.exists() {
+            continue;
+        }
+
+        let canonical_path = path.canonicalize()?;
+        let relative = canonical_path.strip_prefix(root).map_err(|_| {
+            AppError::Security("Import staging reference escaped its owned root".to_string())
+        })?;
+        let components = relative.components().collect::<Vec<_>>();
+        let [std::path::Component::Normal(batch_id), std::path::Component::Normal(item_id), std::path::Component::Normal(attempt_id), std::path::Component::Normal(kind), ..] =
+            components.as_slice()
+        else {
+            return Err(AppError::Security(
+                "Import staging reference has an invalid owned layout".to_string(),
+            ));
+        };
+        if uuid::Uuid::parse_str(&batch_id.to_string_lossy()).is_err()
+            || uuid::Uuid::parse_str(&item_id.to_string_lossy()).is_err()
+            || uuid::Uuid::parse_str(&attempt_id.to_string_lossy()).is_err()
+            || !matches!(kind.to_str(), Some("extracted" | "roots"))
+        {
+            return Err(AppError::Security(
+                "Import staging reference has an invalid owned layout".to_string(),
+            ));
+        }
+
+        let attempt = root
+            .join(batch_id)
+            .join(item_id)
+            .join(attempt_id)
+            .canonicalize()?;
+        attempts.insert(attempt);
+    }
+
+    Ok(attempts)
+}
+
+fn owned_uuid_directories(parent: &Path) -> Result<Vec<PathBuf>, AppError> {
+    std::fs::read_dir(parent)?
+        .filter_map(|entry| match entry {
+            Ok(entry)
+                if uuid::Uuid::parse_str(&entry.file_name().to_string_lossy()).is_ok()
+                    && entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) =>
+            {
+                Some(Ok(entry))
+            }
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .map(|entry| {
+            let entry = entry?;
+            let canonical = entry.path().canonicalize()?;
+            if canonical.parent() != Some(parent) {
+                return Err(AppError::Security(
+                    "Import staging directory escaped its owned root".to_string(),
+                ));
+            }
+            Ok(canonical)
+        })
+        .collect()
+}
+
+fn remove_dir_if_empty(path: &Path) -> Result<(), AppError> {
+    if std::fs::read_dir(path)?.next().is_none() {
+        std::fs::remove_dir(path)?;
+    }
+    Ok(())
 }
 
 fn cleanup_item_staging(
@@ -58,6 +169,21 @@ pub async fn stage_import_batch_sources(
     batch_id: &str,
     staging_root: &Path,
 ) -> Result<ImportBatch, AppError> {
+    stage_import_batch_sources_with_options(
+        db,
+        batch_id,
+        staging_root,
+        &StagingExtractOptions::default(),
+    )
+    .await
+}
+
+pub async fn stage_import_batch_sources_with_options(
+    db: &SqlitePool,
+    batch_id: &str,
+    staging_root: &Path,
+    options: &StagingExtractOptions,
+) -> Result<ImportBatch, AppError> {
     let batch = import_batch::get_batch(db, batch_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
@@ -79,14 +205,17 @@ pub async fn stage_import_batch_sources(
             ImportItemStatus::Discovered | ImportItemStatus::Failed
         )
     }) {
-        if item.status == ImportItemStatus::Failed {
-            cleanup_item_staging(staging_root, batch_id, &item.id)?;
-            if !import_batch::reset_failed_item_for_staging(db, &item.id).await? {
-                return Err(AppError::Validation(format!(
-                    "Import item '{}' changed while preparing a staging retry",
-                    item.id
-                )));
-            }
+        if super::is_cancelled(&options.cancel_token) {
+            return Err(AppError::Cancelled);
+        }
+        cleanup_item_staging(staging_root, batch_id, &item.id)?;
+        if item.status == ImportItemStatus::Failed
+            && !import_batch::reset_failed_item_for_staging(db, &item.id).await?
+        {
+            return Err(AppError::Validation(format!(
+                "Import item '{}' changed while preparing a staging retry",
+                item.id
+            )));
         }
         let source = PathBuf::from(&item.source_path);
         let outcome = if source.is_dir() {
@@ -103,6 +232,7 @@ pub async fn stage_import_batch_sources(
                 &source,
                 &item.planned_name,
                 staging_root,
+                options,
             )
             .await
         } else {
@@ -113,7 +243,14 @@ pub async fn stage_import_batch_sources(
         };
 
         if let Err(error) = outcome {
-            import_batch::set_item_failure(db, &item.id, &error.to_string()).await?;
+            if matches!(error, AppError::Cancelled) {
+                return Err(error);
+            }
+            let persisted_error = match &error {
+                AppError::ArchiveUnsupported { reason } => reason.storage_code().to_string(),
+                _ => error.to_string(),
+            };
+            import_batch::set_item_failure(db, &item.id, &persisted_error).await?;
             import_batch::set_batch_status(db, batch_id, ImportBatchStatus::Partial).await?;
             return Err(error);
         }
@@ -153,7 +290,10 @@ async fn stage_ready_to_move_folder(
         .join("roots");
     let records = tokio::task::spawn_blocking(move || {
         let mut roots =
-            crate::modules::library::application::mods::archive::classify::find_mod_roots(&source_for_worker, 5);
+            crate::modules::library::application::mods::archive::classify::find_mod_roots(
+                &source_for_worker,
+                5,
+            );
         roots.sort();
         if roots.is_empty() || (roots.len() == 1 && roots[0] == source_for_worker) {
             return Ok(Vec::new());
@@ -179,9 +319,10 @@ async fn stage_ready_to_move_folder(
                 Ok(StagedRootRecord {
                     id: uuid::Uuid::new_v4().to_string(),
                     staging_path: target.to_string_lossy().into_owned(),
-                    planned_name: crate::modules::library::application::mods::core_ops::standardize_prefix(
-                        &root_name, false,
-                    ),
+                    planned_name:
+                        crate::modules::library::application::mods::core_ops::standardize_prefix(
+                            &root_name, false,
+                        ),
                 })
             })
             .collect::<Result<Vec<_>, AppError>>()
@@ -206,6 +347,7 @@ async fn stage_archive_item(
     source: &Path,
     fallback_name: &str,
     staging_root: &Path,
+    options: &StagingExtractOptions,
 ) -> Result<(), AppError> {
     let extract_dir = staging_root
         .join(batch_id)
@@ -214,8 +356,13 @@ async fn stage_archive_item(
         .join("extracted");
     let archive = source.to_path_buf();
     let extract_for_worker = extract_dir.clone();
+    let options = options.clone();
     let staged = tokio::task::spawn_blocking(move || {
-        crate::modules::library::application::mods::archive::extract_archive_to_staging(&archive, &extract_for_worker)
+        crate::modules::library::application::mods::archive::extract_archive_to_staging_with_options(
+            &archive,
+            &extract_for_worker,
+            options,
+        )
     })
     .await??;
     let mut roots = staged.mod_roots;
@@ -231,7 +378,10 @@ async fn stage_archive_item(
                     .unwrap_or_else(|| fallback_name.to_string())
             };
             let planned_name =
-                crate::modules::library::application::mods::core_ops::standardize_prefix(&planned_name, false);
+                crate::modules::library::application::mods::core_ops::standardize_prefix(
+                    &planned_name,
+                    false,
+                );
             StagedRootRecord {
                 id: uuid::Uuid::new_v4().to_string(),
                 staging_path: root.to_string_lossy().into_owned(),
@@ -249,7 +399,7 @@ async fn stage_archive_item(
 
 #[cfg(test)]
 mod cleanup_tests {
-    use super::cleanup_batch_staging;
+    use super::{cleanup_batch_staging, cleanup_orphaned_staging};
 
     #[test]
     fn cleanup_removes_only_a_uuid_owned_batch_directory() {
@@ -265,5 +415,33 @@ mod cleanup_tests {
         assert!(sibling.exists());
         assert!(!cleanup_batch_staging(root.path(), "../keep-me").unwrap());
         assert!(sibling.exists());
+    }
+
+    #[test]
+    fn cleanup_orphans_preserves_referenced_attempts() {
+        let root = tempfile::tempdir().unwrap();
+        let batch_id = uuid::Uuid::new_v4().to_string();
+        let item_id = uuid::Uuid::new_v4().to_string();
+        let retained_attempt = root
+            .path()
+            .join(&batch_id)
+            .join(&item_id)
+            .join(uuid::Uuid::new_v4().to_string());
+        let orphaned_attempt = root
+            .path()
+            .join(&batch_id)
+            .join(&item_id)
+            .join(uuid::Uuid::new_v4().to_string());
+        let retained_root = retained_attempt.join("extracted/Mod");
+        std::fs::create_dir_all(&retained_root).unwrap();
+        std::fs::create_dir_all(orphaned_attempt.join("extracted")).unwrap();
+
+        let removed =
+            cleanup_orphaned_staging(root.path(), &[retained_root.to_string_lossy().into_owned()])
+                .unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(retained_attempt.exists());
+        assert!(!orphaned_attempt.exists());
     }
 }

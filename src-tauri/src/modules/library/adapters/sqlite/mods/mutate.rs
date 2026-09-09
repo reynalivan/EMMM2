@@ -1,7 +1,7 @@
 //! Row lifecycle: inserts and deletes.
 
-use crate::shared::path_key::folder_path_key;
 use crate::modules::games::domain::models::ItemStatus;
+use crate::shared::path_key::folder_path_key;
 use sqlx::SqlitePool;
 
 #[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.

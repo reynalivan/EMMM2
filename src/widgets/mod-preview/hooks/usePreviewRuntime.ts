@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useWorkspaceViewModel } from '@/features/workspace-runtime/hooks/useWorkspaceViewModel';
+import { useWorkspaceViewModel } from '@/features/workspace-runtime';
 import {
   useAllModIniDocuments,
   useClearPreviewImages,
@@ -16,11 +16,11 @@ import {
   type WorkspaceExplorerNode,
   type WorkspacePreview,
   type WorkspaceViewModel,
-} from '@/entities/workspace/model/workspace';
+} from '@/entities/workspace';
 import type { IniDocumentLike } from '../utils/previewPanelUtils';
-import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime/actions/workspaceActionAvailability';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { isFolderConflictProtected } from '@/widgets/mod-explorer/hooks/folderConflictScope';
+import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime';
+import { useAppStore } from '@/app/store';
+import { isFolderConflictProtected } from '@/features/workspace-runtime';
 import type { FolderNameConflictGroup } from '../../../shared/api/tauri/bindings';
 
 interface PreviewIniDocument {

@@ -1,6 +1,7 @@
 import { DOWNLOAD_STATUS_BADGE } from '../downloadStatusBadge';
+import { getDownloadProgress, getQueuePosition } from '../downloadPresentation';
 import { useDownloads } from '../hooks/useDownloads';
-import { Download, Trash2 } from 'lucide-react';
+import { Download, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import type { DownloadStatus } from '../types';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '@/shared/lib/utils/formatters';
@@ -8,7 +9,15 @@ import { useTranslation } from 'react-i18next';
 
 export default function DownloadsPage() {
   const { t } = useTranslation('browser');
-  const { downloads, deleteDownload, cancelDownload, clearImported } = useDownloads();
+  const {
+    downloads,
+    deleteDownload,
+    cancelDownload,
+    clearImported,
+    retryDownload,
+    refreshDownloads,
+    isRefreshing,
+  } = useDownloads();
 
   const renderStatus = (status: DownloadStatus) => {
     const badge = DOWNLOAD_STATUS_BADGE[status] ?? DOWNLOAD_STATUS_BADGE.requested;
@@ -23,9 +32,8 @@ export default function DownloadsPage() {
 
   return (
     <div className="flex flex-col h-full bg-base-100 overflow-hidden relative">
-      {/* Header */}
       <div className="w-full bg-base-200 border-b border-base-300 p-6 z-10">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
+        <div className="flex items-center justify-between max-w-7xl mx-auto gap-4">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Download size={32} className="text-primary" />
@@ -33,7 +41,16 @@ export default function DownloadsPage() {
             </h1>
             <p className="text-base-content/75 mt-1">{t('welcome.description')}</p>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-outline btn-sm btn-square"
+              onClick={() => void refreshDownloads()}
+              disabled={isRefreshing}
+              title={t('downloads.refresh')}
+              aria-label={t('downloads.refresh')}
+            >
+              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : undefined} />
+            </button>
             <button className="btn btn-outline btn-sm gap-2" onClick={() => clearImported()}>
               <Trash2 size={16} /> {t('downloads.clear_imported')}
             </button>
@@ -41,7 +58,6 @@ export default function DownloadsPage() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto w-full p-6">
         <div className="max-w-7xl mx-auto space-y-4">
           {downloads.length === 0 ? (
@@ -63,9 +79,8 @@ export default function DownloadsPage() {
                 </thead>
                 <tbody>
                   {downloads.map((item: BrowserDownloadItem) => {
-                    const progress = item.bytes_total
-                      ? Math.round((item.bytes_received / item.bytes_total) * 100)
-                      : 0;
+                    const progress = getDownloadProgress(item);
+                    const queuePosition = getQueuePosition(downloads, item.id);
 
                     return (
                       <tr key={item.id} className="hover">
@@ -79,22 +94,22 @@ export default function DownloadsPage() {
                         </td>
                         <td className="w-1/6">
                           {renderStatus(item.status)}
-                          {item.error_msg && (
-                            <p
-                              className="text-xs text-error mt-1 truncate max-w-37.5"
-                              title={item.error_msg}
-                            >
-                              {item.error_msg}
+                          {item.status === 'failed' && (
+                            <p className="text-xs text-error mt-1 max-w-37.5">
+                              {t('downloads.failure_details')}
                             </p>
                           )}
                         </td>
                         <td className="w-1/4">
-                          {item.status === 'in_progress' ? (
+                          {item.status === 'requested' && queuePosition !== null ? (
+                            <span className="text-sm text-base-content/75">
+                              {t('downloads.queue_position', { position: queuePosition })}
+                            </span>
+                          ) : item.status === 'in_progress' ? (
                             <div>
                               <progress
                                 className="progress progress-primary w-full"
-                                value={progress}
-                                max="100"
+                                {...(progress === null ? {} : { value: progress, max: 100 })}
                               />
                               <div className="flex justify-between text-xs mt-1 text-base-content/75">
                                 <span>{formatBytes(item.bytes_received)}</span>
@@ -115,21 +130,35 @@ export default function DownloadsPage() {
                         </td>
                         <td className="w-1/4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {item.status === 'in_progress' && (
+                            {(item.status === 'requested' || item.status === 'in_progress') && (
                               <button
                                 className="btn btn-sm btn-warning"
                                 onClick={() => cancelDownload(item.id)}
                               >
-                                {t('common:action.cancel')}
+                                <X size={16} /> {t('common:action.cancel')}
                               </button>
                             )}
-                            <button
-                              className="btn btn-sm btn-ghost text-error"
-                              onClick={() => deleteDownload({ id: item.id, deleteFile: false })}
-                              title={t('downloads.delete_title')}
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            {(item.status === 'failed' || item.status === 'canceled') && (
+                              <button
+                                className="btn btn-sm btn-primary btn-outline gap-1"
+                                onClick={() => retryDownload(item.id)}
+                              >
+                                <RotateCcw size={16} /> {t('downloads.retry')}
+                              </button>
+                            )}
+                            {(item.status === 'finished' ||
+                              item.status === 'failed' ||
+                              item.status === 'canceled' ||
+                              item.status === 'imported') && (
+                              <button
+                                className="btn btn-sm btn-ghost text-error"
+                                onClick={() => deleteDownload({ id: item.id, deleteFile: false })}
+                                title={t('downloads.delete_title')}
+                                aria-label={t('downloads.delete_title')}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

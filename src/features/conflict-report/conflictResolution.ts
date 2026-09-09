@@ -1,4 +1,4 @@
-import type { ConflictInfo } from '@/entities/workspace/model/scanner';
+import type { ConflictInfo } from '@/entities/workspace';
 
 export type ModDecision = 'keep' | 'disable';
 export type ConflictDecisions = ReadonlyMap<string, ModDecision>;

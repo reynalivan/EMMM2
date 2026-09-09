@@ -1,6 +1,6 @@
 //! File system watcher for mod directories.
 //!
-//! Uses `notify-debouncer-full` over the `notify` v7 recommended watcher:
+//! Uses `notify-debouncer-full` over the `notify` v8 recommended watcher:
 //! debouncing, event dedup and rename From/To stitching (via Windows file
 //! IDs) all happen in the debouncer, so this module only classifies, filters
 //! and forwards typed events.
@@ -33,6 +33,8 @@ const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(500);
 const WATCH_EVENT_BUFFER_CAPACITY: usize = 4096;
 const WATCH_EVENT_OVERFLOW_ERROR: &str =
     "Watcher event buffer overflowed; a full disk reconcile is required";
+const WATCH_BACKEND_RESCAN_REQUIRED: &str =
+    "Watcher backend reported lost events; a full disk reconcile is required";
 
 pub type ModWatcher = Debouncer<RecommendedWatcher, RecommendedCache>;
 
@@ -144,6 +146,16 @@ fn classify_event(
     // Blanket suppression (broad ops + frontend manual flag)
     if suppressor.load(Ordering::Acquire) {
         suppressor.mark_blanket_event_dropped(session);
+        return;
+    }
+
+    // notify v8 emits a pathless Rescan flag when the platform backend loses
+    // events. Scoped paths can no longer be trusted, so lifecycle performs a
+    // full reconcile for the session.
+    if event.need_rescan() {
+        send(ModWatchEvent::Error(
+            WATCH_BACKEND_RESCAN_REQUIRED.to_string(),
+        ));
         return;
     }
 

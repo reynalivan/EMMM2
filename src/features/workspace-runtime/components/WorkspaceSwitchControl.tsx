@@ -1,4 +1,4 @@
-import type { WorkspaceNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceNode } from '@/entities/workspace';
 import type { WorkspaceSwitchPolicy } from '../actions/workspaceSwitchPolicy';
 
 interface WorkspaceSwitchControlProps {

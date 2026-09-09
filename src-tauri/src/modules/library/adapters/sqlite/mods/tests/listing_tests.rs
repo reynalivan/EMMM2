@@ -1,6 +1,6 @@
 use super::*;
-use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
+use crate::modules::games::domain::models::{GameType, ItemStatus};
 
 #[test]
 fn effective_enabled_path_checks_every_runtime_component() {

@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::modules::workspace::domain::normalizer;
-use crate::modules::workspace::application::scanner::core::walker::FolderContent;
 use crate::modules::matching::application::deep_matcher::MatchMode;
+use crate::modules::workspace::application::scanner::core::walker::FolderContent;
+use crate::modules::workspace::domain::normalizer;
 
 use super::{
     decode_ini_content_with_cap, extract_hashes_from_ini_text, extract_structural_ini_tokens,

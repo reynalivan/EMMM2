@@ -1,6 +1,6 @@
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
-import { isWorkspaceSwitchChecked } from '@/features/workspace-runtime/actions/workspaceSwitchPolicy';
-import { buildWorkspaceObjectActionPolicy } from '@/features/workspace-runtime/actions/workspaceActionPolicy';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
+import { isWorkspaceSwitchChecked } from '@/features/workspace-runtime';
+import { buildWorkspaceObjectActionPolicy } from '@/features/workspace-runtime';
 import type { ContextMenuTarget } from './ObjectContextMenu';
 
 export function buildObjectContextMenuTarget(obj: WorkspaceObjectNode): ContextMenuTarget {

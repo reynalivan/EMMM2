@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { classifyDroppedPaths, allUnsupported } from '@/shared/lib/dropClassification';
-import { toast } from '@/app/store/useToastStore';
+import { toast } from '@/shared/ui/toast';
 
 interface FileDropPayload {
   paths: string[];

@@ -1,6 +1,6 @@
-use crate::shared::errors::AppError;
-use crate::platform::images::thumbnail_cache::ThumbnailCache;
 use crate::modules::workspace::application::scanner::core::thumbnail;
+use crate::platform::images::thumbnail_cache::ThumbnailCache;
+use crate::shared::errors::AppError;
 use image::{imageops::FilterType, ImageFormat};
 use std::collections::{BTreeSet, HashSet};
 use std::fs;

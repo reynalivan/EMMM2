@@ -18,6 +18,7 @@ export function reconcileFolderConflictQueue(
   previous: FolderNameConflictGroup[],
   current: FolderNameConflictGroup[],
   completed: CompletedFolderConflict[],
+  resolvedGroupId: string | null = null,
 ): CompletedFolderConflict[] {
   if (previous.length === 0 && current.length > 0) {
     return [];
@@ -29,21 +30,44 @@ export function reconcileFolderConflictQueue(
     (entry) => !currentIds.has(entry.group_id) && !currentFingerprints.has(entry.fingerprint),
   );
   const completedFingerprints = new Set(next.map((entry) => entry.fingerprint));
-
-  for (const group of previous) {
+  const addCompletedGroup = (group: FolderNameConflictGroup) => {
     const fingerprint = folderConflictFingerprint(group);
     if (
-      !currentIds.has(group.group_id) &&
-      !currentFingerprints.has(fingerprint) &&
-      !completedFingerprints.has(fingerprint)
+      currentIds.has(group.group_id) ||
+      currentFingerprints.has(fingerprint) ||
+      completedFingerprints.has(fingerprint)
     ) {
-      next.push({
-        group_id: group.group_id,
-        fingerprint,
-        display_name: group.display_name,
-      });
-      completedFingerprints.add(fingerprint);
+      return;
     }
+
+    next.push({
+      group_id: group.group_id,
+      fingerprint,
+      display_name: group.display_name,
+    });
+    completedFingerprints.add(fingerprint);
+  };
+
+  if (resolvedGroupId) {
+    const resolvedGroup = previous.find((group) => group.group_id === resolvedGroupId);
+    if (resolvedGroup) {
+      addCompletedGroup(resolvedGroup);
+    }
+  }
+
+  // An empty report can be a transient/stale reconcile result. It cannot tell
+  // us which of several previous groups was actually resolved. A single
+  // previous group is unambiguous and remains compatible with the initial
+  // checklist completion flow.
+  if (current.length === 0) {
+    if (previous.length === 1) {
+      addCompletedGroup(previous[0]);
+    }
+    return next;
+  }
+
+  for (const group of previous) {
+    addCompletedGroup(group);
   }
 
   return next;

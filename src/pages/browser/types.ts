@@ -23,5 +23,16 @@ export interface DownloadProgressEvent {
 export interface DownloadStatusEvent {
   id: string;
   status: DownloadStatus;
+  /** Present on queue creation when the backend can provide the persisted row. */
+  download?: BrowserDownloadItem;
+  filename?: string;
   file_path?: string | null;
+}
+
+/** A native WebView download awaits an explicit user decision before it is queued. */
+export interface DownloadConfirmationRequest {
+  id: string;
+  filename: string;
+  source_url: string;
+  destination_path: string;
 }

@@ -1,14 +1,15 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppUpdater } from './useAppUpdater';
-import { check } from '@tauri-apps/plugin-updater';
 
-vi.mock('@tauri-apps/plugin-updater', () => ({
-  check: vi.fn(),
-}));
+const checkAppUpdate = vi.fn();
+const installAppUpdate = vi.fn();
 
-vi.mock('@tauri-apps/plugin-process', () => ({
-  relaunch: vi.fn(),
+vi.mock('../../../shared/api/tauri/bindings', () => ({
+  commands: {
+    checkAppUpdate: (...args: unknown[]) => checkAppUpdate(...args),
+    installAppUpdate: (...args: unknown[]) => installAppUpdate(...args),
+  },
 }));
 
 describe('useAppUpdater', () => {
@@ -19,9 +20,7 @@ describe('useAppUpdater', () => {
   it('checks for update successfully', async () => {
     const mockUpdate = { version: '1.1.0' };
 
-    // Using TS ignores since Tauri plugin updates have rich methods
-    // @ts-expect-error test mock returns simplified version object
-    vi.mocked(check).mockResolvedValue(mockUpdate);
+    checkAppUpdate.mockResolvedValue(mockUpdate);
 
     const { result } = renderHook(() => useAppUpdater());
 
@@ -35,7 +34,7 @@ describe('useAppUpdater', () => {
   });
 
   it('handles update check failure gracefully', async () => {
-    vi.mocked(check).mockRejectedValue(new Error('Network error'));
+    checkAppUpdate.mockRejectedValue(new Error('Network error'));
 
     const { result } = renderHook(() => useAppUpdater());
 

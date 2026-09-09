@@ -3,7 +3,7 @@ import { join } from '@tauri-apps/api/path';
 import { useFileDrop } from '../../../shared/lib/hooks/useFileDrop';
 import { useDragAutoScroll } from '../../../shared/lib/hooks/useDragAutoScroll';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { openImportBatchWizard } from '@/features/import-batches/launcher';
+import { openImportBatchWizard } from '@/features/import-batches';
 
 interface FolderGridImportOptions {
   parentRef: React.RefObject<HTMLDivElement | null>;

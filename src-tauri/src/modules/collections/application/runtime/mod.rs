@@ -1,12 +1,12 @@
 use sqlx::SqlitePool;
 
-use crate::shared::errors::RuntimeStateError;
+use crate::modules::collections::adapters::sqlite as collection;
+use crate::modules::workspace::application::projected_state;
 use crate::modules::workspace::domain::runtime_state::{
     CollectionRuntimeDescriptor, CollectionRuntimeSnapshot, LastChangesSnapshot, LastChangesSource,
     RuntimeCounts, RuntimeSafetySummary, RuntimeStatus,
 };
-use crate::modules::collections::adapters::sqlite as collection;
-use crate::modules::workspace::application::projected_state;
+use crate::shared::errors::RuntimeStateError;
 
 /// Read the compact global collection status from one SQLite snapshot.
 ///
@@ -28,9 +28,11 @@ pub async fn get_collection_runtime_descriptor(
     }
     .filter(|collection| collection.game_id == game_id && !collection.is_draft);
     let live_summary =
-        crate::modules::collections::application::collection::load_live_runtime_summary_tx(&mut tx, game_id)
-            .await
-            .map_err(RuntimeStateError::from)?;
+        crate::modules::collections::application::collection::load_live_runtime_summary_tx(
+            &mut tx, game_id,
+        )
+        .await
+        .map_err(RuntimeStateError::from)?;
     let is_current = match active_collection.as_ref() {
         Some(collection) => {
             crate::modules::collections::application::collection::live_runtime_matches_collection_tx(
@@ -114,16 +116,20 @@ pub async fn get_collection_runtime_state(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<CollectionRuntimeSnapshot, RuntimeStateError> {
-    let mods_path = crate::modules::collections::application::collection::load_game_mods_path(pool, game_id)
-        .await
-        .map_err(RuntimeStateError::from)?;
-    let (current_mods, current_objects) =
-        crate::modules::collections::application::collection::load_live_runtime_state(pool, game_id)
+    let mods_path =
+        crate::modules::collections::application::collection::load_game_mods_path(pool, game_id)
             .await
             .map_err(RuntimeStateError::from)?;
-    let is_safe = crate::modules::collections::application::collection::live_runtime_is_safe(pool, game_id)
+    let (current_mods, current_objects) =
+        crate::modules::collections::application::collection::load_live_runtime_state(
+            pool, game_id,
+        )
         .await
         .map_err(RuntimeStateError::from)?;
+    let is_safe =
+        crate::modules::collections::application::collection::live_runtime_is_safe(pool, game_id)
+            .await
+            .map_err(RuntimeStateError::from)?;
     let is_safety_classified = current_mods.iter().all(|member| {
         member
             .safety_source
@@ -137,8 +143,7 @@ pub async fn get_collection_runtime_state(
     );
     let current_tree_nodes =
         projected_state::build_preview_tree_from_projected_state(&projected_state);
-    let current_signature =
-        projected_state::signature_for_projected_state(&projected_state);
+    let current_signature = projected_state::signature_for_projected_state(&projected_state);
     let runtime = collection::runtime::get(pool, game_id).await?;
     let active_collection = match runtime
         .as_ref()

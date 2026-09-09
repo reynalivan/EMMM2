@@ -1,10 +1,18 @@
-use crate::shared::errors::AppError;
 use crate::modules::games::adapters::sqlite::game;
 use crate::modules::system::adapters::sqlite::settings;
+use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
 
 use super::models::{config_to_game_row, game_row_to_config, AiConfig, AppSettings, SafetyConfig};
 use super::ConfigService;
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct PersistedAiConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    base_url: Option<String>,
+}
 
 impl ConfigService {
     /// Load AppSettings from the SQLite database.
@@ -29,10 +37,15 @@ impl ConfigService {
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
 
-        let ai: AiConfig = kv
+        let persisted_ai: PersistedAiConfig = kv
             .get("ai")
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
+        let ai = AiConfig {
+            enabled: persisted_ai.enabled,
+            has_api_key: false,
+            base_url: persisted_ai.base_url,
+        };
 
         let auto_close_launcher = kv
             .get("auto_close_launcher")
@@ -95,7 +108,10 @@ impl ConfigService {
         let safety_json = serde_json::to_string(&settings.safety)?;
         settings::set_setting(&mut *tx, "safety_classification", &safety_json).await?;
 
-        let ai_json = serde_json::to_string(&settings.ai)?;
+        let ai_json = serde_json::to_string(&PersistedAiConfig {
+            enabled: settings.ai.enabled,
+            base_url: settings.ai.base_url.clone(),
+        })?;
         settings::set_setting(&mut *tx, "ai", &ai_json).await?;
 
         let hotkeys_json = serde_json::to_string(&settings.hotkeys)?;

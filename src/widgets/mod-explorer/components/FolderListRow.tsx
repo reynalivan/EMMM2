@@ -1,15 +1,15 @@
 import { memo } from 'react';
 import { Folder, File, Copy, AlertTriangle, Star } from 'lucide-react';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { ModFolder } from '@/entities/game-object';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import BulkContextMenu from './BulkContextMenu';
 import { useModContextMenuItems } from '../hooks/useModContextMenuItems';
-import { useModContextMenuActions } from '@/features/mod-runtime/actions/useModContextMenuActions';
+import { useModContextMenuActions } from '@/features/mod-runtime';
 
 import { ContextMenu } from '../../../shared/ui/components/ui/ContextMenu';
-import { formatWorkspaceReason } from '@/features/workspace-runtime/utils/workspaceSemantics';
-import { WorkspaceSwitchControl } from '@/features/workspace-runtime/components/WorkspaceSwitchControl';
-import { WorkspaceSwitchLabel } from '@/features/workspace-runtime/components/WorkspaceSwitchLabel';
+import { formatWorkspaceReason } from '@/features/workspace-runtime';
+import { WorkspaceSwitchControl } from '@/features/workspace-runtime';
+import { WorkspaceSwitchLabel } from '@/features/workspace-runtime';
 import { useFolderNodeView } from '../hooks/useFolderNodeView';
 
 interface FolderListRowProps {

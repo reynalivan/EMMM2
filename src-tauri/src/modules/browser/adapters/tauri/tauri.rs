@@ -2,7 +2,9 @@ use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, State};
 
-use crate::modules::browser::application::browser::{browser_service, download_service};
+use crate::modules::browser::application::browser::{
+    browser_service, download_handler, download_service,
+};
 
 // ── Browser Tab ──────────────────────────────────────────────────────────────
 
@@ -89,9 +91,39 @@ pub async fn browser_list_downloads(
 pub async fn browser_cancel_download(
     id: String,
     delete_file: Option<bool>,
+    app: AppHandle,
     db: State<'_, SqlitePool>,
 ) -> Result<(), AppError> {
-    Ok(download_service::cancel_download(db.inner(), &id, delete_file).await?)
+    Ok(download_service::cancel_download_with_feedback(db.inner(), &app, &id, delete_file).await?)
+}
+
+/// Start a download only after the user accepts its short-lived confirmation.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_confirm_download(
+    request_id: String,
+    app: AppHandle,
+    db: State<'_, SqlitePool>,
+) -> Result<(), AppError> {
+    Ok(download_handler::confirm_download(app, db.inner().clone(), &request_id).await?)
+}
+
+/// Reject a pending download confirmation without creating a file or DB row.
+#[tauri::command]
+#[specta::specta]
+pub fn browser_reject_download(request_id: String) -> Result<(), AppError> {
+    Ok(download_handler::reject_download(&request_id)?)
+}
+
+/// Ask for confirmation before retrying a failed or canceled download.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_retry_download(
+    id: String,
+    app: AppHandle,
+    db: State<'_, SqlitePool>,
+) -> Result<(), AppError> {
+    Ok(download_service::retry_download(db.inner(), &app, &id).await?)
 }
 
 /// Delete a download record (and optionally the file on disk).

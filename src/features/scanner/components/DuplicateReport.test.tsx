@@ -8,11 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '../../../tests/testing/test-utils';
 import DuplicateReport from './DuplicateReport';
 import * as hooks from '../hooks/useDedup';
-import type {
-  DupScanReport,
-  DupScanGroup,
-  DuplicateSelection,
-} from '@/entities/workspace/model/scanner';
+import type { DupScanReport, DupScanGroup, DuplicateSelection } from '@/entities/workspace';
 
 // Mock the hooks
 vi.mock('../hooks/useDedup', () => ({
@@ -21,7 +17,7 @@ vi.mock('../hooks/useDedup', () => ({
 }));
 
 // Mock toast
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     warning: vi.fn(),
     error: vi.fn(),

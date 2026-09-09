@@ -1,8 +1,8 @@
 use sqlx::{Row, SqliteConnection, SqlitePool};
 use std::collections::HashMap;
 
-use crate::shared::path_key::{canonical_name_key, folder_path_key};
 use crate::modules::system::adapters::sqlite::settings;
+use crate::shared::path_key::{canonical_name_key, folder_path_key};
 
 const UNICODE_KEY_VERSION_KEY: &str = "unicode_key_version";
 const UNICODE_KEY_VERSION: &str = "1";

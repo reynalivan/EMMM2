@@ -1,7 +1,7 @@
 import { type Ref } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import type { EditObjectFormData } from '../hooks/useEditObjectForm';
-import type { GameSchema, FilterDef } from '@/entities/game-object/model/object';
+import type { GameSchema, FilterDef } from '@/entities/game-object';
 import type { DbEntryFull } from '../hooks/useMasterDbSync';
 import { Search, ChevronDown, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';

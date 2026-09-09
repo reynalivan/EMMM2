@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(NULLIF(mods_path, ''), path) AS \"mods_path!: String\" FROM games WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "mods_path!: String",
+        "ordinal": 0,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cb1013fd9f5c4d69fe513bbfb11b484df7ada097c0ce24b1a20f5f3c0303d9c2"
+}

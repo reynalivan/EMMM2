@@ -1,8 +1,8 @@
 use sqlx::{QueryBuilder, Sqlite};
 
-use crate::shared::path_key::{canonical_name_key, folder_path_key};
-use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::catalog::domain::objects::UpdateObjectInput;
+use crate::modules::games::domain::models::ItemStatus;
+use crate::shared::path_key::{canonical_name_key, folder_path_key};
 
 pub async fn set_filesystem_identity_tx(
     conn: &mut sqlx::SqliteConnection,

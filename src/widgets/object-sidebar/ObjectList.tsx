@@ -5,7 +5,7 @@ import { useDragAutoScroll } from '../../shared/lib/hooks/useDragAutoScroll';
 import ObjectListToolbar from './components/ObjectListToolbar';
 import ObjectListContent, { type ContextMenuHandlerProps } from './components/ObjectListContent';
 import { useObjectListDropZones } from './hooks/useObjectListDropZones';
-import { useAppStore } from '../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { cn } from '../../shared/lib/utils';
 import { useObjectListEffects } from './hooks/useObjectListEffects';
 import ObjectListConflictBanner from './components/ObjectListConflictBanner';

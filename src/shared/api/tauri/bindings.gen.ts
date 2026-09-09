@@ -7,6 +7,17 @@
 
 export const commands = {
 /**
+ * Exit the application successfully.
+ */
+async exitApp() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("exit_app") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Check if the app has any games configured (determines which screen to show on startup).
  */
 async checkConfigStatus() : Promise<Result<ConfigStatus, AppError>> {
@@ -273,6 +284,14 @@ async getModThumbnail(gameId: string, folderPath: string) : Promise<Result<strin
 async openInExplorer(gameId: string, path: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("open_in_explorer", { gameId, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openIniInEditor(gameId: string, folderPath: string, fileName: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_ini_in_editor", { gameId, folderPath, fileName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -605,6 +624,14 @@ async analyzeImportBatch(batchId: string) : Promise<Result<ImportBatch, AppError
     else return { status: "error", error: e  as any };
 }
 },
+async analyzeImportBatchWithOptions(input: AnalyzeImportBatchOptions, onProgress: TAURI_CHANNEL<ExtractionEvent>) : Promise<Result<ImportBatch, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("analyze_import_batch_with_options", { input, onProgress }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setImportItemClassification(input: SetImportItemClassificationInput) : Promise<Result<ImportItem, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_import_item_classification", { input }) };
@@ -621,6 +648,30 @@ async refreshImportItemSuggestions(itemId: string) : Promise<Result<ImportItem, 
     else return { status: "error", error: e  as any };
 }
 },
+async previewImportLibraryReadiness(batchId: string) : Promise<Result<ImportLibraryReadiness, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_import_library_readiness", { batchId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async refreshImportBatchMatches(batchId: string) : Promise<Result<ImportBatch, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_import_batch_matches", { batchId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async markImportBatchReviewStarted(batchId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_import_batch_review_started", { batchId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setImportItemDecision(input: SetImportItemDecisionInput) : Promise<Result<ImportItem, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_import_item_decision", { input }) };
@@ -632,6 +683,30 @@ async setImportItemDecision(input: SetImportItemDecisionInput) : Promise<Result<
 async renameImportItemPlan(input: RenameImportItemInput) : Promise<Result<ImportItem, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("rename_import_item_plan", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getImportSourcePreview(itemId: string) : Promise<Result<ImportSourcePreview, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_import_source_preview", { itemId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async revealImportSource(itemId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reveal_import_source", { itemId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async revealImportDestination(itemId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reveal_import_destination", { itemId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -749,6 +824,36 @@ async saveSettings(settings: AppSettings) : Promise<Result<SaveSettingsResult, A
     else return { status: "error", error: e  as any };
 }
 },
+async setAiApiKey(apiKey: string) : Promise<Result<AppSettings, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_ai_api_key", { apiKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteAiApiKey() : Promise<Result<AppSettings, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_ai_api_key") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Verify that the configured AI endpoint is reachable and does not reject the stored key.
+ *
+ * The deliberately incomplete payload exercises authentication and routing without invoking a
+ * model. Response bodies and transport errors are not returned because they may contain secrets.
+ */
+async testAiConnection() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_ai_connection") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setActiveGame(gameId: string | null) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_active_game", { gameId }) };
@@ -808,6 +913,22 @@ async saveCustomTheme(theme: CustomTheme) : Promise<Result<null, AppError>> {
 async deleteCustomTheme(id: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_custom_theme", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async importCustomTheme() : Promise<Result<CustomTheme | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_custom_theme") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportCustomTheme(id: string) : Promise<Result<string | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_custom_theme", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1135,6 +1256,22 @@ async fetchMissingAsset(assetName: string) : Promise<Result<string | null, AppEr
     else return { status: "error", error: e  as any };
 }
 },
+async checkAppUpdate() : Promise<Result<AppUpdateInfo | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_app_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async installAppUpdate(onProgress: TAURI_CHANNEL<AppUpdateProgress>) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("install_app_update", { onProgress }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Update hotkey config and re-register OS hotkeys.
  * This saves settings to DB AND tells the HotkeyManager to re-register.
@@ -1281,6 +1418,39 @@ async browserCancelDownload(id: string, deleteFile: boolean | null) : Promise<Re
 }
 },
 /**
+ * Start a download only after the user accepts its short-lived confirmation.
+ */
+async browserConfirmDownload(requestId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_confirm_download", { requestId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reject a pending download confirmation without creating a file or DB row.
+ */
+async browserRejectDownload(requestId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_reject_download", { requestId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Ask for confirmation before retrying a failed or canceled download.
+ */
+async browserRetryDownload(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_retry_download", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Delete a download record (and optionally the file on disk).
  */
 async browserDeleteDownload(id: string, deleteFile: boolean) : Promise<Result<null, AppError>> {
@@ -1329,12 +1499,13 @@ async browserClearOldDownloads() : Promise<Result<number, AppError>> {
  * A keybinding entry extracted from an enabled mod's INI file.
  */
 export type ActiveKeyBinding = { mod_name: string; section_name: string; key: string | null; back: string | null }
-export type AiConfig = { enabled: boolean; api_key: string | null; base_url: string | null }
+export type AiConfig = { enabled: boolean; has_api_key: boolean; base_url: string | null }
+export type AnalyzeImportBatchOptions = { batchId: string; password: string | null; unpackNested: boolean | null }
 /**
  * Unified error type for Tauri command boundaries.
  * Each domain error converts into this for consistent frontend handling.
  */
-export type AppError = { type: "RuntimeState"; payload: RuntimeStateError } | { type: "Collection"; payload: CollectionError } | { type: "Metadata"; payload: MetadataError } | { type: "Browser"; payload: BrowserError } | { type: "Scanner"; payload: ScannerError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } | { type: "Io"; payload: string } | { type: "RuntimePathNotFound"; payload: { target: string } } | { type: "DuplicateConflict"; payload: DuplicateModInfo[] } | { type: "FileInUse"; payload: { path: string; processes: string[] } } | { type: "PathBusy"; payload: { path: string } } | { type: "ObjectHasMods"; payload: number } |
+export type AppError = { type: "RuntimeState"; payload: RuntimeStateError } | { type: "Collection"; payload: CollectionError } | { type: "Metadata"; payload: MetadataError } | { type: "Browser"; payload: BrowserError } | { type: "Scanner"; payload: ScannerError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } | { type: "ArchivePasswordRequired" } | { type: "ArchivePasswordIncorrect" } | { type: "ArchiveUnsupported"; payload: { reason: ArchiveErrorKind } } | { type: "Io"; payload: string } | { type: "RuntimePathNotFound"; payload: { target: string } } | { type: "DuplicateConflict"; payload: DuplicateModInfo[] } | { type: "FileInUse"; payload: { path: string; processes: string[] } } | { type: "PathBusy"; payload: { path: string } } | { type: "ObjectHasMods"; payload: number } |
 /**
  * The user cancelled a long-running operation.
  *
@@ -1348,6 +1519,8 @@ export type AppSettings = {
  * Optimistic-concurrency token for whole-settings IPC saves.
  */
 revision?: number; theme: string; language: string; games: GameConfig[]; active_game_id: string | null; safety: SafetyConfig; ai: AiConfig; auto_close_launcher: boolean; hotkeys?: HotkeyConfig; keyviewer?: KeyViewerConfig }
+export type AppUpdateInfo = { version: string; currentVersion: string; body: string | null }
+export type AppUpdateProgress = { event: "Started"; data: { contentLength: number | null } } | { event: "Progress"; data: { chunkLength: number } } | { event: "Finished" }
 export type ApplyGameModsDirectoryRequest = { game_id: string; candidate_path: string; expected_fingerprint: string; confirm_empty: boolean; different_confirmation_game_name: string | null }
 export type ApplyGameModsDirectoryResult = { game: GameConfig; inspection: GameModsDirectoryInspection; reconcile: DiskReconcileResult }
 export type ApplyObjectClassificationBatchInput = { gameId: string; items: ApplyObjectClassificationItem[]; disableAfterApply?: boolean }
@@ -1362,15 +1535,16 @@ export type ApplyProgressSnapshot = { game_id: string; phase: string; completed:
  * Result of applying a collection.
  */
 export type ApplyResult = { mods_enabled: number; mods_disabled: number; warnings: string[]; final_state_name: string | null; partial_apply: boolean; skipped_missing_paths: string[]; runtime_path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
+export type ArchiveErrorKind = "dictionary_too_large" | "unsupported_compression"
 /**
  * DTO for the frontend download list.
  */
-export type BrowserDownloadDto = { id: string; session_id: string | null; filename: string; file_path: string | null; source_url: string | null; status: string; bytes_total: number | null; bytes_received: number; error_msg: string | null; started_at: string; finished_at: string | null }
+export type BrowserDownloadDto = { id: string; session_id: string | null; filename: string; file_path: string | null; source_url: string | null; status: string; bytes_total: number | null; bytes_received: number; error_msg: string | null; queue_order: number; started_at: string; finished_at: string | null }
 /**
  * Errors from the in-app browser: webview lifecycle, downloads, and the
  * import pipeline that turns a download into a placed mod.
  */
-export type BrowserError = "WindowUnavailable" | { WebviewNotFound: { label: string } } | { InvalidUrl: string } | { Download: string } | { JobIncomplete: { job_id: string; field: string } } | { Import: string } | "QueueClosed" | { Io: string } | { Db: string }
+export type BrowserError = "WindowUnavailable" | { WebviewNotFound: { label: string } } | { InvalidUrl: string } | { Download: string } | { JobIncomplete: { job_id: string; field: string } } | { Import: string } | "QueueClosed" | "QueueFull" | "DownloadAlreadyActive" | "DownloadConfirmationUnavailable" | { Io: string } | { Db: string }
 export type BulkActionError = { path: string; error: AppError }
 export type BulkResult = { success: string[]; failures: BulkActionError[]; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
 export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; evidence: MatchEvidence[] }
@@ -1429,7 +1603,7 @@ export type CommittedMutationSyncWarning = { kind: CommittedMutationSyncWarningK
  * could not finish. Commands return this as data so callers refresh the
  * successful disk effect without retrying the mutation itself.
  */
-export type CommittedMutationSyncWarningKind = "ReconcileFailed" | "ReconcileBlocked"
+export type CommittedMutationSyncWarningKind = "ReconcileFailed" | "ReconcileBlocked" | "CleanupPending"
 export type ConfidenceTier = "high" | "medium" | "low" | "no_match"
 /**
  * Startup config status returned to frontend
@@ -1524,7 +1698,8 @@ hash_db?: Partial<{ [key in string]: string[] }> }
 export type DeleteModResult = { collection_impact: CollectionReferenceImpact; sync_warning: CommittedMutationSyncWarning | null }
 export type DeleteProcessedModInboxSourcesInput = { gameId: string; sourceIds: string[] }
 export type DestinationKind = "specific_target" | "existing_object" | "create_canonical"
-export type DestinationSuggestion = { kind: DestinationKind; objectId: string | null; canonicalEntryKey: string | null; folderName: string; targetPath: string; confidencePercentage: number; confidenceTier: ConfidenceTier; warning: string | null }
+export type DestinationMatchMethod = "canonical_identity" | "exact_name" | "exact_alias" | "name_substring" | "alias_substring" | "token_substring" | "fuzzy_name" | "no_name_match"
+export type DestinationSuggestion = { kind: DestinationKind; objectId: string | null; canonicalEntryKey: string | null; folderName: string; targetPath: string; confidencePercentage: number; confidenceTier: ConfidenceTier; matchMethod?: DestinationMatchMethod; warning: string | null }
 export type DiskReconcileChangeCounts = { added: number; removed: number; renamed: number; modified: number }
 export type DiskReconcileChangeSummary = { object_changes: DiskReconcileChangeCounts; mod_changes: DiskReconcileChangeCounts; object_sample_names: string[]; mod_sample_names: string[]; has_user_visible_changes: boolean }
 export type DiskReconcilePathKind = "Object" | "Mod"
@@ -1589,6 +1764,14 @@ export type DuplicateModInfo = { mod_id: string; object_id: string; folder_path:
  * Controls whether a MasterDB entry can be selected as a concrete object.
  */
 export type EntryKind = "canonical" | "taxonomy"
+/**
+ * Progress events streamed to frontend during archive extraction via `Channel<ExtractionEvent>`.
+ */
+export type ExtractionEvent =
+/**
+ * One file has been extracted (or skipped as directory).
+ */
+{ event: "fileProgress"; data: { fileName: string; fileIndex: number; totalFiles: number } }
 export type FilterDef = { key: string; label: string; options: string[] }
 export type FolderConflictMutationResult = { reconcile: DiskReconcileResult | null; sync_warning: CommittedMutationSyncWarning | null }
 /**
@@ -1680,8 +1863,12 @@ export type ImportDecision = "pending" | "confirm" | "keep_specific_target" | "r
 export type ImportFlow = "auto_import" | "specific_import" | "browser" | "ready_to_move"
 export type ImportItem = { id: string; batchId: string; sourceKind: ImportSourceKind; sourcePath: string; stagingPath: string | null; plannedName: string; status: ImportItemStatus; matchCategory: StableCategory | null; subCategory: string | null; classificationMetadata: JsonValue; categorySuggestions: CategorySuggestion[]; canonicalSuggestions: CanonicalSuggestion[]; destinationSuggestions: DestinationSuggestion[]; selectedEntryKey: string | null; selectedAliasName: string | null; destinationObjectId: string | null; destinationPath: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; evidence: MatchEvidence[]; decision: ImportDecision; fingerprint: SourceFingerprint | null; result: string | null; error: string | null }
 export type ImportItemStatus = "discovered" | "staged" | "awaiting_category" | "awaiting_destination" | "ready" | "committing" | "reconciling" | "finalizing_metadata" | "done" | "skipped" | "partial" | "metadata_pending" | "failed" | "cancelled"
+export type ImportLibraryReadiness = { batchId: string; items: ObjectClassificationPreviewItem[]; highCount: number; mediumCount: number; reviewStarted: boolean }
 export type ImportSourceInput = { path: string; sourceKind: ImportSourceKind | null }
 export type ImportSourceKind = "folder" | "archive_root" | "browser_download" | "ready_to_move"
+export type ImportSourcePreview = { itemId: string; thumbnailPath: string | null; imageThumbnails: string[]; entries: ImportSourcePreviewEntry[]; folderCount: number; fileCount: number; totalSizeBytes: number; truncated: boolean }
+export type ImportSourcePreviewEntry = { relativePath: string; kind: ImportSourcePreviewEntryKind; depth: number }
+export type ImportSourcePreviewEntryKind = "file" | "folder"
 export type IniDocument = { file_path: string; raw_lines: string[]; variables: IniVariable[]; key_bindings: KeyBinding[]; had_bom: boolean; encoding: IniEncoding; newline_style: NewlineStyle; line_terminators: LineTerminator[]; source_hash: string; mode: IniReadMode }
 export type IniEncoding = "Utf8" | "ShiftJis" | "Gbk" | "Utf16Le" | "LossyUtf8"
 export type IniFileEntry = { filename: string; path: string }

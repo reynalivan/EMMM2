@@ -4,8 +4,8 @@
 //! this walk, the BLAKE3 hashing beside it, and the scoring model itself.
 //! Someone tuning the model should not have to scroll past file IO.
 
-use crate::shared::errors::ScannerError;
 use crate::modules::workspace::application::scanner::core::walker::ModCandidate;
+use crate::shared::errors::ScannerError;
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::fs;
@@ -130,7 +130,8 @@ fn read_ini_signals(path: &Path) -> (BTreeSet<String>, BTreeSet<String>, BTreeSe
         Ok(value) => value,
         Err(_) => return (BTreeSet::new(), BTreeSet::new(), BTreeSet::new()),
     };
-    let (content, _, _) = crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
+    let (content, _, _) =
+        crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
     let mut headers = BTreeSet::new();
     let mut keybindings = BTreeSet::new();
     let mut target_hashes = BTreeSet::new();

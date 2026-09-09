@@ -2,11 +2,11 @@
 //! Moved out of `commands::mods::preview_cmds` so the read-model services can
 //! use them without depending on the command layer.
 
-use crate::shared::errors::{AppError, MetadataError};
 use crate::modules::library::application::ini::document::{self as ini_document, IniDocument};
 use crate::modules::library::application::ini::write as ini_write;
 use crate::modules::library::application::mods::preview_image;
 use crate::modules::workspace::application::scanner::core::thumbnail;
+use crate::shared::errors::{AppError, MetadataError};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 

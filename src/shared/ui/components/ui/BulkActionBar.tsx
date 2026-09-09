@@ -16,7 +16,7 @@ interface BulkActionBarLabels {
   count: string;
   safe: string;
   unsafe: string;
-  more?: string;
+  more: string;
   menuTitle?: string;
 }
 
@@ -68,7 +68,7 @@ export default function BulkActionBar({
   const safetyButtons = (
     <div className="join">
       <button
-        className={`btn ${btnSize} btn-ghost join-item text-success hover:bg-success hover:text-success-content`}
+        className={`btn ${btnSize} join-item btn-success text-success-content hover:brightness-110`}
         onClick={() => onMarkSafe(true)}
         title={labels.safe}
         aria-label={labels.safe}
@@ -77,7 +77,7 @@ export default function BulkActionBar({
         <ShieldCheck size={iconSize} />
       </button>
       <button
-        className={`btn ${btnSize} btn-ghost join-item text-warning hover:bg-warning hover:text-warning-content`}
+        className={`btn ${btnSize} join-item btn-warning text-warning-content hover:brightness-110`}
         onClick={() => onMarkSafe(false)}
         title={labels.unsafe}
         aria-label={labels.unsafe}
@@ -166,7 +166,7 @@ export default function BulkActionBar({
           <div className="tooltip tooltip-top" data-tip={toggleGroup.tooltip}>
             <div className="join bg-primary-content/10 rounded-full p-0.5">
               <button
-                className="btn btn-xs join-item btn-ghost text-success hover:bg-success hover:text-success-content border-none h-7 px-3"
+                className="btn btn-xs join-item btn-success text-success-content hover:brightness-110 border-none h-7 px-3"
                 onClick={() => toggleGroup.onToggle(true)}
                 disabled={mutationsDisabled}
               >
@@ -175,7 +175,7 @@ export default function BulkActionBar({
               </button>
               <div className="w-px h-4 bg-primary-content/10 self-center" />
               <button
-                className="btn btn-xs join-item btn-ghost text-warning hover:bg-warning hover:text-warning-content border-none h-7 px-3"
+                className="btn btn-xs join-item btn-warning text-warning-content hover:brightness-110 border-none h-7 px-3"
                 onClick={() => toggleGroup.onToggle(false)}
                 disabled={mutationsDisabled}
               >

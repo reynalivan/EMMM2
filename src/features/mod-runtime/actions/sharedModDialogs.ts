@@ -1,7 +1,7 @@
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { DuplicateInfo } from '@/entities/workspace/model/scanner';
-import type { WorkspaceDialogState } from '../../workspace-runtime/state/workspaceState';
-import { dispatchWorkspaceRuntimeEvent } from '../../workspace-runtime/state/workspaceStoreBridge';
+import type { ModFolder } from '@/entities/game-object';
+import type { DuplicateInfo } from '@/entities/workspace';
+import type { WorkspaceDialogState } from '@/features/workspace-runtime/@x/mod-runtime';
+import { dispatchWorkspaceRuntimeEvent } from '@/features/workspace-runtime/@x/mod-runtime';
 
 export interface SharedModDialogState {
   moveDialog: { open: boolean; folder: ModFolder | null };

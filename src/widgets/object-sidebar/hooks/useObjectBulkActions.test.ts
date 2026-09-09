@@ -6,7 +6,7 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useObjectBulkActions } from './useObjectBulkActions';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 
 const pinObject = vi.fn();
 const updateObject = vi.fn();
@@ -26,18 +26,19 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),
   },
 }));
 
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async () => ({
+  ...(await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query')),
   useQueryClient: () => ({}),
 }));
 
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({ activeGame: { id: 'game-1' } }),
 }));
 
@@ -59,15 +60,15 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
-vi.mock('../../runtime-sync/queryRefresh', () => ({
+vi.mock('@/shared/lib/queryRefresh', () => ({
   publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
 }));
 
-vi.mock('../../workspace-runtime/optimistic/descriptorBuilders', () => ({
+vi.mock('@/features/workspace-runtime/optimistic/descriptorBuilders', () => ({
   buildRuntimeMutationDescriptor: (...args: unknown[]) => buildRuntimeMutationDescriptor(...args),
 }));
 
-vi.mock('../../workspace-runtime/actions/useWorkspaceSwitchActions', () => ({
+vi.mock('@/features/workspace-runtime/actions/useWorkspaceSwitchActions', () => ({
   useWorkspaceSwitchActions: () => ({ setNodeEnabled: vi.fn() }),
 }));
 

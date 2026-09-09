@@ -3,7 +3,7 @@
  * Simple horizontal line + centered label + count badge. Click = filter by category.
  */
 
-import type { CategoryDef } from '@/entities/game-object/model/object';
+import type { CategoryDef } from '@/entities/game-object';
 
 interface CategorySectionProps {
   category: CategoryDef;

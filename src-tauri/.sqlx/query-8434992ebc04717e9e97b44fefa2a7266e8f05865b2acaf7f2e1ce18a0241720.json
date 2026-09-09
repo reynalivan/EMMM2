@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            id,\n            name,\n            game_type AS \"game_type: GameType\",\n            path,\n            mods_path,\n            ready_to_move_path,\n            game_exe,\n            launcher_path,\n            loader_exe,\n            launch_args\n        FROM games\n        ORDER BY name",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "game_type: GameType",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "path",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "mods_path",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "ready_to_move_path",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "game_exe",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "launcher_path",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "loader_exe",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "launch_args",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8434992ebc04717e9e97b44fefa2a7266e8f05865b2acaf7f2e1ce18a0241720"
+}

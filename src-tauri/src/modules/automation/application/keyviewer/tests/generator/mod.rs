@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use tempfile::TempDir;
 
-use crate::modules::library::application::ini::document::KeyBinding;
 use crate::modules::automation::application::keyviewer::generator::{
     atomic_write, create_staging_directory, discover_reload_key, generate_keybind_text,
     generate_keyviewer_ini as generate_keyviewer_ini_for_game, generate_status_text,
@@ -11,6 +10,7 @@ use crate::modules::automation::application::keyviewer::generator::{
     SourceKeyBinding, StatusFields,
 };
 use crate::modules::automation::application::keyviewer::matcher::{MatchConfidence, MatchResult};
+use crate::modules::library::application::ini::document::KeyBinding;
 
 fn make_keybinding(section: &str, key: Option<&str>, back: Option<&str>) -> KeyBinding {
     KeyBinding {
@@ -34,8 +34,12 @@ fn make_match_result(name: &str, sentinels: &[&str]) -> MatchResult {
 }
 
 fn generate_keyviewer_ini(matches: &[MatchResult], toggle_key: &str, _legacy_path: &str) -> String {
-    generate_keyviewer_ini_for_game(matches, toggle_key, crate::modules::games::domain::models::GameType::GIMI)
-        .unwrap()
+    generate_keyviewer_ini_for_game(
+        matches,
+        toggle_key,
+        crate::modules::games::domain::models::GameType::GIMI,
+    )
+    .unwrap()
 }
 
 mod atomic_tests;

@@ -1,6 +1,6 @@
 import { formatAppError } from '../../../../shared/lib/appError';
 import { Monitor, Languages, Database, LogOut, Plus, Trash2, Download } from 'lucide-react';
-import { useAppStore } from '../../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { useSettings } from '../../hooks/useSettings';
 import {
   THEME_OPTIONS,
@@ -10,12 +10,9 @@ import {
 } from '../../../../shared/lib/themeOptions';
 import { useTranslation } from 'react-i18next';
 import { useCustomThemes } from '../../hooks/useCustomThemes';
-import { commands, type CustomTheme } from '../../../../shared/api/tauri/bindings';
+import { commands } from '../../../../shared/api/tauri/bindings';
 import { getTauriVersion, getVersion } from '@tauri-apps/api/app';
-import { open, save } from '@tauri-apps/plugin-dialog';
-// Tauri v2 plugin-fs exports. If text-specific ones are missing in the IDE, we handle conversion.
-import { readFile, writeFile } from '@tauri-apps/plugin-fs';
-import { useToastStore } from '../../../../app/store/useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
 import { useEffect, useState } from 'react';
 
 export default function GeneralTab() {
@@ -50,29 +47,13 @@ export default function GeneralTab() {
 
   const handleImportTheme = async () => {
     try {
-      const selected = await open({
-        multiple: false,
-        filters: [
-          {
-            name: 'JSON Theme',
-            extensions: ['json'],
-          },
-        ],
-      });
-
-      if (selected && typeof selected === 'string') {
-        const data = await readFile(selected);
-        const content = new TextDecoder().decode(data);
-        const themeData = JSON.parse(content) as CustomTheme;
-
-        if (!themeData.id || !themeData.label || !themeData.config) {
-          throw new Error('Invalid theme format: Missing required fields (id, label, config).');
-        }
-
-        await commands.saveCustomTheme(themeData);
-        await refreshCustomThemes();
-        addToast('success', t('general.appearance.import_success', { name: themeData.label }));
+      const themeData = await commands.importCustomTheme();
+      if (!themeData) {
+        return;
       }
+
+      await refreshCustomThemes();
+      addToast('success', t('general.appearance.import_success', { name: themeData.label }));
     } catch (err) {
       console.error('Failed to import theme:', err);
       addToast('error', t('general.appearance.import_failed', { error: formatAppError(err) }));
@@ -82,25 +63,11 @@ export default function GeneralTab() {
   const handleExportTheme = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const themeData = await commands.loadCustomTheme(id);
-      const fileName = `${themeData.id}.json`;
-
-      const savePath = await save({
-        defaultPath: fileName,
-        filters: [
-          {
-            name: 'JSON Theme',
-            extensions: ['json'],
-          },
-        ],
-      });
-
-      if (savePath) {
-        const content = JSON.stringify(themeData, null, 2);
-        const data = new TextEncoder().encode(content);
-        await writeFile(savePath, data);
-        addToast('success', t('general.appearance.export_success', { name: fileName }));
+      const fileName = await commands.exportCustomTheme(id);
+      if (!fileName) {
+        return;
       }
+      addToast('success', t('general.appearance.export_success', { name: fileName }));
     } catch (err) {
       console.error('Failed to export theme:', err);
       addToast('error', t('general.appearance.export_failed', { error: formatAppError(err) }));

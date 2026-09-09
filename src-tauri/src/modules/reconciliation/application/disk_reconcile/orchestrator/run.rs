@@ -1,7 +1,6 @@
 //! One reconcile pass: resolves the game, runs the disk projection, then
 //! applies runtime side-effects and builds the result.
 
-use crate::shared::errors::AppError;
 use crate::modules::reconciliation::application::disk_reconcile::reconcile::{
     reconcile_disk_projection, ReconcileDiskProjectionRequest, ReconcileOutcome,
 };
@@ -10,6 +9,7 @@ use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcileWarning, DiskReconcileWarningKind, PendingRuntimeEffects,
 };
 use crate::modules::workspace::application::scanner::watcher::ModWatchEvent;
+use crate::shared::errors::AppError;
 
 use super::request::DiskReconcileContext;
 

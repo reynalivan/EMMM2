@@ -1,8 +1,10 @@
 import React from 'react';
 import { AlertCircle, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';
-import { useWorkspaceRuntimeSelector } from '../../workspace-runtime/state/workspaceStoreBridge';
+import {
+  closeWorkspaceDialog,
+  useWorkspaceRuntimeSelector,
+} from '@/features/workspace-runtime/@x/file-watcher';
 import { pathBasename } from '../../../shared/lib/pathKey';
 
 export const FileInUseDialog: React.FC = () => {

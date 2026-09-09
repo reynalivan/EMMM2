@@ -6,11 +6,11 @@
 //! - delegate Disk Reconcile to `disk_reconcile`
 //! - emit typed payloads back to the frontend
 
-use crate::shared::sync::lock;
-use crate::shared::errors::ScannerError;
 use crate::modules::workspace::application::scanner::watcher::{
     ModWatchEvent, WatchEventPayload, WatcherSession, WatcherState, WatcherSuppressor,
 };
+use crate::shared::errors::ScannerError;
+use crate::shared::sync::lock;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -106,14 +106,14 @@ async fn process_event_loop(
     let disk_reconcile_state =
         app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
     let config = app.state::<crate::modules::settings::application::config::ConfigService>();
-    let operation_lock = app.state::<crate::platform::fs::operation_lock::OperationLock>();
+    let operation_lock = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
     let session_recovery = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: &pool,
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner_lock(),
             progress_reporter: Some(std::sync::Arc::new(
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),
@@ -182,13 +182,13 @@ async fn process_event_loop(
             app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
         let config = app.state::<crate::modules::settings::application::config::ConfigService>();
         let operation_lock =
-            app.state::<crate::platform::fs::operation_lock::OperationLock>();
+            app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
         let context = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: &pool,
             config: config.inner(),
             state: disk_reconcile_state.inner(),
             watcher_suppressor: suppressor.clone(),
-            operation_lock: operation_lock.inner(),
+            operation_lock: operation_lock.inner_lock(),
             progress_reporter: Some(std::sync::Arc::new(
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),

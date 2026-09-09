@@ -1,9 +1,6 @@
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { DuplicateInfo } from '@/entities/workspace/model/scanner';
-import type {
-  WorkspaceExplorerNode,
-  WorkspaceObjectNode,
-} from '@/entities/workspace/model/workspace';
+import type { ModFolder } from '@/entities/game-object';
+import type { DuplicateInfo } from '@/entities/workspace';
+import type { WorkspaceExplorerNode, WorkspaceObjectNode } from '@/entities/workspace';
 
 export type WorkspaceMobilePane = 'sidebar' | 'grid' | 'details';
 

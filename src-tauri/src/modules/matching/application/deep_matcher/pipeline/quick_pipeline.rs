@@ -38,7 +38,8 @@ pub fn match_folder_quick(
     ai_config: &crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig<'_>,
 ) -> StagedMatchResult {
     let mut local_cache =
-        crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache::new();
+        crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache::new(
+        );
     match_folder_quick_cached(
         candidate,
         db,

@@ -1,14 +1,14 @@
-import type { MoveStatus } from '@/entities/mod/model/mod';
+import type { MoveStatus } from '@/entities/mod';
 import type { QueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { applyRuntimeMutationResult } from '../../workspace-runtime/actions/sharedRuntimeResultMapper';
-import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
+import { applyRuntimeMutationResult } from '@/features/workspace-runtime/@x/mod-runtime';
+import { applyRuntimeEffects } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   buildQueryRemovalDescriptor,
   buildWorkspacePathRewritesDescriptor,
-} from '../../workspace-runtime/optimistic/descriptorBuilders';
-import { mergeRuntimeEffectDescriptors } from '../../workspace-runtime/optimistic/descriptor';
-import { thumbnailKeys } from '@/pages/dashboard/hooks/useThumbnail';
+} from '@/features/workspace-runtime/@x/mod-runtime';
+import { mergeRuntimeEffectDescriptors } from '@/features/workspace-runtime/@x/mod-runtime';
+import { thumbnailKeys } from '@/entities/mod';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 
 export async function moveModsToObjectAndRefresh(params: {

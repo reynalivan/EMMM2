@@ -50,9 +50,10 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
     let etag = crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "etag")
         .await
         .unwrap_or_default();
-    let last_modified = crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "last_modified")
-        .await
-        .unwrap_or_default();
+    let last_modified =
+        crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "last_modified")
+            .await
+            .unwrap_or_default();
 
     // Conditional GET with retry logic for rate limiting
     let response = request_with_retry(
@@ -90,11 +91,12 @@ async fn try_sync(pool: &SqlitePool) -> Result<MetadataSyncResult, anyhow::Error
     let new_last_modified = header_value("last-modified");
 
     let manifest: RemoteManifest = response.json().await?;
-    let local_version: u64 = crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "metadata_version")
-        .await
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(0);
+    let local_version: u64 =
+        crate::modules::system::adapters::sqlite::settings::get_app_meta(pool, "metadata_version")
+            .await
+            .unwrap_or_default()
+            .parse()
+            .unwrap_or(0);
 
     if manifest.db_version <= local_version {
         info!(
@@ -154,7 +156,12 @@ async fn persist_validators(
         crate::modules::system::adapters::sqlite::settings::set_app_meta(pool, "etag", value).await;
     }
     if let Some(value) = last_modified {
-        crate::modules::system::adapters::sqlite::settings::set_app_meta(pool, "last_modified", value).await;
+        crate::modules::system::adapters::sqlite::settings::set_app_meta(
+            pool,
+            "last_modified",
+            value,
+        )
+        .await;
     }
 }
 

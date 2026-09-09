@@ -6,7 +6,7 @@
 import { Search, RefreshCw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { GameSchema, FilterDef, CategoryDef } from '@/entities/game-object/model/object';
+import type { GameSchema, FilterDef, CategoryDef } from '@/entities/game-object';
 import FilterPanel from './FilterPanel';
 import ObjectBulkActionBar from './ObjectBulkActionBar';
 

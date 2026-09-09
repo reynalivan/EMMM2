@@ -5,7 +5,6 @@ use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-
 /// Illegal Windows filename characters to strip.
 const ILLEGAL_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 /// Maximum safe filename length (chars, excluding extension).
@@ -49,11 +48,23 @@ pub fn sanitize_filename(raw: &str) -> String {
 
 /// Resolve the collision-safe destination path for a download directly in the root directory.
 pub fn compute_download_path(dir: &Path, _session_id: Option<&str>, filename: &str) -> PathBuf {
+    compute_download_path_with(dir, _session_id, filename, |candidate| !candidate.exists())
+}
+
+/// Resolve a unique path with a caller-provided availability check. The download
+/// scheduler uses this to include destinations already reserved in memory while
+/// keeping the filesystem-only helper available to the rest of the browser.
+pub fn compute_download_path_with(
+    dir: &Path,
+    _session_id: Option<&str>,
+    filename: &str,
+    is_available: impl Fn(&Path) -> bool,
+) -> PathBuf {
     let safe_name = sanitize_filename(filename);
 
     // Generate unique path (avoid collision)
     let mut candidate = dir.join(&safe_name);
-    if !candidate.exists() {
+    if is_available(&candidate) {
         return candidate;
     }
 
@@ -72,7 +83,7 @@ pub fn compute_download_path(dir: &Path, _session_id: Option<&str>, filename: &s
             format!("{stem}_({n}).{ext}")
         };
         candidate = dir.join(&suffixed);
-        if !candidate.exists() {
+        if is_available(&candidate) {
             return candidate;
         }
         n += 1;
@@ -84,7 +95,9 @@ pub fn compute_download_path(dir: &Path, _session_id: Option<&str>, filename: &s
 /// Priority: Mod Inbox of the active game -> `AppData/EMM2/BrowserDownloads` fallback.
 pub async fn get_downloads_root(app: &AppHandle, db: &SqlitePool) -> PathBuf {
     // If there is an active game, route downloads directly to its Mod Inbox.
-    if let Ok(Some(active_game)) = crate::modules::system::adapters::sqlite::settings::get_setting(db, "active_game_id").await {
+    if let Ok(Some(active_game)) =
+        crate::modules::system::adapters::sqlite::settings::get_setting(db, "active_game_id").await
+    {
         if let Ok(inbox) = crate::modules::ingestion::application::import_batch::ready_to_move::resolve_mod_inbox_root(
             app,
             db,
@@ -107,6 +120,7 @@ pub async fn get_downloads_root(app: &AppHandle, db: &SqlitePool) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use tempfile::tempdir;
 
     #[test]
@@ -194,6 +208,23 @@ mod tests {
         assert_eq!(
             path_noext2.file_name().unwrap().to_str().unwrap(),
             "readme_(2)"
+        );
+    }
+
+    #[test]
+    fn reserved_download_destinations_get_distinct_names_before_writing() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        let first = compute_download_path(root, None, "mod.zip");
+        let reservations = HashSet::from([first]);
+
+        let second = compute_download_path_with(root, None, "mod.zip", |candidate| {
+            !candidate.exists() && !reservations.contains(candidate)
+        });
+
+        assert_eq!(
+            second.file_name().and_then(|name| name.to_str()),
+            Some("mod_(2).zip")
         );
     }
 }

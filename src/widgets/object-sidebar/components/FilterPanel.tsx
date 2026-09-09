@@ -7,7 +7,7 @@
 import { X } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { FilterDef, CategoryDef } from '@/entities/game-object/model/object';
+import type { FilterDef, CategoryDef } from '@/entities/game-object';
 
 interface FilterPanelProps {
   /** Metadata filters (Element, Weapon, Rarity, Gender) */

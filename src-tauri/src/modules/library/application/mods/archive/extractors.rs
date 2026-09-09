@@ -1,34 +1,184 @@
 use super::is_cancelled;
 use super::progress::emit_throttled_progress;
+use super::security::{
+    map_archive_error, reject_multi_volume_archive, validate_archive_signature,
+    validate_entry_path, validate_entry_type, EntryKind, ExtractionBudget, OutputPathRegistry,
+};
 use super::types::{ArchiveFormat, ExtractionEvent};
+use super::zip_reader::extract_zip_to_dir;
 use crate::shared::errors::AppError;
+use compress_tools::{ArchiveContents, ArchiveIteratorBuilder, ArchivePassword};
 use std::fs;
-use std::io;
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::ipc::Channel;
 
-pub(super) fn extract_to_dir(
+#[allow(clippy::too_many_arguments)]
+pub(super) fn extract_to_dir_with_budget(
     archive_path: &Path,
     dest_path: &Path,
     password: Option<&str>,
     format: ArchiveFormat,
     cancel_token: Option<Arc<AtomicBool>>,
     on_progress: Option<&Channel<ExtractionEvent>>,
+    budget: &mut ExtractionBudget,
 ) -> Result<usize, AppError> {
-    match format {
-        ArchiveFormat::Zip => {
-            extract_zip_inner(archive_path, dest_path, password, cancel_token, on_progress)
+    if is_cancelled(&cancel_token) {
+        return Err(AppError::Cancelled);
+    }
+    reject_multi_volume_archive(archive_path)?;
+    validate_archive_signature(archive_path, format)?;
+
+    if format == ArchiveFormat::Zip {
+        return extract_zip_to_dir(
+            archive_path,
+            dest_path,
+            password,
+            cancel_token,
+            on_progress,
+            budget,
+        );
+    }
+
+    let file = fs::File::open(archive_path)?;
+    let password_supplied = password.is_some();
+    let mut builder = ArchiveIteratorBuilder::new(file).mtree_format(false);
+    if let Some(value) = password {
+        let password = ArchivePassword::new(value)
+            .map_err(|error| map_archive_error(error, password_supplied))?;
+        builder = builder.with_password(password);
+    }
+    let mut iterator = builder
+        .build()
+        .map_err(|error| map_archive_error(error, password_supplied))?;
+    let root = dest_path.canonicalize()?;
+    let mut current: Option<OpenEntry> = None;
+    let mut files_extracted = 0_usize;
+    let mut last_progress = Instant::now();
+    let mut last_file_name = String::new();
+    let mut output_paths = OutputPathRegistry::default();
+
+    for content in iterator.by_ref() {
+        if is_cancelled(&cancel_token) {
+            return Err(AppError::Cancelled);
         }
-        ArchiveFormat::SevenZ => {
-            extract_7z_inner(archive_path, dest_path, password, cancel_token, on_progress)
-        }
-        ArchiveFormat::Rar => {
-            extract_rar_inner(archive_path, dest_path, password, cancel_token, on_progress)
+        match content {
+            ArchiveContents::StartOfEntry(name, stat) => {
+                if current.is_some() {
+                    return Err(AppError::Io(
+                        "Archive started an entry before ending the previous entry".to_string(),
+                    ));
+                }
+                let relative_path = validate_entry_path(Path::new(""), &name)?;
+                let kind = validate_entry_type(stat.st_mode.into(), stat.st_nlink.max(0) as u64)?;
+                output_paths.register(&relative_path, kind)?;
+                let output_path = root.join(relative_path);
+                budget.start_entry(stat.st_size.max(0) as u64)?;
+                let file = match kind {
+                    EntryKind::Directory => {
+                        fs::create_dir_all(&output_path)?;
+                        None
+                    }
+                    EntryKind::File => {
+                        let parent = output_path.parent().ok_or_else(|| {
+                            AppError::Security("Archive output has no parent".to_string())
+                        })?;
+                        fs::create_dir_all(parent)?;
+                        let canonical_parent = parent.canonicalize()?;
+                        if !canonical_parent.starts_with(&root) {
+                            return Err(AppError::Security(
+                                "Archive output escaped the extraction root".to_string(),
+                            ));
+                        }
+                        Some(
+                            fs::OpenOptions::new()
+                                .write(true)
+                                .create_new(true)
+                                .open(&output_path)?,
+                        )
+                    }
+                };
+                current = Some(OpenEntry {
+                    name,
+                    output_path,
+                    file,
+                    kind,
+                });
+            }
+            ArchiveContents::DataChunk(chunk) => {
+                let entry = current.as_mut().ok_or_else(|| {
+                    AppError::Io("Archive produced data outside an entry".to_string())
+                })?;
+                if entry.kind != EntryKind::File {
+                    return Err(AppError::Security(
+                        "Archive directory entry contained file data".to_string(),
+                    ));
+                }
+                budget.consume_chunk(chunk.len(), &cancel_token)?;
+                entry
+                    .file
+                    .as_mut()
+                    .ok_or_else(|| AppError::Io("Archive output file was not open".to_string()))?
+                    .write_all(&chunk)?;
+            }
+            ArchiveContents::EndOfEntry => {
+                let Some(mut entry) = current.take() else {
+                    continue;
+                };
+                if let Some(file) = entry.file.as_mut() {
+                    file.flush()?;
+                    files_extracted += 1;
+                    last_file_name = entry
+                        .output_path
+                        .file_name()
+                        .map(|value| value.to_string_lossy().into_owned())
+                        .unwrap_or(entry.name);
+                    if let Some(channel) = on_progress {
+                        emit_throttled_progress(
+                            channel,
+                            &mut last_progress,
+                            last_file_name.clone(),
+                            files_extracted,
+                            0,
+                        );
+                    }
+                }
+            }
+            ArchiveContents::Err(error) => {
+                return Err(map_archive_error(error, password_supplied));
+            }
         }
     }
+    iterator
+        .close()
+        .map_err(|error| map_archive_error(error, password_supplied))?;
+    if current.is_some() {
+        return Err(AppError::Io(
+            "Archive ended before the current entry completed".to_string(),
+        ));
+    }
+    if let Some(channel) = on_progress {
+        if files_extracted > 0 {
+            emit_throttled_progress(
+                channel,
+                &mut last_progress,
+                last_file_name,
+                files_extracted,
+                files_extracted,
+            );
+        }
+    }
+    Ok(files_extracted)
+}
+
+struct OpenEntry {
+    name: String,
+    output_path: PathBuf,
+    file: Option<fs::File>,
+    kind: EntryKind,
 }
 
 pub(super) fn unpack_nested_archives(
@@ -36,278 +186,72 @@ pub(super) fn unpack_nested_archives(
     current_depth: usize,
     max_depth: usize,
     cancel_token: &Option<Arc<AtomicBool>>,
-) -> usize {
+    password: Option<&str>,
+    budget: &mut ExtractionBudget,
+) -> Result<usize, AppError> {
     if current_depth >= max_depth {
-        log::warn!(
-            "Max nested extraction depth ({}) reached in {:?}",
-            max_depth,
-            dir
-        );
-        return 0;
+        log::warn!("Max nested extraction depth ({max_depth}) reached in {dir:?}");
+        return Ok(0);
     }
 
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries.filter_map(|entry| entry.ok()).collect::<Vec<_>>(),
-        Err(_) => return 0,
-    };
-    let mut total_extracted = 0;
-
+    let entries = fs::read_dir(dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
+    let mut total_extracted = 0_usize;
     for entry in entries {
         if is_cancelled(cancel_token) {
-            return total_extracted;
+            return Err(AppError::Cancelled);
         }
-
         let path = entry.path();
         if path.is_dir() {
-            total_extracted +=
-                unpack_nested_archives(&path, current_depth, max_depth, cancel_token);
+            total_extracted += unpack_nested_archives(
+                &path,
+                current_depth,
+                max_depth,
+                cancel_token,
+                password,
+                budget,
+            )?;
             continue;
         }
-
         let Some(format) = ArchiveFormat::detect(&path) else {
             continue;
         };
-
         let stem = path
             .file_stem()
             .unwrap_or_default()
             .to_string_lossy()
-            .to_string();
+            .into_owned();
         let sub_dest = dir.join(stem);
         if sub_dest.exists() {
             continue;
         }
-        if let Err(error) = fs::create_dir_all(&sub_dest) {
-            log::warn!("Failed to create subfolder for nested archive: {error}");
-            continue;
-        }
-
-        match extract_to_dir(&path, &sub_dest, None, format, cancel_token.clone(), None) {
-            Ok(extracted) => {
-                total_extracted += extracted;
-                if let Err(error) =
-                    crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&path)
-                {
-                    log::warn!(
-                        "Failed to move extracted nested archive to the Recycle Bin: {error}"
-                    );
-                }
-                total_extracted +=
-                    unpack_nested_archives(&sub_dest, current_depth + 1, max_depth, cancel_token);
-            }
+        fs::create_dir_all(&sub_dest)?;
+        let extracted = match extract_to_dir_with_budget(
+            &path,
+            &sub_dest,
+            password,
+            format,
+            cancel_token.clone(),
+            None,
+            budget,
+        ) {
+            Ok(extracted) => extracted,
             Err(error) => {
-                log::warn!("Failed to extract nested archive {:?}: {}", path, error);
+                fs::remove_dir_all(&sub_dest).ok();
+                return Err(error);
             }
-        }
-    }
-
-    total_extracted
-}
-
-/// Cancellation marker smuggled through `sevenz_rust`'s io-error channel.
-const CANCEL_MARKER: &str = "ABORTED";
-
-fn extract_zip_inner(
-    archive_path: &Path,
-    dest_path: &Path,
-    password: Option<&str>,
-    cancel_token: Option<Arc<AtomicBool>>,
-    on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<usize, AppError> {
-    let file = fs::File::open(archive_path)?;
-    let mut archive = zip::ZipArchive::new(file)?;
-    let total_entries = archive.len();
-    let mut count = 0_usize;
-    let mut last_progress = Instant::now();
-
-    for i in 0..archive.len() {
-        if is_cancelled(&cancel_token) {
-            return Err(AppError::Cancelled);
-        }
-
-        let mut entry = match password {
-            Some(value) => archive
-                .by_index_decrypt(i, value.as_bytes())
-                .map_err(|error| password_or_read_error(error, "decrypt", i))?,
-            None => archive
-                .by_index(i)
-                .map_err(|error| password_or_read_error(error, "read", i))?,
         };
-
-        let Some(entry_path) = entry.enclosed_name().map(|value| value.to_path_buf()) else {
-            continue;
-        };
-        let output_path = dest_path.join(&entry_path);
-
-        if entry.is_dir() {
-            fs::create_dir_all(&output_path)?;
-            continue;
+        total_extracted += extracted;
+        if let Err(error) = crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&path) {
+            log::warn!("Failed to move extracted nested archive to the Recycle Bin: {error}");
         }
-
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let mut outfile = fs::File::create(&output_path)?;
-        io::copy(&mut entry, &mut outfile)?;
-        count += 1;
-
-        if let Some(channel) = on_progress {
-            let name = entry_path
-                .file_name()
-                .map(|value| value.to_string_lossy().to_string())
-                .unwrap_or_default();
-            emit_throttled_progress(channel, &mut last_progress, name, count, total_entries);
-        }
+        total_extracted += unpack_nested_archives(
+            &sub_dest,
+            current_depth + 1,
+            max_depth,
+            cancel_token,
+            password,
+            budget,
+        )?;
     }
-
-    Ok(count)
-}
-
-fn password_or_read_error(error: zip::result::ZipError, action: &str, index: usize) -> AppError {
-    let message = error.to_string();
-    if message.contains("Password") || message.contains("password") {
-        return AppError::Validation("Password required to extract this archive".to_string());
-    }
-    AppError::Io(format!("Failed to {action} entry {index}: {error}"))
-}
-
-fn extract_7z_inner(
-    archive_path: &Path,
-    dest_path: &Path,
-    password: Option<&str>,
-    cancel_token: Option<Arc<AtomicBool>>,
-    on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<usize, AppError> {
-    if is_cancelled(&cancel_token) {
-        return Err(AppError::Cancelled);
-    }
-
-    let file_counter = Arc::new(AtomicUsize::new(0));
-    let mut last_progress = Instant::now();
-    let extract_result = match password {
-        Some(value) => {
-            let file = fs::File::open(archive_path)?;
-            let counter = file_counter.clone();
-            sevenz_rust::decompress_with_extract_fn_and_password(
-                file,
-                dest_path,
-                value.into(),
-                |entry, reader, dest| {
-                    extract_7z_entry(
-                        entry,
-                        reader,
-                        dest,
-                        &cancel_token,
-                        &counter,
-                        on_progress,
-                        &mut last_progress,
-                    )
-                },
-            )
-        }
-        None => {
-            let counter = file_counter.clone();
-            sevenz_rust::decompress_file_with_extract_fn(
-                archive_path,
-                dest_path,
-                |entry, reader, dest| {
-                    extract_7z_entry(
-                        entry,
-                        reader,
-                        dest,
-                        &cancel_token,
-                        &counter,
-                        on_progress,
-                        &mut last_progress,
-                    )
-                },
-            )
-        }
-    };
-
-    extract_result.map_err(|error| extraction_error_7z(error.to_string()))?;
-
-    let count = walkdir::WalkDir::new(dest_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().is_file())
-        .count();
-
-    Ok(count)
-}
-
-fn extract_7z_entry(
-    entry: &sevenz_rust::SevenZArchiveEntry,
-    reader: &mut dyn std::io::Read,
-    dest: &std::path::PathBuf,
-    cancel_token: &Option<Arc<AtomicBool>>,
-    counter: &Arc<AtomicUsize>,
-    on_progress: Option<&Channel<ExtractionEvent>>,
-    last_progress: &mut Instant,
-) -> Result<bool, sevenz_rust::Error> {
-    if is_cancelled(cancel_token) {
-        return Err(sevenz_rust::Error::io(std::io::Error::new(
-            std::io::ErrorKind::Interrupted,
-            CANCEL_MARKER,
-        )));
-    }
-
-    let idx = counter.fetch_add(1, Ordering::Relaxed) + 1;
-    if let Some(channel) = on_progress {
-        emit_throttled_progress(channel, last_progress, entry.name().to_string(), idx, 0);
-    }
-
-    sevenz_rust::default_entry_extract_fn(entry, reader, dest)
-}
-
-fn extraction_error_7z(message: String) -> AppError {
-    if message.contains("password") || message.contains("Password") || message.contains("decrypt") {
-        return AppError::Validation("Password required to extract this archive".to_string());
-    }
-    // The 7z crate can only carry a cancel back as an io error, so the marker
-    // survives as text this far and is re-typed here.
-    if message.contains(CANCEL_MARKER) {
-        return AppError::Cancelled;
-    }
-    AppError::Internal(format!("Failed to extract 7z: {message}"))
-}
-
-fn extract_rar_inner(
-    archive_path: &Path,
-    dest_path: &Path,
-    password: Option<&str>,
-    cancel_token: Option<Arc<AtomicBool>>,
-    on_progress: Option<&Channel<ExtractionEvent>>,
-) -> Result<usize, AppError> {
-    if is_cancelled(&cancel_token) {
-        return Err(AppError::Cancelled);
-    }
-
-    let path_str = archive_path
-        .to_str()
-        .ok_or_else(|| AppError::Internal("RAR path contains invalid UTF-8".to_string()))?;
-    let dest_str = dest_path
-        .to_str()
-        .ok_or_else(|| AppError::Internal("Dest path contains invalid UTF-8".to_string()))?;
-    let pw = password.unwrap_or("");
-    rar::Archive::extract_all(path_str, dest_str, pw)?;
-
-    let count = walkdir::WalkDir::new(dest_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().is_file())
-        .count();
-
-    if let Some(channel) = on_progress {
-        let _ = channel.send(ExtractionEvent::FileProgress {
-            file_name: String::new(),
-            file_index: count,
-            total_files: count,
-        });
-    }
-
-    Ok(count)
+    Ok(total_extracted)
 }

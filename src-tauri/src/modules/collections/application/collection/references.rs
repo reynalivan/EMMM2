@@ -6,10 +6,12 @@ use super::path_transition::{
     CollectionPathTransitionKind,
 };
 use super::projection::{persist_projected_state, refresh_projected_state_preserving_signature};
-use crate::modules::collections::domain::collection::{CollectionPathRewrite, CollectionReferenceImpact};
-use crate::shared::errors::CollectionError;
 use crate::modules::collections::adapters::sqlite as collection;
+use crate::modules::collections::domain::collection::{
+    CollectionPathRewrite, CollectionReferenceImpact,
+};
 use crate::modules::workspace::application::projected_state;
+use crate::shared::errors::CollectionError;
 use sqlx::SqlitePool;
 
 pub(crate) struct StagedCollectionIdentityTransitions {
@@ -79,13 +81,9 @@ pub(crate) async fn stage_identity_path_transitions_tx(
             ".emmm-reconcile-collection-object-stage-{}",
             uuid::Uuid::new_v4()
         );
-        for (id, name) in collection::stage_object_reference(
-            &mut *conn,
-            game_id,
-            &old_ref_key,
-            &staged_ref_key,
-        )
-        .await?
+        for (id, name) in
+            collection::stage_object_reference(&mut *conn, game_id, &old_ref_key, &staged_ref_key)
+                .await?
         {
             affected.insert(id, name);
         }
@@ -326,7 +324,9 @@ pub async fn handle_object_renamed_tx(
             game_id,
             &old_ref_key,
             &new_ref_key,
-            &crate::modules::workspace::domain::normalizer::normalize_display_name(&new_logical_folder),
+            &crate::modules::workspace::domain::normalizer::normalize_display_name(
+                &new_logical_folder,
+            ),
         )
         .await?
         {

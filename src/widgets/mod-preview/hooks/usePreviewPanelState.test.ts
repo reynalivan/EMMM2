@@ -3,14 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '../../../tests/testing/test-utils';
 import { usePreviewPanelState } from './usePreviewPanelState';
 import * as usePreviewDataModule from './usePreviewData';
-import * as workspaceViewModelModule from '@/features/workspace-runtime/hooks/useWorkspaceViewModel';
-import { useAppStore } from '../../../app/store/useAppStore';
+import * as workspaceViewModelModule from '@/features/workspace-runtime';
+import { useAppStore } from '@/app/store';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../../app/store/useAppStore', () => {
+vi.mock('@/app/store', () => {
   // One shared state object with the workspace runtime slice, so `getState()`
   // and the selector hook see the same store the app does.
   const state = {
@@ -37,7 +37,7 @@ vi.mock('../../../app/store/useAppStore', () => {
   };
 });
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -64,7 +64,7 @@ vi.mock('./usePreviewData', () => ({
   useSelectedModPath: vi.fn(() => null),
 }));
 
-vi.mock('../../workspace-runtime/hooks/useWorkspaceViewModel', () => ({
+vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => ({
   useWorkspaceViewModel: vi.fn(() => ({
     data: {
       preview: {

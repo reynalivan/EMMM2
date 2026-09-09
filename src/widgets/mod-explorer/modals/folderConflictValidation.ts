@@ -1,7 +1,7 @@
 import type { FolderNameConflictCandidate } from '../../../shared/api/tauri/bindings';
 
 export type FolderConflictValidationCode =
-  'empty' | 'invalid' | 'reserved' | 'disabled_prefix' | 'duplicate';
+  'empty' | 'invalid' | 'reserved' | 'disabled_prefix' | 'duplicate' | 'unchanged';
 
 const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 const INVALID_NAME = /[\\/:*?"<>|]/;
@@ -18,6 +18,7 @@ function validateName(name: string): FolderConflictValidationCode | null {
 export function validateFolderConflictDrafts(
   candidates: FolderNameConflictCandidate[],
   drafts: Record<string, string>,
+  keepPath?: string | null,
 ): Record<string, FolderConflictValidationCode> {
   const errors: Record<string, FolderConflictValidationCode> = {};
   const seen = new Map<string, string>();
@@ -33,6 +34,13 @@ export function validateFolderConflictDrafts(
       errors[candidate.path] = 'duplicate';
     }
     seen.set(identity, candidate.path);
+  }
+
+  for (const candidate of candidates) {
+    const value = drafts[candidate.path] ?? '';
+    if (candidate.path !== keepPath && value.toLowerCase() === candidate.base_name.toLowerCase()) {
+      errors[candidate.path] = 'unchanged';
+    }
   }
 
   return errors;

@@ -8,11 +8,11 @@ import { formatAppError } from '../../../shared/lib/appError';
 import { useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
-import type { DuplicateSelection, ResolutionRequest } from '@/entities/workspace/model/scanner';
+import type { DuplicateSelection, ResolutionRequest } from '@/entities/workspace';
 import { buildResolutionRequests } from '../utils/resolutionRequests';
 import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';
-import { toast } from '../../../app/store/useToastStore';
+import { toast } from '@/shared/ui/toast';
 import { useTranslation } from 'react-i18next';
 
 interface Props {

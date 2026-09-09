@@ -3,7 +3,7 @@ import { RefreshCw, Download, CheckCircle, AlertTriangle, Database } from 'lucid
 import { useTranslation } from 'react-i18next';
 import { useAppUpdater } from '../../hooks/useAppUpdater';
 import { useMetadataSyncMutation } from '../../hooks/useMetadataSync';
-import { useToastStore } from '../../../../app/store/useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
 import { getVersion } from '@tauri-apps/api/app';
 import { useEffect, useState } from 'react';
 import { formatBytes } from '../../../../shared/lib/utils/formatters';

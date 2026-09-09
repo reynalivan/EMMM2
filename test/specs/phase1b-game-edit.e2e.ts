@@ -5,6 +5,7 @@ import path from 'path';
 import { createMockGame, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
+import type { AppSettings, GameConfig } from '../../src/shared/api/tauri/bindings.gen.js';
 
 /** Asserts a command rejects rather than quietly returning an empty result. */
 async function rejects(cmd: string, args: Record<string, unknown>): Promise<void> {
@@ -15,16 +16,6 @@ async function rejects(cmd: string, args: Record<string, unknown>): Promise<void
     threw = true;
   }
   expect(threw).toBe(true);
-}
-
-interface GameConfig {
-  id: string;
-  name: string;
-  [key: string]: unknown;
-}
-interface AppSettings {
-  games: GameConfig[];
-  [key: string]: unknown;
 }
 
 /**

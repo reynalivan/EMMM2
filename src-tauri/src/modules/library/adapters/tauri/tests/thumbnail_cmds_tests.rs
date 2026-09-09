@@ -202,8 +202,8 @@ async fn test_list_mod_folders_malformed_info_json() {
 
 #[tokio::test]
 async fn test_get_filtered_objects_unsafe() {
-    use crate::modules::catalog::domain::objects::ObjectFilter;
     use crate::modules::catalog::adapters::sqlite::object::get_filtered_objects;
+    use crate::modules::catalog::domain::objects::ObjectFilter;
 
     let test_db = crate::test_utils::init_test_db().await;
     let pool = &test_db.pool;

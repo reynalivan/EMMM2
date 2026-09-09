@@ -1,26 +1,26 @@
 import { formatAppError } from '../../../shared/lib/appError';
-import type { MoveStatus } from '@/entities/mod/model/mod';
+import type { MoveStatus } from '@/entities/mod';
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { toast } from '../../../app/store/useToastStore';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { toast } from '@/shared/ui/toast';
+import { useActiveGame } from '@/entities/game';
 import { useBulkFavorite } from '../hooks/useBulkModMutations';
-import { useToggleModSafe } from '@/widgets/mod-explorer/hooks/useFolderMutations';
-import { useDeleteMod, useRenameMod } from '@/widgets/mod-explorer/hooks/useFolderCoreMutations';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import { useToggleModSafe } from '../hooks/useFolderMutations';
+import { useDeleteMod, useRenameMod } from '../hooks/useFolderCoreMutations';
+import type { ModFolder } from '@/entities/game-object';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import { moveModsToObjectAndRefresh } from '../operations/sharedOperations';
-import { useWorkspaceRuntimeSelector } from '../../workspace-runtime/state/workspaceStoreBridge';
+import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   useWorkspaceSwitchActions,
   type WorkspaceSwitchSurface,
-} from '../../workspace-runtime/actions/useWorkspaceSwitchActions';
-import { closeWorkspaceDialog } from '../../workspace-runtime/state/workspaceDialogs';
+} from '@/features/workspace-runtime/@x/mod-runtime';
+import { closeWorkspaceDialog } from '@/features/workspace-runtime/@x/mod-runtime';
 import { openModDialog, selectSharedModDialogState, updateModDialog } from './sharedModDialogs';
 import { hasIllegalCharacters, runSharedModActiveContextToggle } from './sharedModEffects';
-import { openObjectClassificationWizard } from '../../import-batches/classificationLauncher';
+import { openObjectClassificationWizard } from '@/features/import-batches/@x/mod-runtime';
 
 // Dialog open/close take no closure state, so they live at module scope and keep
 // a stable identity — these are spread into memoized card props.

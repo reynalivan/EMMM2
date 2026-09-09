@@ -3,9 +3,9 @@ use std::collections::HashSet;
 use crate::modules::matching::application::deep_matcher::CustomSkin;
 
 use super::*;
-use crate::modules::workspace::domain::normalizer;
 use crate::modules::matching::application::deep_matcher::analysis::indexes::MatcherIndexes;
 use crate::modules::matching::application::deep_matcher::models::types::DbEntry;
+use crate::modules::workspace::domain::normalizer;
 
 fn sample_indexes() -> MatcherIndexes {
     let entries = vec![

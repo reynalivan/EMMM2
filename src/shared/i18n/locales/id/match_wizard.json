@@ -1,5 +1,9 @@
 {
   "title": "Wizard Pencocokan",
+  "review_title": "Tinjau Pencocokan Import",
+  "review_summary": "{{count}} mod · {{ready}} diproses · {{skipped}} dilewati · {{errors}} error",
+  "search_placeholder": "Cari mod sumber…",
+  "no_filtered_items": "Tidak ada item import yang cocok dengan filter ini.",
   "resume_import": "Lanjutkan import ({{count}} item)",
   "classification_title": "Klasifikasi & Cocokkan Objek Existing",
   "classification_no_move": "Status existing dipertahankan kecuali Anda memilih untuk menonaktifkan folder objek di bawah.",
@@ -8,44 +12,208 @@
   "classification_match_objects": "Cocokkan objek canonical",
   "classification_apply": "Terapkan klasifikasi",
   "classification_applied": "{{count}} klasifikasi diterapkan dan {{mods}} child mod diperbarui.",
+  "library_preflight": {
+    "title": "{{count}} identifikasi ditemukan",
+    "summary": "{{high}} confidence tinggi · {{medium}} confidence sedang",
+    "later": "Ingatkan dalam 24 jam",
+    "review": "Tinjau {{count}}",
+    "refresh_failed": "Object Library sudah diperbarui, tetapi hasil pencocokan import gagal diperbarui: {{error}}"
+  },
   "batch_summary": "{{count}} item · {{flow}}",
+  "flows": {
+    "auto_import": "Import otomatis",
+    "specific_import": "Import ke tujuan terpilih",
+    "browser": "Import browser",
+    "ready_to_move": "Siap dipindahkan"
+  },
   "analyzing": "Memeriksa sumber dan menyusun bukti kategori…",
-  "steps": {
-    "sources": "Sumber",
-    "category": "Kategori & metadata",
-    "destination": "Objek & tujuan",
-    "validation": "Validasi",
+  "checking_library": "Memeriksa kesiapan Object Library…",
+  "refreshing_matches": "Memperbarui hasil pencocokan import…",
+  "extraction": {
+    "progress": "Mengekstrak {{current}} dari {{total}}"
+  },
+  "archive_password": {
+    "title": "Password arsip diperlukan",
+    "description": "Masukkan password arsip untuk mencoba ekstraksi lagi. Password hanya digunakan untuk percobaan ini.",
+    "label": "Password arsip",
+    "cancel": "Batalkan import",
+    "retry": "Coba ekstraksi lagi"
+  },
+  "summary": {
+    "label": "Status batch",
+    "needs_review": "{{count}} perlu ditinjau",
+    "ready": "{{count}} siap",
+    "skipped": "{{count}} dilewati",
+    "completed": "{{count}} selesai"
+  },
+  "bulk": {
+    "title": "Tinjauan cepat",
+    "description": "{{high}} confidence tinggi · {{other}} perlu ditinjau"
+  },
+  "filters": {
+    "all": "Semua",
+    "high": "Tinggi",
+    "medium": "Sedang",
+    "low": "Rendah",
+    "no_match": "Tidak cocok",
+    "errors": "Error"
+  },
+  "sort": {
+    "label": "Urutkan pencocokan import",
+    "review": "Perlu ditinjau dulu",
+    "confidence_desc": "Confidence tertinggi",
+    "name": "Nama sumber"
+  },
+  "selection": {
+    "all": "Pilih semua",
+    "none": "Kosongkan pilihan",
+    "count": "{{count}} dipilih",
+    "item": "Pilih {{name}}"
+  },
+  "destination": {
+    "search_hint": "Cari tujuan",
+    "search_placeholder": "Cari nama, alias, tipe, atau tag…",
+    "potential": "Potensi kecocokan",
+    "all": "Semua tujuan",
+    "no_results": "Tujuan tidak ditemukan."
+  },
+  "source_preview": {
+    "summary": "{{folders}} folder · {{files}} file · {{size}}",
+    "unavailable": "Pratinjau sumber tidak tersedia.",
+    "more": "File lainnya…"
+  },
+  "sections": {
+    "match": "Klasifikasi & pencocokan",
+    "destination": "Tujuan",
+    "details": "Detail"
+  },
+  "fields": {
+    "planned_name": "Nama rencana",
+    "category": "Kategori",
+    "subcategory": "Subkategori",
+    "optional": "Opsional",
+    "canonical": "Objek canonical",
+    "manual_target": "Pilih manual",
+    "selected_target": "Tujuan terpilih",
+    "decision": "Keputusan",
     "result": "Hasil"
   },
+  "categories": {
+    "Character": "Karakter",
+    "Weapon": "Senjata",
+    "UI": "UI",
+    "Other": "Lainnya",
+    "unknown": "Belum diklasifikasikan"
+  },
+  "confidence": {
+    "high": "Tinggi",
+    "medium": "Sedang",
+    "low": "Rendah",
+    "no_match": "Tidak cocok"
+  },
+  "confidence_value": "{{value}}% · {{label}}",
+  "decisions": {
+    "pending": "Menunggu",
+    "confirm": "Dikonfirmasi",
+    "keep_specific_target": "Pakai tujuan",
+    "reallocate": "Alokasikan ulang",
+    "create_canonical": "Buat canonical",
+    "skip": "Dilewati"
+  },
+  "destination_hint": "Pilih tujuan yang disarankan atau pilih tujuan yang sudah ada secara manual.",
   "columns": {
-    "source": "Sumber / nama rencana",
+    "source": "Mod sumber",
     "category": "Kategori",
     "canonical": "Objek canonical",
     "destination": "Tujuan",
     "confidence": "Confidence / bukti",
-    "decision": "Keputusan / hasil",
+    "decision": "Keputusan",
     "actions": "Aksi"
   },
   "actions": {
-    "confirm_high": "Konfirmasi High",
-    "skip_medium_low": "Lewati Medium & Low",
+    "confirm_high": "Terima {{count}} confidence tinggi",
+    "skip_medium_low": "Lewati {{count}} confidence rendah",
     "confirm": "Konfirmasi kategori",
-    "rename": "Ubah nama rencana",
-    "use_target": "Pakai tujuan",
+    "rename": "Edit nama",
+    "save_name": "Simpan nama",
+    "use_target": "Pakai tujuan ini",
     "skip": "Lewati",
+    "proceed": "Proses",
+    "set_proceed": "Atur Proses",
+    "set_skip": "Atur Lewati",
+    "view_destination": "Lihat tujuan",
     "retry": "Ulangi saran",
+    "resume": "Lanjutkan import",
     "open": "Buka di Explorer",
-    "commit": "Commit {{count}} item"
+    "more": "Aksi lainnya",
+    "import": "Import {{count}} item"
+  },
+  "footer": {
+    "finished": "Batch ini sudah selesai.",
+    "resolve_first": "{{count}} item masih membutuhkan keputusan.",
+    "ready": "{{count}} item siap di-import.",
+    "recovery": "{{count}} item yang sudah dipindahkan perlu memulihkan metadata.",
+    "no_items": "Belum ada item yang dipilih untuk di-import."
   },
   "choose_existing": "Pilih tujuan yang sudah ada…",
   "specific_warning": "target tidak cukup cocok; perlu konfirmasi eksplisit",
   "no_match": "Tidak ada canonical match",
   "no_destination": "Belum ada tujuan",
   "evidence": "Bukti",
+  "evidence_none": "Tidak ada bukti kecocokan",
+  "match_column": "Kecocokan",
+  "import_as_column": "Impor sebagai",
+  "source": {
+    "identified": "Teridentifikasi sebagai {{name}} · {{score}}%",
+    "matching_by_name": "Dicocokkan berdasarkan nama",
+    "edit_name": "Ubah nama folder hasil impor",
+    "destination_preview": "Akan ditempatkan di: {{destination}}/{{name}}",
+    "source_unchanged": "Archive atau folder sumber tidak akan diubah"
+  },
+  "match_methods": {
+    "canonical_identity": "Identitas canonical cocok",
+    "exact_name": "Nama cocok persis",
+    "exact_alias": "Alias cocok persis",
+    "name_substring": "Substring nama cocok",
+    "alias_substring": "Substring alias cocok",
+    "token_substring": "Token nama cocok",
+    "fuzzy_name": "Kemiripan nama fuzzy",
+    "no_name_match": "Tidak ada kemiripan nama yang berarti"
+  },
+  "match_tooltip": {
+    "manual": "Dipilih secara manual",
+    "category_warning": "Tipe tujuan berbeda dari tipe sumber yang terdeteksi",
+    "score": "Skor kecocokan"
+  },
+  "evidence_sources": {
+    "deep_matcher": "Analisis konten",
+    "manual": "Tujuan manual",
+    "other": "Sinyal kecocokan"
+  },
+  "evidence_messages": {
+    "hash_overlap": "{{overlap}} hash sama ({{unique}} unik)",
+    "alias": "Alias '{{value}}' cocok persis",
+    "name": "Nama memuat '{{value}}'",
+    "similarity": "Kemiripan nama {{percent}}%",
+    "deep_name": "'{{value}}' ditemukan pada nama file atau folder",
+    "ini_section": "'{{value}}' ditemukan pada bagian INI",
+    "ini_content": "'{{value}}' ditemukan pada isi INI",
+    "ai_score": "Relevansi AI {{percent}}%",
+    "conflict": "{{count}} sinyal kuat bertentangan",
+    "substring": "'{{value}}' ditemukan di {{source}}",
+    "folder_name": "Nama folder memuat '{{value}}'",
+    "fuzzy_name": "Nama folder menyerupai '{{value}}' ({{percent}}%)",
+    "manual_selected": "'{{name}}' dipilih secara manual"
+  },
   "result_summary": "Dipindah {{moved}}, dialokasikan ulang {{reallocated}}, dibuat {{created}}, dilewati {{skipped}}, bentrok {{collisions}}, metadata tertunda {{pending}}, gagal {{failed}}.",
   "errors": {
+    "archive": {
+      "dictionary_too_large": "Arsip ini memakai dictionary kompresi yang terlalu besar untuk diekstrak dengan aman. Kompres ulang dengan pengaturan standar, atau ekstrak manual lalu import foldernya.",
+      "unsupported_compression": "Arsip ini memakai pengaturan kompresi yang tidak didukung. Kompres ulang sebagai ZIP, 7Z, atau RAR standar, atau ekstrak manual lalu import foldernya."
+    },
     "launch": "Wizard Pencocokan tidak dapat dibuka: {{error}}",
     "update": "Item tidak dapat diperbarui: {{error}}",
-    "commit": "Batch tidak dapat di-commit: {{error}}"
+    "commit": "Batch tidak dapat di-commit: {{error}}",
+    "metadata_pending": "File sudah ditempatkan. Lanjutkan import untuk menyelesaikan metadata."
   }
 }

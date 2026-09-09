@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { ArrowLeft, Trash2, AlertTriangle, Plus, Check } from 'lucide-react';
-import { getGameTypeKey as getGameKey, type GameConfig } from '@/entities/game/model/game';
+import { getGameTypeKey as getGameKey, type GameConfig } from '@/entities/game';
 
 interface AutoDetectResultProps {
   games: GameConfig[];

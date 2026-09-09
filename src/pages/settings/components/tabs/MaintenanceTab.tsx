@@ -4,8 +4,8 @@ import { Wrench, Eraser, RotateCcw, HardDrive } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../hooks/useSettings';
 import { commands } from '../../../../shared/api/tauri/bindings';
-import { useToastStore } from '../../../../app/store/useToastStore';
-import { useAppStore } from '../../../../app/store/useAppStore';
+import { useToastStore } from '@/shared/ui/toast';
+import { useAppStore } from '@/app/store';
 
 export default function MaintenanceTab() {
   const { t } = useTranslation(['settings', 'common', 'layout']);

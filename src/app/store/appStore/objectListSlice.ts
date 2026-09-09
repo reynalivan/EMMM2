@@ -1,4 +1,4 @@
-import { areObjectMetaFiltersEqual } from '@/widgets/object-sidebar/utils/objectFilterState';
+import { areObjectMetaFiltersEqual } from '@/entities/game-object';
 import type { AppSliceCreator } from './sliceTypes';
 
 export interface ObjectListSlice {

@@ -1,10 +1,7 @@
 import { render, screen, fireEvent } from '../../../tests/testing/test-utils';
 import FolderCard from './FolderCard';
 import { beforeEach, vi, describe, it, expect } from 'vitest';
-import type {
-  WorkspaceCapabilities,
-  WorkspaceExplorerNode,
-} from '@/entities/workspace/model/workspace';
+import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '@/entities/workspace';
 
 // Mock dependencies
 vi.mock('@tauri-apps/api/core', () => ({

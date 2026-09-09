@@ -2,15 +2,12 @@ import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { runObjectBatchMutation } from '@/widgets/object-sidebar/hooks/objectQueryCache';
-import {
-  useDeleteObject,
-  useUpdateObject,
-} from '@/widgets/object-sidebar/hooks/useObjectMutations';
-import { toast } from '../../../app/store/useToastStore';
-import type { GameSchema } from '@/entities/game-object/model/object';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import { useActiveGame } from '@/entities/game';
+import { runObjectBatchMutation } from './objectMutationCache';
+import { useDeleteObject, useUpdateObject } from './useObjectMutations';
+import { toast } from '@/shared/ui/toast';
+import type { GameSchema } from '@/entities/game-object';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { applyObjectCategoryAndRefresh, revealObjectInExplorer } from './sharedObjectActionOps';
 import {
   buildSharedObjectActionState,
@@ -21,7 +18,7 @@ import {
   sharedObjectActionsReducer,
 } from './sharedObjectActionsState';
 import { useSharedObjectSyncActions } from './useSharedObjectSyncActions';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '../optimistic/descriptorBuilders';
 import {
   dispatchWorkspaceRuntimeEvent,

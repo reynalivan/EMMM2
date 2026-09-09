@@ -1,5 +1,5 @@
-use crate::shared::errors::AppError;
 use crate::modules::games::application::game::schema_loader;
+use crate::shared::errors::AppError;
 use tauri::Manager;
 
 /// The bundled-resources directory, or a typed error.
@@ -36,8 +36,13 @@ pub async fn get_game_schema(
 pub async fn get_object(
     pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
-) -> Result<Option<crate::modules::workspace::application::scanner::core::types::GameObject>, AppError> {
-    let row = crate::modules::catalog::application::objects::query::get_object_by_id_service(&pool, &id).await?;
+) -> Result<
+    Option<crate::modules::workspace::application::scanner::core::types::GameObject>,
+    AppError,
+> {
+    let row =
+        crate::modules::catalog::application::objects::query::get_object_by_id_service(&pool, &id)
+            .await?;
     Ok(row)
 }
 
@@ -47,12 +52,17 @@ pub async fn get_object(
 /// When hash_db is present in source, merges hashes into matching entries.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_master_db(app: tauri::AppHandle, game_type: i32) -> Result<Vec<crate::modules::matching::application::deep_matcher::DbEntry>, AppError> {
+pub async fn get_master_db(
+    app: tauri::AppHandle,
+    game_type: i32,
+) -> Result<Vec<crate::modules::matching::application::deep_matcher::DbEntry>, AppError> {
     let resource_dir = resource_dir(&app)?;
-    Ok(crate::modules::workspace::application::scanner::master_db::load_master_db_entries(
-        &resource_dir,
-        game_type,
-    )?)
+    Ok(
+        crate::modules::workspace::application::scanner::master_db::load_master_db_entries(
+            &resource_dir,
+            game_type,
+        )?,
+    )
 }
 
 /// Pin or unpin an object in the database.
@@ -63,7 +73,8 @@ pub async fn pin_object(
     id: String,
     pin: bool,
 ) -> Result<(), AppError> {
-    crate::modules::catalog::application::objects::mutate::toggle_pin_object(pool.inner(), &id, pin).await
+    crate::modules::catalog::application::objects::mutate::toggle_pin_object(pool.inner(), &id, pin)
+        .await
 }
 
 /// Search Master DB from Rust to offload fuzzy matching from the JS thread.
@@ -75,8 +86,14 @@ pub async fn search_master_db(
     game_type: i32,
     query: String,
     object_type: Option<String>,
-) -> Result<Vec<crate::modules::workspace::application::scanner::master_db::SearchResultEntry>, AppError> {
-    let Some(db) = crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type).await? else {
+) -> Result<
+    Vec<crate::modules::workspace::application::scanner::master_db::SearchResultEntry>,
+    AppError,
+> {
+    let Some(db) =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+    else {
         return Ok(Vec::new());
     };
 

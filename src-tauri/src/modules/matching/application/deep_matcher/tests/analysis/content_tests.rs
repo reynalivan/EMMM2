@@ -255,8 +255,8 @@ fn test_stacked_section_prefixes_are_all_stripped() {
     );
 }
 
-use crate::modules::workspace::application::scanner::core::walker;
 use crate::modules::matching::application::deep_matcher::MatchMode;
+use crate::modules::workspace::application::scanner::core::walker;
 
 fn write_ini(path: &std::path::Path, hash: &str, section_token: &str, path_token: &str) {
     let text = format!(
@@ -353,8 +353,10 @@ path = mods\Ayaka\head.dds
 "#;
 
     let defaults = IniTokenizationConfig::default().prepare();
-    let schema =
-        crate::modules::games::application::game::schema_loader::load_schema(std::path::Path::new("resources"), 0);
+    let schema = crate::modules::games::application::game::schema_loader::load_schema(
+        std::path::Path::new("resources"),
+        0,
+    );
     let gimi = IniTokenizationConfig {
         stopwords: schema.stopwords.clone(),
         short_token_whitelist: schema.short_token_whitelist.clone(),

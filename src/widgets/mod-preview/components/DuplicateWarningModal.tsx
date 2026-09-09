@@ -7,7 +7,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { AlertTriangle, Zap, ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { DuplicateInfo } from '@/entities/workspace/model/scanner';
+import type { DuplicateInfo } from '@/entities/workspace';
 
 interface DuplicateWarningModalProps {
   open: boolean;

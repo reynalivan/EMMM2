@@ -8,8 +8,8 @@ use std::path::Path;
 
 use tauri::Manager;
 
-use crate::modules::settings::application::config::ConfigService;
 use crate::modules::automation::application::keyviewer::generator::StatusFields;
+use crate::modules::settings::application::config::ConfigService;
 
 use super::actions::{self, CycleDirection};
 use super::HotkeyConfig;
@@ -30,10 +30,13 @@ pub(super) async fn execute_cycle_preset(
 ) -> Result<String, AppError> {
     let config_state = require::<ConfigService>(app, "ConfigService")?;
     let pool_state = require::<sqlx::SqlitePool>(app, "SqlitePool")?;
-    let watcher_state =
-        require::<crate::modules::workspace::application::scanner::watcher::WatcherState>(app, "WatcherState")?;
-    let op_lock =
-        require::<crate::platform::fs::operation_lock::OperationLock>(app, "OperationLock")?;
+    let watcher_state = require::<
+        crate::modules::workspace::application::scanner::watcher::WatcherState,
+    >(app, "WatcherState")?;
+    let op_lock = require::<crate::modules::mutation::coordinator::MutationCoordinator>(
+        app,
+        "MutationCoordinator",
+    )?;
 
     let settings = config_state.get_settings();
     let game = settings
@@ -41,8 +44,11 @@ pub(super) async fn execute_cycle_preset(
         .ok_or_else(|| AppError::Internal("No active game selected".to_string()))?;
     let game_id = game.id.as_str();
 
-    let collections =
-        crate::modules::collections::application::collection::list_collections(pool_state.inner(), game_id).await?;
+    let collections = crate::modules::collections::application::collection::list_collections(
+        pool_state.inner(),
+        game_id,
+    )
+    .await?;
 
     if collections.is_empty() {
         let status = StatusFields {
@@ -86,7 +92,7 @@ pub(super) async fn execute_cycle_preset(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >(app, "DiskReconcileState")?;
     let mutation_lease = disk_reconcile
-        .acquire_mutation_lease(game_id, op_lock.inner())
+        .acquire_mutation_lease(game_id, op_lock.inner_lock())
         .await?;
 
     let apply_result = crate::modules::collections::application::collection::apply_collection(
@@ -135,12 +141,18 @@ async fn write_runtime_status(
     status: &StatusFields,
     hotkey_config: &HotkeyConfig,
 ) -> Result<(), AppError> {
-    let Some(mods_path) = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id).await? else {
+    let Some(mods_path) =
+        crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id).await?
+    else {
         return Ok(());
     };
 
     let status_dir = Path::new(&mods_path).join(".emmm_data").join("status");
-    crate::modules::automation::application::keyviewer::generator::write_status_file(&status_dir, status, hotkey_config)?;
+    crate::modules::automation::application::keyviewer::generator::write_status_file(
+        &status_dir,
+        status,
+        hotkey_config,
+    )?;
 
     Ok(())
 }

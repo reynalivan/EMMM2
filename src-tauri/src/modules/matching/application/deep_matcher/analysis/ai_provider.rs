@@ -1,24 +1,31 @@
-use crate::shared::errors::ScannerError;
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankProvider;
 use crate::modules::matching::application::deep_matcher::analysis::content::FolderSignals;
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
+use crate::platform::security::credential_store::CredentialStore;
+use crate::shared::errors::AppError;
+use crate::shared::errors::ScannerError;
 use reqwest::blocking::Client;
+use reqwest::header::{HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 pub struct HttpAiRerankProvider {
     client: Client,
-    api_key: String,
+    api_key: SecretString,
     base_url: String,
 }
 
 impl HttpAiRerankProvider {
-    pub fn new(api_key: String, base_url: Option<String>) -> Self {
-        Self {
+    pub fn from_credential_store(
+        credentials: &CredentialStore,
+        base_url: Option<String>,
+    ) -> Result<Option<Self>, AppError> {
+        Ok(credentials.get_ai_api_key()?.map(|api_key| Self {
             client: Client::new(),
             api_key,
             base_url: base_url
                 .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string()),
-        }
+        }))
     }
 }
 
@@ -118,11 +125,18 @@ impl AiRerankProvider for HttpAiRerankProvider {
             },
         };
 
+        let bearer = SecretString::from(format!("Bearer {}", self.api_key.expose_secret()));
+        let mut authorization = HeaderValue::from_bytes(bearer.expose_secret().as_bytes())
+            .map_err(|_| {
+                ScannerError::Validation("AI API key is not a valid HTTP header".to_string())
+            })?;
+        authorization.set_sensitive(true);
+
         let res = self
             .client
             .post(&self.base_url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
+            .header(AUTHORIZATION, authorization)
+            .header(CONTENT_TYPE, "application/json")
             .json(&payload)
             .send()?;
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const warningToast = vi.fn();
 
-vi.mock('../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     warning: (...args: unknown[]) => warningToast(...args),
   },
@@ -24,7 +24,7 @@ describe('notifyCommittedMutationSyncWarning', () => {
     });
 
     expect(warningToast).toHaveBeenCalledWith(
-      'Disk changes were applied, but runtime refresh is still pending: projection retry is pending',
+      'Disk changes were applied, but runtime refresh is still pending.',
       7000,
     );
   });

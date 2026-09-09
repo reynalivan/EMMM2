@@ -138,10 +138,12 @@ pub async fn get_game_object_by_id(
     pool: &SqlitePool,
     id: &str,
 ) -> Result<Option<crate::modules::games::domain::models::GameObject>, sqlx::Error> {
-    sqlx::query_as::<_, crate::modules::games::domain::models::GameObject>("SELECT * FROM objects WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, crate::modules::games::domain::models::GameObject>(
+        "SELECT * FROM objects WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn get_mod_count_for_object(pool: &SqlitePool, id: &str) -> Result<i64, sqlx::Error> {

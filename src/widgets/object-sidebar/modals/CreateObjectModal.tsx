@@ -13,10 +13,10 @@ import { useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGameSchema } from '../hooks/useObjectQueries';
 import { useCreateObject } from '../hooks/useObjectMutations';
-import type { JsonValue } from '@/entities/game-object/model/object';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { toast } from '../../../app/store/useToastStore';
-import { type FilterDef, ItemStatus } from '@/entities/game-object/model/object';
+import type { JsonValue } from '@/entities/game-object';
+import { useActiveGame } from '@/entities/game';
+import { toast } from '@/shared/ui/toast';
+import { type FilterDef, ItemStatus } from '@/entities/game-object';
 
 const createSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(255, 'Name is too long'),

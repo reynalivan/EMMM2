@@ -3,6 +3,7 @@ import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../su
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
 import { createObject, reconcile } from '../support/data.js';
+import type { AppSettings } from '../../src/shared/api/tauri/bindings.gen.js';
 
 /**
  * Fase 8 — Runtime periferal. Dashboard analytics, randomizer, error-surfacing,
@@ -55,7 +56,15 @@ describe('Fase 8 — Runtime Peripheral', () => {
   });
 
   it('TC-42-01: Hotkey config update and active keybindings are queryable', async () => {
-    await invokeInApp('update_hotkey_config', { config: {} });
+    const before = await invokeInApp<AppSettings>('get_settings');
+    if (!before.hotkeys) throw new Error('E2E settings did not include hotkey configuration');
+
+    // Do not claim OS-global shortcut ownership in E2E: another EMMM instance
+    // or a developer tool may already own the shipped default combinations.
+    await invokeInApp('save_settings', {
+      settings: { ...before, hotkeys: { ...before.hotkeys, enabled: false } },
+    });
+    await invokeInApp('update_hotkey_config');
     const bindings = await invokeInApp<unknown[]>('get_active_keybindings', { gameId });
     expect(Array.isArray(bindings)).toBe(true);
   });

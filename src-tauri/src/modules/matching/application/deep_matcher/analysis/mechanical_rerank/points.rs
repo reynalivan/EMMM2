@@ -1,9 +1,9 @@
 //! Points-based scoring for each candidate, plus penalty helpers.
 
-use crate::modules::workspace::domain::normalizer;
 use crate::modules::matching::application::deep_matcher::analysis::content::FolderSignals;
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
 use crate::modules::matching::application::deep_matcher::{Candidate, Reason};
+use crate::modules::workspace::domain::normalizer;
 
 use super::config::MechanicalRerankConfig;
 use super::penalties::{

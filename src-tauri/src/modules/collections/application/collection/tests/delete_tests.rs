@@ -1,6 +1,5 @@
 use super::*;
 
-
 #[tokio::test]
 async fn deleting_active_collection_clears_baseline_without_creating_a_draft() {
     let ctx = init_test_db().await;

@@ -15,9 +15,9 @@ import {
   ToggleRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { CategoryDef } from '@/entities/game-object/model/object';
-import type { WorkspaceCapabilities } from '@/entities/workspace/model/workspace';
-import type { WorkspaceObjectActionPolicy } from '@/features/workspace-runtime/actions/workspaceActionPolicy';
+import type { CategoryDef } from '@/entities/game-object';
+import type { WorkspaceCapabilities } from '@/entities/workspace';
+import type { WorkspaceObjectActionPolicy } from '@/features/workspace-runtime';
 
 export interface ContextMenuTarget {
   id: string;

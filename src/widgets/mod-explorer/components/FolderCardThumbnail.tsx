@@ -1,7 +1,7 @@
 import { AlertTriangle, Copy, Folder, Lock, PowerOff, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FolderTypeChipView } from '../utils/FolderTypeChip';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 
 interface FolderCardThumbnailProps {
   folder: WorkspaceExplorerNode;

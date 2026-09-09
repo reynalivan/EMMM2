@@ -1,9 +1,9 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useObjectListHandlers } from './useObjectListHandlers';
-import { useDeleteMod } from '@/widgets/mod-explorer/hooks/useFolderCoreMutations';
+import { useDeleteMod } from '@/features/mod-runtime';
 import { useDeleteObject, useUpdateObject } from './useObjectMutations';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
@@ -12,7 +12,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('../../folder-grid/hooks/useFolderCoreMutations', () => ({
+vi.mock('@/features/mod-runtime', () => ({
   useDeleteMod: vi.fn(),
 }));
 
@@ -21,16 +21,16 @@ vi.mock('./useObjectMutations', () => ({
   useUpdateObject: vi.fn(),
 }));
 
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(),
 }));
 
 const openObjectClassificationWizard = vi.fn();
-vi.mock('../../import-batches/classificationLauncher', () => ({
+vi.mock('@/features/import-batches/classificationLauncher', () => ({
   openObjectClassificationWizard: (...args: unknown[]) => openObjectClassificationWizard(...args),
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock('../../../app/store/useToastStore', () => ({
   },
 }));
 
-vi.mock('../../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: Object.assign(
     vi.fn(
       (

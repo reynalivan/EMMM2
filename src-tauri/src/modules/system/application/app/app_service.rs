@@ -3,8 +3,8 @@
 //! Provides `check_config_status` (DB check for fresh install vs configured)
 //! and `reset_database_service` (backup + full table clear).
 
-use crate::shared::errors::AppError;
 use crate::modules::games::domain::models::ConfigStatus;
+use crate::shared::errors::AppError;
 use std::path::Path;
 
 /// Determine whether the app has games configured.
@@ -55,5 +55,11 @@ pub async fn reset_database_service(
     }
 
     // Clear all data from the database (tables only, no file deletion)
-    Ok(crate::modules::system::adapters::sqlite::settings::reset_all_data_with_revision(pool, settings_revision).await?)
+    Ok(
+        crate::modules::system::adapters::sqlite::settings::reset_all_data_with_revision(
+            pool,
+            settings_revision,
+        )
+        .await?,
+    )
 }

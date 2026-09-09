@@ -1,16 +1,20 @@
 use std::path::Path;
 
-use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
-use crate::shared::errors::AppError;
 use crate::modules::games::domain::models::ItemStatus;
-use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id;
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::helpers::load_runtime_mod_metadata;
 use crate::modules::reconciliation::application::disk_reconcile::path_updates::push_path_update;
-use crate::modules::reconciliation::application::disk_reconcile::types::{DiskReconcilePathKind, DiskReconcilePathUpdate};
-use crate::modules::reconciliation::application::disk_reconcile::watcher_batch::{collect_rename_hints, WatcherRenameHints};
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcilePathKind, DiskReconcilePathUpdate,
+};
+use crate::modules::reconciliation::application::disk_reconcile::watcher_batch::{
+    collect_rename_hints, WatcherRenameHints,
+};
+use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id;
 use crate::modules::workspace::application::scanner::watcher::ModWatchEvent;
+use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
+use crate::shared::errors::AppError;
 
 async fn load_object_type(
     conn: &mut sqlx::SqliteConnection,
@@ -32,12 +36,14 @@ async fn load_existing_manual_safe(
     folder_path: &str,
     mods_path: &str,
 ) -> Result<Option<bool>, AppError> {
-    Ok(crate::modules::library::adapters::sqlite::mods::get_manual_is_safe_by_key(
-        conn,
-        game_id,
-        &crate::shared::path_key::folder_path_key(folder_path, Some(mods_path)),
+    Ok(
+        crate::modules::library::adapters::sqlite::mods::get_manual_is_safe_by_key(
+            conn,
+            game_id,
+            &crate::shared::path_key::folder_path_key(folder_path, Some(mods_path)),
+        )
+        .await?,
     )
-    .await?)
 }
 
 struct ModRenameHintsRequest<'a> {
@@ -56,17 +62,21 @@ async fn apply_mod_rename_hints(
     request: ModRenameHintsRequest<'_>,
 ) -> Result<(), AppError> {
     for (hint_from, hint_to) in &request.hints.mod_renames {
-        let exact_match = crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
-            &mut *conn,
-            hint_from,
-            request.game_id,
-        )
-        .await?;
+        let exact_match =
+            crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
+                &mut *conn,
+                hint_from,
+                request.game_id,
+            )
+            .await?;
         let rename_pairs = if exact_match.is_some() {
             vec![(hint_from.clone(), hint_to.clone())]
         } else {
-            let rows =
-                crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut *conn, request.game_id).await?;
+            let rows = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(
+                &mut *conn,
+                request.game_id,
+            )
+            .await?;
             rows.into_iter()
                 .filter_map(|row| {
                     let suffix = crate::shared::path_key::strip_path_prefix_preserve_display(
@@ -88,12 +98,13 @@ async fn apply_mod_rename_hints(
         };
 
         for (old_relative, new_relative) in rename_pairs {
-            let mod_exists = crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
-                &mut *conn,
-                &old_relative,
-                request.game_id,
-            )
-            .await?;
+            let mod_exists =
+                crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
+                    &mut *conn,
+                    &old_relative,
+                    request.game_id,
+                )
+                .await?;
             let Some((old_id, _object_id, _status)) = mod_exists else {
                 continue;
             };
@@ -110,23 +121,24 @@ async fn apply_mod_rename_hints(
                 .unwrap_or_default();
             let object_name = normalize_display_name(&object_folder);
             let mut new_objects_count = 0usize;
-            let object_id = crate::modules::catalog::application::objects::reconcile::ensure_object_exists(
-                &mut *conn,
-                crate::modules::catalog::domain::objects::EnsureObjectInput {
-                    game_id: request.game_id,
-                    folder_path: &object_folder,
-                    obj_name: &object_name,
-                    obj_type: "Other",
-                    source: crate::modules::catalog::domain::objects::MatchSource::Disk,
-                    db_thumbnail: None,
-                    db_tags_json: "[]",
-                    db_metadata_json: "{}",
-                    db_hash_db_json: None,
-                    db_custom_skins_json: None,
-                },
-                &mut new_objects_count,
-            )
-            .await?;
+            let object_id =
+                crate::modules::catalog::application::objects::reconcile::ensure_object_exists(
+                    &mut *conn,
+                    crate::modules::catalog::domain::objects::EnsureObjectInput {
+                        game_id: request.game_id,
+                        folder_path: &object_folder,
+                        obj_name: &object_name,
+                        obj_type: "Other",
+                        source: crate::modules::catalog::domain::objects::MatchSource::Disk,
+                        db_thumbnail: None,
+                        db_tags_json: "[]",
+                        db_metadata_json: "{}",
+                        db_hash_db_json: None,
+                        db_custom_skins_json: None,
+                    },
+                    &mut new_objects_count,
+                )
+                .await?;
             let object_type = load_object_type(&mut *conn, &object_id).await?;
             let existing_manual_safe = load_existing_manual_safe(
                 &mut *conn,
@@ -143,7 +155,8 @@ async fn apply_mod_rename_hints(
             );
             let new_id = generate_stable_id(request.game_id, &new_relative);
 
-            crate::modules::library::adapters::sqlite::mods::defer_foreign_keys_tx(&mut *conn).await?;
+            crate::modules::library::adapters::sqlite::mods::defer_foreign_keys_tx(&mut *conn)
+                .await?;
 
             crate::modules::library::adapters::sqlite::mods::update_mod_identity_tx(
                 &mut *conn,
@@ -227,10 +240,11 @@ async fn apply_object_rename_hints(
         )
         .await?;
 
-        let impact = crate::modules::collections::application::collection::handle_object_renamed_tx(
-            &mut *conn, game_id, old_folder, new_folder,
-        )
-        .await?;
+        let impact =
+            crate::modules::collections::application::collection::handle_object_renamed_tx(
+                &mut *conn, game_id, old_folder, new_folder,
+            )
+            .await?;
         collection_reference_impact.merge(impact);
 
         push_path_update(

@@ -6,27 +6,27 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
-import { toast } from '../../../app/store/useToastStore';
-import { thumbnailKeys } from '@/pages/dashboard/hooks/useThumbnail';
-import { publishRuntimeDescriptor } from '../../runtime-sync/queryRefresh';
-import { applyRuntimeEffects } from '../../workspace-runtime/optimistic/applyOptimisticEffects';
+import { toast } from '@/shared/ui/toast';
+import { thumbnailKeys } from '@/entities/mod';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
+import { applyRuntimeEffects } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
-} from '../../workspace-runtime/optimistic/descriptorBuilders';
-import type { ModInfoUpdate } from '@/entities/game-object/model/object';
+} from '@/features/workspace-runtime/@x/mod-runtime';
+import type { ModInfoUpdate } from '@/entities/game-object';
 import { formatAppError } from '../../../shared/lib/appError';
-import { openFileInUseRetryDialog } from '../../../shared/lib/hooks/fileInUseRetry';
+import { openFileInUseRetryDialog } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   collectionReferenceImpactRefreshEvents,
   notifyCollectionReferenceImpact,
-} from '@/pages/collections/hooks/collectionReferenceImpact';
+} from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   formatBulkFailureMessage,
   formatBulkSuccessMessage,
 } from '../../../shared/lib/hooks/bulkToastMessages';
-import { resolveTogglePathRewrites } from '@/widgets/mod-explorer/hooks/folderMutationPayloads';
+import { resolveTogglePathRewrites } from '../utils/folderMutationPayloads';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 
 /** Hook to bulk toggle mods. */

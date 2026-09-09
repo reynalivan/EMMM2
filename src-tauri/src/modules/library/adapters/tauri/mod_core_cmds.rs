@@ -1,9 +1,9 @@
-use crate::shared::errors::AppError;
+use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::settings::application::config::ConfigService;
-use crate::platform::fs::guard::validate_path;
-use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
-use std::path::Path;
+use crate::platform::fs::guard::validate_path;
+use crate::shared::errors::AppError;
+use std::path::{Component, Path, PathBuf};
 use tauri::State;
 
 // Re-export from services layer for backward compat (tests use `super::*`)
@@ -38,6 +38,65 @@ pub async fn open_in_explorer(
 
 #[specta::specta]
 #[tauri::command]
+pub async fn open_ini_in_editor(
+    app: tauri::AppHandle,
+    config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    game_id: String,
+    folder_path: String,
+    file_name: String,
+) -> Result<(), AppError> {
+    let canonical_folder = validate_path(&config, &game_id, &folder_path)?;
+    let canonical_ini = resolve_ini_editor_path(&canonical_folder, &file_name)?;
+    ensure_path_can_be_opened(&app, pool.inner(), &game_id, &canonical_ini).await?;
+    crate::platform::process::open_path(&canonical_ini)
+}
+
+fn resolve_ini_editor_path(folder: &Path, file_name: &str) -> Result<PathBuf, AppError> {
+    if file_name.is_empty() || file_name.contains(['/', '\\']) {
+        return Err(AppError::Validation(
+            "INI file name must be a single path component".to_string(),
+        ));
+    }
+
+    let mut components = Path::new(file_name).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(AppError::Validation(
+            "INI file name must be a single path component".to_string(),
+        ));
+    }
+    if !Path::new(file_name)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"))
+    {
+        return Err(AppError::Validation(
+            "Only .ini files can be opened from the INI editor".to_string(),
+        ));
+    }
+
+    let canonical_folder = folder.canonicalize()?;
+    let canonical_ini = canonical_folder.join(file_name).canonicalize()?;
+    if !canonical_ini.is_file() {
+        return Err(AppError::Validation(format!(
+            "INI editor target is not a file: {}",
+            canonical_ini.display()
+        )));
+    }
+
+    let folder_key = crate::shared::path_key::canonical_path_key_for_path(&canonical_folder);
+    let ini_key = crate::shared::path_key::canonical_path_key_for_path(&canonical_ini);
+    let child_prefix = format!("{folder_key}/");
+    if !ini_key.starts_with(&child_prefix) {
+        return Err(AppError::Security(
+            "INI editor target escaped the selected mod folder".to_string(),
+        ));
+    }
+
+    Ok(canonical_ini)
+}
+
+#[specta::specta]
+#[tauri::command]
 pub async fn reveal_object_in_explorer(
     app: tauri::AppHandle,
     config: State<'_, ConfigService>,
@@ -46,9 +105,10 @@ pub async fn reveal_object_in_explorer(
     object_id: String,
     object_name: String,
 ) -> Result<String, AppError> {
-    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool.inner(), &game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
+    let mods_path =
+        crate::modules::games::adapters::sqlite::game::get_mod_path(pool.inner(), &game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
 
     if let Some(path_str) =
         resolve_and_heal_db_path(pool.inner(), &object_id, Path::new(&mods_path)).await
@@ -70,7 +130,10 @@ async fn ensure_path_can_be_opened(
     game_id: &str,
     path: &Path,
 ) -> Result<(), AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_open_path_preflight(app, game_id, path).await
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_open_path_preflight(
+        app, game_id, path,
+    )
+    .await
 }
 
 async fn resolve_and_heal_db_path(
@@ -128,7 +191,11 @@ pub async fn rename_mod_folder(
     config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: State<'_, WatcherState>,
-    op_lock: State<'_, OperationLock>,
+    disk_reconcile_state: State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+    op_lock: State<'_, MutationCoordinator>,
     folder_path: String,
     new_name: String,
     game_id: String,
@@ -142,36 +209,64 @@ pub async fn rename_mod_folder(
         Some(&preflight_paths),
     )
     .await?;
-    let op_guard = op_lock.acquire().await?;
-    let mut result = crate::modules::library::application::mods::core_ops::rename_mod_folder_inner_service(
-        &config,
-        pool.inner(),
-        &state,
-        &op_guard,
-        &folder,
-        new_name.clone(),
-        &game_id,
-    )
-    .await?;
-    drop(op_guard);
+    let source_name = folder
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AppError::Validation("Mod folder has no valid UTF-8 name".to_string()))?;
+    let target_name =
+        standardize_prefix(&new_name, !source_name.starts_with(crate::DISABLED_PREFIX));
+    let target = folder.with_file_name(target_name);
+    let game_guard = disk_reconcile_state.game_lock(&game_id).lock_owned().await;
+    let operation_guard = op_lock
+        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
+            "rename-mod-folder",
+            game_id.clone(),
+            vec![crate::modules::mutation::api::PlannedStep::rename(
+                0,
+                folder.to_path_buf(),
+                target.clone(),
+            )],
+        ))
+        .await?;
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+        game_guard,
+        operation_guard,
+    );
+    let mut result =
+        crate::modules::library::application::mods::core_ops::rename_mod_folder_inner_service(
+            &config,
+            pool.inner(),
+            &state,
+            mutation_lease.operation_guard(),
+            &folder,
+            new_name.clone(),
+            &game_id,
+        )
+        .await?;
+    mutation_lease.mark_step_applied(0)?;
 
-    // Convergence: scoped disk reconcile guarantees DB matches disk even if a
-    // manual sync step missed a case.
-    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
-        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile(
+    let reconcile =
+        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile_with_path_hints_under_lease(
             &app,
             pool.inner(),
             &game_id,
             vec![result.old_path.clone(), result.new_path.clone()],
+            Vec::new(),
+            &mutation_lease,
         )
-        .await,
-    );
-    if let Some(reconcile) = settlement.reconcile {
-        result
-            .collection_impact
-            .merge(reconcile.collection_reference_impact);
+        .await?;
+    if !reconcile.status.applied() {
+        return Err(AppError::Io(format!(
+            "Rename reconcile requires attention: {:?}",
+            reconcile.status
+        )));
     }
-    result.sync_warning = settlement.sync_warning;
+    result
+        .collection_impact
+        .merge(reconcile.collection_reference_impact);
+    mutation_lease.mark_db_committed()?;
+    mutation_lease.commit()?;
+    result.sync_warning = None;
 
     Ok(result)
 }

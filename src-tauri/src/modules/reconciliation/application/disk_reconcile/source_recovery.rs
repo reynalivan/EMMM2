@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::shared::errors::AppError;
-use crate::modules::library::adapters::sqlite::mods::ReconcileModRow;
 use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow;
-use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{collect_disk_projection, DiskProjection};
+use crate::modules::library::adapters::sqlite::mods::ReconcileModRow;
+use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
+    collect_disk_projection, DiskProjection,
+};
+use crate::shared::errors::AppError;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub enum GameModsDirectoryClassification {
@@ -51,7 +53,8 @@ pub struct ApplyGameModsDirectoryRequest {
 pub struct ApplyGameModsDirectoryResult {
     pub game: crate::modules::settings::application::config::GameConfig,
     pub inspection: GameModsDirectoryInspection,
-    pub reconcile: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    pub reconcile:
+        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
 }
 
 fn identity_set<'a>(values: impl Iterator<Item = Option<&'a str>>) -> HashSet<&'a str> {
@@ -216,8 +219,13 @@ pub async fn inspect_game_mods_directory(
 
     let mut conn = pool.acquire().await?;
     let existing_objects =
-        crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(&mut conn, game_id).await?;
-    let existing_mods = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut conn, game_id).await?;
+        crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(
+            &mut conn, game_id,
+        )
+        .await?;
+    let existing_mods =
+        crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut conn, game_id)
+            .await?;
     let summary = classify_candidate(
         &existing_objects,
         &existing_mods,
@@ -373,9 +381,9 @@ fn rollback_game_mods_directory(
 
 #[cfg(test)]
 mod tests {
+    use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow;
     use crate::modules::games::domain::models::ItemStatus;
     use crate::modules::library::adapters::sqlite::mods::ReconcileModRow;
-    use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow;
     use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
         DiskModEntry, DiskObjectEntry, DiskProjection,
     };
@@ -672,7 +680,9 @@ mod tests {
         )
         .await
         .expect("game should be inserted");
-        let config = crate::modules::settings::application::config::ConfigService::new_for_test(context.pool.clone());
+        let config = crate::modules::settings::application::config::ConfigService::new_for_test(
+            context.pool.clone(),
+        );
         let inspection = inspect_game_mods_directory(&context.pool, "game-1", candidate.path())
             .await
             .expect("candidate should inspect");
@@ -741,7 +751,9 @@ mod tests {
         )
         .await
         .expect("game should be inserted");
-        let config = crate::modules::settings::application::config::ConfigService::new_for_test(context.pool.clone());
+        let config = crate::modules::settings::application::config::ConfigService::new_for_test(
+            context.pool.clone(),
+        );
         let state = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new();
         let operation_lock = crate::platform::fs::operation_lock::OperationLock::new();
         let inspection = inspect_game_mods_directory(&context.pool, "game-1", candidate.path())
@@ -820,7 +832,9 @@ mod tests {
         )
         .await
         .expect("game should be inserted");
-        let config = crate::modules::settings::application::config::ConfigService::new_for_test(context.pool.clone());
+        let config = crate::modules::settings::application::config::ConfigService::new_for_test(
+            context.pool.clone(),
+        );
         let inspection = inspect_game_mods_directory(&context.pool, "game-1", candidate.path())
             .await
             .expect("candidate should inspect");

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '../../../tests/testing/test-utils';
 import { CollectionTreeView } from './CollectionTreeView';
-import type { PreviewTreeNode } from '@/entities/collection/model/collection';
+import type { PreviewTreeNode } from '@/entities/collection';
 
 function createTree(): PreviewTreeNode[] {
   return [

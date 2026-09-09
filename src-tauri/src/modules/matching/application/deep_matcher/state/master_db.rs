@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-use crate::modules::workspace::domain::normalizer;
-use crate::shared::errors::ScannerError;
 use crate::modules::matching::application::deep_matcher::analysis::indexes::MatcherIndexes;
 use crate::modules::matching::application::deep_matcher::models::types::DbEntry;
+use crate::modules::workspace::domain::normalizer;
+use crate::shared::errors::ScannerError;
 
 /// The Master DB containing all known objects for matching.
 #[derive(Debug, Clone)]
@@ -44,7 +44,7 @@ impl MasterDb {
     /// When hash_db is present, merges hashes into matching entries by name.
     pub fn from_json(json: &str) -> Result<Self, ScannerError> {
         let value: serde_json::Value = serde_json::from_str(json)?;
-        
+
         let (mut entries, hash_db) = match value {
             serde_json::Value::Object(ref map) if map.contains_key("entries") => {
                 let entries: Vec<DbEntry> = serde_json::from_value(map["entries"].clone())?;

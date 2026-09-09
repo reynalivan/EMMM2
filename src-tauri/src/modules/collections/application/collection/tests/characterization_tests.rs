@@ -271,10 +271,9 @@ async fn active_pointer_failure_keeps_the_apply_task_pending_for_recovery() {
     seed_game(&ctx.pool, "game-finalize-gap", Some(&mods_path)).await;
 
     for (id, name) in [("baseline", "Baseline"), ("target", "Target")] {
-        let collection =
-            collection::create(&ctx.pool, id, "game-finalize-gap", name, true, false)
-                .await
-                .expect("create collection");
+        let collection = collection::create(&ctx.pool, id, "game-finalize-gap", name, true, false)
+            .await
+            .expect("create collection");
         persist_projected_state(
             &ctx.pool,
             &collection.id,
@@ -317,9 +316,10 @@ async fn active_pointer_failure_keeps_the_apply_task_pending_for_recovery() {
     .await
     .expect_err("injected active pointer write must fail");
 
-    let tasks = crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&ctx.pool)
-        .await
-        .expect("load pending recovery tasks");
+    let tasks =
+        crate::modules::workspace::adapters::sqlite::task::get_all_pending_tasks_global(&ctx.pool)
+            .await
+            .expect("load pending recovery tasks");
     let task = tasks
         .iter()
         .find(|task| {
@@ -556,10 +556,13 @@ async fn assert_replace_failure_is_atomic(failpoint: ReplaceFailpoint) {
         .into_iter()
         .map(|member| member.mod_path)
         .collect();
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-replace-atomic")
-        .await
-        .expect("reload runtime state")
-        .expect("runtime state exists");
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(
+        &ctx.pool,
+        "game-replace-atomic",
+    )
+    .await
+    .expect("reload runtime state")
+    .expect("runtime state exists");
     let draft_exists = collection::get_by_id(&ctx.pool, "replace-draft")
         .await
         .expect("reload draft")

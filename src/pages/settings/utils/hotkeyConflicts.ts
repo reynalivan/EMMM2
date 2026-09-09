@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { HotkeyConfig } from '@/pages/settings/model/settings';
+import type { HotkeyConfig } from '@/entities/settings';
 
 export interface ReservedBinding {
   label: string;

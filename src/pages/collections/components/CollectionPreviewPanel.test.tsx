@@ -1,6 +1,6 @@
 import { render, screen } from '../../../tests/testing/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CollectionPreview } from '@/entities/collection/model/collection';
+import type { CollectionPreview } from '@/entities/collection';
 import { CollectionPreviewPanel } from './CollectionPreviewPanel';
 
 const mockUseCollectionPreview = vi.fn();

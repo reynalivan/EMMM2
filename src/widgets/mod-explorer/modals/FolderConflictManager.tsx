@@ -1,22 +1,22 @@
-import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatAppError } from '../../../shared/lib/appError';
 import { commands, type FolderNameConflictCandidate } from '../../../shared/api/tauri/bindings';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { toast } from '../../../app/store/useToastStore';
-import { closeWorkspaceDialog } from '@/features/workspace-runtime/state/workspaceDialogs';
-import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime/state/workspaceStoreBridge';
+import { useAppStore } from '@/app/store';
+import { toast } from '@/shared/ui/toast';
+import { closeWorkspaceDialog } from '@/features/workspace-runtime';
+import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime';
 import { validateFolderConflictDrafts } from './folderConflictValidation';
 import {
   createFolderConflictDraftState,
   reconcileFolderConflictDraftState,
+  type FolderConflictCandidateAction,
   type FolderConflictDraftState,
 } from './folderConflictDrafts';
 import FolderConflictCandidateCard from './FolderConflictCandidateCard';
 import FolderConflictCompletion from './FolderConflictCompletion';
-import FolderConflictTrashDialog from './FolderConflictTrashDialog';
 import { useApplyFolderConflictActionResult } from './useApplyFolderConflictActionResult';
 import { useFolderConflictDetails } from './useFolderConflictDetails';
 import {
@@ -39,19 +39,19 @@ export default function FolderConflictManager() {
   const [completedGroups, setCompletedGroups] = useState<CompletedFolderConflict[]>([]);
   const previousGroupsRef = useRef(groups);
   const queueGameIdRef = useRef(activeGameId);
+  const resolvedGroupIdRef = useRef<string | null>(null);
+  const [queueTotal, setQueueTotal] = useState(groups.length);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draftsRef = useRef(drafts);
   const [keepPath, setKeepPath] = useState<string | null>(null);
   const keepPathRef = useRef<string | null>(null);
+  const [actions, setActions] = useState<Record<string, FolderConflictCandidateAction>>({});
+  const actionsRef = useRef(actions);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const errorsRef = useRef(errors);
   const draftGroupKeyRef = useRef<string | null>(null);
   const draftStatesByGroupRef = useRef<Record<string, FolderConflictDraftState>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [confirmTrash, setConfirmTrash] = useState<{
-    candidate: FolderNameConflictCandidate;
-    returnFocus: HTMLElement;
-  } | null>(null);
 
   const isDialogOpen = dialogState.kind === 'folderConflicts';
   const selected = groups.find((group) => group.group_id === selectedId) ?? groups[0] ?? null;
@@ -74,13 +74,22 @@ export default function FolderConflictManager() {
     if (queueGameIdRef.current !== activeGameId) {
       queueGameIdRef.current = activeGameId;
       previousGroupsRef.current = groups;
+      resolvedGroupIdRef.current = null;
+      setQueueTotal(groups.length);
       setCompletedGroups([]);
       setSelectedId(groups[0]?.group_id ?? null);
       return;
     }
 
     const previous = previousGroupsRef.current;
-    setCompletedGroups((current) => reconcileFolderConflictQueue(previous, groups, current));
+    const resolvedGroupId = resolvedGroupIdRef.current;
+    setCompletedGroups((current) =>
+      reconcileFolderConflictQueue(previous, groups, current, resolvedGroupId),
+    );
+    resolvedGroupIdRef.current = null;
+    if (previous.length === 0 && groups.length > 0) {
+      setQueueTotal(groups.length);
+    }
     setSelectedId((current) => selectNextFolderConflictGroup(previous, groups, current));
     previousGroupsRef.current = groups;
 
@@ -91,16 +100,13 @@ export default function FolderConflictManager() {
 
   useEffect(() => {
     draftsRef.current = drafts;
+    actionsRef.current = actions;
     errorsRef.current = errors;
     const draftGroupKey = draftGroupKeyRef.current;
     if (draftGroupKey) {
-      draftStatesByGroupRef.current[draftGroupKey] = { drafts, keepPath, errors };
+      draftStatesByGroupRef.current[draftGroupKey] = { drafts, keepPath, errors, actions };
     }
-  }, [drafts, errors, keepPath]);
-
-  useEffect(() => {
-    setConfirmTrash(null);
-  }, [activeGameId]);
+  }, [actions, drafts, errors, keepPath]);
 
   useEffect(() => {
     if (!selected || !activeGameId) {
@@ -118,11 +124,14 @@ export default function FolderConflictManager() {
             cached.drafts,
             cached.keepPath,
             cached.errors,
+            undefined,
+            cached.actions,
           )
         : createFolderConflictDraftState(selected.candidates);
       keepPathRef.current = next.keepPath;
       setDrafts(next.drafts);
       setKeepPath(next.keepPath);
+      setActions(next.actions);
       setErrors(next.errors);
     } else {
       const next = reconcileFolderConflictDraftState(
@@ -130,39 +139,110 @@ export default function FolderConflictManager() {
         draftsRef.current,
         keepPathRef.current,
         errorsRef.current,
+        undefined,
+        actionsRef.current,
       );
       keepPathRef.current = next.keepPath;
       setDrafts(next.drafts);
       setKeepPath(next.keepPath);
+      setActions(next.actions);
       setErrors(next.errors);
     }
   }, [activeGameId, selected]);
 
+  const totalGroups = Math.max(queueTotal, completedGroups.length + groups.length);
   const progress = useMemo(
     () =>
       t('conflict_manager.queue_progress', {
         resolved: completedGroups.length,
         remaining: groups.length,
-        total: completedGroups.length + groups.length,
+        total: totalGroups,
       }),
-    [completedGroups.length, groups.length, t],
+    [completedGroups.length, groups.length, t, totalGroups],
   );
-  const totalGroups = completedGroups.length + groups.length;
   const progressValue = totalGroups === 0 ? 0 : (completedGroups.length / totalGroups) * 100;
-  const isComplete = groups.length === 0 && completedGroups.length > 0;
+  const isComplete =
+    groups.length === 0 && completedGroups.length > 0 && completedGroups.length >= totalGroups;
 
-  const resolveSelected = async () => {
-    if (!selected || !activeGameId) return;
-    const validationCodes = validateFolderConflictDrafts(selected.candidates, drafts);
-    const nextErrors = Object.fromEntries(
+  const buildValidationErrors = (
+    candidates: FolderNameConflictCandidate[],
+    currentDrafts: Record<string, string>,
+    currentKeepPath: string | null,
+  ) => {
+    const validationCodes = validateFolderConflictDrafts(
+      candidates,
+      currentDrafts,
+      currentKeepPath,
+    );
+    return Object.fromEntries(
       Object.entries(validationCodes).map(([path, code]) => [
         path,
         t(`conflict_manager.validation.${code}`),
       ]),
     );
+  };
+
+  const validateRenameDrafts = () => {
+    if (!selected) return;
+    const renamePlanCandidates = selected.candidates.filter(
+      (candidate) => candidate.path === keepPath || actions[candidate.path] !== 'trash',
+    );
+    setErrors(buildValidationErrors(renamePlanCandidates, drafts, keepPath));
+  };
+
+  const renameCandidates =
+    selected?.candidates.filter(
+      (candidate) => candidate.path !== keepPath && actions[candidate.path] !== 'trash',
+    ) ?? [];
+  const trashCandidates =
+    selected?.candidates.filter(
+      (candidate) => candidate.path !== keepPath && actions[candidate.path] === 'trash',
+    ) ?? [];
+  const actionCount = renameCandidates.length + trashCandidates.length;
+  const hasValidationErrors = Object.keys(errors).length > 0;
+  const actionButtonLabel =
+    actionCount === 0
+      ? t('conflict_manager.apply_no_changes')
+      : renameCandidates.length > 0 && trashCandidates.length > 0
+        ? t('conflict_manager.apply_mixed', { count: actionCount })
+        : renameCandidates.length > 0
+          ? t(
+              renameCandidates.length === 1
+                ? 'conflict_manager.apply_rename_one'
+                : 'conflict_manager.apply_rename_other',
+              { count: renameCandidates.length },
+            )
+          : t(
+              trashCandidates.length === 1
+                ? 'conflict_manager.apply_trash_one'
+                : 'conflict_manager.apply_trash_other',
+              { count: trashCandidates.length },
+            );
+  const hasNextGroup = groups.length > 1;
+
+  const applySelectedActions = async () => {
+    if (!selected || !activeGameId) return;
+    const selectedGroup = selected;
+    const selectedGameId = activeGameId;
+    const selectedKeepPath = keepPath;
+    const selectedDrafts = drafts;
+    const selectedActions = actions;
+    const renamePlanCandidates = selectedGroup.candidates.filter(
+      (candidate) =>
+        candidate.path === selectedKeepPath || selectedActions[candidate.path] !== 'trash',
+    );
+    const pendingTrashCandidates = selectedGroup.candidates.filter(
+      (candidate) =>
+        candidate.path !== selectedKeepPath && selectedActions[candidate.path] === 'trash',
+    );
+    const nextErrors = buildValidationErrors(
+      renamePlanCandidates,
+      selectedDrafts,
+      selectedKeepPath,
+    );
     setErrors(nextErrors);
-    const firstInvalid = selected.candidates.find(
-      (candidate) => candidate.path !== keepPath && nextErrors[candidate.path],
+    const firstInvalid = renamePlanCandidates.find(
+      (candidate) => candidate.path !== selectedKeepPath && nextErrors[candidate.path],
     );
     if (firstInvalid) {
       inputRefs.current[firstInvalid.path]?.focus();
@@ -171,39 +251,35 @@ export default function FolderConflictManager() {
 
     setSubmitting(true);
     try {
-      const result = await commands.resolveFolderNameConflict(
-        activeGameId,
-        selected.group_id,
-        selected.candidates.map((candidate) => ({
-          path: candidate.path,
-          base_name: drafts[candidate.path],
-        })),
-      );
-      if (applyConflictActionResult(result)) {
-        setErrors({});
+      for (const candidate of pendingTrashCandidates) {
+        const result = await commands.trashFolderConflictCandidate(selectedGameId, candidate.path);
+        notifyCommittedMutationSyncWarning(result);
+        if (
+          result.reconcile &&
+          applyConflictActionResult(result.reconcile, selectedGroup.group_id)
+        ) {
+          if (result.reconcile.status === 'Applied') {
+            resolvedGroupIdRef.current = selectedGroup.group_id;
+          }
+        }
       }
-    } catch (error) {
-      toast.error(t('conflict_manager.resolve_failed', { error: formatAppError(error) }));
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  const moveToTrash = async () => {
-    if (!confirmTrash || !activeGameId) return;
-    setSubmitting(true);
-    try {
-      const result = await commands.trashFolderConflictCandidate(
-        activeGameId,
-        confirmTrash.candidate.path,
-      );
-      setConfirmTrash(null);
-      notifyCommittedMutationSyncWarning(result);
-      if (result.reconcile) {
-        applyConflictActionResult(result.reconcile);
+      if (renamePlanCandidates.length > 1) {
+        const result = await commands.resolveFolderNameConflict(
+          selectedGameId,
+          selectedGroup.group_id,
+          renamePlanCandidates.map((candidate) => ({
+            path: candidate.path,
+            base_name: selectedDrafts[candidate.path],
+          })),
+        );
+        if (applyConflictActionResult(result, selectedGroup.group_id)) {
+          resolvedGroupIdRef.current = selectedGroup.group_id;
+        }
       }
+      setErrors({});
     } catch (error) {
-      toast.error(t('conflict_manager.trash_failed', { error: formatAppError(error) }));
+      toast.error(t('conflict_manager.apply_failed', { error: formatAppError(error) }));
     } finally {
       setSubmitting(false);
     }
@@ -227,7 +303,6 @@ export default function FolderConflictManager() {
             <h2 id="folder-conflict-manager-title" className="font-semibold text-base-content">
               {t('conflict_manager.title')}
             </h2>
-            <p className="text-sm text-base-content/60">{t('conflict_manager.description')}</p>
             <div className="mt-2 flex items-center gap-2">
               <progress
                 className="progress progress-success h-1.5 w-full max-w-56"
@@ -312,10 +387,10 @@ export default function FolderConflictManager() {
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="mb-4">
                   <p className="text-sm font-medium text-base-content/80">
-                    Select one folder to keep its current base name.
+                    {t('conflict_manager.keep_name_instruction')}
                   </p>
                   <p className="text-xs text-base-content/50">
-                    The remaining folders must be renamed or moved to trash.
+                    {t('conflict_manager.remaining_instruction')}
                   </p>
                 </div>
 
@@ -326,6 +401,7 @@ export default function FolderConflictManager() {
                       candidate={candidate}
                       detail={details[candidate.path]}
                       isKeep={candidate.path === keepPath}
+                      action={actions[candidate.path] ?? 'rename'}
                       value={drafts[candidate.path] ?? candidate.base_name}
                       error={errors[candidate.path]}
                       disabled={submitting}
@@ -333,40 +409,61 @@ export default function FolderConflictManager() {
                         inputRefs.current[candidate.path] = element;
                       }}
                       onKeep={() => {
-                        keepPathRef.current = candidate.path;
-                        setKeepPath(candidate.path);
-                        setDrafts((current) => ({
-                          ...current,
-                          [candidate.path]: candidate.base_name,
-                        }));
-                        setErrors({});
+                        const next = reconcileFolderConflictDraftState(
+                          selected.candidates,
+                          draftsRef.current,
+                          keepPathRef.current,
+                          errorsRef.current,
+                          candidate.path,
+                          actionsRef.current,
+                        );
+                        keepPathRef.current = next.keepPath;
+                        setKeepPath(next.keepPath);
+                        setDrafts(next.drafts);
+                        setActions(next.actions);
+                        setErrors(next.errors);
+                      }}
+                      onActionChange={(action) => {
+                        setActions((current) => ({ ...current, [candidate.path]: action }));
+                        if (action === 'trash') {
+                          setErrors((current) => {
+                            const next = { ...current };
+                            delete next[candidate.path];
+                            return next;
+                          });
+                        }
                       }}
                       onChange={(value) =>
                         setDrafts((current) => ({ ...current, [candidate.path]: value }))
                       }
-                      onTrash={(returnFocus) => setConfirmTrash({ candidate, returnFocus })}
+                      onBlur={validateRenameDrafts}
                     />
                   ))}
                 </div>
 
                 {!isComplete && (
                   <div className="mt-auto flex flex-col gap-3 border-t border-base-content/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-[11px] text-base-content/45">
-                        {t('conflict_manager.prefix_note')}
-                      </p>
-                    </div>
+                    <p className="text-xs text-base-content/50">
+                      {t('conflict_manager.action_summary', {
+                        renameCount: renameCandidates.length,
+                        trashCount: trashCandidates.length,
+                      })}
+                    </p>
                     <button
                       className="btn btn-warning btn-sm shrink-0"
-                      disabled={submitting || !selected}
-                      onClick={resolveSelected}
+                      disabled={submitting || !selected || actionCount === 0 || hasValidationErrors}
+                      onClick={applySelectedActions}
                     >
                       {submitting && (
                         <Loader2 size={15} className="animate-spin motion-reduce:animate-none" />
                       )}
-                      {t('conflict_manager.apply_renames', {
-                        count: Math.max(0, selected.candidates.length - 1),
-                      })}
+                      {actionButtonLabel}
+                      {hasNextGroup && (
+                        <span className="inline-flex items-center gap-1">
+                          <ArrowRight size={14} aria-hidden="true" />
+                          {t('conflict_manager.next')}
+                        </span>
+                      )}
                     </button>
                   </div>
                 )}
@@ -374,17 +471,6 @@ export default function FolderConflictManager() {
             )}
           </section>
         </div>
-
-        {confirmTrash && (
-          <FolderConflictTrashDialog
-            candidate={confirmTrash.candidate}
-            detail={details[confirmTrash.candidate.path]}
-            returnFocus={confirmTrash.returnFocus}
-            submitting={submitting}
-            onCancel={() => setConfirmTrash(null)}
-            onConfirm={moveToTrash}
-          />
-        )}
       </div>
       <form method="dialog" className="modal-backdrop bg-overlay-mask">
         <button>{t('conflict_manager.close')}</button>

@@ -1,6 +1,13 @@
 {
   "toolbar": {
-    "sort_title": "Sort by {{label}} {{order}}",
+    "sort_by": "Sort by",
+    "sort_label": "Sort mods",
+    "sort_name_asc": "Name (A–Z)",
+    "sort_name_desc": "Name (Z–A)",
+    "sort_date_asc": "Date (Oldest)",
+    "sort_date_desc": "Date (Newest)",
+    "sort_size_asc": "Size (Smallest)",
+    "sort_size_desc": "Size (Largest)",
     "search_placeholder": "Search mods...",
     "item_count_one": "{{count}} item",
     "item_count_other": "{{count}} items",
@@ -97,6 +104,8 @@
     "confirm": "Enable \"{{name}}\""
   },
   "context": {
+    "favorite": "Favorite",
+    "unfavorite": "Unfavorite",
     "select_all": "Select All",
     "open_explorer": "Open in Explorer",
     "rename": "Rename",
@@ -125,6 +134,7 @@
     "clear_selection": "Clear selection",
     "selected": "Selected",
     "toggle_status": "Toggle Status",
+    "more_actions": "More actions",
     "enable": "Enable",
     "disable": "Disable",
     "pin_title": "Pin to Object",

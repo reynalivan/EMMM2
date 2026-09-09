@@ -98,7 +98,7 @@ extract_archive_cmd(archive_path, mods_dir, password?) → ExtractionResult:
   2. Robust Detection: Magic Byte signature check (ZIP, 7z, RAR)
   3. Disk space check (uncompressed_size + 50MB buffer)
   4. **RAII Staging**: Initialize `TempDirGuard` for {mods_dir}/.temp_extract/{uuid}
-  5. Extract to temp via pure Rust crates (`zip`, `sevenz-rust`, `rar`)
+  5. Extract to temp through the secure `compress-tools` iterator adapter
   6. **Throttled Progress**: Emit per-file events with 250ms interval suppression
   7. On extraction error/abort → `TempDirGuard` auto-deletes temp folder on drop
   8. find_mod_roots(temp, max_depth=5):
@@ -141,7 +141,7 @@ extract_archive_cmd(archive_path, mods_dir, password?) → ExtractionResult:
 
 | Component          | Detail                                                                                                                    |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| Archive Libraries  | **Pure Rust**: `zip` crate, `sevenz-rust`, `rar` crate (No libarchive/C)                                                  |
+| Archive Libraries  | `compress-tools` + statically linked libarchive behind EMMM path/type/quota validation                                      |
 | Temp Dir           | `{mods_dir}/.temp_extract/{uuid}` — managed by RAII `TempDirGuard`                                                        |
 | Classify Module    | `services::mods::archive::classify` — `find_mod_roots`, `has_valid_mod_ini`, `collect_loose_files`, `resolve_unique_dest` |
 | Progress Feedback  | **Throttled**: Events suppressed to 250ms interval to prevent IPC bridge flooding                                         |

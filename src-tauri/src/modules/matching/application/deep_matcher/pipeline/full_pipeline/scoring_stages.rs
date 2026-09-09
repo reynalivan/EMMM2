@@ -2,13 +2,13 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::modules::workspace::domain::normalizer;
 use crate::modules::matching::application::deep_matcher::analysis::scoring::{
     apply_hash_contribution, apply_token_overlap_contribution,
 };
 use crate::modules::matching::application::deep_matcher::pipeline::stages::entry_tokens;
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
 use crate::modules::matching::application::deep_matcher::{Reason, ScoreState};
+use crate::modules::workspace::domain::normalizer;
 
 pub(super) fn apply_hash_stage(
     db: &MasterDb,

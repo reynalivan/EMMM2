@@ -1,7 +1,7 @@
 use super::toggle_object_root_service;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
-use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::operation_lock::OperationLock;
 use crate::test_utils::{insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture};
 
 #[tokio::test]

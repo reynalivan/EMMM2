@@ -1,7 +1,7 @@
 import { formatAppError } from '../../../shared/lib/appError';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from '../../../app/store/useToastStore';
+import { toast } from '@/shared/ui/toast';
 
 export interface MetadataDraftValues {
   actual_name: string;

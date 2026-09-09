@@ -3,7 +3,7 @@
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 
-use super::paths::{compute_download_path, get_downloads_root};
+use super::paths::get_downloads_root;
 use super::settings::{normalize_url, validate_http_url};
 use crate::shared::errors::BrowserError;
 
@@ -37,14 +37,10 @@ pub async fn open_child_webview(
 
     let downloads_root = get_downloads_root(&app, &db).await;
 
-    // Ensure BrowserDownloadsRoot exists
-    std::fs::create_dir_all(&downloads_root)?;
-
     // Clone values for use inside closures
     let session_id_dl = session_id.clone();
     let downloads_root_clone = downloads_root.clone();
-    let db_for_start = db.clone();
-    let app_for_finish = app.clone();
+    let app_for_confirmation = app.clone();
 
     // The main window must exist to attach a webview
     let window = app
@@ -149,7 +145,7 @@ pub async fn open_child_webview(
         match event {
             tauri::webview::DownloadEvent::Requested {
                 url: dl_url,
-                destination,
+                destination: _,
             } => {
                 let filename = dl_url
                     .path_segments()
@@ -157,47 +153,19 @@ pub async fn open_child_webview(
                     .unwrap_or("download")
                     .to_string();
 
-                let dest = compute_download_path(
-                    &downloads_root_clone,
-                    session_id_dl.as_deref(),
-                    &filename,
-                );
-
-                // Create parent directory
-                if let Some(parent) = dest.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+                let url_str = dl_url.to_string();
+                if let Err(error) = crate::modules::browser::application::browser::download_handler::request_download_confirmation(
+                    &app_for_confirmation,
+                    url_str,
+                    filename,
+                    downloads_root_clone.clone(),
+                    session_id_dl.clone(),
+                ) {
+                    log::warn!("Unable to request download confirmation: {error}");
                 }
 
-                *destination = dest.clone();
-
-                let db_c = db_for_start.clone();
-                let sid = session_id_dl.clone();
-                let dest_str = dest.clone();
-                let url_str = dl_url.to_string();
-                let app_c = app_for_finish.clone(); // Reused cloned AppHandle
-
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) =
-                        crate::modules::browser::application::browser::download_handler::start_concurrent_download(
-                            app_c,
-                            db_c,
-                            url_str,
-                            filename.clone(),
-                            dest_str,
-                            sid,
-                        )
-                        .await
-                    {
-                        log::error!(
-                            "Failed to start concurrent download for {}: {}",
-                            filename,
-                            e
-                        );
-                    }
-                });
-
-                // RETURN FALSE to prevent the WebView native overlapping download mechanism.
-                // We're handling the download in our reqwest background task!
+                // Returning false prevents the native transfer. The background
+                // downloader starts only after the frontend confirms.
                 false
             }
             tauri::webview::DownloadEvent::Finished { .. } => {

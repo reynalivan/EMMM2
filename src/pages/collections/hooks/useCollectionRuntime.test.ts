@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { describe, expect, it, vi } from 'vitest';
-import type { CollectionRuntimeSnapshot } from '@/entities/collection/model/collection';
+import type { CollectionRuntimeSnapshot } from '@/entities/collection';
 import { useCollectionRuntime } from './useCollectionRuntime';
 
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));

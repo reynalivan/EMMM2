@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use crate::shared::path_key::{canonical_name_key, strip_path_prefix_preserve_display};
 use crate::modules::workspace::domain::workspace::{
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
     WorkspaceViewModelInput,
 };
+use crate::shared::path_key::{canonical_name_key, strip_path_prefix_preserve_display};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedWorkspaceSelection {

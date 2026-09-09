@@ -1,7 +1,7 @@
 //! `browser_downloads` persistence.
 
 use crate::modules::browser::domain::browser::BrowserDownloadDto;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 
 /// Row of a still-open download matched by source URL.
 pub struct ActiveDownloadRow {
@@ -15,27 +15,40 @@ pub struct ImportableDownloadRow {
     pub session_id: Option<String>,
 }
 
+/// Terminal download metadata retained for an explicit retry request.
+pub struct RetryableDownloadRow {
+    pub session_id: Option<String>,
+    pub filename: String,
+    pub source_url: Option<String>,
+}
+
 /// Insert a new `requested` download record.
+pub struct NewDownloadRow<'a> {
+    pub id: &'a str,
+    pub session_id: Option<&'a str>,
+    pub filename: &'a str,
+    pub source_url: &'a str,
+    pub file_path: &'a str,
+    pub queue_order: i64,
+    pub started_at: &'a str,
+}
+
 pub async fn insert_download(
     db: &SqlitePool,
-    id: &str,
-    session_id: Option<&str>,
-    filename: &str,
-    source_url: &str,
-    file_path: &str,
-    started_at: &str,
+    download: NewDownloadRow<'_>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
+    sqlx::query(
         r#"INSERT INTO browser_downloads
-           (id, session_id, filename, file_path, source_url, status, bytes_received, started_at)
-           VALUES (?, ?, ?, ?, ?, 'requested', 0, ?)"#,
-        id,
-        session_id,
-        filename,
-        file_path,
-        source_url,
-        started_at
+           (id, session_id, filename, file_path, source_url, status, bytes_received, queue_order, started_at)
+           VALUES (?, ?, ?, ?, ?, 'requested', 0, ?, ?)"#,
     )
+    .bind(download.id)
+    .bind(download.session_id)
+    .bind(download.filename)
+    .bind(download.file_path)
+    .bind(download.source_url)
+    .bind(download.queue_order)
+    .bind(download.started_at)
     .execute(db)
     .await?;
     Ok(())
@@ -94,16 +107,34 @@ pub async fn fail_interrupted_downloads(db: &SqlitePool) -> Result<u64, sqlx::Er
 
 /// List the 200 most recent downloads.
 pub async fn list_downloads(db: &SqlitePool) -> Result<Vec<BrowserDownloadDto>, sqlx::Error> {
-    sqlx::query_as::<_, BrowserDownloadDto>(
+    let rows = sqlx::query(
         r#"SELECT id, session_id, filename, file_path, source_url,
-                  status, bytes_total, bytes_received, error_msg,
+                  status, bytes_total, bytes_received, error_msg, queue_order,
                   started_at, finished_at
            FROM browser_downloads
-           ORDER BY started_at DESC
+           ORDER BY started_at DESC, queue_order DESC
            LIMIT 200"#,
     )
     .fetch_all(db)
-    .await
+    .await?;
+    rows.iter()
+        .map(|row| {
+            Ok(BrowserDownloadDto {
+                id: row.try_get("id")?,
+                session_id: row.try_get("session_id")?,
+                filename: row.try_get("filename")?,
+                file_path: row.try_get("file_path")?,
+                source_url: row.try_get("source_url")?,
+                status: row.try_get("status")?,
+                bytes_total: row.try_get("bytes_total")?,
+                bytes_received: row.try_get("bytes_received")?,
+                error_msg: row.try_get("error_msg")?,
+                queue_order: row.try_get("queue_order")?,
+                started_at: row.try_get("started_at")?,
+                finished_at: row.try_get("finished_at")?,
+            })
+        })
+        .collect()
 }
 
 /// Read the stored file path of a download.
@@ -168,6 +199,28 @@ pub async fn find_active_by_url(
     Ok(row.map(|r| ActiveDownloadRow {
         id: r.get::<String, _>("id"),
         session_id: r.get::<Option<String>, _>("session_id"),
+    }))
+}
+
+/// Read a canceled or failed download that may be explicitly queued again.
+pub async fn get_retryable_download(
+    db: &SqlitePool,
+    download_id: &str,
+) -> Result<Option<RetryableDownloadRow>, sqlx::Error> {
+    use sqlx::Row;
+    let row = sqlx::query(
+        "SELECT session_id, filename, source_url
+           FROM browser_downloads
+          WHERE id = ? AND status IN ('failed', 'canceled')",
+    )
+    .bind(download_id)
+    .fetch_optional(db)
+    .await?;
+
+    Ok(row.map(|row| RetryableDownloadRow {
+        session_id: row.get("session_id"),
+        filename: row.get("filename"),
+        source_url: row.get("source_url"),
     }))
 }
 

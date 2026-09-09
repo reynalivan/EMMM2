@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use crate::modules::workspace::domain::classifier::NodeType;
-use crate::shared::path_key::folder_path_key;
 use crate::modules::catalog::domain::objects::ObjectSummary;
+use crate::modules::workspace::domain::classifier::NodeType;
 use crate::modules::workspace::domain::workspace::{
     WorkspaceDisplayMode, WorkspaceNodeKind, WorkspaceReason, WorkspaceReasonCode,
     WorkspaceTypeChip, WorkspaceWarning, WorkspaceWarningCode, WorkspaceWarningState,
 };
+use crate::shared::path_key::folder_path_key;
 
 pub(crate) fn build_disabled_by_container_reason(
     ancestor_disabled_by: Option<&str>,

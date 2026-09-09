@@ -7,7 +7,15 @@
     "manual_setup": "Add Game Manually",
     "description": "Auto-detect scans your XXMI Launcher folder for installed games.",
     "select_folder_title": "Select your XXMI Launcher folder",
-    "duplicate_error": "This game folder is already added as \"{{name}}\"."
+    "duplicate_error": "This game folder is already added as \"{{name}}\".",
+    "language": {
+      "change": "Change language",
+      "options": {
+        "en": "English",
+        "id": "Bahasa Indonesia",
+        "zh": "中文"
+      }
+    }
   },
   "manual_setup": {
     "title": "Manual Setup",

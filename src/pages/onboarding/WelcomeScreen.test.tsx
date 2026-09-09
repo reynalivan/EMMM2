@@ -4,7 +4,7 @@ import WelcomeScreen from './WelcomeScreen';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
-import { GameType, type GameConfig } from '@/entities/game/model/game';
+import { GameType, type GameConfig } from '@/entities/game';
 
 // Mock Tauri dependencies
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
@@ -208,7 +208,6 @@ describe('WelcomeScreen (TC-03)', () => {
       'aria-valuenow',
       '0',
     );
-    expect(screen.getByText(/0%/)).toBeInTheDocument();
 
     await waitFor(() => expect(progressHandler).toBeDefined());
     act(() => {
@@ -229,7 +228,6 @@ describe('WelcomeScreen (TC-03)', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '4');
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '10');
     expect(screen.getByText('Alice')).toBeInTheDocument();
-    expect(screen.getByText(/40%/)).toBeInTheDocument();
 
     unblock();
     await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());

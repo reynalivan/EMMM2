@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyObjectCategoryAndRefresh } from './sharedObjectActionOps';
-import { GameType } from '@/entities/game/model/game';
+import { GameType } from '@/entities/game';
 
 const setModCategory = vi.fn();
 const setObjectModsCategory = vi.fn();
@@ -14,7 +14,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../runtime-sync/queryRefresh', () => ({
+vi.mock('@/shared/lib/queryRefresh', () => ({
   publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
 }));
 

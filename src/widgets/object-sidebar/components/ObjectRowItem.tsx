@@ -16,12 +16,12 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { cn, getFileUrl } from '../../../shared/lib/utils';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { useThumbnail } from '@/pages/dashboard/hooks/useThumbnail';
-import { buildWorkspaceSwitchPolicy } from '@/features/workspace-runtime/actions/workspaceSwitchPolicy';
-import { WorkspaceSwitchLabel } from '@/features/workspace-runtime/components/WorkspaceSwitchLabel';
+import { useActiveGame } from '@/entities/game';
+import { useThumbnail } from '@/entities/mod';
+import { buildWorkspaceSwitchPolicy } from '@/features/workspace-runtime';
+import { WorkspaceSwitchLabel } from '@/features/workspace-runtime';
 
 /** Element icon map for metadata display */
 const ELEMENT_ICONS: Record<string, typeof Flame> = {

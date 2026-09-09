@@ -1,5 +1,5 @@
 import { useCallback, type FocusEvent, type KeyboardEvent } from 'react';
-import type { WorkspaceObjectNode } from '@/entities/workspace/model/workspace';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
 import type { useObjectBulkSelect } from './useObjectBulkSelect';
 
 interface UseObjectListKeyboardInput {

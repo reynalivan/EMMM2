@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { FieldValues, Path, UseFormRegister } from 'react-hook-form';
-import type { FilterDef } from '@/entities/game-object/model/object';
+import type { FilterDef } from '@/entities/game-object';
 
 interface DynamicMetadataFieldsProps<T extends FieldValues> {
   filters: FilterDef[];

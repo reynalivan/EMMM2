@@ -1,11 +1,13 @@
-use crate::shared::sync::lock;
-use crate::shared::errors::AppError;
 use crate::platform::fs::file_utils::rename_cross_drive_fallback;
+use crate::shared::errors::AppError;
+use crate::shared::sync::lock;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 static DISKS_CACHE: std::sync::OnceLock<std::sync::Mutex<sysinfo::Disks>> =
     std::sync::OnceLock::new();
+
+pub(super) const ARCHIVE_DISK_RESERVE_BYTES: u64 = 50 * 1024 * 1024;
 
 pub(super) fn parent_dir_join(parent: &Path, name: &str) -> PathBuf {
     parent.join(name)
@@ -61,14 +63,46 @@ pub(super) fn move_to_extracted_dir(archive_path: &Path) -> Result<(), AppError>
 }
 
 pub(super) fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(), AppError> {
+    let Some(available_space) = available_disk_space(mods_dir) else {
+        return Ok(());
+    };
+
+    if available_space < required_space {
+        return Err(AppError::Internal(format!(
+            "Insufficient disk space. Requires {} bytes, but only {} bytes available.",
+            required_space, available_space
+        )));
+    }
+
+    Ok(())
+}
+
+pub(super) fn effective_archive_limits(
+    staging_dir: &Path,
+    mut limits: super::security::ArchiveLimits,
+) -> Result<super::security::ArchiveLimits, AppError> {
+    let Some(available_space) = available_disk_space(staging_dir) else {
+        return Ok(limits);
+    };
+    let usable_space = available_space.saturating_sub(ARCHIVE_DISK_RESERVE_BYTES);
+    if usable_space == 0 {
+        return Err(AppError::Internal(
+            "Insufficient disk space after reserving workspace safety margin".to_string(),
+        ));
+    }
+    limits.max_total_bytes = limits.max_total_bytes.min(usable_space);
+    Ok(limits)
+}
+
+fn available_disk_space(path: &Path) -> Option<u64> {
     let mutex = DISKS_CACHE
         .get_or_init(|| std::sync::Mutex::new(sysinfo::Disks::new_with_refreshed_list()));
     let mut disks = lock(mutex);
     disks.refresh(true);
 
-    let search_path = mods_dir
+    let search_path = path
         .canonicalize()
-        .unwrap_or_else(|_| mods_dir.to_path_buf());
+        .unwrap_or_else(|_| path.to_path_buf());
 
     let mut available_space = 0_u64;
     let mut matched_len = 0_usize;
@@ -85,12 +119,5 @@ pub(super) fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(
         }
     }
 
-    if matched_len > 0 && available_space < required_space {
-        return Err(AppError::Internal(format!(
-            "Insufficient disk space. Requires {} bytes, but only {} bytes available.",
-            required_space, available_space
-        )));
-    }
-
-    Ok(())
+    (matched_len > 0).then_some(available_space)
 }

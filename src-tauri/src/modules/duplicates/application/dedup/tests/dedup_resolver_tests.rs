@@ -1,6 +1,6 @@
 use super::{resolve_batch, ResolutionAction, ResolutionRequest};
-use crate::platform::fs::operation_lock::OperationLock;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
+use crate::platform::fs::operation_lock::OperationLock;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -86,17 +86,19 @@ async fn seed_dedup_group(
         signals: Vec::new(),
         members: [folder_a, folder_b]
             .into_iter()
-            .map(|folder_path| crate::modules::duplicates::domain::dup_scan::DupScanMember {
-                mod_id: None,
-                version: None,
-                folder_path: folder_path.to_string(),
-                display_name: folder_path.to_string(),
-                total_size_bytes: 12,
-                file_count: 1,
-                is_safe: true,
-                confidence_score: 100,
-                signals: Vec::new(),
-            })
+            .map(
+                |folder_path| crate::modules::duplicates::domain::dup_scan::DupScanMember {
+                    mod_id: None,
+                    version: None,
+                    folder_path: folder_path.to_string(),
+                    display_name: folder_path.to_string(),
+                    total_size_bytes: 12,
+                    file_count: 1,
+                    is_safe: true,
+                    confidence_score: 100,
+                    signals: Vec::new(),
+                },
+            )
             .collect(),
     };
 

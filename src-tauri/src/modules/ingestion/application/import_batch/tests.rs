@@ -9,6 +9,36 @@ use super::types::{
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
 use std::io::Write;
 
+#[tokio::test]
+async fn cancel_and_wait_blocks_until_lease_completion_before_cleanup() {
+    let state = std::sync::Arc::new(super::extraction_state::ImportExtractionState::default());
+    let lease = state.acquire("batch-under-test").unwrap();
+    let cancel_token = lease.cancel_token();
+    let root = tempfile::tempdir().unwrap();
+    let staging = root.path().join("active-staging");
+    std::fs::create_dir(&staging).unwrap();
+    std::fs::write(staging.join("partial.ini"), "still writing").unwrap();
+    let staging_for_cancel = staging.clone();
+    let state_for_cancel = state.clone();
+
+    let cancel_task = tokio::spawn(async move {
+        let cancellation = state_for_cancel.cancel_and_wait("batch-under-test").await;
+        assert!(staging_for_cancel.exists());
+        std::fs::remove_dir_all(&staging_for_cancel).unwrap();
+        drop(cancellation);
+    });
+
+    while !cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    assert!(!cancel_task.is_finished());
+    assert!(staging.exists());
+
+    drop(lease);
+    cancel_task.await.unwrap();
+    assert!(!staging.exists());
+}
+
 #[test]
 fn confidence_tiers_follow_the_match_wizard_contract() {
     assert_eq!(ConfidenceTier::from_percentage(100), ConfidenceTier::High);
@@ -203,22 +233,26 @@ async fn classification_requires_awaiting_category_and_keeps_user_metadata_autho
     .unwrap_err();
     assert!(error.to_string().contains("awaiting_category"));
 
-    assert!(crate::modules::ingestion::adapters::sqlite::import_batch::transition_item_status(
-        &context.pool,
-        item_id,
-        ImportItemStatus::Discovered,
-        ImportItemStatus::Staged,
-    )
-    .await
-    .unwrap());
-    assert!(crate::modules::ingestion::adapters::sqlite::import_batch::transition_item_status(
-        &context.pool,
-        item_id,
-        ImportItemStatus::Staged,
-        ImportItemStatus::AwaitingCategory,
-    )
-    .await
-    .unwrap());
+    assert!(
+        crate::modules::ingestion::adapters::sqlite::import_batch::transition_item_status(
+            &context.pool,
+            item_id,
+            ImportItemStatus::Discovered,
+            ImportItemStatus::Staged,
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        crate::modules::ingestion::adapters::sqlite::import_batch::transition_item_status(
+            &context.pool,
+            item_id,
+            ImportItemStatus::Staged,
+            ImportItemStatus::AwaitingCategory,
+        )
+        .await
+        .unwrap()
+    );
 
     let classified = set_import_item_classification(
         &context.pool,
@@ -363,6 +397,144 @@ async fn failed_archive_staging_can_be_retried_after_the_source_is_repaired() {
     assert_eq!(retried.items.len(), 1);
     assert_eq!(retried.items[0].status, ImportItemStatus::Staged);
     assert_eq!(retried.items[0].planned_name, "DISABLED Ayaka");
+}
+
+#[tokio::test]
+async fn recovered_analysis_retry_removes_crash_staging_before_new_uuid_tree() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("recovered.zip");
+    let file = std::fs::File::create(&archive).unwrap();
+    let mut writer = zip::ZipWriter::new(file);
+    writer
+        .start_file("Ayaka/merged.ini", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer
+        .write_all(b"[TextureOverrideBody]\nhash = abc\n")
+        .unwrap();
+    writer.finish().unwrap();
+    let batch = create_import_batch(
+        &context.pool,
+        CreateImportBatchInput {
+            game_id: "gimi".to_string(),
+            flow: ImportFlow::AutoImport,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            sources: vec![ImportSourceInput {
+                path: archive.to_string_lossy().into_owned(),
+                source_kind: Some(ImportSourceKind::ArchiveRoot),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let staging_root = root.path().join("app-staging");
+    let stale_uuid = uuid::Uuid::new_v4().to_string();
+    let stale_tree = staging_root
+        .join(&batch.id)
+        .join(&batch.items[0].id)
+        .join(stale_uuid);
+    std::fs::create_dir_all(stale_tree.join("extracted")).unwrap();
+    std::fs::write(stale_tree.join("extracted/partial.bin"), b"partial").unwrap();
+    sqlx::query("UPDATE import_batches SET status = 'analyzing' WHERE id = ?")
+        .bind(&batch.id)
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    crate::modules::ingestion::adapters::sqlite::import_batch::recover_interrupted_batch_states(
+        &context.pool,
+    )
+    .await
+    .unwrap();
+    let retried =
+        super::staging::stage_import_batch_sources(&context.pool, &batch.id, &staging_root)
+            .await
+            .unwrap();
+
+    assert_eq!(retried.items[0].status, ImportItemStatus::Staged);
+    assert!(!stale_tree.exists());
+}
+
+#[tokio::test]
+async fn cancelled_staging_does_not_mark_the_item_failed_or_batch_partial() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("cancelled.zip");
+    let file = std::fs::File::create(&archive).unwrap();
+    let mut writer = zip::ZipWriter::new(file);
+    writer
+        .start_file("Ayaka/merged.ini", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer
+        .write_all(b"[TextureOverrideBody]\nhash = abc\n")
+        .unwrap();
+    writer.finish().unwrap();
+    let batch = create_import_batch(
+        &context.pool,
+        CreateImportBatchInput {
+            game_id: "gimi".to_string(),
+            flow: ImportFlow::AutoImport,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            sources: vec![ImportSourceInput {
+                path: archive.to_string_lossy().into_owned(),
+                source_kind: Some(ImportSourceKind::ArchiveRoot),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+    let error = super::staging::stage_import_batch_sources_with_options(
+        &context.pool,
+        &batch.id,
+        &root.path().join("app-staging"),
+        &crate::modules::library::application::mods::archive::StagingExtractOptions {
+            cancel_token: Some(cancel_token),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(error, crate::shared::errors::AppError::Cancelled));
+    let reloaded = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        &context.pool,
+        &batch.id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(reloaded.status, super::types::ImportBatchStatus::Analyzing);
+    assert_eq!(reloaded.items[0].status, ImportItemStatus::Discovered);
 }
 
 #[tokio::test]
@@ -568,13 +740,15 @@ async fn processed_mod_inbox_groups_pack_children_under_one_source_history() {
             target_subpath: None,
             source_archive_path: None,
         },
-        &[crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
-            id: "source-pack-history".to_string(),
-            source_kind: ImportSourceKind::ReadyToMove,
-            source_path: original.to_string_lossy().into_owned(),
-            staging_path: None,
-            planned_name: "DISABLED pack".to_string(),
-        }],
+        &[
+            crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
+                id: "source-pack-history".to_string(),
+                source_kind: ImportSourceKind::ReadyToMove,
+                source_path: original.to_string_lossy().into_owned(),
+                staging_path: None,
+                planned_name: "DISABLED pack".to_string(),
+            },
+        ],
     )
     .await
     .unwrap();
@@ -665,17 +839,19 @@ async fn processed_delete_preflights_every_source_before_recycling_anything() {
                 target_subpath: None,
                 source_archive_path: None,
             },
-            &[crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
-                id: item_id.to_string(),
-                source_kind: ImportSourceKind::ReadyToMove,
-                source_path: root
-                    .path()
-                    .join(format!("{item_id}.zip"))
-                    .to_string_lossy()
-                    .into(),
-                staging_path: Some(format!("C:/Staging/{item_id}")),
-                planned_name: format!("DISABLED {item_id}"),
-            }],
+            &[
+                crate::modules::ingestion::adapters::sqlite::import_batch::NewImportItemRecord {
+                    id: item_id.to_string(),
+                    source_kind: ImportSourceKind::ReadyToMove,
+                    source_path: root
+                        .path()
+                        .join(format!("{item_id}.zip"))
+                        .to_string_lossy()
+                        .into(),
+                    staging_path: Some(format!("C:/Staging/{item_id}")),
+                    planned_name: format!("DISABLED {item_id}"),
+                },
+            ],
         )
         .await
         .unwrap();

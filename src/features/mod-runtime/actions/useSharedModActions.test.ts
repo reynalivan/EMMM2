@@ -2,9 +2,9 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../app/store/useAppStore';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { DuplicateInfo } from '@/entities/workspace/model/scanner';
+import { useAppStore } from '@/app/store';
+import type { ModFolder } from '@/entities/game-object';
+import type { DuplicateInfo } from '@/entities/workspace';
 import { useSharedModActions } from './useSharedModActions';
 
 vi.mock('@tanstack/react-query', async () => await vi.importActual('@tanstack/react-query'));
@@ -32,7 +32,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'game-1',
@@ -41,7 +41,7 @@ vi.mock('../../dashboard/hooks/useActiveGame', () => ({
   }),
 }));
 
-vi.mock('../../folder-grid/hooks/folderCache', () => ({
+vi.mock('@/widgets/mod-explorer/hooks/folderCache', () => ({
   updateFolderCache: vi.fn(),
 }));
 
@@ -51,13 +51,13 @@ vi.mock('../hooks/useBulkModMutations', () => ({
   }),
 }));
 
-vi.mock('../../folder-grid/hooks/useFolderMutations', () => ({
+vi.mock('../hooks/useFolderMutations', () => ({
   useToggleModSafe: () => ({
     mutate: toggleSafeMutate,
   }),
 }));
 
-vi.mock('../../folder-grid/hooks/useFolderCoreMutations', () => ({
+vi.mock('../hooks/useFolderCoreMutations', () => ({
   useRenameMod: () => ({
     mutateAsync: renameMutateAsync,
   }),
@@ -66,19 +66,25 @@ vi.mock('../../folder-grid/hooks/useFolderCoreMutations', () => ({
   }),
 }));
 
-vi.mock('../../workspace-runtime/actions/useWorkspaceSwitchActions', () => ({
-  useWorkspaceSwitchActions: () => ({
-    isPending: false,
-    isNodePending: vi.fn(() => false),
-    toggleNode: (...args: unknown[]) => switchToggleNode(...args),
-    setNodeEnabled: vi.fn(),
-    setFolderPathEnabled: vi.fn(),
-    resolveDuplicateForceEnable: (...args: unknown[]) => switchResolveDuplicateForceEnable(...args),
-    resolveDuplicateEnableOnly: (...args: unknown[]) => switchResolveDuplicateEnableOnly(...args),
-  }),
-}));
+vi.mock('@/features/workspace-runtime/@x/mod-runtime', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/features/workspace-runtime/@x/mod-runtime')>();
+  return {
+    ...actual,
+    useWorkspaceSwitchActions: () => ({
+      isPending: false,
+      isNodePending: vi.fn(() => false),
+      toggleNode: (...args: unknown[]) => switchToggleNode(...args),
+      setNodeEnabled: vi.fn(),
+      setFolderPathEnabled: vi.fn(),
+      resolveDuplicateForceEnable: (...args: unknown[]) =>
+        switchResolveDuplicateForceEnable(...args),
+      resolveDuplicateEnableOnly: (...args: unknown[]) => switchResolveDuplicateEnableOnly(...args),
+    }),
+  };
+});
 
-vi.mock('../../import-batches/classificationLauncher', () => ({
+vi.mock('@/features/import-batches/@x/mod-runtime', () => ({
   openObjectClassificationWizard: (...args: unknown[]) => openObjectClassificationWizard(...args),
 }));
 
@@ -89,7 +95,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../../app/store/useToastStore', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: vi.fn(),
     error: (...args: unknown[]) => toastError(...args),

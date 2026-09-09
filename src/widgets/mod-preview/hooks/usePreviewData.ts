@@ -1,12 +1,10 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
-import type { ModInfoUpdate } from '@/entities/game-object/model/object';
+import type { ModInfoUpdate } from '@/entities/game-object';
+import { detailsKeys } from '@/entities/mod';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
-import { useAppStore } from '../../../app/store/useAppStore';
-import {
-  publishQueryInvalidations,
-  publishQueryScopes,
-} from '@/features/runtime-sync/queryRefresh';
+import { useAppStore } from '@/app/store';
+import { publishQueryInvalidations, publishQueryScopes } from '@/shared/lib/queryRefresh';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 
 export interface IniFileEntry {
@@ -65,16 +63,7 @@ export interface UpdateModInfoInput {
   update: ModInfoUpdate;
 }
 
-export const detailsKeys = {
-  all: ['details'] as const,
-  modInfo: (folderPath: string) => [...detailsKeys.all, 'mod-info', folderPath] as const,
-  iniFiles: (folderPath: string) => [...detailsKeys.all, 'ini-files', folderPath] as const,
-  iniDocument: (folderPath: string, fileName: string) =>
-    [...detailsKeys.all, 'ini-document', folderPath, fileName] as const,
-  previewImages: (folderPath: string) =>
-    [...detailsKeys.all, 'preview-images', folderPath] as const,
-  conflicts: (folderPath: string) => [...detailsKeys.all, 'conflicts', folderPath] as const,
-};
+export { detailsKeys } from '@/entities/mod';
 
 function normalizeFolderPath(folderPath?: string | null): string | null {
   const value = folderPath?.trim();

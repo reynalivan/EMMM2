@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Supported game types (3DMigoto modding frameworks)
-#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GameType {
     GIMI = 0, // Genshin Impact
@@ -27,7 +27,7 @@ impl specta::Type for GameType {
 }
 
 /// Status of an object or mod
-#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq)]
 #[repr(i64)]
 #[derive(Default)]
 pub enum ItemStatus {
@@ -159,50 +159,16 @@ pub enum ConfigStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, Default)]
 pub struct HashDbPayload(pub std::collections::HashMap<String, Vec<String>>);
 
-impl sqlx::Type<sqlx::Sqlite> for HashDbPayload {
-    fn type_info() -> sqlx::sqlite::SqliteTypeInfo {
-        <String as sqlx::Type<sqlx::Sqlite>>::type_info()
-    }
-}
-
-impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for HashDbPayload {
-    fn decode(value: sqlx::sqlite::SqliteValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let text = <&str as sqlx::Decode<sqlx::Sqlite>>::decode(value)?;
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return Ok(Self::default());
-        }
-        Ok(serde_json::from_str(trimmed)?)
-    }
-}
-
 /// Strongly-typed payload for custom skins attached to the master DB
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, Default)]
 pub struct CustomSkinsPayload(pub std::collections::HashMap<String, String>);
-
-impl sqlx::Type<sqlx::Sqlite> for CustomSkinsPayload {
-    fn type_info() -> sqlx::sqlite::SqliteTypeInfo {
-        <String as sqlx::Type<sqlx::Sqlite>>::type_info()
-    }
-}
-
-impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for CustomSkinsPayload {
-    fn decode(value: sqlx::sqlite::SqliteValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let text = <&str as sqlx::Decode<sqlx::Sqlite>>::decode(value)?;
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return Ok(Self::default());
-        }
-        Ok(serde_json::from_str(trimmed)?)
-    }
-}
 
 #[cfg(test)]
 #[path = "models_test.rs"]
 mod tests;
 
 /// Represents a row in the `objects` table.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct GameObject {
     pub id: String,
     pub game_id: String,

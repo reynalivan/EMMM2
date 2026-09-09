@@ -9,12 +9,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useMasterDb } from '../hooks/useObjectQueries';
 import { useCreateObject } from '../hooks/useObjectMutations';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { toast } from '../../../app/store/useToastStore';
-import type { JsonValue } from '@/entities/game-object/model/object';
+import { useActiveGame } from '@/entities/game';
+import { toast } from '@/shared/ui/toast';
+import type { JsonValue } from '@/entities/game-object';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { publishRuntimeDescriptor } from '@/features/runtime-sync/queryRefresh';
-import { buildRuntimeMutationDescriptor } from '@/features/workspace-runtime/optimistic/descriptorBuilders';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
+import { buildRuntimeMutationDescriptor } from '@/features/workspace-runtime';
 import { type DbEntryFull, mapToUiFormat } from '../hooks/useMasterDbSync';
 
 interface AutoSetupModalProps {

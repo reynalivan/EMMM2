@@ -11,10 +11,9 @@ async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ign
     seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
     std::fs::create_dir_all(mods_root.path().join("AINOZ")).expect("create object folder");
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let missing_mod = CollectionMod {
         kind: MemberKind::Mod,
         collection_id: collection.id.clone(),
@@ -118,20 +117,16 @@ async fn partial_apply_skips_missing_paths_without_replacing_original_collection
         .expect("insert enabled mod");
     }
 
-    let collection =
-        collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
-            .await
-            .expect("create collection");
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
     let target_mods = vec![
         test_collection_mod(&collection.id, "AINOZ/Blue", "Blue"),
         test_collection_mod(&collection.id, "AINOZ/Missing Mod", "Missing Mod"),
     ];
     let target_objects = vec![test_collection_object(&collection.id)];
-    let projected_state = projected_state::build_projected_state(
-        &target_mods,
-        &target_objects,
-        Some(&mods_path),
-    );
+    let projected_state =
+        projected_state::build_projected_state(&target_mods, &target_objects, Some(&mods_path));
     persist_projected_state(
         &ctx.pool,
         &collection.id,
@@ -275,7 +270,7 @@ async fn applying_a_collection_is_independent_of_its_safety_classification() {
 }
 
 #[tokio::test]
-async fn failed_parent_rename_reconciles_a_successful_child_rename_and_keeps_task_pending() {
+async fn failed_parent_rename_rolls_back_the_child_and_marks_the_task_failed() {
     let ctx = init_test_db().await;
     let mods_root = tempfile::tempdir().expect("create mods root");
     let mods_path = mods_root.path().to_string_lossy().to_string();
@@ -345,8 +340,8 @@ async fn failed_parent_rename_reconciles_a_successful_child_rename_and_keeps_tas
     .await;
 
     assert!(result.is_err(), "parent collision must fail the apply");
-    assert!(mods_root.path().join("AINOZ/Red").is_dir());
-    assert!(!mods_root.path().join("AINOZ/DISABLED Red").exists());
+    assert!(!mods_root.path().join("AINOZ/Red").exists());
+    assert!(mods_root.path().join("AINOZ/DISABLED Red").is_dir());
     let mod_projection: (String, i64) = sqlx::query_as(
         "SELECT folder_path, status FROM mods WHERE game_id = ? AND actual_name = ?",
     )
@@ -355,8 +350,8 @@ async fn failed_parent_rename_reconciles_a_successful_child_rename_and_keeps_tas
     .fetch_one(&ctx.pool)
     .await
     .expect("load reconciled mod");
-    assert_eq!(mod_projection.0.replace('\\', "/"), "AINOZ/Red");
-    assert_eq!(mod_projection.1, ItemStatus::Enabled as i64);
+    assert_eq!(mod_projection.0.replace('\\', "/"), "AINOZ/DISABLED Red");
+    assert_eq!(mod_projection.1, ItemStatus::Disabled as i64);
 
     let task_status: String = sqlx::query_scalar(
         "SELECT status FROM tasks WHERE game_id = ? AND task_type = 'apply_collection'",
@@ -365,7 +360,7 @@ async fn failed_parent_rename_reconciles_a_successful_child_rename_and_keeps_tas
     .fetch_one(&ctx.pool)
     .await
     .expect("load recovery task");
-    assert_eq!(task_status, "PENDING");
+    assert_eq!(task_status, "FAILED");
 }
 
 #[tokio::test]
@@ -456,10 +451,13 @@ async fn restoring_a_draft_finalizes_its_baseline_with_the_apply_task() {
     .await
     .expect("restore draft");
 
-    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(&ctx.pool, "game-restore-finalize")
-        .await
-        .expect("load runtime")
-        .expect("runtime exists");
+    let runtime = crate::modules::collections::adapters::sqlite::runtime::get(
+        &ctx.pool,
+        "game-restore-finalize",
+    )
+    .await
+    .expect("load runtime")
+    .expect("runtime exists");
     assert_eq!(runtime.active_collection_id, Some(baseline.id));
     let task_status: String =
         sqlx::query_scalar("SELECT status FROM tasks WHERE game_id = ? AND target_id = ?")

@@ -1,5 +1,5 @@
-use crate::shared::errors::AppError;
 use crate::modules::settings::application::config::ConfigService;
+use crate::shared::errors::AppError;
 use std::path::{Component, Path, PathBuf};
 
 /// A canonical path proven to live inside a configured mods root.

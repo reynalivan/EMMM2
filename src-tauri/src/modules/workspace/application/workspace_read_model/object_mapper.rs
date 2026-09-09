@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
-use crate::shared::path_key::folder_path_key;
-use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::catalog::domain::objects::ObjectSummary;
-use crate::modules::workspace::domain::workspace::{
-    WorkspaceCapabilities, WorkspaceDisplayMode, WorkspaceNodeKind, WorkspaceObjectNode,
-    WorkspaceSwitchPolicyKey, WorkspaceSwitchState, WorkspaceWarningState,
-};
+use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::workspace::application::explorer::types::ModFolder;
 use crate::modules::workspace::application::workspace_read_model::common::{
     build_folder_warning, build_inactive_warning, build_naming_conflict_warning,
     build_object_inactive_reason,
 };
 use crate::modules::workspace::application::workspace_read_model::selection::relative_sub_path_exists;
+use crate::modules::workspace::domain::workspace::{
+    WorkspaceCapabilities, WorkspaceDisplayMode, WorkspaceNodeKind, WorkspaceObjectNode,
+    WorkspaceSwitchPolicyKey, WorkspaceSwitchState, WorkspaceWarningState,
+};
+use crate::shared::path_key::folder_path_key;
 
 fn map_object_switch_state(object: &ObjectSummary) -> WorkspaceSwitchState {
     if object.is_object_disabled {

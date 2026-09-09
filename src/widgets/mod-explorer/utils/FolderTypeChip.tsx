@@ -1,6 +1,6 @@
 import { Folder, Layers, Package, type LucideIcon } from 'lucide-react';
 import type { TFunction } from 'i18next';
-import type { WorkspaceTypeChip } from '@/entities/workspace/model/workspace';
+import type { WorkspaceTypeChip } from '@/entities/workspace';
 
 export interface FolderTypeChipView {
   label: string;

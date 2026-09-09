@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useCollectionPreview } from '../hooks/useCollections';
 import { CollectionTreeView } from './CollectionTreeView';
 import { getCollectionDisplayName, useRuntimeLabels } from '../../../shared/lib/runtimeLabels';
-import type { CollectionRuntimeSnapshot } from '@/entities/collection/model/collection';
+import type { CollectionRuntimeSnapshot } from '@/entities/collection';
 import type { CollectionWorkspaceSource } from '../types';
 
 interface CollectionPreviewPanelProps {

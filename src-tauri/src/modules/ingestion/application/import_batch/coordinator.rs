@@ -1,13 +1,28 @@
 use super::types::{
-    CreateImportBatchInput, ImportBatch, ImportDecision, ImportFlow, ImportItem, ImportSourceKind,
-    RenameImportItemInput, SetImportItemClassificationInput, SetImportItemDecisionInput,
-    StableCategory, TargetMode,
+    ConfidenceTier, CreateImportBatchInput, ImportBatch, ImportBatchStatus, ImportDecision,
+    ImportFlow, ImportItem, ImportSourceKind, RenameImportItemInput,
+    SetImportItemClassificationInput, SetImportItemDecisionInput, StableCategory, TargetMode,
+};
+use crate::modules::ingestion::adapters::sqlite::import_batch::{
+    self, CreateImportBatchRecord, NewImportItemRecord,
 };
 use crate::shared::errors::AppError;
-use crate::modules::ingestion::adapters::sqlite::import_batch::{self, CreateImportBatchRecord, NewImportItemRecord};
 use sqlx::SqlitePool;
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::str::FromStr;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportLibraryReadiness {
+    pub batch_id: String,
+    pub items: Vec<
+        crate::modules::catalog::application::objects::classification_batch::ObjectClassificationPreviewItem,
+    >,
+    pub high_count: u32,
+    pub medium_count: u32,
+    pub review_started: bool,
+}
 
 pub async fn create_import_batch(
     db: &SqlitePool,
@@ -108,9 +123,13 @@ pub async fn rename_import_item_plan(
     db: &SqlitePool,
     mut input: RenameImportItemInput,
 ) -> Result<ImportItem, AppError> {
-    input.planned_name =
-        crate::modules::library::application::mods::core_ops::standardize_prefix(input.planned_name.trim(), false);
-    crate::modules::library::application::mods::core_ops::validate_folder_name_component(&input.planned_name)?;
+    input.planned_name = crate::modules::library::application::mods::core_ops::standardize_prefix(
+        input.planned_name.trim(),
+        false,
+    );
+    crate::modules::library::application::mods::core_ops::validate_folder_name_component(
+        &input.planned_name,
+    )?;
     if !import_batch::rename_planned_item(db, &input.item_id, &input.planned_name).await? {
         return Err(AppError::Validation(format!(
             "Import item '{}' can no longer be renamed",
@@ -145,14 +164,15 @@ pub async fn set_import_item_decision(
         let batch = import_batch::get_batch(db, &item.batch_id)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, object_id)
-            .await?
-            .filter(|object| object.game_id == batch.game_id)
-            .ok_or_else(|| {
-                AppError::Validation(
-                    "Selected manual target is not part of the import batch game".to_string(),
-                )
-            })?;
+        let object =
+            crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, object_id)
+                .await?
+                .filter(|object| object.game_id == batch.game_id)
+                .ok_or_else(|| {
+                    AppError::Validation(
+                        "Selected manual target is not part of the import batch game".to_string(),
+                    )
+                })?;
         if input.decision == ImportDecision::KeepSpecificTarget
             && batch.target_object_id.as_deref() != Some(object_id)
         {
@@ -160,9 +180,12 @@ pub async fn set_import_item_decision(
                 "Keep-specific-target can only select the batch's original target".to_string(),
             ));
         }
-        let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)
-            .await?
-            .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
+        let mods_root =
+            crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Validation("Game has no configured mods path".to_string())
+                })?;
         input.destination_path = Some(
             Path::new(&mods_root)
                 .join(&object.folder_path)
@@ -191,7 +214,31 @@ pub async fn set_import_item_decision(
         input.destination_path = Some(selected.target_path.clone());
         input.canonical_entry_key = selected.canonical_entry_key.clone();
     }
-    if !import_batch::store_decision(db, &input).await? {
+    let (confidence, tier) = if input.decision == ImportDecision::Skip {
+        (0, super::types::ConfidenceTier::NoMatch)
+    } else {
+        item.destination_suggestions
+            .iter()
+            .find(|suggestion| {
+                input
+                    .destination_object_id
+                    .as_ref()
+                    .is_some_and(|id| suggestion.object_id.as_ref() == Some(id))
+                    || input
+                        .destination_path
+                        .as_ref()
+                        .is_some_and(|path| suggestion.target_path == *path)
+                    || input
+                        .canonical_entry_key
+                        .as_ref()
+                        .is_some_and(|key| suggestion.canonical_entry_key.as_ref() == Some(key))
+            })
+            .map(|suggestion| {
+                (suggestion.confidence_percentage, suggestion.confidence_tier.clone())
+            })
+            .unwrap_or((0, super::types::ConfidenceTier::NoMatch))
+    };
+    if !import_batch::store_decision(db, &input, confidence, tier).await? {
         return Err(AppError::Validation(format!(
             "Import item '{}' is not awaiting a destination decision",
             input.item_id
@@ -276,7 +323,10 @@ pub async fn refresh_import_item_suggestions(
         .and_then(|id| existing.iter().find(|target| &target.object_id == id));
     let canonical_identity = canonical.first().and_then(|suggestion| {
         master_db.entries.iter().find_map(|entry| {
-            let key = crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(&entry.name);
+            let key =
+                crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(
+                    &entry.name,
+                );
             (key == suggestion.entry_key).then(|| {
                 crate::modules::catalog::application::match_engine::types::CanonicalIdentity {
                     entry_key: key,
@@ -286,7 +336,7 @@ pub async fn refresh_import_item_suggestions(
             })
         })
     });
-    let destinations = crate::modules::catalog::application::match_engine::destination::resolve_destination_candidates(
+    let destinations = crate::modules::catalog::application::match_engine::destination::resolve_all_destination_candidates(
         crate::modules::catalog::application::match_engine::destination::DestinationContext {
             source_name: &item.planned_name,
             category,
@@ -303,20 +353,205 @@ pub async fn refresh_import_item_suggestions(
         .first()
         .map(|suggestion| suggestion.evidence.clone())
         .unwrap_or_else(|| inspection.evidence.clone());
-    if !import_batch::store_match_suggestions(
-        db,
-        item_id,
-        &canonical,
-        &destinations,
-        &evidence,
-    )
-    .await?
+    if !import_batch::store_match_suggestions(db, item_id, &canonical, &destinations, &evidence)
+        .await?
     {
         return Err(AppError::Validation(format!(
             "Import item '{item_id}' changed while suggestions were refreshed"
         )));
     }
     require_item(db, item_id).await
+}
+
+pub async fn preview_import_library_readiness(
+    db: &SqlitePool,
+    batch_id: &str,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+    ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
+    match_extensions: &[String],
+) -> Result<ImportLibraryReadiness, AppError> {
+    let batch = import_batch::get_batch(db, batch_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
+    let review_started = import_batch::has_batch_review_started(db, batch_id).await?;
+    if review_started {
+        return Ok(ImportLibraryReadiness {
+            batch_id: batch_id.to_string(),
+            items: Vec::new(),
+            high_count: 0,
+            medium_count: 0,
+            review_started: true,
+        });
+    }
+    if matches!(batch.status, ImportBatchStatus::Draft | ImportBatchStatus::Analyzing) {
+        return Err(AppError::Validation(
+            "Import source analysis must finish before checking Object Library readiness"
+                .to_string(),
+        ));
+    }
+
+    let relevant_ids = batch
+        .items
+        .iter()
+        .flat_map(|item| item.destination_suggestions.iter())
+        .filter(|suggestion| {
+            matches!(
+                suggestion.confidence_tier,
+                ConfidenceTier::High | ConfidenceTier::Medium
+            )
+        })
+        .filter_map(|suggestion| suggestion.object_id.clone())
+        .collect::<BTreeSet<_>>();
+    if relevant_ids.is_empty() {
+        return Ok(ImportLibraryReadiness {
+            batch_id: batch_id.to_string(),
+            items: Vec::new(),
+            high_count: 0,
+            medium_count: 0,
+            review_started: false,
+        });
+    }
+
+    let page = crate::modules::catalog::adapters::sqlite::object::get_filtered_objects(
+        db,
+        &crate::modules::catalog::domain::objects::ObjectFilter {
+            game_id: batch.game_id.clone(),
+            search_query: None,
+            object_type: None,
+            meta_filters: None,
+            sort_by: None,
+            status_filter: None,
+        },
+    )
+    .await?;
+    let object_ids = page
+        .objects
+        .into_iter()
+        .filter(|object| relevant_ids.contains(&object.id))
+        .filter(|object| object.matched_entry_key.is_none())
+        .filter(|object| object.matched_source.as_deref() != Some("classification_wizard_custom"))
+        .map(|object| object.id)
+        .collect::<Vec<_>>();
+    if object_ids.is_empty() {
+        return Ok(ImportLibraryReadiness {
+            batch_id: batch_id.to_string(),
+            items: Vec::new(),
+            high_count: 0,
+            medium_count: 0,
+            review_started: false,
+        });
+    }
+
+    use crate::modules::catalog::application::objects::classification_batch::{
+        ObjectClassificationDraft, PreviewObjectClassificationBatchInput,
+    };
+    let category_preview =
+        crate::modules::catalog::application::objects::classification_batch::preview_object_classification_batch(
+            db,
+            &PreviewObjectClassificationBatchInput {
+                game_id: batch.game_id.clone(),
+                object_ids: object_ids.clone(),
+                drafts: Vec::new(),
+            },
+            master_db,
+            ini_filters,
+            match_extensions,
+        )
+        .await?;
+    let drafts = category_preview
+        .iter()
+        .map(|item| {
+            let suggestion = item.category_suggestions.first();
+            ObjectClassificationDraft {
+                object_id: item.object_id.clone(),
+                category: suggestion
+                    .map(|value| value.category)
+                    .unwrap_or(StableCategory::Other),
+                sub_category: suggestion.and_then(|value| value.sub_category.clone()),
+                metadata: suggestion
+                    .map(|value| value.metadata.clone())
+                    .unwrap_or_else(|| serde_json::json!({})),
+            }
+        })
+        .collect();
+    let mut items =
+        crate::modules::catalog::application::objects::classification_batch::preview_object_classification_batch(
+            db,
+            &PreviewObjectClassificationBatchInput {
+                game_id: batch.game_id,
+                object_ids,
+                drafts,
+            },
+            master_db,
+            ini_filters,
+            match_extensions,
+        )
+        .await?;
+    items.retain(|item| {
+        item.canonical_suggestions.first().is_some_and(|suggestion| {
+            suggestion.confidence_tier == ConfidenceTier::High
+                || suggestion.confidence_tier == ConfidenceTier::Medium
+        })
+    });
+    items.sort_by(|left, right| {
+        right
+            .canonical_suggestions
+            .first()
+            .map(|suggestion| suggestion.confidence_percentage)
+            .unwrap_or(0)
+            .cmp(
+                &left
+                    .canonical_suggestions
+                    .first()
+                    .map(|suggestion| suggestion.confidence_percentage)
+                    .unwrap_or(0),
+            )
+            .then_with(|| left.object_name.cmp(&right.object_name))
+    });
+    let high_count = items
+        .iter()
+        .filter(|item| {
+            item.canonical_suggestions
+                .first()
+                .is_some_and(|suggestion| suggestion.confidence_tier == ConfidenceTier::High)
+        })
+        .count() as u32;
+    let medium_count = items.len() as u32 - high_count;
+    Ok(ImportLibraryReadiness {
+        batch_id: batch_id.to_string(),
+        items,
+        high_count,
+        medium_count,
+        review_started: false,
+    })
+}
+
+pub async fn refresh_import_batch_matches(
+    db: &SqlitePool,
+    batch_id: &str,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+    ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
+) -> Result<ImportBatch, AppError> {
+    if import_batch::has_batch_review_started(db, batch_id).await? {
+        return Err(AppError::Validation(
+            "Import matches can only be refreshed before review starts".to_string(),
+        ));
+    }
+    let batch = import_batch::get_batch(db, batch_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Import batch '{batch_id}'")))?;
+    let item_ids = batch
+        .items
+        .iter()
+        .filter(|item| item.status.can_refresh_object_suggestions())
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+    for item_id in item_ids {
+        refresh_import_item_suggestions(db, &item_id, master_db, ini_filters).await?;
+    }
+    import_batch::get_batch(db, batch_id)
+        .await?
+        .ok_or_else(|| AppError::Internal("Refreshed import batch could not be reloaded".to_string()))
 }
 
 async fn configured_workspace_roots(db: &SqlitePool) -> Result<Vec<std::path::PathBuf>, AppError> {
@@ -362,8 +597,9 @@ fn rerank_with_metadata(
     }
     for suggestion in suggestions.iter_mut() {
         let Some(entry) = master_db.entries.iter().find(|entry| {
-            crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(&entry.name)
-                == suggestion.entry_key
+            crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(
+                &entry.name,
+            ) == suggestion.entry_key
         }) else {
             continue;
         };
@@ -457,7 +693,9 @@ fn validate_source_kind(path: &Path, kind: ImportSourceKind) -> Result<(), AppEr
         ImportSourceKind::Folder if path.is_dir() => Ok(()),
         ImportSourceKind::ReadyToMove if path.is_dir() => Ok(()),
         ImportSourceKind::ReadyToMove if path.is_file() => {
-            if crate::modules::library::application::mods::archive::ArchiveFormat::detect(path).is_some() {
+            if crate::modules::library::application::mods::archive::ArchiveFormat::detect(path)
+                .is_some()
+            {
                 Ok(())
             } else {
                 Err(AppError::Validation(format!(
@@ -467,7 +705,9 @@ fn validate_source_kind(path: &Path, kind: ImportSourceKind) -> Result<(), AppEr
             }
         }
         ImportSourceKind::ArchiveRoot | ImportSourceKind::BrowserDownload if path.is_file() => {
-            if crate::modules::library::application::mods::archive::ArchiveFormat::detect(path).is_some() {
+            if crate::modules::library::application::mods::archive::ArchiveFormat::detect(path)
+                .is_some()
+            {
                 Ok(())
             } else {
                 Err(AppError::Validation(format!(
@@ -498,9 +738,7 @@ fn planned_name_for_source(path: &Path, kind: ImportSourceKind) -> Result<String
     .map(|value| value.to_string_lossy().into_owned())
     .unwrap_or_default();
     crate::modules::library::application::mods::core_ops::validate_folder_name_component(&name)?;
-    Ok(crate::modules::library::application::mods::core_ops::standardize_prefix(
-        &name, false,
-    ))
+    Ok(crate::modules::library::application::mods::core_ops::standardize_prefix(&name, false))
 }
 
 fn normalized_optional(value: Option<String>) -> Option<String> {

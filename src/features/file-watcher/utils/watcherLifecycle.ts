@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useAppStore } from '../../../app/store/useAppStore';
-import type { GameConfig } from '@/entities/game/model/game';
+import { useAppStore } from '@/app/store';
+import type { GameConfig } from '@/entities/game';
 
 function stopWatcherAfterUnmount(generationRef: { current: number }, generation: number) {
   queueMicrotask(() => {

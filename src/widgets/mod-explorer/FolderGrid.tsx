@@ -14,6 +14,7 @@ import FolderGridContent from './components/FolderGridContent';
 export default function FolderGrid() {
   const folderGrid = useFolderGrid();
   const {
+    previousFolders,
     sortedFolders,
     isLoading,
     isError,
@@ -28,15 +29,17 @@ export default function FolderGrid() {
     isMobile,
     currentPath,
     explorerSearchQuery,
+    sortField,
     sortOrder,
-    sortLabel,
+    setSortField,
+    setSortOrder,
     viewMode,
+    handleNavigate,
     handleBreadcrumbClick,
     handleGoHome,
     setMobilePane,
     setViewMode,
     setExplorerSearch,
-    handleSortToggle,
     handleKeyDown,
     gridSelection,
     clearGridSelection,
@@ -144,11 +147,14 @@ export default function FolderGrid() {
         isMobile={isMobile}
         currentPath={currentPath}
         handleBreadcrumbClick={handleBreadcrumbClick}
+        previousFolderItems={previousFolders}
+        handleNavigate={handleNavigate}
         handleGoHome={handleGoHome}
         setMobilePane={setMobilePane}
-        handleSortToggle={handleSortToggle}
-        sortLabel={sortLabel}
+        sortField={sortField}
         sortOrder={sortOrder}
+        setSortField={setSortField}
+        setSortOrder={setSortOrder}
         viewMode={viewMode}
         setViewMode={setViewMode}
         explorerSearchQuery={explorerSearchQuery}

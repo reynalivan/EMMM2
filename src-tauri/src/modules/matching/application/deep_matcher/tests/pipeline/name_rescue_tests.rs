@@ -1,7 +1,11 @@
-use crate::modules::workspace::application::scanner::core::walker::{scan_folder_content, ModCandidate};
 use crate::modules::matching::application::deep_matcher::pipeline::full_pipeline::match_folder_full;
 use crate::modules::matching::application::deep_matcher::state::master_db::MasterDb;
-use crate::modules::matching::application::deep_matcher::{Confidence, DbEntry, MatchStatus, Reason};
+use crate::modules::matching::application::deep_matcher::{
+    Confidence, DbEntry, MatchStatus, Reason,
+};
+use crate::modules::workspace::application::scanner::core::walker::{
+    scan_folder_content, ModCandidate,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 

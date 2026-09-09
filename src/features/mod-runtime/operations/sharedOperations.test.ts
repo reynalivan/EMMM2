@@ -13,13 +13,15 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../../workspace-runtime/optimistic/applyOptimisticEffects', () => ({
-  applyRuntimeEffects: (...args: unknown[]) => applyRuntimeEffects(...args),
-}));
-
-vi.mock('../../workspace-runtime/actions/sharedRuntimeResultMapper', () => ({
-  applyRuntimeMutationResult: (...args: unknown[]) => applyRuntimeMutationResult(...args),
-}));
+vi.mock('@/features/workspace-runtime/@x/mod-runtime', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/features/workspace-runtime/@x/mod-runtime')>();
+  return {
+    ...actual,
+    applyRuntimeEffects: (...args: unknown[]) => applyRuntimeEffects(...args),
+    applyRuntimeMutationResult: (...args: unknown[]) => applyRuntimeMutationResult(...args),
+  };
+});
 
 vi.mock('../../folder-grid/hooks/folderCache', () => ({}));
 

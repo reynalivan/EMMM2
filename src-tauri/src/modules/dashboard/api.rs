@@ -1,4 +1,3 @@
-
 #[cfg(debug_assertions)]
 pub mod testing {
     pub mod adapters {

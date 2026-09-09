@@ -5,8 +5,8 @@
 //! `services::objects::reconcile`. This module only knows how to look a row up
 //! and how to write one.
 
-use crate::shared::path_key::{canonical_name_key, folder_path_key};
 use crate::modules::catalog::domain::objects::EnsureObjectInput;
+use crate::shared::path_key::{canonical_name_key, folder_path_key};
 
 /// JSON sentinels the schema stores for "nothing set yet".
 const EMPTY_TAGS: &str = "[]";

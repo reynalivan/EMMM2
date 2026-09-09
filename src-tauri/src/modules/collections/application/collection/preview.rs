@@ -2,10 +2,10 @@
 
 use super::live_state::load_live_runtime_state;
 use super::projection::{load_projected_collection_state, require_collection, require_game_match};
-use crate::modules::collections::domain::collection::{ApplyPreview, CollectionPreview};
-use crate::shared::errors::CollectionError;
 use crate::modules::collections::adapters::sqlite as collection;
+use crate::modules::collections::domain::collection::{ApplyPreview, CollectionPreview};
 use crate::modules::workspace::application::projected_state;
+use crate::shared::errors::CollectionError;
 use sqlx::SqlitePool;
 
 pub async fn get_collection_preview(
@@ -27,8 +27,7 @@ pub async fn get_collection_preview(
         .map_err(CollectionError::RuntimeState)?;
     let active_id = runtime_snapshot.active_collection_id.as_deref();
 
-    let tree_nodes =
-        projected_state::build_preview_tree_from_projected_state(&projected_state);
+    let tree_nodes = projected_state::build_preview_tree_from_projected_state(&projected_state);
 
     Ok(CollectionPreview {
         collection: collection::to_summary(&collection, active_id),
@@ -66,9 +65,7 @@ pub async fn preview_apply(
     Ok(ApplyPreview {
         collection_name: collection.name,
         current_tree_nodes,
-        target_tree_nodes: projected_state::build_preview_tree_from_projected_state(
-            &target_state,
-        ),
+        target_tree_nodes: projected_state::build_preview_tree_from_projected_state(&target_state),
         current_state_name: None,
         current_state_is_unsaved: true,
         current_projected_state,

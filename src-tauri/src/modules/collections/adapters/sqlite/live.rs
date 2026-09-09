@@ -1,6 +1,6 @@
 //! Live (unsaved) runtime rows shaped as collection members.
 
-use sqlx::{SqliteConnection, SqlitePool};
+use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use crate::modules::collections::domain::collection::CollectionObject;
 use crate::shared::errors::CollectionError;
@@ -10,7 +10,7 @@ pub async fn get_live_objects(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<CollectionObject>, CollectionError> {
-    Ok(sqlx::query_as(
+    let rows = sqlx::query(
         r#"
         SELECT
             'object' as kind,
@@ -25,14 +25,15 @@ pub async fn get_live_objects(
     )
     .bind(game_id)
     .fetch_all(pool)
-    .await?)
+    .await?;
+    rows.iter().map(map_live_object).collect()
 }
 
 pub async fn get_live_objects_tx(
     conn: &mut SqliteConnection,
     game_id: &str,
 ) -> Result<Vec<CollectionObject>, CollectionError> {
-    Ok(sqlx::query_as(
+    let rows = sqlx::query(
         r#"
         SELECT
             'object' as kind,
@@ -47,7 +48,19 @@ pub async fn get_live_objects_tx(
     )
     .bind(game_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await?;
+    rows.iter().map(map_live_object).collect()
+}
+
+fn map_live_object(row: &sqlx::sqlite::SqliteRow) -> Result<CollectionObject, CollectionError> {
+    Ok(CollectionObject {
+        kind: crate::modules::collections::domain::collection::MemberKind::Object,
+        collection_id: row.try_get("collection_id")?,
+        object_id: row.try_get("object_id")?,
+        is_enabled: row.try_get::<i64, _>("is_enabled")? != 0,
+        display_name: row.try_get("display_name")?,
+        path_key: row.try_get("path_key")?,
+    })
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

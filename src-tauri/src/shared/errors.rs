@@ -1,6 +1,22 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveErrorKind {
+    DictionaryTooLarge,
+    UnsupportedCompression,
+}
+
+impl ArchiveErrorKind {
+    pub const fn storage_code(self) -> &'static str {
+        match self {
+            Self::DictionaryTooLarge => "dictionary_too_large",
+            Self::UnsupportedCompression => "unsupported_compression",
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Typed error enums for each domain
 // ---------------------------------------------------------------------------
@@ -154,6 +170,15 @@ pub enum BrowserError {
     #[error("Background queue is closed")]
     QueueClosed,
 
+    #[error("Download queue is full. Try again after another download finishes.")]
+    QueueFull,
+
+    #[error("This download is already queued or in progress")]
+    DownloadAlreadyActive,
+
+    #[error("Download confirmation request has expired or was already handled")]
+    DownloadConfirmationUnavailable,
+
     #[error("IO error: {0}")]
     Io(String),
 
@@ -282,6 +307,15 @@ pub enum AppError {
     #[error("Validation error: {0}")]
     Validation(String),
 
+    #[error("Archive password required")]
+    ArchivePasswordRequired,
+
+    #[error("Archive password is incorrect or encryption is unsupported for this format")]
+    ArchivePasswordIncorrect,
+
+    #[error("Archive extraction is unsupported: {reason:?}")]
+    ArchiveUnsupported { reason: ArchiveErrorKind },
+
     #[error("IO error: {0}")]
     Io(String),
 
@@ -369,17 +403,5 @@ impl From<enigo::NewConError> for AppError {
 impl From<enigo::InputError> for AppError {
     fn from(error: enigo::InputError) -> Self {
         Self::Internal(format!("input simulation failed: {error}"))
-    }
-}
-
-impl From<zip::result::ZipError> for AppError {
-    fn from(error: zip::result::ZipError) -> Self {
-        Self::Io(format!("archive read failed: {error}"))
-    }
-}
-
-impl From<rar::error::RarError> for AppError {
-    fn from(error: rar::error::RarError) -> Self {
-        Self::Io(format!("RAR extraction failed: {error}"))
     }
 }

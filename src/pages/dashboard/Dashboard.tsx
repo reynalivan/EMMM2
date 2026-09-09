@@ -1,7 +1,7 @@
 import { Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { DashboardPayload } from '@/pages/dashboard/model/dashboard';
-import { useAppStore } from '../../app/store/useAppStore';
+import type { DashboardPayload } from './model/dashboard';
+import { useAppStore } from '@/app/store';
 import { useDashboardStats } from './hooks/useDashboardStats';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 import { useActiveGame } from './hooks/useActiveGame';

@@ -3,8 +3,8 @@ use std::path::Path;
 use rayon::prelude::*;
 
 use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
-use crate::shared::path_key::canonical_name_key;
 use crate::shared::errors::AppError;
+use crate::shared::path_key::canonical_name_key;
 
 use crate::modules::workspace::application::explorer::types::ModFolder;
 

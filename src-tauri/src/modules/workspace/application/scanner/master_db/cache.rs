@@ -35,7 +35,8 @@ pub async fn get_cached(
 ) -> Result<Option<Arc<deep_matcher::MasterDb>>, ScannerError> {
     use tauri::Manager;
 
-    let canonical = crate::modules::games::application::game::schema_loader::normalize_game_type(game_type);
+    let canonical =
+        crate::modules::games::application::game::schema_loader::normalize_game_type(game_type);
     let cache = app.state::<MasterDbCache>();
 
     if let Some(hit) = cache.0.read().await.get(&canonical).cloned() {
@@ -71,13 +72,14 @@ pub async fn get_cached(
 /// they were written to the `objects` table and never read back by the matcher,
 /// so they changed nothing. This is the read half.
 async fn load_user_aliases(pool: &sqlx::SqlitePool) -> HashMap<String, Vec<String>> {
-    let blobs = match crate::modules::catalog::adapters::sqlite::object::get_user_alias_blobs(pool).await {
-        Ok(rows) => rows,
-        Err(error) => {
-            log::warn!("user aliases unavailable, matching with bundled aliases only: {error}");
-            return HashMap::new();
-        }
-    };
+    let blobs =
+        match crate::modules::catalog::adapters::sqlite::object::get_user_alias_blobs(pool).await {
+            Ok(rows) => rows,
+            Err(error) => {
+                log::warn!("user aliases unavailable, matching with bundled aliases only: {error}");
+                return HashMap::new();
+            }
+        };
 
     let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
     for (entry_key, json) in blobs {
@@ -105,7 +107,10 @@ fn attach_user_aliases(
 ) {
     let mut attached = 0usize;
     for entry in &mut db.entries {
-        let key = crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(&entry.name);
+        let key =
+            crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(
+                &entry.name,
+            );
         let Some(aliases) = by_entry_key.get(&key) else {
             continue;
         };

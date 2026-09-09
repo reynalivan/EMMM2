@@ -1,28 +1,11 @@
-import type { MoveStatus } from '@/entities/mod/model/mod';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ModFolder } from '@/entities/game-object/model/object';
-import type { DuplicateInfo } from '@/entities/workspace/model/scanner';
-import MoveToObjectDialog from '@/widgets/object-sidebar/modals/MoveToObjectDialog';
+import type { ModFolder } from '@/entities/game-object';
+import type { DuplicateInfo } from '@/entities/workspace';
 import ConfirmDialog from '../../../shared/ui/components/ui/ConfirmDialog';
 import DuplicateWarningModal from './DuplicateWarningModal';
-import ActiveModContextDialog from '@/features/mod-runtime/modals/ActiveModContextDialog';
-import type { ObjectSummary } from '@/entities/game-object/model/object';
 
 interface PreviewPanelModalsProps {
-  // Move Dialog
-  moveDialog: { open: boolean; folder: ModFolder | null };
-  closeMoveDialog: () => void;
-  handleMoveToObject: (
-    folder: ModFolder,
-    targetId: string,
-    status: MoveStatus,
-    targetSubpath?: string | null,
-    targetModPaths?: string[],
-  ) => Promise<void> | void;
-  objectId?: string;
-  objects: ObjectSummary[];
-
   // Delete Dialog
   deleteConfirm: { open: boolean; folder: ModFolder | null };
   setDeleteConfirm: (state: { open: boolean; folder: ModFolder | null }) => void;
@@ -38,19 +21,9 @@ interface PreviewPanelModalsProps {
   handleDuplicateForceEnable: (ignoreFuture: boolean) => void;
   handleDuplicateEnableOnly: () => void;
   handleDuplicateCancel: () => void;
-
-  // Pin Safe
-  activeContextDialog: { open: boolean; folder: ModFolder | null; isProcessing: boolean };
-  handleActiveContextCancel: () => void;
-  handleActiveContextSubmit: () => void;
 }
 
 export default function PreviewPanelModals({
-  moveDialog,
-  closeMoveDialog,
-  handleMoveToObject,
-  objectId,
-  objects,
   deleteConfirm,
   setDeleteConfirm,
   handleDeleteConfirm,
@@ -61,9 +34,6 @@ export default function PreviewPanelModals({
   handleDuplicateForceEnable,
   handleDuplicateEnableOnly,
   handleDuplicateCancel,
-  activeContextDialog,
-  handleActiveContextCancel,
-  handleActiveContextSubmit,
 }: PreviewPanelModalsProps) {
   const { t } = useTranslation(['preview', 'common']);
 
@@ -76,29 +46,8 @@ export default function PreviewPanelModals({
     }
   }, [renameDialog.open, renameDialog.folder]);
 
-  // currentPath from moveDialog.folder for the new MoveToObjectDialog props
-  const currentPath = moveDialog.folder?.path ?? '';
-  // Note: objectId is already in props, so we just use that directly or as defined below if shadowed
-
   return (
     <>
-      {/* Move To Object Dialog */}
-      {moveDialog.open && moveDialog.folder && (
-        <MoveToObjectDialog
-          isOpen={moveDialog.open}
-          onClose={closeMoveDialog}
-          objects={objects}
-          targetModPaths={[currentPath]}
-          currentObjectId={objectId || undefined}
-          onSubmit={async (targetId: string, status: MoveStatus, targetSubpath: string | null) => {
-            if (!moveDialog.folder) return;
-            await handleMoveToObject(moveDialog.folder, targetId, status, targetSubpath, [
-              currentPath,
-            ]);
-          }}
-        />
-      )}
-
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         open={deleteConfirm.open}
@@ -153,16 +102,6 @@ export default function PreviewPanelModals({
         onForceEnable={handleDuplicateForceEnable}
         onEnableOnlyThis={handleDuplicateEnableOnly}
         onCancel={handleDuplicateCancel}
-      />
-
-      <ActiveModContextDialog
-        key={activeContextDialog.folder?.path || 'preview-dialog-hidden'}
-        open={activeContextDialog.open}
-        modName={activeContextDialog.folder?.name ?? ''}
-        targetSafeStatus={!(activeContextDialog.folder?.is_safe ?? false)}
-        isProcessing={activeContextDialog.isProcessing}
-        onCancel={handleActiveContextCancel}
-        onConfirm={handleActiveContextSubmit}
       />
     </>
   );

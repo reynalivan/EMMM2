@@ -9,7 +9,10 @@ fn status_text_includes_preset_without_obsolete_safety_banner() {
         conflict_count: Some(0),
         ..Default::default()
     };
-    let text = generate_status_text(&fields, &crate::modules::automation::application::hotkeys::HotkeyConfig::default());
+    let text = generate_status_text(
+        &fields,
+        &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
+    );
     assert!(text.contains("Preset: Default"));
     assert!(!text.contains("Safe:"));
 }
@@ -22,7 +25,10 @@ fn status_text_with_folder() {
         scope_name: Some("Albedo".to_string()),
         conflict_count: Some(0),
     };
-    let text = generate_status_text(&fields, &crate::modules::automation::application::hotkeys::HotkeyConfig::default());
+    let text = generate_status_text(
+        &fields,
+        &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
+    );
     assert!(text.contains("Folder: Cape"));
     assert!(text.contains("Scope: Albedo"));
     assert!(!text.contains("Safe:"));
@@ -36,7 +42,10 @@ fn status_text_within_limits() {
         scope_name: Some("SomeScope".to_string()),
         conflict_count: Some(0),
     };
-    let text = generate_status_text(&fields, &crate::modules::automation::application::hotkeys::HotkeyConfig::default());
+    let text = generate_status_text(
+        &fields,
+        &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
+    );
     assert!(text.lines().count() <= 10);
     assert!(text.len() <= 4096);
 }

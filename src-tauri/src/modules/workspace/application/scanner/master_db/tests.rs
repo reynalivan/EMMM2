@@ -16,7 +16,8 @@ fn deserializes_entries_as_canonical() {
 
 #[test]
 fn deserializes_explicit_taxonomy_entries_without_guessing_from_the_name() {
-    let parsed = db(r#"{"entries":[{"name":"Weapon","object_type":"Weapon","entry_kind":"taxonomy"}]}"#);
+    let parsed =
+        db(r#"{"entries":[{"name":"Weapon","object_type":"Weapon","entry_kind":"taxonomy"}]}"#);
 
     assert_eq!(parsed.entries[0].entry_kind, EntryKind::Taxonomy);
 }

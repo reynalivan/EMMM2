@@ -1,11 +1,14 @@
 import { Edit2, ExternalLink, Keyboard, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { open } from '@tauri-apps/plugin-shell';
+import { toast } from '@/shared/ui/toast';
+import { commands } from '../../../shared/api/tauri/bindings';
+import { formatAppError } from '../../../shared/lib/appError';
 import type { KeyBindSectionGroup } from '../utils/previewPanelUtils';
 import { AdvancedKeybindModal } from './AdvancedKeybindModal';
 interface IniEditorSectionProps {
   activePath: string | null;
+  activeGameId: string | null;
   activeObjectName?: string;
   selectedFolderName?: string;
   sections: KeyBindSectionGroup[];
@@ -24,6 +27,7 @@ interface IniEditorSectionProps {
 
 export default function IniEditorSection({
   activePath,
+  activeGameId,
   activeObjectName,
   selectedFolderName,
   sections,
@@ -129,9 +133,19 @@ export default function IniEditorSection({
                       title={t('preview:ini_editor.open_in_editor')}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (activePath && canEdit) open(`${activePath}\\${fileGroup.fileName}`);
+                        if (activeGameId && activePath && canEdit) {
+                          void commands
+                            .openIniInEditor(activeGameId, activePath, fileGroup.fileName)
+                            .catch((error) => {
+                              toast.error(
+                                t('preview:errors.open_location_failed', {
+                                  error: formatAppError(error),
+                                }),
+                              );
+                            });
+                        }
                       }}
-                      disabled={!canEdit}
+                      disabled={!canEdit || !activeGameId}
                     >
                       <ExternalLink size={12} className="opacity-70" />
                     </button>

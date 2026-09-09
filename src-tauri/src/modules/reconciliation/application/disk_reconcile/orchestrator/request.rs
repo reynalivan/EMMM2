@@ -12,7 +12,9 @@ use tauri::Emitter;
 use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcilePhase, DiskReconcileProgress, DiskReconcileReason,
 };
-use crate::modules::workspace::application::scanner::watcher::{ModWatchEvent, WatcherSession, WatcherSuppressor};
+use crate::modules::workspace::application::scanner::watcher::{
+    ModWatchEvent, WatcherSession, WatcherSuppressor,
+};
 
 use super::state::DiskReconcileState;
 

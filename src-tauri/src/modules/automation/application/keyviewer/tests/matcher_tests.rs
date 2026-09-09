@@ -3,7 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::modules::automation::application::keyviewer::matcher::KvObjectEntry;
-use crate::modules::automation::application::keyviewer::matcher::{match_objects, MatchConfidence, MatchConfig};
+use crate::modules::automation::application::keyviewer::matcher::{
+    match_objects, MatchConfidence, MatchConfig,
+};
 
 fn make_kv_entry(name: &str, hashes: &[&str]) -> KvObjectEntry {
     let code_hashes: Vec<String> = hashes.iter().map(|h| h.to_string()).collect();

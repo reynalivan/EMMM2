@@ -1,9 +1,9 @@
-use crate::shared::errors::AppError;
 use crate::modules::ingestion::application::import_batch::types::{
     CommitImportBatchInput, ImportBatchReport, ImportDecision, ImportFlow, ImportItem,
     ImportItemStatus, SourceFingerprint,
 };
 use crate::modules::matching::application::deep_matcher::{EntryKind, MasterDb};
+use crate::shared::errors::AppError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use tauri::{Emitter, Manager};
@@ -97,9 +97,10 @@ pub async fn commit_import_batch(
     input: CommitImportBatchInput,
     master_db: &MasterDb,
 ) -> Result<ImportBatchReport, AppError> {
-    let mut batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, &input.batch_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
+    let mut batch =
+        crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, &input.batch_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
     let requested_ids = validate_selected_items(&batch.items, &input.item_ids)?;
     let archive_pending_ids = batch
         .items
@@ -112,9 +113,10 @@ pub async fn commit_import_batch(
     if batch.flow == ImportFlow::ReadyToMove && !archive_pending_ids.is_empty() {
         return resume_ready_to_move_archive_finalization(app, pool, &batch).await;
     }
-    let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, &batch.game_id)
-        .await?
-        .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
+    let mods_root =
+        crate::modules::games::adapters::sqlite::game::get_mod_path(pool, &batch.game_id)
+            .await?
+            .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
     let canonical_root = Path::new(&mods_root).canonicalize().map_err(|error| {
         AppError::Validation(format!("Configured mods path is unavailable: {error}"))
     })?;
@@ -132,9 +134,12 @@ pub async fn commit_import_batch(
             &canonical_root,
         )
         .await?;
-        batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, &input.batch_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
+        batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+            pool,
+            &input.batch_id,
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
     }
     let recovery_ids = batch
         .items
@@ -182,7 +187,10 @@ pub async fn commit_import_batch(
         .map(|item| item.id.clone())
         .collect::<BTreeSet<_>>();
     if selected_ids.is_empty() {
-        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+            pool, &batch.id,
+        )
+        .await?;
         return Ok(ImportBatchReport {
             batch_id: batch.id,
             moved: 0,
@@ -207,21 +215,66 @@ pub async fn commit_import_batch(
         validate_preview_fingerprint(plan)?;
     }
 
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(app, pool, &batch.game_id)
+    let preflight_paths = plans
+        .iter()
+        .filter(|plan| !plan.target.exists())
+        .map(|plan| plan.target.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    if !preflight_paths.is_empty() {
+        crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+            app,
+            pool,
+            &batch.game_id,
+            Some(&preflight_paths),
+        )
         .await?;
+    }
     let operation_lock = app
-        .try_state::<crate::platform::fs::operation_lock::OperationLock>()
-        .ok_or_else(|| AppError::Internal("OperationLock state is unavailable".to_string()))?;
+        .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
+        .ok_or_else(|| {
+            AppError::Internal("MutationCoordinator state is unavailable".to_string())
+        })?;
     let disk_reconcile_state = app
         .try_state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
         .ok_or_else(|| AppError::Internal("DiskReconcileState is unavailable".to_string()))?;
-    let mutation_lease = disk_reconcile_state
-        .acquire_mutation_lease(&batch.game_id, operation_lock.inner())
+    let game_guard = disk_reconcile_state
+        .game_lock(&batch.game_id)
+        .lock_owned()
+        .await;
+    let operation_guard = operation_lock
+        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
+            "import-commit",
+            batch.game_id.clone(),
+            plans
+                .iter()
+                .enumerate()
+                .map(|(sequence, plan)| {
+                    crate::modules::mutation::api::PlannedStep::rename(
+                        sequence as u32,
+                        plan.source.clone(),
+                        plan.target.clone(),
+                    )
+                })
+                .collect(),
+        ))
         .await?;
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+        game_guard,
+        operation_guard,
+    );
     let selected_id_list = selected_ids.iter().cloned().collect::<Vec<_>>();
-    if !crate::modules::ingestion::adapters::sqlite::import_batch::begin_batch_commit(pool, &batch.id, &selected_id_list)
-        .await?
+    if !crate::modules::ingestion::adapters::sqlite::import_batch::begin_batch_commit(
+        pool,
+        &batch.id,
+        &selected_id_list,
+    )
+    .await?
     {
+        for sequence in 0..plans.len() {
+            mutation_lease.mark_step_rolled_back(sequence as u32)?;
+        }
+        mutation_lease.begin_rollback()?;
+        mutation_lease.finish_rollback()?;
         return Err(AppError::Validation(
             "Import batch changed after preview; refresh it before committing".to_string(),
         ));
@@ -281,8 +334,17 @@ pub async fn commit_import_batch(
                 .await?;
             }
         }
-        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+            pool, &batch.id,
+        )
+        .await?;
         drop(suppression);
+        if rollback_succeeded {
+            for sequence in 0..plans.len() {
+                mutation_lease.mark_step_rolled_back(sequence as u32)?;
+            }
+            mutation_lease.begin_rollback()?;
+        }
         let recovery =
             crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
                 app,
@@ -291,15 +353,29 @@ pub async fn commit_import_batch(
                 &mutation_lease,
             )
             .await;
-        drop(mutation_lease);
         return match (rollback, recovery) {
-            (Ok(()), Ok(_)) => Err(move_error),
-            (rollback, recovery) => Err(AppError::Internal(format!(
-                "Import move failed: {move_error}; rollback: {}; recovery reconcile: {}",
-                result_label(rollback),
-                result_label(recovery)
-            ))),
+            (Ok(()), Ok(_)) => {
+                mutation_lease.finish_rollback()?;
+                Err(move_error)
+            }
+            (rollback, recovery) => {
+                let combined = format!(
+                    "Import move failed: {move_error}; rollback: {}; recovery reconcile: {}",
+                    result_label(rollback),
+                    result_label(recovery)
+                );
+                mutation_lease.fail(combined.clone())?;
+                Err(AppError::Internal(combined))
+            }
         };
+    }
+
+    for (sequence, plan) in plans.iter().enumerate() {
+        if collision_ids.contains(&plan.item.id) {
+            mutation_lease.mark_step_skipped(sequence as u32)?;
+        } else {
+            mutation_lease.mark_step_applied(sequence as u32)?;
+        }
     }
 
     for plan in &plans {
@@ -350,24 +426,56 @@ pub async fn commit_import_batch(
             &mutation_lease,
         )
         .await;
-    drop(mutation_lease);
     let reconcile = match reconcile {
         Ok(result) if result.status.applied() => {
+            mutation_lease.mark_db_committed()?;
+            mutation_lease.commit()?;
             let _ = app.emit("disk_reconcile:result", &result);
             result
         }
         Ok(result) => {
-            let warning = format!("Disk reconcile requires attention: {:?}", result.status);
-            mark_committed_partial(pool, &plans, &collision_ids, &warning).await?;
-            crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
-            let _ = app.emit("disk_reconcile:result", &result);
-            return Ok(report_for(&batch.id, &plans, &collision_ids, true));
+            let error = AppError::Io(format!(
+                "Disk reconcile requires attention after import: {:?}",
+                result.status
+            ));
+            if let Err(rollback_error) = rollback_import_after_reconcile_failure(
+                app,
+                pool,
+                &batch,
+                &plans,
+                &collision_ids,
+                &journal,
+                &created_directories,
+                &mutation_lease,
+                &error,
+            )
+            .await
+            {
+                mutation_lease.fail(rollback_error.to_string())?;
+                return Err(rollback_error);
+            }
+            mutation_lease.finish_rollback()?;
+            return Err(error);
         }
         Err(error) => {
-            let warning = format!("Disk reconcile failed after files were moved: {error}");
-            mark_committed_partial(pool, &plans, &collision_ids, &warning).await?;
-            crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
-            return Ok(report_for(&batch.id, &plans, &collision_ids, true));
+            if let Err(rollback_error) = rollback_import_after_reconcile_failure(
+                app,
+                pool,
+                &batch,
+                &plans,
+                &collision_ids,
+                &journal,
+                &created_directories,
+                &mutation_lease,
+                &error,
+            )
+            .await
+            {
+                mutation_lease.fail(rollback_error.to_string())?;
+                return Err(rollback_error);
+            }
+            mutation_lease.finish_rollback()?;
+            return Err(error);
         }
     };
     let _ = reconcile;
@@ -387,16 +495,36 @@ pub async fn commit_import_batch(
             None,
         )
         .await?;
-        let object_id =
-            resolve_reconciled_object_id(pool, &batch.game_id, &mods_root, plan).await?;
-        let mod_id = resolve_reconciled_mod_id(pool, &batch.game_id, &plan.target).await?;
-        crate::modules::ingestion::adapters::sqlite::import_batch::bind_reconciled_destination(
-            pool,
-            &plan.item.id,
-            &object_id,
-            &mod_id,
-        )
-        .await?;
+        let projection = async {
+            let object_id =
+                resolve_reconciled_object_id(pool, &batch.game_id, &mods_root, plan).await?;
+            let mod_id = resolve_reconciled_mod_id(pool, &batch.game_id, &plan.target).await?;
+            crate::modules::ingestion::adapters::sqlite::import_batch::bind_reconciled_destination(
+                pool,
+                &plan.item.id,
+                &object_id,
+                &mod_id,
+            )
+            .await?;
+            Ok::<String, AppError>(object_id)
+        }
+        .await;
+        let object_id = match projection {
+            Ok(object_id) => object_id,
+            Err(error) => {
+                metadata_pending += 1;
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
+                    pool,
+                    &plan.item.id,
+                    ImportItemStatus::MetadataPending,
+                    Some(&plan.target.to_string_lossy()),
+                    Some("metadata_pending"),
+                    Some(&error.to_string()),
+                )
+                .await?;
+                continue;
+            }
+        };
         let classification =
             apply_item_classification(pool, &batch.game_id, &plan.item, object_id).await;
         match classification {
@@ -427,7 +555,8 @@ pub async fn commit_import_batch(
         }
     }
     if aliases_changed {
-        crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(app).await;
+        crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(app)
+            .await;
     }
     settle_runtime_effects(app, pool, &batch.game_id).await;
     let archive_failed = finalize_batch_after_metadata(app, pool, &batch).await?;
@@ -440,12 +569,63 @@ pub async fn commit_import_batch(
     Ok(report)
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn rollback_import_after_reconcile_failure(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    batch: &crate::modules::ingestion::application::import_batch::types::ImportBatch,
+    plans: &[PlannedMove],
+    collision_ids: &BTreeSet<String>,
+    journal: &[MoveJournalEntry],
+    created_directories: &[PathBuf],
+    mutation_lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+    reconcile_error: &AppError,
+) -> Result<(), AppError> {
+    mutation_lease.begin_rollback()?;
+    if let Err(rollback_error) = rollback_move_journal(journal) {
+        let combined = format!("{reconcile_error}; import rollback failed: {rollback_error}");
+        return Err(AppError::Io(combined));
+    }
+    cleanup_created_directories(created_directories);
+    for (sequence, plan) in plans.iter().enumerate() {
+        if !collision_ids.contains(&plan.item.id) {
+            mutation_lease.mark_step_rolled_back(sequence as u32)?;
+        }
+        crate::modules::ingestion::adapters::sqlite::import_batch::restore_item_after_rollback(
+            pool,
+            &plan.item.id,
+            &reconcile_error.to_string(),
+        )
+        .await?;
+    }
+    crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+        pool, &batch.id,
+    )
+    .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+        app,
+        pool,
+        &batch.game_id,
+        mutation_lease,
+    )
+    .await
+    .map_err(|rollback_reconcile_error| {
+        AppError::Io(format!(
+            "{reconcile_error}; rollback projection failed: {rollback_reconcile_error}"
+        ))
+    })?;
+    Ok(())
+}
+
 async fn apply_item_classification(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     item: &ImportItem,
     object_id: String,
-) -> Result<crate::modules::catalog::application::objects::classification::ClassificationWriteResult, AppError> {
+) -> Result<
+    crate::modules::catalog::application::objects::classification::ClassificationWriteResult,
+    AppError,
+> {
     crate::modules::catalog::application::objects::classification::apply_object_classification(
         pool,
         crate::modules::catalog::application::objects::classification::ObjectClassificationInput {
@@ -514,16 +694,30 @@ async fn recover_interrupted_commits(
         paths.push(((*item).clone(), source, target));
     }
 
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(app, pool, &batch.game_id)
+    let preflight_paths = paths
+        .iter()
+        .filter(|(_, _, target)| !target.exists())
+        .map(|(_, _, target)| target.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    if !preflight_paths.is_empty() {
+        crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+            app,
+            pool,
+            &batch.game_id,
+            Some(&preflight_paths),
+        )
         .await?;
+    }
     let operation_lock = app
-        .try_state::<crate::platform::fs::operation_lock::OperationLock>()
-        .ok_or_else(|| AppError::Internal("OperationLock state is unavailable".to_string()))?;
+        .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
+        .ok_or_else(|| {
+            AppError::Internal("MutationCoordinator state is unavailable".to_string())
+        })?;
     let disk_state = app
         .try_state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
         .ok_or_else(|| AppError::Internal("DiskReconcileState is unavailable".to_string()))?;
     let lease = disk_state
-        .acquire_mutation_lease(&batch.game_id, operation_lock.inner())
+        .acquire_mutation_lease(&batch.game_id, operation_lock.inner_lock())
         .await?;
     let watcher = app
         .try_state::<crate::modules::workspace::application::scanner::watcher::WatcherState>()
@@ -591,7 +785,10 @@ async fn recover_interrupted_commits(
         }
     }
     drop(suppression);
-    crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+    crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+        pool, &batch.id,
+    )
+    .await?;
     if !changed_paths.is_empty() {
         crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile_with_path_hints_under_lease(
             app,
@@ -633,19 +830,25 @@ async fn resume_committed_items(
         crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(app, pool, &batch.game_id)
             .await?;
         let operation_lock = app
-            .try_state::<crate::platform::fs::operation_lock::OperationLock>()
-            .ok_or_else(|| AppError::Internal("OperationLock state is unavailable".to_string()))?;
+            .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
+            .ok_or_else(|| {
+                AppError::Internal("MutationCoordinator state is unavailable".to_string())
+            })?;
         let disk_state = app
             .try_state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
             .ok_or_else(|| AppError::Internal("DiskReconcileState is unavailable".to_string()))?;
         lease = Some(
             disk_state
-                .acquire_mutation_lease(&batch.game_id, operation_lock.inner())
+                .acquire_mutation_lease(&batch.game_id, operation_lock.inner_lock())
                 .await?,
         );
     }
     let ids = item_ids.iter().cloned().collect::<Vec<_>>();
-    if !crate::modules::ingestion::adapters::sqlite::import_batch::prepare_items_for_recovery(pool, &batch.id, &ids).await? {
+    if !crate::modules::ingestion::adapters::sqlite::import_batch::prepare_items_for_recovery(
+        pool, &batch.id, &ids,
+    )
+    .await?
+    {
         return Err(AppError::Validation(
             "Import recovery state changed; reload the batch before retrying".to_string(),
         ));
@@ -711,7 +914,10 @@ async fn resume_committed_items(
                     )
                     .await?;
                 }
-                crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+                crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+                    pool, &batch.id,
+                )
+                .await?;
                 return Ok(recovery_report(&batch.id, 0, 1));
             }
             Err(error) => {
@@ -727,7 +933,10 @@ async fn resume_committed_items(
                     )
                     .await?;
                 }
-                crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
+                crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+                    pool, &batch.id,
+                )
+                .await?;
                 return Ok(recovery_report(&batch.id, 0, 1));
             }
         }
@@ -746,21 +955,41 @@ async fn resume_committed_items(
             None,
         )
         .await?;
-        let object_id =
-            resolve_recovery_object_id(pool, batch, item, master_db, mods_root, canonical_root)
+        let projection = async {
+            let object_id =
+                resolve_recovery_object_id(pool, batch, item, master_db, mods_root, canonical_root)
+                    .await?;
+            let destination_path = item.destination_path.as_deref().ok_or_else(|| {
+                AppError::Internal(format!(
+                    "Import item '{}' has no reconciled destination path",
+                    item.id
+                ))
+            })?;
+            let mod_id =
+                resolve_reconciled_mod_id(pool, &batch.game_id, Path::new(destination_path)).await?;
+            crate::modules::ingestion::adapters::sqlite::import_batch::bind_reconciled_destination(
+                pool, &item.id, &object_id, &mod_id,
+            )
+            .await?;
+            Ok::<String, AppError>(object_id)
+        }
+        .await;
+        let object_id = match projection {
+            Ok(object_id) => object_id,
+            Err(error) => {
+                metadata_pending += 1;
+                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
+                    pool,
+                    &item.id,
+                    ImportItemStatus::MetadataPending,
+                    item.destination_path.as_deref(),
+                    Some("metadata_pending"),
+                    Some(&error.to_string()),
+                )
                 .await?;
-        let destination_path = item.destination_path.as_deref().ok_or_else(|| {
-            AppError::Internal(format!(
-                "Import item '{}' has no reconciled destination path",
-                item.id
-            ))
-        })?;
-        let mod_id =
-            resolve_reconciled_mod_id(pool, &batch.game_id, Path::new(destination_path)).await?;
-        crate::modules::ingestion::adapters::sqlite::import_batch::bind_reconciled_destination(
-            pool, &item.id, &object_id, &mod_id,
-        )
-        .await?;
+                continue;
+            }
+        };
         match apply_item_classification(pool, &batch.game_id, item, object_id).await {
             Ok(result) => {
                 aliases_changed |= result.aliases_changed;
@@ -789,7 +1018,8 @@ async fn resume_committed_items(
         }
     }
     if aliases_changed {
-        crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(app).await;
+        crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(app)
+            .await;
     }
     settle_runtime_effects(app, pool, &batch.game_id).await;
     let archive_failed = finalize_batch_after_metadata(app, pool, batch).await?;
@@ -815,14 +1045,18 @@ async fn resolve_recovery_object_id(
     let key =
         crate::shared::path_key::folder_path_key(&object_dir.to_string_lossy(), Some(mods_root));
     let mut connection = pool.acquire().await?;
-    crate::modules::catalog::adapters::sqlite::object::get_object_id_by_folder_key(&mut connection, &batch.game_id, &key)
-        .await?
-        .ok_or_else(|| {
-            AppError::Internal(format!(
-                "Disk reconcile did not create an object for '{}'",
-                object_dir.display()
-            ))
-        })
+    crate::modules::catalog::adapters::sqlite::object::get_object_id_by_folder_key(
+        &mut connection,
+        &batch.game_id,
+        &key,
+    )
+    .await?
+    .ok_or_else(|| {
+        AppError::Internal(format!(
+            "Disk reconcile did not create an object for '{}'",
+            object_dir.display()
+        ))
+    })
 }
 
 fn recovery_report(batch_id: &str, metadata_pending: u32, failed: u32) -> ImportBatchReport {
@@ -840,7 +1074,9 @@ fn recovery_report(batch_id: &str, metadata_pending: u32, failed: u32) -> Import
 
 fn cleanup_import_staging(app: &tauri::AppHandle, batch_id: &str) -> Result<(), AppError> {
     let root = app.path().app_data_dir()?.join("import-staging");
-    crate::modules::ingestion::application::import_batch::staging::cleanup_batch_staging(&root, batch_id)?;
+    crate::modules::ingestion::application::import_batch::staging::cleanup_batch_staging(
+        &root, batch_id,
+    )?;
     Ok(())
 }
 
@@ -906,7 +1142,9 @@ async fn resolve_plan(
         ))
     })?;
     let physical_name = physical_import_name(&item.planned_name);
-    crate::modules::library::application::mods::core_ops::validate_folder_name_component(&physical_name)?;
+    crate::modules::library::application::mods::core_ops::validate_folder_name_component(
+        &physical_name,
+    )?;
     let (object_dir, creates_object) =
         resolve_object_dir(pool, batch, item, master_db, mods_root).await?;
     ensure_target_under_root(mods_root, &object_dir, creates_object)?;
@@ -938,9 +1176,11 @@ async fn resolve_object_dir(
             ));
         }
         let (game_id, folder_path) =
-            crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool, object_id)
-                .await?
-                .ok_or_else(|| AppError::NotFound(format!("Destination object '{object_id}'")))?;
+            crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(
+                pool, object_id,
+            )
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Destination object '{object_id}'")))?;
         if game_id != batch.game_id {
             return Err(AppError::Security(
                 "Destination object belongs to a different game".to_string(),
@@ -982,7 +1222,9 @@ async fn resolve_object_dir(
                 "Canonical entry no longer matches the confirmed category".to_string(),
             ));
         }
-        crate::modules::library::application::mods::core_ops::validate_folder_name_component(&entry.name)?;
+        crate::modules::library::application::mods::core_ops::validate_folder_name_component(
+            &entry.name,
+        )?;
         Ok((mods_root.join(&entry.name), true))
     }
 }
@@ -1157,29 +1399,6 @@ fn cleanup_created_directories(paths: &[PathBuf]) {
     }
 }
 
-async fn mark_committed_partial(
-    pool: &sqlx::SqlitePool,
-    plans: &[PlannedMove],
-    collision_ids: &BTreeSet<String>,
-    warning: &str,
-) -> Result<(), AppError> {
-    for plan in plans {
-        if collision_ids.contains(&plan.item.id) {
-            continue;
-        }
-        crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
-            pool,
-            &plan.item.id,
-            ImportItemStatus::Partial,
-            Some(&plan.target.to_string_lossy()),
-            Some("committed_with_warning"),
-            Some(warning),
-        )
-        .await?;
-    }
-    Ok(())
-}
-
 async fn resolve_reconciled_object_id(
     pool: &sqlx::SqlitePool,
     game_id: &str,
@@ -1194,14 +1413,18 @@ async fn resolve_reconciled_object_id(
         Some(mods_root),
     );
     let mut connection = pool.acquire().await?;
-    crate::modules::catalog::adapters::sqlite::object::get_object_id_by_folder_key(&mut connection, game_id, &key)
-        .await?
-        .ok_or_else(|| {
-            AppError::Internal(format!(
-                "Disk reconcile did not create an object for '{}'",
-                plan.object_dir.display()
-            ))
-        })
+    crate::modules::catalog::adapters::sqlite::object::get_object_id_by_folder_key(
+        &mut connection,
+        game_id,
+        &key,
+    )
+    .await?
+    .ok_or_else(|| {
+        AppError::Internal(format!(
+            "Disk reconcile did not create an object for '{}'",
+            plan.object_dir.display()
+        ))
+    })
 }
 
 async fn resolve_reconciled_mod_id(
@@ -1225,7 +1448,9 @@ async fn resolve_reconciled_mod_id(
 }
 
 async fn settle_runtime_effects(app: &tauri::AppHandle, pool: &sqlx::SqlitePool, game_id: &str) {
-    let Some(config) = app.try_state::<crate::modules::settings::application::config::ConfigService>() else {
+    let Some(config) =
+        app.try_state::<crate::modules::settings::application::config::ConfigService>()
+    else {
         log::warn!("Classification completed but ConfigService is unavailable");
         return;
     };
@@ -1255,7 +1480,10 @@ pub(super) async fn finalize_ready_to_move_archives(
     pool: &sqlx::SqlitePool,
     batch_id: &str,
 ) -> Result<(), AppError> {
-    let Some(batch) = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, batch_id).await? else {
+    let Some(batch) =
+        crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(pool, batch_id)
+            .await?
+    else {
         return Ok(());
     };
     let mut groups = BTreeMap::<String, Vec<&ImportItem>>::new();
@@ -1323,9 +1551,7 @@ pub(super) async fn finalize_ready_to_move_archives(
                     &target.to_string_lossy(),
                 )
                 .await?;
-                crate::platform::fs::file_utils::rename_cross_drive_fallback(
-                    &source, &target,
-                )?;
+                crate::platform::fs::file_utils::rename_cross_drive_fallback(&source, &target)?;
             }
             (true, true) => {
                 target = collision_safe_file(&processed, file_name);
@@ -1336,9 +1562,7 @@ pub(super) async fn finalize_ready_to_move_archives(
                     &target.to_string_lossy(),
                 )
                 .await?;
-                crate::platform::fs::file_utils::rename_cross_drive_fallback(
-                    &source, &target,
-                )?;
+                crate::platform::fs::file_utils::rename_cross_drive_fallback(&source, &target)?;
             }
             (false, false) => {
                 return Err(AppError::Validation(format!(
@@ -1392,8 +1616,13 @@ async fn finalize_batch_after_metadata(
             .await?;
     }
     let final_status =
-        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(pool, &batch.id).await?;
-    if final_status == crate::modules::ingestion::application::import_batch::types::ImportBatchStatus::Done {
+        crate::modules::ingestion::adapters::sqlite::import_batch::finish_batch_from_items(
+            pool, &batch.id,
+        )
+        .await?;
+    if final_status
+        == crate::modules::ingestion::application::import_batch::types::ImportBatchStatus::Done
+    {
         cleanup_import_staging(app, &batch.id)?;
     }
     Ok(false)

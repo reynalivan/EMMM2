@@ -6,14 +6,14 @@ import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
 import type { AppSettings, GameModsDirectoryInspection } from '../../../shared/api/tauri/bindings';
 import { formatAppError } from '../../../shared/lib/appError';
-import { useActiveGame } from '@/pages/dashboard/hooks/useActiveGame';
-import { useSettings } from '@/pages/settings/hooks/useSettings';
-import { settingsKeys } from '@/pages/settings/hooks/settingsQuery';
-import { useAppStore } from '../../../app/store/useAppStore';
-import { toast } from '../../../app/store/useToastStore';
-import { applyDiskReconcileResult } from '@/features/file-watcher/hooks/useFileWatcher';
-import { closeWorkspaceDialog } from '@/features/workspace-runtime/state/workspaceDialogs';
-import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime/state/workspaceStoreBridge';
+import { useActiveGame } from '@/entities/game';
+import { useSettings } from '@/entities/settings';
+import { settingsKeys } from '@/entities/settings';
+import { useAppStore } from '@/app/store';
+import { toast } from '@/shared/ui/toast';
+import { applyDiskReconcileResult } from '@/features/file-watcher';
+import { closeWorkspaceDialog } from '@/features/workspace-runtime';
+import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime';
 
 export default function WorkspaceSourceUnavailableDialog() {
   const { t } = useTranslation(['grid', 'common']);

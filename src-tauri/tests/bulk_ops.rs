@@ -3,12 +3,12 @@ mod common;
 #[cfg(test)]
 mod tests {
     use super::common::init_test_db;
-    use emmm_lib::modules::games::api::testing::domain::models::GameType;
     use emmm_lib::modules::games::api::testing::adapters::sqlite::game::{upsert_game, GameRow};
-    use emmm_lib::modules::settings::api::testing::application::config::ConfigService;
+    use emmm_lib::modules::games::api::testing::domain::models::GameType;
     use emmm_lib::modules::library::api::testing::application::mods::bulk;
     use emmm_lib::modules::library::api::testing::application::mods::core_ops::toggle_mod_inner;
     use emmm_lib::modules::library::api::testing::application::mods::info_json;
+    use emmm_lib::modules::settings::api::testing::application::config::ConfigService;
     use std::fs;
     use tempfile::TempDir;
 
@@ -117,9 +117,8 @@ mod tests {
             ..info_json::ModInfoUpdate::default()
         };
 
-        let validated =
-            emmm_lib::platform::fs::guard::validate_paths(&config, game_id, &paths)
-                .expect("Paths should validate inside the mods root");
+        let validated = emmm_lib::platform::fs::guard::validate_paths(&config, game_id, &paths)
+            .expect("Paths should validate inside the mods root");
         let result = bulk::bulk_update_info(&validated, update)
             .await
             .expect("Bulk update should succeed");

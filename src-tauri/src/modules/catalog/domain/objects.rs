@@ -1,10 +1,7 @@
 //! Object vocabulary shared by the repo, the services and the frontend.
 //!
-//! These carry `specta::Type`, so they are the TypeScript contract. They lived
-//! in `repo::object`, which made the data-access layer the owner of the
-//! IPC surface. `sqlx::FromRow` stays on them: the row shape and the wire
-//! shape genuinely coincide today, and a second type per table would be
-//! ceremony until one of them actually diverges.
+//! These carry `specta::Type`, so they are the TypeScript contract. Storage
+//! mapping belongs to the SQLite adapter rather than these domain contracts.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,7 +27,7 @@ pub struct GetObjectsResult {
     pub lost_objects: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
 pub struct ObjectSummary {
     pub id: String,
     pub name: String,
@@ -66,7 +63,7 @@ pub struct ObjectSummary {
     pub active_mod_paths: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
 pub struct ObjectRuntimeDescriptor {
     pub id: String,
     pub name: String,
@@ -78,7 +75,7 @@ pub struct ObjectRuntimeDescriptor {
     pub thumbnail_path: Option<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, sqlx::FromRow, specta::Type)]
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
 pub struct CategoryCount {
     pub object_type: String,
     #[specta(type = f64)]

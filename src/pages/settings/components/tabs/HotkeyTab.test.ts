@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import type { HotkeyConfig } from '@/pages/settings/model/settings';
+import type { HotkeyConfig } from '@/entities/settings';
 import { detectConflicts } from '../../utils/hotkeyConflicts';
 
 const translate = ((key: string, values?: Record<string, unknown>) =>

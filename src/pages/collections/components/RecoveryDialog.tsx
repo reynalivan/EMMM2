@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { PipelineTask, RecoveryAction } from '@/entities/task/model/task';
-import { toast } from '../../../app/store/useToastStore';
+import type { PipelineTask, RecoveryAction } from '@/entities/task';
+import { toast } from '@/shared/ui/toast';
 import { formatAppError } from '../../../shared/lib/appError';
 
 interface RecoveryDialogProps {

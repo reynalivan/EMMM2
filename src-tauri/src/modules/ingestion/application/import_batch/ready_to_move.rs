@@ -37,7 +37,9 @@ pub async fn validate_mod_inbox_root(
     game_id: &str,
     root: &Path,
 ) -> Result<(), AppError> {
-    let Some(mods_path) = crate::modules::games::adapters::sqlite::game::get_mod_path(db, game_id).await? else {
+    let Some(mods_path) =
+        crate::modules::games::adapters::sqlite::game::get_mod_path(db, game_id).await?
+    else {
         return Ok(());
     };
     let mods_root = Path::new(&mods_path).canonicalize().map_err(|error| {

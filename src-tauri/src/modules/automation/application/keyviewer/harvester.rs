@@ -58,7 +58,8 @@ pub fn harvest_hashes_from_ini(file_path: &Path) -> Result<Vec<HarvestedHash>, A
     let bytes = fs::read(file_path)?;
 
     // Hash lines are ASCII, so even the lossy fallback decode scans fine.
-    let (text, _had_bom, _clean) = crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
+    let (text, _had_bom, _clean) =
+        crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
 
     Ok(harvest_hashes_from_text(&text, file_path))
 }
@@ -139,7 +140,9 @@ pub fn harvest_keybinds_from_mod(
     let mut all_keybinds = Vec::new();
 
     for ini_path in ini_files {
-        if let Ok(doc) = crate::modules::library::application::ini::document::read_ini_document(&ini_path) {
+        if let Ok(doc) =
+            crate::modules::library::application::ini::document::read_ini_document(&ini_path)
+        {
             all_keybinds.extend(doc.key_bindings);
         }
     }

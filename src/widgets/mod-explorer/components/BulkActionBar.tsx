@@ -41,6 +41,7 @@ export default function BulkActionBar({
         count: t('bulk.selected'),
         safe: t('bulk.safe_title'),
         unsafe: t('bulk.unsafe_title'),
+        more: t('bulk.more_actions'),
         menuTitle: t('bulk.ops_title'),
       }}
       toggleGroup={{

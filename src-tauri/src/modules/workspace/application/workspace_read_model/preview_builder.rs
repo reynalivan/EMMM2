@@ -1,17 +1,11 @@
 use std::path::Path;
 
-use crate::modules::workspace::domain::classifier::NodeType;
-use crate::shared::path_key::path_starts_with_key;
-use crate::modules::workspace::domain::workspace::{
-    WorkspaceDisplayMode, WorkspaceExplorer, WorkspaceExplorerNode, WorkspaceImageSummary,
-    WorkspaceIniSummary, WorkspaceModInfoSummary, WorkspaceNode, WorkspacePreview,
-    WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
-    WorkspaceWarning, WorkspaceWarningState, WorkspaceWarningSummary,
+use crate::modules::library::application::mods::info_json::{read_info_json, ModInfo};
+use crate::modules::library::application::mods::preview_ops::{
+    list_mod_ini_files_inner, list_mod_preview_images_inner,
 };
 use crate::modules::workspace::application::explorer::listing::build_mod_folder_from_path;
 use crate::modules::workspace::application::explorer::types::ModFolder;
-use crate::modules::library::application::mods::info_json::{read_info_json, ModInfo};
-use crate::modules::library::application::mods::preview_ops::{list_mod_ini_files_inner, list_mod_preview_images_inner};
 use crate::modules::workspace::application::workspace_read_model::common::{
     build_folder_warning, build_inactive_warning, paths_equal_by_key,
 };
@@ -19,6 +13,14 @@ use crate::modules::workspace::application::workspace_read_model::explorer_mappe
 use crate::modules::workspace::application::workspace_read_model::selection::{
     push_affected_path, ResolvedWorkspaceSelection,
 };
+use crate::modules::workspace::domain::classifier::NodeType;
+use crate::modules::workspace::domain::workspace::{
+    WorkspaceDisplayMode, WorkspaceExplorer, WorkspaceExplorerNode, WorkspaceImageSummary,
+    WorkspaceIniSummary, WorkspaceModInfoSummary, WorkspaceNode, WorkspacePreview,
+    WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
+    WorkspaceWarning, WorkspaceWarningState, WorkspaceWarningSummary,
+};
+use crate::shared::path_key::path_starts_with_key;
 
 fn resolve_preview_target_path(
     selected_mod_path: Option<&str>,

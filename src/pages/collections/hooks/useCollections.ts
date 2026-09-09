@@ -11,7 +11,7 @@
 
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { toast } from '../../../app/store/useToastStore';
+import { toast } from '@/shared/ui/toast';
 import { collectionKeys } from '../queryKeys';
 import { commands } from '../../../shared/api/tauri/bindings';
 import {
@@ -19,14 +19,14 @@ import {
   extractMissingModsPayload,
   formatAppError,
 } from '../../../shared/lib/appError';
-import { publishRuntimeDescriptor } from '@/features/runtime-sync/queryRefresh';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
-} from '@/features/workspace-runtime/optimistic/descriptorBuilders';
-import { mergeRuntimeEffectDescriptors } from '@/features/workspace-runtime/optimistic/descriptor';
-import { applyRuntimeEffects } from '@/features/workspace-runtime/optimistic/applyOptimisticEffects';
-import { openWorkspaceFileInUseDialog } from '@/features/workspace-runtime/state/workspaceDialogs';
+} from '@/features/workspace-runtime';
+import { mergeRuntimeEffectDescriptors } from '@/features/workspace-runtime';
+import { applyRuntimeEffects } from '@/features/workspace-runtime';
+import { openWorkspaceFileInUseDialog } from '@/features/workspace-runtime';
 import type { RuntimeEffectDescriptor } from '../../../shared/lib/runtimeEffects';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 import type {
@@ -35,7 +35,7 @@ import type {
   ApplyPreview,
   ApplyResult,
   ApplyProgressSnapshot,
-} from '@/entities/collection/model/collection';
+} from '@/entities/collection';
 import type { CollectionSaveMode } from '../types';
 
 /**

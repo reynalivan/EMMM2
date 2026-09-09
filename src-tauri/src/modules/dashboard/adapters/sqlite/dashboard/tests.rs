@@ -280,9 +280,7 @@ async fn test_category_distribution() {
     )
     .await;
 
-    let dist = dashboard::fetch_category_distribution(&pool)
-        .await
-        .unwrap();
+    let dist = dashboard::fetch_category_distribution(&pool).await.unwrap();
     assert_eq!(
         dist.len(),
         3,
@@ -333,9 +331,7 @@ async fn test_game_distribution() {
     )
     .await;
 
-    let dist = dashboard::fetch_game_distribution(&pool)
-        .await
-        .unwrap();
+    let dist = dashboard::fetch_game_distribution(&pool).await.unwrap();
     assert_eq!(dist.len(), 2);
 
     let genshin = dist.iter().find(|d| d.game_name == "Genshin").unwrap();

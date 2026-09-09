@@ -1,12 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ObjectRowItem from './ObjectRowItem';
-import type {
-  WorkspaceCapabilities,
-  WorkspaceObjectNode,
-} from '@/entities/workspace/model/workspace';
+import type { WorkspaceCapabilities, WorkspaceObjectNode } from '@/entities/workspace';
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, values?: Record<string, string>) => {
       if (key === 'item.matched_alias' && values?.alias) {

@@ -91,7 +91,8 @@ pub(super) async fn prune_missing_mods(
         .await?;
         state.collection_reference_impact.merge(impact);
 
-        crate::modules::library::adapters::sqlite::mods::delete_mod_tx(&mut *conn, &db_mod.id).await?;
+        crate::modules::library::adapters::sqlite::mods::delete_mod_tx(&mut *conn, &db_mod.id)
+            .await?;
         state.folders_changed = true;
         state.change_summary.record_mod_removed(&db_mod.actual_name);
     }

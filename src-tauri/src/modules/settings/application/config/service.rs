@@ -1,5 +1,5 @@
-use crate::shared::sync::lock;
 use crate::shared::errors::AppError;
+use crate::shared::sync::lock;
 use sqlx::SqlitePool;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -107,6 +107,10 @@ impl ConfigService {
         lock(&self.settings).clone()
     }
 
+    pub fn set_ai_key_status(&self, has_api_key: bool) {
+        lock(&self.settings).ai.has_api_key = has_api_key;
+    }
+
     /// Read a projection of the settings without cloning the whole struct.
     ///
     /// `get_settings` deep-clones every `GameConfig`, keyword list, and hotkey
@@ -159,7 +163,9 @@ impl ConfigService {
                 ));
             }
             ensure_existing_mod_paths_unchanged(current, &new_settings)?;
+            let has_api_key = current.ai.has_api_key;
             *current = new_settings;
+            current.ai.has_api_key = has_api_key;
             if current
                 .active_game_id
                 .as_ref()

@@ -3,8 +3,8 @@
 //! Commands that require DB access for "Enable Only This" and conflict checks.
 //! Separated from mod_cmds.rs to keep file sizes manageable.
 
-use crate::shared::errors::AppError;
 use crate::modules::workspace::application::scanner::conflict::ConflictInfo;
+use crate::shared::errors::AppError;
 use std::path::PathBuf;
 
 /// Detect shader/buffer hash conflicts across INI files.
@@ -37,8 +37,7 @@ pub async fn detect_conflicts_in_folder_cmd(
     mods_path: String,
     config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<Vec<ConflictInfo>, AppError> {
-    let path =
-        crate::platform::fs::guard::validate_dir_in_configured_roots(&config, &mods_path)?;
+    let path = crate::platform::fs::guard::validate_dir_in_configured_roots(&config, &mods_path)?;
     Ok(crate::modules::workspace::application::scanner::conflict::detect::detect_conflicts_in_folder_service(&path)?)
 }
 

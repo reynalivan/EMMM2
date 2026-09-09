@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { invoke } from '@tauri-apps/api/core';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
+import { commands } from '../../../shared/api/tauri/bindings';
 import FolderConflictManager from './FolderConflictManager';
 
 const notifyCommittedMutationSyncWarning = vi.fn();
@@ -12,10 +12,16 @@ vi.mock('../../../shared/lib/committedMutationWarning', () => ({
     notifyCommittedMutationSyncWarning(...args),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-  convertFileSrc: vi.fn((path) => path),
+vi.mock('../../../shared/api/tauri/bindings', () => ({
+  commands: {
+    getFolderConflictDetails: vi.fn(),
+    resolveFolderNameConflict: vi.fn(),
+    trashFolderConflictCandidate: vi.fn(),
+  },
 }));
+
+const getFolderConflictDetails = vi.mocked(commands.getFolderConflictDetails);
+const trashFolderConflictCandidate = vi.mocked(commands.trashFolderConflictCandidate);
 
 const renderManager = () =>
   render(<FolderConflictManager />, {
@@ -24,7 +30,7 @@ const renderManager = () =>
     ),
   });
 
-describe('FolderConflictManager Trash flow', () => {
+describe('FolderConflictManager pending Trash actions', () => {
   beforeAll(() => {
     HTMLDialogElement.prototype.showModal = vi.fn(function mock(this: HTMLDialogElement) {
       this.open = true;
@@ -71,163 +77,51 @@ describe('FolderConflictManager Trash flow', () => {
     });
   });
 
-  it('identifies the exact folder in the Trash action and confirmation', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
-      if (command === 'get_folder_conflict_details') {
-        return Promise.resolve([
-          {
-            path: 'C:/Mods/Alice/DISABLED Blue',
-            folder_name: 'DISABLED Blue',
-            is_enabled: false,
-            total_size: 2048,
-            file_count: 1,
-            files: [],
-            thumbnail_path: null,
-            partial: false,
-            warnings: [],
-          },
-        ]);
-      }
-      return Promise.resolve();
-    });
+  it('keeps Trash actions local until the yellow Apply button is clicked', async () => {
+    getFolderConflictDetails.mockResolvedValue([]);
+    trashFolderConflictCandidate.mockResolvedValue({ reconcile: null, sync_warning: null });
     renderManager();
 
-    const trashButton = await screen.findByRole('button', {
-      name: 'Move “DISABLED Blue” to Trash — C:/Mods/Alice/DISABLED Blue',
-    });
-    expect(
-      screen.getByRole('button', { name: 'Move “Blue” to Trash — C:/Mods/Alice/Blue' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', {
-        name: 'Move “Blue” to Trash — C:/Mods/DISABLED Alice/Blue',
-      }),
-    ).toBeInTheDocument();
-    fireEvent.click(trashButton);
+    const trashActions = await screen.findAllByRole('button', { name: 'Mark as Trash' });
+    expect(trashActions).toHaveLength(2);
+    fireEvent.click(trashActions[0]);
+    fireEvent.click(trashActions[1]);
 
-    const confirmation = screen.getByRole('alertdialog', { name: 'Move folder to Trash?' });
-    expect(within(confirmation).getByText('C:/Mods/Alice/DISABLED Blue')).toBeInTheDocument();
-    expect(within(confirmation).getByText(/1 file$/)).toBeInTheDocument();
-    const cancelButton = within(confirmation).getByRole('button', { name: 'Cancel' });
-    const continueButton = within(confirmation).getByRole('button', {
-      name: 'Move “DISABLED Blue” to Trash & Continue',
-    });
-    expect(cancelButton).toHaveFocus();
-    fireEvent.keyDown(confirmation, { key: 'Tab', shiftKey: true });
-    expect(continueButton).toHaveFocus();
-    fireEvent.keyDown(confirmation, { key: 'Tab' });
-    expect(cancelButton).toHaveFocus();
-
-    fireEvent.keyDown(confirmation, { key: 'Escape' });
+    expect(trashFolderConflictCandidate).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Mark 2 folders for Trash' })).toBeEnabled();
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(trashButton).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark 2 folders for Trash' }));
+
+    await waitFor(() => expect(trashFolderConflictCandidate).toHaveBeenCalledTimes(2));
+    expect(trashFolderConflictCandidate).toHaveBeenNthCalledWith(
+      1,
+      'game-1',
+      'C:/Mods/Alice/DISABLED Blue',
+    );
+    expect(trashFolderConflictCandidate).toHaveBeenNthCalledWith(
+      2,
+      'game-1',
+      'C:/Mods/DISABLED Alice/Blue',
+    );
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledTimes(2);
   });
 
-  it('treats a committed Trash reconcile failure as a warning, not a failed delete', async () => {
-    const committedResult = {
-      reconcile: null,
-      sync_warning: {
-        kind: 'ReconcileFailed',
-        message: 'Projection refresh is pending',
-      },
-    };
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
-      if (command === 'get_folder_conflict_details') return Promise.resolve([]);
-      if (command === 'trash_folder_conflict_candidate') return Promise.resolve(committedResult);
-      return Promise.resolve();
-    });
+  it('switches each non-kept folder between Rename and Mark as Trash', async () => {
+    getFolderConflictDetails.mockResolvedValue([]);
     renderManager();
 
-    fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Move “DISABLED Blue” to Trash — C:/Mods/Alice/DISABLED Blue',
-      }),
-    );
-    fireEvent.click(
-      within(screen.getByRole('alertdialog')).getByRole('button', {
-        name: 'Move “DISABLED Blue” to Trash & Continue',
-      }),
-    );
+    expect(await screen.findAllByRole('textbox')).toHaveLength(2);
+    const trashActions = screen.getAllByRole('button', { name: 'Mark as Trash' });
+    fireEvent.click(trashActions[0]);
 
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith('trash_folder_conflict_candidate', {
-        gameId: 'game-1',
-        path: 'C:/Mods/Alice/DISABLED Blue',
-      }),
-    );
-    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(committedResult);
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-  });
-
-  it('does not present missing folder metadata as a zero-size Trash total', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
-      if (command === 'get_folder_conflict_details') return Promise.resolve([]);
-      return Promise.resolve();
-    });
-    renderManager();
-
-    expect(await screen.findAllByText('Folder details unavailable')).toHaveLength(3);
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'Move “DISABLED Blue” to Trash — C:/Mods/Alice/DISABLED Blue',
-      }),
-    );
-
-    const confirmation = screen.getByRole('alertdialog');
-    expect(within(confirmation).getByText('Folder details unavailable')).toBeInTheDocument();
-    expect(within(confirmation).queryByText(/0 B/)).not.toBeInTheDocument();
-  });
-
-  it('labels partial folder metadata instead of presenting it as complete', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
-      if (command === 'get_folder_conflict_details') {
-        return Promise.resolve([
-          {
-            path: 'C:/Mods/Alice/DISABLED Blue',
-            folder_name: 'DISABLED Blue',
-            is_enabled: false,
-            total_size: 1024,
-            file_count: 2,
-            files: [],
-            thumbnail_path: null,
-            partial: true,
-            warnings: ['C:/Mods/Alice/DISABLED Blue/locked.bin'],
-          },
-        ]);
-      }
-      return Promise.resolve();
-    });
-    renderManager();
-
-    expect(await screen.findByText('Some folder details could not be read.')).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'Move “DISABLED Blue” to Trash — C:/Mods/Alice/DISABLED Blue',
-      }),
-    );
-
-    const confirmation = screen.getByRole('alertdialog');
-    expect(within(confirmation).getByText('1 KB · 2 files')).toBeInTheDocument();
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
     expect(
-      within(confirmation).getByText('Some folder details could not be read.'),
+      screen.getByText('This folder will be moved to Trash when you apply the changes.'),
     ).toBeInTheDocument();
-  });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rename' })[0]);
 
-  it('closes a stale Trash confirmation when the active game changes', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
-      if (command === 'get_folder_conflict_details') return Promise.resolve([]);
-      return Promise.resolve();
-    });
-    renderManager();
-
-    fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Move “DISABLED Blue” to Trash — C:/Mods/Alice/DISABLED Blue',
-      }),
-    );
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-    act(() => useAppStore.setState({ activeGameId: 'game-2' }));
-
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(screen.getAllByRole('textbox')).toHaveLength(2);
+    expect(trashFolderConflictCandidate).not.toHaveBeenCalled();
   });
 });

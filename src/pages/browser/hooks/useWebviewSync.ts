@@ -1,7 +1,7 @@
 import { useEffect, type RefObject } from 'react';
 import { Webview } from '@tauri-apps/api/webview';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
-import type { BrowserTab } from '@/app/store/useBrowserStore';
+import type { BrowserTab } from '@/entities/browser';
 
 /**
  * Keeps the native Tauri webviews positioned over `containerRef`, showing only

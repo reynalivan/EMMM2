@@ -1,12 +1,14 @@
 use crate::modules::ingestion::application::import_batch::types::{
     CategorySuggestion, ConfidenceTier, MatchEvidence, StableCategory,
 };
-use crate::modules::workspace::application::scanner::core::walker::{scan_folder_content, ModCandidate};
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::modules::matching::application::deep_matcher::models::result_summary::score_to_percentage;
 use crate::modules::matching::application::deep_matcher::StagedMatchResult;
 use crate::modules::matching::application::deep_matcher::{match_folder_phased, MasterDb};
+use crate::modules::workspace::application::scanner::core::walker::{
+    scan_folder_content, ModCandidate,
+};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
@@ -57,8 +59,13 @@ pub fn classify_source(
     let candidate = ModCandidate {
         path: source_path.to_path_buf(),
         raw_name: planned_name.to_string(),
-        display_name: crate::modules::workspace::domain::normalizer::normalize_display_name(planned_name).into_owned(),
-        is_disabled: crate::modules::workspace::domain::normalizer::is_disabled_folder(planned_name),
+        display_name: crate::modules::workspace::domain::normalizer::normalize_display_name(
+            planned_name,
+        )
+        .into_owned(),
+        is_disabled: crate::modules::workspace::domain::normalizer::is_disabled_folder(
+            planned_name,
+        ),
     };
     let content = scan_folder_content(source_path, 3);
     let result = match_folder_phased(

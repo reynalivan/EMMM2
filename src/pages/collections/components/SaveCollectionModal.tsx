@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import { useState } from 'react';
 import { Save, X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../../../app/store/useAppStore';
+import { useAppStore } from '@/app/store';
 import { useCreateCollection } from '../hooks/useCollections';
 import type { CollectionSaveMode } from '../types';
 

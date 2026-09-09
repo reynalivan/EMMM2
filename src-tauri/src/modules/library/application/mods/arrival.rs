@@ -9,9 +9,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::shared::errors::AppError;
-use crate::platform::fs::file_utils::rename_cross_drive_fallback;
 use crate::modules::library::application::mods::core_ops::standardize_prefix;
+use crate::platform::fs::file_utils::rename_cross_drive_fallback;
+use crate::shared::errors::AppError;
 
 /// Move an extracted folder into `target_root`, disabled.
 ///

@@ -1,12 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use crate::shared::safety_constants::SAFETY_SOURCE_UNKNOWN;
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
-use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id;
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_disk_projection;
-use crate::modules::reconciliation::application::disk_reconcile::types::{DiskReconcilePathKind, DiskReconcilePathUpdate};
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcilePathKind, DiskReconcilePathUpdate,
+};
+use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id;
+use crate::shared::safety_constants::SAFETY_SOURCE_UNKNOWN;
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,
     TestModFixture, TestObjectFixture,
@@ -517,8 +519,10 @@ async fn parent_delete_preserves_collection_members_and_reports_every_child_miss
             .fetch_one(&ctx.pool)
             .await
             .expect("collection snapshot");
-    let snapshot = crate::modules::workspace::application::projected_state::parse_snapshot_json(&snapshot_json)
-        .unwrap_or_else(|| panic!("invalid collection snapshot: {snapshot_json}"));
+    let snapshot = crate::modules::workspace::application::projected_state::parse_snapshot_json(
+        &snapshot_json,
+    )
+    .unwrap_or_else(|| panic!("invalid collection snapshot: {snapshot_json}"));
     assert_eq!(snapshot.summary.missing_root_count, 1);
 }
 

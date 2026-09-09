@@ -3,9 +3,9 @@ import { useCallback, useRef, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { toast } from '../../../app/store/useToastStore';
-import { publishWorkspaceIntent } from '@/features/workspace-runtime/utils/workspaceIntentBus';
-import type { WorkspaceExplorerNode } from '@/entities/workspace/model/workspace';
+import { toast } from '@/shared/ui/toast';
+import { publishWorkspaceIntent } from '@/features/workspace-runtime';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
 
 interface PreviewMutationLike<TInput> {
   isPending: boolean;

@@ -1,11 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from '../../tests/testing/test-utils';
+import { act, fireEvent, render, screen, waitFor, within } from '../../tests/testing/test-utils';
 import { listen } from '@tauri-apps/api/event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands } from '../../shared/api/tauri/bindings';
-import { openImportBatchWizard } from '@/features/import-batches/launcher';
+import { openImportBatchWizard } from '@/features/import-batches';
 import { modInboxCommands } from './api';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import ModInboxPage from './ModInboxPage';
+import type { AppSettings } from '../../shared/api/tauri/bindings.gen';
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 import type { ModInboxSnapshot } from './types';
@@ -29,7 +30,7 @@ const mockStoreState: {
   setGridSelection: mockSetGridSelection,
 };
 
-vi.mock('../../app/store/useAppStore', () => ({
+vi.mock('@/app/store', () => ({
   useAppStore: Object.assign(
     (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
     { getState: () => mockStoreState },
@@ -53,7 +54,7 @@ vi.mock('../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('../import-batches/launcher', () => ({
+vi.mock('@/features/import-batches/launcher', () => ({
   openImportBatchWizard: vi.fn(),
 }));
 
@@ -128,6 +129,9 @@ const processedSnapshot = {
 describe('ModInboxPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    const portalTarget = document.createElement('div');
+    portalTarget.id = 'topbar-actions-portal';
+    document.body.appendChild(portalTarget);
     mockStoreState.activeGameId = 'game-1';
     vi.mocked(modInboxCommands.getModInbox).mockResolvedValue(readySnapshot);
     vi.mocked(modInboxCommands.startModInboxWatcher).mockResolvedValue(undefined);
@@ -136,6 +140,10 @@ describe('ModInboxPage', () => {
     vi.mocked(modInboxCommands.openModInboxFolder).mockResolvedValue(undefined);
     vi.mocked(commands.openInExplorer).mockResolvedValue(undefined as never);
     vi.mocked(listen).mockResolvedValue(vi.fn());
+  });
+
+  afterEach(() => {
+    document.getElementById('topbar-actions-portal')?.remove();
   });
 
   it('starts a scoped watcher, refreshes for inbox events, and stops it on unmount', async () => {
@@ -202,10 +210,14 @@ describe('ModInboxPage', () => {
     expect(modInboxCommands.startModInboxWatcher).not.toHaveBeenCalled();
 
     vi.mocked(openDialog).mockResolvedValueOnce('D:/New/Inbox/Path');
-    vi.mocked(modInboxCommands.getSettings).mockResolvedValueOnce({
+    const settings: AppSettings = {
+      revision: 1,
       language: 'en',
       theme: 'dark',
-      discord_rpc: true,
+      active_game_id: 'game-1',
+      safety: { keywords: [] },
+      ai: { enabled: false, has_api_key: false, base_url: null },
+      auto_close_launcher: false,
       games: [
         {
           id: 'game-1',
@@ -218,11 +230,18 @@ describe('ModInboxPage', () => {
           launch_args: null,
         },
       ],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
-    vi.mocked(modInboxCommands.saveSettings).mockResolvedValueOnce(undefined as any);
+    };
+    vi.mocked(modInboxCommands.getSettings).mockResolvedValueOnce(settings);
+    vi.mocked(modInboxCommands.saveSettings).mockResolvedValueOnce({
+      settings,
+      sync_warning: null,
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose Location' }));
+    fireEvent.click(
+      within(document.getElementById('topbar-actions-portal')!).getByRole('button', {
+        name: 'Choose Location',
+      }),
+    );
 
     await waitFor(() =>
       expect(openDialog).toHaveBeenCalledWith({

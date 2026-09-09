@@ -2,10 +2,10 @@ use sqlx::SqlitePool;
 
 use super::live_state::{live_runtime_is_safe, load_game_mods_path, load_live_runtime_state};
 use super::projection::persist_projected_state;
-use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
-use crate::shared::errors::CollectionError;
 use crate::modules::collections::adapters::sqlite as collection;
+use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
 use crate::modules::workspace::application::projected_state;
+use crate::shared::errors::CollectionError;
 
 pub async fn capture_last_changes_if_needed(
     pool: &SqlitePool,
@@ -92,13 +92,8 @@ pub async fn capture_last_changes_if_needed(
         &state,
     )
     .await?;
-    collection::runtime::set_draft_tx(
-        &mut tx,
-        game_id,
-        &draft_id,
-        base_collection_id.as_deref(),
-    )
-    .await?;
+    collection::runtime::set_draft_tx(&mut tx, game_id, &draft_id, base_collection_id.as_deref())
+        .await?;
     tx.commit().await?;
 
     Ok(Some(draft_id))

@@ -133,7 +133,8 @@ pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, MetadataErro
 
     // Canonical stripper: also handles the legacy `disabled_`/`Disabled-` forms
     // that a literal prefix match would leave in the generated name.
-    let clean_name = crate::modules::workspace::domain::normalizer::normalize_display_name(&folder_name);
+    let clean_name =
+        crate::modules::workspace::domain::normalizer::normalize_display_name(&folder_name);
 
     let info = ModInfo::from_folder_name(&clean_name);
 
