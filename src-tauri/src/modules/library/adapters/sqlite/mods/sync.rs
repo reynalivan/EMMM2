@@ -1,33 +1,7 @@
 //! Writes driven by scanner sync, runtime toggles, and object (re)linking.
 
-use super::types::SyncModRowUpdate;
 use crate::modules::games::domain::models::ItemStatus;
 use crate::shared::path_key::folder_path_key;
-
-pub async fn update_mod_sync_row(
-    conn: &mut sqlx::SqliteConnection,
-    update: SyncModRowUpdate<'_>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE mods
-         SET id = ?, folder_path = ?, folder_path_key = ?, actual_name = ?, status = ?, is_safe = ?, safety_source = ?, object_id = ?, object_type = ?
-         WHERE folder_path_key = ? AND game_id = ?",
-    )
-    .bind(update.new_id)
-    .bind(update.folder_path)
-    .bind(folder_path_key(update.folder_path, Some(update.mods_path)))
-    .bind(update.actual_name)
-    .bind(update.status)
-    .bind(update.is_safe)
-    .bind(update.safety_source)
-    .bind(update.object_id)
-    .bind(update.object_type)
-    .bind(folder_path_key(update.old_folder_path, Some(update.mods_path)))
-    .bind(update.game_id)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
-}
 
 #[allow(clippy::too_many_arguments)] // Transactional identity update mirrors the mod row fields being rewritten.
 pub async fn update_mod_identity_tx(
@@ -99,22 +73,6 @@ pub async fn rewrite_dependent_mod_ids_tx(
             .execute(&mut *conn)
             .await?;
     }
-    Ok(())
-}
-
-pub async fn set_mod_object<'c, E>(
-    executor: E,
-    mod_id: &str,
-    object_id: &str,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    sqlx::query("UPDATE mods SET object_id = ? WHERE id = ?")
-        .bind(object_id)
-        .bind(mod_id)
-        .execute(executor)
-        .await?;
     Ok(())
 }
 

@@ -2,7 +2,6 @@ use sqlx::{Row, SqliteConnection, SqlitePool};
 
 #[derive(Debug, Clone, Default)]
 pub struct CollectionRuntimeState {
-    pub game_id: String,
     pub active_collection_id: Option<String>,
     pub draft_collection_id: Option<String>,
     pub draft_base_collection_id: Option<String>,
@@ -10,7 +9,6 @@ pub struct CollectionRuntimeState {
 
 fn map_row(row: sqlx::sqlite::SqliteRow) -> CollectionRuntimeState {
     CollectionRuntimeState {
-        game_id: row.get("game_id"),
         active_collection_id: row.get("active_collection_id"),
         draft_collection_id: row.get("draft_collection_id"),
         draft_base_collection_id: row.get("draft_base_collection_id"),
@@ -22,7 +20,7 @@ pub async fn get(
     game_id: &str,
 ) -> Result<Option<CollectionRuntimeState>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT game_id, active_collection_id, draft_collection_id, draft_base_collection_id FROM collection_runtime_state WHERE game_id = ?",
+        "SELECT active_collection_id, draft_collection_id, draft_base_collection_id FROM collection_runtime_state WHERE game_id = ?",
     )
     .bind(game_id)
     .fetch_optional(pool)
@@ -36,7 +34,7 @@ pub async fn get_tx(
     game_id: &str,
 ) -> Result<Option<CollectionRuntimeState>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT game_id, active_collection_id, draft_collection_id, draft_base_collection_id FROM collection_runtime_state WHERE game_id = ?",
+        "SELECT active_collection_id, draft_collection_id, draft_base_collection_id FROM collection_runtime_state WHERE game_id = ?",
     )
     .bind(game_id)
     .fetch_optional(&mut *conn)
@@ -64,6 +62,7 @@ pub async fn set_active_tx(
     Ok(())
 }
 
+#[cfg(test)]
 pub async fn set_active(
     pool: &SqlitePool,
     game_id: &str,

@@ -211,16 +211,3 @@ async fn refresh_object_projection_tx(
         .await?;
     Ok(())
 }
-
-pub async fn delete_object_projection(
-    pool: &SqlitePool,
-    game_id: &str,
-    object_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM object_runtime_projection WHERE game_id = ? AND object_id = ?")
-        .bind(game_id)
-        .bind(object_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}

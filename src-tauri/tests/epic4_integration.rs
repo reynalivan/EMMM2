@@ -1,4 +1,6 @@
-use emmm_lib::modules::library::api::testing::adapters::tauri::mod_core_cmds;
+use emmm_lib::modules::library::api::testing::application::mods::core_ops::{
+    rename_mod_folder_inner, toggle_mod_inner,
+};
 use emmm_lib::modules::library::api::testing::application::mods::trash;
 use std::fs;
 use tempfile::TempDir;
@@ -29,7 +31,7 @@ async fn test_epic4_full_maintenance_flow() {
     // -------------------------------------------------------------------------
     // Step 1: Rename "Raiden" -> "Shogun"
     // -------------------------------------------------------------------------
-    let rename_result = mod_core_cmds::rename_mod_folder_inner(
+    let rename_result = rename_mod_folder_inner(
         &state,
         mod_path.to_string_lossy().to_string(),
         "Shogun".to_string(),
@@ -48,7 +50,7 @@ async fn test_epic4_full_maintenance_flow() {
     // -------------------------------------------------------------------------
     // Step 2: Toggle (Disable) "Shogun" -> "DISABLED Shogun"
     // -------------------------------------------------------------------------
-    let toggle_result = mod_core_cmds::toggle_mod_inner(
+    let toggle_result = toggle_mod_inner(
         &state,
         shogun_path.to_string_lossy().to_string(),
         false, // enable = false => disable

@@ -5,21 +5,6 @@ use crate::shared::path_key::folder_path_key;
 use crate::shared::safety_constants::SAFETY_SOURCE_MANUAL;
 use sqlx::SqlitePool;
 
-pub async fn get_is_safe_by_folder(
-    pool: &SqlitePool,
-    game_id: &str,
-    folder_path: &str,
-) -> Result<Option<bool>, sqlx::Error> {
-    let value: Option<Option<i32>> = sqlx::query_scalar(
-        "SELECT is_safe FROM mods WHERE game_id = ? AND folder_path = ? LIMIT 1",
-    )
-    .bind(game_id)
-    .bind(folder_path)
-    .fetch_optional(pool)
-    .await?;
-    Ok(value.flatten().map(|value| value != 0))
-}
-
 pub async fn get_manual_is_safe_by_key(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,

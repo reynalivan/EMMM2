@@ -1,7 +1,7 @@
 {
   "resume_import": "继续导入（{{count}} 项）",
   "title": "匹配向导",
-  "review_title": "检查导入匹配",
+  "review_title": "检查匹配",
   "review_summary": "{{count}} 个模组 · {{ready}} 个继续 · {{skipped}} 个跳过 · {{errors}} 个错误",
   "search_placeholder": "搜索来源模组…",
   "no_filtered_items": "没有符合此筛选条件的导入项。",
@@ -11,7 +11,17 @@
   "classification_after_category": "确认所有分类后再计算标准对象匹配。",
   "classification_match_objects": "匹配标准对象",
   "classification_apply": "应用分类",
+  "classification_apply_selected": "应用已选项目（{{count}}）",
+  "classification_confidence_tier": "{{score}}% · {{tier}}",
+  "classification_no_catalog_match": "没有符合搜索条件的标准对象。",
   "classification_applied": "已应用 {{count}} 个分类，并更新 {{mods}} 个子模组。",
+  "classification_select": "选择",
+  "classification_select_row": "选择 {{name}}",
+  "classification_select_high_confidence": "选择全部高置信度推荐",
+  "classification_manual": "手动分类",
+  "classification_use_catalog": "使用标准目录",
+  "classification_subcategory": "子类别",
+  "classification_why_suggested": "推荐原因",
   "library_preflight": {
     "title": "发现 {{count}} 个可识别对象",
     "summary": "{{high}} 个高置信度 · {{medium}} 个中等置信度",
@@ -41,6 +51,7 @@
   },
   "summary": {
     "label": "批次状态",
+    "items": "{{count}} 个模组",
     "needs_review": "{{count}} 个待检查",
     "ready": "{{count}} 个已准备",
     "skipped": "{{count}} 个已跳过",
@@ -152,10 +163,10 @@
   },
   "footer": {
     "finished": "此批次已完成。",
-    "resolve_first": "仍有 {{count}} 个项目需要决定。",
-    "ready": "{{count}} 个项目已准备导入。",
-    "recovery": "{{count}} 个已放置项目需要恢复元数据。",
-    "no_items": "尚未选择要导入的项目。"
+    "resolve_first": "{{count}} 个待决定",
+    "ready": "{{count}} 个可导入",
+    "recovery": "{{count}} 个需要恢复元数据",
+    "no_items": "没有可导入项目"
   },
   "choose_existing": "选择已有目标…",
   "specific_warning": "目标匹配度不足，需要明确确认",
@@ -207,7 +218,13 @@
   "evidence": "依据",
   "evidence_none": "没有匹配依据",
   "match_column": "匹配",
-  "import_as_column": "导入为",
+  "import_as_column": "来源",
+  "review": {
+    "required": "需检查",
+    "fix_source": "修复来源",
+    "details": "详情 ({{count}})",
+    "duplicate": "重复"
+  },
   "source": {
     "identified": "识别为 {{name}} · {{score}}%",
     "matching_by_name": "按名称匹配",
@@ -218,14 +235,14 @@
     "source_unchanged": "来源压缩包或文件夹不会被修改"
   },
   "match_methods": {
-    "canonical_identity": "标准身份匹配",
-    "exact_name": "名称完全匹配",
-    "exact_alias": "别名完全匹配",
-    "name_substring": "名称子字符串匹配",
-    "alias_substring": "别名子字符串匹配",
-    "token_substring": "名称词元匹配",
-    "fuzzy_name": "名称模糊相似",
-    "no_name_match": "没有明显的名称相似性"
+    "canonical_identity": "标准匹配",
+    "exact_name": "名称一致",
+    "exact_alias": "别名一致",
+    "name_substring": "名称包含",
+    "alias_substring": "别名包含",
+    "token_substring": "名称词元",
+    "fuzzy_name": "名称相近",
+    "no_name_match": "名称不匹配"
   },
   "match_tooltip": {
     "manual": "手动选择",

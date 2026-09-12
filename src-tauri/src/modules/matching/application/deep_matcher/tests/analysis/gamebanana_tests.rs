@@ -39,9 +39,11 @@ fn test_game_enum_resolution() {
     assert_eq!(GameBananaGame::ArknightsEndfield.game_id(), 21842);
 }
 
-// Live API test (we can run this with cargo test -- --ignored to prevent CI flakiness,
-// but we'll run it normally for manual testing here)
+// The public API is intentionally outside the normal test suite: its availability,
+// rate limits, and the referenced community item can change independently of EMMM.
+// Run it explicitly with `cargo test test_live_api_fetch_and_validate -- --ignored`.
 #[test]
+#[ignore = "requires the live GameBanana API and a mutable community item"]
 fn test_live_api_fetch_and_validate() {
     // A known Genshin Impact mod (from your request or recent subfeed)
     // Mod ID: 654298 -> "❤️Zibai❤️ Lunar Qilin"

@@ -1,17 +1,18 @@
+use crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects;
 use crate::modules::catalog::application::match_engine::inspection::{
-    inspect_source, InspectionRequest,
+    InspectionRequest, inspect_source,
 };
 use crate::modules::catalog::application::objects::classification::{
     CanonicalClassificationMatch, ObjectClassificationInput,
 };
 use crate::modules::ingestion::application::import_batch::types::{
-    CanonicalSuggestion, CategorySuggestion, SourceFingerprint, StableCategory,
+    CanonicalSuggestion, SourceFingerprint, StableCategory,
 };
 use crate::shared::errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::collections::BTreeMap;
 use std::path::Path;
+use std::str::FromStr;
 
 struct PreparedClassification {
     input: ObjectClassificationInput,
@@ -19,11 +20,26 @@ struct PreparedClassification {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
-pub struct ObjectClassificationDraft {
-    pub object_id: String,
+pub struct CanonicalClassificationCatalogEntry {
+    pub entry_key: String,
+    pub name: String,
     pub category: StableCategory,
-    pub sub_category: Option<String>,
     pub metadata: serde_json::Value,
+    pub thumbnail_path: Option<String>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum ObjectClassificationDecision {
+    #[serde(rename_all = "camelCase")]
+    Canonical { entry_key: String },
+    #[serde(rename_all = "camelCase")]
+    Manual {
+        category: StableCategory,
+        sub_category: Option<String>,
+        metadata: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -31,7 +47,6 @@ pub struct ObjectClassificationDraft {
 pub struct PreviewObjectClassificationBatchInput {
     pub game_id: String,
     pub object_ids: Vec<String>,
-    pub drafts: Vec<ObjectClassificationDraft>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -41,7 +56,6 @@ pub struct ObjectClassificationPreviewItem {
     pub object_name: String,
     pub source_path: String,
     pub current_category: String,
-    pub category_suggestions: Vec<CategorySuggestion>,
     pub canonical_suggestions: Vec<CanonicalSuggestion>,
     pub fingerprint: SourceFingerprint,
 }
@@ -50,12 +64,7 @@ pub struct ObjectClassificationPreviewItem {
 #[serde(rename_all = "camelCase")]
 pub struct ApplyObjectClassificationItem {
     pub object_id: String,
-    pub category: StableCategory,
-    pub sub_category: Option<String>,
-    pub metadata: serde_json::Value,
-    pub canonical_entry_key: Option<String>,
-    pub canonical_alias: Option<String>,
-    pub confidence_percentage: Option<u8>,
+    pub decision: ObjectClassificationDecision,
     pub fingerprint: SourceFingerprint,
 }
 
@@ -78,6 +87,44 @@ pub struct ApplyObjectClassificationBatchResult {
     pub disable_warning: Option<String>,
 }
 
+pub fn list_canonical_classification_catalog(
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+) -> Vec<CanonicalClassificationCatalogEntry> {
+    let mut entries = master_db
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.entry_kind == crate::modules::matching::application::deep_matcher::EntryKind::Canonical
+        })
+        .filter_map(|entry| {
+            let category = StableCategory::from_str(&entry.object_type).ok()?;
+            let metadata = entry.metadata.clone().unwrap_or_else(|| serde_json::json!({}));
+            if !metadata.is_object() {
+                return None;
+            }
+            let mut aliases = entry.aliases.clone();
+            for skin in &entry.custom_skins {
+                aliases.push(skin.name.clone());
+                aliases.extend(skin.aliases.clone());
+            }
+            aliases.sort_by_cached_key(|value| value.to_lowercase());
+            aliases.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+            Some(CanonicalClassificationCatalogEntry {
+                entry_key: crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(
+                    &entry.name,
+                ),
+                name: entry.name.clone(),
+                category,
+                metadata,
+                thumbnail_path: entry.thumbnail_path.clone(),
+                aliases,
+            })
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by_cached_key(|entry| entry.name.to_lowercase());
+    entries
+}
+
 pub async fn preview_object_classification_batch(
     db: &SqlitePool,
     input: &PreviewObjectClassificationBatchInput,
@@ -90,11 +137,6 @@ pub async fn preview_object_classification_batch(
             "Select at least one existing object to classify".to_string(),
         ));
     }
-    let drafts = input
-        .drafts
-        .iter()
-        .map(|draft| (draft.object_id.as_str(), draft))
-        .collect::<BTreeMap<_, _>>();
     let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?;
@@ -112,35 +154,13 @@ pub async fn preview_object_classification_batch(
             planned_name: Some(object.name.clone()),
             match_extensions: match_extensions.to_vec(),
         })?;
-        let categories =
-            crate::modules::catalog::application::match_engine::classification::classify_source(
-                &source,
-                &object.name,
-                master_db,
-                filters,
-            );
-        let canonical_suggestions = if let Some(draft) = drafts.get(object_id.as_str()) {
-            if !draft.metadata.is_object() {
-                return Err(AppError::Validation(format!(
-                    "Classification metadata for object '{object_id}' must be an object"
-                )));
-            }
-            crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects(
-                &source,
-                &object.name,
-                draft.category,
-                master_db,
-                filters,
-            )
-        } else {
-            Vec::new()
-        };
+        let canonical_suggestions =
+            match_canonical_objects(&source, &object.name, master_db, filters);
         result.push(ObjectClassificationPreviewItem {
             object_id: object.id,
             object_name: object.name,
             source_path: source.to_string_lossy().into_owned(),
             current_category: object.object_type,
-            category_suggestions: categories,
             canonical_suggestions,
             fingerprint: inspection.fingerprint,
         });
@@ -152,6 +172,7 @@ pub async fn apply_object_classification_batch(
     db: &SqlitePool,
     input: ApplyObjectClassificationBatchInput,
     master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+    filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
     match_extensions: &[String],
 ) -> Result<ApplyObjectClassificationBatchResult, AppError> {
     if input.items.is_empty() {
@@ -184,7 +205,7 @@ pub async fn apply_object_classification_batch(
         .ok_or_else(|| AppError::NotFound(format!("Object '{}'", item.object_id)))?;
         let source = Path::new(&mods_root).join(&object.folder_path);
         let current = inspect_source(&InspectionRequest {
-            source_path: source,
+            source_path: source.clone(),
             planned_name: Some(object.name.clone()),
             match_extensions: match_extensions.to_vec(),
         })?;
@@ -194,23 +215,34 @@ pub async fn apply_object_classification_batch(
                 object.name
             )));
         }
-        let canonical_match = validate_canonical_selection(
-            master_db,
-            item.category,
-            item.canonical_entry_key,
-            item.canonical_alias,
-            item.confidence_percentage,
-        )?;
-        prepared.push(PreparedClassification {
-            input: ObjectClassificationInput {
+        let classification = match item.decision {
+            ObjectClassificationDecision::Canonical { entry_key } => {
+                canonical_classification_input(
+                    master_db,
+                    filters,
+                    &source,
+                    &object.name,
+                    input.game_id.clone(),
+                    item.object_id,
+                    entry_key,
+                )?
+            }
+            ObjectClassificationDecision::Manual {
+                category,
+                sub_category,
+                metadata,
+            } => ObjectClassificationInput {
                 game_id: input.game_id.clone(),
                 object_id: item.object_id,
-                category: item.category.as_str().to_string(),
-                subcategory: item.sub_category,
-                metadata: item.metadata,
-                confirmed_source_alias: canonical_match.as_ref().map(|_| object.name.clone()),
-                canonical_match,
+                category: category.as_str().to_string(),
+                subcategory: sub_category,
+                metadata,
+                canonical_match: None,
+                confirmed_source_alias: None,
             },
+        };
+        prepared.push(PreparedClassification {
+            input: classification,
         });
     }
 
@@ -236,21 +268,15 @@ pub async fn apply_object_classification_batch(
     })
 }
 
-fn validate_canonical_selection(
+fn canonical_classification_input(
     master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
-    category: StableCategory,
-    entry_key: Option<String>,
-    alias_name: Option<String>,
-    confidence_percentage: Option<u8>,
-) -> Result<Option<CanonicalClassificationMatch>, AppError> {
-    let Some(entry_key) = entry_key else {
-        if alias_name.is_some() || confidence_percentage.is_some() {
-            return Err(AppError::Validation(
-                "Canonical alias/confidence requires a canonical entry key".to_string(),
-            ));
-        }
-        return Ok(None);
-    };
+    filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
+    source: &Path,
+    object_name: &str,
+    game_id: String,
+    object_id: String,
+    entry_key: String,
+) -> Result<ObjectClassificationInput, AppError> {
     let entry = master_db
         .entries
         .iter()
@@ -270,37 +296,50 @@ fn validate_canonical_selection(
             "Canonical entry '{entry_key}' is taxonomy-only"
         )));
     }
-    if entry.object_type != category.as_str() {
+    let category = StableCategory::from_str(&entry.object_type).map_err(|_| {
+        AppError::Validation(format!(
+            "Canonical entry '{entry_key}' has unsupported category '{}'",
+            entry.object_type
+        ))
+    })?;
+    let metadata = entry
+        .metadata
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !metadata.is_object() {
         return Err(AppError::Validation(format!(
-            "Canonical entry '{entry_key}' belongs to category '{}', not '{}'",
-            entry.object_type,
-            category.as_str()
+            "Canonical entry '{entry_key}' has invalid metadata"
         )));
     }
-    if let Some(alias) = alias_name.as_deref() {
-        let recognized = entry.name.eq_ignore_ascii_case(alias)
-            || entry
-                .aliases
-                .iter()
-                .any(|value| value.eq_ignore_ascii_case(alias))
-            || entry.custom_skins.iter().any(|skin| {
-                skin.name.eq_ignore_ascii_case(alias)
-                    || skin
-                        .aliases
-                        .iter()
-                        .any(|value| value.eq_ignore_ascii_case(alias))
-            });
-        if !recognized {
-            return Err(AppError::Validation(format!(
-                "Alias '{alias}' is not registered for canonical entry '{entry_key}'"
-            )));
-        }
-    }
-    Ok(Some(CanonicalClassificationMatch {
+    let matched = match_canonical_objects(source, object_name, master_db, filters)
+        .into_iter()
+        .find(|candidate| candidate.entry_key == entry_key);
+    let canonical_match = CanonicalClassificationMatch {
         entry_key,
-        alias_name,
-        confidence: confidence_percentage.map(|value| f64::from(value) / 100.0),
-        reason: Some("Confirmed in classification wizard".to_string()),
-        source: "classification_wizard".to_string(),
-    }))
+        alias_name: matched
+            .as_ref()
+            .and_then(|candidate| candidate.matched_alias.clone()),
+        confidence: matched
+            .as_ref()
+            .map(|candidate| f64::from(candidate.confidence_percentage) / 100.0),
+        reason: Some(if matched.is_some() {
+            "Confirmed canonical matcher recommendation".to_string()
+        } else {
+            "Confirmed canonical catalog selection".to_string()
+        }),
+        source: if matched.is_some() {
+            "classification_wizard_matcher".to_string()
+        } else {
+            "classification_wizard_manual".to_string()
+        },
+    };
+    Ok(ObjectClassificationInput {
+        game_id,
+        object_id,
+        category: category.as_str().to_string(),
+        subcategory: None,
+        metadata,
+        canonical_match: Some(canonical_match),
+        confirmed_source_alias: Some(object_name.to_string()),
+    })
 }

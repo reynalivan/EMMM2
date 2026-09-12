@@ -9,6 +9,7 @@ use sqlx::SqlitePool;
 /// `mods_path`. Two games can hold the same mod at the same relative path, so
 /// the key alone is ambiguous and `game_id` is what makes the match
 /// single-game.
+#[cfg(test)]
 pub async fn batch_delete_by_path(
     pool: &SqlitePool,
     game_id: &str,

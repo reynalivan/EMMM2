@@ -90,10 +90,38 @@ describe('ConflictModal', () => {
     render(<ConflictModal open onClose={vi.fn()} conflicts={[conflict]} gameId="game-1" />);
 
     expect(screen.getByText('scanner:conflict_modal.kind.resource_hash')).toBeInTheDocument();
-    expect(screen.getAllByText('config.ini')).toHaveLength(2);
+    expect(screen.getByText('E:/Mods/ModA')).toBeInTheDocument();
+    expect(screen.getByText('E:/Mods/ModB')).toBeInTheDocument();
+    expect(screen.getByText('E:/Mods/ModA/config.ini')).toBeInTheDocument();
+    expect(screen.getByText('E:/Mods/ModB/config.ini')).toBeInTheDocument();
     expect(screen.getByText('scanner:conflict_modal.match_priority: 7')).toBeInTheDocument();
     expect(screen.getAllByText('scanner:conflict_modal.first_index: 0')).toHaveLength(2);
     expect(screen.getByText('$active')).toBeInTheDocument();
+  });
+
+  it('groups runtime hashes that involve the same mod locations', () => {
+    const secondHash: ConflictInfo = {
+      ...conflict,
+      hash: '12345678',
+      section_name: 'TextureOverrideHair',
+      evidence: conflict.evidence.map((item) => ({
+        ...item,
+        section_name: 'TextureOverrideHair',
+      })),
+    };
+
+    render(
+      <ConflictModal open onClose={vi.fn()} conflicts={[conflict, secondHash]} gameId="game-1" />,
+    );
+
+    expect(screen.getByText('scanner:conflict_modal.runtime_keys:2')).toBeInTheDocument();
+    expect(screen.getByText('scanner:conflict_modal.mod_locations:2')).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('button', {
+        name: 'scanner:conflict_modal.keep_enabled:ModA',
+        hidden: true,
+      }),
+    ).toHaveLength(1);
   });
 
   it('does not preselect or mutate a potential conflict when opened', () => {

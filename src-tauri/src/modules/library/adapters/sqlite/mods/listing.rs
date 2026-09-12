@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use super::types::{Mod, ReconcileModRow};
-use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::system::domain::mod_path::ModFolderPath;
 use sqlx::SqlitePool;
 
@@ -175,52 +174,4 @@ pub async fn get_all_mods_id_and_paths_tx(
         .into_iter()
         .map(|(id, path, is_safe)| (id, ModFolderPath::from_stored(path), is_safe))
         .collect())
-}
-
-pub async fn get_all_mods_sync_info_tx(
-    conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-) -> Result<
-    Vec<(
-        String,
-        String,
-        ItemStatus,
-        Option<String>,
-        bool,
-        Option<String>,
-    )>,
-    sqlx::Error,
-> {
-    sqlx::query_as(
-        "SELECT id, folder_path, status, object_id, COALESCE(is_safe, 1), safety_source FROM mods WHERE game_id = ?",
-    )
-        .bind(game_id)
-        .fetch_all(conn)
-        .await
-}
-
-/// Folder paths of every mod owned by any of `object_ids`, ordered by mod id.
-pub async fn get_folder_paths_by_object_ids(
-    pool: &SqlitePool,
-    game_id: &str,
-    object_ids: &[String],
-) -> Result<Vec<String>, sqlx::Error> {
-    if object_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut query_builder =
-        sqlx::QueryBuilder::new("SELECT folder_path FROM mods WHERE game_id = ");
-    query_builder.push_bind(game_id);
-    query_builder.push(" AND object_id IN (");
-    let mut separated = query_builder.separated(", ");
-    for object_id in object_ids {
-        separated.push_bind(object_id);
-    }
-    separated.push_unseparated(") ORDER BY id");
-
-    query_builder
-        .build_query_scalar::<String>()
-        .fetch_all(pool)
-        .await
 }

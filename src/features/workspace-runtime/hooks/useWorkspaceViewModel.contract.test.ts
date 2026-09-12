@@ -10,7 +10,6 @@ import {
   resetWorkspaceSelectionReconciliationGuardsForTest,
   shouldApplySelectionReconciledEvent,
   shouldRunSelectionReconciliationEffect,
-  shouldShowSelectionReconciliationToast,
 } from '../utils/selectionReconciliation';
 
 describe('useWorkspaceViewModel contract', () => {
@@ -189,33 +188,6 @@ describe('useWorkspaceViewModel contract', () => {
     );
 
     expect(shouldApply).toBe(false);
-  });
-
-  it('suppresses disk-change toast for internal enable-disable rewrites', () => {
-    recordInternalWorkspacePathRewrites(
-      [{ oldPath: 'E:/Mods/ALBEDO/Variant', newPath: 'E:/Mods/ALBEDO/DISABLED Variant' }],
-      2_000,
-    );
-
-    const shouldToast = shouldShowSelectionReconciliationToast(
-      {
-        selectedObjectFolderPath: 'ALBEDO',
-        explorerSubPath: 'ALBEDO',
-        selectedModPath: 'E:/Mods/ALBEDO/DISABLED Variant',
-      },
-      {
-        selected_object_folder_path: 'ALBEDO',
-        explorer_sub_path: 'ALBEDO',
-        selected_mod_path: 'E:/Mods/ALBEDO/DISABLED Variant',
-        current_path: ['ALBEDO'],
-        reconciliation_status: 'fallback',
-        reconciliation_reason: 'missing_mod_path',
-        affected_paths: ['E:/Mods/ALBEDO/Variant'],
-      },
-      2_500,
-    );
-
-    expect(shouldToast).toBe(false);
   });
 
   it('deduplicates the same selection reconciliation effect across workspace consumers', () => {

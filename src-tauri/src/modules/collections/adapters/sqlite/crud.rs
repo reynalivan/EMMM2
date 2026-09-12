@@ -85,6 +85,7 @@ pub async fn get_by_id_tx(
 }
 
 /// Create a new collection.
+#[cfg(test)]
 pub async fn create(
     pool: &SqlitePool,
     id: &str,

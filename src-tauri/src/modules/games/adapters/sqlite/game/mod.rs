@@ -180,25 +180,5 @@ impl From<ReadyToMoveConfig> for (String, Option<String>) {
     }
 }
 
-pub async fn ensure_game_exists(
-    conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    game_name: &str,
-    game_type: GameType,
-    mods_path: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "INSERT OR IGNORE INTO games (id, name, game_type, path, mods_path) VALUES (?, ?, ?, ?, ?)",
-        game_id,
-        game_name,
-        game_type,
-        mods_path,
-        mods_path,
-    )
-    .execute(conn)
-    .await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests;

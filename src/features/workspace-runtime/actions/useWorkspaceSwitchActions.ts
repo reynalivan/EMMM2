@@ -77,13 +77,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(
-        queryClient,
-        result,
-        'folderSwitch',
-        (key) => t('objects:toasts.reload_required', { key }),
-        options,
-      );
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', options);
 
       return nextPath;
     },
@@ -119,13 +113,7 @@ export function useWorkspaceSwitchActions() {
       }
 
       const nextPath = result.primary_path;
-      await applyWorkspaceSwitchEffects(
-        queryClient,
-        result,
-        'objectSwitch',
-        (key) => t('objects:toasts.reload_required', { key }),
-        options,
-      );
+      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', options);
       // A no-op switch changed nothing on disk — don't announce a change.
       if (result.status !== 'noop') {
         toast.success(
@@ -196,9 +184,7 @@ export function useWorkspaceSwitchActions() {
           return null;
         }
 
-        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
-          t('objects:toasts.reload_required', { key }),
-        );
+        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
 
         return nextPath;
       } finally {
@@ -228,9 +214,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
-        t('objects:toasts.reload_required', { key }),
-      );
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
@@ -257,9 +241,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', (key) =>
-        t('objects:toasts.reload_required', { key }),
-      );
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },

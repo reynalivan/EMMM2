@@ -1,6 +1,6 @@
 {
   "title": "Match Wizard",
-  "review_title": "Review Import Matches",
+  "review_title": "Review matches",
   "review_summary": "{{count}} mods · {{ready}} proceed · {{skipped}} skipped · {{errors}} errors",
   "search_placeholder": "Search source mods…",
   "no_filtered_items": "No import items match this filter.",
@@ -11,7 +11,17 @@
   "classification_after_category": "Confirm all categories to calculate canonical matches.",
   "classification_match_objects": "Match canonical objects",
   "classification_apply": "Apply classifications",
+  "classification_apply_selected": "Apply selected ({{count}})",
+  "classification_confidence_tier": "{{score}}% · {{tier}}",
+  "classification_no_catalog_match": "No canonical objects match your search.",
   "classification_applied": "Applied {{count}} classification(s) and updated {{mods}} child mod(s).",
+  "classification_select": "Select",
+  "classification_select_row": "Select {{name}}",
+  "classification_select_high_confidence": "Select all high-confidence recommendations",
+  "classification_manual": "Classify manually",
+  "classification_use_catalog": "Use canonical catalog",
+  "classification_subcategory": "Subcategory",
+  "classification_why_suggested": "Why suggested",
   "library_preflight": {
     "title": "{{count}} identifications found",
     "summary": "{{high}} high confidence · {{medium}} medium confidence",
@@ -41,6 +51,7 @@
   },
   "summary": {
     "label": "Batch status",
+    "items": "{{count}} mods",
     "needs_review": "{{count}} need review",
     "ready": "{{count}} ready",
     "skipped": "{{count}} skipped",
@@ -152,10 +163,10 @@
   },
   "footer": {
     "finished": "This batch is complete.",
-    "resolve_first": "{{count}} item(s) still need a decision.",
-    "ready": "{{count}} item(s) ready to import.",
-    "recovery": "{{count}} imported item(s) need metadata recovery.",
-    "no_items": "No items selected for import."
+    "resolve_first": "{{count}} need a decision",
+    "ready": "{{count}} ready to import",
+    "recovery": "{{count}} need metadata recovery",
+    "no_items": "No items to import"
   },
   "choose_existing": "Choose existing target…",
   "specific_warning": "target does not strongly match; explicit confirmation required",
@@ -207,7 +218,13 @@
   "evidence": "Evidence",
   "evidence_none": "No match evidence",
   "match_column": "Match",
-  "import_as_column": "Import as",
+  "import_as_column": "Source",
+  "review": {
+    "required": "Review",
+    "fix_source": "Fix source",
+    "details": "Details ({{count}})",
+    "duplicate": "Duplicate"
+  },
   "source": {
     "identified": "Identified as {{name}} · {{score}}%",
     "matching_by_name": "Matching by name",
@@ -218,14 +235,14 @@
     "source_unchanged": "The source archive or folder will remain unchanged"
   },
   "match_methods": {
-    "canonical_identity": "Canonical identity match",
-    "exact_name": "Exact name match",
-    "exact_alias": "Exact alias match",
-    "name_substring": "Name substring match",
-    "alias_substring": "Alias substring match",
-    "token_substring": "Name token match",
-    "fuzzy_name": "Fuzzy name similarity",
-    "no_name_match": "No meaningful name similarity"
+    "canonical_identity": "Canonical",
+    "exact_name": "Exact name",
+    "exact_alias": "Exact alias",
+    "name_substring": "Name contains",
+    "alias_substring": "Alias contains",
+    "token_substring": "Name token",
+    "fuzzy_name": "Similar name",
+    "no_name_match": "No name match"
   },
   "match_tooltip": {
     "manual": "Selected manually",

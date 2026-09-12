@@ -9,8 +9,8 @@ import { formatAppError } from '../../shared/lib/appError';
 import ConflictGroupCard from './ConflictGroupCard';
 import ConflictResolutionSummary from './ConflictResolutionSummary';
 import {
-  buildConflictKey,
-  chooseConflictWinner,
+  chooseConflictModSetWinner,
+  groupConflictsByModSet,
   setModDecision,
   summarizeConflictResolution,
   type ConflictDecisions,
@@ -43,6 +43,7 @@ export default function ConflictModal({ open, onClose, conflicts, gameId }: Conf
     setActionError(null);
   }, [open]);
 
+  const conflictSets = useMemo(() => groupConflictsByModSet(conflicts), [conflicts]);
   const summary = useMemo(
     () => summarizeConflictResolution(conflicts, decisions),
     [conflicts, decisions],
@@ -138,16 +139,18 @@ export default function ConflictModal({ open, onClose, conflicts, gameId }: Conf
                 <span>{t('scanner:conflict_modal.description')}</span>
               </div>
 
-              {conflicts.map((conflict) => (
+              {conflictSets.map((conflictSet) => (
                 <ConflictGroupCard
-                  key={buildConflictKey(conflict)}
-                  conflict={conflict}
+                  key={conflictSet.key}
+                  conflictSet={conflictSet}
                   decisions={decisions}
                   pathErrors={pathErrors}
                   disabled={isBusy}
                   onKeep={(path) => {
                     setPathErrors(new Map());
-                    setDecisions((current) => chooseConflictWinner(current, conflict, path));
+                    setDecisions((current) =>
+                      chooseConflictModSetWinner(current, conflictSet, path),
+                    );
                   }}
                   onDisable={(path) => {
                     setPathErrors(new Map());
@@ -165,7 +168,7 @@ export default function ConflictModal({ open, onClose, conflicts, gameId }: Conf
             <div className="mr-auto text-xs text-base-content/60">
               {t('scanner:conflict_modal.impact', {
                 resolved: summary.resolvedCount,
-                total: conflicts.length,
+                total: conflictSets.length,
                 count: summary.disablePaths.length,
               })}
             </div>

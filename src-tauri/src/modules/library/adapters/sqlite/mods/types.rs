@@ -23,18 +23,3 @@ pub struct ReconcileModRow {
     pub object_type: Option<String>,
     pub filesystem_identity: Option<String>,
 }
-
-/// Full row rewrite for one mod during scanner sync commit, addressed by its old path key.
-pub struct SyncModRowUpdate<'a> {
-    pub new_id: &'a str,
-    pub folder_path: &'a str,
-    pub mods_path: &'a str,
-    pub actual_name: &'a str,
-    pub status: ItemStatus,
-    pub is_safe: bool,
-    pub safety_source: &'a str,
-    pub object_id: &'a str,
-    pub object_type: &'a str,
-    pub old_folder_path: &'a str,
-    pub game_id: &'a str,
-}

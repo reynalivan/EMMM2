@@ -26,12 +26,11 @@ pub fn category_suggestions(result: &StagedMatchResult) -> Vec<CategorySuggestio
         .into_iter()
         .filter_map(|(category, score)| {
             let category = StableCategory::from_str(&category).ok()?;
-            let percentage = score;
             Some(CategorySuggestion {
                 category,
                 sub_category: None,
-                confidence_percentage: percentage,
-                confidence_tier: ConfidenceTier::from_percentage(percentage),
+                confidence_percentage: score,
+                confidence_tier: ConfidenceTier::from_percentage(score),
                 evidence: vec![MatchEvidence {
                     source: "deep_matcher".to_string(),
                     value: category.as_str().to_string(),

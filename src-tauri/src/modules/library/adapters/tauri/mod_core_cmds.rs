@@ -6,10 +6,7 @@ use crate::shared::errors::AppError;
 use std::path::{Component, Path, PathBuf};
 use tauri::State;
 
-// Re-export from services layer for backward compat (tests use `super::*`)
-pub use crate::modules::library::application::mods::core_ops::{
-    rename_mod_folder_inner, standardize_prefix, toggle_mod_inner, RenameResult,
-};
+pub use crate::modules::library::application::mods::core_ops::{standardize_prefix, RenameResult};
 
 #[specta::specta]
 #[tauri::command]

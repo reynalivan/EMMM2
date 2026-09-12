@@ -1,6 +1,6 @@
 {
   "title": "Wizard Pencocokan",
-  "review_title": "Tinjau Pencocokan Import",
+  "review_title": "Tinjau kecocokan",
   "review_summary": "{{count}} mod · {{ready}} diproses · {{skipped}} dilewati · {{errors}} error",
   "search_placeholder": "Cari mod sumber…",
   "no_filtered_items": "Tidak ada item import yang cocok dengan filter ini.",
@@ -11,7 +11,17 @@
   "classification_after_category": "Konfirmasi seluruh kategori untuk menghitung canonical match.",
   "classification_match_objects": "Cocokkan objek canonical",
   "classification_apply": "Terapkan klasifikasi",
+  "classification_apply_selected": "Terapkan yang dipilih ({{count}})",
+  "classification_confidence_tier": "{{score}}% · {{tier}}",
+  "classification_no_catalog_match": "Tidak ada objek canonical yang cocok dengan pencarian Anda.",
   "classification_applied": "{{count}} klasifikasi diterapkan dan {{mods}} child mod diperbarui.",
+  "classification_select": "Pilih",
+  "classification_select_row": "Pilih {{name}}",
+  "classification_select_high_confidence": "Pilih semua rekomendasi confidence tinggi",
+  "classification_manual": "Klasifikasikan manual",
+  "classification_use_catalog": "Gunakan katalog canonical",
+  "classification_subcategory": "Subkategori",
+  "classification_why_suggested": "Alasan rekomendasi",
   "library_preflight": {
     "title": "{{count}} identifikasi ditemukan",
     "summary": "{{high}} confidence tinggi · {{medium}} confidence sedang",
@@ -41,6 +51,7 @@
   },
   "summary": {
     "label": "Status batch",
+    "items": "{{count}} mod",
     "needs_review": "{{count}} perlu ditinjau",
     "ready": "{{count}} siap",
     "skipped": "{{count}} dilewati",
@@ -152,10 +163,10 @@
   },
   "footer": {
     "finished": "Batch ini sudah selesai.",
-    "resolve_first": "{{count}} item masih membutuhkan keputusan.",
-    "ready": "{{count}} item siap di-import.",
-    "recovery": "{{count}} item yang sudah dipindahkan perlu memulihkan metadata.",
-    "no_items": "Belum ada item yang dipilih untuk di-import."
+    "resolve_first": "{{count}} perlu keputusan",
+    "ready": "{{count}} siap di-import",
+    "recovery": "{{count}} perlu pemulihan metadata",
+    "no_items": "Tidak ada item untuk di-import"
   },
   "choose_existing": "Pilih tujuan yang sudah ada…",
   "specific_warning": "target tidak cukup cocok; perlu konfirmasi eksplisit",
@@ -207,7 +218,13 @@
   "evidence": "Bukti",
   "evidence_none": "Tidak ada bukti kecocokan",
   "match_column": "Kecocokan",
-  "import_as_column": "Impor sebagai",
+  "import_as_column": "Sumber",
+  "review": {
+    "required": "Tinjau",
+    "fix_source": "Perbaiki sumber",
+    "details": "Detail ({{count}})",
+    "duplicate": "Duplikat"
+  },
   "source": {
     "identified": "Teridentifikasi sebagai {{name}} · {{score}}%",
     "matching_by_name": "Dicocokkan berdasarkan nama",
@@ -218,14 +235,14 @@
     "source_unchanged": "Archive atau folder sumber tidak akan diubah"
   },
   "match_methods": {
-    "canonical_identity": "Identitas canonical cocok",
-    "exact_name": "Nama cocok persis",
-    "exact_alias": "Alias cocok persis",
-    "name_substring": "Substring nama cocok",
-    "alias_substring": "Substring alias cocok",
-    "token_substring": "Token nama cocok",
-    "fuzzy_name": "Kemiripan nama fuzzy",
-    "no_name_match": "Tidak ada kemiripan nama yang berarti"
+    "canonical_identity": "Canonical",
+    "exact_name": "Nama sama",
+    "exact_alias": "Alias sama",
+    "name_substring": "Nama memuat",
+    "alias_substring": "Alias memuat",
+    "token_substring": "Token nama",
+    "fuzzy_name": "Nama mirip",
+    "no_name_match": "Nama tidak cocok"
   },
   "match_tooltip": {
     "manual": "Dipilih secara manual",

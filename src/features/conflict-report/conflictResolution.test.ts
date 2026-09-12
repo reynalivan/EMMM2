@@ -3,6 +3,7 @@ import type { ConflictInfo } from '@/entities/workspace';
 import {
   buildConflictKey,
   chooseConflictWinner,
+  groupConflictsByModSet,
   setModDecision,
   summarizeConflictResolution,
 } from './conflictResolution';
@@ -26,6 +27,33 @@ describe('conflict resolution decisions', () => {
     const right = conflict('aaaaaaaa', ['E:/Mods/ModB', 'E:/Mods/ModA']);
 
     expect(buildConflictKey(left)).toBe(buildConflictKey(right));
+  });
+
+  it('groups multiple runtime hashes for the same mod locations', () => {
+    const groups = groupConflictsByModSet([
+      conflict('bbbbbbbb', ['E:/Mods/ModB', 'E:/Mods/ModA']),
+      conflict('aaaaaaaa', ['E:/Mods/ModA', 'E:/Mods/ModB']),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      modPaths: ['E:/Mods/ModA', 'E:/Mods/ModB'],
+    });
+    expect(groups[0].conflicts.map((item) => item.hash)).toEqual(['aaaaaaaa', 'bbbbbbbb']);
+  });
+
+  it('counts a mod set once after a decision resolves each of its runtime hashes', () => {
+    const conflicts = [
+      conflict('aaaaaaaa', ['E:/Mods/ModA', 'E:/Mods/ModB']),
+      conflict('bbbbbbbb', ['E:/Mods/ModA', 'E:/Mods/ModB']),
+    ];
+
+    const summary = summarizeConflictResolution(
+      conflicts,
+      setModDecision(new Map(), 'E:/Mods/ModB', 'disable'),
+    );
+
+    expect(summary).toMatchObject({ resolvedCount: 1, unresolvedCount: 0 });
   });
 
   it('keeps one winner and disables the other participants without mutating prior state', () => {

@@ -100,6 +100,7 @@ function batch(status: ImportBatch['status']): ImportBatch {
         targetComparison: null,
         analysisRevision: 0,
         analysisAckRevision: null,
+        reviewGate: { reasons: [] },
         diagnostics: [],
         contentKind: 'unknown',
         packageShape: 'single',

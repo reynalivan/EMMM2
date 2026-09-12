@@ -335,7 +335,7 @@ async fn update_thumbnail_rejects_non_image_source_without_creating_a_file() {
 }
 
 #[test]
-fn randomizer_excludes_children_of_disabled_containers() {
+fn randomizer_includes_effectively_disabled_children() {
     assert!(super::is_randomizer_candidate(
         ItemStatus::Disabled,
         "DISABLED Hu Tao Galaxy"
@@ -344,11 +344,11 @@ fn randomizer_excludes_children_of_disabled_containers() {
         ItemStatus::Disabled,
         "Hu Tao/DISABLED Galaxy"
     ));
-    assert!(!super::is_randomizer_candidate(
+    assert!(super::is_randomizer_candidate(
         ItemStatus::Disabled,
         "DISABLED Hu Tao/Galaxy"
     ));
-    assert!(!super::is_randomizer_candidate(
+    assert!(super::is_randomizer_candidate(
         ItemStatus::Enabled,
         "Hu Tao/DISABLED Galaxy"
     ));

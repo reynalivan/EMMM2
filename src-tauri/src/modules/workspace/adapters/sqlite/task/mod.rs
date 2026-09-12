@@ -23,6 +23,7 @@ fn row_to_task(r: &sqlx::sqlite::SqliteRow) -> PipelineTask {
 }
 
 /// Create a new pending task in the database and return its ID.
+#[cfg(test)]
 pub async fn create_task(
     pool: &SqlitePool,
     id: &str,
@@ -33,6 +34,7 @@ pub async fn create_task(
     create_task_with_rollback_intent(pool, id, game_id, task_type, target_id, None, None).await
 }
 
+#[cfg(test)]
 pub async fn create_task_with_rollback_intent(
     pool: &SqlitePool,
     task_id: &str,
@@ -61,6 +63,7 @@ pub async fn create_task_with_rollback_intent(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub async fn create_task_with_full_intent(
     pool: &SqlitePool,
     task_id: &str,
@@ -108,6 +111,7 @@ pub async fn create_task_with_full_intent(
 /// Create a normal collection apply already claimed by this process. The
 /// pending row and its `RUNNING` claim commit together, so lock-free recovery
 /// actions can never observe an actionable task owned by a live apply.
+#[cfg(test)]
 pub async fn create_claimed_task(
     pool: &SqlitePool,
     task_id: &str,
@@ -174,6 +178,7 @@ pub async fn create_claimed_task_with_final_active(
 }
 
 /// Mark a task as completed or failed.
+#[cfg(test)]
 pub async fn update_status(
     pool: &SqlitePool,
     id: &str,
@@ -188,6 +193,7 @@ pub async fn update_status(
         .map_err(|e| AppError::Db(e.to_string()))
 }
 
+#[cfg(test)]
 pub async fn update_status_tx(
     conn: &mut SqliteConnection,
     id: &str,

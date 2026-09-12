@@ -146,21 +146,10 @@ fn path_has_hidden_segment(path: &str) -> bool {
         .any(|segment| segment.starts_with('.'))
 }
 
-fn path_has_disabled_ancestor(path: &str) -> bool {
-    let mut segments = path
-        .split(['/', '\\'])
+fn path_is_effectively_disabled(path: &str) -> bool {
+    path.split(['/', '\\'])
         .filter(|segment| !segment.is_empty())
-        .peekable();
-
-    while let Some(segment) = segments.next() {
-        if segments.peek().is_some()
-            && crate::modules::workspace::domain::normalizer::is_disabled_folder(segment)
-        {
-            return true;
-        }
-    }
-
-    false
+        .any(crate::modules::workspace::domain::normalizer::is_disabled_folder)
 }
 
 fn is_randomizer_candidate(status: ItemStatus, folder_path: &str) -> bool {
@@ -168,10 +157,10 @@ fn is_randomizer_candidate(status: ItemStatus, folder_path: &str) -> bool {
         return false;
     }
 
-    // `enable_only_this` only renames the selected folder. A child inside a
-    // disabled container would remain inactive after that operation, so it
-    // must not be offered as a randomizer recommendation.
-    status == ItemStatus::Disabled && !path_has_disabled_ancestor(folder_path)
+    // Reconciliation stores a terminal folder's own status, while a disabled
+    // parent can make an otherwise enabled row inactive. Treat both forms as
+    // eligible so randomizer proposals represent the runtime state on disk.
+    status == ItemStatus::Disabled || path_is_effectively_disabled(folder_path)
 }
 
 pub async fn suggest_random_mods(

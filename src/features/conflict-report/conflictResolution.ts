@@ -9,6 +9,44 @@ export interface ConflictResolutionSummary {
   unresolvedCount: number;
 }
 
+export interface ConflictModSet {
+  key: string;
+  modPaths: string[];
+  conflicts: ConflictInfo[];
+}
+
+function sortPaths(paths: string[]): string[] {
+  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * The runtime detector reports one item per resource or shader hash. The user
+ * acts on mod folders, so combine hashes that involve the same mod locations.
+ */
+export function groupConflictsByModSet(conflicts: ConflictInfo[]): ConflictModSet[] {
+  const groups = new Map<string, ConflictModSet>();
+
+  for (const conflict of conflicts) {
+    const modPaths = sortPaths(conflict.mod_paths);
+    const key = JSON.stringify(modPaths);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.conflicts.push(conflict);
+    } else {
+      groups.set(key, { key, modPaths, conflicts: [conflict] });
+    }
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      conflicts: [...group.conflicts].sort(
+        (left, right) => left.kind.localeCompare(right.kind) || left.hash.localeCompare(right.hash),
+      ),
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+}
+
 export function buildConflictKey(conflict: ConflictInfo): string {
   const stages = conflict.evidence
     .map((evidence) => evidence.shader_stage)
@@ -35,20 +73,36 @@ export function setModDecision(
   return next;
 }
 
+function chooseWinnerFromPaths(
+  decisions: ConflictDecisions,
+  modPaths: string[],
+  keepPath: string,
+): Map<string, ModDecision> {
+  if (!modPaths.includes(keepPath)) {
+    throw new Error('The selected winner is not part of this conflict');
+  }
+
+  const next = new Map(decisions);
+  for (const path of modPaths) {
+    next.set(path, path === keepPath ? 'keep' : 'disable');
+  }
+  return next;
+}
+
 export function chooseConflictWinner(
   decisions: ConflictDecisions,
   conflict: ConflictInfo,
   keepPath: string,
 ): Map<string, ModDecision> {
-  if (!conflict.mod_paths.includes(keepPath)) {
-    throw new Error('The selected winner is not part of this conflict');
-  }
+  return chooseWinnerFromPaths(decisions, conflict.mod_paths, keepPath);
+}
 
-  const next = new Map(decisions);
-  for (const path of conflict.mod_paths) {
-    next.set(path, path === keepPath ? 'keep' : 'disable');
-  }
-  return next;
+export function chooseConflictModSetWinner(
+  decisions: ConflictDecisions,
+  conflictSet: ConflictModSet,
+  keepPath: string,
+): Map<string, ModDecision> {
+  return chooseWinnerFromPaths(decisions, conflictSet.modPaths, keepPath);
 }
 
 export function summarizeConflictResolution(
@@ -61,13 +115,14 @@ export function summarizeConflictResolution(
     .map(([path]) => path)
     .sort();
   const disabled = new Set(disablePaths);
-  const resolvedCount = conflicts.filter(
-    (conflict) => conflict.mod_paths.filter((path) => !disabled.has(path)).length <= 1,
+  const conflictSets = groupConflictsByModSet(conflicts);
+  const resolvedCount = conflictSets.filter(
+    (conflictSet) => conflictSet.modPaths.filter((path) => !disabled.has(path)).length <= 1,
   ).length;
 
   return {
     disablePaths,
     resolvedCount,
-    unresolvedCount: conflicts.length - resolvedCount,
+    unresolvedCount: conflictSets.length - resolvedCount,
   };
 }

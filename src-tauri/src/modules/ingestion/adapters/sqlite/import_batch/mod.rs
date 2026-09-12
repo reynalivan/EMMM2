@@ -387,6 +387,7 @@ pub async fn list_active_mod_inbox_sources(
         .collect()
 }
 
+#[cfg(test)]
 pub async fn mark_mod_inbox_source_processed(
     db: &SqlitePool,
     batch_id: &str,
@@ -518,36 +519,6 @@ pub async fn mark_batch_review_started(
          WHERE id = ?",
     )
     .bind(batch_id)
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected() == 1)
-}
-
-pub async fn store_inspection(
-    db: &SqlitePool,
-    item_id: &str,
-    inspection: &crate::modules::catalog::application::match_engine::types::SourceInspection,
-    category_suggestions: &[CategorySuggestion],
-) -> Result<bool, sqlx::Error> {
-    let inspection_json = serde_json::to_string(inspection)
-        .map_err(|error| decode_error(format!("could not encode source inspection: {error}")))?;
-    let fingerprint_json = serde_json::to_string(&inspection.fingerprint)
-        .map_err(|error| decode_error(format!("could not encode source fingerprint: {error}")))?;
-    let evidence_json = serde_json::to_string(&inspection.evidence)
-        .map_err(|error| decode_error(format!("could not encode match evidence: {error}")))?;
-    let categories_json = serde_json::to_string(category_suggestions)
-        .map_err(|error| decode_error(format!("could not encode category suggestions: {error}")))?;
-    let result = sqlx::query(
-        "UPDATE import_jobs
-         SET source_inspection = ?, source_fingerprint = ?, evidence_json = ?,
-             category_suggestions_json = ?, status = 'awaiting_category', updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND status IN ('discovered', 'staged', 'failed')",
-    )
-    .bind(inspection_json)
-    .bind(fingerprint_json)
-    .bind(evidence_json)
-    .bind(categories_json)
-    .bind(item_id)
     .execute(db)
     .await?;
     Ok(result.rows_affected() == 1)
@@ -951,6 +922,7 @@ pub async fn mark_archive_duplicate(
     Ok(result.rows_affected() == 1)
 }
 
+#[cfg(test)]
 pub async fn store_payload_manifest(
     db: &SqlitePool,
     item_id: &str,
@@ -966,25 +938,6 @@ pub async fn store_payload_manifest(
          WHERE id = ? AND status IN ('staged', 'awaiting_destination', 'ready', 'skipped')",
     )
     .bind(raw)
-    .bind(item_id)
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected() == 1)
-}
-
-pub async fn store_content_classification(
-    db: &SqlitePool,
-    item_id: &str,
-    content_kind: ImportContentKind,
-    package_shape: ImportPackageShape,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        "UPDATE import_jobs
-         SET content_kind = ?, package_shape = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND status IN ('staged', 'awaiting_category', 'awaiting_destination', 'ready', 'skipped')",
-    )
-    .bind(content_kind.as_str())
-    .bind(package_shape.as_str())
     .bind(item_id)
     .execute(db)
     .await?;
@@ -1060,26 +1013,6 @@ pub async fn mark_payload_duplicate(
     Ok(result.rows_affected() == 1)
 }
 
-pub async fn store_target_comparison(
-    db: &SqlitePool,
-    item_id: &str,
-    comparison: &TargetComparison,
-) -> Result<bool, sqlx::Error> {
-    let raw = serde_json::to_string(comparison)
-        .map_err(|error| decode_error(format!("could not encode target comparison: {error}")))?;
-    let result = sqlx::query(
-        "UPDATE import_jobs
-         SET target_comparison_json = ?, analysis_revision = analysis_revision + 1,
-             analysis_ack_revision = NULL, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
-    )
-    .bind(raw)
-    .bind(item_id)
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected() == 1)
-}
-
 pub async fn apply_target_comparison(
     db: &SqlitePool,
     item_id: &str,
@@ -1144,35 +1077,6 @@ pub async fn get_payload_manifest(
         >(&raw, "payload_manifest_json")
     })
     .transpose()
-}
-
-pub async fn apply_target_comparison_outcome(
-    db: &SqlitePool,
-    item_id: &str,
-    outcome: TargetComparisonOutcome,
-) -> Result<bool, sqlx::Error> {
-    let (decision, status, result) = match outcome {
-        TargetComparisonOutcome::AlreadyInstalled => ("skip", "skipped", "already_installed"),
-        TargetComparisonOutcome::TargetHasAdditionalFiles
-        | TargetComparisonOutcome::SameNameDifferentContent
-        | TargetComparisonOutcome::Incomplete => {
-            ("pending", "awaiting_destination", "target_conflict")
-        }
-    };
-    let result = sqlx::query(
-        "UPDATE import_jobs
-         SET decision = ?, status = ?, result = ?, destination_object_id = NULL,
-             destination_path = NULL, placed_path = NULL, analysis_ack_revision = NULL,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
-    )
-    .bind(decision)
-    .bind(status)
-    .bind(result)
-    .bind(item_id)
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected() == 1)
 }
 
 pub async fn store_keep_separate_decision(
@@ -1395,21 +1299,6 @@ pub async fn set_commit_item_state(
     .bind(destination_path)
     .bind(result)
     .bind(error)
-    .bind(item_id)
-    .execute(db)
-    .await?;
-    Ok(())
-}
-
-pub async fn bind_reconciled_object_id(
-    db: &SqlitePool,
-    item_id: &str,
-    object_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE import_jobs SET match_object_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    )
-    .bind(object_id)
     .bind(item_id)
     .execute(db)
     .await?;

@@ -20,7 +20,6 @@ const setFolderConflicts = vi.fn();
 const setRenameConfirmations = vi.fn();
 const toastError = vi.fn();
 const toastInfo = vi.fn();
-const getReloadKeyCommand = vi.fn();
 const notifyCommittedMutationSyncWarning = vi.fn();
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
@@ -28,7 +27,6 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitchCommand(...args),
     reconcileDiskStateCmd: (...args: unknown[]) => reconcileDiskStateCommand(...args),
-    getReloadKey: () => getReloadKeyCommand(),
   },
 }));
 
@@ -233,20 +231,14 @@ describe('workspace switch ops', () => {
     });
   });
 
-  it('labels an applied disk switch as reload-required', async () => {
-    getReloadKeyCommand.mockResolvedValue('F10');
+  it('keeps an applied disk switch silent after updating the workspace', async () => {
     const result = {
       status: 'applied',
       impact: { rewrites: [], refresh_scopes: [] },
     } as unknown as WorkspaceSwitchResult;
 
-    await applyWorkspaceSwitchEffects(
-      new QueryClient(),
-      result,
-      'folderSwitch',
-      (key) => `reload required: ${key}`,
-    );
+    await applyWorkspaceSwitchEffects(new QueryClient(), result, 'folderSwitch');
 
-    expect(toastInfo).toHaveBeenCalledWith('reload required: F10');
+    expect(toastInfo).not.toHaveBeenCalled();
   });
 });

@@ -50,6 +50,7 @@ pub async fn get_all_settings(pool: &SqlitePool) -> Result<HashMap<String, Strin
 
 /// Delete all user data from every table, restoring the app to fresh-install state.
 /// Tables are cleared in FK-safe order within a single transaction.
+#[cfg(test)]
 pub async fn reset_all_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     reset_all_data_with_revision(pool, None).await
 }

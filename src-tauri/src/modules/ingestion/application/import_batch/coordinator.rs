@@ -413,7 +413,7 @@ pub(crate) async fn build_match_suggestions(
     master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
     ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
 ) -> Result<MatchSuggestions, AppError> {
-    let mut canonical = crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects(
+    let mut canonical = crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects_for_category(
         Path::new(&inspection.source_path),
         &item.planned_name,
         category,
@@ -530,7 +530,7 @@ pub(crate) async fn inspect_existing_target(
             return Ok(Some(incomplete_target_comparison(
                 parent.join(&physical_name),
                 format!("Could not inspect existing target: {error}"),
-            )))
+            )));
         }
     };
     let source_manifest = match supplied_source_manifest {
@@ -871,45 +871,12 @@ pub async fn preview_import_library_readiness(
         });
     }
 
-    use crate::modules::catalog::application::objects::classification_batch::{
-        ObjectClassificationDraft, PreviewObjectClassificationBatchInput,
-    };
-    let category_preview =
-        crate::modules::catalog::application::objects::classification_batch::preview_object_classification_batch(
-            db,
-            &PreviewObjectClassificationBatchInput {
-                game_id: batch.game_id.clone(),
-                object_ids: object_ids.clone(),
-                drafts: Vec::new(),
-            },
-            master_db,
-            ini_filters,
-            match_extensions,
-        )
-        .await?;
-    let drafts = category_preview
-        .iter()
-        .map(|item| {
-            let suggestion = item.category_suggestions.first();
-            ObjectClassificationDraft {
-                object_id: item.object_id.clone(),
-                category: suggestion
-                    .map(|value| value.category)
-                    .unwrap_or(StableCategory::Other),
-                sub_category: suggestion.and_then(|value| value.sub_category.clone()),
-                metadata: suggestion
-                    .map(|value| value.metadata.clone())
-                    .unwrap_or_else(|| serde_json::json!({})),
-            }
-        })
-        .collect();
     let mut items =
         crate::modules::catalog::application::objects::classification_batch::preview_object_classification_batch(
             db,
-            &PreviewObjectClassificationBatchInput {
+            &crate::modules::catalog::application::objects::classification_batch::PreviewObjectClassificationBatchInput {
                 game_id: batch.game_id,
                 object_ids,
-                drafts,
             },
             master_db,
             ini_filters,

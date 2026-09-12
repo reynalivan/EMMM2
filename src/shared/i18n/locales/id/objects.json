@@ -212,8 +212,7 @@
     "mark_safe": "Menandai {{count}} objek sebagai Aman",
     "mark_unsafe": "Menandai {{count}} objek sebagai Tidak Aman",
     "tags_added": "Menambahkan {{count}} tag ke {{items}}",
-    "tags_removed": "Menghapus {{count}} tag dari {{items}}",
-    "reload_required": "Status disk diterapkan — tekan {{key}} di dalam game untuk memuat ulang"
+    "tags_removed": "Menghapus {{count}} tag dari {{items}}"
   },
   "bulk_tags": {
     "add_title": "Tambah Tag",

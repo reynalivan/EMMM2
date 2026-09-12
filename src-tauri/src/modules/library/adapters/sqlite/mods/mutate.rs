@@ -43,16 +43,6 @@ pub async fn delete_mod_by_id(pool: &SqlitePool, mod_id: &str) -> Result<(), sql
     delete_mod_tx(&mut conn, mod_id).await
 }
 
-/// `folder_path` MUST be absolute: the key is built without a `mods_path`, and
-/// only an absolute path short-circuits that lookup to the stored key shape.
-pub async fn delete_mod_by_path(pool: &SqlitePool, folder_path: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM mods WHERE folder_path_key = ?")
-        .bind(folder_path_key(folder_path, None))
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 pub async fn delete_mod_tx(conn: &mut sqlx::SqliteConnection, id: &str) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM mods WHERE id = ?")
         .bind(id)

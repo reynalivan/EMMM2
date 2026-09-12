@@ -102,6 +102,7 @@ macro_rules! emmm_collect_commands {
             modules::ingestion::adapters::tauri::tauri::start_mod_inbox_watcher,
             modules::ingestion::adapters::tauri::tauri::stop_mod_inbox_watcher,
             modules::ingestion::adapters::tauri::tauri::preview_object_classification_batch,
+            modules::ingestion::adapters::tauri::tauri::list_canonical_classification_catalog,
             modules::ingestion::adapters::tauri::tauri::apply_object_classification_batch,
             modules::ingestion::adapters::tauri::tauri::preview_relocation_batch,
             crate::modules::settings::adapters::tauri::settings_cmds::get_settings,

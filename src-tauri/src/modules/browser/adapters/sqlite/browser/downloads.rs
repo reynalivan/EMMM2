@@ -3,12 +3,6 @@
 use crate::modules::browser::domain::browser::BrowserDownloadDto;
 use sqlx::{Row, SqlitePool};
 
-/// Row of a still-open download matched by source URL.
-pub struct ActiveDownloadRow {
-    pub id: String,
-    pub session_id: Option<String>,
-}
-
 /// Terminal download metadata retained for an explicit retry request.
 pub struct RetryableDownloadRow {
     pub session_id: Option<String>,
@@ -165,27 +159,6 @@ pub async fn delete_older_than(db: &SqlitePool, retention_days: i64) -> Result<u
     .execute(db)
     .await?;
     Ok(result.rows_affected())
-}
-
-/// Most recent still-open download for a source URL.
-pub async fn find_active_by_url(
-    db: &SqlitePool,
-    source_url: &str,
-) -> Result<Option<ActiveDownloadRow>, sqlx::Error> {
-    use sqlx::Row;
-    let row = sqlx::query(
-        r#"SELECT id, session_id FROM browser_downloads
-           WHERE source_url = ? AND status IN ('requested', 'in_progress')
-           ORDER BY started_at DESC LIMIT 1"#,
-    )
-    .bind(source_url)
-    .fetch_optional(db)
-    .await?;
-
-    Ok(row.map(|r| ActiveDownloadRow {
-        id: r.get::<String, _>("id"),
-        session_id: r.get::<Option<String>, _>("session_id"),
-    }))
 }
 
 /// Read a canceled or failed download that may be explicitly queued again.

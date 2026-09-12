@@ -42,13 +42,6 @@ pub async fn create_object(
     Ok(())
 }
 
-pub async fn delete_object(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query!("DELETE FROM objects WHERE id = ?", id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 /// Atomically delete an object folder and all its child mods from the DB.
 ///
 /// Used when the watcher detects a depth=1 `Removed` event (an entire object
@@ -87,31 +80,6 @@ pub async fn delete_object_and_mods_by_folder(
         folder_path, game_id, mods_deleted
     );
     Ok(mods_deleted)
-}
-
-/// Delete all mod rows belonging to an object (cascade helper).
-pub async fn delete_mods_for_object(
-    pool: &SqlitePool,
-    object_id: &str,
-) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM mods WHERE object_id = ?")
-        .bind(object_id)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected())
-}
-
-pub async fn delete_ghost_objects_gc(
-    conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "DELETE FROM objects WHERE game_id = $1 AND NOT EXISTS (SELECT 1 FROM mods WHERE object_id = objects.id)"
-    )
-    .bind(game_id)
-    .execute(conn)
-    .await?;
-    Ok(())
 }
 
 pub async fn set_is_pinned(

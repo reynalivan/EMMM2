@@ -162,6 +162,15 @@ export function ImportBatchWizard({
   const bottomSpacer = lastVirtualRow ? rowVirtualizer.getTotalSize() - lastVirtualRow.end : 0;
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((itemId) => selected.has(itemId));
+  const headerSummary = [
+    t('summary.items', { count: batch.items.length }),
+    unresolvedItems.length > 0 && t('summary.needs_review', { count: unresolvedItems.length }),
+    readyItems.length > 0 && t('summary.ready', { count: readyItems.length }),
+    skippedCount > 0 && t('summary.skipped', { count: skippedCount }),
+    errorCount > 0 && t('filters.errors', { count: errorCount }),
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
 
   useEffect(() => {
     const currentIds = new Set(batch.items.map((item) => item.id));
@@ -223,14 +232,7 @@ export function ImportBatchWizard({
                 {t('review_title')}
               </h2>
             </div>
-            <p className="mt-0.5 text-xs text-base-content/60">
-              {t('review_summary', {
-                count: batch.items.length,
-                ready: readyItems.length,
-                skipped: skippedCount,
-                errors: errorCount,
-              })}
-            </p>
+            <p className="mt-0.5 text-xs text-base-content/60">{headerSummary}</p>
           </div>
           <button
             type="button"
@@ -303,7 +305,6 @@ export function ImportBatchWizard({
                       className="btn btn-ghost btn-xs"
                       onClick={selectAllVisible}
                       aria-keyshortcuts="Control+A Meta+A"
-                      title="Ctrl+A"
                     >
                       {t('selection.all')}
                     </button>
@@ -312,7 +313,6 @@ export function ImportBatchWizard({
                       className="btn btn-ghost btn-xs"
                       onClick={selectNone}
                       aria-keyshortcuts="Control+Shift+A Meta+Shift+A"
-                      title="Ctrl+Shift+A"
                     >
                       {t('selection.none')}
                     </button>
@@ -349,9 +349,9 @@ export function ImportBatchWizard({
                 <table className="table table-fixed table-sm w-full">
                   <colgroup>
                     <col className="w-10" />
-                    <col className="w-[28%]" />
-                    <col className="w-[34%]" />
-                    <col className="w-[25%]" />
+                    <col className="w-[30%]" />
+                    <col className="w-[36%]" />
+                    <col className="w-[18%]" />
                     <col className="w-32" />
                   </colgroup>
                   <thead className="sticky top-0 z-20 bg-base-100 shadow-[0_1px_0_hsl(var(--bc)/0.1)]">

@@ -603,7 +603,8 @@ pub async fn stop_mod_inbox_watcher(
 
 use crate::modules::catalog::application::objects::classification_batch::{
     ApplyObjectClassificationBatchInput, ApplyObjectClassificationBatchResult,
-    ObjectClassificationPreviewItem, PreviewObjectClassificationBatchInput,
+    CanonicalClassificationCatalogEntry, ObjectClassificationPreviewItem,
+    PreviewObjectClassificationBatchInput,
 };
 
 #[tauri::command]
@@ -642,6 +643,28 @@ pub async fn preview_object_classification_batch(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn list_canonical_classification_catalog(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+    game_id: String,
+) -> Result<Vec<CanonicalClassificationCatalogEntry>, AppError> {
+    let game_type =
+        crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}'")))? as i32;
+    let master_db =
+        crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+    Ok(
+        crate::modules::catalog::application::objects::classification_batch::list_canonical_classification_catalog(
+            &master_db,
+        ),
+    )
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn apply_object_classification_batch(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
@@ -660,6 +683,10 @@ pub async fn apply_object_classification_batch(
         &resource_dir,
         game_type,
     );
+    let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(
+        Some(&resource_dir),
+        game_type,
+    );
     let game_id = input.game_id.clone();
     let disable_after_apply = input.disable_after_apply;
     let object_ids = input
@@ -672,6 +699,7 @@ pub async fn apply_object_classification_batch(
             pool.inner(),
             input,
             &master_db,
+            &filters,
             &schema.match_extensions,
         )
         .await?;

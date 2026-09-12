@@ -1,5 +1,5 @@
 use crate::modules::catalog::application::objects::classification::{
-    apply_object_classification, CanonicalClassificationMatch, ObjectClassificationInput,
+    CanonicalClassificationMatch, ObjectClassificationInput, apply_object_classification,
 };
 
 async fn setup_classification_fixture() -> sqlx::SqlitePool {
@@ -164,9 +164,11 @@ async fn classification_writer_rejects_unstable_category_without_writes() {
         .await
         .expect_err("legacy category must be rejected");
 
-    assert!(error
-        .to_string()
-        .contains("Character, Weapon, UI, or Other"));
+    assert!(
+        error
+            .to_string()
+            .contains("Character, Weapon, UI, or Other")
+    );
     let object_type: String = sqlx::query_scalar("SELECT object_type FROM objects WHERE id = 'o1'")
         .fetch_one(&pool)
         .await
@@ -222,13 +224,14 @@ async fn classification_writer_requires_canonical_match_before_learning_alias() 
 #[tokio::test]
 async fn classification_batch_preflights_every_item_before_writing_any_item() {
     use crate::modules::catalog::application::match_engine::inspection::{
-        inspect_source, InspectionRequest,
+        InspectionRequest, inspect_source,
     };
     use crate::modules::catalog::application::objects::classification_batch::{
-        apply_object_classification_batch, ApplyObjectClassificationBatchInput,
-        ApplyObjectClassificationItem,
+        ApplyObjectClassificationBatchInput, ApplyObjectClassificationItem,
+        ObjectClassificationDecision, apply_object_classification_batch,
     };
     use crate::modules::ingestion::application::import_batch::types::StableCategory;
+    use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
 
     let context = crate::test_utils::init_test_db().await;
     let workspace = tempfile::tempdir().unwrap();
@@ -287,17 +290,17 @@ async fn classification_batch_preflights_every_item_before_writing_any_item() {
             .into_iter()
             .map(|(object_id, fingerprint)| ApplyObjectClassificationItem {
                 object_id: object_id.to_string(),
-                category: StableCategory::Weapon,
-                sub_category: None,
-                metadata: serde_json::json!({}),
-                canonical_entry_key: None,
-                canonical_alias: None,
-                confidence_percentage: None,
+                decision: ObjectClassificationDecision::Manual {
+                    category: StableCategory::Weapon,
+                    sub_category: None,
+                    metadata: serde_json::json!({}),
+                },
                 fingerprint,
             })
             .collect(),
         },
         &crate::modules::matching::application::deep_matcher::MasterDb::new(Vec::new()),
+        &IniTokenizationConfig::default().prepare(),
         &["ini".to_string()],
     )
     .await
@@ -314,13 +317,14 @@ async fn classification_batch_preflights_every_item_before_writing_any_item() {
 #[tokio::test]
 async fn classification_batch_revalidates_canonical_identity_against_master_db() {
     use crate::modules::catalog::application::match_engine::inspection::{
-        inspect_source, InspectionRequest,
+        InspectionRequest, inspect_source,
     };
     use crate::modules::catalog::application::objects::classification_batch::{
-        apply_object_classification_batch, ApplyObjectClassificationBatchInput,
-        ApplyObjectClassificationItem,
+        ApplyObjectClassificationBatchInput, ApplyObjectClassificationItem,
+        ObjectClassificationDecision, apply_object_classification_batch,
+        list_canonical_classification_catalog,
     };
-    use crate::modules::ingestion::application::import_batch::types::StableCategory;
+    use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
     use crate::modules::matching::application::deep_matcher::{DbEntry, MasterDb};
 
     let context = crate::test_utils::init_test_db().await;
@@ -361,13 +365,13 @@ async fn classification_batch_revalidates_canonical_identity_against_master_db()
     .unwrap()
     .fingerprint;
     let entries: Vec<DbEntry> = serde_json::from_value(serde_json::json!([
-        {"name": "Ayaka", "object_type": "Character", "entry_kind": "canonical"},
+        {"name": "Ayaka", "object_type": "Character", "entry_kind": "canonical", "metadata": {"element": "Cryo"}},
         {"name": "Weapon Taxonomy", "object_type": "Weapon", "entry_kind": "taxonomy"}
     ]))
     .unwrap();
     let master_db = MasterDb::new(entries);
 
-    for entry_key in ["missing-entry", "weapon-taxonomy", "ayaka"] {
+    for entry_key in ["missing-entry", "weapon-taxonomy"] {
         let error = apply_object_classification_batch(
             &context.pool,
             ApplyObjectClassificationBatchInput {
@@ -375,16 +379,14 @@ async fn classification_batch_revalidates_canonical_identity_against_master_db()
                 disable_after_apply: false,
                 items: vec![ApplyObjectClassificationItem {
                     object_id: "o1".to_string(),
-                    category: StableCategory::Weapon,
-                    sub_category: None,
-                    metadata: serde_json::json!({}),
-                    canonical_entry_key: Some(entry_key.to_string()),
-                    canonical_alias: None,
-                    confidence_percentage: Some(90),
+                    decision: ObjectClassificationDecision::Canonical {
+                        entry_key: entry_key.to_string(),
+                    },
                     fingerprint: fingerprint.clone(),
                 }],
             },
             &master_db,
+            &IniTokenizationConfig::default().prepare(),
             &["ini".to_string()],
         )
         .await
@@ -408,16 +410,14 @@ async fn classification_batch_revalidates_canonical_identity_against_master_db()
             disable_after_apply: false,
             items: vec![ApplyObjectClassificationItem {
                 object_id: "o1".to_string(),
-                category: StableCategory::Character,
-                sub_category: None,
-                metadata: serde_json::json!({}),
-                canonical_entry_key: Some("ayaka".to_string()),
-                canonical_alias: None,
-                confidence_percentage: Some(90),
+                decision: ObjectClassificationDecision::Canonical {
+                    entry_key: "ayaka".to_string(),
+                },
                 fingerprint,
             }],
         },
         &master_db,
+        &IniTokenizationConfig::default().prepare(),
         &["ini".to_string()],
     )
     .await
@@ -429,4 +429,12 @@ async fn classification_batch_revalidates_canonical_identity_against_master_db()
             .await
             .unwrap();
     assert_eq!(matched_key.as_deref(), Some("ayaka"));
+    let metadata: String = sqlx::query_scalar("SELECT metadata FROM objects WHERE id = 'o1'")
+        .fetch_one(&context.pool)
+        .await
+        .unwrap();
+    assert_eq!(metadata, r#"{"element":"Cryo"}"#);
+    let catalog = list_canonical_classification_catalog(&master_db);
+    assert_eq!(catalog.len(), 1);
+    assert_eq!(catalog[0].name, "Ayaka");
 }

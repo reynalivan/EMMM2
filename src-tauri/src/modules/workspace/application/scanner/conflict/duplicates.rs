@@ -3,10 +3,38 @@
 //! Distinct from `hash_scan`: this half is async service orchestration
 //! over the mods table, not filesystem INI parsing.
 
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::shared::errors::AppError;
+
+/// Finds the outermost disabled directory between `mods_root` and a terminal
+/// mod. Renaming that directory is required to make a child mod active.
+fn activation_path_for_disabled_ancestor(target_path: &Path, mods_root: &Path) -> PathBuf {
+    let Ok(relative_path) = target_path.strip_prefix(mods_root) else {
+        return target_path.to_path_buf();
+    };
+
+    let mut candidate = mods_root.to_path_buf();
+    for component in relative_path.components() {
+        match component {
+            Component::Normal(name) => {
+                candidate.push(name);
+                if crate::modules::workspace::domain::normalizer::is_disabled_folder(
+                    &name.to_string_lossy(),
+                ) {
+                    return candidate;
+                }
+            }
+            Component::CurDir => {}
+            Component::ParentDir | Component::Prefix(_) | Component::RootDir => {
+                return target_path.to_path_buf();
+            }
+        }
+    }
+
+    target_path.to_path_buf()
+}
 
 /// Find all enabled mods in the same object as `folder_path` (i.e. duplicates/conflicts).
 pub async fn get_duplicates_for_mod_service(
@@ -191,24 +219,19 @@ pub async fn enable_only_this_service(
         }
     }
 
-    match toggle_mod_inner(state, target_path.clone(), true).await {
+    let activation_target =
+        activation_path_for_disabled_ancestor(Path::new(&target_path), Path::new(&mods_path));
+    let activation_target = activation_target.to_string_lossy().to_string();
+
+    match toggle_mod_inner(state, activation_target.clone(), true).await {
         Ok(new_abs_path) => {
-            let new_rel = Path::new(&new_abs_path)
-                .strip_prefix(&mods_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| new_abs_path.clone());
-
-            success.push(new_abs_path);
-
-            if target_rel != new_rel {
+            if activation_target != new_abs_path {
                 path_rewrites.push(WorkspacePathRewrite {
-                    old_path: target_path.clone(),
-                    new_path: Path::new(&mods_path)
-                        .join(&new_rel)
-                        .to_string_lossy()
-                        .to_string(),
+                    old_path: activation_target,
+                    new_path: new_abs_path.clone(),
                 });
             }
+            success.push(new_abs_path);
         }
         Err(e) => failures.push(BulkActionError {
             path: target_path,
@@ -222,4 +245,32 @@ pub async fn enable_only_this_service(
     let mut result = BulkResult::new(success, failures);
     result.path_rewrites = path_rewrites;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::activation_path_for_disabled_ancestor;
+    use std::path::Path;
+
+    #[test]
+    fn uses_the_outermost_disabled_ancestor_for_activation() {
+        let mods_root = Path::new("C:/Mods");
+        let target = Path::new("C:/Mods/DISABLED Amber/Amber Skin");
+
+        assert_eq!(
+            activation_path_for_disabled_ancestor(target, mods_root),
+            Path::new("C:/Mods/DISABLED Amber")
+        );
+    }
+
+    #[test]
+    fn keeps_a_terminal_path_without_a_disabled_ancestor() {
+        let mods_root = Path::new("C:/Mods");
+        let target = Path::new("C:/Mods/Amber/Amber Skin");
+
+        assert_eq!(
+            activation_path_for_disabled_ancestor(target, mods_root),
+            target
+        );
+    }
 }

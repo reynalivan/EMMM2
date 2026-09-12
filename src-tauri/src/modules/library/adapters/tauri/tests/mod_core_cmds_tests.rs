@@ -1,4 +1,7 @@
 use super::*;
+use crate::modules::library::application::mods::core_ops::{
+    rename_mod_folder_inner, toggle_mod_inner,
+};
 use crate::modules::library::application::mods::trash;
 use std::fs;
 use tempfile::TempDir;

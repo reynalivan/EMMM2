@@ -212,8 +212,7 @@
     "mark_safe": "已将 {{count}} 个对象标记为安全",
     "mark_unsafe": "已将 {{count}} 个对象标记为不安全",
     "tags_added": "已为 {{items}} 添加 {{count}} 个标签",
-    "tags_removed": "已为 {{items}} 移除 {{count}} 个标签",
-    "reload_required": "磁盘状态已应用 — 请在游戏中按 {{key}} 重新加载"
+    "tags_removed": "已为 {{items}} 移除 {{count}} 个标签"
   },
   "bulk_tags": {
     "add_title": "添加标签",

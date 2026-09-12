@@ -4,13 +4,33 @@ use crate::modules::ingestion::application::import_batch::types::{
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::modules::matching::application::deep_matcher::models::result_summary::score_to_percentage;
-use crate::modules::matching::application::deep_matcher::{match_folder_phased, MasterDb, Reason};
+use crate::modules::matching::application::deep_matcher::{MasterDb, Reason, match_folder_phased};
 use crate::modules::workspace::application::scanner::core::walker::{
-    scan_folder_content, ModCandidate,
+    ModCandidate, scan_folder_content,
 };
 use std::path::Path;
 
 pub fn match_canonical_objects(
+    source_path: &Path,
+    planned_name: &str,
+    master_db: &MasterDb,
+    ini_filters: &PreparedTokenFilters,
+) -> Vec<CanonicalSuggestion> {
+    let filtered = MasterDb::new(
+        master_db
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.entry_kind
+                    == crate::modules::matching::application::deep_matcher::EntryKind::Canonical
+            })
+            .cloned()
+            .collect(),
+    );
+    match_canonical_objects_against(source_path, planned_name, &filtered, ini_filters)
+}
+
+pub fn match_canonical_objects_for_category(
     source_path: &Path,
     planned_name: &str,
     category: StableCategory,
@@ -29,6 +49,15 @@ pub fn match_canonical_objects(
             .cloned()
             .collect(),
     );
+    match_canonical_objects_against(source_path, planned_name, &filtered, ini_filters)
+}
+
+fn match_canonical_objects_against(
+    source_path: &Path,
+    planned_name: &str,
+    filtered: &MasterDb,
+    ini_filters: &PreparedTokenFilters,
+) -> Vec<CanonicalSuggestion> {
     if filtered.entries.is_empty() {
         return Vec::new();
     }

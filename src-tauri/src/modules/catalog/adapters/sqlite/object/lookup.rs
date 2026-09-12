@@ -71,25 +71,6 @@ pub async fn get_rows_for_reconcile(
     .await
 }
 
-pub async fn get_folder_path_conn(
-    conn: &mut sqlx::SqliteConnection,
-    id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    let value: Option<Option<String>> =
-        sqlx::query_scalar("SELECT folder_path FROM objects WHERE id = ? LIMIT 1")
-            .bind(id)
-            .fetch_optional(&mut *conn)
-            .await?;
-    Ok(value.flatten())
-}
-
-pub async fn get_game_id(pool: &SqlitePool, id: &str) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT game_id FROM objects WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-}
-
 pub async fn get_game_id_conn(
     conn: &mut sqlx::SqliteConnection,
     id: &str,

@@ -791,6 +791,14 @@ async previewObjectClassificationBatch(input: PreviewObjectClassificationBatchIn
     else return { status: "error", error: e  as any };
 }
 },
+async listCanonicalClassificationCatalog(gameId: string) : Promise<Result<CanonicalClassificationCatalogEntry[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_canonical_classification_catalog", { gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async applyObjectClassificationBatch(input: ApplyObjectClassificationBatchInput) : Promise<Result<ApplyObjectClassificationBatchResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("apply_object_classification_batch", { input }) };
@@ -1543,7 +1551,7 @@ export type ApplyGameModsDirectoryRequest = { game_id: string; candidate_path: s
 export type ApplyGameModsDirectoryResult = { game: GameConfig; inspection: GameModsDirectoryInspection; reconcile: DiskReconcileResult }
 export type ApplyObjectClassificationBatchInput = { gameId: string; items: ApplyObjectClassificationItem[]; disableAfterApply?: boolean }
 export type ApplyObjectClassificationBatchResult = { applied: number; childModsUpdated: number; aliasesChanged: boolean; disabledObjects: number; disableWarning: string | null }
-export type ApplyObjectClassificationItem = { objectId: string; category: StableCategory; subCategory: string | null; metadata: JsonValue; canonicalEntryKey: string | null; canonicalAlias: string | null; confidencePercentage: number | null; fingerprint: SourceFingerprint }
+export type ApplyObjectClassificationItem = { objectId: string; decision: ObjectClassificationDecision; fingerprint: SourceFingerprint }
 /**
  * Preview data for applying a collection (before → after).
  */
@@ -1565,6 +1573,7 @@ export type BrowserDownloadDto = { id: string; session_id: string | null; filena
 export type BrowserError = "WindowUnavailable" | { WebviewNotFound: { label: string } } | { InvalidUrl: string } | { InvalidSetting: string } | { Download: string } | { JobIncomplete: { job_id: string; field: string } } | { Import: string } | "QueueClosed" | "QueueFull" | "DownloadAlreadyActive" | "DownloadConfirmationUnavailable" | { Io: string } | { Db: string }
 export type BulkActionError = { path: string; error: AppError }
 export type BulkResult = { success: string[]; failures: BulkActionError[]; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
+export type CanonicalClassificationCatalogEntry = { entryKey: string; name: string; category: StableCategory; metadata: JsonValue; thumbnailPath: string | null; aliases: string[] }
 export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; matchStatus?: ImportMatchStatus; evidence: MatchEvidence[] }
 export type CategoryCount = { object_type: string; count: number }
 export type CategoryDef = { name: string;
@@ -1952,8 +1961,8 @@ export type ModInfo = { actual_name?: string; author?: string; description?: str
 export type ModInfoUpdate = { actual_name: string | null; author: string | null; description: string | null; version: string | null; tags: string[] | null; tags_add: string[] | null; tags_remove: string[] | null; is_safe: boolean | null; is_favorite: boolean | null; is_pinned: boolean | null; is_auto_sync: boolean | null; preset_name_add: string[] | null; preset_name_remove: string[] | null; metadata: Partial<{ [key in string]: string }> | null }
 export type MoveModsToObjectInput = { game_id: string; folder_paths: string[]; target_object_id: string; target_subpath: string | null; status: string | null }
 export type NewlineStyle = "Lf" | "CrLf"
-export type ObjectClassificationDraft = { objectId: string; category: StableCategory; subCategory: string | null; metadata: JsonValue }
-export type ObjectClassificationPreviewItem = { objectId: string; objectName: string; sourcePath: string; currentCategory: string; categorySuggestions: CategorySuggestion[]; canonicalSuggestions: CanonicalSuggestion[]; fingerprint: SourceFingerprint }
+export type ObjectClassificationDecision = { kind: "canonical"; entryKey: string } | { kind: "manual"; category: StableCategory; subCategory: string | null; metadata: JsonValue }
+export type ObjectClassificationPreviewItem = { objectId: string; objectName: string; sourcePath: string; currentCategory: string; canonicalSuggestions: CanonicalSuggestion[]; fingerprint: SourceFingerprint }
 /**
  * `Default` is the unfiltered query. Callers spell out only
  * the axes they actually constrain — the full seven-field literal was written
@@ -1969,7 +1978,7 @@ export type OnboardingIndexingWorkPlan = { game_id: string; file_count: number; 
 export type PayloadManifestSummary = { version: number; fileCount: number; totalSizeBytes: string; contentSha256: string }
 export type PendingRuntimeEffects = { collections_dirty: boolean; overlay_refresh: boolean }
 export type PipelineTask = { id: string; game_id: string; task_type: string; status: TaskStatus; target_id: string | null; rollback_collection_id: string | null; rollback_active_collection_id: string | null; final_active_collection_id: string | null; created_at: string; updated_at: string }
-export type PreviewObjectClassificationBatchInput = { gameId: string; objectIds: string[]; drafts: ObjectClassificationDraft[] }
+export type PreviewObjectClassificationBatchInput = { gameId: string; objectIds: string[] }
 export type PreviewRelocationBatchInput = { gameId: string; sourcePaths: string[]; currentObjectId: string | null }
 export type PreviewTreeNode = { kind: PreviewTreeNodeKind; id: string; name: string; path: string | null; object_id: string | null; node_type: string | null; is_enabled: boolean; is_effectively_active: boolean; inactive_reason: string | null; show_inactive_chip: boolean; status_kind: string | null; collapse_children: boolean; warnings: string[]; mod_count: number | null; children: PreviewTreeNode[] }
 export type PreviewTreeNodeKind = "object" | "folder" | "mod"

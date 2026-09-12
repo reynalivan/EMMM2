@@ -1,10 +1,10 @@
 import { Folder, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ConflictInfo } from '@/entities/workspace';
-import { buildConflictKey, type ConflictDecisions } from './conflictResolution';
+import type { ConflictModSet, ConflictDecisions } from './conflictResolution';
+import { buildConflictKey } from './conflictResolution';
 
 interface ConflictGroupCardProps {
-  conflict: ConflictInfo;
+  conflictSet: ConflictModSet;
   decisions: ConflictDecisions;
   pathErrors: ReadonlyMap<string, string>;
   disabled: boolean;
@@ -18,7 +18,7 @@ function pathName(path: string): string {
 }
 
 export default function ConflictGroupCard({
-  conflict,
+  conflictSet,
   decisions,
   pathErrors,
   disabled,
@@ -27,10 +27,13 @@ export default function ConflictGroupCard({
   onOpenFolder,
 }: ConflictGroupCardProps) {
   const { t } = useTranslation(['scanner']);
-  const remainingEnabled = conflict.mod_paths.filter((path) => decisions.get(path) !== 'disable');
+  const { conflicts, modPaths } = conflictSet;
+  const remainingEnabled = modPaths.filter((path) => decisions.get(path) !== 'disable');
   const resolved = remainingEnabled.length <= 1;
-  const conflictKey = buildConflictKey(conflict);
-  const headingId = `conflict-${encodeURIComponent(conflictKey)}`;
+  const headingId = `conflict-${encodeURIComponent(conflictSet.key)}`;
+  const hasPotentialConflict = conflicts.some((conflict) => conflict.certainty === 'potential');
+  const runtimeKeyCount = new Set(conflicts.map((conflict) => `${conflict.kind}:${conflict.hash}`))
+    .size;
 
   return (
     <section
@@ -40,34 +43,25 @@ export default function ConflictGroupCard({
       <div className="flex justify-between items-start gap-3 mb-3">
         <div className="flex flex-wrap items-center gap-2">
           <span id={headingId} className="badge badge-sm badge-neutral font-mono opacity-70">
-            {conflict.hash}
-          </span>
-          <span className="badge badge-sm badge-outline">
-            {t(`scanner:conflict_modal.kind.${conflict.kind}`)}
-          </span>
-          <span
-            className={`badge badge-sm ${
-              conflict.certainty === 'potential' ? 'badge-info' : 'badge-warning'
-            }`}
-          >
-            {t(`scanner:conflict_modal.${conflict.certainty}`)}
+            {t('scanner:conflict_modal.runtime_keys', { count: runtimeKeyCount })}
           </span>
           <span className={`badge badge-sm ${resolved ? 'badge-success' : 'badge-ghost'}`}>
             {t(`scanner:conflict_modal.${resolved ? 'resolved' : 'unresolved'}`)}
           </span>
         </div>
-        <span className="text-xs font-mono text-base-content/50">[{conflict.section_name}]</span>
+        <span className="text-xs text-base-content/50">
+          {t('scanner:conflict_modal.mod_locations', { count: modPaths.length })}
+        </span>
       </div>
 
-      {conflict.certainty === 'potential' && (
+      {hasPotentialConflict && (
         <p className="text-xs text-info mb-3">{t('scanner:conflict_modal.potential_guidance')}</p>
       )}
 
       <div className="flex flex-col gap-2">
-        {conflict.mod_paths.map((path) => {
+        {modPaths.map((path) => {
           const name = pathName(path);
           const decision = decisions.get(path);
-          const evidence = conflict.evidence.filter((item) => item.mod_path === path);
           return (
             <div key={path} className="rounded-md border border-base-content/10 bg-base-100/60 p-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -105,16 +99,54 @@ export default function ConflictGroupCard({
                   {t('scanner:conflict_modal.open')}
                 </button>
               </div>
+              <code className="mt-1 ml-5 block break-all text-xs text-base-content/60">{path}</code>
 
-              {evidence.map((item, index) => {
-                const sourceName = pathName(item.source_path);
-                return (
-                  <div
-                    key={`${item.source_path}:${item.section_name}:${index}`}
-                    className="mt-1 ml-5 text-xs text-base-content/60 flex flex-wrap gap-x-2 gap-y-1"
-                    title={item.source_path}
-                  >
-                    <span>{sourceName}</span>
+              {pathErrors.get(path) && (
+                <p className="mt-2 text-xs text-error" role="alert">
+                  {pathErrors.get(path)}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <details className="mt-3 rounded-md border border-base-content/10 bg-base-100/40 p-2">
+        <summary className="cursor-pointer text-xs font-medium text-base-content/70">
+          {t('scanner:conflict_modal.show_runtime_keys', { count: runtimeKeyCount })}
+        </summary>
+        <div className="mt-2 flex flex-col gap-2">
+          {conflicts.map((conflict) => (
+            <article
+              key={buildConflictKey(conflict)}
+              className="border-t border-base-content/10 pt-2 first:border-0 first:pt-0"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="badge badge-sm badge-neutral font-mono opacity-70">
+                  {conflict.hash}
+                </span>
+                <span className="badge badge-sm badge-outline">
+                  {t(`scanner:conflict_modal.kind.${conflict.kind}`)}
+                </span>
+                <span
+                  className={`badge badge-sm ${
+                    conflict.certainty === 'potential' ? 'badge-info' : 'badge-warning'
+                  }`}
+                >
+                  {t(`scanner:conflict_modal.${conflict.certainty}`)}
+                </span>
+                <span className="text-xs font-mono text-base-content/50">
+                  [{conflict.section_name}]
+                </span>
+              </div>
+
+              {conflict.evidence.map((item, index) => (
+                <div
+                  key={`${item.mod_path}:${item.source_path}:${item.section_name}:${index}`}
+                  className="mt-1 text-xs text-base-content/60"
+                >
+                  <code className="block break-all">{item.source_path}</code>
+                  <div className="flex flex-wrap gap-x-2 gap-y-1">
                     <span>[{item.section_name}]</span>
                     {item.namespace && (
                       <span>
@@ -138,18 +170,12 @@ export default function ConflictGroupCard({
                       </span>
                     )}
                   </div>
-                );
-              })}
-
-              {pathErrors.get(path) && (
-                <p className="mt-2 text-xs text-error" role="alert">
-                  {pathErrors.get(path)}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                </div>
+              ))}
+            </article>
+          ))}
+        </div>
+      </details>
     </section>
   );
 }

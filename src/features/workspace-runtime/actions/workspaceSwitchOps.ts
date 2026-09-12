@@ -150,7 +150,6 @@ export async function applyWorkspaceSwitchEffects(
   queryClient: QueryClient,
   result: WorkspaceSwitchResult,
   fallbackClass: WorkspaceSwitchFallbackClass,
-  reloadMessage?: (key: string) => string,
   options: WorkspaceSwitchEffectsOptions = {},
 ): Promise<void> {
   applyRuntimeEffects(
@@ -164,12 +163,5 @@ export async function applyWorkspaceSwitchEffects(
       buildSwitchRefreshDescriptor(result.impact, fallbackClass),
       'active',
     );
-  }
-
-  if (result.status === 'applied' && reloadMessage) {
-    const reloadKey = await commands.getReloadKey().catch(() => null);
-    if (reloadKey) {
-      toast.info(reloadMessage(reloadKey));
-    }
   }
 }

@@ -10,6 +10,10 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSCommandPath
 Set-Location $repositoryRoot
 
+$minimumNodeMajor = 22
+$maximumNodeMajor = 24
+$requiredPnpmVersion = '10.24.0'
+
 function Require-Command {
     param([Parameter(Mandatory)][string]$Name)
 
@@ -35,12 +39,17 @@ if (-not $SkipFrontend) {
     Require-Command corepack
 
     $nodeMajor = [int]((& node --version).Trim().TrimStart('v').Split('.')[0])
-    if ($nodeMajor -lt 20) {
-        throw "Node.js 20 or newer is required; found $((& node --version).Trim())."
+    if ($nodeMajor -lt $minimumNodeMajor -or $nodeMajor -gt $maximumNodeMajor) {
+        throw "Node.js $minimumNodeMajor through $maximumNodeMajor is supported; found $((& node --version).Trim())."
     }
 
     Invoke-SetupCommand corepack enable
-    Invoke-SetupCommand corepack pnpm install --frozen-lockfile
+    $pnpmVersion = (& corepack pnpm --version).Trim()
+    if ($pnpmVersion -ne $requiredPnpmVersion) {
+        throw "pnpm $requiredPnpmVersion is required; Corepack resolved $pnpmVersion."
+    }
+
+    Invoke-SetupCommand corepack pnpm install --frozen-lockfile --prefer-offline
 }
 
 if (-not $SkipRust) {

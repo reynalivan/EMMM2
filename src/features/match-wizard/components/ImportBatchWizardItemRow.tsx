@@ -8,6 +8,7 @@ import type {
   ImportDecision,
   ImportItem,
   ImportSourcePreview,
+  ReviewReasonCode,
 } from '../../../shared/api/tauri/bindings.gen';
 import type { ObjectSummary } from '@/entities/game-object';
 import { archiveErrorKindFromStoredMessage } from '../../../shared/lib/appError';
@@ -112,34 +113,46 @@ export function ImportBatchWizardItemRow({
       (item.destinationObjectId !== null && suggestion.objectId === item.destinationObjectId) ||
       (item.destinationPath !== null && suggestion.targetPath === item.destinationPath),
   );
-  const selectedTopSuggestion =
-    selectedSuggestion !== undefined &&
-    topSuggestion !== null &&
-    selectedSuggestion.kind === topSuggestion.kind &&
-    selectedSuggestion.objectId === topSuggestion.objectId &&
-    selectedSuggestion.targetPath === topSuggestion.targetPath;
-  const hasManualDestination =
+  const hasSelectedDestination =
     item.decision !== 'skip' &&
-    (item.destinationObjectId !== null || item.destinationPath !== null) &&
-    !selectedTopSuggestion;
-  const displayedConfidence = item.confidencePercentage;
-  const displayedTier = item.confidenceTier;
-  const displayedMethod = effectiveMatchMethod(selectedSuggestion);
+    (item.destinationObjectId !== null || item.destinationPath !== null);
+  const hasManualDestination = hasSelectedDestination && selectedSuggestion === undefined;
+  const displayedSuggestion =
+    selectedSuggestion ?? (hasSelectedDestination ? undefined : topSuggestion);
+  const displayedConfidence =
+    displayedSuggestion?.confidencePercentage ??
+    (hasManualDestination ? 0 : item.confidencePercentage);
+  const displayedTier =
+    displayedSuggestion?.confidenceTier ??
+    (hasManualDestination ? 'no_match' : item.confidenceTier);
+  const displayedMethod = effectiveMatchMethod(displayedSuggestion);
   const selectedObjectName = item.destinationObjectId
     ? objects.find((object) => object.id === item.destinationObjectId)?.name
     : undefined;
-  const sourceIdentification = item.canonicalSuggestions.find(
-    (suggestion) => suggestion.confidenceTier === 'high' || suggestion.confidenceTier === 'medium',
-  );
-  const identityNeedsReview = item.identityMatchStatus === 'needs_review';
   const duplicateSourceName = item.duplicateOfItemId
     ? batch.items.find((candidate) => candidate.id === item.duplicateOfItemId)?.plannedName
     : null;
   const selectedDestinationName =
     selectedObjectName ??
-    selectedSuggestion?.folderName ??
+    displayedSuggestion?.folderName ??
     item.destinationPath ??
     t('no_destination');
+  const reviewDetails = uniqueMessages([
+    errorText,
+    targetComparison
+      ? t(`target_comparison.${targetComparison.outcome}`, {
+          additional: targetComparison.additionalFiles,
+          changed: targetComparison.changedFiles,
+          missing: targetComparison.missingFiles,
+        })
+      : null,
+    ...item.reviewGate.reasons
+      .filter((reason) => !targetComparison || !isTargetComparisonReason(reason.code))
+      .map((reason) => t(`review_reasons.${reason.code}`)),
+    ...item.diagnostics.map((diagnostic) =>
+      t(`diagnostics.${diagnostic.code}`, { defaultValue: diagnostic.recovery }),
+    ),
+  ]);
 
   const saveName = async () => {
     const next = plannedName.trim();
@@ -254,54 +267,41 @@ export function ImportBatchWizardItemRow({
                 />
               </div>
             )}
-            <p className="mt-0.5 truncate text-[11px] leading-4 text-base-content/60">
-              {sourceIdentification
-                ? t('source.identified', {
-                    name: sourceIdentification.name,
-                    score: sourceIdentification.confidencePercentage,
-                  })
-                : t('source.matching_by_name')}
-            </p>
-            {identityNeedsReview && (
-              <p className="mt-0.5 text-[11px] font-medium leading-4 text-warning">
-                {t('source.identity_review_required')}
-              </p>
-            )}
-            <p className="mt-0.5 truncate text-[11px] leading-4 text-base-content/55">
-              {t(`content_kind.${item.contentKind}`)} · {t(`package_shape.${item.packageShape}`)}
-            </p>
-            {duplicateSourceName && (
-              <p className="mt-0.5 truncate text-[11px] leading-4 text-warning">
-                {t('source.duplicate_of', { name: duplicateSourceName })}
-              </p>
-            )}
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="badge badge-ghost badge-xs">
+                {t(`content_kind.${item.contentKind}`)}
+              </span>
+              <span className="badge badge-ghost badge-xs">
+                {t(`package_shape.${item.packageShape}`)}
+              </span>
+              {duplicateSourceName && (
+                <span
+                  className="badge badge-warning badge-xs"
+                  title={t('source.duplicate_of', { name: duplicateSourceName })}
+                >
+                  {t('review.duplicate')}
+                </span>
+              )}
+            </div>
           </div>
         </ImportSourcePreviewCard>
-        {errorText && (
-          <p className="mt-2 line-clamp-2 text-xs leading-snug text-error">{errorText}</p>
+        {reviewDetails.length > 0 && (
+          <details className="mt-2 text-xs">
+            <summary className="cursor-pointer text-warning marker:text-warning">
+              <span className={`badge badge-xs ${errorText ? 'badge-error' : 'badge-warning'}`}>
+                {t(errorText ? 'review.fix_source' : 'review.required')}
+              </span>
+              <span className="ml-1 text-base-content/60">
+                {t('review.details', { count: reviewDetails.length })}
+              </span>
+            </summary>
+            <ul className="mt-2 space-y-1 border-l border-warning/30 pl-3 leading-snug text-base-content/70">
+              {reviewDetails.map((detail) => (
+                <li key={detail}>{detail}</li>
+              ))}
+            </ul>
+          </details>
         )}
-        {targetComparison && (
-          <p className="mt-1 line-clamp-2 text-xs leading-snug text-warning">
-            {t(`target_comparison.${targetComparison.outcome}`, {
-              additional: targetComparison.additionalFiles,
-              changed: targetComparison.changedFiles,
-              missing: targetComparison.missingFiles,
-            })}
-          </p>
-        )}
-        {item.reviewGate.reasons.map((reason) => (
-          <p key={`${reason.code}-${reason.diagnosticCode ?? ''}`} className="mt-1 text-xs leading-snug text-warning">
-            {t(`review_reasons.${reason.code}`)}
-          </p>
-        ))}
-        {item.diagnostics.map((diagnostic) => (
-          <p
-            key={`${diagnostic.stage}-${diagnostic.code}`}
-            className="mt-1 text-xs leading-snug text-warning"
-          >
-            {t(`diagnostics.${diagnostic.code}`, { defaultValue: diagnostic.recovery })}
-          </p>
-        ))}
       </td>
       <td className="min-w-0 align-middle">
         <div className="flex min-h-14 min-w-0 items-center gap-1.5">
@@ -407,6 +407,18 @@ function shortPath(path: string): string {
 
 function withoutDisabledPrefix(name: string): string {
   return name.replace(/^disable(?:d)?[\s_-]+/i, '').trim() || name;
+}
+
+function isTargetComparisonReason(code: ReviewReasonCode): boolean {
+  return (
+    code === 'target_has_additional_files' ||
+    code === 'target_name_conflict' ||
+    code === 'target_comparison_incomplete'
+  );
+}
+
+function uniqueMessages(messages: Array<string | null>): string[] {
+  return [...new Set(messages.filter((message): message is string => Boolean(message)))];
 }
 
 function effectiveMatchMethod(

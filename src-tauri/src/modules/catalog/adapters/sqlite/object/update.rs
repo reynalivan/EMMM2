@@ -17,55 +17,6 @@ pub async fn set_filesystem_identity_tx(
     Ok(())
 }
 
-pub async fn update_object_path_exact_tx(
-    conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    old_path: &str,
-    new_path: &str,
-) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
-        "UPDATE objects SET folder_path = ?, folder_path_key = ? \
-         WHERE game_id = ? AND folder_path = ?",
-    )
-    .bind(new_path)
-    .bind(folder_path_key(new_path, None))
-    .bind(game_id)
-    .bind(old_path)
-    .execute(conn)
-    .await?;
-    Ok(result.rows_affected())
-}
-
-pub async fn update_object_folder_path<'c, E>(
-    executor: E,
-    game_id: &str,
-    old_path: &str,
-    new_path: &str,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    sqlx::query(
-        "UPDATE objects
-         SET folder_path = ?,
-             folder_path_key = ?,
-             name = CASE WHEN name = ? THEN ? ELSE name END,
-             name_key = CASE WHEN name = ? THEN ? ELSE name_key END
-         WHERE game_id = ? AND folder_path_key = ?",
-    )
-    .bind(new_path)
-    .bind(folder_path_key(new_path, None))
-    .bind(old_path)
-    .bind(new_path)
-    .bind(old_path)
-    .bind(canonical_name_key(new_path))
-    .bind(game_id)
-    .bind(folder_path_key(old_path, None))
-    .execute(executor)
-    .await?;
-    Ok(())
-}
-
 pub async fn update_object_runtime_folder_path<'c, E>(
     executor: E,
     game_id: &str,

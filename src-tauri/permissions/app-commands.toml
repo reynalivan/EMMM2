@@ -137,6 +137,7 @@ commands.allow = [
     "set_ai_api_key",
     "delete_ai_api_key",
     "preview_object_classification_batch",
+    "list_canonical_classification_catalog",
     "preview_import_library_readiness",
     "apply_object_classification_batch",
     "preview_relocation_batch",

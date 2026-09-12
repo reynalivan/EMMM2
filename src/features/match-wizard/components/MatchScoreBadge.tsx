@@ -53,11 +53,14 @@ export function MatchScoreBadge({
         onFocus={show}
         onBlur={() => setPosition(null)}
       >
-        {score}% · {t(`confidence.${tier}`)}
+        {t('confidence_value', { value: score, label: t(`confidence.${tier}`) })}
       </button>
-      <p className="mt-1 truncate text-[11px] text-base-content/55">
-        {t(`match_methods.${method}`)}
-      </p>
+      <div className="mt-1 flex min-w-0 items-center gap-1.5">
+        <p className="truncate text-[11px] text-base-content/55">{t(`match_methods.${method}`)}</p>
+        {manual && (
+          <span className="badge badge-primary badge-xs">{t('match_tooltip.manual')}</span>
+        )}
+      </div>
 
       {position &&
         createPortal(

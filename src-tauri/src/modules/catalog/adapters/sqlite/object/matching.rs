@@ -1,43 +1,4 @@
 use sqlx::SqlitePool;
-use std::collections::HashMap;
-
-pub async fn get_matched_entry_key_by_id(
-    pool: &sqlx::SqlitePool,
-    id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT matched_entry_key FROM objects WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-}
-
-pub async fn has_matched_entry_key<'c, E>(executor: E, id: &str) -> Result<bool, sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM objects WHERE id = ? AND matched_entry_key IS NOT NULL)",
-    )
-    .bind(id)
-    .fetch_one(executor)
-    .await
-}
-
-pub async fn get_matched_entry_keys_by_game(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<HashMap<String, String>, sqlx::Error> {
-    let pairs = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, matched_entry_key FROM objects
-         WHERE game_id = ? AND matched_entry_key IS NOT NULL",
-    )
-    .bind(game_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(pairs.into_iter().collect())
-}
-
 /// Every object's `(matched_entry_key, custom_skins)` pair that carries both.
 ///
 /// Feeds the MasterDB loader, which folds the user's own aliases into the
@@ -65,46 +26,6 @@ pub async fn get_user_alias_blobs(
             ))
         })
         .collect()
-}
-
-pub async fn get_object_folder_by_matched_entry_key<'c, E>(
-    executor: E,
-    game_id: &str,
-    matched_entry_key: &str,
-) -> Result<Option<String>, sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    sqlx::query_scalar(
-        "SELECT folder_path FROM objects
-         WHERE game_id = ? AND matched_entry_key = ?
-         ORDER BY updated_at DESC
-         LIMIT 1",
-    )
-    .bind(game_id)
-    .bind(matched_entry_key)
-    .fetch_optional(executor)
-    .await
-}
-
-pub async fn get_object_id_by_matched_entry_key<'c, E>(
-    executor: E,
-    game_id: &str,
-    matched_entry_key: &str,
-) -> Result<Option<String>, sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    sqlx::query_scalar(
-        "SELECT id FROM objects
-         WHERE game_id = ? AND matched_entry_key = ?
-         ORDER BY updated_at DESC
-         LIMIT 1",
-    )
-    .bind(game_id)
-    .bind(matched_entry_key)
-    .fetch_optional(executor)
-    .await
 }
 
 #[allow(clippy::too_many_arguments)] // Canonical match patch mirrors nullable DB columns at the repo boundary.

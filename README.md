@@ -117,14 +117,14 @@ EMMM is a **Premium Orchestrator**. We prioritize visual excellence and tactile 
 
 ### Prerequisites
 
-- **Node.js** (v20+) & **pnpm** (v9+)
+- **Node.js** 22–24 and Corepack (which supplies the pinned **pnpm** 10.24.0)
 - **Rust** (Stable) & **Cargo**
 - **Administrator Privileges**: Required for PowerShell run-as-admin game launching and symbolic link operations.
 
 ### Installation
 
 1. `.\setup.ps1` — Validate Node/Rust, install the locked frontend dependencies, and fetch Cargo crates.
-2. `pnpm tauri dev` — Start the application in development mode with HMR.
+2. `corepack pnpm tauri dev` — Start the application in development mode with HMR.
 
 ### Essential Commands
 

@@ -250,7 +250,6 @@
     "mark_safe": "Marked {{count}} objects as Safe",
     "mark_unsafe": "Marked {{count}} objects as Unsafe",
     "tags_added": "Added {{count}} tag(s) to {{items}}",
-    "tags_removed": "Removed {{count}} tag(s) from {{items}}",
-    "reload_required": "Disk state applied — press {{key}} in-game to reload"
+    "tags_removed": "Removed {{count}} tag(s) from {{items}}"
   }
 }

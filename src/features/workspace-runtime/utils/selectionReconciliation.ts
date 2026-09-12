@@ -51,14 +51,6 @@ export function buildSelectionReconciledEvent(
   };
 }
 
-export function buildReconciliationMessage(reason: string | null): string {
-  if (reason === 'source_unavailable') {
-    return 'Workspace source is unavailable. Selection was cleared.';
-  }
-
-  return 'Workspace target changed on disk. Selection was updated.';
-}
-
 function normalizeSelectionPath(path: string | null | undefined): string | null {
   return path ? normalizeWorkspacePath(path) : null;
 }
@@ -189,18 +181,6 @@ export function shouldRunSelectionReconciliationEffect(
 
   seenSelectionReconciliationEffects.set(key, nowMs);
   return true;
-}
-
-export function shouldShowSelectionReconciliationToast(
-  selection: WorkspaceViewModelSelectionInput,
-  reconciledSelection: WorkspaceSelection,
-  nowMs: number,
-): boolean {
-  if (reconciledSelection.reconciliation_status === 'unchanged') {
-    return false;
-  }
-
-  return !reconciliationCoveredByRecentInternalRewrite(selection, reconciledSelection, nowMs);
 }
 
 export function resetWorkspaceSelectionReconciliationGuardsForTest(): void {

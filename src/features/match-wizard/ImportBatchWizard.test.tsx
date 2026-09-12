@@ -4,10 +4,27 @@ import type { ImportBatch, ImportItem } from '../../shared/api/tauri/bindings.ge
 import { ImportBatchWizard } from './ImportBatchWizard';
 
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => path }));
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: (options: { count: number; estimateSize: () => number }) => {
+    const size = options.estimateSize();
+    return {
+      getVirtualItems: () =>
+        Array.from({ length: options.count }, (_, index) => ({
+          index,
+          start: index * size,
+          end: (index + 1) * size,
+        })),
+      getTotalSize: () => options.count * size,
+      measureElement: vi.fn(),
+    };
+  },
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, values?: { count?: number }) =>
-      values?.count === undefined ? key : `${key}:${values.count}`,
+    t: (key: string, values?: Record<string, string | number>) => {
+      if (key === 'confidence_value') return `${values?.value}% · ${values?.label}`;
+      return values?.count === undefined ? key : `${key}:${values.count}`;
+    },
   }),
 }));
 
@@ -134,7 +151,20 @@ describe('ImportBatchWizard', () => {
       confidenceTier: 'high' as const,
       warning: null,
     };
-    const first = item({ destinationSuggestions: [suggestion] });
+    const first = item({
+      destinationSuggestions: [suggestion],
+      canonicalSuggestions: [
+        {
+          entryKey: 'ayaka',
+          name: 'Ayaka',
+          matchedAlias: null,
+          confidencePercentage: 91,
+          confidenceTier: 'high',
+          matchStatus: 'auto_matched',
+          evidence: [],
+        },
+      ],
+    });
     const second = item({ id: 'item-2', plannedName: 'second', sourcePath: 'C:/Mods/second' });
     const callbacks = handlers();
     render(
@@ -205,6 +235,144 @@ describe('ImportBatchWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'actions.set_proceed' }));
 
     await waitFor(() => expect(callbacks.onChooseDestination).not.toHaveBeenCalled());
+  });
+
+  it('groups duplicate target warnings under one review detail', () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({
+            targetComparison: {
+              outcome: 'incomplete',
+              targetPath: 'C:/Mods/Ayaka/skin',
+              sameFiles: 0,
+              changedFiles: 0,
+              missingFiles: 0,
+              additionalFiles: 0,
+              suggestedSeparateName: null,
+              reason: 'target inspection incomplete',
+            },
+            reviewGate: {
+              reasons: [{ code: 'target_comparison_incomplete', diagnosticCode: null }],
+            },
+          }),
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.getByText('review.required')).toBeInTheDocument();
+    expect(screen.getByText('review.details:1')).toBeInTheDocument();
+    expect(screen.getByText('target_comparison.incomplete')).toBeInTheDocument();
+    expect(
+      screen.queryByText('review_reasons.target_comparison_incomplete'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('labels an unselected canonical destination as a canonical match', () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({
+            confidencePercentage: 92,
+            confidenceTier: 'high',
+            destinationSuggestions: [
+              {
+                kind: 'create_canonical',
+                objectId: null,
+                canonicalEntryKey: 'robin',
+                folderName: 'Robin',
+                targetPath: 'C:/Mods/Robin/RobinSummertoEdits',
+                confidencePercentage: 92,
+                confidenceTier: 'high',
+                matchMethod: 'no_name_match',
+                warning: null,
+              },
+            ],
+          }),
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.getAllByText('match_methods.canonical_identity')).toHaveLength(2);
+    expect(screen.queryByText('match_methods.no_name_match')).not.toBeInTheDocument();
+  });
+
+  it('shows the selected manual destination confidence instead of the source confidence', () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({
+            decision: 'confirm',
+            destinationObjectId: 'object-herta',
+            destinationPath: 'C:/Mods/Herta/RobinSummertoEdits',
+            confidencePercentage: 92,
+            confidenceTier: 'high',
+            destinationSuggestions: [
+              {
+                kind: 'create_canonical',
+                objectId: null,
+                canonicalEntryKey: 'robin',
+                folderName: 'Robin',
+                targetPath: 'C:/Mods/Robin/RobinSummertoEdits',
+                confidencePercentage: 92,
+                confidenceTier: 'high',
+                matchMethod: 'no_name_match',
+                warning: null,
+              },
+            ],
+          }),
+        )}
+        schema={null}
+        objects={[
+          {
+            id: 'object-herta',
+            name: 'herta',
+            folder_path: 'C:/Mods/Herta',
+            matched_entry_key: null,
+            matched_alias_name: null,
+            matched_confidence: null,
+            matched_reason: null,
+            matched_source: null,
+            object_type: 'Other',
+            sub_category: null,
+            status: 1,
+            metadata: '{}',
+            tags: '[]',
+            hash_db: null,
+            custom_skins: null,
+            is_pinned: false,
+            is_auto_sync: false,
+            thumbnail_path: null,
+            created_at: null,
+            mod_count: 0,
+            enabled_count: 0,
+            safe_mod_count: 0,
+            unsafe_mod_count: 0,
+            unclassified_mod_count: 0,
+            is_object_disabled: false,
+            has_naming_conflict: false,
+            active_mod_paths: null,
+          },
+        ]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.getByText('0% · confidence.no_match')).toBeInTheDocument();
+    expect(screen.getByText('match_tooltip.manual')).toBeInTheDocument();
+    expect(screen.queryByText('92% · confidence.high')).not.toBeInTheDocument();
   });
 
   it('selects a ranked destination from the searchable dropdown', async () => {

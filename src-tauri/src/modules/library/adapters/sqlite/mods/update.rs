@@ -1,5 +1,6 @@
 //! Single-row updates: folder path and user flags. Status is reconcile-owned.
 
+#[cfg(test)]
 use super::paths::get_game_mod_path;
 use crate::shared::path_key::{folder_path_key, strip_path_prefix_preserve_display};
 use sqlx::{Row, SqlitePool};
@@ -17,26 +18,7 @@ pub async fn set_filesystem_identity_tx(
     Ok(())
 }
 
-pub async fn update_mod_path_exact_tx(
-    conn: &mut sqlx::SqliteConnection,
-    game_id: &str,
-    old_path: &str,
-    new_path: &str,
-    mods_path: Option<&str>,
-) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
-        "UPDATE mods SET folder_path = ?, folder_path_key = ? \
-         WHERE game_id = ? AND folder_path = ?",
-    )
-    .bind(new_path)
-    .bind(folder_path_key(new_path, mods_path))
-    .bind(game_id)
-    .bind(old_path)
-    .execute(conn)
-    .await?;
-    Ok(result.rows_affected())
-}
-
+#[cfg(test)]
 pub async fn update_mod_path_by_old_path_in_game(
     pool: &SqlitePool,
     game_id: &str,
@@ -47,12 +29,12 @@ pub async fn update_mod_path_by_old_path_in_game(
     sqlx::query(
         "UPDATE mods SET folder_path = ?, folder_path_key = ? WHERE folder_path_key = ? AND game_id = ?",
     )
-        .bind(new_path)
-        .bind(folder_path_key(new_path, mods_path.as_deref()))
-        .bind(folder_path_key(old_path, mods_path.as_deref()))
-        .bind(game_id)
-        .execute(pool)
-        .await?;
+    .bind(new_path)
+    .bind(folder_path_key(new_path, mods_path.as_deref()))
+    .bind(folder_path_key(old_path, mods_path.as_deref()))
+    .bind(game_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

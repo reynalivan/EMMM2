@@ -4,7 +4,6 @@ import { useEffect, useMemo } from 'react';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { useActiveGame } from '@/entities/game';
 import { useAppStore } from '@/app/store';
-import { toast } from '@/shared/ui/toast';
 import { ItemStatus, type ObjectFilter } from '@/entities/game-object';
 import type { WorkspaceViewModel } from '@/entities/workspace';
 import {
@@ -12,11 +11,9 @@ import {
   useWorkspaceRuntimeSelector,
 } from '../state/workspaceStoreBridge';
 import {
-  buildReconciliationMessage,
   buildSelectionReconciledEvent,
   shouldApplySelectionReconciledEvent,
   shouldRunSelectionReconciliationEffect,
-  shouldShowSelectionReconciliationToast,
   type WorkspaceViewModelSelectionInput,
 } from '../utils/selectionReconciliation';
 
@@ -160,9 +157,6 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
     }
 
     dispatchWorkspaceRuntimeEvent(buildSelectionReconciledEvent(reconciledSelection));
-    if (shouldShowSelectionReconciliationToast(selection, reconciledSelection, nowMs)) {
-      toast.info(buildReconciliationMessage(reconciledSelection.reconciliation_reason), 4000);
-    }
   }, [
     filterInput.gameId,
     options?.selectionOverrides,
