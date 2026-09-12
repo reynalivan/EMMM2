@@ -7,17 +7,16 @@ import { useResponsive } from '../../../shared/lib/hooks/useResponsive';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 import { useObjectListHandlers } from './useObjectListHandlers';
 import { useObjectBulkSelect } from './useObjectBulkSelect';
-import type { FilterDef } from '@/entities/game-object';
+import {
+  areObjectMetaFiltersEqual,
+  sanitizeObjectMetaFilters,
+  type FilterDef,
+  type ObjectMetaFilters,
+} from '@/entities/game-object';
 import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { useWorkspaceViewModel } from '@/features/workspace-runtime';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime';
 import { useWorkspaceRuntime } from '@/features/workspace-runtime';
-import {
-  areObjectMetaFiltersEqual,
-  sanitizeObjectMetaFilters,
-  type ObjectMetaFilters,
-} from '../utils/objectFilterState';
-
 const EMPTY_OBJECT_META_FILTERS: ObjectMetaFilters = {};
 const EMPTY_WORKSPACE_OBJECTS: WorkspaceObjectNode[] = [];
 

@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import MoveToObjectDialog from './MoveToObjectDialog';
+import { MoveToObjectDialog } from '@/features/mod-runtime';
 import type { ObjectSummary } from '@/entities/game-object';
 
 vi.unmock('@tanstack/react-query');

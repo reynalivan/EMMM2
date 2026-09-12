@@ -36,9 +36,12 @@ vi.mock('./components/ManualSetupForm', () => ({
             id: 'new-game',
             name: 'New Game',
             game_type: GameType.GIMI,
+            instance_path: 'C:/Instance',
             mod_path: 'C:/Mods',
+            launch_mode: 'standalone',
             game_exe: 'C:/Game.exe',
             loader_exe: null,
+            xxmi_launcher_exe: null,
             launch_args: null,
           })
         }
@@ -196,6 +199,7 @@ describe('WelcomeScreen (TC-03)', () => {
     });
     (invoke as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([])
       .mockReturnValueOnce(reconcile);
 
     render(<WelcomeScreen onComplete={mockOnComplete} />);
@@ -225,9 +229,11 @@ describe('WelcomeScreen (TC-03)', () => {
         },
       });
     });
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '4');
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '10');
-    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '100');
+    expect(screen.getByText('Overall progress')).toBeInTheDocument();
+    expect(screen.getByText('Game 1 of 1 · New Game')).toBeInTheDocument();
+    expect(screen.getByText('Scanning mod folders [Alice] · Step 2 of 4')).toBeInTheDocument();
 
     unblock();
     await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());

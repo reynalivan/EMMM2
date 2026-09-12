@@ -17,6 +17,28 @@ fn create_valid_instance(dir: &Path) {
     fs::write(dir.join("3DMigotoLoader.exe"), "fake-exe").unwrap();
 }
 
+fn create_xxmi_launcher(root: &Path) {
+    let launcher = root.join("Resources").join("Bin").join("XXMI Launcher.exe");
+    fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+    fs::write(launcher, "fake-exe").unwrap();
+}
+
+#[test]
+fn test_xxmi_launch_args_select_the_importer_without_a_direct_game_exe() {
+    assert_eq!(
+        super::xxmi_launch_args(crate::modules::games::domain::models::GameType::WWMI),
+        ["--nogui", "--xxmi", "WWMI"]
+    );
+}
+
+#[test]
+fn test_launch_rejects_directories_as_executables() {
+    let temp = TempDir::new().unwrap();
+    let error = super::ensure_executable_file(temp.path(), "Game").unwrap_err();
+
+    assert!(error.to_string().contains("Game executable not found"));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_auto_detect_games() {
     let pool = setup_pool().await;
@@ -25,6 +47,7 @@ async fn test_auto_detect_games() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().join("XXMI");
     fs::create_dir_all(&root).unwrap();
+    create_xxmi_launcher(&root);
 
     // Create valid GIMI
     create_valid_instance(&root.join("GIMI"));
@@ -36,6 +59,15 @@ async fn test_auto_detect_games() {
     assert_eq!(
         results[0].game_type,
         crate::modules::games::domain::models::GameType::GIMI
+    );
+    assert_eq!(
+        results[0].launch_mode,
+        crate::modules::games::domain::models::LaunchMode::XxmiManaged
+    );
+    assert_eq!(results[0].game_exe, None);
+    assert_eq!(
+        results[0].xxmi_launcher_exe,
+        Some(root.join("Resources").join("Bin").join("XXMI Launcher.exe"))
     );
 
     // Persist to DB/Settings
@@ -94,7 +126,8 @@ async fn test_add_game_manual_persists_selected_mods_subfolder() {
         .await
         .unwrap();
 
-    assert_eq!(game.game_exe, game_dir);
+    assert_eq!(game.instance_path, game_dir);
+    assert_eq!(game.game_exe, None);
     assert_eq!(game.mod_path, selected);
     super::save_onboarding_games_inner(&service, vec![game])
         .await

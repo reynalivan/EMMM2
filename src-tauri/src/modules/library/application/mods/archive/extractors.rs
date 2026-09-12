@@ -72,8 +72,8 @@ pub(super) fn extract_to_dir_with_budget(
                         "Archive started an entry before ending the previous entry".to_string(),
                     ));
                 }
-                let relative_path = validate_entry_path(Path::new(""), &name)?;
                 let kind = validate_entry_type(stat.st_mode.into(), stat.st_nlink.max(0) as u64)?;
+                let relative_path = validate_entry_path(Path::new(""), &name, kind)?;
                 output_paths.register(&relative_path, kind)?;
                 let output_path = root.join(relative_path);
                 budget.start_entry(stat.st_size.max(0) as u64)?;
@@ -190,7 +190,20 @@ pub(super) fn unpack_nested_archives(
     budget: &mut ExtractionBudget,
 ) -> Result<usize, AppError> {
     if current_depth >= max_depth {
-        log::warn!("Max nested extraction depth ({max_depth}) reached in {dir:?}");
+        let contains_more_archives = walkdir::WalkDir::new(dir)
+            .min_depth(1)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry.file_type().is_file() && ArchiveFormat::detect(entry.path()).is_some()
+            });
+        if contains_more_archives {
+            return Err(AppError::Validation(format!(
+                "nested_archive_depth_limit: nested archive exceeds the {max_depth}-layer extraction limit in {}",
+                dir.display()
+            )));
+        }
         return Ok(0);
     }
 
@@ -222,7 +235,11 @@ pub(super) fn unpack_nested_archives(
             .into_owned();
         let sub_dest = dir.join(stem);
         if sub_dest.exists() {
-            continue;
+            return Err(AppError::Validation(format!(
+                "nested_archive_destination_collision: nested archive '{}' conflicts with existing folder '{}'",
+                path.display(),
+                sub_dest.display()
+            )));
         }
         fs::create_dir_all(&sub_dest)?;
         let extracted = match extract_to_dir_with_budget(

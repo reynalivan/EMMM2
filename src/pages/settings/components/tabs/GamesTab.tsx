@@ -2,7 +2,8 @@ import { formatAppError } from '../../../../shared/lib/appError';
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Play, Inbox } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useSettings, GameConfig } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
+import type { GameConfig } from '@/entities/game';
 import GameFormModal from '../../modals/GameFormModal';
 import { useAppStore } from '@/app/store';
 import { useQueryClient } from '@tanstack/react-query';
@@ -175,9 +176,14 @@ export default function GamesTab() {
                       </p>
                       <p className="flex items-center gap-1">
                         <span className="font-semibold">
-                          {t('settings:games.form.exe_label_short')}:
+                          {game.launch_mode === 'xxmi_managed'
+                            ? t('settings:games.form.xxmi_label_short')
+                            : t('settings:games.form.exe_label_short')}
+                          :
                         </span>{' '}
-                        {game.game_exe}
+                        {game.launch_mode === 'xxmi_managed'
+                          ? game.xxmi_launcher_exe
+                          : game.game_exe}
                       </p>
                     </div>
                   </div>

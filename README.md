@@ -123,7 +123,7 @@ EMMM is a **Premium Orchestrator**. We prioritize visual excellence and tactile 
 
 ### Installation
 
-1. `pnpm install` — Install frontend and tooling dependencies.
+1. `.\setup.ps1` — Validate Node/Rust, install the locked frontend dependencies, and fetch Cargo crates.
 2. `pnpm tauri dev` — Start the application in development mode with HMR.
 
 ### Essential Commands

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveTogglePathRewrites } from './folderMutationPayloads';
+import { resolveTogglePathRewrites } from '@/features/mod-runtime';
 
 describe('resolveTogglePathRewrites', () => {
   it('prefers the rewrites reported by the backend', () => {

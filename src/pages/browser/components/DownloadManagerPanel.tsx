@@ -22,7 +22,6 @@ export function DownloadManagerPanel() {
     downloads,
     deleteDownload,
     cancelDownload,
-    clearImported,
     retryDownload,
     refreshDownloads,
     isRefreshing,
@@ -91,18 +90,6 @@ export function DownloadManagerPanel() {
           </button>
         </div>
       </div>
-
-      {downloads.length > 0 && (
-        <div className="flex items-center justify-end px-4 py-2 border-b border-base-300">
-          <button
-            id="download-clear-imported-btn"
-            className="btn btn-ghost btn-xs"
-            onClick={() => clearImported()}
-          >
-            {t('downloads.clear_imported')}
-          </button>
-        </div>
-      )}
 
       <div className="flex-1 overflow-y-auto py-2">
         {downloads.length === 0 ? (

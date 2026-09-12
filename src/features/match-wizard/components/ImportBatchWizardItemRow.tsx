@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefCallback } from 'react';
 import { Check, ExternalLink, Eye, FileArchive, Folder, Pencil, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -35,6 +35,8 @@ type Props = {
   onRevealSource: (item: ImportItem) => Promise<void>;
   onRevealDestination?: (item: ImportItem) => Promise<void>;
   onLoadSourcePreview?: (item: ImportItem) => Promise<ImportSourcePreview>;
+  virtualIndex?: number;
+  measureElement?: RefCallback<HTMLTableRowElement>;
 };
 
 export function ImportBatchWizardItemRow({
@@ -52,6 +54,8 @@ export function ImportBatchWizardItemRow({
   onSkip,
   onToggleSelected,
   selected,
+  virtualIndex,
+  measureElement,
 }: Props) {
   const { t } = useTranslation('match_wizard');
   const sourceDisplayName = withoutDisabledPrefix(item.plannedName);
@@ -89,6 +93,12 @@ export function ImportBatchWizardItemRow({
     'committing',
   ].includes(item.status);
   const topSuggestion = item.destinationSuggestions[0] ?? null;
+  const targetComparison = item.targetComparison;
+  const canKeepSeparate =
+    targetComparison !== null &&
+    targetComparison.outcome !== 'already_installed' &&
+    targetComparison.suggestedSeparateName !== null &&
+    topSuggestion !== null;
   const archiveError = archiveErrorKindFromStoredMessage(item.error);
   const errorText = needsRecovery
     ? t('errors.metadata_pending')
@@ -112,8 +122,8 @@ export function ImportBatchWizardItemRow({
     item.decision !== 'skip' &&
     (item.destinationObjectId !== null || item.destinationPath !== null) &&
     !selectedTopSuggestion;
-  const displayedConfidence = selectedSuggestion?.confidencePercentage ?? item.confidencePercentage;
-  const displayedTier = selectedSuggestion?.confidenceTier ?? item.confidenceTier;
+  const displayedConfidence = item.confidencePercentage;
+  const displayedTier = item.confidenceTier;
   const displayedMethod = effectiveMatchMethod(selectedSuggestion);
   const selectedObjectName = item.destinationObjectId
     ? objects.find((object) => object.id === item.destinationObjectId)?.name
@@ -121,6 +131,10 @@ export function ImportBatchWizardItemRow({
   const sourceIdentification = item.canonicalSuggestions.find(
     (suggestion) => suggestion.confidenceTier === 'high' || suggestion.confidenceTier === 'medium',
   );
+  const identityNeedsReview = item.identityMatchStatus === 'needs_review';
+  const duplicateSourceName = item.duplicateOfItemId
+    ? batch.items.find((candidate) => candidate.id === item.duplicateOfItemId)?.plannedName
+    : null;
   const selectedDestinationName =
     selectedObjectName ??
     selectedSuggestion?.folderName ??
@@ -139,7 +153,11 @@ export function ImportBatchWizardItemRow({
   };
 
   return (
-    <tr className={selected ? 'bg-primary/5' : undefined}>
+    <tr
+      ref={measureElement}
+      data-index={virtualIndex}
+      className={selected ? 'bg-primary/5' : undefined}
+    >
       <td className="w-10 text-center align-middle">
         <input
           type="checkbox"
@@ -244,11 +262,46 @@ export function ImportBatchWizardItemRow({
                   })
                 : t('source.matching_by_name')}
             </p>
+            {identityNeedsReview && (
+              <p className="mt-0.5 text-[11px] font-medium leading-4 text-warning">
+                {t('source.identity_review_required')}
+              </p>
+            )}
+            <p className="mt-0.5 truncate text-[11px] leading-4 text-base-content/55">
+              {t(`content_kind.${item.contentKind}`)} · {t(`package_shape.${item.packageShape}`)}
+            </p>
+            {duplicateSourceName && (
+              <p className="mt-0.5 truncate text-[11px] leading-4 text-warning">
+                {t('source.duplicate_of', { name: duplicateSourceName })}
+              </p>
+            )}
           </div>
         </ImportSourcePreviewCard>
         {errorText && (
           <p className="mt-2 line-clamp-2 text-xs leading-snug text-error">{errorText}</p>
         )}
+        {targetComparison && (
+          <p className="mt-1 line-clamp-2 text-xs leading-snug text-warning">
+            {t(`target_comparison.${targetComparison.outcome}`, {
+              additional: targetComparison.additionalFiles,
+              changed: targetComparison.changedFiles,
+              missing: targetComparison.missingFiles,
+            })}
+          </p>
+        )}
+        {item.reviewGate.reasons.map((reason) => (
+          <p key={`${reason.code}-${reason.diagnosticCode ?? ''}`} className="mt-1 text-xs leading-snug text-warning">
+            {t(`review_reasons.${reason.code}`)}
+          </p>
+        ))}
+        {item.diagnostics.map((diagnostic) => (
+          <p
+            key={`${diagnostic.stage}-${diagnostic.code}`}
+            className="mt-1 text-xs leading-snug text-warning"
+          >
+            {t(`diagnostics.${diagnostic.code}`, { defaultValue: diagnostic.recovery })}
+          </p>
+        ))}
       </td>
       <td className="min-w-0 align-middle">
         <div className="flex min-h-14 min-w-0 items-center gap-1.5">
@@ -305,6 +358,21 @@ export function ImportBatchWizardItemRow({
           >
             {t('actions.proceed')}
           </button>
+          {canKeepSeparate && targetComparison && (
+            <button
+              type="button"
+              className="btn btn-xs join-item justify-start"
+              disabled={busy}
+              onClick={() => {
+                if (topSuggestion) {
+                  void onChooseDestination(item, topSuggestion, 'keep_separate');
+                }
+              }}
+              title={targetComparison.suggestedSeparateName ?? undefined}
+            >
+              {t('actions.keep_separate', { name: targetComparison.suggestedSeparateName })}
+            </button>
+          )}
           <button
             type="button"
             className={`btn btn-xs join-item justify-start ${

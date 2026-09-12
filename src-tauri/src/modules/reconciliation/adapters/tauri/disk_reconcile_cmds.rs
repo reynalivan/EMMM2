@@ -160,6 +160,38 @@ pub async fn reconcile_disk_state_cmd(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn plan_onboarding_indexing_work(
+    game_ids: Vec<String>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
+) -> Result<
+    Vec<
+        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingWorkPlan,
+    >,
+    AppError,
+> {
+    let configured_games = config.get_settings().games;
+    let requested_games = game_ids
+        .iter()
+        .map(|game_id| {
+            configured_games
+                .iter()
+                .find(|game| game.id == *game_id)
+                .cloned()
+                .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' not found")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    tokio::task::spawn_blocking(move || {
+        crate::modules::reconciliation::application::disk_reconcile::work_plan::plan_onboarding_indexing_work(
+            &requested_games,
+        )
+    })
+    .await
+    .map_err(|error| AppError::Internal(format!("Indexing work planning task failed: {error}")))?
+}
+
+#[tauri::command]
+#[specta::specta]
 #[allow(clippy::too_many_arguments)]
 pub async fn resolve_rename_confirmations(
     game_id: String,

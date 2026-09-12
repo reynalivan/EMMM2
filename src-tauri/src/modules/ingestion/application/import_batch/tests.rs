@@ -1,12 +1,16 @@
 use super::coordinator::{
     create_import_batch, rename_import_item_plan, set_import_item_classification,
+    set_import_item_decision,
 };
 use super::types::{ConfidenceTier, ImportItemStatus};
 use super::types::{
-    CreateImportBatchInput, ImportFlow, ImportSourceInput, ImportSourceKind, RenameImportItemInput,
-    SetImportItemClassificationInput, StableCategory, TargetMode,
+    CreateImportBatchInput, ImportDecision, ImportFlow, ImportSourceInput, ImportSourceKind,
+    RenameImportItemInput, SetImportItemClassificationInput, SetImportItemDecisionInput,
+    StableCategory, TargetComparisonOutcome, TargetMode,
 };
-use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
+use crate::test_utils::{
+    init_test_db, insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture,
+};
 use std::io::Write;
 
 #[tokio::test]
@@ -337,6 +341,240 @@ async fn multi_root_archive_becomes_one_batch_item_per_mod_root_without_moving_a
         std::collections::BTreeSet::from(["DISABLED Ayaka", "DISABLED Hutao", "DISABLED Raiden",])
     );
     assert!(archive.exists());
+}
+
+#[tokio::test]
+async fn identical_archives_stage_one_representative_and_keep_the_duplicate_source() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi-archive-dedup",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods/character"),
+        },
+    )
+    .await
+    .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let first_archive = root.path().join("Ayaka blue.zip");
+    let file = std::fs::File::create(&first_archive).unwrap();
+    let mut writer = zip::ZipWriter::new(file);
+    writer
+        .start_file("Ayaka/merged.ini", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer
+        .write_all(b"[TextureOverrideBody]\nhash = abc\n")
+        .unwrap();
+    writer.finish().unwrap();
+    let duplicate_archive = root.path().join("Ayaka blue (download 2).zip");
+    std::fs::copy(&first_archive, &duplicate_archive).unwrap();
+
+    let batch = create_import_batch(
+        &context.pool,
+        CreateImportBatchInput {
+            game_id: "gimi-archive-dedup".to_string(),
+            flow: ImportFlow::AutoImport,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            sources: vec![
+                ImportSourceInput {
+                    path: first_archive.to_string_lossy().into_owned(),
+                    source_kind: Some(ImportSourceKind::ArchiveRoot),
+                },
+                ImportSourceInput {
+                    path: duplicate_archive.to_string_lossy().into_owned(),
+                    source_kind: Some(ImportSourceKind::ArchiveRoot),
+                },
+            ],
+        },
+    )
+    .await
+    .unwrap();
+
+    let staged = super::staging::stage_import_batch_sources(
+        &context.pool,
+        &batch.id,
+        &root.path().join("app-staging"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(staged.items.len(), 2);
+    let representative = staged
+        .items
+        .iter()
+        .find(|item| {
+            std::path::Path::new(&item.source_path)
+                .file_name()
+                .is_some_and(|name| name == "Ayaka blue.zip")
+        })
+        .unwrap_or_else(|| panic!("representative missing: {:#?}", staged.items));
+    let duplicate = staged
+        .items
+        .iter()
+        .find(|item| {
+            std::path::Path::new(&item.source_path)
+                .file_name()
+                .is_some_and(|name| name == "Ayaka blue (download 2).zip")
+        })
+        .unwrap_or_else(|| panic!("duplicate missing: {:#?}", staged.items));
+    assert_eq!(representative.status, ImportItemStatus::Staged);
+    assert!(representative.archive_sha256.is_some());
+    assert_eq!(duplicate.status, ImportItemStatus::Skipped);
+    assert_eq!(duplicate.result.as_deref(), Some("duplicate_archive"));
+    assert_eq!(
+        duplicate.duplicate_of_item_id.as_deref(),
+        Some(representative.id.as_str())
+    );
+    assert!(first_archive.exists());
+    assert!(duplicate_archive.exists());
+}
+
+#[tokio::test]
+async fn target_with_extra_files_requires_review_then_keeps_a_separate_name() {
+    let context = init_test_db().await;
+    let root = tempfile::tempdir().unwrap();
+    let mods_root = root.path().join("Mods/character");
+    let target = mods_root.join("Ayaka/DISABLED Spring Skin");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(
+        target.join("merged.ini"),
+        b"[TextureOverride]\nhash = abc\n",
+    )
+    .unwrap();
+    std::fs::write(target.join("author-notes.txt"), b"extra target file").unwrap();
+    let source = root.path().join("downloads/Spring Skin");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("merged.ini"),
+        b"[TextureOverride]\nhash = abc\n",
+    )
+    .unwrap();
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi-target-review",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: root.path().to_str().unwrap(),
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &context.pool,
+        &TestObjectFixture {
+            id: "object-ayaka-target-review",
+            game_id: "gimi-target-review",
+            name: "Ayaka",
+            folder_path: "Ayaka",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    let batch = create_import_batch(
+        &context.pool,
+        CreateImportBatchInput {
+            game_id: "gimi-target-review".to_string(),
+            flow: ImportFlow::AutoImport,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            sources: vec![ImportSourceInput {
+                path: source.to_string_lossy().into_owned(),
+                source_kind: Some(ImportSourceKind::Folder),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let item_id = batch.items[0].id.clone();
+    assert!(
+        crate::modules::ingestion::adapters::sqlite::import_batch::transition_item_status(
+            &context.pool,
+            &item_id,
+            ImportItemStatus::Discovered,
+            ImportItemStatus::Staged,
+        )
+        .await
+        .unwrap()
+    );
+    let manifest = super::payload_manifest::build_payload_manifest(&source, None).unwrap();
+    assert!(
+        crate::modules::ingestion::adapters::sqlite::import_batch::store_payload_manifest(
+            &context.pool,
+            &item_id,
+            &manifest,
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        crate::modules::ingestion::adapters::sqlite::import_batch::transition_item_status(
+            &context.pool,
+            &item_id,
+            ImportItemStatus::Staged,
+            ImportItemStatus::AwaitingCategory,
+        )
+        .await
+        .unwrap()
+    );
+    set_import_item_classification(
+        &context.pool,
+        SetImportItemClassificationInput {
+            item_id: item_id.clone(),
+            category: StableCategory::Character,
+            sub_category: None,
+            metadata: serde_json::json!({}),
+        },
+    )
+    .await
+    .unwrap();
+    let select_target = SetImportItemDecisionInput {
+        item_id: item_id.clone(),
+        decision: ImportDecision::Reallocate,
+        destination_object_id: Some("object-ayaka-target-review".to_string()),
+        destination_path: None,
+        canonical_entry_key: None,
+        matched_alias: None,
+    };
+    let reviewed = set_import_item_decision(&context.pool, select_target.clone())
+        .await
+        .unwrap();
+    assert_eq!(reviewed.status, ImportItemStatus::AwaitingDestination);
+    assert_eq!(reviewed.decision, ImportDecision::Pending);
+    assert_eq!(
+        reviewed
+            .target_comparison
+            .as_ref()
+            .map(|value| value.outcome),
+        Some(TargetComparisonOutcome::TargetHasAdditionalFiles)
+    );
+    assert_eq!(
+        reviewed
+            .target_comparison
+            .as_ref()
+            .and_then(|value| value.suggested_separate_name.as_deref()),
+        Some("Spring Skin (2)")
+    );
+
+    let kept_separately = set_import_item_decision(
+        &context.pool,
+        SetImportItemDecisionInput {
+            decision: ImportDecision::KeepSeparate,
+            ..select_target
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(kept_separately.status, ImportItemStatus::Ready);
+    assert_eq!(kept_separately.decision, ImportDecision::KeepSeparate);
+    assert_eq!(kept_separately.planned_name, "Spring Skin (2)");
 }
 
 #[tokio::test]

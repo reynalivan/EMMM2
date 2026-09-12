@@ -5,8 +5,7 @@ import {
 } from '../../../shared/ui/components/ui/ContextMenu';
 import type { ModFolder } from '@/entities/game-object';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
-import { useModContextMenuItems } from '../hooks/useModContextMenuItems';
-import { useModContextMenuActions } from '@/features/mod-runtime';
+import { useModContextMenuActions, useModContextMenuItems } from '@/features/mod-runtime';
 
 interface FolderCardContextMenuProps {
   folder: WorkspaceExplorerNode;

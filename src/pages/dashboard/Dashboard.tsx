@@ -4,7 +4,7 @@ import type { DashboardPayload } from './model/dashboard';
 import { useAppStore } from '@/app/store';
 import { useDashboardStats } from './hooks/useDashboardStats';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
-import { useActiveGame } from './hooks/useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { formatBytes } from '../../shared/lib/utils/formatters';
 import { DashboardActivity } from './components/DashboardActivity';
 import { DashboardCharts } from './components/DashboardCharts';

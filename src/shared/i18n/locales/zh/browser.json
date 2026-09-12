@@ -15,7 +15,7 @@
   },
   "welcome": {
     "title": "应用内浏览器",
-    "description": "直接浏览和下载模组。下载将被自动截获并加入智能导入队列。",
+    "description": "直接浏览和下载模组。在“下载”中管理已下载的文件。",
     "browse_gb": "浏览 GameBanana",
     "google": "谷歌"
   },
@@ -23,15 +23,7 @@
     "title": "下载",
     "view_detail": "查看详情",
     "close": "关闭下载面板",
-    "select_all": "全选已完成",
-    "deselect_all": "取消全选",
-    "selected": "已选择 {{count}} 项",
-    "select_finished": "选择已完成项",
-    "import_selected": "导入所选",
-    "clear_imported": "清除已导入",
     "empty": "暂无下载",
-    "import": "导入",
-    "import_title": "导入此文件",
     "cancel_title": "取消下载",
     "refresh": "刷新下载",
     "retry": "重新下载",
@@ -63,8 +55,7 @@
       "refresh_failed": "无法刷新下载。请重试。",
       "retry_failed": "无法重新开始此下载。请重试。",
       "cancel_failed": "无法取消此下载。请重试。",
-      "delete_failed": "无法移除此下载。请重试。",
-      "clear_failed": "无法清除已导入的下载。请重试。"
+      "delete_failed": "无法移除此下载。请重试。"
     },
     "confirmation": {
       "title": "下载此文件？",
@@ -76,39 +67,5 @@
       "confirm_failed": "无法开始下载。请重试。",
       "cancel_failed": "无法取消此下载请求。请重试。"
     }
-  },
-  "import": {
-    "title": "导入队列",
-    "review": "查看",
-    "skip": "跳过",
-    "status": {
-      "queued": "排队中",
-      "extracting": "解压中",
-      "matching": "匹配中",
-      "review": "需审查",
-      "placing": "放置中",
-      "done": "完成",
-      "failed": "失败",
-      "canceled": "已取消"
-    }
-  },
-  "review": {
-    "title": "需要手动审查",
-    "archive": "压缩包",
-    "duplicate": "重复",
-    "target_game": "目标游戏",
-    "target_object_optional": "目标物理对象（可选）",
-    "select_game": "— 选择游戏 —",
-    "keep_as_other": "— 保持为 Other —",
-    "mod_category": "模组类别",
-    "confirm": "确认并导入",
-    "cancel": "取消"
-  },
-  "picker": {
-    "title": "选择目标游戏",
-    "description": "选择要导入 {{count}} 个文件的游戏。",
-    "description_plural": "选择要导入 {{count}} 个文件的游戏。",
-    "no_games": "未配置游戏。请先在设置中添加游戏。",
-    "import_now": "立即导入"
   }
 }

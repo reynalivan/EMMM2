@@ -18,7 +18,7 @@ vi.mock('@/widgets/mod-explorer/modals/FolderConflictManager', () => ({
 vi.mock('@/widgets/mod-explorer/modals/RenameConfirmationManager', () => ({
   default: () => <div data-testid="rename-confirmation-manager" />,
 }));
-vi.mock('@/shared/ui/components/ui/Toast', () => ({
+vi.mock('@/shared/ui/toast', () => ({
   ToastContainer: () => null,
 }));
 

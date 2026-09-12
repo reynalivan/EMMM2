@@ -42,6 +42,7 @@
     }
   },
   "result": {
+    "managed_by_xxmi": "Dikelola oleh XXMI",
     "back_to_welcome": "Kembali ke Selamat Datang",
     "back": "Kembali",
     "title_one": "Game Ditemukan!",
@@ -57,8 +58,19 @@
     "subtitle": "Mencari instance 3DMigoto di subfolder XXMI"
   },
   "indexing": {
-    "title": "Mengindeks mod Anda...",
+    "title": "Mengindeks library Anda",
     "subtitle": "Harap tunggu sementara EMMM memindai folder game.",
+    "overall_progress": "Progres keseluruhan",
+    "game_progress": "Game {{current}} dari {{total}} · {{game}}",
+    "activity": {
+      "discovering": "Menyiapkan rencana scan · Tahap {{step}} dari {{total}}",
+      "scanning": "Memindai folder mod [{{folder}}] · Tahap {{step}} dari {{total}}",
+      "scanning_without_folder": "Memindai folder mod · Tahap {{step}} dari {{total}}",
+      "projecting": "Menyinkronkan library · Tahap {{step}} dari {{total}}",
+      "finalizing": "Menyelesaikan indexing · Tahap {{step}} dari {{total}}",
+      "completed": "Menyelesaikan indexing · Tahap {{step}} dari {{total}}",
+      "failed": "Menyelesaikan indexing · Tahap {{step}} dari {{total}}"
+    },
     "preparing": "Menyiapkan library…",
     "progress_label": "Progres pengindeksan",
     "estimating": "Mengestimasi waktu tersisa…",

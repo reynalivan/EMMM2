@@ -28,7 +28,8 @@ vi.mock('lucide-react', async (importOriginal) => ({
 vi.mock('../hooks/useFolderMutations', () => ({
   usePasteThumbnail: () => ({ mutateAsync: vi.fn() }),
 }));
-vi.mock('../hooks/useModContextMenuItems', () => ({
+vi.mock('@/features/mod-runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/mod-runtime')>()),
   useModContextMenuItems: (props: {
     folder: { is_enabled: boolean; is_favorite: boolean };
     onOpenMoveDialog?: (folder: WorkspaceExplorerNode) => void;

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { useUpdateObject } from './useObjectMutations';
+import { useUpdateObject } from '@/features/workspace-runtime';
 import {
   useDeleteModThumbnail,
   useToggleModSafe,

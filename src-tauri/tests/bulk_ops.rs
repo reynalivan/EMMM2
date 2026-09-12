@@ -98,6 +98,8 @@ mod tests {
                 game_exe: None,
                 launcher_path: None,
                 loader_exe: None,
+                launch_mode: "standalone".into(),
+                xxmi_launcher_exe: None,
                 launch_args: None,
             },
         )

@@ -70,6 +70,26 @@ pub async fn browser_set_homepage(url: String, db: State<'_, SqlitePool>) -> Res
     Ok(browser_service::set_homepage(db.inner(), &url).await?)
 }
 
+/// Get the number of days terminal downloads stay in history.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_get_retention_days(
+    legacy_retention_days: Option<i64>,
+    db: State<'_, SqlitePool>,
+) -> Result<i64, AppError> {
+    Ok(browser_service::get_or_migrate_retention_days(db.inner(), legacy_retention_days).await?)
+}
+
+/// Set the number of days terminal downloads stay in history.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_set_retention_days(
+    days: i64,
+    db: State<'_, SqlitePool>,
+) -> Result<(), AppError> {
+    Ok(browser_service::set_retention_days(db.inner(), days).await?)
+}
+
 // ── Download Manager ─────────────────────────────────────────────────────────
 
 /// Return all browser downloads ordered by most recent first.
@@ -135,13 +155,6 @@ pub async fn browser_delete_download(
     db: State<'_, SqlitePool>,
 ) -> Result<(), AppError> {
     Ok(download_service::delete_download(db.inner(), &id, delete_file).await?)
-}
-
-/// Remove all downloads with status `imported`.
-#[tauri::command]
-#[specta::specta]
-pub async fn browser_clear_imported(db: State<'_, SqlitePool>) -> Result<u64, AppError> {
-    Ok(download_service::clear_imported(db.inner()).await?)
 }
 
 /// Remove old downloads that exceed the configured retention period.

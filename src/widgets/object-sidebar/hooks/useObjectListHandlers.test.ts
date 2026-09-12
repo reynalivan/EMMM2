@@ -2,7 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useObjectListHandlers } from './useObjectListHandlers';
 import { useDeleteMod } from '@/features/mod-runtime';
-import { useDeleteObject, useUpdateObject } from './useObjectMutations';
+import { useDeleteObject, useUpdateObject } from '@/features/workspace-runtime';
 import { useActiveGame } from '@/entities/game';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -16,7 +16,8 @@ vi.mock('@/features/mod-runtime', () => ({
   useDeleteMod: vi.fn(),
 }));
 
-vi.mock('./useObjectMutations', () => ({
+vi.mock('@/features/workspace-runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/workspace-runtime')>()),
   useDeleteObject: vi.fn(),
   useUpdateObject: vi.fn(),
 }));

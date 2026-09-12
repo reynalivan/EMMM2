@@ -140,11 +140,36 @@ impl GameType {
     }
 }
 
+/// Determines which executable owns a game's launch flow.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum LaunchMode {
+    #[default]
+    Standalone,
+    XxmiManaged,
+}
+
+impl LaunchMode {
+    pub fn from_persisted(value: &str) -> Self {
+        match value {
+            "xxmi_managed" => Self::XxmiManaged,
+            _ => Self::Standalone,
+        }
+    }
+
+    pub fn as_persisted(self) -> &'static str {
+        match self {
+            Self::Standalone => "standalone",
+            Self::XxmiManaged => "xxmi_managed",
+        }
+    }
+}
+
 /// Result of a successful folder validation
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct GameInfo {
     pub path: String,
-    pub launcher_path: String,
+    pub launcher_path: Option<String>,
     pub mods_path: String,
 }
 

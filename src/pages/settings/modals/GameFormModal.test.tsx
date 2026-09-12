@@ -75,4 +75,38 @@ describe('GameFormModal', () => {
     expect(await screen.findByText('source apply failed')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('uses the shared XXMI launcher for the managed launch mode', async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    render(<GameFormModal isOpen onClose={vi.fn()} onSave={onSave} existingModPaths={[]} />);
+
+    const launchMode = document.querySelector<HTMLSelectElement>('select[name="launch_mode"]');
+    expect(launchMode).not.toBeNull();
+    fireEvent.change(launchMode!, {
+      target: { value: 'xxmi_managed' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('games.form.path_placeholder'), {
+      target: { value: 'E:/XXMI/WWMI/Mods' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('games.form.xxmi_placeholder'), {
+      target: { value: 'E:/XXMI/Resources/Bin/XXMI Launcher.exe' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('games.form.name_placeholder'), {
+      target: { value: 'Wuthering Waves' },
+    });
+
+    const submit = screen.getByTestId('game-form-submit');
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        launch_mode: 'xxmi_managed',
+        game_exe: null,
+        loader_exe: null,
+        xxmi_launcher_exe: 'E:/XXMI/Resources/Bin/XXMI Launcher.exe',
+      }),
+    );
+  });
 });

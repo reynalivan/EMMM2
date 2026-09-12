@@ -136,6 +136,7 @@
     "title": "Smart Randomizer",
     "desc": "Recommends 1 random disabled mod for every active Character. Review and apply.",
     "no_eligible": "No eligible character mods found (check filters or ensure you have disabled mods).",
+    "apply_no_change": "{{name}} could not be activated.",
     "consulting": "Consulting the RNG Gods...",
     "reroll": "Reroll All",
     "roll": "Roll Luck",

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Check, ListChecks, Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -77,10 +78,18 @@ function filterMatches(item: ImportItem, filter: ConfidenceFilter): boolean {
 function reviewWeight(item: ImportItem): number {
   if (needsMetadataRecovery(item)) return -2;
   if (item.error || item.status === 'failed') return -1;
-  if (item.confidenceTier === 'no_match') return 0;
-  if (item.confidenceTier === 'low') return 1;
-  if (item.confidenceTier === 'medium') return 2;
-  return 3;
+  if (
+    item.identityMatchStatus === 'needs_review' ||
+    item.reviewGate.reasons.length > 0 ||
+    item.diagnostics.length > 0 ||
+    item.targetComparison !== null
+  ) {
+    return 0;
+  }
+  if (item.confidenceTier === 'no_match') return 1;
+  if (item.confidenceTier === 'low') return 2;
+  if (item.confidenceTier === 'medium') return 3;
+  return 4;
 }
 
 export function ImportBatchWizard({
@@ -105,6 +114,7 @@ export function ImportBatchWizard({
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortMode>('review');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const listRef = useRef<HTMLDivElement>(null);
   const processing = batch.status === 'draft' || batch.status === 'analyzing';
   const terminal = ['done', 'cancelled'].includes(batch.status);
   const readyItems = batch.items.filter((item) => item.status === 'ready');
@@ -140,6 +150,16 @@ export function ImportBatchWizard({
   }, [batch.items, filter, normalizedSearch, sort]);
 
   const visibleIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
+  const rowVirtualizer = useVirtualizer({
+    count: visibleItems.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 112,
+    overscan: 8,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const firstVirtualRow = virtualRows[0];
+  const lastVirtualRow = virtualRows[virtualRows.length - 1];
+  const bottomSpacer = lastVirtualRow ? rowVirtualizer.getTotalSize() - lastVirtualRow.end : 0;
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((itemId) => selected.has(itemId));
 
@@ -173,6 +193,8 @@ export function ImportBatchWizard({
   const bulkProceed = async () => {
     for (const item of batch.items.filter((candidate) => selected.has(candidate.id))) {
       if (item.status === 'ready' || !['pending', 'skip'].includes(item.decision)) continue;
+      if (item.reviewGate.reasons.length > 0) continue;
+      if (item.canonicalSuggestions[0]?.matchStatus !== 'auto_matched') continue;
       const suggestion = item.destinationSuggestions[0];
       if (suggestion) {
         await onChooseDestination(item, suggestion, destinationDecision(batch, suggestion));
@@ -319,7 +341,10 @@ export function ImportBatchWizard({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-3">
+            <div
+              ref={listRef}
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-3"
+            >
               <div className="overflow-visible rounded-xl border border-base-300 bg-base-100">
                 <table className="table table-fixed table-sm w-full">
                   <colgroup>
@@ -347,32 +372,47 @@ export function ImportBatchWizard({
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleItems.map((item) => (
-                      <ImportBatchWizardItemRow
-                        key={item.id}
-                        batch={batch}
-                        item={item}
-                        objects={objects}
-                        busy={busyItemId === item.id}
-                        selected={selected.has(item.id)}
-                        onToggleSelected={() =>
-                          setSelected((previous) => {
-                            const next = new Set(previous);
-                            if (next.has(item.id)) next.delete(item.id);
-                            else next.add(item.id);
-                            return next;
-                          })
-                        }
-                        onChooseDestination={onChooseDestination}
-                        onChooseManualTarget={onChooseManualTarget}
-                        onSkip={onSkip}
-                        onRename={onRename}
-                        onRetry={onRetry}
-                        onRevealSource={onOpenInExplorer}
-                        onRevealDestination={onOpenDestination}
-                        onLoadSourcePreview={onLoadSourcePreview}
-                      />
-                    ))}
+                    {firstVirtualRow && (
+                      <tr aria-hidden="true">
+                        <td colSpan={5} className="p-0" style={{ height: firstVirtualRow.start }} />
+                      </tr>
+                    )}
+                    {virtualRows.map((virtualRow) => {
+                      const item = visibleItems[virtualRow.index];
+                      return (
+                        <ImportBatchWizardItemRow
+                          key={item.id}
+                          batch={batch}
+                          item={item}
+                          objects={objects}
+                          busy={busyItemId === item.id}
+                          selected={selected.has(item.id)}
+                          virtualIndex={virtualRow.index}
+                          measureElement={(element) => rowVirtualizer.measureElement(element)}
+                          onToggleSelected={() =>
+                            setSelected((previous) => {
+                              const next = new Set(previous);
+                              if (next.has(item.id)) next.delete(item.id);
+                              else next.add(item.id);
+                              return next;
+                            })
+                          }
+                          onChooseDestination={onChooseDestination}
+                          onChooseManualTarget={onChooseManualTarget}
+                          onSkip={onSkip}
+                          onRename={onRename}
+                          onRetry={onRetry}
+                          onRevealSource={onOpenInExplorer}
+                          onRevealDestination={onOpenDestination}
+                          onLoadSourcePreview={onLoadSourcePreview}
+                        />
+                      );
+                    })}
+                    {bottomSpacer > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={5} className="p-0" style={{ height: bottomSpacer }} />
+                      </tr>
+                    )}
                     {visibleItems.length === 0 && (
                       <tr>
                         <td colSpan={5} className="py-12 text-center text-sm text-base-content/45">

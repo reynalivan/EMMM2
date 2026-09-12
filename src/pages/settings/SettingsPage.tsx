@@ -13,7 +13,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from './hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import { useAppStore } from '@/app/store'; // Import Store
 import GamesTab from './components/tabs/GamesTab';
 import PrivacyTab from './components/tabs/PrivacyTab';

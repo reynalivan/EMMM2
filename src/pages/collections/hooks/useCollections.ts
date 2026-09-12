@@ -12,7 +12,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/shared/ui/toast';
-import { collectionKeys } from '../queryKeys';
+import { collectionKeys } from '@/entities/collection';
 import { commands } from '../../../shared/api/tauri/bindings';
 import {
   extractFileInUsePayload,

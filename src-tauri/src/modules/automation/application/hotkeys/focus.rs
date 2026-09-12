@@ -9,7 +9,8 @@ pub fn is_active_game_focused(settings: &AppSettings) -> bool {
 
     let expected_exe_name = active_game
         .game_exe
-        .file_name()
+        .as_ref()
+        .and_then(|game_exe| game_exe.file_name())
         .and_then(|name| name.to_str())
         .map(|name| name.to_ascii_lowercase());
 

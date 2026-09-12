@@ -44,13 +44,11 @@ vi.mock('@/entities/game', () => ({
 
 // Run the wrapped mutation directly: the optimistic patch and its trailing
 // refresh are not what these tests are about.
-vi.mock('./objectQueryCache', () => ({
+vi.mock('@/features/workspace-runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/workspace-runtime')>()),
   runObjectBatchMutation: async ({ mutation }: { mutation: () => Promise<void> }) => {
     await mutation();
   },
-}));
-
-vi.mock('./useObjectMutations', () => ({
   useDeleteObject: () => ({ mutateAsync: vi.fn() }),
 }));
 

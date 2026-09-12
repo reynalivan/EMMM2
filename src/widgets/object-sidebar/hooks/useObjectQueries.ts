@@ -2,8 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { useActiveGame } from '@/entities/game';
 import { getCategoryCounts, type CategoryCount, type GameSchema } from '@/entities/game-object';
-import { objectKeys } from './objectQueryCache';
-import { useGameSwitch } from '@/features/workspace-runtime';
+import { objectKeys, useGameSwitch } from '@/features/workspace-runtime';
 import type { GameType } from '@/entities/game';
 
 export function useCategoryCounts() {

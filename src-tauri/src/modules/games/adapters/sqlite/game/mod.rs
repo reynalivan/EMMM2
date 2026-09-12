@@ -16,6 +16,8 @@ pub struct GameRow {
     pub game_exe: Option<String>,
     pub launcher_path: Option<String>,
     pub loader_exe: Option<String>,
+    pub launch_mode: String,
+    pub xxmi_launcher_exe: Option<String>,
     pub launch_args: Option<String>,
 }
 
@@ -35,6 +37,8 @@ pub async fn get_all_games(pool: &SqlitePool) -> Result<Vec<GameRow>, sqlx::Erro
             game_exe,
             launcher_path,
             loader_exe,
+            launch_mode,
+            xxmi_launcher_exe,
             launch_args
         FROM games
         ORDER BY name"#
@@ -56,8 +60,8 @@ where
     E: Executor<'e, Database = Sqlite>,
 {
     sqlx::query!(
-        "INSERT INTO games (id, name, game_type, path, mods_path, ready_to_move_path, game_exe, launcher_path, loader_exe, launch_args, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        "INSERT INTO games (id, name, game_type, path, mods_path, ready_to_move_path, game_exe, launcher_path, loader_exe, launch_mode, xxmi_launcher_exe, launch_args, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            game_type = excluded.game_type,
@@ -67,6 +71,8 @@ where
            game_exe = excluded.game_exe,
            launcher_path = excluded.launcher_path,
            loader_exe = excluded.loader_exe,
+           launch_mode = excluded.launch_mode,
+           xxmi_launcher_exe = excluded.xxmi_launcher_exe,
            launch_args = excluded.launch_args",
         game.id,
         game.name,
@@ -77,6 +83,8 @@ where
         game.game_exe,
         game.launcher_path,
         game.loader_exe,
+        game.launch_mode,
+        game.xxmi_launcher_exe,
         game.launch_args,
     )
     .execute(executor)

@@ -2,11 +2,11 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamesTab from './GamesTab';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import { useAppStore } from '@/app/store';
 import { commands } from '../../../../shared/api/tauri/bindings';
 
-vi.mock('../../hooks/useSettings', () => ({
+vi.mock('@/entities/settings', () => ({
   useSettings: vi.fn(),
 }));
 

@@ -114,4 +114,5 @@ pub struct ExtractionResult {
 pub struct StagedArchive {
     pub mod_roots: Vec<std::path::PathBuf>,
     pub files_extracted: usize,
+    pub unreadable_ini_files: usize,
 }

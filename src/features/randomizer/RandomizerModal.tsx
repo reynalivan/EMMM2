@@ -30,13 +30,18 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
 
   const dialogRef = useRef<HTMLDialogElement>(null);
   const hasAutoRolledRef = useRef(false);
+  const sessionRef = useRef(0);
 
   const handleRoll = useCallback(async () => {
+    const session = sessionRef.current;
     setLoading(true);
     setError(null);
 
     try {
       const res = await commands.suggestRandomMods(gameId);
+      if (sessionRef.current !== session) {
+        return;
+      }
 
       if (res && res.length > 0) {
         setProposals(res);
@@ -47,11 +52,32 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
         setError(t('randomizer.no_eligible'));
       }
     } catch (e) {
-      setError(formatAppError(e));
+      if (sessionRef.current === session) {
+        setError(formatAppError(e));
+      }
     } finally {
-      setLoading(false);
+      if (sessionRef.current === session) {
+        setLoading(false);
+      }
     }
   }, [gameId, t]);
+
+  useEffect(() => {
+    sessionRef.current += 1;
+    hasAutoRolledRef.current = false;
+    setProposals([]);
+    setSelectedModIds(new Set());
+    setLoading(false);
+    setApplying(false);
+    setError(null);
+  }, [gameId, open]);
+
+  useEffect(
+    () => () => {
+      sessionRef.current += 1;
+    },
+    [],
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -65,14 +91,10 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
 
     if (!open && dialog.open) {
       dialog.close();
-      hasAutoRolledRef.current = false;
       return;
     }
 
-    if (!open) {
-      hasAutoRolledRef.current = false;
-      return;
-    }
+    if (!open) return;
 
     if (proposals.length > 0 || loading || applying || hasAutoRolledRef.current) {
       return;
@@ -103,13 +125,14 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   const handleApply = async () => {
     if (selectedModIds.size === 0) return;
 
+    const session = sessionRef.current;
     setApplying(true);
     setError(null);
-    try {
-      // Collect the proposals to apply
-      const toApply = proposals.filter((p) => selectedModIds.has(p.mod_id));
+    const toApply = proposals.filter((p) => selectedModIds.has(p.mod_id));
+    const failures: string[] = [];
 
-      for (const proposal of toApply) {
+    for (const proposal of toApply) {
+      try {
         const result = await commands.executeWorkspaceSwitch({
           game_id: gameId,
           target: {
@@ -120,6 +143,9 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
           resolution: 'enable_only_this',
           origin_surface: 'collections',
         });
+        if (sessionRef.current !== session) {
+          return;
+        }
         if (result.status === 'applied') {
           // No thumbnail drop: the randomizer only toggles, and toggles keep
           // the folder identity the thumbnail cache is keyed by.
@@ -132,15 +158,27 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
             buildRandomizerRefreshDescriptor(result.impact),
             'active',
           );
+        } else {
+          failures.push(t('randomizer.apply_no_change', { name: proposal.name }));
         }
+      } catch (e) {
+        if (sessionRef.current !== session) {
+          return;
+        }
+        failures.push(formatAppError(e));
       }
-
-      onClose();
-    } catch (e) {
-      setError(formatAppError(e));
-    } finally {
-      setApplying(false);
     }
+
+    if (sessionRef.current !== session) {
+      return;
+    }
+
+    if (failures.length === 0) {
+      onClose();
+    } else {
+      setError(failures.join('\n'));
+    }
+    setApplying(false);
   };
 
   const hasSelections = selectedModIds.size > 0;

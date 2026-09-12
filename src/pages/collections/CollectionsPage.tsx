@@ -14,15 +14,15 @@ import { History, Layers, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '@/entities/game';
 
+import { useCollectionRuntime } from './hooks/useCollectionRuntime';
 import {
   useClearLastChanges,
-  useCollectionRuntime,
   useCollections,
   useDeleteCollection,
   useRestoreLastChanges,
   useSaveCollectionChanges,
   useUpdateCollection,
-} from './hooks';
+} from './hooks/useCollections';
 import { CollectionList } from './components/CollectionList';
 import { CollectionPreviewPanel } from './components/CollectionPreviewPanel';
 import { SaveCollectionModal } from './components/SaveCollectionModal';

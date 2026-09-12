@@ -1,7 +1,9 @@
 use crate::modules::ingestion::application::import_batch::types::{
-    CanonicalSuggestion, CategorySuggestion, ConfidenceTier, DestinationSuggestion, ImportBatch,
-    ImportBatchStatus, ImportDecision, ImportFlow, ImportItem, ImportItemStatus, ImportSourceKind,
-    MatchEvidence, SourceFingerprint, StableCategory, TargetMode,
+    AnalysisResult, CanonicalSuggestion, CategorySuggestion, ConfidenceTier, DestinationSuggestion,
+    ImportBatch, ImportBatchStatus, ImportContentKind, ImportDecision, ImportDiagnostic,
+    ImportFlow, ImportItem, ImportItemStatus, ImportMatchStatus, ImportPackageShape,
+    ImportSourceKind, MatchEvidence, PayloadManifestSummary, ReviewGate, ReviewReasonCode,
+    SourceFingerprint, StableCategory, TargetComparison, TargetComparisonOutcome, TargetMode,
 };
 use sqlx::{Row, SqliteConnection, SqlitePool};
 use std::path::Path;
@@ -100,12 +102,13 @@ async fn insert_batch_records(
     .execute(&mut *conn)
     .await?;
 
-    for item in items {
+    for (source_order, item) in items.iter().enumerate() {
         sqlx::query(
             "INSERT INTO import_jobs
              (id, batch_id, game_id, archive_path, source_kind, source_path, source_group_id,
-              staging_path, planned_name, status, match_confidence, confidence_tier, decision)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered', 0, 'no_match', 'pending')",
+              staging_path, planned_name, source_order, root_order, status, match_confidence,
+              confidence_tier, decision)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'discovered', 0, 'no_match', 'pending')",
         )
         .bind(&item.id)
         .bind(&batch.id)
@@ -116,6 +119,9 @@ async fn insert_batch_records(
         .bind(&item.id)
         .bind(&item.staging_path)
         .bind(&item.planned_name)
+        .bind(i64::try_from(source_order).map_err(|_| {
+            decode_error("source order exceeds supported integer range".to_string())
+        })?)
         .execute(&mut *conn)
         .await?;
     }
@@ -176,19 +182,6 @@ pub async fn create_mod_inbox_batch_if_sources_available(
     }
 }
 
-pub async fn attach_download_id(
-    db: &SqlitePool,
-    item_id: &str,
-    download_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE import_jobs SET download_id = ? WHERE id = ?")
-        .bind(download_id)
-        .bind(item_id)
-        .execute(db)
-        .await?;
-    Ok(())
-}
-
 pub async fn transition_item_status(
     db: &SqlitePool,
     item_id: &str,
@@ -221,7 +214,7 @@ pub async fn replace_archive_item_with_roots(
     let mut tx = db.begin().await?;
     let Some(source) = sqlx::query(
         "SELECT batch_id, game_id, download_id, source_kind, source_path, source_group_id,
-                archive_path
+                archive_path, source_order
          FROM import_jobs WHERE id = ? AND status = 'discovered'",
     )
     .bind(item_id)
@@ -237,10 +230,11 @@ pub async fn replace_archive_item_with_roots(
     let source_path: Option<String> = source.try_get("source_path")?;
     let source_group_id: Option<String> = source.try_get("source_group_id")?;
     let archive_path: Option<String> = source.try_get("archive_path")?;
+    let source_order: i64 = source.try_get("source_order")?;
 
     sqlx::query(
         "UPDATE import_jobs
-         SET staging_path = ?, planned_name = ?, status = 'staged', updated_at = CURRENT_TIMESTAMP
+         SET staging_path = ?, planned_name = ?, root_order = 0, status = 'staged', updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status = 'discovered'",
     )
     .bind(&roots[0].staging_path)
@@ -249,13 +243,13 @@ pub async fn replace_archive_item_with_roots(
     .execute(&mut *tx)
     .await?;
 
-    for root in &roots[1..] {
+    for (root_order, root) in roots[1..].iter().enumerate() {
         sqlx::query(
             "INSERT INTO import_jobs
              (id, batch_id, download_id, game_id, archive_path, source_kind, source_path,
               source_group_id, staging_path, planned_name, status, match_confidence,
-              confidence_tier, decision)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged', 0, 'no_match', 'pending')",
+              confidence_tier, decision, source_order, root_order)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staged', 0, 'no_match', 'pending', ?, ?)",
         )
         .bind(&root.id)
         .bind(&batch_id)
@@ -267,6 +261,12 @@ pub async fn replace_archive_item_with_roots(
         .bind(&source_group_id)
         .bind(&root.staging_path)
         .bind(&root.planned_name)
+        .bind(source_order)
+        .bind(
+            i64::try_from(root_order + 1).map_err(|_| {
+                decode_error("root order exceeds supported integer range".to_string())
+            })?,
+        )
         .execute(&mut *tx)
         .await?;
     }
@@ -595,35 +595,213 @@ pub async fn store_classification(
     Ok(result.rows_affected() == 1)
 }
 
+pub(crate) async fn apply_analysis_result(
+    db: &SqlitePool,
+    item_id: &str,
+    analysis: &AnalysisResult,
+) -> Result<bool, sqlx::Error> {
+    let inspection_json = serde_json::to_string(&analysis.inspection)
+        .map_err(|error| decode_error(format!("could not encode source inspection: {error}")))?;
+    let fingerprint_json = serde_json::to_string(&analysis.inspection.fingerprint)
+        .map_err(|error| decode_error(format!("could not encode source fingerprint: {error}")))?;
+    let categories_json = serde_json::to_string(&analysis.category_suggestions)
+        .map_err(|error| decode_error(format!("could not encode category suggestions: {error}")))?;
+    let metadata_json =
+        serde_json::to_string(&analysis.classification_metadata).map_err(|error| {
+            decode_error(format!("could not encode classification metadata: {error}"))
+        })?;
+    let manifest_json = serde_json::to_string(&analysis.payload_manifest)
+        .map_err(|error| decode_error(format!("could not encode payload manifest: {error}")))?;
+    let canonical_json =
+        serde_json::to_string(&analysis.canonical_suggestions).map_err(|error| {
+            decode_error(format!("could not encode canonical suggestions: {error}"))
+        })?;
+    // Every object is scored once during analysis, but a missing entry is
+    // semantically a zero-score result in the UI. Persisting those entries
+    // duplicates the full object library for every import item.
+    let stored_destinations = analysis
+        .destination_suggestions
+        .iter()
+        .filter(|suggestion| suggestion.confidence_percentage > 0 || suggestion.object_id.is_none())
+        .collect::<Vec<_>>();
+    let destination_json = serde_json::to_string(&stored_destinations).map_err(|error| {
+        decode_error(format!("could not encode destination suggestions: {error}"))
+    })?;
+    let evidence_json = serde_json::to_string(&analysis.evidence)
+        .map_err(|error| decode_error(format!("could not encode match evidence: {error}")))?;
+    let diagnostics_json = serde_json::to_string(&analysis.diagnostics)
+        .map_err(|error| decode_error(format!("could not encode import diagnostics: {error}")))?;
+    let review_gate_json = serde_json::to_string(&analysis.review_gate)
+        .map_err(|error| decode_error(format!("could not encode review gate: {error}")))?;
+    let target_comparison_json = analysis
+        .target_comparison
+        .as_ref()
+        .map(|comparison| serde_json::to_string(comparison))
+        .transpose()
+        .map_err(|error| decode_error(format!("could not encode target comparison: {error}")))?;
+    let identity_match_status = if !analysis.review_gate.is_empty() {
+        ImportMatchStatus::NeedsReview
+    } else {
+        analysis
+            .canonical_suggestions
+            .first()
+            .map(|suggestion| suggestion.match_status)
+            .unwrap_or(ImportMatchStatus::NoMatch)
+    };
+    let default_destination = analysis
+        .canonical_suggestions
+        .first()
+        .filter(|suggestion| {
+            analysis.review_gate.is_empty()
+                && suggestion.match_status
+                    == crate::modules::ingestion::application::import_batch::types::ImportMatchStatus::AutoMatched
+        })
+        .and_then(|_| stored_destinations.first().copied());
+    let (confidence, tier) = analysis
+        .canonical_suggestions
+        .first()
+        .map(|suggestion| {
+            (
+                f64::from(suggestion.confidence_percentage),
+                suggestion.confidence_tier,
+            )
+        })
+        .unwrap_or((0.0, ConfidenceTier::NoMatch));
+    let (
+        mut decision,
+        mut status,
+        mut destination_object_id,
+        mut destination_path,
+        mut canonical_entry_key,
+    ) = if let Some(destination) = default_destination {
+        let kind = serde_json::to_value(&destination.kind)
+            .map_err(|error| decode_error(format!("could not encode destination kind: {error}")))?;
+        let decision = match kind.as_str() {
+            Some("specific_target") => "keep_specific_target",
+            Some("existing_object") => "reallocate",
+            Some("create_canonical") => "create_canonical",
+            _ => "confirm",
+        };
+        (
+            decision,
+            "ready",
+            destination.object_id.as_deref(),
+            Some(destination.target_path.as_str()),
+            destination.canonical_entry_key.as_deref(),
+        )
+    } else {
+        ("pending", "awaiting_destination", None, None, None)
+    };
+    if let Some(comparison) = &analysis.target_comparison {
+        match comparison.outcome {
+            TargetComparisonOutcome::AlreadyInstalled => {
+                decision = "skip";
+                status = "skipped";
+                destination_object_id = None;
+                destination_path = None;
+                canonical_entry_key = None;
+            }
+            TargetComparisonOutcome::TargetHasAdditionalFiles
+            | TargetComparisonOutcome::SameNameDifferentContent
+            | TargetComparisonOutcome::Incomplete => {
+                decision = "pending";
+                status = "awaiting_destination";
+                destination_object_id = None;
+                destination_path = None;
+                canonical_entry_key = None;
+            }
+        }
+    }
+    let mut tx = db.begin().await?;
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET source_inspection = ?, source_fingerprint = ?, category_suggestions_json = ?,
+             match_category = ?, match_sub_category = ?, classification_metadata = ?,
+             payload_manifest_json = ?, canonical_suggestions_json = ?,
+             destination_suggestions_json = ?, evidence_json = ?, diagnostics_json = ?,
+             review_gate_json = ?, target_comparison_json = ?, content_kind = ?, package_shape = ?,
+             match_confidence = ?, confidence_tier = ?, decision = ?,
+             identity_match_status = ?, analysis_revision = analysis_revision + 1,
+             analysis_ack_revision = NULL,
+             match_entry_key = ?, match_alias_name = NULL, match_object_id = ?,
+             destination_object_id = ?, destination_path = ?, placed_path = NULL,
+             result = NULL, error_msg = NULL, status = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('staged', 'awaiting_category', 'awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(inspection_json)
+    .bind(fingerprint_json)
+    .bind(categories_json)
+    .bind(analysis.selected_category.as_str())
+    .bind(&analysis.selected_sub_category)
+    .bind(metadata_json)
+    .bind(manifest_json)
+    .bind(canonical_json)
+    .bind(destination_json)
+    .bind(evidence_json)
+    .bind(diagnostics_json)
+    .bind(review_gate_json)
+    .bind(target_comparison_json)
+    .bind(analysis.content_kind.as_str())
+    .bind(analysis.package_shape.as_str())
+    .bind(confidence)
+    .bind(tier.as_str())
+    .bind(decision)
+    .bind(identity_match_status.as_str())
+    .bind(canonical_entry_key)
+    .bind(destination_object_id)
+    .bind(destination_object_id)
+    .bind(destination_path)
+    .bind(status)
+    .bind(item_id)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() != 1 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
 pub async fn store_match_suggestions(
     db: &SqlitePool,
     item_id: &str,
     canonical: &[CanonicalSuggestion],
     destinations: &[DestinationSuggestion],
     evidence: &[MatchEvidence],
+    review_gate: &ReviewGate,
 ) -> Result<bool, sqlx::Error> {
     let canonical_json = serde_json::to_string(canonical).map_err(|error| {
         decode_error(format!("could not encode canonical suggestions: {error}"))
     })?;
-    // Every object is scored once during analysis, but a missing entry is
-    // semantically a zero-score result in the UI. Persisting those entries
-    // duplicates the full object library for every import item.
     let stored_destinations = destinations
         .iter()
-        .filter(|suggestion| {
-            suggestion.confidence_percentage > 0 || suggestion.object_id.is_none()
-        })
+        .filter(|suggestion| suggestion.confidence_percentage > 0 || suggestion.object_id.is_none())
         .collect::<Vec<_>>();
     let destination_json = serde_json::to_string(&stored_destinations).map_err(|error| {
         decode_error(format!("could not encode destination suggestions: {error}"))
     })?;
     let evidence_json = serde_json::to_string(evidence)
         .map_err(|error| decode_error(format!("could not encode match evidence: {error}")))?;
+    let review_gate_json = serde_json::to_string(review_gate)
+        .map_err(|error| decode_error(format!("could not encode review gate: {error}")))?;
+    let identity_match_status = if review_gate.is_empty() {
+        canonical
+            .first()
+            .map(|suggestion| suggestion.match_status)
+            .unwrap_or(ImportMatchStatus::NoMatch)
+    } else {
+        ImportMatchStatus::NeedsReview
+    };
     let default_destination = canonical
         .first()
-        .filter(|suggestion| matches!(suggestion.confidence_tier, ConfidenceTier::High | ConfidenceTier::Medium))
+        .filter(|suggestion| {
+            review_gate.is_empty() && suggestion.match_status == ImportMatchStatus::AutoMatched
+        })
         .and_then(|_| stored_destinations.first().copied());
-    let (confidence, tier) = default_destination
+    let (confidence, tier) = canonical
+        .first()
         .map(|suggestion| {
             (
                 f64::from(suggestion.confidence_percentage),
@@ -632,42 +810,41 @@ pub async fn store_match_suggestions(
         })
         .unwrap_or((0.0, ConfidenceTier::NoMatch));
     let (decision, status, destination_object_id, destination_path, canonical_entry_key) =
-        if let Some(destination) = default_destination {
-            let kind = serde_json::to_value(&destination.kind).map_err(|error| {
-                decode_error(format!("could not encode destination kind: {error}"))
-            })?;
-            let decision = match kind.as_str() {
-                Some("specific_target") => "keep_specific_target",
-                Some("existing_object") => "reallocate",
-                Some("create_canonical") => "create_canonical",
-                _ => "confirm",
-            };
-            (
-                decision,
-                "ready",
-                destination.object_id.as_deref(),
-                Some(destination.target_path.as_str()),
-                destination.canonical_entry_key.as_deref(),
-            )
-        } else {
-            ("skip", "skipped", None, None, None)
+        match default_destination {
+            Some(destination) => {
+                let decision = match destination.kind {
+                    crate::modules::ingestion::application::import_batch::types::DestinationKind::SpecificTarget => "keep_specific_target",
+                    crate::modules::ingestion::application::import_batch::types::DestinationKind::ExistingObject => "reallocate",
+                    crate::modules::ingestion::application::import_batch::types::DestinationKind::CreateCanonical => "create_canonical",
+                };
+                (
+                    decision,
+                    "ready",
+                    destination.object_id.as_deref(),
+                    Some(destination.target_path.as_str()),
+                    destination.canonical_entry_key.as_deref(),
+                )
+            }
+            None => ("pending", "awaiting_destination", None, None, None),
         };
     let result = sqlx::query(
         "UPDATE import_jobs
          SET canonical_suggestions_json = ?, destination_suggestions_json = ?, evidence_json = ?,
-             match_confidence = ?, confidence_tier = ?, decision = ?,
-             match_entry_key = ?, match_alias_name = NULL, match_object_id = ?,
-             destination_object_id = ?, destination_path = ?, placed_path = NULL,
-             result = NULL, error_msg = NULL, status = ?,
-             updated_at = CURRENT_TIMESTAMP
+             review_gate_json = ?, match_confidence = ?, confidence_tier = ?, decision = ?,
+             identity_match_status = ?, analysis_revision = analysis_revision + 1,
+             analysis_ack_revision = NULL, match_entry_key = ?, match_alias_name = NULL,
+             match_object_id = ?, destination_object_id = ?, destination_path = ?, placed_path = NULL,
+             result = NULL, error_msg = NULL, status = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
     )
     .bind(canonical_json)
     .bind(destination_json)
     .bind(evidence_json)
+    .bind(review_gate_json)
     .bind(confidence)
     .bind(tier.as_str())
     .bind(decision)
+    .bind(identity_match_status.as_str())
     .bind(canonical_entry_key)
     .bind(destination_object_id)
     .bind(destination_object_id)
@@ -687,7 +864,10 @@ pub async fn rename_planned_item(
     let result = sqlx::query(
         "UPDATE import_jobs
          SET planned_name = ?, canonical_suggestions_json = '[]', destination_suggestions_json = '[]',
-             match_confidence = 0, confidence_tier = 'no_match', decision = 'pending',
+             match_confidence = 0, confidence_tier = 'no_match', identity_match_status = 'needs_review',
+             decision = 'pending', analysis_revision = analysis_revision + 1,
+             analysis_ack_revision = NULL, target_comparison_json = NULL,
+             review_gate_json = '{\"reasons\":[]}',
              match_entry_key = NULL, match_alias_name = NULL, destination_object_id = NULL,
              match_object_id = NULL, destination_path = NULL, placed_path = NULL,
              status = CASE WHEN match_category IS NULL THEN 'awaiting_category' ELSE 'awaiting_destination' END,
@@ -717,6 +897,7 @@ pub async fn store_decision(
         "UPDATE import_jobs
          SET decision = ?, destination_object_id = ?, destination_path = ?,
              match_entry_key = ?, match_alias_name = ?, match_confidence = ?, confidence_tier = ?,
+             analysis_ack_revision = analysis_revision,
              status = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
     )
@@ -728,6 +909,294 @@ pub async fn store_decision(
     .bind(f64::from(confidence))
     .bind(tier.as_str())
     .bind(next_status.as_str())
+    .bind(&input.item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn store_archive_hash(
+    db: &SqlitePool,
+    item_id: &str,
+    archive_sha256: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE import_jobs SET archive_sha256 = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('discovered', 'staged', 'awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(archive_sha256)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn mark_archive_duplicate(
+    db: &SqlitePool,
+    item_id: &str,
+    representative_item_id: &str,
+    archive_sha256: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET archive_sha256 = ?, duplicate_of_item_id = ?, decision = 'skip', status = 'skipped',
+             result = 'duplicate_archive', error_msg = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status = 'discovered'",
+    )
+    .bind(archive_sha256)
+    .bind(representative_item_id)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn store_payload_manifest(
+    db: &SqlitePool,
+    item_id: &str,
+    manifest: &crate::modules::ingestion::application::import_batch::payload_manifest::PayloadManifest,
+) -> Result<bool, sqlx::Error> {
+    let raw = serde_json::to_string(manifest)
+        .map_err(|error| decode_error(format!("could not encode payload manifest: {error}")))?;
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET payload_manifest_json = ?, target_comparison_json = NULL,
+             analysis_revision = analysis_revision + 1, analysis_ack_revision = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('staged', 'awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(raw)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn store_content_classification(
+    db: &SqlitePool,
+    item_id: &str,
+    content_kind: ImportContentKind,
+    package_shape: ImportPackageShape,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET content_kind = ?, package_shape = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('staged', 'awaiting_category', 'awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(content_kind.as_str())
+    .bind(package_shape.as_str())
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn append_item_diagnostic(
+    db: &SqlitePool,
+    item_id: &str,
+    diagnostic: &ImportDiagnostic,
+) -> Result<bool, sqlx::Error> {
+    let Some(existing) = sqlx::query(
+        "SELECT diagnostics_json, review_gate_json FROM import_jobs
+         WHERE id = ? AND status IN ('staged', 'awaiting_category', 'awaiting_destination', 'ready')",
+    )
+    .bind(item_id)
+    .fetch_optional(db)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let existing_diagnostics: String = existing.try_get("diagnostics_json")?;
+    let existing_review_gate: String = existing.try_get("review_gate_json")?;
+    let mut diagnostics: Vec<ImportDiagnostic> =
+        parse_json(&existing_diagnostics, "diagnostics_json")?;
+    if diagnostics.iter().any(|current| {
+        current.code == diagnostic.code
+            && current.stage == diagnostic.stage
+            && current.member_path == diagnostic.member_path
+    }) {
+        return Ok(true);
+    }
+    diagnostics.push(diagnostic.clone());
+    let raw = serde_json::to_string(&diagnostics)
+        .map_err(|error| decode_error(format!("could not encode import diagnostic: {error}")))?;
+    let mut review_gate: ReviewGate = parse_json(&existing_review_gate, "review_gate_json")?;
+    review_gate.add(
+        ReviewReasonCode::IncompleteInspection,
+        Some(diagnostic.code.clone()),
+    );
+    let review_gate_json = serde_json::to_string(&review_gate)
+        .map_err(|error| decode_error(format!("could not encode review gate: {error}")))?;
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET diagnostics_json = ?, review_gate_json = ?, identity_match_status = 'needs_review',
+             analysis_revision = analysis_revision + 1, analysis_ack_revision = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('staged', 'awaiting_category', 'awaiting_destination', 'ready')",
+    )
+    .bind(raw)
+    .bind(review_gate_json)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn mark_payload_duplicate(
+    db: &SqlitePool,
+    item_id: &str,
+    representative_item_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET duplicate_of_item_id = ?, decision = 'skip', status = 'skipped',
+             result = 'duplicate_payload', error_msg = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('awaiting_destination', 'ready')",
+    )
+    .bind(representative_item_id)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn store_target_comparison(
+    db: &SqlitePool,
+    item_id: &str,
+    comparison: &TargetComparison,
+) -> Result<bool, sqlx::Error> {
+    let raw = serde_json::to_string(comparison)
+        .map_err(|error| decode_error(format!("could not encode target comparison: {error}")))?;
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET target_comparison_json = ?, analysis_revision = analysis_revision + 1,
+             analysis_ack_revision = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(raw)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn apply_target_comparison(
+    db: &SqlitePool,
+    item_id: &str,
+    comparison: &TargetComparison,
+    review_gate: &ReviewGate,
+) -> Result<bool, sqlx::Error> {
+    let comparison_json = serde_json::to_string(comparison)
+        .map_err(|error| decode_error(format!("could not encode target comparison: {error}")))?;
+    let review_gate_json = serde_json::to_string(review_gate)
+        .map_err(|error| decode_error(format!("could not encode review gate: {error}")))?;
+    let (decision, status, result) = match comparison.outcome {
+        TargetComparisonOutcome::AlreadyInstalled => ("skip", "skipped", "already_installed"),
+        TargetComparisonOutcome::TargetHasAdditionalFiles
+        | TargetComparisonOutcome::SameNameDifferentContent
+        | TargetComparisonOutcome::Incomplete => {
+            ("pending", "awaiting_destination", "target_conflict")
+        }
+    };
+    let identity_match_status = if review_gate.is_empty() {
+        None
+    } else {
+        Some("needs_review")
+    };
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET target_comparison_json = ?, review_gate_json = ?, decision = ?, status = ?, result = ?,
+             identity_match_status = COALESCE(?, identity_match_status),
+             destination_object_id = NULL, destination_path = NULL, placed_path = NULL,
+             analysis_revision = analysis_revision + 1, analysis_ack_revision = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(comparison_json)
+    .bind(review_gate_json)
+    .bind(decision)
+    .bind(status)
+    .bind(result)
+    .bind(identity_match_status)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn get_payload_manifest(
+    db: &SqlitePool,
+    item_id: &str,
+) -> Result<
+    Option<crate::modules::ingestion::application::import_batch::payload_manifest::PayloadManifest>,
+    sqlx::Error,
+> {
+    let raw = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT payload_manifest_json FROM import_jobs WHERE id = ?",
+    )
+    .bind(item_id)
+    .fetch_optional(db)
+    .await?
+    .flatten();
+    raw.map(|raw| {
+        parse_json::<
+            crate::modules::ingestion::application::import_batch::payload_manifest::PayloadManifest,
+        >(&raw, "payload_manifest_json")
+    })
+    .transpose()
+}
+
+pub async fn apply_target_comparison_outcome(
+    db: &SqlitePool,
+    item_id: &str,
+    outcome: TargetComparisonOutcome,
+) -> Result<bool, sqlx::Error> {
+    let (decision, status, result) = match outcome {
+        TargetComparisonOutcome::AlreadyInstalled => ("skip", "skipped", "already_installed"),
+        TargetComparisonOutcome::TargetHasAdditionalFiles
+        | TargetComparisonOutcome::SameNameDifferentContent
+        | TargetComparisonOutcome::Incomplete => {
+            ("pending", "awaiting_destination", "target_conflict")
+        }
+    };
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET decision = ?, status = ?, result = ?, destination_object_id = NULL,
+             destination_path = NULL, placed_path = NULL, analysis_ack_revision = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(decision)
+    .bind(status)
+    .bind(result)
+    .bind(item_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn store_keep_separate_decision(
+    db: &SqlitePool,
+    input: &crate::modules::ingestion::application::import_batch::types::SetImportItemDecisionInput,
+    planned_name: &str,
+    confidence: u8,
+    tier: ConfidenceTier,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE import_jobs
+         SET planned_name = ?, decision = 'keep_separate', destination_object_id = ?,
+             destination_path = ?, match_entry_key = ?, match_alias_name = ?,
+             match_confidence = ?, confidence_tier = ?, status = 'ready',
+             analysis_ack_revision = analysis_revision, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
+    )
+    .bind(planned_name)
+    .bind(&input.destination_object_id)
+    .bind(&input.destination_path)
+    .bind(&input.canonical_entry_key)
+    .bind(&input.matched_alias)
+    .bind(f64::from(confidence))
+    .bind(tier.as_str())
     .bind(&input.item_id)
     .execute(db)
     .await?;
@@ -762,15 +1231,88 @@ pub async fn set_item_failure(
     item_id: &str,
     message: &str,
 ) -> Result<(), sqlx::Error> {
+    let diagnostics_json = serde_json::to_string(&[failure_diagnostic(message)])
+        .map_err(|error| decode_error(format!("could not encode import diagnostic: {error}")))?;
     sqlx::query(
-        "UPDATE import_jobs SET status = 'failed', error_msg = ?, updated_at = CURRENT_TIMESTAMP
+        "UPDATE import_jobs
+         SET status = 'failed', error_msg = ?, diagnostics_json = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status NOT IN ('done', 'cancelled')",
     )
     .bind(message)
+    .bind(diagnostics_json)
     .bind(item_id)
     .execute(db)
     .await?;
     Ok(())
+}
+
+fn failure_diagnostic(message: &str) -> ImportDiagnostic {
+    use crate::modules::ingestion::application::import_batch::types::ImportDiagnosticStage;
+
+    let normalized = message.to_ascii_lowercase();
+    let (code, stage, recovery) = if normalized.contains("mod_root_too_deep") {
+        (
+            "root_too_deep",
+            ImportDiagnosticStage::RootDiscovery,
+            "Unwrap one or more wrapper folders, then retry analysis",
+        )
+    } else if normalized.contains("entry limit") {
+        (
+            "root_scan_limit",
+            ImportDiagnosticStage::RootDiscovery,
+            "Reduce the archive tree or inspect the source manually",
+        )
+    } else if normalized.contains("multipart") {
+        (
+            "archive_multipart",
+            ImportDiagnosticStage::Staging,
+            "Place every archive part beside the first part, then retry",
+        )
+    } else if normalized.contains("nested_archive_depth_limit")
+        || normalized.contains("nested_archive_destination_collision")
+    {
+        (
+            "nested_archive_unresolved",
+            ImportDiagnosticStage::Staging,
+            "Open the nested archive manually or remove the conflicting wrapper folder",
+        )
+    } else if normalized.contains("password") {
+        (
+            "archive_password",
+            ImportDiagnosticStage::Staging,
+            "Provide the archive password and retry",
+        )
+    } else if normalized.contains("unsupported") || normalized.contains("compression") {
+        (
+            "archive_compression_unsupported",
+            ImportDiagnosticStage::Staging,
+            "Extract with a compatible archiver, then import the folder",
+        )
+    } else if normalized.contains("no valid .ini") {
+        (
+            "archive_no_mod_root",
+            ImportDiagnosticStage::RootDiscovery,
+            "Choose the folder containing the runnable mod INI",
+        )
+    } else if normalized.contains("disappeared") {
+        (
+            "source_changed",
+            ImportDiagnosticStage::Staging,
+            "Restore the source or refresh the inbox",
+        )
+    } else {
+        (
+            "staging_failed",
+            ImportDiagnosticStage::Staging,
+            "Inspect the source and retry analysis",
+        )
+    };
+    ImportDiagnostic {
+        code: code.to_string(),
+        stage,
+        member_path: None,
+        recovery: recovery.to_string(),
+    }
 }
 
 pub async fn restore_item_after_rollback(
@@ -815,7 +1357,10 @@ pub async fn begin_batch_commit(
     for item_id in item_ids {
         let item = sqlx::query(
             "UPDATE import_jobs SET status = 'committing', error_msg = NULL, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ? AND batch_id = ? AND status = 'ready'",
+             WHERE id = ? AND batch_id = ? AND status = 'ready'
+               AND analysis_revision > 0
+               AND ((identity_match_status = 'auto_matched' AND json_array_length(review_gate_json, '$.reasons') = 0)
+                    OR analysis_ack_revision = analysis_revision)",
         )
         .bind(item_id)
         .bind(batch_id)
@@ -1133,8 +1678,11 @@ pub async fn get_batch(
                 category_suggestions_json, canonical_suggestions_json, destination_suggestions_json,
                 match_entry_key, match_alias_name, destination_object_id, match_object_id,
                 destination_path, placed_path, match_confidence, confidence_tier, evidence_json,
-                decision, source_fingerprint, result, error_msg
-         FROM import_jobs WHERE batch_id = ? ORDER BY created_at, id",
+                decision, source_fingerprint, archive_sha256, payload_manifest_json,
+                duplicate_of_item_id, target_comparison_json, analysis_revision,
+                analysis_ack_revision, review_gate_json, identity_match_status, diagnostics_json,
+                content_kind, package_shape, result, error_msg
+         FROM import_jobs WHERE batch_id = ? ORDER BY source_order, root_order, id",
     )
     .bind(batch_id)
     .fetch_all(db)
@@ -1191,6 +1739,51 @@ fn map_item_row(row: sqlx::sqlite::SqliteRow) -> Result<ImportItem, sqlx::Error>
         .try_get::<Option<String>, _>("source_fingerprint")?
         .map(|raw| parse_json::<SourceFingerprint>(&raw, "source_fingerprint"))
         .transpose()?;
+    let archive_sha256 = row.try_get::<Option<String>, _>("archive_sha256")?;
+    let payload_manifest = row
+        .try_get::<Option<String>, _>("payload_manifest_json")?
+        .map(|raw| {
+            parse_json::<crate::modules::ingestion::application::import_batch::payload_manifest::PayloadManifest>(
+                &raw,
+                "payload_manifest_json",
+            )
+            .map(|manifest| PayloadManifestSummary {
+                version: manifest.version,
+                file_count: manifest.file_count,
+                total_size_bytes: manifest.total_size_bytes,
+                content_sha256: manifest.content_sha256,
+            })
+        })
+        .transpose()?;
+    let duplicate_of_item_id = row.try_get::<Option<String>, _>("duplicate_of_item_id")?;
+    let target_comparison = row
+        .try_get::<Option<String>, _>("target_comparison_json")?
+        .map(|raw| parse_json::<TargetComparison>(&raw, "target_comparison_json"))
+        .transpose()?;
+    let analysis_revision = u64::try_from(row.try_get::<i64, _>("analysis_revision")?)
+        .map_err(|_| decode_error("invalid negative analysis_revision".to_string()))?;
+    let analysis_ack_revision = row
+        .try_get::<Option<i64>, _>("analysis_ack_revision")?
+        .map(|value| {
+            u64::try_from(value)
+                .map_err(|_| decode_error("invalid negative analysis_ack_revision".to_string()))
+        })
+        .transpose()?;
+    let review_gate = parse_json::<ReviewGate>(
+        row.try_get::<&str, _>("review_gate_json")?,
+        "review_gate_json",
+    )?;
+    let identity_match_status =
+        ImportMatchStatus::from_str(row.try_get::<&str, _>("identity_match_status")?)
+            .map_err(decode_error)?;
+    let diagnostics = parse_json::<Vec<ImportDiagnostic>>(
+        row.try_get::<&str, _>("diagnostics_json")?,
+        "diagnostics_json",
+    )?;
+    let content_kind = ImportContentKind::from_str(row.try_get::<&str, _>("content_kind")?)
+        .map_err(decode_error)?;
+    let package_shape = ImportPackageShape::from_str(row.try_get::<&str, _>("package_shape")?)
+        .map_err(decode_error)?;
     let stored_tier = ConfidenceTier::from_str(row.try_get::<&str, _>("confidence_tier")?)
         .unwrap_or_else(|_| ConfidenceTier::from_percentage(confidence_percentage));
 
@@ -1232,6 +1825,7 @@ fn map_item_row(row: sqlx::sqlite::SqliteRow) -> Result<ImportItem, sqlx::Error>
             .or(row.try_get::<Option<String>, _>("placed_path")?),
         confidence_percentage,
         confidence_tier: stored_tier,
+        identity_match_status,
         evidence: parse_json::<Vec<MatchEvidence>>(
             row.try_get::<&str, _>("evidence_json")?,
             "evidence_json",
@@ -1239,6 +1833,16 @@ fn map_item_row(row: sqlx::sqlite::SqliteRow) -> Result<ImportItem, sqlx::Error>
         decision: ImportDecision::from_str(row.try_get::<&str, _>("decision")?)
             .map_err(decode_error)?,
         fingerprint,
+        archive_sha256,
+        payload_manifest,
+        duplicate_of_item_id,
+        target_comparison,
+        analysis_revision,
+        analysis_ack_revision,
+        review_gate,
+        diagnostics,
+        content_kind,
+        package_shape,
         result: row.try_get("result")?,
         error: row.try_get("error_msg")?,
     })

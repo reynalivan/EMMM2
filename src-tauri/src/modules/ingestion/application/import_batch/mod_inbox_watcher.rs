@@ -12,6 +12,7 @@ type InboxWatcher = Debouncer<notify::RecommendedWatcher, RecommendedCache>;
 
 struct ActiveInboxWatcher {
     game_id: String,
+    root_path: String,
     _watcher: InboxWatcher,
 }
 
@@ -56,6 +57,7 @@ pub fn start(
     let canonical_root = root.canonicalize()?;
     let callback_game_id = game_id.to_string();
     let callback_root = canonical_root.to_string_lossy().into_owned();
+    let active_root = callback_root.clone();
     let callback_app = app;
     let mut watcher = notify_debouncer_full::new_debouncer(
         Duration::from_millis(500),
@@ -89,16 +91,17 @@ pub fn start(
 
     *lock(&state.active) = Some(ActiveInboxWatcher {
         game_id: game_id.to_string(),
+        root_path: active_root,
         _watcher: watcher,
     });
     Ok(())
 }
 
-pub fn stop(state: &ModInboxWatcherState, game_id: &str) {
+pub fn stop(state: &ModInboxWatcherState, game_id: &str, root_path: &str) {
     let mut active = lock(&state.active);
     if active
         .as_ref()
-        .is_some_and(|watcher| watcher.game_id == game_id)
+        .is_some_and(|watcher| watcher.game_id == game_id && watcher.root_path == root_path)
     {
         *active = None;
     }

@@ -146,20 +146,32 @@ fn path_has_hidden_segment(path: &str) -> bool {
         .any(|segment| segment.starts_with('.'))
 }
 
-fn path_has_disabled_segment(path: &str) -> bool {
-    path.split(['/', '\\'])
+fn path_has_disabled_ancestor(path: &str) -> bool {
+    let mut segments = path
+        .split(['/', '\\'])
         .filter(|segment| !segment.is_empty())
-        .any(crate::modules::workspace::domain::normalizer::is_disabled_folder)
+        .peekable();
+
+    while let Some(segment) = segments.next() {
+        if segments.peek().is_some()
+            && crate::modules::workspace::domain::normalizer::is_disabled_folder(segment)
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
-fn is_effectively_disabled_randomizer_candidate(
-    mod_row: &crate::modules::library::adapters::sqlite::mods::Mod,
-) -> bool {
-    if path_has_hidden_segment(&mod_row.folder_path) {
+fn is_randomizer_candidate(status: ItemStatus, folder_path: &str) -> bool {
+    if path_has_hidden_segment(folder_path) {
         return false;
     }
 
-    mod_row.status == ItemStatus::Disabled || path_has_disabled_segment(&mod_row.folder_path)
+    // `enable_only_this` only renames the selected folder. A child inside a
+    // disabled container would remain inactive after that operation, so it
+    // must not be offered as a randomizer recommendation.
+    status == ItemStatus::Disabled && !path_has_disabled_ancestor(folder_path)
 }
 
 pub async fn suggest_random_mods(
@@ -190,7 +202,7 @@ pub async fn suggest_random_mods(
 
         let candidates: Vec<(String, String, String)> = mods
             .into_iter()
-            .filter(is_effectively_disabled_randomizer_candidate)
+            .filter(|mod_row| is_randomizer_candidate(mod_row.status, &mod_row.folder_path))
             .map(|row| (row.id, row.actual_name, row.folder_path))
             .collect();
 

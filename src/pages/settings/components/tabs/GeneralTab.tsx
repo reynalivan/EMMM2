@@ -1,7 +1,7 @@
 import { formatAppError } from '../../../../shared/lib/appError';
 import { Monitor, Languages, Database, LogOut, Plus, Trash2, Download } from 'lucide-react';
 import { useAppStore } from '@/app/store';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import {
   THEME_OPTIONS,
   BUILTIN_THEMES,

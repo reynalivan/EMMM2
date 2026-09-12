@@ -1,5 +1,6 @@
 use crate::modules::automation::application::hotkeys::{HotkeyConfig, KeyViewerConfig};
 use crate::modules::games::adapters::sqlite::game;
+use crate::modules::games::domain::models::LaunchMode;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -8,12 +9,18 @@ pub struct GameConfig {
     pub id: String,
     pub name: String,
     pub game_type: crate::modules::games::domain::models::GameType,
+    #[serde(default)]
+    pub instance_path: PathBuf,
     pub mod_path: PathBuf,
     /// Optional per-game ReadyToMove inbox. When absent, the OS Downloads default is used.
     #[serde(default)]
     pub ready_to_move_path: Option<PathBuf>,
-    pub game_exe: PathBuf,
+    #[serde(default)]
+    pub launch_mode: LaunchMode,
+    pub game_exe: Option<PathBuf>,
     pub loader_exe: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xxmi_launcher_exe: Option<PathBuf>,
     pub launch_args: Option<String>,
     /// Transient warnings from path validation. NOT persisted to DB.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -90,27 +97,39 @@ pub fn game_row_to_config(row: game::GameRow) -> GameConfig {
         id: row.id,
         name: row.name,
         game_type: row.game_type,
+        instance_path: PathBuf::from(row.path.clone()),
         mod_path: PathBuf::from(row.mods_path.unwrap_or_else(|| row.path.clone())),
         ready_to_move_path: row.ready_to_move_path.map(PathBuf::from),
-        game_exe: PathBuf::from(row.game_exe.unwrap_or(row.path)),
+        launch_mode: LaunchMode::from_persisted(&row.launch_mode),
+        game_exe: row.game_exe.map(PathBuf::from),
         loader_exe: row.loader_exe.or(row.launcher_path).map(PathBuf::from),
+        xxmi_launcher_exe: row.xxmi_launcher_exe.map(PathBuf::from),
         launch_args: row.launch_args,
         warnings: Vec::new(), // transient, never from DB
     }
 }
 
 pub fn config_to_game_row(config: &GameConfig) -> game::GameRow {
+    let instance_path = if config.instance_path.as_os_str().is_empty() {
+        &config.mod_path
+    } else {
+        &config.instance_path
+    };
+
     game::GameRow {
         id: config.id.clone(),
         name: config.name.clone(),
         game_type: config.game_type,
-        path: config.game_exe.to_string_lossy().to_string(),
+        path: instance_path.to_string_lossy().to_string(),
         mods_path: Some(config.mod_path.to_string_lossy().to_string()),
         ready_to_move_path: config
             .ready_to_move_path
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
-        game_exe: Some(config.game_exe.to_string_lossy().to_string()),
+        game_exe: config
+            .game_exe
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
         launcher_path: config
             .loader_exe
             .as_ref()
@@ -119,6 +138,11 @@ pub fn config_to_game_row(config: &GameConfig) -> game::GameRow {
             .loader_exe
             .as_ref()
             .map(|p| p.to_string_lossy().to_string()),
+        launch_mode: config.launch_mode.as_persisted().to_string(),
+        xxmi_launcher_exe: config
+            .xxmi_launcher_exe
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
         launch_args: config.launch_args.clone(),
     }
 }

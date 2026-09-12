@@ -9,7 +9,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import EditObjectModal from './EditObjectModal';
-import { useUpdateObject } from '../hooks/useObjectMutations';
+import { useUpdateObject } from '@/features/workspace-runtime';
 import type { ObjectSummary } from '@/entities/game-object';
 import { createWrapper } from '../../../tests/testing/test-utils';
 import { useForm } from 'react-hook-form';
@@ -18,7 +18,7 @@ import { useEditObjectForm, schema } from '../hooks/useEditObjectForm';
 import type { EditObjectFormData } from '../hooks/useEditObjectForm';
 
 // Mock dependencies
-vi.mock('../hooks/useObjectMutations');
+vi.mock('@/features/workspace-runtime');
 vi.mock('../hooks/useObjectQueries');
 vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(),

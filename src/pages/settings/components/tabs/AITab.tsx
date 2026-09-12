@@ -1,7 +1,7 @@
 import { formatAppError } from '../../../../shared/lib/appError';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import { Eye, EyeOff } from 'lucide-react';
 import { useToastStore } from '@/shared/ui/toast';
 import { commands } from '../../../../shared/api/tauri/bindings';

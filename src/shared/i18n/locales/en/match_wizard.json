@@ -118,6 +118,7 @@
     "keep_specific_target": "Keep target",
     "reallocate": "Reallocate",
     "create_canonical": "Create canonical",
+    "keep_separate": "Keep separately",
     "skip": "Skipped"
   },
   "destination_hint": "Choose a suggested destination or select an existing target manually.",
@@ -139,6 +140,7 @@
     "use_target": "Use this target",
     "skip": "Skip",
     "proceed": "Proceed",
+    "keep_separate": "Keep separately as {{name}}",
     "set_proceed": "Set Proceed",
     "set_skip": "Set Skip",
     "view_destination": "View destination",
@@ -159,6 +161,49 @@
   "specific_warning": "target does not strongly match; explicit confirmation required",
   "no_match": "No canonical match",
   "no_destination": "No destination selected",
+  "target_comparison": {
+    "already_installed": "Already installed: every source file has the same content.",
+    "target_has_additional_files": "The target contains {{additional}} additional file(s). Review it before importing.",
+    "same_name_different_content": "A same-name target differs ({{changed}} changed, {{missing}} missing). Review it before importing.",
+    "incomplete": "The existing target could not be fully verified. Review it before importing."
+  },
+  "review_reasons": {
+    "identity_needs_confirmation": "Character identity needs an explicit decision.",
+    "identity_no_match": "No reliable character identity was found.",
+    "package_bundle": "Package roots may depend on each other and are kept together.",
+    "incomplete_inspection": "Package inspection is incomplete; review the source evidence.",
+    "utility_requires_destination": "Utility packages need an explicit destination.",
+    "patch_requires_review": "Patches are identified but cannot be installed by Mod Inbox.",
+    "foreign_game_package": "This package appears to belong to a different game.",
+    "target_has_additional_files": "The matching target has additional files.",
+    "target_name_conflict": "A same-name target has different content.",
+    "target_comparison_incomplete": "The existing target could not be compared safely."
+  },
+  "content_kind": {
+    "skin": "Skin mod",
+    "patch": "Patch",
+    "utility": "Utility",
+    "foreign_game": "Other game",
+    "unknown": "Unknown content"
+  },
+  "package_shape": {
+    "single": "Single package",
+    "composite": "Composite package",
+    "bundle": "Bundle"
+  },
+  "diagnostics": {
+    "root_too_deep": "The mod root is deeper than the supported search depth. Unwrap wrapper folders and retry.",
+    "root_scan_limit": "The root scan reached its entry limit. Inspect the source manually.",
+    "archive_multipart": "This archive needs all multipart volumes in the same folder.",
+    "nested_archive_unresolved": "A nested archive could not be opened safely. Extract it manually and retry.",
+    "archive_password": "This archive requires a password.",
+    "archive_compression_unsupported": "This archive uses unsupported compression. Recompress or extract it manually.",
+    "archive_no_mod_root": "No runnable mod root was found in this archive.",
+    "source_changed": "The source changed after analysis. Refresh the item before importing.",
+    "staging_failed": "Staging did not complete. Fix the source and retry.",
+    "package_grouping_review": "Package roots may depend on one another and are kept together for review.",
+    "ini_decode_incomplete": "Some INI files could not be decoded completely. Confirm the package manually."
+  },
   "evidence": "Evidence",
   "evidence_none": "No match evidence",
   "match_column": "Match",
@@ -166,6 +211,8 @@
   "source": {
     "identified": "Identified as {{name}} · {{score}}%",
     "matching_by_name": "Matching by name",
+    "identity_review_required": "Identity needs your confirmation before import",
+    "duplicate_of": "Duplicate of {{name}}; it will be skipped",
     "edit_name": "Edit imported folder name",
     "destination_preview": "Will be placed in: {{destination}}/{{name}}",
     "source_unchanged": "The source archive or folder will remain unchanged"

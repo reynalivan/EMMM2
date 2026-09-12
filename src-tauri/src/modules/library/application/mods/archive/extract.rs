@@ -127,7 +127,7 @@ pub fn extract_archive(
         }
     }
 
-    let mod_roots = find_mod_roots(guard.path(), 5);
+    let mod_roots = find_mod_roots(guard.path(), super::classify::MOD_ROOT_MAX_DEPTH);
     if mod_roots.is_empty() {
         return Err(AppError::Validation(
             "Not a valid 3DMigoto mod archive (no valid .ini found)".to_string(),

@@ -21,7 +21,10 @@ fn test_valid_instance_passes() {
     let (info, warnings) = result.unwrap();
     assert_eq!(PathBuf::from(info.path), dir);
     assert_eq!(PathBuf::from(info.mods_path), dir.join("Mods"));
-    assert!(info.launcher_path.contains("3DMigotoLoader"));
+    assert!(info
+        .launcher_path
+        .as_deref()
+        .is_some_and(|launcher_path| launcher_path.contains("3DMigotoLoader")));
     assert!(
         warnings.is_empty(),
         "Expected no warnings for a valid instance"
@@ -111,7 +114,10 @@ fn test_loader_priority() {
     fs::write(dir.join("SomeOtherApp.exe"), "").unwrap();
 
     let (info, _) = validate_instance(&dir).unwrap();
-    assert!(info.launcher_path.contains("Loader"));
+    assert!(info
+        .launcher_path
+        .as_deref()
+        .is_some_and(|launcher_path| launcher_path.contains("Loader")));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -131,7 +137,8 @@ fn test_no_exe_found_is_warning() {
         result.is_ok(),
         "No .exe should be a soft warning, not an error"
     );
-    let (_, warnings) = result.unwrap();
+    let (info, warnings) = result.unwrap();
+    assert_eq!(info.launcher_path, None);
     assert!(
         warnings
             .iter()
@@ -190,7 +197,10 @@ fn test_smart_mods_subfolder_correction() {
 
     assert_eq!(PathBuf::from(info.path), base);
     assert_eq!(PathBuf::from(info.mods_path), selected);
-    assert!(info.launcher_path.contains("3DMigotoLoader"));
+    assert!(info
+        .launcher_path
+        .as_deref()
+        .is_some_and(|launcher_path| launcher_path.contains("3DMigotoLoader")));
     assert!(warnings.is_empty());
 
     let _ = fs::remove_dir_all(&base);
@@ -202,6 +212,12 @@ fn test_scan_xxmi_partial() {
     let root = std::env::temp_dir().join("emmm_test_xxmi_scan");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(root.join("Resources").join("Bin")).unwrap();
+    fs::write(
+        root.join("Resources").join("Bin").join("XXMI Launcher.exe"),
+        "fake-exe",
+    )
+    .unwrap();
 
     // Create valid GIMI only
     create_valid_instance(&root.join("GIMI"));
@@ -211,6 +227,49 @@ fn test_scan_xxmi_partial() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].game_type, GameType::GIMI);
     assert_eq!(results[0].game_type.display_name(), "Genshin Impact");
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn test_xxmi_managed_instance_does_not_require_importer_launcher() {
+    let root = std::env::temp_dir().join("emmm_test_xxmi_managed_scan");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("Resources").join("Bin")).unwrap();
+    fs::write(
+        root.join("Resources").join("Bin").join("XXMI Launcher.exe"),
+        "fake-exe",
+    )
+    .unwrap();
+
+    let wwmi = root.join("WWMI");
+    fs::create_dir_all(wwmi.join("Mods")).unwrap();
+    fs::write(wwmi.join("d3dx.ini"), "[Constants]").unwrap();
+    fs::write(wwmi.join("d3d11.dll"), "fake-dll").unwrap();
+
+    let results = scan_xxmi_root(&root);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].game_type, GameType::WWMI);
+    assert!(
+        results[0].warnings.is_empty(),
+        "an XXMI-managed importer must not require a launcher in its own folder"
+    );
+    assert_eq!(
+        PathBuf::from(results[0].info.launcher_path.as_ref().unwrap()),
+        root.join("Resources").join("Bin").join("XXMI Launcher.exe")
+    );
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn test_root_without_shared_xxmi_launcher_is_not_managed() {
+    let root = std::env::temp_dir().join("emmm_test_xxmi_missing_shared_launcher");
+    let _ = fs::remove_dir_all(&root);
+    create_valid_instance(&root.join("WWMI"));
+
+    assert!(scan_xxmi_root(&root).is_empty());
 
     let _ = fs::remove_dir_all(&root);
 }

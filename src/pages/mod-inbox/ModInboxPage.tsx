@@ -33,6 +33,7 @@ export default function ModInboxPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const refreshSequence = useRef(0);
+  const watcherTransition = useRef(Promise.resolve());
   const watcherErrorPrefix = t('watcher_failed', { error: '' });
 
   const refresh = useCallback(async () => {
@@ -76,20 +77,31 @@ export default function ModInboxPage() {
     };
   }, [activeGameId, refresh]);
 
+  const inboxWatcherRoot =
+    snapshot?.gameId === activeGameId && snapshot.rootState === 'ready' ? snapshot.rootPath : null;
+
   useEffect(() => {
-    if (!activeGameId || snapshot?.gameId !== activeGameId || snapshot.rootState !== 'ready') {
+    if (!activeGameId || !inboxWatcherRoot) {
       return;
     }
 
-    void modInboxCommands.startModInboxWatcher(activeGameId).catch((cause) => {
-      toast.warning(`${watcherErrorPrefix}${formatAppError(cause)}`);
+    watcherTransition.current = watcherTransition.current.then(async () => {
+      try {
+        await modInboxCommands.startModInboxWatcher(activeGameId);
+      } catch (cause) {
+        toast.warning(`${watcherErrorPrefix}${formatAppError(cause)}`);
+      }
     });
     return () => {
-      void modInboxCommands.stopModInboxWatcher(activeGameId).catch((cause) => {
-        console.warn('Could not stop Mod Inbox watcher', cause);
+      watcherTransition.current = watcherTransition.current.then(async () => {
+        try {
+          await modInboxCommands.stopModInboxWatcher(activeGameId, inboxWatcherRoot);
+        } catch (cause) {
+          console.warn('Could not stop Mod Inbox watcher', cause);
+        }
       });
     };
-  }, [activeGameId, snapshot?.gameId, snapshot?.rootState, watcherErrorPrefix]);
+  }, [activeGameId, inboxWatcherRoot, watcherErrorPrefix]);
 
   const selectableReadyEntries = useMemo(
     () => snapshot?.readyEntries.filter((entry) => !entry.pendingBatchId) ?? [],

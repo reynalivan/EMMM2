@@ -102,26 +102,6 @@ async fn cancel_download_with_delete_file_drops_row_and_file() {
 }
 
 #[tokio::test]
-async fn clear_imported_removes_only_imported_rows() {
-    let db = init_test_db().await.pool;
-    let keep = create_download(&db, None, "k.zip", "https://x/k.zip", "C:/dl/k.zip")
-        .await
-        .unwrap();
-    let drop = create_download(&db, None, "d.zip", "https://x/d.zip", "C:/dl/d.zip")
-        .await
-        .unwrap();
-    update_status(&db, &drop, "imported", None, None, None, None)
-        .await
-        .unwrap();
-
-    let removed = clear_imported(&db).await.unwrap();
-
-    assert_eq!(removed, 1);
-    assert_eq!(status_of(&db, &keep).await.as_deref(), Some("requested"));
-    assert!(status_of(&db, &drop).await.is_none());
-}
-
-#[tokio::test]
 async fn clear_old_downloads_uses_the_configured_retention_window() {
     let db = init_test_db().await.pool;
     browser::set_setting(&db, "retention_days", "1")

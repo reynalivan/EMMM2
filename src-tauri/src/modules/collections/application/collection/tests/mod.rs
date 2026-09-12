@@ -1,8 +1,8 @@
 use super::projection::persist_projected_state;
 use super::{
-    apply_collection, capture_last_changes_if_needed, create_collection, delete_collection,
-    get_collection_preview, handle_mod_missing, handle_mod_moved_or_renamed,
-    handle_object_renamed_tx, list_collections, preview_apply,
+    apply_collection, capture_last_changes_if_needed, collection_preflight_scope_paths,
+    create_collection, delete_collection, get_collection_preview, handle_mod_missing,
+    handle_mod_moved_or_renamed, handle_object_renamed_tx, list_collections, preview_apply,
     replace_collection_with_current_state, update_collection, ApplyCollectionRequest,
 };
 use crate::modules::collections::adapters::sqlite as collection;

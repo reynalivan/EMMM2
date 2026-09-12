@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO games (id, name, game_type, path, mods_path, ready_to_move_path, game_exe, launcher_path, loader_exe, launch_mode, xxmi_launcher_exe, launch_args, created_at)\n         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)\n         ON CONFLICT(id) DO UPDATE SET\n           name = excluded.name,\n           game_type = excluded.game_type,\n           path = excluded.path,\n           mods_path = excluded.mods_path,\n           ready_to_move_path = excluded.ready_to_move_path,\n           game_exe = excluded.game_exe,\n           launcher_path = excluded.launcher_path,\n           loader_exe = excluded.loader_exe,\n           launch_mode = excluded.launch_mode,\n           xxmi_launcher_exe = excluded.xxmi_launcher_exe,\n           launch_args = excluded.launch_args",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "b76f0307c8dc0092f0f2794fd724d08af51b0cd65679e9775fab3e5df9b5cf99"
+}

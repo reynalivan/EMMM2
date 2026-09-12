@@ -136,6 +136,7 @@
     "title": "Smart Randomizer",
     "desc": "Merekomendasikan 1 mod yang dinonaktifkan secara acak untuk setiap Karakter yang aktif. Tinjau dan terapkan.",
     "no_eligible": "Tidak ditemukan mod karakter yang memenuhi syarat (periksa filter atau pastikan Anda memiliki mod yang dinonaktifkan).",
+    "apply_no_change": "{{name}} tidak dapat diaktifkan.",
     "consulting": "Berkonsultasi dengan Dewa RNG...",
     "reroll": "Acak Ulang Semua",
     "roll": "Coba Keberuntungan",

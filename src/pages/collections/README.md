@@ -13,4 +13,4 @@ SAFE/UNSAFE classification is display metadata. The global filter never changes 
 
 ### Export Barrel
 
-Consumers outside this feature should import hooks from `src/pages/collections/hooks/index.ts`.
+Consumers outside this feature should import its public APIs from `src/pages/collections/index.ts`.

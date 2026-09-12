@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { classifyDroppedPaths, allUnsupported, validateDropForZone } from './dropUtils';
+import { allUnsupported, classifyDroppedPaths } from '@/shared/lib/dropClassification';
+import { validateDropForZone } from './dropUtils';
 
 describe('dropUtils', () => {
   describe('classifyDroppedPaths', () => {

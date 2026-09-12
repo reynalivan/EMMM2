@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { useQuery } from '@tanstack/react-query';
-import { useActiveGame } from './useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('@tanstack/react-query', () => ({

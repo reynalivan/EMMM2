@@ -30,11 +30,7 @@ vi.mock('./hooks/useFolderMutations', () => ({
   useActiveConflicts: () => ({ data: [] }),
 }));
 
-vi.mock('../settings/hooks/useSettings', () => ({
-  useSettings: () => ({ data: { organize_subfolders: true }, isLoading: false }),
-}));
-
-vi.mock('../dashboard/hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({ activeGame: { id: 'test-game', mod_path: 'C:\\mods' } }),
 }));
 

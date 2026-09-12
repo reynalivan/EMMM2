@@ -167,8 +167,7 @@ async getGames() : Promise<Result<GameConfig[], AppError>> {
 }
 },
 /**
- * Launch the 3DMigoto Loader (if not running) and then the Game.
- * Covers: US-10.1, TC-10.1-01
+ * Launch a game through its configured XXMI or standalone topology.
  */
 async launchGame(gameId: string) : Promise<Result<null, AppError>> {
     try {
@@ -776,9 +775,9 @@ async startModInboxWatcher(gameId: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async stopModInboxWatcher(gameId: string) : Promise<Result<null, AppError>> {
+async stopModInboxWatcher(gameId: string, rootPath: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("stop_mod_inbox_watcher", { gameId }) };
+    return { status: "ok", data: await TAURI_INVOKE("stop_mod_inbox_watcher", { gameId, rootPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1134,6 +1133,14 @@ async reconcileDiskStateCmd(gameId: string, reason: DiskReconcileReason, changed
     else return { status: "error", error: e  as any };
 }
 },
+async planOnboardingIndexingWork(gameIds: string[]) : Promise<Result<OnboardingIndexingWorkPlan[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("plan_onboarding_indexing_work", { gameIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async inspectGameModsDirectory(gameId: string, candidatePath: string) : Promise<Result<GameModsDirectoryInspection, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("inspect_game_mods_directory", { gameId, candidatePath }) };
@@ -1392,6 +1399,28 @@ async browserSetHomepage(url: string) : Promise<Result<null, AppError>> {
 }
 },
 /**
+ * Get the number of days terminal downloads stay in history.
+ */
+async browserGetRetentionDays(legacyRetentionDays: number | null) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_get_retention_days", { legacyRetentionDays }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Set the number of days terminal downloads stay in history.
+ */
+async browserSetRetentionDays(days: number) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_set_retention_days", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Return all browser downloads ordered by most recent first.
  */
 async browserListDownloads() : Promise<Result<BrowserDownloadDto[], AppError>> {
@@ -1456,17 +1485,6 @@ async browserRetryDownload(id: string) : Promise<Result<null, AppError>> {
 async browserDeleteDownload(id: string, deleteFile: boolean) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("browser_delete_download", { id, deleteFile }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Remove all downloads with status `imported`.
- */
-async browserClearImported() : Promise<Result<number, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("browser_clear_imported") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1544,10 +1562,10 @@ export type BrowserDownloadDto = { id: string; session_id: string | null; filena
  * Errors from the in-app browser: webview lifecycle, downloads, and the
  * import pipeline that turns a download into a placed mod.
  */
-export type BrowserError = "WindowUnavailable" | { WebviewNotFound: { label: string } } | { InvalidUrl: string } | { Download: string } | { JobIncomplete: { job_id: string; field: string } } | { Import: string } | "QueueClosed" | "QueueFull" | "DownloadAlreadyActive" | "DownloadConfirmationUnavailable" | { Io: string } | { Db: string }
+export type BrowserError = "WindowUnavailable" | { WebviewNotFound: { label: string } } | { InvalidUrl: string } | { InvalidSetting: string } | { Download: string } | { JobIncomplete: { job_id: string; field: string } } | { Import: string } | "QueueClosed" | "QueueFull" | "DownloadAlreadyActive" | "DownloadConfirmationUnavailable" | { Io: string } | { Db: string }
 export type BulkActionError = { path: string; error: AppError }
 export type BulkResult = { success: string[]; failures: BulkActionError[]; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
-export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; evidence: MatchEvidence[] }
+export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; matchStatus?: ImportMatchStatus; evidence: MatchEvidence[] }
 export type CategoryCount = { object_type: string; count: number }
 export type CategoryDef = { name: string;
 /**
@@ -1785,11 +1803,11 @@ export type FolderConflictSummary = { path: string; folder_name: string; is_enab
 export type FolderEntry = { name: string; is_dir: boolean }
 export type FolderNameConflictCandidate = { path: string; folder_name: string; base_name: string; is_enabled: boolean }
 export type FolderNameConflictGroup = { group_id: string; identity: string; display_name: string; candidates: FolderNameConflictCandidate[] }
-export type GameConfig = { id: string; name: string; game_type: number; mod_path: string;
+export type GameConfig = { id: string; name: string; game_type: number; instance_path?: string; mod_path: string;
 /**
  * Optional per-game ReadyToMove inbox. When absent, the OS Downloads default is used.
  */
-ready_to_move_path?: string | null; game_exe: string; loader_exe: string | null; launch_args: string | null;
+ready_to_move_path?: string | null; launch_mode?: LaunchMode; game_exe: string | null; loader_exe: string | null; xxmi_launcher_exe?: string | null; launch_args: string | null;
 /**
  * Transient warnings from path validation. NOT persisted to DB.
  */
@@ -1797,7 +1815,7 @@ warnings?: string[] }
 /**
  * Result of a successful folder validation
  */
-export type GameInfo = { path: string; launcher_path: string; mods_path: string }
+export type GameInfo = { path: string; launcher_path: string | null; mods_path: string }
 export type GameModsDirectoryCandidateSummary = { classification: GameModsDirectoryClassification; existing_object_count: number; existing_mod_count: number; candidate_object_count: number; candidate_mod_count: number; physical_entry_count: number; filesystem_identity_match_count: number; relative_path_match_count: number; requires_confirmation: boolean }
 export type GameModsDirectoryClassification = "Matching" | "NewLibrary" | "Empty" | "Different"
 export type GameModsDirectoryInspection = { game_id: string; candidate_path: string; fingerprint: string; summary: GameModsDirectoryCandidateSummary }
@@ -1859,16 +1877,27 @@ export type IgnoredConflict = { id: string; game_id: string; object_id: string; 
 export type ImportBatch = { id: string; gameId: string; flow: ImportFlow; targetMode: TargetMode; targetObjectId: string | null; targetSubpath: string | null; status: ImportBatchStatus; sourceArchivePath: string | null; items: ImportItem[]; createdAt: string; updatedAt: string }
 export type ImportBatchReport = { batchId: string; moved: number; reallocated: number; createdCanonicalFolders: number; skipped: number; collisions: number; metadataPending: number; failed: number }
 export type ImportBatchStatus = "draft" | "analyzing" | "awaiting_review" | "ready" | "committing" | "partial" | "done" | "failed" | "cancelled"
-export type ImportDecision = "pending" | "confirm" | "keep_specific_target" | "reallocate" | "create_canonical" | "skip"
+export type ImportContentKind = "skin" | "patch" | "utility" | "foreign_game" | "unknown"
+export type ImportDecision = "pending" | "confirm" | "keep_specific_target" | "reallocate" | "create_canonical" | "keep_separate" | "skip"
+export type ImportDiagnostic = { code: string; stage: ImportDiagnosticStage; memberPath: string | null; recovery: string }
+export type ImportDiagnosticStage = "staging" | "root_discovery" | "inspection" | "deduplication" | "target_comparison"
 export type ImportFlow = "auto_import" | "specific_import" | "browser" | "ready_to_move"
-export type ImportItem = { id: string; batchId: string; sourceKind: ImportSourceKind; sourcePath: string; stagingPath: string | null; plannedName: string; status: ImportItemStatus; matchCategory: StableCategory | null; subCategory: string | null; classificationMetadata: JsonValue; categorySuggestions: CategorySuggestion[]; canonicalSuggestions: CanonicalSuggestion[]; destinationSuggestions: DestinationSuggestion[]; selectedEntryKey: string | null; selectedAliasName: string | null; destinationObjectId: string | null; destinationPath: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; evidence: MatchEvidence[]; decision: ImportDecision; fingerprint: SourceFingerprint | null; result: string | null; error: string | null }
+export type ImportItem = { id: string; batchId: string; sourceKind: ImportSourceKind; sourcePath: string; stagingPath: string | null; plannedName: string; status: ImportItemStatus; matchCategory: StableCategory | null; subCategory: string | null; classificationMetadata: JsonValue; categorySuggestions: CategorySuggestion[]; canonicalSuggestions: CanonicalSuggestion[]; destinationSuggestions: DestinationSuggestion[]; selectedEntryKey: string | null; selectedAliasName: string | null; destinationObjectId: string | null; destinationPath: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; identityMatchStatus: ImportMatchStatus; evidence: MatchEvidence[]; decision: ImportDecision; fingerprint: SourceFingerprint | null; archiveSha256: string | null; payloadManifest: PayloadManifestSummary | null; duplicateOfItemId: string | null; targetComparison: TargetComparison | null; analysisRevision: number; analysisAckRevision: number | null; reviewGate: ReviewGate; diagnostics: ImportDiagnostic[]; contentKind: ImportContentKind; packageShape: ImportPackageShape; result: string | null; error: string | null }
 export type ImportItemStatus = "discovered" | "staged" | "awaiting_category" | "awaiting_destination" | "ready" | "committing" | "reconciling" | "finalizing_metadata" | "done" | "skipped" | "partial" | "metadata_pending" | "failed" | "cancelled"
 export type ImportLibraryReadiness = { batchId: string; items: ObjectClassificationPreviewItem[]; highCount: number; mediumCount: number; reviewStarted: boolean }
+/**
+ * Acceptance state produced by the canonical matcher. Destination confidence
+ * is deliberately separate: a good folder name is not proof of character
+ * identity.
+ */
+export type ImportMatchStatus = "auto_matched" | "needs_review" | "no_match"
+export type ImportPackageShape = "single" | "composite" | "bundle"
 export type ImportSourceInput = { path: string; sourceKind: ImportSourceKind | null }
 export type ImportSourceKind = "folder" | "archive_root" | "browser_download" | "ready_to_move"
 export type ImportSourcePreview = { itemId: string; thumbnailPath: string | null; imageThumbnails: string[]; entries: ImportSourcePreviewEntry[]; folderCount: number; fileCount: number; totalSizeBytes: number; truncated: boolean }
 export type ImportSourcePreviewEntry = { relativePath: string; kind: ImportSourcePreviewEntryKind; depth: number }
 export type ImportSourcePreviewEntryKind = "file" | "folder"
+export type IndexingRootWork = { root_name: string; file_count: number; total_bytes: number; work_units: number }
 export type IniDocument = { file_path: string; raw_lines: string[]; variables: IniVariable[]; key_bindings: KeyBinding[]; had_bom: boolean; encoding: IniEncoding; newline_style: NewlineStyle; line_terminators: LineTerminator[]; source_hash: string; mode: IniReadMode }
 export type IniEncoding = "Utf8" | "ShiftJis" | "Gbk" | "Utf16Le" | "LossyUtf8"
 export type IniFileEntry = { filename: string; path: string }
@@ -1887,6 +1916,10 @@ export type KeyViewerConfig = {
 enabled: boolean }
 export type LastChangesSnapshot = { source: LastChangesSource; collection_id: string | null; base_collection_id: string | null; can_restore: boolean }
 export type LastChangesSource = "live" | "draft"
+/**
+ * Determines which executable owns a game's launch flow.
+ */
+export type LaunchMode = "standalone" | "xxmi_managed"
 export type LineTerminator = "None" | "Lf" | "CrLf" | "Cr"
 export type MatchEvidence = { source: string; value: string; score: number }
 /**
@@ -1928,6 +1961,12 @@ export type ObjectClassificationPreviewItem = { objectId: string; objectName: st
  */
 export type ObjectFilter = { game_id: string; search_query: string | null; object_type: string | null; meta_filters: Partial<{ [key in string]: string[] }> | null; sort_by: string | null; status_filter: number | null }
 export type ObjectSummary = { id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }
+export type OnboardingIndexingWorkPlan = { game_id: string; file_count: number; total_bytes: number; work_units: number; roots: IndexingRootWork[] }
+/**
+ * A compact, list-safe summary of a full payload manifest. The detailed file
+ * entries remain in SQLite until the detail view requests them.
+ */
+export type PayloadManifestSummary = { version: number; fileCount: number; totalSizeBytes: string; contentSha256: string }
 export type PendingRuntimeEffects = { collections_dirty: boolean; overlay_refresh: boolean }
 export type PipelineTask = { id: string; game_id: string; task_type: string; status: TaskStatus; target_id: string | null; rollback_collection_id: string | null; rollback_active_collection_id: string | null; final_active_collection_id: string | null; created_at: string; updated_at: string }
 export type PreviewObjectClassificationBatchInput = { gameId: string; objectIds: string[]; drafts: ObjectClassificationDraft[] }
@@ -1958,6 +1997,13 @@ export type ResolutionAction = "keepA" | "keepB" | "ignore" | "hardlink"
 export type ResolutionError = { groupId: string; action: ResolutionAction; message: string }
 export type ResolutionRequest = { groupId: string; action: ResolutionAction; folderA: string; folderB: string }
 export type ResolutionSummary = { total: number; successful: number; failed: number; errors: ResolutionError[] }
+export type ReviewGate = { reasons: ReviewReason[] }
+export type ReviewReason = { code: ReviewReasonCode; diagnosticCode: string | null }
+/**
+ * A stable, user-visible reason that prevents an import decision from being
+ * accepted implicitly. Diagnostics retain the lower-level failure details.
+ */
+export type ReviewReasonCode = "identity_needs_confirmation" | "identity_no_match" | "package_bundle" | "incomplete_inspection" | "utility_requires_destination" | "patch_requires_review" | "foreign_game_package" | "target_has_additional_files" | "target_name_conflict" | "target_comparison_incomplete"
 export type RuntimeCounts = { active_mod_count: number; object_count: number; enabled_object_count: number }
 export type RuntimeSafetySummary = { is_safe: boolean; is_safety_classified: boolean }
 /**
@@ -1978,6 +2024,8 @@ export type SetImportItemDecisionInput = { itemId: string; decision: ImportDecis
 export type SourceFingerprint = { path: string; modifiedUnixMs: string; sizeBytes: string; fileCount: number }
 export type StableCategory = "Character" | "Weapon" | "UI" | "Other"
 export type TAURI_CHANNEL<TSend> = null
+export type TargetComparison = { outcome: TargetComparisonOutcome; targetPath: string; sameFiles: number; changedFiles: number; missingFiles: number; additionalFiles: number; suggestedSeparateName: string | null; reason: string }
+export type TargetComparisonOutcome = "already_installed" | "target_has_additional_files" | "same_name_different_content" | "incomplete"
 export type TargetMode = "auto" | "specific"
 export type TaskStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
 export type ThemeConfig = { colors: Partial<{ [key in string]: string }>; glass: Partial<{ [key in string]: string }> }

@@ -4,6 +4,43 @@ use crate::modules::collections::domain::collection::ApplyResult;
 use crate::modules::workspace::domain::task::{TaskStatus, TASK_TYPE_APPLY_COLLECTION};
 use crate::shared::errors::{AppError, CollectionError};
 use sqlx::SqlitePool;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+
+/// Conservative paths that collection apply may mutate: target members can be
+/// enabled, while currently enabled mods can be disabled.
+pub(crate) async fn collection_preflight_scope_paths(
+    pool: &SqlitePool,
+    game_id: &str,
+    collection_id: &str,
+    mods_path: &Path,
+) -> Result<Vec<String>, AppError> {
+    let mods = crate::modules::collections::adapters::sqlite::get_mods(pool, collection_id).await?;
+    let objects =
+        crate::modules::collections::adapters::sqlite::get_objects(pool, collection_id).await?;
+    let enabled_mod_paths =
+        crate::modules::library::adapters::sqlite::mods::get_enabled_mods_paths(pool, game_id)
+            .await?;
+    let mut paths = BTreeSet::new();
+    for relative_path in mods
+        .into_iter()
+        .map(|member| member.mod_path)
+        .chain(objects.into_iter().filter_map(|member| member.path_key))
+        .chain(enabled_mod_paths.into_iter().map(|path| path.into_stored()))
+    {
+        let path = PathBuf::from(relative_path);
+        paths.insert(
+            if path.is_absolute() {
+                path
+            } else {
+                mods_path.join(path)
+            }
+            .to_string_lossy()
+            .to_string(),
+        );
+    }
+    Ok(paths.into_iter().collect())
+}
 
 pub struct ApplyCollectionRequest<'a> {
     pub pool: &'a SqlitePool,

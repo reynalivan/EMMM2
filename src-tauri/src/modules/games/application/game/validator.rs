@@ -1,4 +1,4 @@
-use crate::modules::games::domain::models::{GameInfo, GameType};
+use crate::modules::games::domain::models::{GameInfo, GameType, LaunchMode};
 use crate::shared::errors::AppError;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +10,8 @@ pub struct DetectedGame {
     pub info: GameInfo,
     pub warnings: Vec<String>,
     pub game_type: GameType,
+    pub launch_mode: LaunchMode,
+    pub xxmi_launcher_exe: Option<PathBuf>,
 }
 
 /// Validates a folder as a valid 3DMigoto game instance.
@@ -20,6 +22,13 @@ pub struct DetectedGame {
 ///
 /// Returns `(GameInfo, Vec<String>)` where warnings are displayed in the UI.
 pub fn validate_instance(raw_path: &Path) -> Result<(GameInfo, Vec<String>), AppError> {
+    validate_instance_with_launcher_requirement(raw_path, true)
+}
+
+fn validate_instance_with_launcher_requirement(
+    raw_path: &Path,
+    require_standalone_launcher: bool,
+) -> Result<(GameInfo, Vec<String>), AppError> {
     if !raw_path.exists() {
         return Err(AppError::Internal(format!(
             "Path does not exist: {}",
@@ -49,16 +58,13 @@ pub fn validate_instance(raw_path: &Path) -> Result<(GameInfo, Vec<String>), App
     }
 
     // RULE 3: Find launcher .exe (soft — warn if missing)
-    let launcher_path = match find_launcher(&path) {
-        Some(launcher) => launcher.to_string_lossy().to_string(),
-        None => {
-            warnings.push(
-                "No .exe launcher found. Auto-launch will not work until a launcher is configured."
-                    .to_string(),
-            );
-            path.to_string_lossy().to_string() // fallback to the game folder itself
-        }
-    };
+    let launcher_path = find_launcher(&path).map(|launcher| launcher.to_string_lossy().to_string());
+    if require_standalone_launcher && launcher_path.is_none() {
+        warnings.push(
+            "No standalone launcher found. Configure a 3DMigoto loader before using Play."
+                .to_string(),
+        );
+    }
 
     let info = GameInfo {
         path: path.to_string_lossy().to_string(),
@@ -128,19 +134,36 @@ fn find_launcher(path: &Path) -> Option<PathBuf> {
 /// the game's own code, so the roster comes from `GameType` rather than a
 /// second table kept in sync by hand.
 pub fn scan_xxmi_root(root: &Path) -> Vec<DetectedGame> {
+    let xxmi_launcher_exe = root.join("Resources").join("Bin").join("XXMI Launcher.exe");
+    if !is_executable_file(&xxmi_launcher_exe) {
+        return Vec::new();
+    }
+
     GameType::ALL
         .into_iter()
         .filter_map(|game_type| {
             let full = root.join(game_type.to_string());
-            validate_instance(&full)
+            validate_instance_with_launcher_requirement(&full, false)
                 .ok()
-                .map(|(info, warnings)| DetectedGame {
-                    info,
-                    warnings,
-                    game_type,
+                .map(|(mut info, warnings)| {
+                    info.launcher_path = Some(xxmi_launcher_exe.to_string_lossy().to_string());
+                    DetectedGame {
+                        info,
+                        warnings,
+                        game_type,
+                        launch_mode: LaunchMode::XxmiManaged,
+                        xxmi_launcher_exe: Some(xxmi_launcher_exe.clone()),
+                    }
                 })
         })
         .collect()
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
 }
 
 #[cfg(test)]

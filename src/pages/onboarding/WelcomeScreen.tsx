@@ -15,14 +15,39 @@ import SmartDemoStrip from './components/welcome/SmartDemoStrip';
 import AnimatedLogo from './components/welcome/AnimatedLogo';
 import { useOnboardingDiskProgress } from './hooks/useOnboardingDiskProgress';
 import {
+  calculateOverallIndexingProgress,
   estimatedRemainingMs,
   formatEstimatedDuration,
+  INDEXING_STEP_COUNT,
+  type IndexingWorkPlan,
   type IndexingProgress,
 } from './utils/indexingProgress';
+import type { DiskReconcilePhase } from '../../shared/api/tauri/bindings';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 
 const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
+function activityTranslationKey(
+  phase: DiskReconcilePhase | undefined,
+  folderName: string | null | undefined,
+): string {
+  switch (phase) {
+    case 'ScanningRoots':
+      return folderName ? 'scanning' : 'scanning_without_folder';
+    case 'Projecting':
+      return 'projecting';
+    case 'Finalizing':
+      return 'finalizing';
+    case 'Completed':
+      return 'completed';
+    case 'Failed':
+      return 'failed';
+    case 'DiscoveringRoots':
+    default:
+      return 'discovering';
+  }
+}
 
 export default function WelcomeScreen({
   onComplete,
@@ -34,6 +59,7 @@ export default function WelcomeScreen({
   const [isScanning, setIsScanning] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
+  const [indexingWorkPlan, setIndexingWorkPlan] = useState<IndexingWorkPlan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
@@ -81,7 +107,9 @@ export default function WelcomeScreen({
   };
 
   const handleManualComplete = (game: GameConfig) => {
-    const duplicate = detectedGames.find((g) => pathsEqual(g.game_exe, game.game_exe));
+    const duplicate = detectedGames.find((g) =>
+      pathsEqual(g.instance_path || g.mod_path, game.instance_path || game.mod_path),
+    );
 
     if (duplicate) {
       setError(t('onboarding:welcome.duplicate_error', { name: duplicate.name }));
@@ -107,6 +135,7 @@ export default function WelcomeScreen({
     try {
       setError(null);
       setIsIndexing(true);
+      setIndexingWorkPlan(null);
       const total = Math.max(1, games.length);
       const completedDurationsMs: number[] = [];
       setIndexingProgress({
@@ -118,6 +147,8 @@ export default function WelcomeScreen({
 
       // Save the games to DB — this is mandatory
       await commands.saveOnboardingGames(games);
+      const workPlan = await commands.planOnboardingIndexingWork(games.map((game) => game.id));
+      setIndexingWorkPlan(workPlan);
 
       // Disk Reconcile only. Onboarding must not trigger Deep Match Scanner implicitly.
       for (const [index, game] of games.entries()) {
@@ -151,6 +182,7 @@ export default function WelcomeScreen({
       setError(formatAppError(err));
       setIsIndexing(false);
       setIndexingProgress(null);
+      setIndexingWorkPlan(null);
     }
   };
 
@@ -350,22 +382,28 @@ export default function WelcomeScreen({
       currentGame: null,
       completedDurationsMs: [],
     };
-    const rootProgress = diskProgress?.total_units === null ? null : diskProgress;
-    const completed = rootProgress?.completed_units ?? progress.completed;
-    const total = rootProgress?.total_units ?? progress.total;
-    const percent = Math.min(100, Math.max(0, Math.round((completed / total) * 100))) || 0;
-    const remaining = rootProgress?.eta_ms ?? estimatedRemainingMs(progress);
-
-    const phaseLabel = diskProgress?.phase
-      ? {
-          DiscoveringRoots: t('onboarding:indexing.phases.discovering'),
-          ScanningRoots: t('onboarding:indexing.phases.scanning'),
-          Projecting: t('onboarding:indexing.phases.projecting'),
-          Finalizing: t('onboarding:indexing.phases.finalizing'),
-          Completed: t('onboarding:indexing.phases.completed'),
-          Failed: t('onboarding:indexing.phases.failed'),
-        }[diskProgress.phase]
-      : t('onboarding:indexing.phases.starting');
+    const activeGameIndex = Math.min(progress.completed, Math.max(0, progress.total - 1));
+    const activeGame = detectedGames[activeGameIndex];
+    const activeDiskProgress =
+      diskProgress?.current.game_id === activeGame?.id ? diskProgress : null;
+    const overallProgress = activeDiskProgress
+      ? calculateOverallIndexingProgress(
+          activeDiskProgress.current,
+          detectedGames.map((game) => game.id),
+          indexingWorkPlan ?? [],
+          activeDiskProgress.completedRootsByGame,
+        )
+      : null;
+    const percent =
+      overallProgress?.percent ?? Math.round((progress.completed / progress.total) * 100);
+    const remaining = estimatedRemainingMs(progress);
+    const gameNumber = (overallProgress?.gameIndex ?? activeGameIndex) + 1;
+    const gameName = activeGame?.name ?? progress.currentGame ?? '';
+    const step = overallProgress?.step ?? 1;
+    const activityKey = activityTranslationKey(
+      activeDiskProgress?.current.phase,
+      overallProgress?.folderName,
+    );
 
     return (
       <div className="min-h-screen bg-base-100 flex items-center justify-center">
@@ -378,37 +416,24 @@ export default function WelcomeScreen({
                 <Loader2 className="w-8 h-8 text-primary animate-spin motion-reduce:animate-none" />
               </div>
             </div>
-            <h2 className="text-2xl font-bold bg-linear-to-r from-primary to-secondary bg-clip-text text-transparent">
+            <h2 className="text-2xl font-bold text-base-content">
               {t('onboarding:indexing.title')}
             </h2>
-            <p className="text-base-content/60 mt-2 text-sm font-medium">
-              {progress.currentGame
-                ? t('onboarding:indexing.processing', { game: progress.currentGame })
-                : t('onboarding:indexing.subtitle')}
-            </p>
           </div>
 
           {/* Progress Section */}
           <div
-            className="bg-base-200/50 rounded-2xl p-6 shadow-sm border border-base-content/5 space-y-4"
+            className="bg-base-200/50 rounded-2xl p-6 shadow-sm border border-base-content/5 space-y-5"
             aria-live="polite"
           >
-            {/* Phase & Stats */}
-            <div className="flex items-end justify-between text-xs">
-              <div className="text-left">
-                <span className="font-bold text-primary uppercase tracking-wider text-[10px] block mb-1">
-                  {phaseLabel}
-                </span>
-                <span className="text-base-content/60 font-mono">
-                  {completed.toLocaleString()} / {total.toLocaleString()}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-2xl font-light text-base-content tracking-tighter">
-                  {percent}
-                  <span className="text-sm text-base-content/50 ml-0.5">%</span>
-                </span>
-              </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-medium text-base-content/70">
+                {t('onboarding:indexing.overall_progress')}
+              </span>
+              <span className="text-2xl font-semibold tracking-tight text-base-content">
+                {percent}
+                <span className="ml-0.5 text-sm font-medium text-base-content/50">%</span>
+              </span>
             </div>
 
             {/* Custom Animated Bar */}
@@ -417,8 +442,8 @@ export default function WelcomeScreen({
               role="progressbar"
               aria-label={t('onboarding:indexing.progress_label')}
               aria-valuemin={0}
-              aria-valuemax={total}
-              aria-valuenow={completed}
+              aria-valuemax={100}
+              aria-valuenow={percent}
             >
               <div
                 className="absolute top-0 bottom-0 left-0 bg-primary transition-all duration-300 ease-out"
@@ -428,17 +453,8 @@ export default function WelcomeScreen({
               </div>
             </div>
 
-            {/* Terminal Log View */}
-            <div className="bg-neutral text-neutral-content rounded-lg p-2.5 text-left h-10 overflow-hidden relative shadow-inner">
-              <div className="absolute top-0 left-0 bottom-0 w-1 bg-primary/80" />
-              <div className="text-[10px] font-mono truncate pl-2 opacity-70 flex items-center h-full">
-                <span className="mr-2 text-primary opacity-50">&gt;</span>
-                {diskProgress?.current_root ?? t('onboarding:indexing.initializing')}
-              </div>
-            </div>
-
             {/* ETA */}
-            <p className="text-center text-[11px] font-medium text-base-content/40 uppercase tracking-wide pt-1">
+            <p className="text-left text-xs font-medium text-base-content/50">
               {remaining === null
                 ? t('onboarding:indexing.estimating')
                 : remaining < 2000
@@ -447,6 +463,23 @@ export default function WelcomeScreen({
                       duration: formatEstimatedDuration(remaining),
                     })}
             </p>
+
+            <div className="border-t border-base-content/10 pt-5 text-left space-y-1.5">
+              <p className="text-sm font-semibold text-base-content">
+                {t('onboarding:indexing.game_progress', {
+                  current: gameNumber,
+                  total: progress.total,
+                  game: gameName,
+                })}
+              </p>
+              <p className="text-sm text-base-content/65">
+                {t(`onboarding:indexing.activity.${activityKey}`, {
+                  folder: overallProgress?.folderName,
+                  step,
+                  total: INDEXING_STEP_COUNT,
+                })}
+              </p>
+            </div>
           </div>
         </div>
       </div>

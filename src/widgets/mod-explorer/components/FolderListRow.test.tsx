@@ -4,10 +4,11 @@ import { describe, it, expect, vi } from 'vitest';
 import FolderListRow from './FolderListRow';
 import type { WorkspaceCapabilities, WorkspaceExplorerNode } from '@/entities/workspace';
 
-vi.mock('../../dashboard/hooks/useThumbnail', () => ({
+vi.mock('@/entities/mod', () => ({
   useThumbnail: vi.fn((_gameId: string, _path: string) => ({ data: null, isLoading: false })),
 }));
-vi.mock('../hooks/useModContextMenuItems', () => ({
+vi.mock('@/features/mod-runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/mod-runtime')>()),
   useModContextMenuItems: () => [],
 }));
 vi.mock('../../mod-runtime/actions/useModContextMenuActions', () => ({

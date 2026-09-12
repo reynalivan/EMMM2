@@ -20,6 +20,8 @@ async fn test_game_crud() {
         game_exe: Some("C:\\Game\\game.exe".into()),
         launcher_path: Some("C:\\Loader\\loader.exe".into()),
         loader_exe: Some("C:\\Loader\\loader.exe".into()),
+        launch_mode: "standalone".into(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
 
@@ -53,10 +55,39 @@ async fn test_count_games() {
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
+        launch_mode: "standalone".into(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
     upsert_game(&pool, &game).await.unwrap();
     assert_eq!(count_games(&pool).await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn test_xxmi_managed_launch_fields_round_trip() {
+    let pool = setup_pool().await;
+    let launcher = "C:\\XXMI\\Resources\\Bin\\XXMI Launcher.exe";
+    let game = GameRow {
+        id: "wwmi".into(),
+        name: "Wuthering Waves".into(),
+        game_type: crate::modules::games::domain::models::GameType::WWMI,
+        path: "C:\\XXMI\\WWMI".into(),
+        mods_path: Some("C:\\XXMI\\WWMI\\Mods".into()),
+        ready_to_move_path: None,
+        game_exe: None,
+        launcher_path: None,
+        loader_exe: None,
+        launch_mode: "xxmi_managed".into(),
+        xxmi_launcher_exe: Some(launcher.into()),
+        launch_args: None,
+    };
+
+    upsert_game(&pool, &game).await.unwrap();
+    let stored = get_all_games(&pool).await.unwrap();
+
+    assert_eq!(stored[0].launch_mode, "xxmi_managed");
+    assert_eq!(stored[0].xxmi_launcher_exe.as_deref(), Some(launcher));
+    assert_eq!(stored[0].game_exe, None);
 }
 
 #[tokio::test]
@@ -72,6 +103,8 @@ async fn test_get_mod_path() {
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
+        launch_mode: "standalone".into(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
     upsert_game(&pool, &game).await.unwrap();

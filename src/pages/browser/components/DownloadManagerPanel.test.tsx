@@ -48,7 +48,6 @@ describe('DownloadManagerPanel', () => {
   const closeDownloadPanel = vi.fn();
   const deleteDownload = vi.fn();
   const cancelDownload = vi.fn();
-  const clearImported = vi.fn();
   const retryDownload = vi.fn();
   const refreshDownloads = vi.fn();
 
@@ -65,7 +64,6 @@ describe('DownloadManagerPanel', () => {
       downloads: mockDownloads,
       deleteDownload,
       cancelDownload,
-      clearImported,
       retryDownload,
       refreshDownloads,
       isRefreshing: false,
@@ -78,11 +76,6 @@ describe('DownloadManagerPanel', () => {
     expect(screen.getByText('Ready')).toBeInTheDocument();
     expect(screen.getByText('downloading.rar')).toBeInTheDocument();
     expect(screen.getByText('Downloading')).toBeInTheDocument();
-  });
-
-  it('shows Toolbar with Clear Imported when downloads exist', () => {
-    render(<DownloadManagerPanel />);
-    expect(screen.getByText('Clear Imported')).toBeInTheDocument();
   });
 
   it('does not show any checkboxes', () => {
@@ -114,7 +107,6 @@ describe('DownloadManagerPanel', () => {
       downloads: [unknownSize, queued],
       deleteDownload,
       cancelDownload,
-      clearImported,
       retryDownload,
       refreshDownloads,
       isRefreshing: false,
@@ -141,7 +133,6 @@ describe('DownloadManagerPanel', () => {
       downloads: [failed],
       deleteDownload,
       cancelDownload,
-      clearImported,
       retryDownload,
       refreshDownloads,
       isRefreshing: false,

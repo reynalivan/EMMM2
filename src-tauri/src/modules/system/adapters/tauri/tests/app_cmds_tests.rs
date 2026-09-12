@@ -33,6 +33,8 @@ async fn test_check_config_status_has_config() {
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
+        launch_mode: "standalone".into(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
     upsert_game(&pool, &game).await.unwrap();

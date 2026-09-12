@@ -186,10 +186,8 @@ pub fn init_hotkey_manager(
     hk_manager
 }
 
-/// Marks browser downloads and import jobs that were mid-flight when the process
-/// last exited as `failed`. Neither a reqwest stream nor an import pipeline survives
-/// a restart, so without this they stay `in_progress`/`extracting` forever and the
-/// user can never retry them.
+/// Marks browser downloads that were mid-flight when the process last exited as
+/// `failed`. The import-batch recovery below owns resumable import state.
 async fn recover_interrupted_transfers(pool: &sqlx::SqlitePool) {
     match crate::modules::browser::adapters::sqlite::browser::fail_interrupted_downloads(pool).await
     {
@@ -197,15 +195,10 @@ async fn recover_interrupted_transfers(pool: &sqlx::SqlitePool) {
         Ok(_) => {}
         Err(error) => log::warn!("startup: download recovery failed: {error}"),
     }
-    match crate::modules::browser::adapters::sqlite::browser::fail_interrupted_jobs(pool).await {
-        Ok(count) if count > 0 => log::info!("startup: failed {count} interrupted import job(s)"),
-        Ok(_) => {}
-        Err(error) => log::warn!("startup: import job recovery failed: {error}"),
-    }
 }
 
-/// Purges stale task rows, fails downloads and import jobs a crash left in
-/// flight, then reconciles the active game's mod folder against the database.
+/// Purges stale task rows, fails downloads a crash left in flight, then
+/// reconciles the active game's mod folder against the database.
 /// Every step is best-effort and only logs on failure.
 /// Boot-time database housekeeping, plus a background reconcile.
 ///

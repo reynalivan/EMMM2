@@ -8,9 +8,6 @@
 
 import { allUnsupported, type ClassifiedPaths } from '../../../shared/lib/dropClassification';
 
-export { classifyDroppedPaths, allUnsupported } from '../../../shared/lib/dropClassification';
-export type { ClassifiedPaths } from '../../../shared/lib/dropClassification';
-
 /** Supported drop zone types in the ObjectList sidebar */
 export type DropZone = 'auto-organize' | 'item' | 'new-object';
 

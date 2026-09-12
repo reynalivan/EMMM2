@@ -60,8 +60,8 @@ pub fn analyze_archive_with_limits(
                         "Archive started an entry before ending the previous entry".to_string(),
                     ));
                 }
-                let relative_path = validate_entry_path(Path::new(""), &name)?;
                 let kind = validate_entry_type(stat.st_mode.into(), stat.st_nlink.max(0) as u64)?;
+                let relative_path = validate_entry_path(Path::new(""), &name, kind)?;
                 output_paths.register(&relative_path, kind)?;
                 budget.start_entry(stat.st_size.max(0) as u64)?;
                 current = Some(PendingEntry {

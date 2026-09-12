@@ -1,4 +1,4 @@
-//! Browser download and import DTOs crossing IPC.
+//! Browser download DTOs crossing IPC.
 
 /// DTO for the frontend download list.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -17,25 +17,4 @@ pub struct BrowserDownloadDto {
     pub queue_order: i64,
     pub started_at: String,
     pub finished_at: Option<String>,
-}
-
-/// DTO returned to the frontend for import queue display.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
-pub struct ImportJobDto {
-    pub id: String,
-    pub batch_id: Option<String>,
-    pub download_id: Option<String>,
-    pub game_id: Option<String>,
-    pub archive_path: String,
-    pub status: String,
-    pub match_category: Option<String>,
-    pub match_entry_key: Option<String>,
-    pub match_alias_name: Option<String>,
-    pub match_confidence: Option<f64>,
-    pub match_reason: Option<String>,
-    pub placed_path: Option<String>,
-    pub error_msg: Option<String>,
-    pub is_duplicate: bool,
-    pub created_at: String,
-    pub updated_at: String,
 }

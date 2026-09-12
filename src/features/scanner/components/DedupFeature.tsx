@@ -1,13 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import DuplicateReport from './DuplicateReport';
-
-export interface DedupScanProgress {
-  isScanning: boolean;
-  totalFolders: number;
-  scannedFolders: number;
-  currentFolder: string;
-  error: string;
-}
+import type { DedupScanProgress } from '../utils/dedupProgress';
 
 export interface DedupFeatureProps extends DedupScanProgress {
   activeFilter?: 'all' | 'high' | 'medium' | 'low';

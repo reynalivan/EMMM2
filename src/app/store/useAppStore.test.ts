@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useToastStore } from './useToastStore';
+import { useToastStore } from '@/shared/ui/toast';
 import { useAppStore } from './useAppStore';
 
 // Snapshot the pristine state (defaults + actions) once, restore before each test.

@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useActiveKeybindings } from './useActiveKeybindings';
-import { useActiveGame } from './useActiveGame';
+import { useActiveGame } from '@/entities/game';
 import { invoke } from '@tauri-apps/api/core';
 import { createWrapper } from '../../../tests/testing/test-utils';
 
@@ -13,7 +13,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('./useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(),
 }));
 

@@ -136,6 +136,7 @@
     "title": "智能随机生成器",
     "desc": "为每个活动角色推荐 1 个随机禁用的 Mod。查看并应用。",
     "no_eligible": "未找到符合条件的角色 Mod（请检查过滤器或确保您有禁用的 Mod）。",
+    "apply_no_change": "无法启用 {{name}}。",
     "consulting": "正在咨询 RNG 大神...",
     "reroll": "全部重抽",
     "roll": "碰碰运气",

@@ -4,18 +4,11 @@ import { useAppStore } from '@/app/store';
 import { useActiveGame } from '@/entities/game';
 import { useCancelDedupScan, useIgnoredPairs, useStartDedupScan } from './hooks/useDedup';
 import type { DupScanEvent } from '@/entities/workspace';
-import DedupFeature, { type DedupScanProgress } from './components/DedupFeature';
+import DedupFeature from './components/DedupFeature';
 import { IgnoredPairsModal } from './components/IgnoredPairsModal';
 import { useTranslation } from 'react-i18next';
-import { reduceDedupProgress } from './utils/dedupProgress';
-
-const IDLE_PROGRESS: DedupScanProgress = {
-  isScanning: false,
-  totalFolders: 0,
-  scannedFolders: 0,
-  currentFolder: '',
-  error: '',
-};
+import { IDLE_DEDUP_SCAN_PROGRESS, type DedupScanProgress } from './utils/dedupProgress';
+import { useDedupScanStore } from './stores/useDedupScanStore';
 
 export default function StorageOptimizerPage() {
   const { t } = useTranslation(['scanner']);
@@ -23,20 +16,31 @@ export default function StorageOptimizerPage() {
   const { activeGame } = useActiveGame();
   const startScan = useStartDedupScan();
   const cancelScan = useCancelDedupScan();
-  const [progress, setProgress] = useState<DedupScanProgress>(IDLE_PROGRESS);
+  const scanGameId = useDedupScanStore((state) => state.gameId);
+  const storedProgress = useDedupScanStore((state) => state.progress);
+  const startStoredScan = useDedupScanStore((state) => state.startScan);
+  const applyScanEvent = useDedupScanStore((state) => state.applyEvent);
+  const stopStoredScan = useDedupScanStore((state) => state.stopScan);
   const [showIgnoredModal, setShowIgnoredModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'high' | 'medium' | 'low'>('all');
 
   const { data: ignoredPairs } = useIgnoredPairs(activeGame?.id || '');
+  const activeGameId = activeGame?.id ?? null;
+  const isScanningOtherGame =
+    storedProgress.isScanning && scanGameId !== null && scanGameId !== activeGameId;
+  const progress: DedupScanProgress =
+    scanGameId === activeGameId ? storedProgress : IDLE_DEDUP_SCAN_PROGRESS;
   const isScanning = progress.isScanning;
 
   const handleEvent = useCallback((event: DupScanEvent) => {
-    setProgress((current) => reduceDedupProgress(current, event));
-  }, []);
+    if (activeGameId) {
+      applyScanEvent(activeGameId, event);
+    }
+  }, [activeGameId, applyScanEvent]);
 
   const handleStartScan = useCallback(() => {
-    if (!activeGame) return;
-    setProgress({ ...IDLE_PROGRESS, isScanning: true });
+    if (!activeGame || isScanningOtherGame) return;
+    startStoredScan(activeGame.id);
 
     startScan.mutate(
       {
@@ -45,16 +49,20 @@ export default function StorageOptimizerPage() {
         onEvent: handleEvent,
       },
       {
-        onError: () => setProgress((current) => ({ ...current, isScanning: false })),
+        onError: () => stopStoredScan(activeGame.id),
       },
     );
-  }, [activeGame, handleEvent, startScan]);
+  }, [activeGame, handleEvent, isScanningOtherGame, startScan, startStoredScan, stopStoredScan]);
 
   const handleCancelScan = useCallback(() => {
     cancelScan.mutate(undefined, {
-      onSettled: () => setProgress((current) => ({ ...current, isScanning: false })),
+      onSettled: () => {
+        if (activeGame) {
+          stopStoredScan(activeGame.id);
+        }
+      },
     });
-  }, [cancelScan]);
+  }, [activeGame, cancelScan, stopStoredScan]);
 
   return (
     <div className="h-full overflow-y-auto bg-base-100 animate-in fade-in duration-500">
@@ -99,6 +107,7 @@ export default function StorageOptimizerPage() {
               <button
                 className="btn btn-primary btn-md shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all gap-2 px-6 h-12 rounded-xl"
                 onClick={handleStartScan}
+                disabled={isScanningOtherGame}
               >
                 <Play size={18} fill="currentColor" />
                 <span className="text-sm font-black uppercase tracking-wider">

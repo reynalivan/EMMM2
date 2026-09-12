@@ -1,5 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub const MOD_ROOT_MAX_DEPTH: usize = 12;
+pub const MOD_ROOT_MAX_ENTRIES: usize = 10_000;
 
 /// Extensions considered loose/non-mod files (readme, previews, etc).
 const LOOSE_EXTENSIONS: &[&str] = &[
@@ -23,35 +27,127 @@ const VALID_INI_SECTION_PREFIXES: &[&str] = &[
 ///
 /// Returns the list of mod root paths found.
 pub fn find_mod_roots(folder: &Path, max_depth: usize) -> Vec<PathBuf> {
-    if max_depth == 0 {
-        return Vec::new();
-    }
+    find_mod_roots_with_limits(folder, max_depth, MOD_ROOT_MAX_ENTRIES, None)
+        .map(|search| search.roots)
+        .unwrap_or_default()
+}
 
-    if has_valid_mod_ini(folder) {
-        return vec![folder.to_path_buf()];
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModRootSearch {
+    pub roots: Vec<PathBuf>,
+    pub unreadable_ini_files: usize,
+    pub depth_limit_reached: bool,
+}
 
-    let mut results = Vec::new();
-    let entries = match fs::read_dir(folder) {
-        Ok(e) => e,
-        Err(_) => return results,
+/// Finds shallowest runnable mod roots without following links. This is used by
+/// import staging, where a traversal limit must fail explicitly instead of
+/// silently turning a deeply wrapped mod into an unknown archive.
+pub fn find_mod_roots_with_limits(
+    folder: &Path,
+    max_depth: usize,
+    max_entries: usize,
+    cancel_token: Option<&AtomicBool>,
+) -> Result<ModRootSearch, crate::shared::errors::AppError> {
+    let mut search = ModRootSearch {
+        roots: Vec::new(),
+        unreadable_ini_files: 0,
+        depth_limit_reached: false,
     };
+    let mut visited_entries = 0_usize;
+    visit_mod_roots(
+        folder,
+        0,
+        max_depth,
+        max_entries,
+        cancel_token,
+        &mut visited_entries,
+        &mut search,
+    )?;
+    Ok(search)
+}
 
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if name.starts_with('.') {
-                continue;
+#[allow(clippy::too_many_arguments)]
+fn visit_mod_roots(
+    folder: &Path,
+    depth: usize,
+    max_depth: usize,
+    max_entries: usize,
+    cancel_token: Option<&AtomicBool>,
+    visited_entries: &mut usize,
+    search: &mut ModRootSearch,
+) -> Result<(), crate::shared::errors::AppError> {
+    if cancel_token.is_some_and(|token| token.load(Ordering::SeqCst)) {
+        return Err(crate::shared::errors::AppError::Cancelled);
+    }
+    if depth > max_depth {
+        return Ok(());
+    }
+    if has_valid_mod_ini_with_diagnostics(folder, &mut search.unreadable_ini_files) {
+        search.roots.push(folder.to_path_buf());
+        return Ok(());
+    }
+    if depth == max_depth {
+        for entry in fs::read_dir(folder)? {
+            if cancel_token.is_some_and(|token| token.load(Ordering::SeqCst)) {
+                return Err(crate::shared::errors::AppError::Cancelled);
             }
-            results.extend(find_mod_roots(&path, max_depth - 1));
+            *visited_entries = visited_entries.checked_add(1).ok_or_else(|| {
+                crate::shared::errors::AppError::Validation(
+                    "Mod root search entry count overflow".to_string(),
+                )
+            })?;
+            if *visited_entries > max_entries {
+                return Err(crate::shared::errors::AppError::Validation(format!(
+                    "Mod root search exceeded the {max_entries} entry limit"
+                )));
+            }
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_dir()
+                && !file_type.is_symlink()
+                && !entry.file_name().to_string_lossy().starts_with('.')
+            {
+                search.depth_limit_reached = true;
+                break;
+            }
         }
+        return Ok(());
     }
 
-    results
+    for entry in fs::read_dir(folder)? {
+        if cancel_token.is_some_and(|token| token.load(Ordering::SeqCst)) {
+            return Err(crate::shared::errors::AppError::Cancelled);
+        }
+        *visited_entries = visited_entries.checked_add(1).ok_or_else(|| {
+            crate::shared::errors::AppError::Validation(
+                "Mod root search entry count overflow".to_string(),
+            )
+        })?;
+        if *visited_entries > max_entries {
+            return Err(crate::shared::errors::AppError::Validation(format!(
+                "Mod root search exceeded the {max_entries} entry limit"
+            )));
+        }
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if !file_type.is_dir() || file_type.is_symlink() {
+            continue;
+        }
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        visit_mod_roots(
+            &entry.path(),
+            depth + 1,
+            max_depth,
+            max_entries,
+            cancel_token,
+            visited_entries,
+            search,
+        )?;
+    }
+    Ok(())
 }
 
 /// Check if a folder's root (non-recursive) contains at least one valid 3DMigoto .ini.
@@ -59,6 +155,10 @@ pub fn find_mod_roots(folder: &Path, max_depth: usize) -> Vec<PathBuf> {
 /// A valid .ini must contain an override/resource, input, command-list,
 /// shader-regex, or include section.
 pub fn has_valid_mod_ini(folder: &Path) -> bool {
+    has_valid_mod_ini_with_diagnostics(folder, &mut 0)
+}
+
+fn has_valid_mod_ini_with_diagnostics(folder: &Path, unreadable_ini_files: &mut usize) -> bool {
     let entries = match fs::read_dir(folder) {
         Ok(e) => e,
         Err(_) => return false,
@@ -80,14 +180,17 @@ pub fn has_valid_mod_ini(folder: &Path) -> bool {
             continue;
         }
 
-        use std::io::{BufRead, BufReader};
-        if let Ok(file) = fs::File::open(&path) {
-            let reader = BufReader::new(file);
-            for line in reader.lines().map_while(Result::ok) {
-                if is_runtime_section(&line) {
-                    return true;
-                }
-            }
+        let Ok(bytes) = fs::read(&path) else {
+            *unreadable_ini_files = unreadable_ini_files.saturating_add(1);
+            continue;
+        };
+        let (content, _, clean) =
+            crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
+        if !clean {
+            *unreadable_ini_files = unreadable_ini_files.saturating_add(1);
+        }
+        if content.lines().any(is_runtime_section) {
+            return true;
         }
     }
 
@@ -237,6 +340,58 @@ mod tests {
         let roots = find_mod_roots(tmp.path(), 5);
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0], deep);
+    }
+
+    #[test]
+    fn root_search_reaches_the_configured_depth_and_reports_entry_limits() {
+        let tmp = TempDir::new().unwrap();
+        let deep = (0..12).fold(tmp.path().to_path_buf(), |path, index| {
+            path.join(format!("wrapper-{index}"))
+        });
+        fs::create_dir_all(&deep).unwrap();
+        create_file(&deep, "merged.ini", VALID_INI);
+
+        let result =
+            find_mod_roots_with_limits(tmp.path(), MOD_ROOT_MAX_DEPTH, MOD_ROOT_MAX_ENTRIES, None)
+                .unwrap();
+        assert_eq!(result.roots, vec![deep]);
+        assert!(!result.depth_limit_reached);
+
+        let error =
+            find_mod_roots_with_limits(tmp.path(), MOD_ROOT_MAX_DEPTH, 1, None).unwrap_err();
+        assert!(error.to_string().contains("entry limit"));
+    }
+
+    #[test]
+    fn root_search_reports_when_a_root_may_be_below_the_depth_limit() {
+        let tmp = TempDir::new().unwrap();
+        let too_deep = (0..13).fold(tmp.path().to_path_buf(), |path, index| {
+            let next = path.join(format!("wrapper-{index}"));
+            fs::create_dir_all(&next).unwrap();
+            next
+        });
+        create_file(&too_deep, "merged.ini", VALID_INI);
+
+        let result = find_mod_roots_with_limits(tmp.path(), MOD_ROOT_MAX_DEPTH, 100, None).unwrap();
+        assert!(result.roots.is_empty());
+        assert!(result.depth_limit_reached);
+    }
+
+    #[test]
+    fn root_search_reads_utf16_ini_sources() {
+        let tmp = TempDir::new().unwrap();
+        let mut utf16 = vec![0xff, 0xfe];
+        utf16.extend(
+            "[TextureOverrideBody]\r\nhash = deadbeef\r\n"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>(),
+        );
+        fs::write(tmp.path().join("merged.ini"), utf16).unwrap();
+
+        let result = find_mod_roots_with_limits(tmp.path(), 1, 10, None).unwrap();
+        assert_eq!(result.roots, vec![tmp.path().to_path_buf()]);
+        assert_eq!(result.unreadable_ini_files, 0);
     }
 
     #[test]

@@ -6,7 +6,7 @@ use crate::shared::errors::AppError;
 use crate::shared::errors::ScannerError;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -132,6 +132,10 @@ pub async fn prepare_durable_batch(
     game_id: &str,
     db: &SqlitePool,
 ) -> Result<DurableResolutionBatch, AppError> {
+    validate_ignore_group_coverage(&requests, game_id, db)
+        .await
+        .map_err(|error| AppError::Validation(error.to_string()))?;
+
     let mut actions = Vec::with_capacity(requests.len());
     let mut steps = Vec::new();
     let mut sequence = 0u32;
@@ -203,6 +207,12 @@ where
 {
     let _suppression_guard = SuppressionGuard::new(watcher_suppressor);
     let total = batch.actions.len();
+    let mut pending_ignores_by_group =
+        count_pending_ignores(batch.actions.iter().filter_map(|action| match action {
+            DurableResolutionAction::Ignore(request) => Some(request),
+            DurableResolutionAction::Quarantine { .. }
+            | DurableResolutionAction::Hardlink { .. } => None,
+        }));
     for (index, action) in batch.actions.iter().enumerate() {
         let request = match action {
             DurableResolutionAction::Quarantine { request, .. }
@@ -243,9 +253,13 @@ where
                 persist_whitelist_pair(db, game_id, &request.folder_a, &request.folder_b)
                     .await
                     .map_err(|error| AppError::Db(error.to_string()))?;
-                set_group_status(db, &request.group_id, "ignored")
-                    .await
-                    .map_err(|error| AppError::Db(error.to_string()))?;
+                mark_group_ignored_after_last_pair(
+                    db,
+                    &request.group_id,
+                    &mut pending_ignores_by_group,
+                )
+                .await
+                .map_err(|error| AppError::Db(error.to_string()))?;
             }
         }
     }
@@ -277,12 +291,21 @@ where
         });
     }
 
+    validate_ignore_group_coverage(&requests, &game_id, db)
+        .await
+        .map_err(|error| AppError::Validation(error.to_string()))?;
+
     let _suppression_guard = SuppressionGuard::new(watcher_suppressor);
 
     let total = requests.len();
     let mut successful = 0usize;
     let mut failed = 0usize;
     let mut errors = Vec::new();
+    let mut pending_ignores_by_group = count_pending_ignores(
+        requests
+            .iter()
+            .filter(|request| matches!(request.action, ResolutionAction::Ignore)),
+    );
 
     for (index, request) in requests.iter().enumerate() {
         on_progress(ResolutionProgress {
@@ -292,7 +315,19 @@ where
             action: request.action.clone(),
         });
 
-        let outcome = resolve_one(request, &game_id, db).await;
+        let outcome: Result<(), ScannerError> = async {
+            resolve_one(request, &game_id, db).await?;
+            if matches!(request.action, ResolutionAction::Ignore) {
+                mark_group_ignored_after_last_pair(
+                    db,
+                    &request.group_id,
+                    &mut pending_ignores_by_group,
+                )
+                .await?;
+            }
+            Ok(())
+        }
+        .await;
         match outcome {
             Ok(()) => {
                 successful += 1;
@@ -339,7 +374,6 @@ async fn resolve_one(
         }
         ResolutionAction::Ignore => {
             persist_whitelist_pair(db, game_id, &request.folder_a, &request.folder_b).await?;
-            set_group_status(db, &request.group_id, "ignored").await?;
             Ok(())
         }
         ResolutionAction::Hardlink => {
@@ -348,6 +382,128 @@ async fn resolve_one(
             set_group_status(db, &request.group_id, "resolved").await?;
             Ok(())
         }
+    }
+}
+
+fn count_pending_ignores<'a>(
+    requests: impl Iterator<Item = &'a ResolutionRequest>,
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for request in requests {
+        *counts.entry(request.group_id.clone()).or_default() += 1;
+    }
+    counts
+}
+
+async fn mark_group_ignored_after_last_pair(
+    db: &SqlitePool,
+    group_id: &str,
+    pending_ignores_by_group: &mut BTreeMap<String, usize>,
+) -> Result<(), ScannerError> {
+    let remaining = pending_ignores_by_group.get_mut(group_id).ok_or_else(|| {
+        ScannerError::Validation(format!(
+            "Ignore resolution has no tracked group: {group_id}"
+        ))
+    })?;
+    *remaining = remaining.checked_sub(1).ok_or_else(|| {
+        ScannerError::Validation(format!(
+            "Ignore resolution count underflow for group: {group_id}"
+        ))
+    })?;
+
+    if *remaining == 0 {
+        set_group_status(db, group_id, "ignored").await?;
+    }
+
+    Ok(())
+}
+
+async fn validate_ignore_group_coverage(
+    requests: &[ResolutionRequest],
+    game_id: &str,
+    db: &SqlitePool,
+) -> Result<(), ScannerError> {
+    let ignore_group_ids = requests
+        .iter()
+        .filter(|request| matches!(request.action, ResolutionAction::Ignore))
+        .map(|request| request.group_id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    for group_id in ignore_group_ids {
+        if requests.iter().any(|request| {
+            request.group_id == group_id && !matches!(request.action, ResolutionAction::Ignore)
+        }) {
+            return Err(ScannerError::Validation(format!(
+                "Ignore resolution cannot be mixed with another action for group: {group_id}"
+            )));
+        }
+
+        let group = crate::modules::duplicates::adapters::sqlite::dedup::load_pending_group(
+            db, game_id, group_id,
+        )
+        .await?
+        .ok_or_else(|| {
+            ScannerError::Validation(format!(
+                "Duplicate group is missing, stale, or already resolved: {group_id}"
+            ))
+        })?;
+        let member_paths = group_member_paths(&group)?;
+        let expected_pairs = unique_member_pairs(&member_paths)?;
+        let ignore_requests = requests
+            .iter()
+            .filter(|request| {
+                request.group_id == group_id && matches!(request.action, ResolutionAction::Ignore)
+            })
+            .collect::<Vec<_>>();
+        let supplied_pairs = ignore_requests
+            .iter()
+            .map(|request| canonical_request_paths(request).map(canonicalize_path_pair))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+
+        if supplied_pairs.len() != ignore_requests.len() {
+            return Err(ScannerError::Validation(format!(
+                "Ignore resolution contains duplicate pairs for group: {group_id}"
+            )));
+        }
+        if supplied_pairs != expected_pairs {
+            return Err(ScannerError::Validation(format!(
+                "Ignore resolution must include every unique member pair for group: {group_id}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn unique_member_pairs(
+    member_paths: &[PathBuf],
+) -> Result<BTreeSet<(PathBuf, PathBuf)>, ScannerError> {
+    let mut pairs = BTreeSet::new();
+    for (index, left) in member_paths.iter().enumerate() {
+        for right in member_paths.iter().skip(index + 1) {
+            if left == right {
+                return Err(ScannerError::Validation(
+                    "Duplicate group contains the same physical folder more than once".to_string(),
+                ));
+            }
+            pairs.insert(canonicalize_path_pair((left.clone(), right.clone())));
+        }
+    }
+
+    if pairs.is_empty() {
+        return Err(ScannerError::Validation(
+            "Ignore resolution requires a duplicate group with at least two folders".to_string(),
+        ));
+    }
+
+    Ok(pairs)
+}
+
+fn canonicalize_path_pair(paths: (PathBuf, PathBuf)) -> (PathBuf, PathBuf) {
+    if paths.0 <= paths.1 {
+        paths
+    } else {
+        (paths.1, paths.0)
     }
 }
 

@@ -158,6 +158,9 @@ pub enum BrowserError {
     #[error("Invalid URL: {0}")]
     InvalidUrl(String),
 
+    #[error("Invalid browser setting: {0}")]
+    InvalidSetting(String),
+
     #[error("Download failed: {0}")]
     Download(String),
 

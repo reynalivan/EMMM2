@@ -27,6 +27,8 @@ async fn enabled_queries_exclude_rows_under_disabled_ancestors() {
             game_exe: Some("C:/Game/game.exe".into()),
             launcher_path: None,
             loader_exe: None,
+            launch_mode: "standalone".into(),
+            xxmi_launcher_exe: None,
             launch_args: None,
         },
     )

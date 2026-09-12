@@ -173,6 +173,23 @@ pub enum CommittedMutationSyncWarningKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct IndexingRootWork {
+    pub root_name: String,
+    pub file_count: u64,
+    pub total_bytes: u64,
+    pub work_units: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct OnboardingIndexingWorkPlan {
+    pub game_id: String,
+    pub file_count: u64,
+    pub total_bytes: u64,
+    pub work_units: u64,
+    pub roots: Vec<IndexingRootWork>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub struct CommittedMutationSyncWarning {
     pub kind: CommittedMutationSyncWarningKind,
     pub message: String,

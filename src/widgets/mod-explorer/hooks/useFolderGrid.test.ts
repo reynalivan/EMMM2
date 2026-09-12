@@ -21,11 +21,6 @@ vi.mock('./folderCache', () => ({
   folderKeys: { all: [] },
 }));
 
-vi.mock('./useFolderCoreMutations', () => ({
-  useRenameMod: () => ({ mutate: vi.fn() }),
-  useDeleteMod: () => ({ mutate: vi.fn() }),
-}));
-
 vi.mock('./useFolderMutations', () => ({
   useImportMods: () => ({ mutate: vi.fn() }),
   useToggleModSafe: () => ({ mutate: vi.fn() }),

@@ -118,6 +118,7 @@
     "keep_specific_target": "保留目标",
     "reallocate": "重新分配",
     "create_canonical": "创建标准对象",
+    "keep_separate": "单独保留",
     "skip": "已跳过"
   },
   "destination_hint": "选择建议的目标，或手动选择已有目标。",
@@ -139,6 +140,7 @@
     "use_target": "使用此目标",
     "skip": "跳过",
     "proceed": "继续",
+    "keep_separate": "另存为 {{name}}",
     "set_proceed": "设为继续",
     "set_skip": "设为跳过",
     "view_destination": "查看目标",
@@ -159,6 +161,49 @@
   "specific_warning": "目标匹配度不足，需要明确确认",
   "no_match": "没有标准匹配",
   "no_destination": "尚未选择目标",
+  "target_comparison": {
+    "already_installed": "已安装：所有来源文件的内容相同。",
+    "target_has_additional_files": "目标包含 {{additional}} 个额外文件。请在导入前检查。",
+    "same_name_different_content": "同名目标内容不同（{{changed}} 个已变更，{{missing}} 个缺失）。请在导入前检查。",
+    "incomplete": "无法完整验证现有目标。请在导入前检查。"
+  },
+  "review_reasons": {
+    "identity_needs_confirmation": "角色身份需要明确决定。",
+    "identity_no_match": "未找到可靠的角色身份。",
+    "package_bundle": "包根目录可能相互依赖，因此会保留在一起。",
+    "incomplete_inspection": "包检查不完整；请检查来源依据。",
+    "utility_requires_destination": "工具包需要明确的目标位置。",
+    "patch_requires_review": "已识别补丁，但 Mod Inbox 无法安装它。",
+    "foreign_game_package": "此包似乎属于其他游戏。",
+    "target_has_additional_files": "匹配的目标包含额外文件。",
+    "target_name_conflict": "同名目标的内容不同。",
+    "target_comparison_incomplete": "无法安全比较现有目标。"
+  },
+  "content_kind": {
+    "skin": "外观模组",
+    "patch": "补丁",
+    "utility": "工具",
+    "foreign_game": "其他游戏",
+    "unknown": "未知内容"
+  },
+  "package_shape": {
+    "single": "单个包",
+    "composite": "组合包",
+    "bundle": "捆绑包"
+  },
+  "diagnostics": {
+    "root_too_deep": "模组根目录超过支持的搜索深度。请展开外层文件夹后重试。",
+    "root_scan_limit": "根目录扫描已达到条目上限。请手动检查来源。",
+    "archive_multipart": "此压缩包需要将所有分卷放在同一文件夹中。",
+    "nested_archive_unresolved": "无法安全打开嵌套压缩包。请手动解压后重试。",
+    "archive_password": "此压缩包需要密码。",
+    "archive_compression_unsupported": "此压缩包使用了不支持的压缩方式。请重新压缩或手动解压。",
+    "archive_no_mod_root": "压缩包中没有找到可运行的模组根目录。",
+    "source_changed": "来源在分析后已变更。请刷新项目后再导入。",
+    "staging_failed": "暂存未完成。请修复来源后重试。",
+    "package_grouping_review": "包的根目录可能互相依赖，因此会保留在一起供检查。",
+    "ini_decode_incomplete": "部分 INI 文件无法完整解码。请手动确认该包。"
+  },
   "evidence": "依据",
   "evidence_none": "没有匹配依据",
   "match_column": "匹配",
@@ -166,6 +211,8 @@
   "source": {
     "identified": "识别为 {{name}} · {{score}}%",
     "matching_by_name": "按名称匹配",
+    "identity_review_required": "身份识别需要您确认后才能导入",
+    "duplicate_of": "与 {{name}} 重复；将跳过此项目",
     "edit_name": "编辑导入后的文件夹名称",
     "destination_preview": "将放置到：{{destination}}/{{name}}",
     "source_unchanged": "来源压缩包或文件夹不会被修改"

@@ -168,7 +168,41 @@ describe('ModInboxPage', () => {
     unmount();
     await waitFor(() => {
       expect(unlisten).toHaveBeenCalledTimes(1);
-      expect(modInboxCommands.stopModInboxWatcher).toHaveBeenCalledWith('game-1');
+      expect(modInboxCommands.stopModInboxWatcher).toHaveBeenCalledWith(
+        'game-1',
+        readySnapshot.rootPath,
+      );
+    });
+  });
+
+  it('replaces the watcher when the ready inbox root changes', async () => {
+    let changeHandler: (() => void) | undefined;
+    const movedSnapshot = {
+      ...readySnapshot,
+      rootPath: 'D:/New Inbox',
+    };
+    vi.mocked(modInboxCommands.getModInbox)
+      .mockResolvedValueOnce(readySnapshot)
+      .mockResolvedValueOnce(movedSnapshot);
+    vi.mocked(listen).mockImplementation(async (_event, handler) => {
+      changeHandler = () => handler({ payload: {} } as never);
+      return () => undefined;
+    });
+
+    render(<ModInboxPage />);
+
+    await waitFor(() =>
+      expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledWith('game-1'),
+    );
+
+    changeHandler?.();
+
+    await waitFor(() => {
+      expect(modInboxCommands.stopModInboxWatcher).toHaveBeenCalledWith(
+        'game-1',
+        readySnapshot.rootPath,
+      );
+      expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledTimes(2);
     });
   });
 

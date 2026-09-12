@@ -28,8 +28,6 @@ import { workspaceKeys } from '@/features/workspace-runtime/@x/file-watcher';
 import { useDiskReconcileProgress } from '../utils/reconcileProgress';
 import { isDuplicateWatcherError, type WatchErrorPayload } from '../utils/watcherError';
 
-export { useWatcherLifecycle } from '../utils/watcherLifecycle';
-
 const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
 const AUTO_OPEN_REPORT_MAX_GAMES = 32;

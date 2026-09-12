@@ -1,5 +1,20 @@
 import type { DupScanEvent } from '@/entities/workspace';
-import type { DedupScanProgress } from '../components/DedupFeature';
+
+export interface DedupScanProgress {
+  isScanning: boolean;
+  totalFolders: number;
+  scannedFolders: number;
+  currentFolder: string;
+  error: string;
+}
+
+export const IDLE_DEDUP_SCAN_PROGRESS: DedupScanProgress = {
+  isScanning: false,
+  totalFolders: 0,
+  scannedFolders: 0,
+  currentFolder: '',
+  error: '',
+};
 
 export function reduceDedupProgress(
   current: DedupScanProgress,

@@ -1,10 +1,9 @@
 import { formatAppError } from '../../shared/lib/appError';
 import { Play, Shuffle, AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useActiveGame } from '@/entities/game';
+import { launchConfiguredGame, useActiveGame } from '@/entities/game';
 import { useActiveConflicts } from '@/features/mod-runtime';
 import { useAppStore } from '@/app/store';
-import { commands } from '../../shared/api/tauri/bindings';
 import { RandomizerModal } from '@/features/randomizer';
 import { ConflictModal } from '@/features/conflict-report';
 import { ConflictToast } from '@/features/scanner';
@@ -64,11 +63,7 @@ export default function LaunchBar() {
     setError(null);
 
     try {
-      await commands.launchGame(activeGame.id);
-
-      if (autoCloseLauncher) {
-        await commands.exitApp();
-      }
+      await launchConfiguredGame(activeGame.id, autoCloseLauncher);
     } catch (e) {
       setError(formatAppError(e));
       setTimeout(() => setError(null), 5000);

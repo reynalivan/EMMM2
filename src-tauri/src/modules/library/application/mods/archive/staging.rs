@@ -6,9 +6,7 @@ use std::sync::Arc;
 use crate::shared::errors::AppError;
 use tauri::ipc::Channel;
 
-use super::destination::{
-    check_disk_space, effective_archive_limits, ARCHIVE_DISK_RESERVE_BYTES,
-};
+use super::destination::{check_disk_space, effective_archive_limits, ARCHIVE_DISK_RESERVE_BYTES};
 use super::extractors::{extract_to_dir_with_budget, unpack_nested_archives};
 use super::is_cancelled;
 use super::security::{ArchiveLimits, ExtractionBudget};
@@ -102,8 +100,26 @@ pub fn extract_archive_to_staging_with_limits(
         return Err(AppError::Cancelled);
     }
 
-    let mod_roots = super::classify::find_mod_roots(guard.path(), 5);
+    let root_search = super::classify::find_mod_roots_with_limits(
+        guard.path(),
+        super::classify::MOD_ROOT_MAX_DEPTH,
+        super::classify::MOD_ROOT_MAX_ENTRIES,
+        options.cancel_token.as_deref(),
+    )?;
+    if root_search.unreadable_ini_files > 0 {
+        log::warn!(
+            "Import staging could not cleanly decode {} INI file(s)",
+            root_search.unreadable_ini_files
+        );
+    }
+    let mod_roots = root_search.roots;
     if mod_roots.is_empty() {
+        if root_search.depth_limit_reached {
+            return Err(AppError::Validation(format!(
+                "mod_root_too_deep: no runnable mod root was found within the {}-level search limit",
+                super::classify::MOD_ROOT_MAX_DEPTH
+            )));
+        }
         return Err(AppError::Validation(
             "Not a valid 3DMigoto mod archive (no valid .ini found)".to_string(),
         ));
@@ -112,6 +128,7 @@ pub fn extract_archive_to_staging_with_limits(
     Ok(StagedArchive {
         mod_roots,
         files_extracted: extracted,
+        unreadable_ini_files: root_search.unreadable_ini_files,
     })
 }
 

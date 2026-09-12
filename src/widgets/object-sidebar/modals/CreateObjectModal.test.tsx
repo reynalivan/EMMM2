@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import CreateObjectModal from './CreateObjectModal';
-import { useCreateObject } from '../hooks/useObjectMutations';
+import { useCreateObject } from '@/features/workspace-runtime';
 
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
@@ -18,7 +18,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('../hooks/useObjectMutations', () => ({
+vi.mock('@/features/workspace-runtime', () => ({
   useCreateObject: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false, isError: false })),
 }));
 

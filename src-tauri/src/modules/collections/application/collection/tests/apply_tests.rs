@@ -1,6 +1,81 @@
 use super::*;
 
 #[tokio::test]
+async fn collection_preflight_scope_includes_active_nonmembers_and_excludes_disabled_ones() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    seed_game(&ctx.pool, "game-1", Some(&mods_path)).await;
+    seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "active-nonmember",
+            game_id: "game-1",
+            object_id: Some("object-1"),
+            actual_name: "Active Nonmember",
+            folder_path: "AINOZ/Active Nonmember",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert active nonmember");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "disabled-unrelated",
+            game_id: "game-1",
+            object_id: Some("object-1"),
+            actual_name: "Disabled Unrelated",
+            folder_path: "AINOZ/DISABLED Disabled Unrelated",
+            status: ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert disabled unrelated mod");
+
+    let collection = collection::create(&ctx.pool, "target", "game-1", "Target", true, false)
+        .await
+        .expect("create collection");
+    let mods = vec![test_collection_mod(
+        &collection.id,
+        "AINOZ/Target Mod",
+        "Target",
+    )];
+    let objects = vec![test_collection_object(&collection.id)];
+    let projected_state = projected_state::build_projected_state(&mods, &objects, Some(&mods_path));
+    persist_projected_state(&ctx.pool, &collection.id, &mods, &objects, &projected_state)
+        .await
+        .expect("persist collection state");
+
+    let paths = collection_preflight_scope_paths(&ctx.pool, "game-1", "target", mods_root.path())
+        .await
+        .expect("build target paths");
+    let normalized = paths
+        .iter()
+        .map(|path| path.replace('\\', "/"))
+        .collect::<Vec<_>>();
+
+    assert!(normalized.iter().any(|path| path.ends_with("/AINOZ")));
+    assert!(normalized
+        .iter()
+        .any(|path| path.ends_with("/AINOZ/Target Mod")));
+    assert!(normalized
+        .iter()
+        .any(|path| path.ends_with("/AINOZ/Active Nonmember")));
+    assert!(!normalized
+        .iter()
+        .any(|path| path.ends_with("/AINOZ/DISABLED Disabled Unrelated")));
+}
+
+#[tokio::test]
 async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ignoring() {
     let ctx = init_test_db().await;
     let mods_root = tempfile::tempdir().expect("create mods root");

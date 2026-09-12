@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n            id,\n            name,\n            game_type AS \"game_type: GameType\",\n            path,\n            mods_path,\n            ready_to_move_path,\n            game_exe,\n            launcher_path,\n            loader_exe,\n            launch_args\n        FROM games\n        ORDER BY name",
+  "query": "SELECT\n            id,\n            name,\n            game_type AS \"game_type: GameType\",\n            path,\n            mods_path,\n            ready_to_move_path,\n            game_exe,\n            launcher_path,\n            loader_exe,\n            launch_mode,\n            xxmi_launcher_exe,\n            launch_args\n        FROM games\n        ORDER BY name",
   "describe": {
     "columns": [
       {
@@ -49,8 +49,18 @@
         "type_info": "Text"
       },
       {
-        "name": "launch_args",
+        "name": "launch_mode",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "xxmi_launcher_exe",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "launch_args",
+        "ordinal": 11,
         "type_info": "Text"
       }
     ],
@@ -67,8 +77,10 @@
       true,
       true,
       true,
+      false,
+      true,
       true
     ]
   },
-  "hash": "8434992ebc04717e9e97b44fefa2a7266e8f05865b2acaf7f2e1ce18a0241720"
+  "hash": "715da8d38e125cca068fe967f3ce74dd6ea4eb81a974eeefa1d3b56f5a4fe443"
 }

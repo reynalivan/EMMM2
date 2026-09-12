@@ -249,8 +249,10 @@ fn classify_layout(path: &Path, kind: ModInboxEntryKind) -> (ModInboxLayout, u32
     if kind == ModInboxEntryKind::Archive {
         return (ModInboxLayout::Unknown, 0);
     }
-    let roots =
-        crate::modules::library::application::mods::archive::classify::find_mod_roots(path, 5);
+    let roots = crate::modules::library::application::mods::archive::classify::find_mod_roots(
+        path,
+        crate::modules::library::application::mods::archive::classify::MOD_ROOT_MAX_DEPTH,
+    );
     let count = roots.len() as u32;
     match roots.as_slice() {
         [] => (ModInboxLayout::Unknown, 0),

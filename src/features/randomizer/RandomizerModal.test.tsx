@@ -30,6 +30,7 @@ vi.mock('react-i18next', () => ({
         'randomizer.reroll': 'Reroll All',
         'randomizer.roll': 'Roll Luck',
         'randomizer.no_eligible': 'No eligible character mods found',
+        'randomizer.apply_no_change': `${String(vars?.name ?? 'Mod')} was not activated`,
         'randomizer.empty_desc': 'No results yet',
         'common:actions.close': 'Close',
       };
@@ -235,6 +236,70 @@ describe('RandomizerModal - TC-35', () => {
       });
     });
 
+    it('continues applying safe proposals after an earlier switch fails', async () => {
+      vi.mocked(invoke)
+        .mockResolvedValueOnce(mockProposals)
+        .mockRejectedValueOnce(new Error('Folder conflict'))
+        .mockResolvedValueOnce({
+          status: 'applied',
+          changed_folder_paths: [],
+          impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
+        });
+
+      const onClose = vi.fn();
+      render(<RandomizerModal open={true} onClose={onClose} gameId="g-1" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText(/Apply/i, { selector: 'button' }));
+      });
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('execute_workspace_switch', {
+          input: expect.objectContaining({
+            target: { kind: 'mod_path', value: 'E:/Mods/Kazuha Samurai' },
+          }),
+        });
+        expect(screen.getByText('Folder conflict')).toBeInTheDocument();
+      });
+
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('keeps the modal open when a selected mod cannot be activated', async () => {
+      vi.mocked(invoke)
+        .mockResolvedValueOnce(mockProposals)
+        .mockResolvedValueOnce({
+          status: 'noop',
+          changed_folder_paths: [],
+          impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
+        })
+        .mockResolvedValueOnce({
+          status: 'applied',
+          changed_folder_paths: [],
+          impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
+        });
+
+      const onClose = vi.fn();
+      render(<RandomizerModal open={true} onClose={onClose} gameId="g-1" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText(/Apply/i, { selector: 'button' }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Hu Tao Galaxy Skin was not activated')).toBeInTheDocument();
+      });
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
     it('disables apply button when nothing is selected', async () => {
       vi.mocked(invoke).mockResolvedValue(mockProposals);
 
@@ -262,6 +327,36 @@ describe('RandomizerModal - TC-35', () => {
   // derived server-side from Settings and can no longer be chosen per roll.
 
   describe('TC-35-006: Empty / Error States', () => {
+    it('clears old proposals before rolling for a newly selected game', async () => {
+      const gameTwoProposals = [
+        {
+          object_id: 'obj-3',
+          object_name: 'Furina',
+          mod_id: 'mod-c',
+          name: 'Furina Ocean Skin',
+          folder_path: 'E:/Mods/Furina Ocean',
+        },
+      ];
+      vi.mocked(invoke)
+        .mockResolvedValueOnce(mockProposals)
+        .mockResolvedValueOnce(gameTwoProposals);
+
+      const { rerender } = render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
+      });
+
+      rerender(<RandomizerModal open={false} onClose={vi.fn()} gameId="g-1" />);
+      rerender(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-2" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Furina Ocean Skin')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Hu Tao Galaxy Skin')).not.toBeInTheDocument();
+      expect(invoke).toHaveBeenCalledWith('suggest_random_mods', { gameId: 'g-2' });
+    });
+
     it('shows error alert when no eligible mods found', async () => {
       vi.mocked(invoke).mockResolvedValue([]);
 

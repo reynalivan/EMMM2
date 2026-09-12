@@ -4,7 +4,7 @@ import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import { queryClient } from '@/shared/lib/queryClient';
 import { settingsKeys } from '@/entities/settings';
-import { toast } from '../useToastStore';
+import { toast } from '@/shared/ui/toast';
 import type { AppSliceCreator } from './sliceTypes';
 import type {
   DiskReconcileResult,

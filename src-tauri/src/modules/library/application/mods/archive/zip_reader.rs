@@ -204,16 +204,16 @@ fn preflight_zip(
         }
         let raw = archive.by_index_raw(index).map_err(map_zip_error)?;
         let name = raw.name().to_string();
+        let kind = validate_zip_entry_type(&raw)?;
         let relative_path = raw.enclosed_name().ok_or_else(|| {
             AppError::Security("Archive entry path escapes the extraction root".to_string())
         })?;
-        let validated_path = validate_entry_path(Path::new(""), &name)?;
+        let validated_path = validate_entry_path(Path::new(""), &name, kind)?;
         if relative_path != validated_path {
             return Err(AppError::Security(
                 "Archive entry path is not normalized safely".to_string(),
             ));
         }
-        let kind = validate_zip_entry_type(&raw)?;
         output_paths.register(&relative_path, kind)?;
         let compression = raw.compression();
         let encrypted = raw.encrypted();
@@ -274,7 +274,9 @@ fn ensure_supported_compression(method: CompressionMethod) -> Result<(), AppErro
 fn map_zip_error(error: ZipError) -> AppError {
     match error {
         ZipError::InvalidPassword => AppError::ArchivePasswordIncorrect,
-        ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED) => AppError::ArchivePasswordRequired,
+        ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED) => {
+            AppError::ArchivePasswordRequired
+        }
         ZipError::UnsupportedArchive(_) => AppError::ArchiveUnsupported {
             reason: ArchiveErrorKind::UnsupportedCompression,
         },
@@ -297,14 +299,21 @@ fn map_zip_io_error(error: std::io::Error) -> AppError {
 
 fn is_nested_archive_name(name: &str) -> bool {
     matches!(
-        name.rsplit('.').next().unwrap_or_default().to_ascii_lowercase().as_str(),
+        name.rsplit('.')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
         "zip" | "rar" | "7z"
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{analyze_zip, ensure_supported_compression, extract_zip_to_dir, ArchiveLimits, ExtractionBudget};
+    use super::{
+        analyze_zip, ensure_supported_compression, extract_zip_to_dir, ArchiveLimits,
+        ExtractionBudget,
+    };
     use std::fs;
     use std::io::Write;
     use tempfile::TempDir;
@@ -351,15 +360,9 @@ mod tests {
                 ArchiveLimits::default(),
                 fs::metadata(&archive_path).unwrap().len(),
             );
-            let extracted = extract_zip_to_dir(
-                &archive_path,
-                &destination,
-                None,
-                None,
-                None,
-                &mut budget,
-            )
-            .unwrap();
+            let extracted =
+                extract_zip_to_dir(&archive_path, &destination, None, None, None, &mut budget)
+                    .unwrap();
             assert_eq!(extracted, 1, "{method:?}");
             assert_eq!(
                 fs::read(destination.join("Mod/config.ini")).unwrap(),

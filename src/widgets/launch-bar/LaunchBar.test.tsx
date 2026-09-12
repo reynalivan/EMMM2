@@ -3,12 +3,12 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 import LaunchBar from './LaunchBar';
 import type { ConflictInfo } from '@/entities/workspace';
 
-const launchGame = vi.fn();
-const exitApp = vi.fn();
+const launchConfiguredGame = vi.fn();
 let activeConflicts: ConflictInfo[] = [];
 
 vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
+  launchConfiguredGame: (...args: unknown[]) => launchConfiguredGame(...args),
 }));
 vi.mock('@/features/mod-runtime', () => ({
   useActiveConflicts: vi.fn(() => ({ data: activeConflicts })),
@@ -31,14 +31,6 @@ vi.mock('react-i18next', () => ({
     },
   }),
 }));
-vi.mock('../../shared/api/tauri/bindings', () => ({
-  sparse: (value: unknown) => value,
-  commands: {
-    launchGame: (...args: unknown[]) => launchGame(...args),
-    exitApp: (...args: unknown[]) => exitApp(...args),
-  },
-}));
-
 // Mock inner modals so they don't break rendering
 vi.mock('@/features/randomizer', () => ({
   RandomizerModal: () => <div data-testid="randomizer-modal"></div>,
@@ -70,24 +62,22 @@ function conflict(hash: string): ConflictInfo {
 describe('LaunchBar', () => {
   beforeEach(() => {
     activeConflicts = [];
-    launchGame.mockReset();
-    exitApp.mockReset();
+    launchConfiguredGame.mockReset();
   });
 
-  it('launches game and triggers exit if autoClose is true', async () => {
+  it('launches through the shared action with auto-close enabled', async () => {
     render(<LaunchBar />);
 
     fireEvent.click(screen.getByText('Play'));
 
     await waitFor(() => {
-      expect(launchGame).toHaveBeenCalledWith('game-1');
+      expect(launchConfiguredGame).toHaveBeenCalledWith('game-1', true);
     });
 
-    expect(exitApp).toHaveBeenCalledOnce();
   });
 
   it('handles launch error gracefully', async () => {
-    launchGame.mockRejectedValue(new Error('Launch failed'));
+    launchConfiguredGame.mockRejectedValue(new Error('Launch failed'));
     render(<LaunchBar />);
 
     fireEvent.click(screen.getByText('Play'));

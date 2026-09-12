@@ -302,6 +302,91 @@ pub enum ConfidenceTier {
     NoMatch,
 }
 
+/// Acceptance state produced by the canonical matcher. Destination confidence
+/// is deliberately separate: a good folder name is not proof of character
+/// identity.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportMatchStatus {
+    AutoMatched,
+    #[default]
+    NeedsReview,
+    NoMatch,
+}
+
+impl ImportMatchStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AutoMatched => "auto_matched",
+            Self::NeedsReview => "needs_review",
+            Self::NoMatch => "no_match",
+        }
+    }
+}
+
+/// A stable, user-visible reason that prevents an import decision from being
+/// accepted implicitly. Diagnostics retain the lower-level failure details.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewReasonCode {
+    IdentityNeedsConfirmation,
+    IdentityNoMatch,
+    PackageBundle,
+    IncompleteInspection,
+    UtilityRequiresDestination,
+    PatchRequiresReview,
+    ForeignGamePackage,
+    TargetHasAdditionalFiles,
+    TargetNameConflict,
+    TargetComparisonIncomplete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewReason {
+    pub code: ReviewReasonCode,
+    pub diagnostic_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewGate {
+    pub reasons: Vec<ReviewReason>,
+}
+
+impl ReviewGate {
+    pub fn is_empty(&self) -> bool {
+        self.reasons.is_empty()
+    }
+
+    pub fn add(&mut self, code: ReviewReasonCode, diagnostic_code: Option<String>) {
+        if self
+            .reasons
+            .iter()
+            .any(|reason| reason.code == code && reason.diagnostic_code == diagnostic_code)
+        {
+            return;
+        }
+        self.reasons.push(ReviewReason {
+            code,
+            diagnostic_code,
+        });
+    }
+}
+
+impl std::str::FromStr for ImportMatchStatus {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto_matched" => Ok(Self::AutoMatched),
+            "needs_review" => Ok(Self::NeedsReview),
+            "no_match" => Ok(Self::NoMatch),
+            _ => Err(format!("unsupported import match status '{value}'")),
+        }
+    }
+}
+
 impl ConfidenceTier {
     pub fn from_percentage(value: u8) -> Self {
         match value.min(100) {
@@ -344,6 +429,7 @@ pub enum ImportDecision {
     KeepSpecificTarget,
     Reallocate,
     CreateCanonical,
+    KeepSeparate,
     Skip,
 }
 
@@ -355,6 +441,7 @@ impl ImportDecision {
             Self::KeepSpecificTarget => "keep_specific_target",
             Self::Reallocate => "reallocate",
             Self::CreateCanonical => "create_canonical",
+            Self::KeepSeparate => "keep_separate",
             Self::Skip => "skip",
         }
     }
@@ -370,6 +457,7 @@ impl std::str::FromStr for ImportDecision {
             "keep_specific_target" => Ok(Self::KeepSpecificTarget),
             "reallocate" => Ok(Self::Reallocate),
             "create_canonical" => Ok(Self::CreateCanonical),
+            "keep_separate" => Ok(Self::KeepSeparate),
             "skip" => Ok(Self::Skip),
             _ => Err(format!("unsupported import decision '{value}'")),
         }
@@ -383,6 +471,126 @@ pub struct SourceFingerprint {
     pub modified_unix_ms: String,
     pub size_bytes: String,
     pub file_count: u32,
+}
+
+/// A compact, list-safe summary of a full payload manifest. The detailed file
+/// entries remain in SQLite until the detail view requests them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PayloadManifestSummary {
+    pub version: u8,
+    pub file_count: u32,
+    pub total_size_bytes: String,
+    pub content_sha256: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetComparisonOutcome {
+    AlreadyInstalled,
+    TargetHasAdditionalFiles,
+    SameNameDifferentContent,
+    Incomplete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportContentKind {
+    Skin,
+    Patch,
+    Utility,
+    ForeignGame,
+    Unknown,
+}
+
+impl ImportContentKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Skin => "skin",
+            Self::Patch => "patch",
+            Self::Utility => "utility",
+            Self::ForeignGame => "foreign_game",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl std::str::FromStr for ImportContentKind {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "skin" => Ok(Self::Skin),
+            "patch" => Ok(Self::Patch),
+            "utility" => Ok(Self::Utility),
+            "foreign_game" => Ok(Self::ForeignGame),
+            "unknown" => Ok(Self::Unknown),
+            _ => Err(format!("unsupported import content kind '{value}'")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportPackageShape {
+    Single,
+    Composite,
+    Bundle,
+}
+
+impl ImportPackageShape {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Single => "single",
+            Self::Composite => "composite",
+            Self::Bundle => "bundle",
+        }
+    }
+}
+
+impl std::str::FromStr for ImportPackageShape {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "single" => Ok(Self::Single),
+            "composite" => Ok(Self::Composite),
+            "bundle" => Ok(Self::Bundle),
+            _ => Err(format!("unsupported import package shape '{value}'")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetComparison {
+    pub outcome: TargetComparisonOutcome,
+    pub target_path: String,
+    pub same_files: u32,
+    pub changed_files: u32,
+    pub missing_files: u32,
+    pub additional_files: u32,
+    pub suggested_separate_name: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportDiagnosticStage {
+    Staging,
+    RootDiscovery,
+    Inspection,
+    Deduplication,
+    TargetComparison,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportDiagnostic {
+    pub code: String,
+    pub stage: ImportDiagnosticStage,
+    pub member_path: Option<String>,
+    pub recovery: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -412,6 +620,8 @@ pub struct CanonicalSuggestion {
     pub matched_alias: Option<String>,
     pub confidence_percentage: u8,
     pub confidence_tier: ConfidenceTier,
+    #[serde(default)]
+    pub match_status: ImportMatchStatus,
     pub evidence: Vec<MatchEvidence>,
 }
 
@@ -474,11 +684,43 @@ pub struct ImportItem {
     pub destination_path: Option<String>,
     pub confidence_percentage: u8,
     pub confidence_tier: ConfidenceTier,
+    pub identity_match_status: ImportMatchStatus,
     pub evidence: Vec<MatchEvidence>,
     pub decision: ImportDecision,
     pub fingerprint: Option<SourceFingerprint>,
+    pub archive_sha256: Option<String>,
+    pub payload_manifest: Option<PayloadManifestSummary>,
+    pub duplicate_of_item_id: Option<String>,
+    pub target_comparison: Option<TargetComparison>,
+    pub analysis_revision: u64,
+    pub analysis_ack_revision: Option<u64>,
+    pub review_gate: ReviewGate,
+    pub diagnostics: Vec<ImportDiagnostic>,
+    pub content_kind: ImportContentKind,
+    pub package_shape: ImportPackageShape,
     pub result: Option<String>,
     pub error: Option<String>,
+}
+
+/// Complete, internally produced outcome of one source-analysis pass. It is
+/// persisted atomically so a visible review never combines old and new facts.
+#[derive(Debug, Clone)]
+pub(crate) struct AnalysisResult {
+    pub inspection: crate::modules::catalog::application::match_engine::types::SourceInspection,
+    pub category_suggestions: Vec<CategorySuggestion>,
+    pub selected_category: StableCategory,
+    pub selected_sub_category: Option<String>,
+    pub classification_metadata: serde_json::Value,
+    pub payload_manifest:
+        crate::modules::ingestion::application::import_batch::payload_manifest::PayloadManifest,
+    pub canonical_suggestions: Vec<CanonicalSuggestion>,
+    pub destination_suggestions: Vec<DestinationSuggestion>,
+    pub evidence: Vec<MatchEvidence>,
+    pub content_kind: ImportContentKind,
+    pub package_shape: ImportPackageShape,
+    pub diagnostics: Vec<ImportDiagnostic>,
+    pub review_gate: ReviewGate,
+    pub target_comparison: Option<TargetComparison>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

@@ -82,10 +82,19 @@ pub(super) async fn execute_cycle_preset(
         .find(|collection| collection.name == target_name)
         .ok_or_else(|| AppError::Internal(format!("Target preset '{target_name}' not found")))?;
 
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
+    let preflight_paths =
+        crate::modules::collections::application::collection::collection_preflight_scope_paths(
+            pool_state.inner(),
+            game_id,
+            &target.id,
+            &game.mod_path,
+        )
+        .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         app,
         pool_state.inner(),
         game_id,
+        Some(&preflight_paths),
     )
     .await?;
     let disk_reconcile = require::<

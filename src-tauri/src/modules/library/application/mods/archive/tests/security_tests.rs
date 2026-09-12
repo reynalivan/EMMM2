@@ -54,14 +54,59 @@ fn archive_entry_paths_reject_escape_and_windows_aliases() {
         "trailing-dot./file.ini",
         "trailing-space /file.ini",
     ] {
-        let error = super::security::validate_entry_path(root, entry).unwrap_err();
+        let error =
+            super::security::validate_entry_path(root, entry, super::security::EntryKind::File)
+                .unwrap_err();
         assert_security(error);
     }
 
     assert_eq!(
-        super::security::validate_entry_path(root, "SafeMod/config.ini").unwrap(),
+        super::security::validate_entry_path(
+            root,
+            "SafeMod/config.ini",
+            super::security::EntryKind::File,
+        )
+        .unwrap(),
         root.join("SafeMod").join("config.ini")
     );
+    assert_eq!(
+        super::security::validate_entry_path(
+            root,
+            "SafeMod/",
+            super::security::EntryKind::Directory,
+        )
+        .unwrap(),
+        root.join("SafeMod")
+    );
+    let error =
+        super::security::validate_entry_path(root, "SafeMod/", super::security::EntryKind::File)
+            .unwrap_err();
+    assert_security(error);
+    let error = super::security::validate_entry_path(
+        root,
+        "SafeMod//",
+        super::security::EntryKind::Directory,
+    )
+    .unwrap_err();
+    assert_security(error);
+}
+
+#[test]
+fn staging_accepts_explicit_zip_directory_entries() {
+    let dir = TempDir::new().unwrap();
+    let archive = dir.path().join("directory.zip");
+    let file = fs::File::create(&archive).unwrap();
+    let mut writer = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+    writer.add_directory("Mod/", options).unwrap();
+    writer.start_file("Mod/config.ini", options).unwrap();
+    writer.write_all(b"[TextureOverride]\n").unwrap();
+    writer.finish().unwrap();
+
+    let staging = dir.path().join("staging");
+    let result = extract_archive_to_staging(&archive, &staging).unwrap();
+
+    assert_eq!(result.mod_roots, vec![staging.join("Mod")]);
 }
 
 #[test]

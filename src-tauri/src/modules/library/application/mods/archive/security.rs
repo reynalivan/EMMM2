@@ -98,12 +98,27 @@ pub(super) fn validate_entry_type(mode: u32, link_count: u64) -> Result<EntryKin
     }
 }
 
-pub(super) fn validate_entry_path(root: &Path, entry_name: &str) -> Result<PathBuf, AppError> {
+pub(super) fn validate_entry_path(
+    root: &Path,
+    entry_name: &str,
+    kind: EntryKind,
+) -> Result<PathBuf, AppError> {
     if entry_name.is_empty()
         || entry_name.contains('\0')
         || entry_name.starts_with('/')
         || entry_name.starts_with('\\')
     {
+        return Err(unsafe_path(entry_name));
+    }
+
+    let entry_name = if kind == EntryKind::Directory {
+        entry_name
+            .strip_suffix(['/', '\\'])
+            .ok_or_else(|| unsafe_path(entry_name))?
+    } else {
+        entry_name
+    };
+    if entry_name.is_empty() {
         return Err(unsafe_path(entry_name));
     }
 
@@ -402,7 +417,9 @@ mod tests {
     #[test]
     fn output_registry_rejects_a_file_as_a_directory_parent() {
         let mut registry = OutputPathRegistry::default();
-        registry.register(Path::new("Robin"), EntryKind::File).unwrap();
+        registry
+            .register(Path::new("Robin"), EntryKind::File)
+            .unwrap();
 
         assert!(matches!(
             registry.register(Path::new("Robin/Config.ini"), EntryKind::File),

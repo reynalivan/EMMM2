@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Shield, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import { useToastStore } from '@/shared/ui/toast';
 import { formatAppError } from '../../../../shared/lib/appError';
 

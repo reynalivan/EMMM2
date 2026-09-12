@@ -48,6 +48,36 @@ describe('AutoDetectResult (TC-03)', () => {
     expect(screen.getByText('0 Games Found!')).toBeInTheDocument();
   });
 
+  it('identifies XXMI-managed games without a standalone warning', () => {
+    const games = [
+      {
+        id: 'wwmi',
+        name: 'Wuthering Waves',
+        game_type: 'WWMI',
+        instance_path: 'E:/XXMI/WWMI',
+        mod_path: 'E:/XXMI/WWMI/Mods',
+        launch_mode: 'xxmi_managed',
+        game_exe: null,
+        loader_exe: null,
+        xxmi_launcher_exe: 'E:/XXMI/Resources/Bin/XXMI Launcher.exe',
+        launch_args: null,
+      },
+    ] as unknown as GameConfig[];
+
+    render(
+      <AutoDetectResult
+        games={games}
+        onConfirm={mockOnContinue}
+        onAddMore={mockOnAddMore}
+        onRemoveGame={mockOnRemoveGame}
+        onBack={mockOnGoBack}
+      />,
+    );
+
+    expect(screen.getByText('Managed by XXMI')).toBeInTheDocument();
+    expect(screen.queryByText('Setup Warnings — you can still proceed')).not.toBeInTheDocument();
+  });
+
   it('triggers callbacks', () => {
     const games = [
       { id: 'g1', name: 'Game 1', game_type: 'GIMI', mod_path: 'C:/Mods', game_exe: 'C:/G.exe' },

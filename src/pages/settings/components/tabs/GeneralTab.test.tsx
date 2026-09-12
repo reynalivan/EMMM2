@@ -33,7 +33,7 @@ vi.mock('@/shared/ui/toast', () => ({
   useToastStore: () => ({ addToast: mockAddToast }),
 }));
 
-vi.mock('../../hooks/useSettings', () => ({
+vi.mock('@/entities/settings', () => ({
   useSettings: () => ({
     settings: {
       theme: mockTheme,

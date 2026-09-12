@@ -12,8 +12,9 @@ import {
   Settings,
 } from 'lucide-react';
 import { useAppStore } from '@/app/store';
-import { useActiveGame } from '@/entities/game';
-import { commands } from '@/shared/api/tauri/bindings';
+import { launchConfiguredGame, useActiveGame } from '@/entities/game';
+import { formatAppError } from '@/shared/lib/appError';
+import { toast } from '@/shared/ui/toast';
 import GameSelector from './GameSelector';
 import GlobalActions from './GlobalActions';
 import { SafetyFilterControl } from '@/shared/ui/components/ui/SafetyFilterControl';
@@ -29,9 +30,24 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const safetyFilter = useAppStore((state) => state.safetyFilter);
   const setSafetyFilter = useAppStore((state) => state.setSafetyFilter);
+  const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const { activeGame } = useActiveGame();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleQuickPlay = async () => {
+    if (!activeGame) return;
+    setIsLaunching(true);
+    try {
+      await launchConfiguredGame(activeGame.id, autoCloseLauncher);
+      setMenuOpen(false);
+    } catch (cause) {
+      toast.error(formatAppError(cause));
+    } finally {
+      setIsLaunching(false);
+    }
+  };
 
   const NAV_ITEMS = [
     {
@@ -113,11 +129,8 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
             <div className="absolute top-full left-0 mt-2 w-56 bg-base-200 border border-base-300 rounded-2xl shadow-2xl p-2 z-60 animate-in fade-in slide-in-from-top-2 duration-150">
               {/* Quick Play */}
               <button
-                onClick={() => {
-                  if (activeGame) commands.launchGame(activeGame.id).catch(console.error);
-                  setMenuOpen(false);
-                }}
-                disabled={!activeGame}
+                onClick={() => void handleQuickPlay()}
+                disabled={!activeGame || isLaunching}
                 className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left hover:bg-success/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed group"
               >
                 <div className="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shrink-0">

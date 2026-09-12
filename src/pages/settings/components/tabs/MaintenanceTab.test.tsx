@@ -21,7 +21,7 @@ vi.mock('@/shared/ui/toast', () => ({
 }));
 
 const mockRunMaintenance = vi.fn();
-vi.mock('../../hooks/useSettings', () => ({
+vi.mock('@/entities/settings', () => ({
   useSettings: () => ({
     runMaintenance: mockRunMaintenance,
   }),

@@ -2,7 +2,7 @@ import { formatAppError } from '../../../../shared/lib/appError';
 import { useState, useRef } from 'react';
 import { Wrench, Eraser, RotateCcw, HardDrive } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import { commands } from '../../../../shared/api/tauri/bindings';
 import { useToastStore } from '@/shared/ui/toast';
 import { useAppStore } from '@/app/store';

@@ -23,8 +23,7 @@ export function BrowserPage() {
   // Container that the Webview will be placed over
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Selector-scoped: the browser store also holds persisted settings, so a
-  // bare call re-renders this page whenever any of those change.
+  // Select only the browser state used by this page.
   const {
     openDownloadPanel,
     isDownloadPanelOpen,

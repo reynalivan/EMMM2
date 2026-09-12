@@ -63,8 +63,6 @@ export interface UpdateModInfoInput {
   update: ModInfoUpdate;
 }
 
-export { detailsKeys } from '@/entities/mod';
-
 function normalizeFolderPath(folderPath?: string | null): string | null {
   const value = folderPath?.trim();
   return value ? value : null;

@@ -67,7 +67,7 @@ pub async fn init_test_db() -> TestContext {
         .await
         .expect("Failed to create in-memory database");
 
-    // Run migrations (force cache bust)
+    // The build script tracks the migration directory for this embedded migrator.
     let m = sqlx::migrate!("./migrations");
     m.run(&pool).await.expect("Failed to run migrations");
     crate::modules::system::adapters::sqlite::utils::unicode_keys::ensure_unicode_keys(&pool)
@@ -91,6 +91,8 @@ pub async fn insert_test_game(
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
+        launch_mode: "standalone".to_string(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
 

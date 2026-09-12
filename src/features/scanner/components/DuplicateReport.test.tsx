@@ -9,6 +9,7 @@ import { render, screen, fireEvent, waitFor } from '../../../tests/testing/test-
 import DuplicateReport from './DuplicateReport';
 import * as hooks from '../hooks/useDedup';
 import type { DupScanReport, DupScanGroup, DuplicateSelection } from '@/entities/workspace';
+import { toast } from '@/shared/ui/toast';
 
 // Mock the hooks
 vi.mock('../hooks/useDedup', () => ({
@@ -417,6 +418,40 @@ describe('DuplicateReport', () => {
       await waitFor(() => {
         expect(mockMutate).toHaveBeenCalled();
       });
+    });
+
+    it('retains selections when the backend reports a partial resolution', async () => {
+      const mockMutate = vi.fn();
+      mockResolveDuplicates({
+        isPending: false,
+        mutate: mockMutate,
+      });
+
+      render(<DuplicateReport />);
+      fireEvent.click(screen.getByTestId('keep-a-group-1'));
+      fireEvent.click(await screen.findByRole('button', { name: /Apply 1 Action/i }));
+      fireEvent.click(await screen.findByTestId('confirm-button'));
+
+      const options = mockMutate.mock.calls[0]?.[1] as {
+        onSuccess?: (summary: {
+          total: number;
+          successful: number;
+          failed: number;
+          errors: { groupId: string; action: string; message: string }[];
+        }) => void;
+      };
+      options.onSuccess?.({
+        total: 1,
+        successful: 0,
+        failed: 1,
+        errors: [{ groupId: 'group-1', action: 'keepA', message: 'Folder changed on disk' }],
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Apply 1 Action/i })).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('resolution-modal')).toHaveStyle('display: none');
+      expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     });
   });
 

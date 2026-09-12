@@ -9,12 +9,6 @@ pub struct ActiveDownloadRow {
     pub session_id: Option<String>,
 }
 
-/// Row of a finished download that is eligible for import.
-pub struct ImportableDownloadRow {
-    pub file_path: Option<String>,
-    pub session_id: Option<String>,
-}
-
 /// Terminal download metadata retained for an explicit retry request.
 pub struct RetryableDownloadRow {
     pub session_id: Option<String>,
@@ -159,14 +153,6 @@ pub async fn delete_download(db: &SqlitePool, download_id: &str) -> Result<(), s
     Ok(())
 }
 
-/// Delete every download whose status is `imported`. Returns rows removed.
-pub async fn delete_imported(db: &SqlitePool) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query!("DELETE FROM browser_downloads WHERE status = 'imported'")
-        .execute(db)
-        .await?;
-    Ok(result.rows_affected())
-}
-
 /// Delete terminal downloads finished more than `retention_days` ago.
 pub async fn delete_older_than(db: &SqlitePool, retention_days: i64) -> Result<u64, sqlx::Error> {
     let interval = format!("-{retention_days}");
@@ -222,36 +208,4 @@ pub async fn get_retryable_download(
         filename: row.get("filename"),
         source_url: row.get("source_url"),
     }))
-}
-
-/// Fetch a `finished` download so it can be queued for import.
-pub async fn get_finished_for_import(
-    db: &SqlitePool,
-    download_id: &str,
-) -> Result<Option<ImportableDownloadRow>, sqlx::Error> {
-    let row = sqlx::query!(
-        "SELECT file_path, session_id FROM browser_downloads WHERE id = ? AND status = 'finished'",
-        download_id
-    )
-    .fetch_optional(db)
-    .await?;
-
-    Ok(row.map(|r| ImportableDownloadRow {
-        file_path: r.file_path,
-        session_id: r.session_id,
-    }))
-}
-
-/// Flag a download as `imported` (runs inside the placement transaction).
-pub async fn mark_imported(
-    conn: &mut sqlx::SqliteConnection,
-    download_id: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "UPDATE browser_downloads SET status = 'imported' WHERE id = ?",
-        download_id
-    )
-    .execute(conn)
-    .await?;
-    Ok(())
 }

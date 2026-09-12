@@ -17,9 +17,17 @@ interface UseDownloadsOptions {
 
 const progressByDownloadId = new Map<string, DownloadProgressEvent>();
 
-function applyLatestProgress(download: BrowserDownloadItem): BrowserDownloadItem {
-  const progress = progressByDownloadId.get(download.id);
-  if (!progress) return download;
+function isTerminalStatus(status: BrowserDownloadItem['status']): boolean {
+  return status === 'finished' || status === 'failed' || status === 'canceled' || status === 'imported';
+}
+
+export function mergeDownloadProgress(
+  download: BrowserDownloadItem,
+  progress: DownloadProgressEvent,
+): BrowserDownloadItem {
+  if (isTerminalStatus(download.status)) {
+    return download;
+  }
 
   return {
     ...download,
@@ -27,6 +35,18 @@ function applyLatestProgress(download: BrowserDownloadItem): BrowserDownloadItem
     bytes_received: progress.bytes_received,
     bytes_total: progress.bytes_total,
   };
+}
+
+function applyLatestProgress(download: BrowserDownloadItem): BrowserDownloadItem {
+  if (isTerminalStatus(download.status)) {
+    progressByDownloadId.delete(download.id);
+    return download;
+  }
+
+  const progress = progressByDownloadId.get(download.id);
+  if (!progress) return download;
+
+  return mergeDownloadProgress(download, progress);
 }
 
 /** Fetches all browser downloads and subscribes to real-time Tauri events. */
@@ -55,10 +75,13 @@ export function useDownloads({ showFeedback = false, onOpenDownloads }: UseDownl
     // snapshot first so a just-queued row can render before a following progress event.
     const unlistenStatus = listen<DownloadStatusEvent>('browser:download-status', (event) => {
       const { download, file_path: filePath, filename, id, status } = event.payload;
+      if (isTerminalStatus(status)) {
+        progressByDownloadId.delete(id);
+      }
 
       queryClient.setQueryData<BrowserDownloadItem[]>(DOWNLOADS_QUERY_KEY, (old) => {
         if (download) {
-          const next = applyLatestProgress(download);
+          const next = applyLatestProgress({ ...download, status, file_path: filePath ?? download.file_path });
           const existing = old ?? [];
           const index = existing.findIndex((item) => item.id === next.id);
           if (index === -1) return [next, ...existing];
@@ -120,16 +143,16 @@ export function useDownloads({ showFeedback = false, onOpenDownloads }: UseDownl
     const unlistenProgress = listen<DownloadProgressEvent>('browser:download-progress', (event) => {
       progressByDownloadId.set(event.payload.id, event.payload);
       queryClient.setQueryData<BrowserDownloadItem[]>(DOWNLOADS_QUERY_KEY, (old) =>
-        old?.map((d) =>
-          d.id === event.payload.id
-            ? {
-                ...d,
-                status: 'in_progress' as const,
-                bytes_received: event.payload.bytes_received,
-                bytes_total: event.payload.bytes_total,
-              }
-            : d,
-        ),
+        old?.map((download) => {
+          if (download.id !== event.payload.id) {
+            return download;
+          }
+          if (isTerminalStatus(download.status)) {
+            progressByDownloadId.delete(download.id);
+            return download;
+          }
+          return mergeDownloadProgress(download, event.payload);
+        }),
       );
     });
 
@@ -154,12 +177,6 @@ export function useDownloads({ showFeedback = false, onOpenDownloads }: UseDownl
     onError: () => toast.error(t('downloads.feedback.cancel_failed')),
   });
 
-  const clearImportedMutation = useMutation({
-    mutationFn: () => commands.browserClearImported(),
-    onSuccess: async () => publishQueryScopes(queryClient, ['browserDownloads']),
-    onError: () => toast.error(t('downloads.feedback.clear_failed')),
-  });
-
   const refreshDownloads = async () => {
     const result = await query.refetch();
     if (result.error) {
@@ -173,7 +190,6 @@ export function useDownloads({ showFeedback = false, onOpenDownloads }: UseDownl
     downloads,
     deleteDownload: deleteMutation.mutate,
     cancelDownload: cancelMutation.mutate,
-    clearImported: clearImportedMutation.mutate,
     retryDownload,
     refreshDownloads,
     isRefreshing: query.isRefetching,

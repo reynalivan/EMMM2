@@ -260,7 +260,7 @@ fn destination_preflight_runs_before_overwrite_commit() {
         ))
     };
 
-    let result = extract_archive(
+    let error = extract_archive(
         &zip_path,
         dir.path(),
         ExtractOptions {
@@ -270,7 +270,7 @@ fn destination_preflight_runs_before_overwrite_commit() {
         },
     );
 
-    assert!(result.is_err());
+    assert!(error.is_err());
     assert!(called.get());
     assert_eq!(
         fs::read_to_string(existing.join("keep.ini")).unwrap(),
@@ -653,7 +653,6 @@ fn test_extract_nested_archives_basic() {
         },
     )
     .unwrap();
-
     assert!(result.success);
 
     // The inner zip should be extracted into a folder named after itself conceptually
@@ -705,7 +704,7 @@ fn test_extract_nested_archives_max_depth() {
     // depth 1 (L1) - outer extraction
     let l1_zip_path = create_test_zip(dir.path(), "level1.zip", &[("level2.zip", &l2_zip_data)]);
 
-    let result = extract_archive(
+    let error = extract_archive(
         &l1_zip_path,
         dir.path(),
         ExtractOptions {
@@ -713,9 +712,8 @@ fn test_extract_nested_archives_max_depth() {
             ..Default::default()
         },
     )
-    .unwrap();
-
-    assert!(result.success);
+    .unwrap_err();
+    assert!(error.to_string().contains("nested_archive_depth_limit"));
 
     // Output structure:
     // The top wrapper (level1) is bypassed because it doesn't contain the .ini.
@@ -729,14 +727,20 @@ fn test_extract_nested_archives_max_depth() {
     let l4_zip_leftover = l3_dir.join("level4.zip");
     let l4_dir = l3_dir.join("level4");
 
-    assert!(l2_dir.exists(), "Level 2 was not unpacked");
-    assert!(l3_dir.exists(), "Level 3 was not unpacked");
     assert!(
-        l4_zip_leftover.exists(),
-        "Level 4 zip should remain extracted as a file"
+        !l2_dir.exists(),
+        "failed nested extraction must not leave staging output"
+    );
+    assert!(
+        !l3_dir.exists(),
+        "failed nested extraction must not leave staging output"
+    );
+    assert!(
+        !l4_zip_leftover.exists(),
+        "nested archive must not be reported as staged"
     );
     assert!(
         !l4_dir.exists(),
-        "Level 4 should NOT have been unpacked (exceeds max depth 2)"
+        "nested archive must not be unpacked beyond the limit"
     );
 }

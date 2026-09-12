@@ -2959,6 +2959,124 @@
       }
     },
     {
+      "name": "Aino",
+      "hash_db": {
+        "Default": ["d94c8962"]
+      },
+      "tags": ["Aino", "爱诺", "アイノ", "아이노"],
+      "object_type": "Character",
+      "custom_skins": [],
+      "thumbnail_path": null,
+      "metadata": {
+        "rarity": "4-Star",
+        "element": "Hydro",
+        "gender": "Female",
+        "weapon": "Claymore",
+        "catalog_provenance": "resources/databases/references/GIMI_Characters.json",
+        "catalog_verified_at": "2026-09-12"
+      }
+    },
+    {
+      "name": "Flins",
+      "hash_db": {
+        "Default": ["da9f1463"]
+      },
+      "tags": ["Flins", "菲林斯", "フリンズ", "플린스"],
+      "object_type": "Character",
+      "custom_skins": [],
+      "thumbnail_path": null,
+      "metadata": {
+        "rarity": "5-Star",
+        "element": "Electro",
+        "gender": "Male",
+        "weapon": "Polearm",
+        "catalog_provenance": "resources/databases/references/GIMI_Characters.json",
+        "catalog_verified_at": "2026-09-12"
+      }
+    },
+    {
+      "name": "Lauma",
+      "hash_db": {
+        "Default": ["8226cf84"]
+      },
+      "tags": ["Lauma", "菈乌玛", "ラウマ", "라우마"],
+      "object_type": "Character",
+      "custom_skins": [],
+      "thumbnail_path": null,
+      "metadata": {
+        "rarity": "5-Star",
+        "element": "Dendro",
+        "gender": "Female",
+        "weapon": "Catalyst",
+        "catalog_provenance": "resources/databases/references/GIMI_Characters.json",
+        "catalog_verified_at": "2026-09-12"
+      }
+    },
+    {
+      "name": "Nefer",
+      "hash_db": {},
+      "tags": ["Nefer", "奈芙尔", "ネフェル", "네페르"],
+      "object_type": "Character",
+      "custom_skins": [],
+      "thumbnail_path": null,
+      "metadata": {
+        "rarity": "5-Star",
+        "element": "Dendro",
+        "gender": "Female",
+        "weapon": "Catalyst",
+        "catalog_provenance": "resources/databases/references/GIMI_Characters.json",
+        "catalog_verified_at": "2026-09-12"
+      }
+    },
+    {
+      "name": "Nicole Reeyn",
+      "hash_db": {},
+      "tags": ["Nicole Reeyn", "Nicole", "N"],
+      "object_type": "Character",
+      "custom_skins": [],
+      "thumbnail_path": null,
+      "metadata": {
+        "rarity": "5-Star",
+        "element": "Pyro",
+        "gender": "Female",
+        "weapon": "Catalyst",
+        "catalog_provenance": "https://blog.playstation.com/?p=418331",
+        "catalog_verified_at": "2026-09-12"
+      }
+    },
+    {
+      "name": "Prune",
+      "hash_db": {},
+      "tags": ["Prune", "Witch Hunter"],
+      "object_type": "Character",
+      "custom_skins": [],
+      "thumbnail_path": null,
+      "metadata": {
+        "rarity": "4-Star",
+        "element": "Anemo",
+        "gender": "Female",
+        "weapon": "Catalyst",
+        "catalog_provenance": "https://blog.playstation.com/?p=418331",
+        "catalog_verified_at": "2026-09-12"
+      }
+    },
+    {
+      "name": "Lohen",
+      "hash_db": {},
+      "tags": ["Lohen", "Knights of Favonius", "Fifth Company"],
+      "object_type": "Character",
+      "custom_skins": [],
+      "thumbnail_path": null,
+      "metadata": {
+        "rarity": "5-Star",
+        "element": "Cryo",
+        "gender": "Male",
+        "weapon": "Polearm",
+        "catalog_provenance": "https://blog.playstation.com/?p=418331",
+        "catalog_verified_at": "2026-09-12"
+      }
+    },
+    {
       "name": "Weapon",
       "entry_kind": "taxonomy",
       "hash_db": {},

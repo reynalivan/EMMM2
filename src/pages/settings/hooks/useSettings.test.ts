@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react';
-import { useSettings } from './useSettings';
+import { useSettings } from '@/entities/settings';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { useToastStore } from '@/shared/ui/toast';

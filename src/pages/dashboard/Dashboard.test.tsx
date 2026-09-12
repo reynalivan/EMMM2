@@ -42,7 +42,7 @@ vi.mock('./hooks/useActiveKeybindings', () => ({
   useActiveKeybindings: vi.fn(),
 }));
 
-vi.mock('./hooks/useActiveGame', () => ({
+vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'g-1',

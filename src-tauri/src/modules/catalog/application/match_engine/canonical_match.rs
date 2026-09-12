@@ -1,5 +1,5 @@
 use crate::modules::ingestion::application::import_batch::types::{
-    CanonicalSuggestion, ConfidenceTier, MatchEvidence, StableCategory,
+    CanonicalSuggestion, ConfidenceTier, ImportMatchStatus, MatchEvidence, StableCategory,
 };
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
@@ -51,6 +51,17 @@ pub fn match_canonical_objects(
         ini_filters,
         &AiRerankConfig::default(),
     );
+    let match_status = match result.status {
+        crate::modules::matching::application::deep_matcher::MatchStatus::AutoMatched => {
+            ImportMatchStatus::AutoMatched
+        }
+        crate::modules::matching::application::deep_matcher::MatchStatus::NeedsReview => {
+            ImportMatchStatus::NeedsReview
+        }
+        crate::modules::matching::application::deep_matcher::MatchStatus::NoMatch => {
+            ImportMatchStatus::NoMatch
+        }
+    };
     result
         .candidates_topk
         .iter()
@@ -64,6 +75,7 @@ pub fn match_canonical_objects(
                 matched_alias: alias_reason(&candidate.reasons),
                 confidence_percentage: percentage,
                 confidence_tier: ConfidenceTier::from_percentage(percentage),
+                match_status,
                 evidence: candidate
                     .reasons
                     .iter()

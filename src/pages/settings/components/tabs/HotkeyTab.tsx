@@ -4,7 +4,7 @@ import { Keyboard, Eye, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../../shared/api/tauri/bindings';
 import type { HotkeyConfig, KeyViewerConfig } from '@/entities/settings';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import { useToastStore } from '@/shared/ui/toast';
 import { detectConflicts, type ReservedBinding } from '../../utils/hotkeyConflicts';
 

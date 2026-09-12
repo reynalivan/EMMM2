@@ -45,13 +45,6 @@ vi.mock('@/shared/ui/toast', () => ({
   },
 }));
 
-vi.mock('../../settings/hooks/useSettings', () => ({
-  useSettings: vi.fn(() => ({
-    data: { preview_auto_sync: false },
-    isLoading: false,
-  })),
-}));
-
 vi.mock('./usePreviewData', () => ({
   useModIniFiles: vi.fn(),
   useAllModIniDocuments: vi.fn(),

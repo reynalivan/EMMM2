@@ -123,3 +123,110 @@ async fn preparing_object_switch_does_not_heal_the_stored_path() {
         .unwrap();
     assert_eq!(stored_path, "DISABLED Alice");
 }
+
+#[tokio::test]
+async fn preparing_object_switch_rejects_an_object_from_another_game() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let first_mods_path = temp_dir.path().join("first-mods");
+    let second_mods_path = temp_dir.path().join("second-mods");
+    std::fs::create_dir_all(&first_mods_path).expect("first mods root");
+    std::fs::create_dir_all(second_mods_path.join("Alice")).expect("second object folder");
+
+    for (id, mods_path) in [
+        ("g_object_switch_owner", &first_mods_path),
+        ("g_object_switch_other", &second_mods_path),
+    ] {
+        insert_test_game(
+            &pool,
+            &TestGameFixture {
+                id,
+                name: "ZZZ",
+                game_type: GameType::GIMI,
+                path: if id == "g_object_switch_owner" {
+                    "/game_object_switch_owner"
+                } else {
+                    "/game_object_switch_other"
+                },
+                mods_path: Some(mods_path.to_str().unwrap()),
+            },
+        )
+        .await
+        .unwrap();
+    }
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "o_object_switch_owner",
+            game_id: "g_object_switch_owner",
+            name: "Alice",
+            folder_path: "Alice",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    let error = prepare_object_root_switch(
+        &pool,
+        "g_object_switch_other",
+        "o_object_switch_owner",
+        false,
+    )
+    .await
+    .expect_err("cross-game object must be rejected");
+
+    assert!(matches!(
+        error,
+        crate::shared::errors::AppError::NotFound(_)
+    ));
+}
+
+#[tokio::test]
+async fn preparing_object_switch_rejects_a_stored_path_outside_the_mods_root() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp_dir.path().join("mods");
+    let outside_path = temp_dir.path().join("outside").join("DISABLED Alice");
+    std::fs::create_dir_all(&mods_path).expect("mods root");
+    std::fs::create_dir_all(&outside_path).expect("outside object folder");
+
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "g_object_switch_containment",
+            name: "ZZZ",
+            game_type: GameType::GIMI,
+            path: "/game_object_switch_containment",
+            mods_path: Some(mods_path.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "o_object_switch_containment",
+            game_id: "g_object_switch_containment",
+            name: "Alice",
+            folder_path: outside_path.to_str().unwrap(),
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+
+    let error = prepare_object_root_switch(
+        &pool,
+        "g_object_switch_containment",
+        "o_object_switch_containment",
+        true,
+    )
+    .await
+    .expect_err("outside-root object path must be rejected");
+
+    assert!(matches!(
+        error,
+        crate::shared::errors::AppError::Security(_)
+    ));
+}

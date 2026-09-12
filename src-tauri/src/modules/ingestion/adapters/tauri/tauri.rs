@@ -112,6 +112,7 @@ pub async fn set_import_item_classification(
 pub async fn refresh_import_item_suggestions(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
+    target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     item_id: String,
 ) -> Result<crate::modules::ingestion::application::import_batch::types::ImportItem, AppError> {
     let item =
@@ -137,8 +138,9 @@ pub async fn refresh_import_item_suggestions(
         Some(&resource_dir),
         game_type,
     );
-    crate::modules::ingestion::application::import_batch::coordinator::refresh_import_item_suggestions(
+    crate::modules::ingestion::application::import_batch::coordinator::refresh_import_item_suggestions_with_target_index(
         pool.inner(),
+        target_manifest_index.inner(),
         &item_id,
         &master_db,
         &filters,
@@ -152,7 +154,10 @@ pub async fn preview_import_library_readiness(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
     batch_id: String,
-) -> Result<crate::modules::ingestion::application::import_batch::coordinator::ImportLibraryReadiness, AppError> {
+) -> Result<
+    crate::modules::ingestion::application::import_batch::coordinator::ImportLibraryReadiness,
+    AppError,
+> {
     let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
         pool.inner(),
         &batch_id,
@@ -191,6 +196,7 @@ pub async fn preview_import_library_readiness(
 pub async fn refresh_import_batch_matches(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
+    target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     batch_id: String,
 ) -> Result<ImportBatch, AppError> {
     let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
@@ -212,8 +218,9 @@ pub async fn refresh_import_batch_matches(
         Some(&resource_dir),
         game_type,
     );
-    crate::modules::ingestion::application::import_batch::coordinator::refresh_import_batch_matches(
+    crate::modules::ingestion::application::import_batch::coordinator::refresh_import_batch_matches_with_target_index(
         pool.inner(),
+        target_manifest_index.inner(),
         &batch_id,
         &master_db,
         &filters,
@@ -243,10 +250,12 @@ pub async fn mark_import_batch_review_started(
 #[specta::specta]
 pub async fn set_import_item_decision(
     pool: State<'_, sqlx::SqlitePool>,
+    target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     input: SetImportItemDecisionInput,
 ) -> Result<crate::modules::ingestion::application::import_batch::types::ImportItem, AppError> {
-    crate::modules::ingestion::application::import_batch::coordinator::set_import_item_decision(
+    crate::modules::ingestion::application::import_batch::coordinator::set_import_item_decision_with_target_index(
         pool.inner(),
+        target_manifest_index.inner(),
         input,
     )
     .await
@@ -310,6 +319,7 @@ pub async fn cancel_import_batch(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
     extraction_state: State<'_, crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState>,
+    target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     batch_id: String,
 ) -> Result<(), AppError> {
     let cancellation = extraction_state.cancel_and_wait(&batch_id).await;
@@ -328,6 +338,7 @@ pub async fn cancel_import_batch(
             &staging_root,
             &batch_id,
         )?;
+        target_manifest_index.clear_batch(&batch_id);
         drop(cancellation);
         Ok(())
     } else {
@@ -342,11 +353,13 @@ pub async fn cancel_import_batch(
 pub async fn commit_import_batch(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
+    target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     input: CommitImportBatchInput,
 ) -> Result<ImportBatchReport, AppError> {
+    let batch_id = input.batch_id.clone();
     let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
         pool.inner(),
-        &input.batch_id,
+        &batch_id,
     )
     .await?
     .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", input.batch_id)))?;
@@ -358,13 +371,30 @@ pub async fn commit_import_batch(
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
-    crate::modules::mutation::application::workspace_mutation::import_commit::commit_import_batch(
+    let report = crate::modules::mutation::application::workspace_mutation::import_commit::commit_import_batch(
         &app,
         pool.inner(),
         input,
         &master_db,
     )
-    .await
+    .await?;
+    let terminal = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        pool.inner(),
+        &batch_id,
+    )
+    .await?
+    .is_some_and(|current| {
+        matches!(
+            current.status,
+            crate::modules::ingestion::application::import_batch::types::ImportBatchStatus::Done
+                | crate::modules::ingestion::application::import_batch::types::ImportBatchStatus::Failed
+                | crate::modules::ingestion::application::import_batch::types::ImportBatchStatus::Cancelled
+        )
+    });
+    if terminal {
+        target_manifest_index.clear_batch(&batch_id);
+    }
+    Ok(report)
 }
 
 #[tauri::command]
@@ -559,10 +589,12 @@ pub async fn start_mod_inbox_watcher(
 pub async fn stop_mod_inbox_watcher(
     state: State<'_, crate::modules::ingestion::application::import_batch::mod_inbox_watcher::ModInboxWatcherState>,
     game_id: String,
+    root_path: String,
 ) -> Result<(), AppError> {
     crate::modules::ingestion::application::import_batch::mod_inbox_watcher::stop(
         state.inner(),
         &game_id,
+        &root_path,
     );
     Ok(())
 }

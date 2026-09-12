@@ -24,6 +24,8 @@ async fn test_mod_repo_crud() {
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
+        launch_mode: "standalone".into(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
     upsert_game(&pool, &game).await.unwrap();
@@ -94,6 +96,8 @@ async fn update_child_paths_matches_unicode_prefix_with_ascii_case_variants() {
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
+        launch_mode: "standalone".into(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
     upsert_game(&pool, &game).await.unwrap();
@@ -175,6 +179,8 @@ async fn test_repo_mod_status_consistency() {
         game_exe: None,
         launcher_path: None,
         loader_exe: None,
+        launch_mode: "standalone".into(),
+        xxmi_launcher_exe: None,
         launch_args: None,
     };
     upsert_game(&pool, &game).await.unwrap();
@@ -290,6 +296,8 @@ async fn seed_same_relative_mod_in_two_games(pool: &SqlitePool) {
                 game_exe: None,
                 launcher_path: None,
                 loader_exe: None,
+                launch_mode: "standalone".into(),
+                xxmi_launcher_exe: None,
                 launch_args: None,
             },
         )

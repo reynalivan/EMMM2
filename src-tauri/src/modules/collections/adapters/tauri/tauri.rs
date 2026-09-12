@@ -1,6 +1,4 @@
 use sqlx::SqlitePool;
-use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
 
 use crate::modules::collections::application::collection;
@@ -51,37 +49,6 @@ pub async fn get_apply_progress(
 // ============================================================================
 // Collection Commands
 // ============================================================================
-
-async fn collection_preflight_paths(
-    pool: &SqlitePool,
-    collection_id: &str,
-    mods_path: &Path,
-) -> Result<Vec<String>, AppError> {
-    let mods = crate::modules::collections::adapters::sqlite::get_mods(pool, collection_id)
-        .await
-        .map_err(|error| AppError::Internal(error.to_string()))?;
-    let objects = crate::modules::collections::adapters::sqlite::get_objects(pool, collection_id)
-        .await
-        .map_err(|error| AppError::Internal(error.to_string()))?;
-    let mut paths = BTreeSet::new();
-    for relative_path in mods
-        .into_iter()
-        .map(|member| member.mod_path)
-        .chain(objects.into_iter().filter_map(|member| member.path_key))
-    {
-        let path = PathBuf::from(relative_path);
-        paths.insert(
-            if path.is_absolute() {
-                path
-            } else {
-                mods_path.join(path)
-            }
-            .to_string_lossy()
-            .to_string(),
-        );
-    }
-    Ok(paths.into_iter().collect())
-}
 
 #[tauri::command]
 #[specta::specta]
@@ -198,8 +165,13 @@ pub async fn apply_collection(
             })
         })?;
     let mods_path = game.mod_path.clone();
-    let preflight_paths =
-        collection_preflight_paths(pool.inner(), &collection_id, &mods_path).await?;
+    let preflight_paths = collection::collection_preflight_scope_paths(
+        pool.inner(),
+        &game_id,
+        &collection_id,
+        &mods_path,
+    )
+    .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
@@ -572,33 +544,6 @@ mod tests {
         assert!(
             !apply_command.contains("run_full_internal_disk_reconcile"),
             "a committed apply must not be converted to Err by an outer reconcile"
-        );
-    }
-
-    #[test]
-    fn apply_command_uses_scoped_member_preflight_before_its_inline_projection() {
-        let source = include_str!("tauri.rs");
-        let start = source
-            .find("pub async fn apply_collection(")
-            .expect("apply command source");
-        let remainder = &source[start..];
-        let end = remainder[1..]
-            .find("#[tauri::command]")
-            .map(|offset| offset + 1)
-            .expect("next command boundary");
-        let apply_command = &remainder[..end];
-
-        assert!(
-            apply_command.contains("ensure_mutation_preflight_for_paths"),
-            "collection apply must preflight only collection member roots"
-        );
-        assert!(
-            apply_command.contains("collection_preflight_paths"),
-            "the target member/object paths must define the scoped preflight"
-        );
-        assert!(
-            !apply_command.contains("ensure_mutation_preflight(&app"),
-            "collection apply must not perform a duplicate full preflight before inline projection"
         );
     }
 

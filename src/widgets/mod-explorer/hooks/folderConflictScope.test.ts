@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isFolderConflictProtected } from './folderConflictScope';
+import { isFolderConflictProtected } from '@/features/workspace-runtime';
 
 describe('isFolderConflictProtected', () => {
   it('protects an exact conflict candidate and all descendants of a parent conflict', () => {

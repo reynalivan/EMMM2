@@ -86,7 +86,7 @@ export function AutoDetectResult({
                     {game.name}
                   </h3>
                   <code className="text-[10px] text-base-content/40 truncate block">
-                    {game.game_exe}
+                    {game.instance_path || game.mod_path}
                   </code>
                 </div>
                 <div className="flex items-center gap-2">
@@ -102,6 +102,12 @@ export function AutoDetectResult({
                   </button>
                 </div>
               </div>
+
+              {game.launch_mode === 'xxmi_managed' && (
+                <div className="badge badge-success badge-sm font-semibold">
+                  {t('result.managed_by_xxmi')}
+                </div>
+              )}
 
               {game.warnings && game.warnings.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-base-content/5">

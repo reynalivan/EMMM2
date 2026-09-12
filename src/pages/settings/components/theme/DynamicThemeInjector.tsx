@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useSettings } from '../../hooks/useSettings';
+import { useSettings } from '@/entities/settings';
 import { type CustomTheme } from '../../../../shared/api/tauri/bindings';
 import { useCustomTheme } from '../../hooks/useCustomThemes';
 

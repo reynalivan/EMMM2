@@ -42,6 +42,7 @@
     }
   },
   "result": {
+    "managed_by_xxmi": "Managed by XXMI",
     "back_to_welcome": "Back to Welcome",
     "back": "Back",
     "title_one": "Game Found!",
@@ -57,8 +58,19 @@
     "subtitle": "Looking for 3DMigoto instances in XXMI subfolders"
   },
   "indexing": {
-    "title": "Indexing your mods...",
+    "title": "Indexing your library",
     "subtitle": "Please wait while EMMM scans the game folders.",
+    "overall_progress": "Overall progress",
+    "game_progress": "Game {{current}} of {{total}} · {{game}}",
+    "activity": {
+      "discovering": "Preparing scan plan · Step {{step}} of {{total}}",
+      "scanning": "Scanning mod folders [{{folder}}] · Step {{step}} of {{total}}",
+      "scanning_without_folder": "Scanning mod folders · Step {{step}} of {{total}}",
+      "projecting": "Syncing library · Step {{step}} of {{total}}",
+      "finalizing": "Finishing indexing · Step {{step}} of {{total}}",
+      "completed": "Finishing indexing · Step {{step}} of {{total}}",
+      "failed": "Finishing indexing · Step {{step}} of {{total}}"
+    },
     "preparing": "Preparing library…",
     "progress_label": "Indexing progress",
     "estimating": "Estimating remaining time…",

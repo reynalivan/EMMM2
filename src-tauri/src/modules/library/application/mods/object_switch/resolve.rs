@@ -64,6 +64,24 @@ fn find_matching_object_root(mods_path: &Path, object_name: &str) -> Option<Stri
     None
 }
 
+fn ensure_object_root_containment(
+    canonical_mods_root: &Path,
+    candidate: &Path,
+) -> Result<(), AppError> {
+    let canonical_candidate = candidate
+        .canonicalize()
+        .map_err(|error| AppError::Validation(format!("Object folder is unavailable: {error}")))?;
+    if canonical_candidate == canonical_mods_root
+        || !canonical_candidate.starts_with(canonical_mods_root)
+    {
+        return Err(AppError::Security(format!(
+            "Object folder escapes the configured Mods root: {}",
+            candidate.display()
+        )));
+    }
+    Ok(())
+}
+
 pub(super) async fn heal_object_root_path(
     pool: &sqlx::SqlitePool,
     game_id: &str,
@@ -127,19 +145,25 @@ pub(super) async fn resolve_object_root_path(
     let object =
         crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(pool, object_id)
             .await?
+            .filter(|object| object.game_id == game_id)
             .ok_or_else(|| AppError::NotFound(format!("Object not found: {object_id}")))?;
     let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
     let mods_root = Path::new(&mods_path);
+    let canonical_mods_root = mods_root
+        .canonicalize()
+        .map_err(|error| AppError::Validation(format!("Mods folder is unavailable: {error}")))?;
 
     for candidate in build_object_path_candidates(mods_root, &object.folder_path, &object.name) {
         if Path::new(&candidate).exists() {
+            ensure_object_root_containment(&canonical_mods_root, Path::new(&candidate))?;
             return Ok((object, mods_path, candidate));
         }
     }
 
     if let Some(found_path) = find_matching_object_root(mods_root, &object.name) {
+        ensure_object_root_containment(&canonical_mods_root, Path::new(&found_path))?;
         return Ok((object, mods_path, found_path));
     }
 

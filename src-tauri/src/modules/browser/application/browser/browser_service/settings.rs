@@ -5,6 +5,12 @@ use sqlx::SqlitePool;
 use crate::modules::browser::adapters::sqlite::browser;
 use crate::shared::errors::BrowserError;
 
+const DEFAULT_RETENTION_DAYS: i64 = 30;
+const LEGACY_DATABASE_DEFAULT_RETENTION_DAYS: i64 = 3;
+const MIN_RETENTION_DAYS: i64 = 1;
+const MAX_RETENTION_DAYS: i64 = 365;
+const RETENTION_MIGRATION_MARKER: &str = "retention_days_migration_v1";
+
 /// Fetch the configured homepage URL from `browser_settings` table.
 /// Falls back to `https://www.google.com` if not set.
 pub async fn get_homepage(db: &SqlitePool) -> String {
@@ -20,6 +26,61 @@ pub async fn set_homepage(db: &SqlitePool, url: &str) -> Result<(), BrowserError
     validate_http_url(url)?;
     browser::set_setting(db, "homepage_url", url).await?;
     Ok(())
+}
+
+/// Read the configured retention period, falling back if a legacy value is invalid.
+pub async fn get_retention_days(db: &SqlitePool) -> Result<i64, BrowserError> {
+    let configured = browser::get_retention_days(db).await?;
+    Ok(configured
+        .filter(|days| is_valid_retention_days(*days))
+        .unwrap_or(DEFAULT_RETENTION_DAYS))
+}
+
+/// Preserve a valid retention value from the legacy browser store during the
+/// one-time move away from the legacy database default. The marker prevents a
+/// stale local value from overwriting a preference saved through the new UI.
+pub async fn get_or_migrate_retention_days(
+    db: &SqlitePool,
+    legacy_retention_days: Option<i64>,
+) -> Result<i64, BrowserError> {
+    if browser::get_setting(db, RETENTION_MIGRATION_MARKER)
+        .await?
+        .is_some()
+    {
+        return get_retention_days(db).await;
+    }
+
+    let configured = browser::get_retention_days(db).await?;
+    let retention_days = match configured {
+        Some(days)
+            if is_valid_retention_days(days) && days != LEGACY_DATABASE_DEFAULT_RETENTION_DAYS =>
+        {
+            days
+        }
+        Some(_) | None => legacy_retention_days
+            .filter(|days| is_valid_retention_days(*days))
+            .unwrap_or(DEFAULT_RETENTION_DAYS),
+    };
+
+    set_retention_days(db, retention_days).await?;
+    browser::set_setting(db, RETENTION_MIGRATION_MARKER, "complete").await?;
+    Ok(retention_days)
+}
+
+/// Store a retention period that is safe for the cleanup job to consume.
+pub async fn set_retention_days(db: &SqlitePool, days: i64) -> Result<(), BrowserError> {
+    if !is_valid_retention_days(days) {
+        return Err(BrowserError::InvalidSetting(format!(
+            "retention days must be between {MIN_RETENTION_DAYS} and {MAX_RETENTION_DAYS}"
+        )));
+    }
+
+    browser::set_setting(db, "retention_days", &days.to_string()).await?;
+    Ok(())
+}
+
+fn is_valid_retention_days(days: i64) -> bool {
+    (MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(&days)
 }
 
 /// Validate that URL is http or https only.
@@ -105,5 +166,36 @@ mod tests {
 
         assert!(matches!(err, BrowserError::InvalidUrl(_)));
         assert_eq!(get_homepage(&db).await, "https://ok.test");
+    }
+
+    #[tokio::test]
+    async fn retention_days_round_trip_through_the_browser_database() {
+        let db = init_test_db().await.pool;
+
+        set_retention_days(&db, 14).await.unwrap();
+        assert_eq!(get_retention_days(&db).await.unwrap(), 14);
+
+        assert!(matches!(
+            set_retention_days(&db, 0).await.unwrap_err(),
+            BrowserError::InvalidSetting(_)
+        ));
+        assert_eq!(get_retention_days(&db).await.unwrap(), 14);
+    }
+
+    #[tokio::test]
+    async fn migration_preserves_legacy_retention_and_keeps_existing_database_setting() {
+        let db = init_test_db().await.pool;
+
+        assert_eq!(
+            get_or_migrate_retention_days(&db, Some(365)).await.unwrap(),
+            365
+        );
+        assert_eq!(get_retention_days(&db).await.unwrap(), 365);
+
+        set_retention_days(&db, 14).await.unwrap();
+        assert_eq!(
+            get_or_migrate_retention_days(&db, Some(1)).await.unwrap(),
+            14
+        );
     }
 }

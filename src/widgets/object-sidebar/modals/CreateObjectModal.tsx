@@ -12,7 +12,7 @@ import { X } from 'lucide-react';
 import { useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGameSchema } from '../hooks/useObjectQueries';
-import { useCreateObject } from '../hooks/useObjectMutations';
+import { useCreateObject } from '@/features/workspace-runtime';
 import type { JsonValue } from '@/entities/game-object';
 import { useActiveGame } from '@/entities/game';
 import { toast } from '@/shared/ui/toast';

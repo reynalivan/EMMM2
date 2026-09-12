@@ -62,10 +62,19 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
     resolve(
       { requests, gameId: report.gameId },
       {
-        onSuccess: () => {
+        onSuccess: (summary) => {
           setShowModal(false);
-          setSelections(new Map()); // Clear selections after success
-          toast.success(t('scanner:report.toast.actions_applied'));
+          if (summary.failed === 0) {
+            setSelections(new Map());
+            return;
+          }
+
+          const failedGroupIds = new Set(summary.errors.map((entry) => entry.groupId));
+          if (failedGroupIds.size > 0) {
+            setSelections((current) =>
+              new Map([...current].filter(([groupId]) => failedGroupIds.has(groupId))),
+            );
+          }
         },
         onError: (err) => {
           toast.error(t('scanner:report.toast.action_failed', { error: formatAppError(err) }));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FilterDef } from '@/entities/game-object';
-import { areObjectMetaFiltersEqual, sanitizeObjectMetaFilters } from './objectFilterState';
+import { areObjectMetaFiltersEqual, sanitizeObjectMetaFilters } from '@/entities/game-object';
 
 describe('objectFilterState', () => {
   const categoryFilters: FilterDef[] = [

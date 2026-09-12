@@ -262,6 +262,22 @@ pub async fn commit_import_batch(
         game_guard,
         operation_guard,
     );
+    let target_manifest_index = app
+        .try_state::<crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>()
+        .ok_or_else(|| AppError::Internal("TargetManifestIndexState is unavailable".to_string()))?;
+    if let Err(error) = validate_targets_still_available(
+        &plans,
+        &canonical_root,
+        &batch.game_id,
+        target_manifest_index.inner(),
+    ) {
+        for sequence in 0..plans.len() {
+            mutation_lease.mark_step_rolled_back(sequence as u32)?;
+        }
+        mutation_lease.begin_rollback()?;
+        mutation_lease.finish_rollback()?;
+        return Err(error);
+    }
     let selected_id_list = selected_ids.iter().cloned().collect::<Vec<_>>();
     if !crate::modules::ingestion::adapters::sqlite::import_batch::begin_batch_commit(
         pool,
@@ -966,7 +982,8 @@ async fn resume_committed_items(
                 ))
             })?;
             let mod_id =
-                resolve_reconciled_mod_id(pool, &batch.game_id, Path::new(destination_path)).await?;
+                resolve_reconciled_mod_id(pool, &batch.game_id, Path::new(destination_path))
+                    .await?;
             crate::modules::ingestion::adapters::sqlite::import_batch::bind_reconciled_destination(
                 pool, &item.id, &object_id, &mod_id,
             )
@@ -1331,26 +1348,86 @@ fn validate_preview_fingerprint(plan: &PlannedMove) -> Result<(), AppError> {
     }
 }
 
+fn validate_targets_still_available(
+    plans: &[PlannedMove],
+    mods_root: &Path,
+    game_id: &str,
+    target_manifest_index: &crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState,
+) -> Result<(), AppError> {
+    for plan in plans {
+        let expected_manifest = plan.item.payload_manifest.as_ref().ok_or_else(|| {
+            AppError::Validation(format!(
+                "stale_preview: import item '{}' has no payload manifest",
+                plan.item.id
+            ))
+        })?;
+        let current_manifest = crate::modules::ingestion::application::import_batch::payload_manifest::build_payload_manifest(
+            &plan.source,
+            None,
+        )?;
+        if current_manifest.version != expected_manifest.version
+            || current_manifest.content_sha256 != expected_manifest.content_sha256
+        {
+            return Err(AppError::Validation(format!(
+                "stale_preview: payload changed after analysis for item '{}'",
+                plan.item.id
+            )));
+        }
+        if let Some(existing) = target_manifest_index.find_existing_payload_match(
+            &plan.item.batch_id,
+            game_id,
+            mods_root,
+            &current_manifest,
+        )? {
+            return Err(AppError::Validation(format!(
+                "target_changed: an identical payload is now installed at '{}'; refresh this item before committing",
+                existing.display()
+            )));
+        }
+        let Some(parent) = plan.target.parent() else {
+            return Err(AppError::Validation(
+                "Import destination has no parent".to_string(),
+            ));
+        };
+        if !parent.exists() {
+            continue;
+        }
+        let Some(target_name) = plan.target.file_name().and_then(|name| name.to_str()) else {
+            return Err(AppError::Validation(format!(
+                "Import destination has an invalid folder name: {}",
+                plan.target.display()
+            )));
+        };
+        if let Some(existing) =
+            crate::modules::library::application::mods::core_ops::find_sibling_identity_collision(
+                parent,
+                target_name,
+                None,
+            )
+        {
+            return Err(AppError::Validation(format!(
+                "target_changed: destination '{}' is now occupied by '{}'; refresh this item before committing",
+                plan.target.display(),
+                existing.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 async fn execute_moves(
-    pool: &sqlx::SqlitePool,
+    _pool: &sqlx::SqlitePool,
     plans: &[PlannedMove],
     journal: &mut Vec<MoveJournalEntry>,
     created_directories: &mut Vec<PathBuf>,
-    collision_ids: &mut BTreeSet<String>,
+    _collision_ids: &mut BTreeSet<String>,
 ) -> Result<(), AppError> {
     for plan in plans {
         if plan.target.exists() {
-            collision_ids.insert(plan.item.id.clone());
-            crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
-                pool,
-                &plan.item.id,
-                ImportItemStatus::Skipped,
-                None,
-                Some("collision"),
-                Some("Destination folder already exists"),
-            )
-            .await?;
-            continue;
+            return Err(AppError::Validation(format!(
+                "target_changed: destination '{}' became occupied during commit",
+                plan.target.display()
+            )));
         }
         if !plan.object_dir.exists() {
             std::fs::create_dir(&plan.object_dir)?;

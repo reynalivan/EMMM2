@@ -5,9 +5,9 @@ import { QueryClient } from '@tanstack/react-query';
 import {
   applyDiskReconcileResult,
   useDiskReconcileCoordinator,
-  useWatcherLifecycle,
 } from './useFileWatcher';
 import { isPreviewAffected } from '../utils/reconcileSelection';
+import { useWatcherLifecycle } from '../utils/watcherLifecycle';
 import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { runtimeQueryKeys } from '@/shared/lib/queryRefresh';

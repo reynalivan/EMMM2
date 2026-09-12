@@ -13,7 +13,6 @@ export default function DownloadsPage() {
     downloads,
     deleteDownload,
     cancelDownload,
-    clearImported,
     retryDownload,
     refreshDownloads,
     isRefreshing,
@@ -50,9 +49,6 @@ export default function DownloadsPage() {
               aria-label={t('downloads.refresh')}
             >
               <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : undefined} />
-            </button>
-            <button className="btn btn-outline btn-sm gap-2" onClick={() => clearImported()}>
-              <Trash2 size={16} /> {t('downloads.clear_imported')}
             </button>
           </div>
         </div>

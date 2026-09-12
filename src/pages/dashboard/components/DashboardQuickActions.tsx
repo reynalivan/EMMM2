@@ -9,9 +9,13 @@ import {
   Settings,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../shared/api/tauri/bindings';
 import type { WorkspaceView } from '@/app/store';
+import { useAppStore } from '@/app/store';
+import { launchConfiguredGame } from '@/entities/game';
+import { formatAppError } from '@/shared/lib/appError';
+import { toast } from '@/shared/ui/toast';
 
 interface DashboardQuickActionsProps {
   activeGameId: string | null;
@@ -23,6 +27,20 @@ export function DashboardQuickActions({
   setWorkspaceView,
 }: DashboardQuickActionsProps) {
   const { t } = useTranslation(['dashboard']);
+  const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
+  const [isLaunching, setIsLaunching] = useState(false);
+
+  const handleQuickPlay = async () => {
+    if (!activeGameId) return;
+    setIsLaunching(true);
+    try {
+      await launchConfiguredGame(activeGameId, autoCloseLauncher);
+    } catch (cause) {
+      toast.error(formatAppError(cause));
+    } finally {
+      setIsLaunching(false);
+    }
+  };
 
   return (
     <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
@@ -31,11 +49,9 @@ export function DashboardQuickActions({
           reads as an alert about a problem that isn't there. */}
       <ActionTile
         label={t('actions.quick_play')}
-        icon={<PlayCircle size={26} />}
-        onClick={() => {
-          if (activeGameId) commands.launchGame(activeGameId).catch(console.error);
-        }}
-        disabled={!activeGameId}
+        icon={isLaunching ? <span className="loading loading-spinner loading-md" /> : <PlayCircle size={26} />}
+        onClick={() => void handleQuickPlay()}
+        disabled={!activeGameId || isLaunching}
         emphasis
       />
       <ActionTile

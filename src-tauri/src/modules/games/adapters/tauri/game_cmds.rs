@@ -1,5 +1,5 @@
 use crate::modules::games::application::game::validator;
-use crate::modules::games::domain::models::GameType;
+use crate::modules::games::domain::models::{GameType, LaunchMode};
 use crate::modules::settings::application::config::{ConfigService, GameConfig};
 use crate::shared::errors::AppError;
 use crate::shared::path_key::folder_path_key;
@@ -56,20 +56,24 @@ pub async fn auto_detect_games_inner(
             id,
             name: detected.game_type.display_name().to_string(),
             game_type: detected.game_type,
+            instance_path: PathBuf::from(&detected.info.path),
             mod_path: PathBuf::from(&detected.info.mods_path),
             ready_to_move_path: None,
-            game_exe: PathBuf::from(&detected.info.path),
-            loader_exe: Some(PathBuf::from(&detected.info.launcher_path)),
+            launch_mode: detected.launch_mode,
+            game_exe: None,
+            loader_exe: (detected.launch_mode == LaunchMode::Standalone)
+                .then(|| detected.info.launcher_path.as_ref().map(PathBuf::from))
+                .flatten(),
+            xxmi_launcher_exe: detected.xxmi_launcher_exe.clone(),
             launch_args: None,
             warnings: detected.warnings.clone(),
         };
 
         // Check for duplicates
-        let normalized_path = canonical_game_path_key(&game.game_exe.to_string_lossy());
-        let is_duplicate = settings
-            .games
-            .iter()
-            .any(|g| canonical_game_path_key(&g.game_exe.to_string_lossy()) == normalized_path);
+        let normalized_path = canonical_game_path_key(&game.instance_path.to_string_lossy());
+        let is_duplicate = settings.games.iter().any(|g| {
+            canonical_game_path_key(&g.instance_path.to_string_lossy()) == normalized_path
+        });
 
         if !is_duplicate {
             new_games.push(game);
@@ -106,14 +110,17 @@ pub async fn add_game_manual_inner(
     let folder = Path::new(path);
 
     // Validate folder structure (returns warnings, not hard errors, for missing files)
-    let (info, warnings) = validator::validate_instance(folder)?;
+    let (info, mut warnings) = validator::validate_instance(folder)?;
+    warnings.push(
+        "Game executable is not configured. Select the game's .exe before using Play.".to_string(),
+    );
 
     let settings = service.get_settings();
 
     // Duplicate path check (TC-1.5-01, NC-1.3-02)
     let normalized_path = canonical_game_path_key(&info.path);
     for g in &settings.games {
-        let existing_normalized = canonical_game_path_key(&g.game_exe.to_string_lossy());
+        let existing_normalized = canonical_game_path_key(&g.instance_path.to_string_lossy());
         if existing_normalized == normalized_path {
             return Err(AppError::Validation(format!(
                 "This game path is already registered as '{}'.",
@@ -127,10 +134,13 @@ pub async fn add_game_manual_inner(
         id,
         name: gt.display_name().to_string(),
         game_type: gt,
+        instance_path: PathBuf::from(&info.path),
         mod_path: PathBuf::from(&info.mods_path),
         ready_to_move_path: None,
-        game_exe: PathBuf::from(&info.path),
-        loader_exe: Some(PathBuf::from(&info.launcher_path)),
+        launch_mode: LaunchMode::Standalone,
+        game_exe: None,
+        loader_exe: info.launcher_path.map(PathBuf::from),
+        xxmi_launcher_exe: None,
         launch_args: None,
         warnings,
     };
@@ -168,10 +178,11 @@ pub async fn save_onboarding_games_inner(
         for game in games {
             // Double check against the latest committed list, not the snapshot
             // from when onboarding detection started.
-            let normalized_path = canonical_game_path_key(&game.game_exe.to_string_lossy());
+            let normalized_path = canonical_game_path_key(&game.instance_path.to_string_lossy());
 
             let is_duplicate = settings.games.iter().any(|configured| {
-                canonical_game_path_key(&configured.game_exe.to_string_lossy()) == normalized_path
+                canonical_game_path_key(&configured.instance_path.to_string_lossy())
+                    == normalized_path
             });
 
             if !is_duplicate {
@@ -195,84 +206,100 @@ pub async fn get_games(
     Ok(state.get_settings().games)
 }
 
-/// Launch the 3DMigoto Loader (if not running) and then the Game.
-/// Covers: US-10.1, TC-10.1-01
+/// Launch a game through its configured XXMI or standalone topology.
 #[specta::specta]
 #[tauri::command]
 pub async fn launch_game(
     state: tauri::State<'_, ConfigService>,
     game_id: String,
 ) -> Result<(), AppError> {
-    use sysinfo::System;
-
-    // 1. Get Game Config
     let games = get_games(state).await?;
     let game = games
         .into_iter()
         .find(|g| g.id == game_id)
         .ok_or_else(|| AppError::NotFound("Game config not found".to_string()))?;
 
-    // 2. Check if Game is valid
-    let game_path = &game.game_exe;
-    if !game_path.exists() {
-        return Err(AppError::NotFound(format!(
-            "Game executable not found at: {}",
-            game_path.display()
-        )));
+    match game.launch_mode {
+        LaunchMode::XxmiManaged => launch_xxmi_managed_game(&game),
+        LaunchMode::Standalone => launch_standalone_game(&game).await,
     }
+}
 
-    // 3. Process Check & Loader Launch (if loader is configured)
+fn launch_xxmi_managed_game(game: &GameConfig) -> Result<(), AppError> {
+    let launcher_path = game.xxmi_launcher_exe.as_ref().ok_or_else(|| {
+        AppError::Validation("XXMI launcher is not configured for this game.".to_string())
+    })?;
+    ensure_executable_file(launcher_path, "XXMI launcher")?;
+
+    let launcher_dir = launcher_path.parent().unwrap_or(launcher_path);
+    std::process::Command::new(launcher_path)
+        .current_dir(launcher_dir)
+        .args(xxmi_launch_args(game.game_type))
+        .spawn()
+        .map_err(|error| AppError::Io(format!("Failed to start XXMI launcher: {error}")))?;
+
+    Ok(())
+}
+
+fn xxmi_launch_args(game_type: GameType) -> [String; 3] {
+    [
+        "--nogui".to_string(),
+        "--xxmi".to_string(),
+        game_type.to_string(),
+    ]
+}
+
+async fn launch_standalone_game(game: &GameConfig) -> Result<(), AppError> {
+    use sysinfo::System;
+
+    let game_path = game.game_exe.as_ref().ok_or_else(|| {
+        AppError::Validation(
+            "Game executable is not configured. Select the game's .exe before using Play."
+                .to_string(),
+        )
+    })?;
+    ensure_executable_file(game_path, "Game executable")?;
+
     if let Some(launcher_path) = &game.loader_exe {
-        if !launcher_path.as_os_str().is_empty() {
-            if !launcher_path.exists() {
-                return Err(AppError::NotFound(format!(
-                    "Loader not found at: {}",
-                    launcher_path.display()
-                )));
+        ensure_executable_file(launcher_path, "Loader")?;
+
+        let mut sys = System::new_all();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+        let launcher_name = launcher_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+
+        let is_loader_running = sys.processes().values().any(|process| {
+            process
+                .name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&launcher_name)
+        });
+
+        if !is_loader_running {
+            log::info!("Starting Loader: {}", launcher_path.display());
+
+            let launcher_dir = launcher_path.parent().unwrap_or(launcher_path);
+
+            #[cfg(target_os = "windows")]
+            {
+                crate::platform::process::launch_elevated(launcher_path, launcher_dir)?;
             }
 
-            let mut sys = System::new_all();
-            sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-
-            let launcher_name = launcher_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
-
-            let is_loader_running = sys.processes().values().any(|p| {
-                p.name()
-                    .to_string_lossy()
-                    .eq_ignore_ascii_case(&launcher_name)
-            });
-
-            // 4. Launch Loader if needed
-            if !is_loader_running {
-                log::info!("Starting Loader: {}", launcher_path.display());
-
-                let launcher_dir = launcher_path.parent().unwrap_or(launcher_path);
-
-                #[cfg(target_os = "windows")]
-                {
-                    crate::platform::process::launch_elevated(launcher_path, launcher_dir)?;
-                }
-
-                #[cfg(not(target_os = "windows"))]
-                {
-                    std::process::Command::new(launcher_path)
-                        .current_dir(launcher_dir)
-                        .spawn()
-                        .map_err(|e| AppError::Io(format!("Failed to start loader: {e}")))?;
-                }
-
-                // Small delay to let loader initialize
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            } else {
-                log::info!("Loader already running: {}", launcher_name);
+            #[cfg(not(target_os = "windows"))]
+            {
+                std::process::Command::new(launcher_path)
+                    .current_dir(launcher_dir)
+                    .spawn()
+                    .map_err(|error| AppError::Io(format!("Failed to start loader: {error}")))?;
             }
+
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     }
 
-    // 5. Launch Game
     log::info!("Starting Game: {}", game_path.display());
     let game_dir = game_path.parent().unwrap_or(game_path);
 
@@ -280,7 +307,7 @@ pub async fn launch_game(
     cmd.current_dir(game_dir);
 
     // Apply args
-    if let Some(args_str) = game.launch_args {
+    if let Some(args_str) = &game.launch_args {
         if !args_str.trim().is_empty() {
             for arg in args_str.split_whitespace() {
                 cmd.arg(arg);
@@ -290,6 +317,26 @@ pub async fn launch_game(
 
     cmd.spawn()
         .map_err(|e| AppError::Io(format!("Failed to start game: {e}")))?;
+
+    Ok(())
+}
+
+fn ensure_executable_file(path: &Path, label: &str) -> Result<(), AppError> {
+    if !path.is_file() {
+        return Err(AppError::NotFound(format!(
+            "{label} executable not found at: {}",
+            path.display()
+        )));
+    }
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+    {
+        return Err(AppError::Validation(format!(
+            "{label} must be a .exe file: {}",
+            path.display()
+        )));
+    }
 
     Ok(())
 }

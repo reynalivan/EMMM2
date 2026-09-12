@@ -1,4 +1,9 @@
 fn main() {
+    // `sqlx::migrate!` embeds the migration list at compile time, but Cargo
+    // otherwise has no file dependency on the directory. Keep test and app
+    // binaries in sync when a migration is added or changed.
+    println!("cargo:rerun-if-changed=migrations");
+
     #[cfg(windows)]
     {
         println!("cargo:rerun-if-changed=common-controls-v6.rc");

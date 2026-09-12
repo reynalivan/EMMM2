@@ -39,7 +39,7 @@ vi.mock('@/app/store', () => ({
 
 let mockIsLoading = false;
 let mockError: string | null = null;
-vi.mock('./hooks/useSettings', () => ({
+vi.mock('@/entities/settings', () => ({
   useSettings: () => ({
     isLoading: mockIsLoading,
     error: mockError,

@@ -2,7 +2,16 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { DashboardQuickActions } from './DashboardQuickActions';
 
-vi.mock('../../../shared/api/tauri/bindings', () => ({ commands: { launchGame: vi.fn() } }));
+const launchConfiguredGame = vi.fn();
+
+vi.mock('@/entities/game', () => ({
+  launchConfiguredGame: (...args: unknown[]) => launchConfiguredGame(...args),
+}));
+vi.mock('@/app/store', () => ({
+  useAppStore: (selector: (state: { autoCloseLauncher: boolean }) => unknown) =>
+    selector({ autoCloseLauncher: true }),
+}));
+vi.mock('@/shared/ui/toast', () => ({ toast: { error: vi.fn() } }));
 
 describe('DashboardQuickActions', () => {
   it('opens Mod Inbox from its dashboard tile', () => {
@@ -12,5 +21,23 @@ describe('DashboardQuickActions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mod Inbox' }));
 
     expect(setWorkspaceView).toHaveBeenCalledWith('mod-inbox');
+  });
+
+  it('uses the shared launch action and prevents duplicate clicks while pending', async () => {
+    let resolveLaunch!: () => void;
+    launchConfiguredGame.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveLaunch = resolve;
+      }),
+    );
+    render(<DashboardQuickActions activeGameId="game-1" setWorkspaceView={vi.fn()} />);
+
+    const quickPlay = screen.getByRole('button', { name: 'Quick Play' });
+    fireEvent.click(quickPlay);
+
+    expect(launchConfiguredGame).toHaveBeenCalledWith('game-1', true);
+    expect(quickPlay).toBeDisabled();
+
+    resolveLaunch();
   });
 });

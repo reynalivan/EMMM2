@@ -1,7 +1,10 @@
 import { Clock, Gamepad2, Keyboard, PlayCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../shared/api/tauri/bindings';
-import type { GameConfig } from '@/entities/game';
+import { launchConfiguredGame, type GameConfig } from '@/entities/game';
+import { useAppStore } from '@/app/store';
+import { formatAppError } from '@/shared/lib/appError';
+import { toast } from '@/shared/ui/toast';
+import { useState } from 'react';
 import type { DashboardPayload } from '../model/dashboard';
 import type { ActiveKeyBinding } from '@/entities/settings';
 import { formatRelativeDate } from '../../../shared/lib/utils/formatters';
@@ -71,6 +74,20 @@ function RecentModsCard({ recentMods }: { recentMods: DashboardPayload['recent_m
 
 function QuickPlayCard({ activeGame }: { activeGame: GameConfig | null }) {
   const { t } = useTranslation(['dashboard']);
+  const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
+  const [isLaunching, setIsLaunching] = useState(false);
+
+  const handleLaunch = async () => {
+    if (!activeGame) return;
+    setIsLaunching(true);
+    try {
+      await launchConfiguredGame(activeGame.id, autoCloseLauncher);
+    } catch (cause) {
+      toast.error(formatAppError(cause));
+    } finally {
+      setIsLaunching(false);
+    }
+  };
 
   return (
     <div className="card bg-base-200/50 border border-base-300">
@@ -88,12 +105,11 @@ function QuickPlayCard({ activeGame }: { activeGame: GameConfig | null }) {
             <p className="font-semibold text-base">{activeGame.name}</p>
             <p className="text-xs text-base-content/50 mb-3">{t('activity.last_selected')}</p>
             <button
-              onClick={() => {
-                commands.launchGame(activeGame.id).catch(console.error);
-              }}
+              onClick={() => void handleLaunch()}
+              disabled={isLaunching}
               className="btn btn-primary btn-sm gap-2 w-full"
             >
-              <PlayCircle size={16} />
+              {isLaunching ? <span className="loading loading-spinner loading-sm" /> : <PlayCircle size={16} />}
               {t('activity.launch')}
             </button>
           </>

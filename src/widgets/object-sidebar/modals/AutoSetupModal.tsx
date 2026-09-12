@@ -8,7 +8,7 @@ import { X, CheckSquare, Square, Download } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useMasterDb } from '../hooks/useObjectQueries';
-import { useCreateObject } from '../hooks/useObjectMutations';
+import { useCreateObject } from '@/features/workspace-runtime';
 import { useActiveGame } from '@/entities/game';
 import { toast } from '@/shared/ui/toast';
 import type { JsonValue } from '@/entities/game-object';

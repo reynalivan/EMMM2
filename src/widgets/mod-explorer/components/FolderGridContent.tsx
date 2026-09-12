@@ -8,8 +8,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from '../../../shared/ui/components/ui/ContextMenu';
-import { normalizeWorkspacePath } from '@/features/workspace-runtime';
-import { isFolderConflictProtected } from '../hooks/folderConflictScope';
+import { isFolderConflictProtected, normalizeWorkspacePath } from '@/features/workspace-runtime';
 import type { useFolderGrid } from '../hooks/useFolderGrid';
 
 type FolderGridModel = ReturnType<typeof useFolderGrid>;

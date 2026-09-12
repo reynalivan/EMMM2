@@ -3,8 +3,7 @@ import { Folder, File, Copy, AlertTriangle, Star } from 'lucide-react';
 import type { ModFolder } from '@/entities/game-object';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import BulkContextMenu from './BulkContextMenu';
-import { useModContextMenuItems } from '../hooks/useModContextMenuItems';
-import { useModContextMenuActions } from '@/features/mod-runtime';
+import { useModContextMenuActions, useModContextMenuItems } from '@/features/mod-runtime';
 
 import { ContextMenu } from '../../../shared/ui/components/ui/ContextMenu';
 import { formatWorkspaceReason } from '@/features/workspace-runtime';

@@ -15,7 +15,7 @@
   },
   "welcome": {
     "title": "Browser Dalam Aplikasi",
-    "description": "Telusuri dan unduh mod secara langsung. Unduhan dicegat secara otomatis dan antre untuk Impor Pintar.",
+    "description": "Telusuri dan unduh mod secara langsung. Kelola file yang diunduh dari Unduhan.",
     "browse_gb": "Telusuri GameBanana",
     "google": "Google"
   },
@@ -23,15 +23,7 @@
     "title": "Unduhan",
     "view_detail": "Lihat detail",
     "close": "Tutup panel unduhan",
-    "select_all": "Pilih semua yang selesai",
-    "deselect_all": "Batal pilih semua",
-    "selected": "{{count}} terpilih",
-    "select_finished": "Pilih yang selesai",
-    "import_selected": "Impor Terpilih",
-    "clear_imported": "Bersihkan Selesai",
     "empty": "Belum ada unduhan",
-    "import": "Impor",
-    "import_title": "Impor file ini",
     "cancel_title": "Batalkan unduhan",
     "refresh": "Segarkan unduhan",
     "retry": "Unduh lagi",
@@ -63,8 +55,7 @@
       "refresh_failed": "Tidak dapat menyegarkan unduhan. Silakan coba lagi.",
       "retry_failed": "Tidak dapat memulai ulang unduhan ini. Silakan coba lagi.",
       "cancel_failed": "Tidak dapat membatalkan unduhan ini. Silakan coba lagi.",
-      "delete_failed": "Tidak dapat menghapus unduhan ini. Silakan coba lagi.",
-      "clear_failed": "Tidak dapat membersihkan unduhan yang sudah diimpor. Silakan coba lagi."
+      "delete_failed": "Tidak dapat menghapus unduhan ini. Silakan coba lagi."
     },
     "confirmation": {
       "title": "Unduh file ini?",
@@ -76,39 +67,5 @@
       "confirm_failed": "Tidak dapat memulai unduhan. Silakan coba lagi.",
       "cancel_failed": "Tidak dapat membatalkan permintaan unduhan ini. Silakan coba lagi."
     }
-  },
-  "import": {
-    "title": "Antrean Impor",
-    "review": "Tinjau",
-    "skip": "Lewati",
-    "status": {
-      "queued": "Antre",
-      "extracting": "Mengekstrak",
-      "matching": "Mencocokkan",
-      "review": "Tinjauan",
-      "placing": "Menempatkan",
-      "done": "Selesai",
-      "failed": "Gagal",
-      "canceled": "Dibatalkan"
-    }
-  },
-  "review": {
-    "title": "Tinjauan Manual Diperlukan",
-    "archive": "Arsip",
-    "duplicate": "Duplikat",
-    "target_game": "Game Target",
-    "target_object_optional": "Object Fisik Target (Opsional)",
-    "select_game": "— Pilih game —",
-    "keep_as_other": "— Simpan sebagai Other —",
-    "mod_category": "Kategori Mod",
-    "confirm": "Konfirmasi & Impor",
-    "cancel": "Batal"
-  },
-  "picker": {
-    "title": "Pilih Game Target",
-    "description": "Pilih game untuk mengimpor {{count}} file.",
-    "description_plural": "Pilih game untuk mengimpor {{count}} file.",
-    "no_games": "Belum ada game yang terkonfigurasi. Tambahkan game di Pengaturan terlebih dahulu.",
-    "import_now": "Impor Sekarang"
   }
 }

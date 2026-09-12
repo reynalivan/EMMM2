@@ -20,8 +20,6 @@ import {
   type WorkspaceViewModelSelectionInput,
 } from '../utils/selectionReconciliation';
 
-export type { WorkspaceViewModelSelectionInput } from '../utils/selectionReconciliation';
-
 export interface WorkspaceViewModelFilterInput {
   gameId: string | null;
   selectedObjectType: string | null;

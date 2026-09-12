@@ -144,6 +144,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::workspace::adapters::tauri::folder_entries_cmds::list_folder_entries_cmd,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::apply_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::reconcile_disk_state_cmd,
+            crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::plan_onboarding_indexing_work,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::inspect_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::resolve_rename_confirmations,
             crate::modules::workspace::adapters::tauri::watcher_cmds::start_watcher,
@@ -168,13 +169,14 @@ macro_rules! emmm_collect_commands {
             modules::browser::adapters::tauri::tauri::browser_clear_data,
             modules::browser::adapters::tauri::tauri::browser_get_homepage,
             modules::browser::adapters::tauri::tauri::browser_set_homepage,
+            modules::browser::adapters::tauri::tauri::browser_get_retention_days,
+            modules::browser::adapters::tauri::tauri::browser_set_retention_days,
             modules::browser::adapters::tauri::tauri::browser_list_downloads,
             modules::browser::adapters::tauri::tauri::browser_cancel_download,
             modules::browser::adapters::tauri::tauri::browser_confirm_download,
             modules::browser::adapters::tauri::tauri::browser_reject_download,
             modules::browser::adapters::tauri::tauri::browser_retry_download,
             modules::browser::adapters::tauri::tauri::browser_delete_download,
-            modules::browser::adapters::tauri::tauri::browser_clear_imported,
             modules::browser::adapters::tauri::tauri::browser_clear_old_downloads,
         ]
     };
@@ -226,6 +228,7 @@ pub fn run() {
         .manage(crate::modules::workspace::application::scanner::watcher::WatcherState::new())
         .manage(crate::modules::ingestion::application::import_batch::mod_inbox_watcher::ModInboxWatcherState::new())
         .manage(crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState::default())
+        .manage(crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState::new())
         .manage(crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new())
         .manage(crate::modules::mutation::coordinator::MutationCoordinator::unconfigured())
         .setup(move |app| {

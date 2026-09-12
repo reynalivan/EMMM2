@@ -423,6 +423,206 @@ async fn test_tc_9_2_02_ignore_persists_whitelist() {
     assert_eq!(status, "ignored");
 }
 
+#[tokio::test]
+async fn ignore_rejects_an_incomplete_three_member_group() {
+    let context = setup_context().await;
+    let game_id = "game-1";
+    let (folder_a, folder_b) = seed_pair(&context, game_id).await;
+    seed_dedup_group(
+        &context,
+        game_id,
+        "group-ignore-incomplete",
+        &folder_a,
+        &folder_b,
+    )
+    .await;
+
+    let folder_c = context.mods_root.join("Paimon");
+    fs::create_dir_all(&folder_c).unwrap();
+    fs::write(folder_c.join("mod.ini"), "same-content").unwrap();
+    let group_json: String =
+        sqlx::query_scalar("SELECT reasons_json FROM dedup_groups WHERE id = ?")
+            .bind("group-ignore-incomplete")
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    let mut group: crate::modules::duplicates::domain::dup_scan::DupScanGroup =
+        serde_json::from_str(&group_json).unwrap();
+    group.members.push(
+        crate::modules::duplicates::domain::dup_scan::DupScanMember {
+            mod_id: None,
+            version: None,
+            folder_path: folder_c.to_string_lossy().to_string(),
+            display_name: "Paimon".to_string(),
+            total_size_bytes: 12,
+            file_count: 1,
+            is_safe: true,
+            confidence_score: 100,
+            signals: Vec::new(),
+        },
+    );
+    sqlx::query("UPDATE dedup_groups SET reasons_json = ? WHERE id = ?")
+        .bind(serde_json::to_string(&group).unwrap())
+        .bind("group-ignore-incomplete")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
+    let error = resolve_batch(
+        vec![ResolutionRequest {
+            group_id: "group-ignore-incomplete".to_string(),
+            action: ResolutionAction::Ignore,
+            folder_a,
+            folder_b,
+        }],
+        game_id.to_string(),
+        &context.pool,
+        &guard,
+        &suppressor,
+        |_| {},
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        crate::shared::errors::AppError::Validation(_)
+    ));
+    let whitelist_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM duplicate_whitelist WHERE game_id = ?")
+            .bind(game_id)
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    assert_eq!(whitelist_count, 0);
+    let resolution_status: String =
+        sqlx::query_scalar("SELECT resolution_status FROM dedup_groups WHERE id = ?")
+            .bind("group-ignore-incomplete")
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    assert_eq!(resolution_status, "pending");
+}
+
+#[tokio::test]
+async fn ignore_all_pairs_in_a_three_member_group_before_closing_the_group() {
+    let context = setup_context().await;
+    let game_id = "game-1";
+    let (folder_a, folder_b) = seed_pair(&context, game_id).await;
+    seed_dedup_group(
+        &context,
+        game_id,
+        "group-ignore-three",
+        &folder_a,
+        &folder_b,
+    )
+    .await;
+
+    let folder_c = context.mods_root.join("Paimon");
+    fs::create_dir_all(&folder_c).unwrap();
+    fs::write(folder_c.join("mod.ini"), "same-content").unwrap();
+    let folder_c = folder_c.to_string_lossy().to_string();
+    crate::test_utils::insert_test_mod(
+        &context.pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod-c",
+            game_id,
+            object_id: None,
+            actual_name: "Paimon",
+            folder_path: &folder_c,
+            status: crate::modules::games::domain::models::ItemStatus::Enabled,
+            is_safe: true,
+            object_type: None,
+            mods_path: Some(context.mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    let group_json: String =
+        sqlx::query_scalar("SELECT reasons_json FROM dedup_groups WHERE id = ?")
+            .bind("group-ignore-three")
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    let mut group: crate::modules::duplicates::domain::dup_scan::DupScanGroup =
+        serde_json::from_str(&group_json).unwrap();
+    group.members.push(
+        crate::modules::duplicates::domain::dup_scan::DupScanMember {
+            mod_id: Some("mod-c".to_string()),
+            version: None,
+            folder_path: folder_c.clone(),
+            display_name: "Paimon".to_string(),
+            total_size_bytes: 12,
+            file_count: 1,
+            is_safe: true,
+            confidence_score: 100,
+            signals: Vec::new(),
+        },
+    );
+    sqlx::query("UPDATE dedup_groups SET reasons_json = ? WHERE id = ?")
+        .bind(serde_json::to_string(&group).unwrap())
+        .bind("group-ignore-three")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    let lock = OperationLock::new();
+    let guard = lock.acquire().await.unwrap();
+    let suppressor = Arc::new(WatcherSuppressor::new(false));
+    let summary = resolve_batch(
+        vec![
+            ResolutionRequest {
+                group_id: "group-ignore-three".to_string(),
+                action: ResolutionAction::Ignore,
+                folder_a: folder_a.clone(),
+                folder_b: folder_b.clone(),
+            },
+            ResolutionRequest {
+                group_id: "group-ignore-three".to_string(),
+                action: ResolutionAction::Ignore,
+                folder_a: folder_a.clone(),
+                folder_b: folder_c.clone(),
+            },
+            ResolutionRequest {
+                group_id: "group-ignore-three".to_string(),
+                action: ResolutionAction::Ignore,
+                folder_a: folder_b,
+                folder_b: folder_c,
+            },
+        ],
+        game_id.to_string(),
+        &context.pool,
+        &guard,
+        &suppressor,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.successful, 3);
+    assert_eq!(summary.failed, 0);
+
+    let whitelist_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM duplicate_whitelist WHERE game_id = ?")
+            .bind(game_id)
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    assert_eq!(whitelist_count, 3);
+
+    let status: String =
+        sqlx::query_scalar("SELECT resolution_status FROM dedup_groups WHERE id = ?")
+            .bind("group-ignore-three")
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "ignored");
+}
+
 // NC-9.2-03 (Operation Lock Active): `resolve_batch` now takes `&OpGuard`, so
 // running it without the lock — or while another operation holds it — is a
 // compile error rather than a runtime path. The contention error itself is

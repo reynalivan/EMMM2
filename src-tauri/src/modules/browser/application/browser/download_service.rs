@@ -184,18 +184,9 @@ pub async fn retry_download(
     )
 }
 
-/// Remove all downloads with status `imported`.
-pub async fn clear_imported(db: &SqlitePool) -> Result<u64, BrowserError> {
-    Ok(browser::delete_imported(db).await?)
-}
-
 /// Remove old downloads that exceed the retention period.
 pub async fn clear_old_downloads(db: &SqlitePool) -> Result<u64, BrowserError> {
-    let retention = browser::get_retention_days(db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(30);
+    let retention = browser_service::get_retention_days(db).await?;
 
     Ok(browser::delete_older_than(db, retention).await?)
 }

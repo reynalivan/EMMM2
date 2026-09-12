@@ -3,6 +3,7 @@ use crate::modules::library::application::mods::info_json;
 use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::guard::ValidatedPath;
 use crate::shared::errors::AppError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, State};
@@ -43,6 +44,27 @@ fn apply_committed_reconcile(
     result.sync_warning = settlement.sync_warning;
 }
 
+fn partition_toggle_paths(
+    validated: Vec<ValidatedPath>,
+    conflicts: &[crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup],
+) -> (Vec<ValidatedPath>, Vec<bulk::BulkActionError>) {
+    let (blocked, safe): (Vec<_>, Vec<_>) = validated.into_iter().partition(|path| {
+        let canonical_path = path.to_string_lossy().into_owned();
+        crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
+            conflicts,
+            std::slice::from_ref(&canonical_path),
+        )
+    });
+    let failures = blocked
+        .into_iter()
+        .map(|path| bulk::BulkActionError {
+            path: path.original().to_string(),
+            error: crate::modules::reconciliation::application::disk_reconcile::emit::folder_conflict_mutation_error(),
+        })
+        .collect();
+    (safe, failures)
+}
+
 /// Stop the running bulk toggle/delete after the item in flight. Work already
 /// done stays done — the trailing reconcile still converges the DB.
 #[specta::specta]
@@ -80,22 +102,8 @@ pub async fn bulk_toggle_mods(
         Some(&preflight_paths),
     )
     .await?;
-    let (blocked, validated): (Vec<_>, Vec<_>) = validated
-        .into_iter()
-        .partition(|path| {
-            let canonical_path = path.to_string_lossy().into_owned();
-            crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
-                &preflight.folder_conflicts,
-                std::slice::from_ref(&canonical_path),
-            )
-        });
-    let preflight_failures = blocked
-        .into_iter()
-        .map(|path| bulk::BulkActionError {
-            path: path.original().to_string(),
-            error: crate::modules::reconciliation::application::disk_reconcile::emit::folder_conflict_mutation_error(),
-        })
-        .collect::<Vec<_>>();
+    let (validated, preflight_failures) =
+        partition_toggle_paths(validated, &preflight.folder_conflicts);
     if validated.is_empty() {
         return Ok(bulk::BulkResult::new(Vec::new(), preflight_failures));
     }
@@ -524,6 +532,66 @@ pub async fn bulk_pin_mods(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn folder_conflicts_become_per_item_failures_without_dropping_safe_paths() {
+        use crate::modules::reconciliation::application::disk_reconcile::types::{
+            FolderNameConflictCandidate, FolderNameConflictGroup,
+        };
+        use crate::modules::settings::application::config::GameConfig;
+
+        let pool = crate::test_utils::init_test_db().await.pool;
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mods_root = temp_dir.path().join("Mods");
+        let conflicted = mods_root.join("DISABLED Conflict");
+        let safe = mods_root.join("DISABLED Safe");
+        std::fs::create_dir_all(&conflicted).expect("conflicted folder");
+        std::fs::create_dir_all(&safe).expect("safe folder");
+
+        let config = ConfigService::new_for_test_async(pool).await;
+        let mut settings = config.get_settings();
+        settings.games.push(GameConfig {
+            id: "game-1".to_string(),
+            name: "Test Game".to_string(),
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            instance_path: mods_root.clone(),
+            mod_path: mods_root.clone(),
+            ready_to_move_path: None,
+            launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+            game_exe: Some(mods_root.join("game.exe")),
+            loader_exe: None,
+            xxmi_launcher_exe: None,
+            launch_args: None,
+            warnings: Vec::new(),
+        });
+        config.save_settings(settings).expect("save settings");
+
+        let requested = vec!["DISABLED Conflict".to_string(), "DISABLED Safe".to_string()];
+        let validated = crate::platform::fs::guard::validate_paths(&config, "game-1", &requested)
+            .expect("paths should validate");
+        let conflicts = vec![FolderNameConflictGroup {
+            group_id: "conflict".to_string(),
+            identity: "conflict".to_string(),
+            display_name: "Conflict".to_string(),
+            candidates: vec![FolderNameConflictCandidate {
+                path: conflicted
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                folder_name: "DISABLED Conflict".to_string(),
+                base_name: "Conflict".to_string(),
+                is_enabled: false,
+            }],
+        }];
+
+        let (safe_paths, failures) = partition_toggle_paths(validated, &conflicts);
+
+        assert_eq!(safe_paths.len(), 1);
+        assert_eq!(safe_paths[0].original(), "DISABLED Safe");
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].path, "DISABLED Conflict");
+    }
 
     #[test]
     fn bulk_cancel_state_is_observed_and_reset_for_the_next_batch() {

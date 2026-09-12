@@ -170,7 +170,7 @@ pub async fn open_child_webview(
             }
             tauri::webview::DownloadEvent::Finished { .. } => {
                 // Since we returned false in Requested, the native downloader shouldn't fire this.
-                // All finishing logic (and Smart Import trigger) is now safely handled inside `download_handler.rs`.
+                // Download completion persistence is handled inside `download_handler.rs`.
                 true
             }
             _ => true,

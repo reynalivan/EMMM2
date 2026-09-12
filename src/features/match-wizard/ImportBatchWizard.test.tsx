@@ -32,12 +32,23 @@ function item(overrides: Partial<ImportItem> = {}): ImportItem {
     destinationPath: null,
     confidencePercentage: 0,
     confidenceTier: 'no_match',
-    evidence: [],
-    decision: 'pending',
-    fingerprint: null,
-    result: null,
-    error: null,
     ...overrides,
+    identityMatchStatus: overrides.identityMatchStatus ?? 'no_match',
+    archiveSha256: overrides.archiveSha256 ?? null,
+    payloadManifest: overrides.payloadManifest ?? null,
+    duplicateOfItemId: overrides.duplicateOfItemId ?? null,
+    targetComparison: overrides.targetComparison ?? null,
+    analysisRevision: overrides.analysisRevision ?? 0,
+    analysisAckRevision: overrides.analysisAckRevision ?? null,
+    reviewGate: overrides.reviewGate ?? { reasons: [] },
+    diagnostics: overrides.diagnostics ?? [],
+    contentKind: overrides.contentKind ?? 'unknown',
+    packageShape: overrides.packageShape ?? 'single',
+    evidence: overrides.evidence ?? [],
+    decision: overrides.decision ?? 'pending',
+    fingerprint: overrides.fingerprint ?? null,
+    result: overrides.result ?? null,
+    error: overrides.error ?? null,
   };
 }
 
@@ -148,6 +159,52 @@ describe('ImportBatchWizard', () => {
     fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
     fireEvent.keyDown(window, { key: 'a', ctrlKey: true, shiftKey: true });
     expect(screen.queryByRole('button', { name: 'actions.set_skip' })).not.toBeInTheDocument();
+  });
+
+  it('keeps review-gated items out of bulk proceed', async () => {
+    const suggestion = {
+      kind: 'existing_object' as const,
+      objectId: 'object-ayaka',
+      canonicalEntryKey: 'ayaka',
+      folderName: 'Ayaka',
+      targetPath: 'C:/Mods/Ayaka/skin',
+      confidencePercentage: 91,
+      confidenceTier: 'high' as const,
+      warning: null,
+    };
+    const gated = item({
+      destinationSuggestions: [suggestion],
+      canonicalSuggestions: [
+        {
+          entryKey: 'ayaka',
+          name: 'Ayaka',
+          matchedAlias: null,
+          confidencePercentage: 91,
+          confidenceTier: 'high',
+          matchStatus: 'auto_matched',
+          evidence: [],
+        },
+      ],
+      reviewGate: {
+        reasons: [{ code: 'package_bundle', diagnosticCode: null }],
+      },
+    });
+    const callbacks = handlers();
+    render(
+      <ImportBatchWizard
+        batch={batch(gated)}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...callbacks}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'actions.set_proceed' }));
+
+    await waitFor(() => expect(callbacks.onChooseDestination).not.toHaveBeenCalled());
   });
 
   it('selects a ranked destination from the searchable dropdown', async () => {

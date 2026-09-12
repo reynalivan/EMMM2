@@ -13,6 +13,7 @@ pub mod rename_healer;
 pub mod source_recovery;
 pub mod types;
 pub mod watcher_batch;
+pub mod work_plan;
 
 #[cfg(test)]
 mod reconcile_tests;

@@ -26,8 +26,8 @@ pub async fn get_import_source_preview(
         let source = first_existing_path(candidates)?;
         build_preview(item_id, source)
     })
-        .await
-        .map_err(|error| AppError::Internal(format!("Source preview task failed: {error}")))?
+    .await
+    .map_err(|error| AppError::Internal(format!("Source preview task failed: {error}")))?
 }
 
 pub async fn reveal_import_source(db: &SqlitePool, item_id: &str) -> Result<(), AppError> {

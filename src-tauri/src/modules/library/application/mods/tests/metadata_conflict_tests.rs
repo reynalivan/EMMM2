@@ -6,6 +6,7 @@
 //! silently, because "no conflicts" is a perfectly ordinary answer.
 
 use super::conflicts_for_enabled_paths;
+use crate::modules::games::domain::models::ItemStatus;
 use crate::modules::system::domain::mod_path::ModFolderPath;
 use std::fs;
 use std::path::Path;
@@ -316,10 +317,13 @@ async fn update_thumbnail_rejects_non_image_source_without_creating_a_file() {
         id: "game-1".to_string(),
         name: "Test Game".to_string(),
         game_type: crate::modules::games::domain::models::GameType::GIMI,
+        instance_path: temp.path().to_path_buf(),
         mod_path: mods_root,
         ready_to_move_path: None,
-        game_exe: temp.path().join("game.exe"),
+        launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+        game_exe: Some(temp.path().join("game.exe")),
         loader_exe: None,
+        xxmi_launcher_exe: None,
         launch_args: None,
         warnings: Vec::new(),
     });
@@ -328,4 +332,24 @@ async fn update_thumbnail_rejects_non_image_source_without_creating_a_file() {
 
     assert!(super::update_mod_thumbnail(&validated, &source.to_string_lossy()).is_err());
     assert!(!mod_dir.join("not-an-image.png").exists());
+}
+
+#[test]
+fn randomizer_excludes_children_of_disabled_containers() {
+    assert!(super::is_randomizer_candidate(
+        ItemStatus::Disabled,
+        "DISABLED Hu Tao Galaxy"
+    ));
+    assert!(super::is_randomizer_candidate(
+        ItemStatus::Disabled,
+        "Hu Tao/DISABLED Galaxy"
+    ));
+    assert!(!super::is_randomizer_candidate(
+        ItemStatus::Disabled,
+        "DISABLED Hu Tao/Galaxy"
+    ));
+    assert!(!super::is_randomizer_candidate(
+        ItemStatus::Enabled,
+        "Hu Tao/DISABLED Galaxy"
+    ));
 }
