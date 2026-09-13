@@ -1,29 +1,84 @@
-import { formatAppError } from '../../../../shared/lib/appError';
-import { Monitor, Languages, Database, LogOut, Plus, Trash2, Download } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Download, FileDown, RefreshCw, Upload } from 'lucide-react';
 import { useAppStore } from '@/app/store';
 import { useSettings } from '@/entities/settings';
+import { commands } from '@/shared/api/tauri/bindings';
+import { formatAppError } from '@/shared/lib/appError';
 import {
   THEME_OPTIONS,
-  BUILTIN_THEMES,
   normalizeThemeSetting,
   type ThemeSetting,
 } from '../../../../shared/lib/themeOptions';
 import { useTranslation } from 'react-i18next';
 import { useCustomThemes } from '../../hooks/useCustomThemes';
-import { commands } from '../../../../shared/api/tauri/bindings';
-import { getTauriVersion, getVersion } from '@tauri-apps/api/app';
-import { useToastStore } from '@/shared/ui/toast';
+import { useAppUpdater } from '../../hooks/useAppUpdater';
+import { getVersion } from '@tauri-apps/api/app';
 import { useEffect, useState } from 'react';
+import { TrustInformationDialog, type TrustDocument } from '../TrustInformationDialog';
+import { SettingsRow, SettingsSection } from '../SettingsLayout';
+import { formatBytes } from '@/shared/lib/utils/formatters';
+
+const CUSTOM_THEME_TEMPLATE = {
+  id: 'midnight-blue',
+  label: 'Midnight Blue',
+  config: {
+    colors: {
+      'base-100': '#101827',
+      'base-200': '#172033',
+      'base-300': '#0b1020',
+      'base-content': '#e2e8f0',
+      primary: '#60a5fa',
+    },
+    glass: {
+      bg: 'rgba(16, 24, 39, 0.72)',
+      border: 'rgba(226, 232, 240, 0.10)',
+    },
+    liquid: {
+      nav: { material: 'regular', tint: '#dbeafe', tint_opacity: 0.08, quality: 'high' },
+      control: { material: 'thin', tint: '#bfdbfe', tint_opacity: 0.06, quality: 'high' },
+      indicator: { material: 'clear', tint: '#93c5fd', tint_opacity: 0.05, quality: 'high' },
+      overlay: { material: 'thick', tint: '#dbeafe', tint_opacity: 0.1, quality: 'high' },
+    },
+    background: {
+      kind: 'gradient',
+      value: 'linear-gradient(135deg, #101827, #172554)',
+      dim_opacity: 0.62,
+    },
+  },
+} as const;
+
+function downloadCustomThemeTemplate() {
+  const blob = new Blob([`${JSON.stringify(CUSTOM_THEME_TEMPLATE, null, 2)}\n`], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'custom-theme-template.json';
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 export default function GeneralTab() {
   const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const setAutoCloseLauncher = useAppStore((state) => state.setAutoCloseLauncher);
-  const { settings, updateTheme, updateLanguage } = useSettings();
+  const { settings, updateTheme, updateLanguage, setTelemetryEnabled } = useSettings();
   const { customThemes, refreshCustomThemes } = useCustomThemes();
-  const { addToast } = useToastStore();
   const { t } = useTranslation(['settings', 'common']);
   const [appVersion, setAppVersion] = useState('');
-  const [tauriVersion, setTauriVersion] = useState('');
+  const [activeTrustDocument, setActiveTrustDocument] = useState<TrustDocument | null>(null);
+  const [isImportingTheme, setIsImportingTheme] = useState(false);
+  const [themeImportStatus, setThemeImportStatus] = useState<string | null>(null);
+  const {
+    update,
+    isChecking,
+    isInstalling,
+    progress,
+    error: updateError,
+    hasChecked,
+    checkForUpdate,
+    downloadAndInstall,
+    dismiss,
+  } = useAppUpdater();
 
   const selectedTheme = normalizeThemeSetting(settings?.theme);
 
@@ -31,10 +86,6 @@ export default function GeneralTab() {
     getVersion()
       .then(setAppVersion)
       .catch(() => setAppVersion(t('common:status.not_set')));
-
-    getTauriVersion()
-      .then(setTauriVersion)
-      .catch(() => setTauriVersion(t('common:status.not_set')));
   }, [t]);
 
   const handleThemeChange = (value: string) => {
@@ -46,218 +97,269 @@ export default function GeneralTab() {
   };
 
   const handleImportTheme = async () => {
+    setIsImportingTheme(true);
+    setThemeImportStatus(null);
     try {
-      const themeData = await commands.importCustomTheme();
-      if (!themeData) {
-        return;
-      }
-
+      const theme = await commands.importCustomTheme();
+      if (!theme) return;
       await refreshCustomThemes();
-      addToast('success', t('general.appearance.import_success', { name: themeData.label }));
-    } catch (err) {
-      console.error('Failed to import theme:', err);
-      addToast('error', t('general.appearance.import_failed', { error: formatAppError(err) }));
+      setThemeImportStatus(
+        t('general.appearance.import_success', { defaultValue: `Imported ${theme.label}.` }),
+      );
+    } catch (cause) {
+      setThemeImportStatus(
+        t('general.appearance.import_error', {
+          defaultValue: `Could not import theme: ${formatAppError(cause)}`,
+        }),
+      );
+    } finally {
+      setIsImportingTheme(false);
     }
   };
 
-  const handleExportTheme = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const fileName = await commands.exportCustomTheme(id);
-      if (!fileName) {
-        return;
-      }
-      addToast('success', t('general.appearance.export_success', { name: fileName }));
-    } catch (err) {
-      console.error('Failed to export theme:', err);
-      addToast('error', t('general.appearance.export_failed', { error: formatAppError(err) }));
-    }
-  };
-
-  const handleDeleteTheme = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm(t('general.appearance.delete_confirm'))) {
-      try {
-        await commands.deleteCustomTheme(id);
-        await refreshCustomThemes();
-        if (selectedTheme === id) {
-          handleThemeChange('onyx');
-        }
-        addToast('success', t('general.appearance.delete_success'));
-      } catch (err) {
-        addToast('error', t('general.appearance.delete_failed', { error: formatAppError(err) }));
-      }
-    }
-  };
-
-  const isCustom = !(BUILTIN_THEMES as readonly string[]).includes(selectedTheme);
+  const progressPercent =
+    progress && progress.total ? Math.round((progress.downloaded / progress.total) * 100) : null;
 
   return (
-    <div className="space-y-6">
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body p-5">
-          <div className="flex items-center justify-between">
-            <h3 className="card-title text-lg flex items-center gap-2">
-              <Monitor size={20} className="text-primary" />
-              {t('general.appearance.title')}
-            </h3>
-            <button className="btn btn-ghost btn-sm gap-2 text-primary" onClick={handleImportTheme}>
-              <Plus size={16} />
-              {t('general.appearance.import')}
+    <div>
+      <SettingsSection id="appearance-heading" title={t('general.appearance.title')}>
+        <SettingsRow
+          label={t('general.appearance.theme_select')}
+          description={t(
+            'general.appearance.download_template_hint',
+            'JSON templates include liquid and background settings.',
+          )}
+          control={
+            <select
+              id="theme-select"
+              aria-label={t('general.appearance.theme_select')}
+              className="select select-bordered select-sm w-full theme-controller sm:w-72"
+              value={selectedTheme}
+              onChange={(event) => handleThemeChange(event.target.value)}
+              disabled={updateTheme.isPending || !settings}
+            >
+              <optgroup label={t('general.appearance.groups.builtin')}>
+                {THEME_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {t(option.labelKey)}
+                  </option>
+                ))}
+              </optgroup>
+              {customThemes.length > 0 && (
+                <optgroup label={t('general.appearance.groups.custom')}>
+                  {customThemes.map((theme) => (
+                    <option key={theme.id} value={theme.id}>
+                      {theme.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          }
+        />
+        <div className="flex flex-wrap justify-end gap-2 border-t border-base-300/70 pt-3">
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost gap-2"
+            onClick={downloadCustomThemeTemplate}
+          >
+            <FileDown size={15} />
+            {t('general.appearance.download_template', 'Download template')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline gap-2"
+            disabled={isImportingTheme}
+            onClick={() => void handleImportTheme()}
+          >
+            <Upload size={15} />
+            {isImportingTheme
+              ? t('common:status.loading')
+              : t('general.appearance.import_theme', 'Import theme')}
+          </button>
+        </div>
+        {themeImportStatus && (
+          <p className="mt-2 text-right text-xs text-base-content/70" role="status">
+            {themeImportStatus}
+          </p>
+        )}
+        <div className="mt-3 border-t border-base-300/70 pt-1">
+          <SettingsRow
+            label={t('general.language.label')}
+            control={
+              <select
+                aria-label={t('general.language.label')}
+                className="select select-bordered select-sm w-full sm:w-72"
+                value={settings?.language || 'en'}
+                onChange={(event) => handleLanguageChange(event.target.value)}
+                disabled={updateLanguage.isPending || !settings}
+              >
+                <option value="en">{t('general.language.options.en')}</option>
+                <option value="id">{t('general.language.options.id')}</option>
+                <option value="zh">{t('general.language.options.zh')}</option>
+              </select>
+            }
+          />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection id="behavior-heading" title={t('general.behavior.title')}>
+        <SettingsRow
+          label={t('general.behavior.auto_close')}
+          description={t('general.behavior.auto_close_desc')}
+          control={
+            <input
+              type="checkbox"
+              aria-label={t('general.behavior.auto_close')}
+              className="toggle toggle-primary toggle-sm"
+              checked={autoCloseLauncher}
+              onChange={(event) => setAutoCloseLauncher(event.target.checked)}
+            />
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection id="system-heading" title={t('general.system.title')}>
+        <SettingsRow
+          label={t('general.system.app_version')}
+          control={
+            <span className="font-mono text-xs">{appVersion || t('common:status.not_set')}</span>
+          }
+        />
+        <div className="border-t border-base-300/70">
+          <SettingsRow
+            label={t('general.diagnostics.title')}
+            description={t('general.diagnostics.description')}
+            control={
+              <label className="label cursor-pointer gap-2 py-0" htmlFor="anonymous-diagnostics">
+                <span className="label-text text-xs">{t('general.diagnostics.toggle')}</span>
+                <input
+                  id="anonymous-diagnostics"
+                  type="checkbox"
+                  className="toggle toggle-sm toggle-primary"
+                  checked={settings?.diagnostics?.telemetry_enabled ?? false}
+                  disabled={setTelemetryEnabled.isPending || !settings}
+                  onChange={(event) => setTelemetryEnabled.mutate(event.target.checked)}
+                />
+              </label>
+            }
+          />
+        </div>
+        <div className="border-t border-base-300/70 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">{t('update.title')}</p>
+              <p className="mt-0.5 text-xs text-base-content/60">
+                {t('update.current_version', {
+                  version: appVersion || t('common:status.not_set'),
+                })}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm gap-2"
+              onClick={() => void checkForUpdate()}
+              disabled={isChecking || isInstalling}
+            >
+              <RefreshCw size={15} className={isChecking ? 'animate-spin' : ''} />
+              {isChecking ? t('update.checking') : t('update.check_btn')}
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-            <div className="form-control w-full">
-              <label className="label" htmlFor="theme-select">
-                <span className="label-text">{t('general.appearance.theme_select')}</span>
-              </label>
-              <div className="flex flex-col gap-2">
-                <select
-                  id="theme-select"
-                  className="select select-bordered w-full theme-controller"
-                  value={selectedTheme}
-                  onChange={(e) => handleThemeChange(e.target.value)}
-                  disabled={updateTheme.isPending || !settings}
-                >
-                  <optgroup label={t('general.appearance.groups.builtin')}>
-                    {THEME_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {t(option.labelKey)}
-                      </option>
-                    ))}
-                  </optgroup>
-                  {customThemes.length > 0 && (
-                    <optgroup label={t('general.appearance.groups.custom')}>
-                      {customThemes.map((ct) => (
-                        <option key={ct.id} value={ct.id}>
-                          {ct.label}
-                        </option>
-                      ))}
-                    </optgroup>
+          {update && (
+            <div className="mt-3 rounded-md border border-info/25 bg-info/10 p-3 text-sm">
+              <div className="flex gap-2">
+                <Download size={17} className="mt-0.5 shrink-0 text-info" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">
+                    {t('update.available', { version: update.version })}
+                  </p>
+                  {update.body && (
+                    <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-base-content/65">
+                      {update.body}
+                    </p>
                   )}
-                </select>
-
-                {isCustom && (
-                  <div className="flex items-center gap-4 mt-1">
-                    <span className="text-xs badge badge-ghost">
-                      {t('general.appearance.custom_active')}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="btn btn-ghost btn-xs text-info p-0 h-auto min-h-0"
-                        onClick={(e) => handleExportTheme(selectedTheme, e)}
-                      >
-                        <Download size={12} className="mr-1" /> {t('general.appearance.export')}
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-xs text-error p-0 h-auto min-h-0"
-                        onClick={(e) => handleDeleteTheme(selectedTheme, e)}
-                      >
-                        <Trash2 size={12} className="mr-1" /> {t('general.appearance.remove')}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
+              {!isInstalling && (
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm gap-2"
+                    onClick={() => void downloadAndInstall()}
+                  >
+                    <Download size={15} />
+                    {t('update.install_btn')}
+                  </button>
+                </div>
+              )}
             </div>
+          )}
 
-            <div className="text-xs text-base-content/60 bg-base-300/30 p-3 rounded-lg flex flex-col justify-center">
-              <p className="font-medium text-base-content/80 mb-1">
-                {t('general.appearance.info.title')}
-              </p>
-              <p>{t('general.appearance.info.system')}</p>
-              <p className="mt-1">{t('general.appearance.info.builtin')}</p>
-              <p className="mt-1">{t('general.appearance.info.custom')}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body p-5">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <Languages size={20} className="text-primary" />
-            {t('general.language.title')}
-          </h3>
-
-          <div className="form-control max-w-xs mt-2">
-            <label className="label">
-              <span className="label-text">{t('general.language.label')}</span>
-            </label>
-            <select
-              className="select select-bordered w-full"
-              value={settings?.language || 'en'}
-              onChange={(e) => handleLanguageChange(e.target.value)}
-              disabled={updateLanguage.isPending || !settings}
-            >
-              <option value="en">{t('general.language.options.en')}</option>
-              <option value="id">{t('general.language.options.id')}</option>
-              <option value="zh">{t('general.language.options.zh')}</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body p-5">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <LogOut size={20} className="text-secondary" />
-            {t('general.behavior.title')}
-          </h3>
-
-          <div className="form-control max-w-sm mt-2">
-            <label className="label cursor-pointer justify-start gap-4">
-              <input
-                type="checkbox"
-                className="toggle toggle-primary"
-                checked={autoCloseLauncher}
-                onChange={(e) => setAutoCloseLauncher(e.target.checked)}
+          {progress && (
+            <div className="mt-3" role="status">
+              <div className="mb-1 flex justify-between gap-3 text-xs text-base-content/70">
+                <span>
+                  {t('update.downloading', {
+                    downloaded: formatBytes(progress.downloaded),
+                    total: progress.total ? formatBytes(progress.total) : '?',
+                  })}
+                </span>
+                {progressPercent !== null && <span>{progressPercent}%</span>}
+              </div>
+              <progress
+                className="progress progress-primary w-full"
+                value={progressPercent ?? undefined}
+                max={100}
               />
-              <span className="label-text font-medium">{t('general.behavior.auto_close')}</span>
-            </label>
-            <p className="text-sm text-base-content/70 mt-1 pl-13">
-              {t('general.behavior.auto_close_desc')}
+            </div>
+          )}
+
+          {updateError && (
+            <div
+              className="mt-3 flex items-center gap-2 rounded-md border border-error/25 bg-error/10 p-3 text-sm text-error"
+              role="alert"
+            >
+              <AlertTriangle size={17} className="shrink-0" />
+              <span className="min-w-0 flex-1">{updateError}</span>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={dismiss}>
+                {t('common:action.dismiss')}
+              </button>
+            </div>
+          )}
+
+          {hasChecked && !update && !isChecking && !updateError && !progress && (
+            <p className="mt-3 flex items-center gap-2 text-xs text-success" role="status">
+              <CheckCircle size={16} />
+              {t('update.latest')}
             </p>
-          </div>
+          )}
         </div>
-      </div>
-
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body p-5">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <Database size={20} className="text-accent" />
-            {t('general.system.title')}
-          </h3>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2 text-xs opacity-80">
-            <div>
-              <span className="font-semibold block text-base-content/50 uppercase tracking-tighter">
-                {t('general.system.app_version')}
+        <div className="divide-y divide-base-300/70 border-t border-base-300/70">
+          {(['privacy', 'terms'] as const).map((document) => (
+            <button
+              key={document}
+              type="button"
+              className="flex w-full items-center justify-between gap-4 py-3 text-left text-sm transition-colors duration-150 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              onClick={() => setActiveTrustDocument(document)}
+            >
+              <span>
+                <span className="block font-medium">
+                  {t(`general.trust.${document}.card_title`)}
+                </span>
+                <span className="mt-0.5 block text-xs text-base-content/60">
+                  {t(`general.trust.${document}.card_desc`)}
+                </span>
               </span>
-              <span className="font-mono">{appVersion || t('common:status.not_set')}</span>
-            </div>
-            <div>
-              <span className="font-semibold block text-base-content/50 uppercase tracking-tighter">
-                {t('general.system.tauri_version')}
-              </span>
-              <span className="font-mono">{tauriVersion || t('common:status.not_set')}</span>
-            </div>
-            <div>
-              <span className="font-semibold block text-base-content/50 uppercase tracking-tighter">
-                {t('general.system.database')}
-              </span>
-              <span className="font-mono">{t('general.system.db_val')}</span>
-            </div>
-            <div>
-              <span className="font-semibold block text-base-content/50 uppercase tracking-tighter">
-                {t('general.system.engine')}
-              </span>
-              <span className="font-mono">{t('general.system.engine_val')}</span>
-            </div>
-          </div>
+              <span aria-hidden="true">›</span>
+            </button>
+          ))}
         </div>
-      </div>
+      </SettingsSection>
+      <TrustInformationDialog
+        document={activeTrustDocument}
+        onClose={() => setActiveTrustDocument(null)}
+      />
     </div>
   );
 }

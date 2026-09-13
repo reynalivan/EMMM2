@@ -51,6 +51,7 @@ const baseObject: WorkspaceObjectNode = {
   matched_reason: null,
   matched_source: null,
   object_type: 'Character',
+  randomizer_mode: null,
   sub_category: null,
   status: 1,
   created_at: null,

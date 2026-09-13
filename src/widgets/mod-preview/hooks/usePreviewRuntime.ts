@@ -23,6 +23,8 @@ import { useAppStore } from '@/app/store';
 import { isFolderConflictProtected } from '@/features/workspace-runtime';
 import type { FolderNameConflictGroup } from '../../../shared/api/tauri/bindings';
 
+const EMPTY_FOLDER_CONFLICTS: FolderNameConflictGroup[] = [];
+
 interface PreviewIniDocument {
   fileName: string;
   document: IniDocumentLike | null | undefined;
@@ -53,7 +55,9 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const activePath = workspace?.preview.selected_path ?? null;
   const activeGameId = useAppStore((state) => state.activeGameId);
   const folderConflicts = useAppStore((state) =>
-    activeGameId ? (state.folderConflictsByGame[activeGameId] ?? []) : [],
+    activeGameId
+      ? (state.folderConflictsByGame[activeGameId] ?? EMPTY_FOLDER_CONFLICTS)
+      : EMPTY_FOLDER_CONFLICTS,
   );
   const folderNameConflict =
     activePath === null

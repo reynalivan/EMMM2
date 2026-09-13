@@ -268,7 +268,7 @@ async fn scoped_reconcile_refreshes_touched_projection_and_keeps_the_rest() {
     // Toggle Alice on disk, then reconcile scoped to that root only.
     fs::rename(mods_path.join("Alice"), mods_path.join("DISABLED Alice"))
         .expect("rename should succeed");
-    run_reconcile(
+    let toggled = run_reconcile(
         &pool,
         "g_scoped",
         &mods_path,
@@ -283,6 +283,12 @@ async fn scoped_reconcile_refreshes_touched_projection_and_keeps_the_rest() {
         false,
     )
     .await;
+
+    assert_eq!(toggled.status, DiskReconcileStatus::Applied);
+    assert!(
+        toggled.folder_conflicts.is_empty(),
+        "a single disabled root must not be reported as a folder conflict"
+    );
 
     assert_eq!(
         projection_row(&pool, "g_scoped", "DISABLED Alice").await,

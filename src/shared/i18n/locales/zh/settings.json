@@ -6,19 +6,23 @@
   "tabs": {
     "general": "常规",
     "games": "游戏",
-    "browser": "浏览器与导入",
-    "privacy": "隐私与安全模式",
-    "hotkeys": "热键与按键查看器",
-    "ai": "AI 配置",
+    "catalog": "目录资源",
+    "browser": "浏览器",
+    "privacy": "安全",
+    "hotkeys": "热键",
+    "ai": "AI",
     "maintenance": "维护",
-    "updates": "更新",
+    "integrations": "集成",
     "logs": "日志"
   },
   "general": {
     "appearance": {
       "title": "外观",
       "import": "导入主题",
-      "theme_select": "主题选择",
+      "theme_select": "主题",
+      "download_template": "下载模板",
+      "import_theme": "导入主题",
+      "download_template_hint": "JSON 模板包含液态效果和背景设置。",
       "groups": {
         "builtin": "内置",
         "custom": "自定义主题"
@@ -47,7 +51,7 @@
     },
     "language": {
       "title": "语言",
-      "label": "选择语言",
+      "label": "界面语言",
       "options": {
         "en": "English (US)",
         "id": "Bahasa Indonesia",
@@ -55,19 +59,74 @@
       }
     },
     "behavior": {
-      "title": "应用行为",
-      "auto_close": "启动时自动关闭",
-      "auto_close_desc": "成功启动游戏后自动完全关闭 EMMM。"
+      "title": "行为",
+      "auto_close": "启动后关闭",
+      "auto_close_desc": "游戏启动后关闭 EMMM。"
     },
     "system": {
-      "title": "系统信息",
+      "title": "系统",
       "app_version": "应用版本",
       "tauri_version": "Tauri 版本",
       "database": "数据库",
       "engine": "引擎",
       "db_val": "SQLite (SQLx)",
       "engine_val": "Vite + React"
+    },
+    "catalog_assets": {
+      "title": "目录资源",
+      "not_installed": "尚未安装目录包。",
+      "installed": "{{name}} {{version}} · {{entries}} 个目录条目",
+      "invalid": "无法验证已安装的目录包。",
+      "status_unavailable": "目录资源状态不可用。",
+      "open_folder": "打开文件夹",
+      "refresh": "刷新目录",
+      "updates_title": "已签名目录更新",
+      "updates_desc": "每周从公共发布渠道检查。",
+      "auto_install": "自动安装",
+      "check_update": "立即检查",
+      "install_update": "安装 {{version}}",
+      "update_available": "版本 {{version}} 已可安装。",
+      "up_to_date": "目录已是最新。",
+      "update_idle": "安装前会验证更新。",
+      "update_check_failed": "无法检查目录更新；已安装目录未更改。",
+      "update_install_failed": "无法安装已签名目录更新；已安装目录未更改。",
+      "auto_update_failed": "无法保存目录更新偏好：{{error}}"
+    },
+    "diagnostics": {
+      "title": "匿名诊断数据",
+      "description": "共享匿名可靠性数据。不会发送个人或游戏数据。",
+      "toggle": "共享诊断数据"
+    },
+    "trust": {
+      "title": "信任与隐私",
+      "close": "关闭",
+      "close_dialog": "关闭对话框",
+      "privacy": {
+        "card_title": "隐私政策",
+        "card_desc": "本地数据、浏览器会话和可选诊断。",
+        "title": "隐私政策",
+        "section_one": "存储在本设备的数据",
+        "body_one": "EMMM 会在此设备保存设置、本地模组元数据、Discover 书签和历史记录、恢复的标签页地址以及下载记录。除非您启用可选共享功能，否则这些数据保留在本地。",
+        "section_two": "浏览器数据",
+        "body_two": "Discover 使用独立的浏览器配置文件保存网站会话。EMMM 不会读取或传输网站密码、Cookie、OAuth 令牌或表单内容。",
+        "section_three": "可选诊断",
+        "body_three": "匿名诊断数据为可选项。启用后，EMMM 会向 Grafana Cloud 发送版本、有限的操作和结果代码、汇总耗时及简短诊断代码，不包含路径、模组或游戏名称、URL、消息、网站数据或用户标识符。崩溃报告需要确认。关闭诊断会清除本地队列。"
+      },
+      "terms": {
+        "card_title": "使用条款",
+        "card_desc": "游戏、模组和外部工具的使用责任。",
+        "title": "使用条款",
+        "section_one": "独立软件",
+        "body_one": "EMMM 是独立的第三方工具，不隶属于、未获任何游戏开发商、发行商或平台认可或赞助。",
+        "section_two": "获准使用",
+        "body_two": "仅将 EMMM 用于您获准使用的游戏、模组、帐户和内容。您有责任遵守各游戏、平台、网站和第三方工具的条款与规则。",
+        "section_three": "外部内容",
+        "body_three": "外部下载和工具在 EMMM 之外运行。进行更改前请检查文件并保留备份。EMMM 不认可或保证第三方内容。"
+      }
     }
+  },
+  "diagnostics": {
+    "save_failed": "无法保存诊断数据偏好：{{error}}"
   },
   "toast": {
     "save_success": "设置已成功保存。",
@@ -79,10 +138,10 @@
     "lang_failed": "更新语言失败：{{error}}"
   },
   "games": {
-    "title": "游戏库",
-    "desc": "管理您的安装位置和游戏配置。",
+    "title": "游戏",
+    "desc": "安装路径和启动设置。",
     "add": "添加游戏",
-    "empty": "尚未配置游戏。点击“添加游戏”开始。",
+    "empty": "尚未配置游戏。",
     "active": "激活",
     "actions": {
       "set_active": "设为激活",
@@ -92,11 +151,11 @@
     },
     "delete_confirm": "您确定要移除此游戏配置吗？",
     "types": {
-      "gimi": "原神",
-      "srmi": "崩坏：星穹铁道",
-      "zzmi": "绝区零",
-      "wwmi": "鸣潮",
-      "efmi": "明日方舟：终末地"
+      "gimi": "GIMI",
+      "srmi": "SRMI",
+      "zzmi": "ZZMI",
+      "wwmi": "WWMI",
+      "efmi": "EFMI"
     },
     "form": {
       "launch_mode_label": "Launch Mode",
@@ -105,16 +164,16 @@
       "title_add": "添加新游戏",
       "title_edit": "编辑游戏",
       "name_label": "显示名称",
-      "name_placeholder": "例如：Genshin Impact",
+      "name_placeholder": "例如：GIMI",
       "type_label": "游戏类型",
       "path_label": "Mod 文件夹路径",
-      "path_placeholder": "C:/Games/Genshin Impact/Mods",
+      "path_placeholder": "C:/Games/GIMI/Mods",
       "path_help": "选择存储 Mod 的文件夹。",
       "ready_to_move_label": "模组收件箱（可选）",
       "ready_to_move_placeholder": "默认：Downloads/mods/<游戏名称>",
       "ready_to_move_help": "放在此处的文件夹和压缩包会显示在模组收件箱页面中。",
       "exe_label": "游戏可执行文件 (.exe)",
-      "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
+      "exe_placeholder": "C:/Games/GIMI/Game.exe",
       "advanced_title": "高级选项",
       "loader_label": "3DMigoto 加载器 (可选)",
       "loader_placeholder": "3DMigoto Loader.exe",
@@ -146,14 +205,14 @@
     }
   },
   "ai": {
-    "title": "AI 智能重新排序",
-    "desc": "启用后，EMMM 将通过提供的 OpenAI 兼容端点使用 LLM，尝试恢复被本地评分系统标记为“需要审核”的模组文件夹。",
-    "enable": "启用 AI 重新排序",
-    "base_url": "接口提供商 Base URL",
-    "base_url_desc": "(必须是兼容 OpenAI 的 /v1/chat/completions 接口)",
-    "api_key": "AI API 密钥",
-    "api_key_desc": "密钥存储在操作系统凭据保险库中，且仅发送到配置的 Base URL。",
-    "api_key_stored": "密钥已安全存储。仅在需要替换时输入新密钥。",
+    "title": "AI 重新排序",
+    "desc": "通过兼容 OpenAI 的端点审核不确定的模组文件夹。",
+    "enable": "启用重新排序",
+    "base_url": "端点",
+    "base_url_desc": "兼容 OpenAI 的聊天补全 URL。",
+    "api_key": "API 密钥",
+    "api_key_desc": "存储在系统凭据保险库中。",
+    "api_key_stored": "已保存密钥。输入新密钥即可替换。",
     "stored_key_placeholder": "已安全存储密钥",
     "remove_key": "删除密钥",
     "show_key": "显示密钥",
@@ -179,12 +238,12 @@
   "browser": {
     "title": "发现与浏览器",
     "homepage": "首页 URL",
-    "homepage_desc": "点击“发现”时默认打开的页面（必须以 http/https 开头）。",
+    "homepage_desc": "Discover 默认页面。请使用 http 或 https URL。",
     "reset": "重置",
-    "storage_title": "存储与保留",
-    "retention": "保留天数",
-    "retention_desc": "下载的存档在自动清理前保留多长时间。",
-    "clear_downloads": "立即清理旧下载",
+    "storage_title": "下载",
+    "retention": "保留存档",
+    "retention_desc": "自动删除较旧的下载。",
+    "clear_downloads": "清理旧下载",
     "clearing": "正在清理...",
     "clear_success": "已清理 {{count}} 个旧下载。",
     "clear_failed": "清理下载失败：{{error}}",
@@ -198,22 +257,22 @@
   "hotkeys": {
     "title": "全局热键",
     "enabled": "已启用",
-    "desc": "在游戏进行时快速操作的系统级键盘快捷键。这些快捷键在游戏窗口激活时被拦截。",
+    "desc": "游戏窗口激活时可用的快捷键。",
     "cooldown": "操作冷却",
-    "cooldown_desc": "防止意外的双重触发",
+    "cooldown_desc": "防止重复输入。",
     "conflicts_title": "检测到按键冲突",
     "labels": {
-      "next_preset": "切换到下一个预设",
-      "prev_preset": "切换到上一个预设",
-      "toggle_overlay": "切换显示层 (横幅 + 按键查看器)",
-      "next_variant": "切换到下一个变体",
-      "prev_variant": "切换到上一个变体"
+      "next_preset": "下一个预设",
+      "prev_preset": "上一个预设",
+      "toggle_overlay": "切换显示层",
+      "next_variant": "下一个变体",
+      "prev_variant": "上一个变体"
     },
     "viewer_title": "按键查看器显示层",
     "auto_reload": "自动重载",
-    "viewer_desc": "根据通过 3DMigoto 哈希检测到的当前角色/对象，自动生成并管理游戏内按键列表。使用 {{key}} 与状态横幅一同切换。",
-    "infrastructure_title": "运行时基础设施",
-    "infrastructure_desc": "构件在 .emmm_data/ 中管理。部署无需用户配置。",
+    "viewer_desc": "显示检测到的游戏按键。使用 {{key}} 切换。",
+    "infrastructure_title": "运行时文件",
+    "infrastructure_desc": "在 .emmm_data/ 中自动管理。",
     "reset": "全部重置为默认值",
     "reset_success": "热键设置已重置为默认值。",
     "save_failed": "保存热键设置失败：{{error}}",
@@ -234,17 +293,17 @@
   "maintenance": {
     "open_optimizer": "打开优化器",
     "storage_title": "存储优化器",
-    "storage_desc": "查找大型模组、重复文件和可清理项，避免占用过多磁盘空间。",
+    "storage_desc": "查看大型和重复文件。",
     "retention_title": "存储保留",
     "system_title": "系统维护",
-    "system_desc": "运行自动清理任务、验证数据库完整性并清理孤立元数据。",
+    "system_desc": "清理数据并验证数据库。",
     "run_maintenance": "运行维护",
     "cache_title": "清理图像缓存",
-    "cache_desc": "移除旧的生成缩略图（超过 30 天）以节省空间。它们将根据需要重新生成。",
+    "cache_desc": "移除超过 30 天的缩略图。",
     "clear_cache": "清理旧缓存",
     "clear_failed": "清理缓存失败：{{error}}",
     "danger_title": "重置应用程序设置",
-    "danger_desc": "从数据库中清除所有游戏注册、模组元数据和设置。应用程序将返回初始设置屏幕。数据库备份将保存到回收站文件夹。",
+    "danger_desc": "清除注册、元数据、收藏和设置。备份保存在回收站。",
     "danger_info": "磁盘上的模组文件和文件夹不会被删除。",
     "reset_btn": "重置并重新设置",
     "modal_title": "您确定吗？",
@@ -262,18 +321,42 @@
     "checking": "正在检查...",
     "check_btn": "检查更新",
     "install_btn": "安装并重启",
-    "downloading": "正在下载... {{downloaded}} / {{total}}",
-    "metadata_title": "元数据同步",
-    "metadata_desc": "从远程服务器同步角色和武器数据库。这在启动时自动发生，也可以手动触发。",
-    "sync_btn": "立即同步",
-    "syncing": "正在同步...",
-    "sync_success": "元数据已更新至版本 {{version}}",
-    "sync_up_to_date": "元数据已是最新。",
-    "sync_failed": "元数据同步失败：{{error}}"
+    "downloading": "正在下载... {{downloaded}} / {{total}}"
+  },
+  "integrations": {
+    "title": "集成",
+    "mod_viewer": {
+      "title": "3DMigoto Mod Viewer",
+      "description": "在外部查看器中打开模组。",
+      "recommended_version": "建议使用便携版 v2.3.0 或更高版本。",
+      "path": "可执行文件路径",
+      "status": {
+        "not_configured": "未配置",
+        "configured": "已配置",
+        "missing": "未找到已配置的可执行文件",
+        "checking": "正在检查可执行文件…"
+      },
+      "view_latest_release": "查看最新版本",
+      "select_executable": "选择可执行文件",
+      "replace": "替换",
+      "remove": "移除",
+      "disclosure": {
+        "title": "使用外部 Mod Viewer？",
+        "body": "3DMigoto Mod Viewer 是独立的外部应用程序。它可以修改 INI 和 DDS 文件、创建备份，并在您的模组文件夹中写入 .mod_viewer.json。这些更改发生在 EMMM 的事务和恢复机制之外。",
+        "official_source": "请只选择从官方 GitHub 发行页下载的二进制文件。",
+        "cancel": "取消",
+        "continue": "继续"
+      },
+      "picker_error": "无法选择可执行文件：{{error}}",
+      "release_error": "无法打开最新发行页：{{error}}",
+      "save_failed": "无法保存 Mod Viewer 可执行文件：{{error}}",
+      "configured_success": "Mod Viewer 可执行文件已配置。",
+      "removed_success": "已移除 Mod Viewer 配置，未删除可执行文件。"
+    }
   },
   "privacy": {
     "title": "安全分类",
-    "desc": "Safe 和 Unsafe 仅用于模组与收藏集分类。关键词可帮助识别敏感模组，但不会切换当前运行状态。",
+    "desc": "关键词用于敏感模组分类，不会更改运行模式。",
     "keywords_title": "分类关键词",
     "keywords_placeholder": "例如：skin, lewd, bikini",
     "keywords_add": "添加关键字",

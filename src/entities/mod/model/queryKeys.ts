@@ -2,8 +2,12 @@ import { identityPathKey } from '@/shared/lib/pathKey';
 
 export const thumbnailKeys = {
   all: ['thumbnails'] as const,
-  folder: (folderPath: string) =>
-    [...thumbnailKeys.all, identityPathKey(folderPath) ?? folderPath] as const,
+  folder: (folderPath: string, gameId?: string) =>
+    [
+      ...thumbnailKeys.all,
+      identityPathKey(folderPath) ?? folderPath,
+      ...(gameId ? [gameId] : []),
+    ] as const,
 };
 
 export const detailsKeys = {
@@ -15,4 +19,18 @@ export const detailsKeys = {
   previewImages: (folderPath: string) =>
     [...detailsKeys.all, 'preview-images', folderPath] as const,
   conflicts: (folderPath: string) => [...detailsKeys.all, 'conflicts', folderPath] as const,
+};
+
+export const modHealthKeys = {
+  all: ['mod-health'] as const,
+  report: (gameId: string, folderPath: string) =>
+    [...modHealthKeys.all, 'report', gameId, identityPathKey(folderPath) ?? folderPath] as const,
+  viewerSnapshots: () => [...modHealthKeys.all, 'viewer-snapshots'] as const,
+  viewerReview: (gameId: string, folderPath: string) =>
+    [
+      ...modHealthKeys.all,
+      'viewer-review',
+      gameId,
+      identityPathKey(folderPath) ?? folderPath,
+    ] as const,
 };

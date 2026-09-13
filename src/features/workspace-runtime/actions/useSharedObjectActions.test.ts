@@ -115,6 +115,7 @@ function createObject(overrides: Partial<WorkspaceObjectNode> = {}): WorkspaceOb
     is_registered: true,
     folder_path: 'Objects/Alpha',
     object_type: 'Character',
+    randomizer_mode: null,
     sub_category: null,
     status: 1,
     created_at: '2025-01-01T00:00:00Z',

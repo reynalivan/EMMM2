@@ -18,6 +18,7 @@ import { toast } from '@/shared/ui/toast';
 import GameSelector from './GameSelector';
 import GlobalActions from './GlobalActions';
 import { SafetyFilterControl } from '@/shared/ui/components/ui/SafetyFilterControl';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 export interface TopBarProps {
   launchBar?: ReactNode;
@@ -35,6 +36,23 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const pageTitle =
+    workspaceView === 'dashboard'
+      ? t('nav.dashboard')
+      : workspaceView === 'mods'
+        ? t('nav.mods_manager')
+        : workspaceView === 'mod-inbox'
+          ? t('nav.mod_inbox')
+          : workspaceView === 'collections'
+            ? t('nav.collections')
+            : workspaceView === 'settings'
+              ? t('nav.settings')
+              : workspaceView === 'browser'
+                ? t('nav.browser')
+                : workspaceView === 'downloads'
+                  ? t('nav.downloads')
+                  : t('nav.storage_optimizer');
+  const showLaunchBar = workspaceView === 'dashboard' || workspaceView === 'mods';
 
   const handleQuickPlay = async () => {
     if (!activeGame) return;
@@ -54,43 +72,31 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
       id: 'dashboard' as const,
       icon: LayoutGrid,
       label: t('nav.dashboard'),
-      color: 'text-primary',
-      bg: 'bg-primary/15',
     },
     {
       id: 'mods' as const,
       icon: FolderOpen,
       label: t('nav.mods_manager'),
-      color: 'text-info',
-      bg: 'bg-info/15',
     },
     {
       id: 'mod-inbox' as const,
       icon: Inbox,
       label: t('nav.mod_inbox'),
-      color: 'text-success',
-      bg: 'bg-success/15',
     },
     {
       id: 'collections' as const,
       icon: Layers,
       label: t('nav.collections'),
-      color: 'text-secondary',
-      bg: 'bg-secondary/15',
     },
     {
       id: 'settings' as const,
       icon: Settings,
       label: t('nav.settings'),
-      color: 'text-accent',
-      bg: 'bg-accent/15',
     },
     {
       id: 'storage-optimizer' as const,
       icon: Copy,
       label: t('nav.storage_optimizer'),
-      color: 'text-warning',
-      bg: 'bg-warning/15',
     },
   ];
 
@@ -107,17 +113,21 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
   }, [menuOpen]);
 
   return (
-    <div className="h-16 glass-surface flex items-center justify-between px-3 md:px-4 sticky top-0 z-50">
+    <LiquidSurface
+      liquidRole="nav"
+      className="absolute inset-x-0 top-0 z-[var(--workspace-layer-topbar)] h-16"
+      contentClassName="flex h-full items-center gap-2 px-3 md:px-4"
+    >
       {/* Left Section: Branding & Navigation */}
-      <div className="flex items-center gap-3 md:gap-5 shrink-0">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3 md:gap-4">
         {/* App Menu Toggle */}
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className={`p-2 rounded-xl border transition-all cursor-pointer ${
+            className={`cursor-pointer rounded-lg border p-2 transition-[background-color,border-color,color] duration-150 ${
               menuOpen
-                ? 'bg-primary/20 text-primary border-primary/30 shadow-[0_0_15px_-5px_var(--color-primary)]'
-                : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/15 shadow-[0_0_15px_-5px_var(--color-primary)]'
+                ? 'border-primary/30 bg-primary/10 text-primary'
+                : 'border-base-300 bg-base-200 text-base-content/75 hover:bg-base-300 hover:text-base-content'
             }`}
             title={t('nav.app_menu_tip')}
           >
@@ -126,18 +136,41 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
 
           {/* Dropdown Menu */}
           {menuOpen && (
-            <div className="absolute top-full left-0 mt-2 w-56 bg-base-200 border border-base-300 rounded-2xl shadow-2xl p-2 z-60 animate-in fade-in slide-in-from-top-2 duration-150">
+            <LiquidSurface
+              liquidRole="overlay"
+              data-testid="app-menu-overlay"
+              className="app-menu-overlay absolute left-0 top-full z-[var(--workspace-layer-popover)] mt-2 w-56 rounded-xl shadow-lg"
+              contentClassName="p-2"
+            >
+              {workspaceView !== 'dashboard' && (
+                <>
+                  <button
+                    type="button"
+                    data-testid="nav-dashboard"
+                    onClick={() => {
+                      setWorkspaceView('dashboard');
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-base-content/85 transition-colors hover:bg-base-content/8 hover:text-base-content"
+                  >
+                    <ChevronLeft size={16} className="text-base-content/60" />
+                    {t('nav.back_to_dashboard')}
+                  </button>
+                  <div className="mx-2 my-1.5 h-px bg-base-content/10" />
+                </>
+              )}
+
               {/* Quick Play */}
               <button
                 onClick={() => void handleQuickPlay()}
                 disabled={!activeGame || isLaunching}
                 className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left hover:bg-success/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed group"
               >
-                <div className="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shrink-0">
-                  <PlayCircle size={16} className="text-success" />
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
+                  <PlayCircle size={16} className="text-primary" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-base-content/90 group-hover:text-success transition-colors">
+                  <p className="text-sm font-medium text-base-content/90 transition-colors group-hover:text-primary">
                     {t('nav.quick_play')}
                   </p>
                   <p className="text-[10px] text-base-content/40 truncate">
@@ -152,6 +185,8 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive = workspaceView === item.id;
+                if (item.id === 'dashboard' && workspaceView !== 'dashboard') return null;
+
                 return (
                   <button
                     key={item.id}
@@ -160,90 +195,93 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
                       setWorkspaceView(item.id);
                       setMenuOpen(false);
                     }}
-                    className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left transition-colors group ${
-                      isActive ? 'bg-primary/10' : 'hover:bg-base-300/60'
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors group ${
+                      isActive ? 'bg-base-content/5' : 'hover:bg-base-300/60'
                     }`}
                   >
                     <div
-                      className={`w-8 h-8 rounded-lg ${item.bg} flex items-center justify-center shrink-0`}
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        isActive ? 'text-base-content' : 'text-base-content/55'
+                      }`}
                     >
-                      <Icon size={16} className={item.color} />
+                      <Icon size={16} />
                     </div>
                     <span
-                      className={`text-sm font-medium ${isActive ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'} transition-colors`}
+                      className={`text-sm font-medium ${isActive ? 'text-base-content' : 'text-base-content/80 group-hover:text-base-content'} transition-colors`}
                     >
                       {item.label}
                     </span>
-                    {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
                   </button>
                 );
               })}
-            </div>
+            </LiquidSurface>
           )}
         </div>
 
-        {/* Back button when not on dashboard */}
-        {workspaceView !== 'dashboard' && (
-          <button
-            onClick={() => setWorkspaceView('dashboard')}
-            className="btn btn-ghost btn-sm btn-square text-base-content/70 hover:text-primary hover:bg-base-content/5"
-            title={t('nav.back_to_dashboard')}
-          >
-            <ChevronLeft size={20} />
-          </button>
+        {workspaceView === 'settings' ? (
+          <div className="hidden flex-col gap-0.5 sm:flex">
+            <span className="font-bold text-lg leading-none tracking-tight text-base-content">
+              {t('app.name')}
+            </span>
+            <span className="hidden text-[9px] font-semibold uppercase tracking-[0.2em] text-base-content/50 sm:inline-block md:text-[10px]">
+              {t('app.version')}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="sm:hidden">
+              <GameSelector compact />
+            </div>
+            <div className="hidden sm:block">
+              <GameSelector />
+            </div>
+          </>
         )}
-
-        <div className="flex flex-col gap-0.5">
-          <span className="font-bold text-lg md:text-xl leading-none tracking-tight text-base-content glow-text">
-            {t('app.name')}
-          </span>
-          <span className="text-[9px] md:text-[10px] uppercase tracking-[0.2em] opacity-70 font-semibold hidden sm:inline-block text-accent">
-            {t('app.version')}
-          </span>
-        </div>
-
-        <div className="h-8 w-px bg-base-content/5 mx-1 md:mx-2 hidden xs:block" />
-
-        {/* Game Selector Cartridge */}
-        <GameSelector />
       </div>
 
-      {/* Center Section: Active Page Title */}
-      <div className="flex-1 flex justify-center items-center pointer-events-none hidden lg:flex">
-        <span className="font-bold tracking-[0.2em] uppercase opacity-40 text-sm">
-          {workspaceView === 'dashboard'
-            ? t('nav.dashboard')
-            : workspaceView === 'mods'
-              ? t('nav.mods_manager')
-              : workspaceView === 'mod-inbox'
-                ? t('nav.mod_inbox')
-                : workspaceView === 'collections'
-                  ? t('nav.collections')
-                  : workspaceView === 'settings'
-                    ? t('nav.settings')
-                    : workspaceView === 'storage-optimizer'
-                      ? t('nav.storage_optimizer')
-                      : ''}
-        </span>
+      {/* Center Section: Active Page Title or Mods Manager collection switcher */}
+      <div
+        data-testid="topbar-center"
+        className={`flex min-w-0 flex-1 items-center justify-center px-1 pointer-events-none ${
+          workspaceView === 'mods' && contextControls
+            ? 'xl:absolute xl:left-1/2 xl:-translate-x-1/2 xl:flex-none xl:px-0'
+            : ''
+        }`}
+      >
+        {workspaceView === 'mods' && contextControls ? (
+          <>
+            <span className="max-w-36 truncate text-[10px] font-bold uppercase tracking-[0.12em] text-muted sm:max-w-none sm:text-xs sm:tracking-[0.16em] lg:text-sm lg:tracking-[0.2em] xl:hidden">
+              {pageTitle}
+            </span>
+            <div className="pointer-events-auto hidden min-w-0 xl:block">{contextControls}</div>
+          </>
+        ) : (
+          <span className="max-w-36 truncate text-[10px] font-bold uppercase tracking-[0.12em] text-muted sm:max-w-none sm:text-xs sm:tracking-[0.16em] lg:text-sm lg:tracking-[0.2em]">
+            {pageTitle}
+          </span>
+        )}
       </div>
 
       {/* Right Section: Context Actions */}
       <div
-        className="flex items-center justify-end gap-2 shrink-0 min-w-[100px]"
+        className="flex min-w-0 shrink-0 items-center justify-end gap-1 sm:min-w-[100px] sm:gap-2 xl:ml-auto"
         id="topbar-actions-portal"
       >
         {workspaceView === 'mods' && (
-          <div className="hidden sm:flex items-center">
+          <div className="hidden items-center xl:flex">
             <SafetyFilterControl value={safetyFilter} onChange={setSafetyFilter} compact />
           </div>
         )}
         {workspaceView !== 'mod-inbox' && (
           <>
-            {contextControls}
-            <GlobalActions launchBar={launchBar} />
+            <GlobalActions
+              launchBar={showLaunchBar ? launchBar : undefined}
+              safetyFilter={workspaceView === 'mods' ? safetyFilter : undefined}
+              onSafetyFilterChange={workspaceView === 'mods' ? setSafetyFilter : undefined}
+            />
           </>
         )}
       </div>
-    </div>
+    </LiquidSurface>
   );
 }

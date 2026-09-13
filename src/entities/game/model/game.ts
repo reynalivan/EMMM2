@@ -24,11 +24,11 @@ export function getGameTypeKey(type: GameType): string {
  * Keep in sync with Rust `XXMI_TARGETS` in `src-tauri/src/services/validator.rs`.
  */
 export const GAME_OPTIONS = [
-  { value: 'GIMI', label: 'Genshin Impact (GIMI)', badgeColor: 'badge-primary' },
-  { value: 'SRMI', label: 'Honkai Star Rail (SRMI)', badgeColor: 'badge-secondary' },
-  { value: 'WWMI', label: 'Wuthering Waves (WWMI)', badgeColor: 'badge-accent' },
-  { value: 'ZZMI', label: 'Zenless Zone Zero (ZZMI)', badgeColor: 'badge-info' },
-  { value: 'EFMI', label: 'Arknight Endfield (EFMI)', badgeColor: 'badge-warning' },
+  { value: 'GIMI', label: 'GIMI', badgeColor: 'badge-primary' },
+  { value: 'SRMI', label: 'SRMI', badgeColor: 'badge-secondary' },
+  { value: 'WWMI', label: 'WWMI', badgeColor: 'badge-accent' },
+  { value: 'ZZMI', label: 'ZZMI', badgeColor: 'badge-info' },
+  { value: 'EFMI', label: 'EFMI', badgeColor: 'badge-warning' },
 ] as const;
 
 /** Lookup map: game_type → DaisyUI badge class. */

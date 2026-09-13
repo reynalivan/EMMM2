@@ -1,10 +1,11 @@
 import { createPortal } from 'react-dom';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Save, X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/app/store';
 import { useCreateCollection } from '../hooks/useCollections';
 import type { CollectionSaveMode } from '../types';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 interface SaveCollectionModalProps {
   onClose: () => void;
@@ -32,8 +33,10 @@ export function SaveCollectionModal({
   const { t } = useTranslation('collections');
   const activeGameId = useAppStore((state) => state.activeGameId);
   const [name, setName] = useState(buildDefaultCollectionName());
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const createMutation = useCreateCollection();
   const isSnapshotSave = saveMode === 'clone_snapshot';
+  useDialogSync(dialogRef, true);
 
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -56,11 +59,16 @@ export function SaveCollectionModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-1000 flex items-center justify-center bg-overlay-mask backdrop-blur-sm p-4">
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      aria-labelledby="save-collection-title"
+      onClose={onClose}
+    >
       <div className="card bg-base-200 border border-base-content/10 shadow-2xl w-full max-w-sm my-auto animate-in fade-in zoom-in-95 duration-200">
         <div className="card-body p-6">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="card-title text-xl flex gap-2 items-center">
+            <h2 id="save-collection-title" className="card-title text-xl flex gap-2 items-center">
               <Save size={20} className="text-secondary" />
               {isSnapshotSave
                 ? t('save.snapshot_title', 'Save Snapshot as New Collection')
@@ -119,7 +127,10 @@ export function SaveCollectionModal({
           </form>
         </div>
       </div>
-    </div>,
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>{t('common:actions.close')}</button>
+      </form>
+    </dialog>,
     document.body,
   );
 }

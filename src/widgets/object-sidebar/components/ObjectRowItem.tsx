@@ -132,7 +132,7 @@ function ObjectRowItemInner({
             ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/40'
             : 'hover:bg-base-200/50 hover:border-base-300/30',
         isInactive && !isSelected && 'bg-base-200/25',
-        isMobile ? 'px-3 py-2' : 'px-2 py-1.5',
+        isMobile ? 'px-3 py-2.5' : 'px-2 py-1.5',
         className,
       )}
       onClick={onClick}

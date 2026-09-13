@@ -57,8 +57,8 @@ export default function FolderCardThumbnail({
           src={thumbnailSrc}
           alt=""
           decoding="async"
-          className={`w-full h-full object-cover transition-all duration-500
-            ${isSelected ? 'scale-105' : 'scale-100 group-hover:scale-105'}
+          className={`h-full w-full object-cover transition-opacity duration-150
+            ${isSelected ? 'opacity-100' : 'opacity-90 group-hover:opacity-100'}
             ${imgLoaded ? (isSelected ? 'opacity-100' : 'opacity-85 group-hover:opacity-100') : 'opacity-0'}
             ${isHiddenByMask ? 'blur-xl' : ''}
           `}
@@ -105,11 +105,11 @@ export default function FolderCardThumbnail({
           event.stopPropagation();
           onToggleFavorite();
         }}
-        className={`absolute top-1.5 right-8 p-1 rounded-full transition-all duration-200 z-10
+        className={`absolute top-1.5 right-8 z-10 rounded-full p-1 transition-[color,opacity,transform] duration-150
            ${
              folder.is_favorite
-               ? 'text-warning opacity-100 hover:scale-110'
-               : 'text-base-content/20 opacity-0 group-hover:opacity-100 hover:text-warning hover:scale-110'
+               ? 'text-warning opacity-100'
+               : 'text-base-content/45 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 hover:text-warning'
            }
          `}
         title={t(folder.is_favorite ? 'card.unfavorite' : 'card.favorite')}
@@ -128,23 +128,29 @@ export default function FolderCardThumbnail({
         </div>
       )}
 
-      {hasNamingConflict && (
-        <div
-          className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm"
-          title={t('card.name_conflict_title')}
-        >
-          <AlertTriangle size={10} />
-          <span className="text-[9px] font-bold">{t('card.name_conflict')}</span>
-        </div>
-      )}
-
-      {hasConflict && !hasNamingConflict && (
-        <div
-          className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-warning/90 text-warning-content rounded-md z-10 shadow-sm"
-          title={t('card.hash_conflict_title')}
-        >
-          <Copy size={10} />
-          <span className="text-[9px] font-bold">{t('card.conflict')}</span>
+      {(hasNamingConflict || hasConflict) && (
+        <div className="absolute bottom-1.5 left-1.5 z-10 flex items-center rounded-md border border-base-content/10 bg-base-100/90 p-0.5 shadow-sm">
+          {hasNamingConflict && (
+            <div
+              role="img"
+              aria-label={t('card.name_conflict')}
+              className="flex h-5 w-5 items-center justify-center rounded-sm text-warning"
+              title={t('card.name_conflict_title')}
+            >
+              <AlertTriangle size={10} />
+            </div>
+          )}
+          {hasNamingConflict && hasConflict && <span className="h-3 w-px bg-base-content/15" />}
+          {hasConflict && (
+            <div
+              role="img"
+              aria-label={t('card.shared_hash')}
+              className="flex h-5 w-5 items-center justify-center rounded-sm text-info"
+              title={t('card.hash_conflict_title')}
+            >
+              <Copy size={10} />
+            </div>
+          )}
         </div>
       )}
 
@@ -159,8 +165,8 @@ export default function FolderCardThumbnail({
       )}
 
       <div
-        className={`absolute top-1.5 right-1.5 transition-all duration-200 z-20
-          ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100'}`}
+        className={`absolute right-1.5 top-1.5 z-20 transition-opacity duration-150
+          ${isSelected ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
       >
         <input
           type="checkbox"

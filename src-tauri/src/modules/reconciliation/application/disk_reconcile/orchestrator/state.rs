@@ -14,6 +14,7 @@ use crate::modules::reconciliation::application::disk_reconcile::types::{
 #[derive(Debug, Default, Clone)]
 struct GameSyncState {
     last_result: Option<DiskReconcileResult>,
+    reconcile_revision: u64,
     completed_at: Option<std::time::Instant>,
     pending_runtime_effects: PendingRuntimeEffects,
     runtime_effects_generation: u64,
@@ -427,10 +428,12 @@ impl DiskReconcileState {
         }
     }
 
-    pub(super) fn record_result(&self, game_id: &str, result: &DiskReconcileResult) {
+    pub(super) fn record_result(&self, game_id: &str, result: &mut DiskReconcileResult) {
         {
             let mut games = lock(&self.games);
             let state = games.entry(game_id.to_string()).or_default();
+            state.reconcile_revision = state.reconcile_revision.saturating_add(1);
+            result.reconcile_revision = state.reconcile_revision;
             state.last_result = Some(result.clone());
             state.completed_at = Some(std::time::Instant::now());
         }

@@ -1,5 +1,6 @@
 //! Homepage preference and URL scheme rules.
 
+use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::modules::browser::adapters::sqlite::browser;
@@ -11,20 +12,30 @@ const MIN_RETENTION_DAYS: i64 = 1;
 const MAX_RETENTION_DAYS: i64 = 365;
 const RETENTION_MIGRATION_MARKER: &str = "retention_days_migration_v1";
 
-/// Fetch the configured homepage URL from `browser_settings` table.
+/// Fetch the configured homepage URL for one game.
 /// Falls back to `https://www.google.com` if not set.
-pub async fn get_homepage(db: &SqlitePool) -> String {
-    browser::get_setting(db, "homepage_url")
+pub async fn get_homepage(db: &SqlitePool, game_id: &str) -> String {
+    sqlx::query_scalar("SELECT homepage_url FROM browser_game_settings WHERE game_id = ?")
+        .bind(game_id)
+        .fetch_optional(db)
         .await
         .ok()
         .flatten()
         .unwrap_or_else(|| "https://www.google.com".to_string())
 }
 
-/// Save a new homepage URL to `browser_settings`.
-pub async fn set_homepage(db: &SqlitePool, url: &str) -> Result<(), BrowserError> {
+/// Save a new homepage URL for one game.
+pub async fn set_homepage(db: &SqlitePool, game_id: &str, url: &str) -> Result<(), BrowserError> {
     validate_http_url(url)?;
-    browser::set_setting(db, "homepage_url", url).await?;
+    sqlx::query(
+        "INSERT INTO browser_game_settings (game_id, homepage_url, updated_at) VALUES (?, ?, ?) \
+         ON CONFLICT(game_id) DO UPDATE SET homepage_url = excluded.homepage_url, updated_at = excluded.updated_at",
+    )
+    .bind(game_id)
+    .bind(url)
+    .bind(Utc::now().timestamp())
+    .execute(db)
+    .await?;
     Ok(())
 }
 
@@ -143,29 +154,30 @@ mod tests {
     #[tokio::test]
     async fn get_homepage_falls_back_to_google_when_unset() {
         let db = init_test_db().await.pool;
-        assert_eq!(get_homepage(&db).await, "https://www.google.com");
+        assert_eq!(get_homepage(&db, "game-1").await, "https://www.google.com");
     }
 
     #[tokio::test]
     async fn set_homepage_upserts_the_stored_value() {
         let db = init_test_db().await.pool;
 
-        set_homepage(&db, "https://gamebanana.com").await.unwrap();
-        assert_eq!(get_homepage(&db).await, "https://gamebanana.com");
+        set_homepage(&db, "game-1", "https://gamebanana.com").await.unwrap();
+        assert_eq!(get_homepage(&db, "game-1").await, "https://gamebanana.com");
 
-        set_homepage(&db, "http://localhost:1420").await.unwrap();
-        assert_eq!(get_homepage(&db).await, "http://localhost:1420");
+        set_homepage(&db, "game-2", "http://localhost:1420").await.unwrap();
+        assert_eq!(get_homepage(&db, "game-1").await, "https://gamebanana.com");
+        assert_eq!(get_homepage(&db, "game-2").await, "http://localhost:1420");
     }
 
     #[tokio::test]
     async fn set_homepage_rejects_a_bad_scheme_without_writing() {
         let db = init_test_db().await.pool;
-        set_homepage(&db, "https://ok.test").await.unwrap();
+        set_homepage(&db, "game-1", "https://ok.test").await.unwrap();
 
-        let err = set_homepage(&db, "javascript:alert(1)").await.unwrap_err();
+        let err = set_homepage(&db, "game-1", "javascript:alert(1)").await.unwrap_err();
 
         assert!(matches!(err, BrowserError::InvalidUrl(_)));
-        assert_eq!(get_homepage(&db).await, "https://ok.test");
+        assert_eq!(get_homepage(&db, "game-1").await, "https://ok.test");
     }
 
     #[tokio::test]

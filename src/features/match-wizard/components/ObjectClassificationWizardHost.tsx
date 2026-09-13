@@ -432,7 +432,7 @@ export function ObjectClassificationWizardHost() {
                           </details>
                         </>
                       ) : (
-                        '—'
+                        '-'
                       )}
                     </td>
                   </tr>

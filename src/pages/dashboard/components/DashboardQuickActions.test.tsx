@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { DashboardQuickActions } from './DashboardQuickActions';
 
@@ -12,6 +13,9 @@ vi.mock('@/app/store', () => ({
     selector({ autoCloseLauncher: true }),
 }));
 vi.mock('@/shared/ui/toast', () => ({ toast: { error: vi.fn() } }));
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 
 describe('DashboardQuickActions', () => {
   it('opens Mod Inbox from its dashboard tile', () => {

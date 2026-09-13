@@ -58,6 +58,7 @@ impl Default for DupScanState {
 #[tauri::command]
 #[specta::specta]
 pub async fn dup_scan_start(
+    app: AppHandle,
     game_id: String,
     mods_root: String,
     state: State<'_, DupScanState>,
@@ -85,6 +86,7 @@ pub async fn dup_scan_start(
     let mods_root_for_task = mods_root.clone();
     let game_id_for_task = game_id.clone();
     let db_for_task = db.inner().clone();
+    let app_for_task = app.clone();
 
     tokio::spawn(async move {
         let _running_guard = RunningGuard::new(running_flag);
@@ -92,6 +94,11 @@ pub async fn dup_scan_start(
         let candidates = match walker::scan_mod_folders(Path::new(&mods_root_for_task)) {
             Ok(items) => items,
             Err(error) => {
+                crate::modules::system::application::telemetry::record_background_failure(
+                    &app_for_task,
+                    &AppError::Scanner(error.clone()),
+                )
+                .await;
                 let message = error.to_string();
                 let _ = on_event.send(DupScanEvent::Failed {
                     scan_id,
@@ -122,6 +129,11 @@ pub async fn dup_scan_start(
             {
                 Ok(data) => data,
                 Err(error) => {
+                    crate::modules::system::application::telemetry::record_background_failure(
+                        &app_for_task,
+                        &AppError::Scanner(error.clone()),
+                    )
+                    .await;
                     let message = error.to_string();
                     let _ = on_event.send(DupScanEvent::Failed {
                         scan_id,

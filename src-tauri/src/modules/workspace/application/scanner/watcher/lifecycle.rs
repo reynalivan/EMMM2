@@ -18,6 +18,60 @@ fn emit_event(app: &tauri::AppHandle, payload: WatchEventPayload) {
     let _ = app.emit("mod_watch:event", payload);
 }
 
+async fn record_watcher_outcome(
+    app: &tauri::AppHandle,
+    outcome: crate::modules::system::application::telemetry::TelemetryOutcome,
+    error_code: crate::modules::system::application::telemetry::TelemetryErrorCode,
+) {
+    if !app
+        .state::<crate::modules::settings::application::config::ConfigService>()
+        .get_settings()
+        .diagnostics
+        .telemetry_enabled
+    {
+        return;
+    }
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+        crate::modules::system::application::telemetry::TelemetryOperation::Watcher,
+        outcome,
+        error_code,
+    );
+    let _ = telemetry
+        .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+        .await;
+}
+
+async fn record_reconcile_outcome(
+    app: &tauri::AppHandle,
+    outcome: crate::modules::system::application::telemetry::TelemetryOutcome,
+    error_code: crate::modules::system::application::telemetry::TelemetryErrorCode,
+) {
+    if !app
+        .state::<crate::modules::settings::application::config::ConfigService>()
+        .get_settings()
+        .diagnostics
+        .telemetry_enabled
+    {
+        return;
+    }
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+        crate::modules::system::application::telemetry::TelemetryOperation::Reconcile,
+        outcome,
+        error_code,
+    );
+    let _ = telemetry
+        .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+        .await;
+}
+
 fn replace_watcher(
     state: &WatcherState,
     root: &std::path::Path,
@@ -133,16 +187,40 @@ async fn process_event_loop(
     .await;
     match session_recovery {
         Ok(result) if app.state::<WatcherState>().is_current_session(&session) => {
+            record_reconcile_outcome(
+                &app,
+                crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+            )
+            .await;
             let _ = app.emit("disk_reconcile:result", result);
         }
-        Err(error) if app.state::<WatcherState>().is_current_session(&session) => emit_event(
-            &app,
-            WatchEventPayload::Error {
-                game_id: game_id.clone(),
-                error: error.to_string(),
-                path: Some(mods_path_root.clone()),
-            },
-        ),
+        Err(error) if app.state::<WatcherState>().is_current_session(&session) => {
+            let error_code =
+                crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(
+                    &error,
+                );
+            record_watcher_outcome(
+                &app,
+                crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
+                error_code,
+            )
+            .await;
+            record_reconcile_outcome(
+                &app,
+                crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
+                error_code,
+            )
+            .await;
+            emit_event(
+                &app,
+                WatchEventPayload::Error {
+                    game_id: game_id.clone(),
+                    error: error.to_string(),
+                    path: Some(mods_path_root.clone()),
+                },
+            );
+        }
         _ => return,
     }
 
@@ -170,6 +248,14 @@ async fn process_event_loop(
         let events_lost = batch
             .iter()
             .any(|event| matches!(event, ModWatchEvent::Error(_)));
+        if events_lost {
+            record_watcher_outcome(
+                &app,
+                crate::modules::system::application::telemetry::TelemetryOutcome::Overflow,
+                crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+            )
+            .await;
+        }
         for event in &batch {
             if let ModWatchEvent::Error(error) = event {
                 log::warn!("Watcher error for {}: {}", mods_path_root, error);
@@ -231,9 +317,34 @@ async fn process_event_loop(
         }
         match result {
             Ok(result) => {
+                record_watcher_outcome(
+                    &app,
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                    crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                )
+                .await;
+                record_reconcile_outcome(
+                    &app,
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                    crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                )
+                .await;
                 let _ = app.emit("disk_reconcile:result", result);
             }
             Err(error) => {
+                let error_code = crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(&error);
+                record_watcher_outcome(
+                    &app,
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
+                    error_code,
+                )
+                .await;
+                record_reconcile_outcome(
+                    &app,
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
+                    error_code,
+                )
+                .await;
                 emit_event(
                     &app,
                     WatchEventPayload::Error {

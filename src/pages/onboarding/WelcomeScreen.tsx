@@ -7,6 +7,7 @@ import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle, Globe } from 'l
 import { motion } from 'motion/react';
 import type { GameConfig } from '@/entities/game';
 import { pathsEqual } from '../../shared/lib/pathKey';
+import { setFrontendTelemetryEnabled } from '../../shared/lib/telemetry';
 import { usePrefersReducedMotion } from '../../shared/lib/hooks/usePrefersReducedMotion';
 import { ManualSetupForm } from './components/ManualSetupForm';
 import { AutoDetectResult } from './components/AutoDetectResult';
@@ -23,6 +24,7 @@ import {
   type IndexingProgress,
 } from './utils/indexingProgress';
 import type { DiskReconcilePhase } from '../../shared/api/tauri/bindings';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 
@@ -63,6 +65,7 @@ export default function WelcomeScreen({
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
+  const [shareDiagnostics, setShareDiagnostics] = useState(false);
   const prefersReduced = usePrefersReducedMotion();
   const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames);
 
@@ -145,6 +148,11 @@ export default function WelcomeScreen({
         completedDurationsMs,
       });
 
+      if (shareDiagnostics) {
+        await commands.setTelemetryEnabled(true);
+        setFrontendTelemetryEnabled(true);
+      }
+
       // Save the games to DB — this is mandatory
       await commands.saveOnboardingGames(games);
       const workPlan = await commands.planOnboardingIndexingWork(games.map((game) => game.id));
@@ -205,35 +213,37 @@ export default function WelcomeScreen({
             >
               <Globe size={18} />
             </div>
-            <ul
-              tabIndex={0}
-              className="dropdown-content menu bg-base-200/90 backdrop-blur-md rounded-box z-[1] w-32 p-2 shadow-xl border border-base-content/5 mt-2"
+            <LiquidSurface
+              liquidRole="overlay"
+              className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-32 rounded-box shadow-xl"
             >
-              <li>
-                <button
-                  onClick={() => i18n.changeLanguage('en')}
-                  className={i18n.language.startsWith('en') ? 'active' : ''}
-                >
-                  {t('onboarding:welcome.language.options.en')}
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => i18n.changeLanguage('id')}
-                  className={i18n.language.startsWith('id') ? 'active' : ''}
-                >
-                  {t('onboarding:welcome.language.options.id')}
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => i18n.changeLanguage('zh')}
-                  className={i18n.language.startsWith('zh') ? 'active' : ''}
-                >
-                  {t('onboarding:welcome.language.options.zh')}
-                </button>
-              </li>
-            </ul>
+              <ul tabIndex={0} className="menu w-full p-2">
+                <li>
+                  <button
+                    onClick={() => i18n.changeLanguage('en')}
+                    className={i18n.language.startsWith('en') ? 'active' : ''}
+                  >
+                    {t('onboarding:welcome.language.options.en')}
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => i18n.changeLanguage('id')}
+                    className={i18n.language.startsWith('id') ? 'active' : ''}
+                  >
+                    {t('onboarding:welcome.language.options.id')}
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => i18n.changeLanguage('zh')}
+                    className={i18n.language.startsWith('zh') ? 'active' : ''}
+                  >
+                    {t('onboarding:welcome.language.options.zh')}
+                  </button>
+                </li>
+              </ul>
+            </LiquidSurface>
           </div>
         </div>
 
@@ -256,7 +266,7 @@ export default function WelcomeScreen({
               <AnimatedLogo />
             </div>
             <div className="[@media(max-height:750px)]:text-left flex flex-col justify-center">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl [@media(max-height:750px)]:text-2xl font-extrabold bg-linear-to-r from-primary to-secondary bg-clip-text text-transparent drop-shadow-sm pb-1">
+              <h1 className="pb-1 text-3xl font-extrabold text-base-content sm:text-4xl md:text-5xl [@media(max-height:750px)]:text-2xl">
                 {t('onboarding:welcome.title')}
               </h1>
               <p className="text-base-content/60 text-base md:text-lg [@media(max-height:750px)]:text-xs font-medium tracking-wide mt-1">
@@ -282,6 +292,27 @@ export default function WelcomeScreen({
           )}
 
           {/* CTA Buttons */}
+          <motion.label
+            variants={fade}
+            className="mx-auto flex max-w-2xl cursor-pointer items-start gap-3 rounded-xl border border-base-content/10 bg-base-100/45 px-4 py-3 text-left backdrop-blur-sm"
+            htmlFor="onboarding-anonymous-diagnostics"
+          >
+            <input
+              id="onboarding-anonymous-diagnostics"
+              type="checkbox"
+              className="toggle toggle-sm toggle-primary mt-0.5"
+              checked={shareDiagnostics}
+              onChange={(event) => setShareDiagnostics(event.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-medium">
+                {t('onboarding:welcome.diagnostics.title')}
+              </span>
+              <span className="mt-0.5 block text-xs leading-5 text-base-content/65">
+                {t('onboarding:welcome.diagnostics.description')}
+              </span>
+            </span>
+          </motion.label>
           <motion.div variants={rise} className="max-w-2xl mx-auto space-y-3">
             <div className="flex flex-col [@media(max-height:750px)]:flex-row max-sm:flex-col! [@media(max-height:750px)]:w-full gap-3">
               <div
@@ -297,10 +328,9 @@ export default function WelcomeScreen({
                   onFocus={() => setIsDemoPaused(true)}
                   onBlur={() => setIsDemoPaused(false)}
                   id="btn-auto-detect"
-                  className="cta-shine btn btn-primary btn-lg w-full gap-2 sm:gap-3 overflow-hidden border-0 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-shadow duration-300 [@media(max-height:750px)]:min-h-12 max-sm:min-h-14! [@media(max-height:750px)]:h-12 max-sm:h-14! [@media(max-height:750px)]:px-4"
+                  className="btn btn-primary btn-lg w-full gap-2 border-0 shadow-lg shadow-primary/20 transition-shadow duration-300 hover:shadow-xl hover:shadow-primary/30 sm:gap-3 [@media(max-height:750px)]:min-h-12 max-sm:min-h-14! [@media(max-height:750px)]:h-12 max-sm:h-14! [@media(max-height:750px)]:px-4"
                   onClick={handleAutoDetect}
                 >
-                  <span aria-hidden="true" className="cta-shine-bar" />
                   <Search className="w-5 h-5 shrink-0" />
                   <span className="flex-1 text-left truncate [@media(max-height:750px)]:text-sm">
                     {t('onboarding:welcome.auto_detect')}

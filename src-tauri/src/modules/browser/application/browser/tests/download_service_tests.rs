@@ -6,7 +6,7 @@ use crate::modules::browser::adapters::sqlite::browser;
 use crate::test_utils::init_test_db;
 
 async fn status_of(db: &SqlitePool, id: &str) -> Option<String> {
-    list_downloads(db)
+    list_downloads(db, "game-1")
         .await
         .unwrap()
         .into_iter()
@@ -20,6 +20,7 @@ async fn create_download_lands_as_requested_row_in_the_listing() {
 
     let id = create_download(
         &db,
+        "game-1",
         Some("sess-1"),
         "pack.zip",
         "https://x/pack.zip",
@@ -28,7 +29,7 @@ async fn create_download_lands_as_requested_row_in_the_listing() {
     .await
     .unwrap();
 
-    let rows = list_downloads(&db).await.unwrap();
+    let rows = list_downloads(&db, "game-1").await.unwrap();
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
     assert_eq!(row.id, id);
@@ -42,14 +43,14 @@ async fn create_download_lands_as_requested_row_in_the_listing() {
 #[tokio::test]
 async fn update_status_stamps_finished_at_only_for_terminal_states() {
     let db = init_test_db().await.pool;
-    let id = create_download(&db, None, "a.zip", "https://x/a.zip", "C:/dl/a.zip")
+    let id = create_download(&db, "game-1", None, "a.zip", "https://x/a.zip", "C:/dl/a.zip")
         .await
         .unwrap();
 
     update_status(&db, &id, "in_progress", Some(10), Some(100), None, None)
         .await
         .unwrap();
-    let row = list_downloads(&db).await.unwrap().remove(0);
+    let row = list_downloads(&db, "game-1").await.unwrap().remove(0);
     assert_eq!(row.status, "in_progress");
     assert_eq!(row.bytes_received, 10);
     assert_eq!(row.bytes_total, Some(100));
@@ -58,7 +59,7 @@ async fn update_status_stamps_finished_at_only_for_terminal_states() {
     update_status(&db, &id, "finished", None, None, None, None)
         .await
         .unwrap();
-    let row = list_downloads(&db).await.unwrap().remove(0);
+    let row = list_downloads(&db, "game-1").await.unwrap().remove(0);
     assert_eq!(row.status, "finished");
     assert!(row.finished_at.is_some());
     // COALESCE keeps the earlier progress values.
@@ -68,7 +69,7 @@ async fn update_status_stamps_finished_at_only_for_terminal_states() {
 #[tokio::test]
 async fn cancel_download_marks_stale_record_canceled_and_keeps_the_row() {
     let db = init_test_db().await.pool;
-    let id = create_download(&db, None, "b.zip", "https://x/b.zip", "C:/dl/b.zip")
+    let id = create_download(&db, "game-1", None, "b.zip", "https://x/b.zip", "C:/dl/b.zip")
         .await
         .unwrap();
 
@@ -87,6 +88,7 @@ async fn cancel_download_with_delete_file_drops_row_and_file() {
 
     let id = create_download(
         &db,
+        "game-1",
         None,
         "c.zip",
         "https://x/c.zip",
@@ -98,7 +100,7 @@ async fn cancel_download_with_delete_file_drops_row_and_file() {
     cancel_download(&db, &id, Some(true)).await.unwrap();
 
     assert!(!file.exists());
-    assert!(list_downloads(&db).await.unwrap().is_empty());
+    assert!(list_downloads(&db, "game-1").await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -108,10 +110,10 @@ async fn clear_old_downloads_uses_the_configured_retention_window() {
         .await
         .unwrap();
 
-    let stale = create_download(&db, None, "old.zip", "https://x/old.zip", "C:/dl/old.zip")
+    let stale = create_download(&db, "game-1", None, "old.zip", "https://x/old.zip", "C:/dl/old.zip")
         .await
         .unwrap();
-    let fresh = create_download(&db, None, "new.zip", "https://x/new.zip", "C:/dl/new.zip")
+    let fresh = create_download(&db, "game-1", None, "new.zip", "https://x/new.zip", "C:/dl/new.zip")
         .await
         .unwrap();
 
@@ -133,4 +135,19 @@ async fn clear_old_downloads_uses_the_configured_retention_window() {
     assert_eq!(removed, 1);
     assert!(status_of(&db, &stale).await.is_none());
     assert_eq!(status_of(&db, &fresh).await.as_deref(), Some("finished"));
+}
+
+#[tokio::test]
+async fn download_listing_is_isolated_by_game() {
+    let db = init_test_db().await.pool;
+
+    create_download(&db, "game-1", None, "one.zip", "https://x/one.zip", "C:/dl/one.zip")
+        .await
+        .unwrap();
+    create_download(&db, "game-2", None, "two.zip", "https://x/two.zip", "C:/dl/two.zip")
+        .await
+        .unwrap();
+
+    assert_eq!(list_downloads(&db, "game-1").await.unwrap().len(), 1);
+    assert_eq!(list_downloads(&db, "game-2").await.unwrap().len(), 1);
 }

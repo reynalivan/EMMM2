@@ -37,6 +37,7 @@ describe('AppShell (TC-05)', () => {
     render(<AppShell {...slots} workspaceView="dashboard" />);
     expect(screen.getByTestId('top-bar')).toBeInTheDocument();
     expect(screen.getByTestId('dashboard')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-content')).not.toHaveClass('pt-16');
   });
 
   it('renders settings composition', () => {

@@ -2,6 +2,7 @@ use crate::modules::dashboard::domain::dashboard::{
     CategorySlice, DashboardStats, GameSlice, RecentMod,
 };
 use sqlx::{Row, SqlitePool};
+use std::path::Path;
 
 // ── Response Structs ────────────────────────────────────────────────────────
 
@@ -115,9 +116,12 @@ pub async fn fetch_recent_mods(
         r#"
         SELECT
             m.id,
+            m.game_id,
             m.actual_name AS name,
             g.name        AS game_name,
             o.name AS object_name,
+            m.folder_path,
+            COALESCE(NULLIF(g.mods_path, ''), g.path) AS mods_path,
             m.indexed_at
         FROM mods m
         JOIN games g ON g.id = m.game_id
@@ -131,11 +135,23 @@ pub async fn fetch_recent_mods(
     .await?;
     rows.iter()
         .map(|row| {
+            let folder_path: String = row.try_get("folder_path")?;
+            let mods_path: String = row.try_get("mods_path")?;
+            let resolved_folder_path = if Path::new(&folder_path).is_absolute() {
+                folder_path
+            } else {
+                Path::new(&mods_path)
+                    .join(folder_path)
+                    .to_string_lossy()
+                    .to_string()
+            };
             Ok(RecentMod {
                 id: row.try_get("id")?,
+                game_id: row.try_get("game_id")?,
                 name: row.try_get("name")?,
                 game_name: row.try_get("game_name")?,
                 object_name: row.try_get("object_name")?,
+                folder_path: resolved_folder_path,
                 indexed_at: row.try_get("indexed_at")?,
             })
         })

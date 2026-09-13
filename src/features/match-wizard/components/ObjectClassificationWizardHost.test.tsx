@@ -25,6 +25,7 @@ vi.mock('react-i18next', () => ({
       return key;
     },
   }),
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
 }));
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {

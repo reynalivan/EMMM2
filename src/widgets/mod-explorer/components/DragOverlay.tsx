@@ -12,7 +12,7 @@ export default function DragOverlay({ isDragging }: DragOverlayProps) {
 
   return (
     <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm border-2 border-primary border-dashed rounded-lg flex flex-col items-center justify-center animate-in fade-in duration-200 pointer-events-none">
-      <div className="bg-base-100 p-6 rounded-xl shadow-xl flex flex-col items-center gap-3">
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-base-300 bg-base-100 p-6">
         <Upload size={48} className="text-primary animate-bounce" />
         <div className="text-center">
           <h3 className="font-bold text-lg">{t('drag_overlay.title')}</h3>

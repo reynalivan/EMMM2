@@ -1,7 +1,10 @@
 export { default as MoveToObjectDialog } from './components/MoveToObjectDialog';
 export { default as MoveToObjectDialogPanels } from './components/MoveToObjectDialogPanels';
 export * from './actions/modContextMenuPolicy';
+export * from './actions/modViewerLaunchPolicy';
+export * from './actions/modViewerExternalReviewState';
 export * from './actions/useModContextMenuActions';
+export * from './actions/useModViewerLaunch';
 export * from './actions/useSharedModActions';
 export * from './hooks/useBulkModMutations';
 export * from './hooks/useFolderCoreMutations';

@@ -185,6 +185,11 @@ where
         sets.push("object_type = ").push_bind_unseparated(obj_type);
         wrote_any = true;
     }
+    if let Some(mode) = updates.randomizer_mode {
+        sets.push("randomizer_mode = ")
+            .push_bind_unseparated(mode.persisted());
+        wrote_any = true;
+    }
     if let Some(sub) = &updates.sub_category {
         sets.push("sub_category = ").push_bind_unseparated(sub);
         wrote_any = true;

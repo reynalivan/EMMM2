@@ -20,7 +20,8 @@
     "save": "Simpan",
     "close": "Tutup",
     "edit": "Edit",
-    "more_actions": "Aksi Lainnya"
+    "more_actions": "Aksi Lainnya",
+    "rename_mod": "Ubah nama mod"
   },
   "metadata": {
     "title": "Metadata",
@@ -53,28 +54,30 @@
     "next_image": "Gambar berikutnya",
     "fullscreen": "Layar Penuh",
     "slider_label": "Slider gambar pratinjau",
+    "actions_label": "Aksi gambar pratinjau",
+    "add_preview_image": "Tambah gambar pratinjau",
     "go_to_image": "Ke gambar {{index}}",
     "menu": {
-      "paste": "Tempel Thumbnail",
-      "import": "Impor Thumbnail",
-      "remove_current": "Hapus Thumbnail Ini",
-      "clear_all": "Hapus Semua Thumbnail",
-      "thumbnail_imported": "Thumbnail berhasil diimpor."
+      "paste": "Tempel gambar dari clipboard",
+      "import": "Impor gambar pratinjau",
+      "remove_current": "Hapus gambar pratinjau saat ini",
+      "clear_all": "Hapus semua gambar pratinjau",
+      "thumbnail_imported": "Gambar pratinjau berhasil diimpor."
     },
     "image_alt": "Gambar pratinjau",
     "maximize_label": "Buka pratinjau layar penuh",
     "no_image_in_clipboard": "Tidak ada gambar di clipboard.",
-    "thumbnail_pasted": "Thumbnail ditempel.",
-    "paste_error": "Gagal menempel thumbnail: {{error}}",
-    "thumbnail_removed": "Thumbnail dihapus.",
-    "remove_error": "Gagal menghapus thumbnail: {{error}}",
-    "all_thumbnails_cleared": "Semua thumbnail dihapus.",
-    "clear_all_error": "Gagal menghapus semua thumbnail: {{error}}",
-    "remove_confirm_message": "Hapus thumbnail yang dipilih?",
-    "clear_all_confirm_message": "Hapus semua thumbnail dari mod ini?",
-    "no_thumbnail_selected": "Tidak ada thumbnail yang dipilih.",
-    "no_thumbnails_to_clear": "Tidak ada thumbnail untuk dihapus.",
-    "import_error": "Gagal mengimpor thumbnail: {{error}}"
+    "thumbnail_pasted": "Gambar pratinjau ditempel.",
+    "paste_error": "Gagal menempel gambar pratinjau: {{error}}",
+    "thumbnail_removed": "Gambar pratinjau dihapus.",
+    "remove_error": "Gagal menghapus gambar pratinjau: {{error}}",
+    "all_thumbnails_cleared": "Semua gambar pratinjau dihapus.",
+    "clear_all_error": "Gagal menghapus semua gambar pratinjau: {{error}}",
+    "remove_confirm_message": "Hapus gambar pratinjau yang dipilih?",
+    "clear_all_confirm_message": "Hapus semua gambar pratinjau dari mod ini?",
+    "no_thumbnail_selected": "Tidak ada gambar pratinjau yang dipilih.",
+    "no_thumbnails_to_clear": "Tidak ada gambar pratinjau untuk dihapus.",
+    "import_error": "Gagal mengimpor gambar pratinjau: {{error}}"
   },
   "ini_editor": {
     "title": "INI Editor",
@@ -106,7 +109,51 @@
     "modifier_shift": "SHIFT",
     "invalid_values": "Perbaiki nilai INI yang tidak valid sebelum menyimpan.",
     "saved": "INI editor tersimpan.",
-    "save_error": "Gagal menyimpan INI: {{error}}"
+    "save_error": "Gagal menyimpan INI: {{error}}",
+    "binding_count": "{{count}} binding",
+    "unsaved_count": "{{count}} belum disimpan"
+  },
+  "mod_health": {
+    "title": "Kesehatan Mod",
+    "loading": "Memeriksa file mod…",
+    "error": "Kesehatan Mod tidak dapat diperiksa: {{error}}",
+    "recheck": "Periksa ulang",
+    "view_details": "Detail",
+    "open_ini": "Buka INI",
+    "details_title": "Detail",
+    "error_count": "{{count}} error",
+    "warning_count": "{{count}} peringatan",
+    "control_count": "{{count}} kontrol",
+    "no_issues": "Tidak ada masalah.",
+    "no_controls": "Tidak ada kontrol yang didukung.",
+    "default_value": "Default: {{value}}",
+    "support": { "full": "Penuh", "experimental": "Eksperimental", "baseline": "Dasar" },
+    "tabs": { "issues": "Masalah", "assets": "Aset", "controls": "Kontrol" },
+    "assets": {
+      "referenced": "Direferensikan",
+      "inactive_only": "Hanya nonaktif",
+      "orphan": "Tidak direferensikan",
+      "external_reference": "Referensi eksternal"
+    },
+    "control_kind": {
+      "key_toggle": "Toggle tombol",
+      "menu_toggle": "Toggle menu",
+      "present": "PRESENT",
+      "shape": "Bentuk"
+    },
+    "external_review": {
+      "title": "Perubahan terdeteksi setelah Mod Viewer diluncurkan",
+      "dismiss": "Tutup",
+      "toast": "{{count}} perubahan file eksternal terdeteksi setelah Mod Viewer diluncurkan.",
+      "category": {
+        "ini": "File INI",
+        "dds": "Tekstur DDS",
+        "backup": "Cadangan",
+        "metadata": "Metadata viewer",
+        "other": "File lainnya"
+      },
+      "change": { "added": "Ditambahkan", "modified": "Diubah", "removed": "Dihapus" }
+    }
   },
   "modals": {
     "unsaved": {

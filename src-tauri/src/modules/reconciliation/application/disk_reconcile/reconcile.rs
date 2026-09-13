@@ -10,7 +10,8 @@ use crate::modules::catalog::domain::objects::ObjectRuntimeDescriptor;
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
-    collect_scoped_disk_discovery_with_progress, DiskProjectionError, DiskSnapshotProgress,
+    collect_scoped_disk_discovery_with_progress, DiskProjectionError, DiskSizeScan,
+    DiskSnapshotProgress,
 };
 use crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census;
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcilePathHint;
@@ -326,6 +327,18 @@ pub async fn reconcile_disk_projection(
         let snapshot_path = mods_path.to_path_buf();
         let snapshot_roots = changed_roots.clone();
         let snapshot_progress = progress_reporter.clone();
+        let known_mod_keys =
+            crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_game(
+                pool, game_id,
+            )
+            .await?
+            .into_iter()
+            .collect();
+        let size_scan = if matches!(reason, DiskReconcileReason::StorageSizeBackfill) {
+            DiskSizeScan::full()
+        } else {
+            DiskSizeScan::incremental(mods_path, known_mod_keys, changed_paths)
+        };
         let snapshot = tokio::task::spawn_blocking(move || {
             let on_progress = |progress: DiskSnapshotProgress| {
                 if let Some(reporter) = &snapshot_progress {
@@ -341,6 +354,7 @@ pub async fn reconcile_disk_projection(
                 &snapshot_path,
                 &snapshot_roots,
                 requested_scoped,
+                Some(&size_scan),
                 Some(&on_progress),
             )
         })

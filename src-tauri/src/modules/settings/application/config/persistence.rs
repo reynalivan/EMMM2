@@ -3,7 +3,10 @@ use crate::modules::system::adapters::sqlite::settings;
 use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
 
-use super::models::{config_to_game_row, game_row_to_config, AiConfig, AppSettings, SafetyConfig};
+use super::models::{
+    config_to_game_row, game_row_to_config, AiConfig, AppSettings, CatalogUpdateConfig,
+    DiagnosticsSettings, ExternalToolsConfig, SafetyConfig,
+};
 use super::ConfigService;
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -62,6 +65,21 @@ impl ConfigService {
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
 
+        let external_tools: ExternalToolsConfig = kv
+            .get("external_tools")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+
+        let catalog_updates: CatalogUpdateConfig = kv
+            .get("catalog_updates")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+
+        let diagnostics: DiagnosticsSettings = kv
+            .get("diagnostics")
+            .and_then(|v| serde_json::from_str(v).ok())
+            .unwrap_or_default();
+
         Ok(AppSettings {
             revision,
             theme,
@@ -73,6 +91,9 @@ impl ConfigService {
             auto_close_launcher,
             hotkeys,
             keyviewer,
+            external_tools,
+            catalog_updates,
+            diagnostics,
         })
     }
 
@@ -119,6 +140,15 @@ impl ConfigService {
 
         let keyviewer_json = serde_json::to_string(&settings.keyviewer)?;
         settings::set_setting(&mut *tx, "keyviewer", &keyviewer_json).await?;
+
+        let external_tools_json = serde_json::to_string(&settings.external_tools)?;
+        settings::set_setting(&mut *tx, "external_tools", &external_tools_json).await?;
+
+        let catalog_updates_json = serde_json::to_string(&settings.catalog_updates)?;
+        settings::set_setting(&mut *tx, "catalog_updates", &catalog_updates_json).await?;
+
+        let diagnostics_json = serde_json::to_string(&settings.diagnostics)?;
+        settings::set_setting(&mut *tx, "diagnostics", &diagnostics_json).await?;
 
         // Persist games
         for game in &settings.games {

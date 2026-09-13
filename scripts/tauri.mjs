@@ -5,6 +5,7 @@ import { access, mkdir, open, readFile, rename, rm, stat, unlink, writeFile } fr
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { installDevCatalogPack } from './install-dev-catalog-pack.mjs';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const tauriRoot = join(projectRoot, 'src-tauri');
@@ -29,6 +30,32 @@ const requiredArtifacts = [
   join('lib', 'bz2.lib'),
   join('lib', 'zs.lib'),
 ];
+const observabilityEnvironmentNames = new Set([
+  'EMMM_GRAFANA_OTLP_METRICS_ENDPOINT',
+  'EMMM_GRAFANA_OTLP_AUTHORIZATION',
+  'VITE_GRAFANA_FARO_URL',
+  'VITE_GRAFANA_FARO_API_KEY',
+  'VITE_APP_VERSION',
+]);
+
+function loadProjectEnvironment() {
+  const originalEnvironment = new Map(Object.entries(process.env));
+  try {
+    process.loadEnvFile(join(projectRoot, '.env'));
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT')) return;
+    throw error;
+  }
+
+  for (const [name, value] of originalEnvironment) {
+    if (!observabilityEnvironmentNames.has(name)) process.env[name] = value;
+  }
+  for (const name of Object.keys(process.env)) {
+    if (!observabilityEnvironmentNames.has(name) && !originalEnvironment.has(name)) {
+      delete process.env[name];
+    }
+  }
+}
 
 function hasErrorCode(error, code) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
@@ -321,7 +348,9 @@ async function runTauri(args) {
     throw new Error('Tauri CLI is not installed. Run pnpm install first.');
   }
 
-  await run(process.execPath, [tauriCli, ...args], {
+  const tauriArgs = args[0] === 'dev' ? [...args, '--config', 'src-tauri/tauri.dev.conf.json'] : args;
+
+  await run(process.execPath, [tauriCli, ...tauriArgs], {
     env: {
       ...process.env,
       VCPKG_ROOT: localVcpkgRoot,
@@ -331,9 +360,11 @@ async function runTauri(args) {
 }
 
 async function main() {
+  loadProjectEnvironment();
   const args = process.argv.slice(2);
   const prepareOnly = args.length === 1 && args[0] === '--prepare-only';
   await prepareWindowsDependencies();
+  if (args[0] === 'dev') await installDevCatalogPack();
   if (!prepareOnly) await runTauri(args);
 }
 

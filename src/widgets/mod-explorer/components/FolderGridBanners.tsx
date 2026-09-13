@@ -113,7 +113,7 @@ export default function FolderGridBanners({
 
       {diskConflicts.length > 0 && (
         <div
-          className="mb-3 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2"
+          className="mb-3 flex items-center gap-2 rounded-lg border border-warning/25 bg-base-200 px-3 py-2"
           role="status"
           data-testid="folder-conflict-banner"
         >
@@ -147,7 +147,7 @@ export default function FolderGridBanners({
 
       {/* ── Parent-Disabled Notice (compact, topmost) ─────────────────────── */}
       {ancestorDisabledBy && (
-        <div className="sticky top-0 z-20 mb-3 flex items-center gap-2 bg-warning/10 border-b border-warning/20 px-3 py-1.5 -mx-4 -mt-4 shadow-sm backdrop-blur-md">
+        <div className="sticky top-0 z-20 -mx-4 mb-3 flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-1.5 shadow-sm backdrop-blur-md">
           <Lock size={12} className="text-warning shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-bold text-warning/90 leading-none truncate uppercase tracking-wider">

@@ -69,7 +69,7 @@ export default function FolderGridContent({
     openEnableParentDialog,
     isSwitchPending,
     isFolderSwitchPending,
-    currentAbsPath,
+    currentFolderPath,
     handleOpenCurrentFolderInExplorer,
   } = model;
 
@@ -90,7 +90,7 @@ export default function FolderGridContent({
             onClick={() => {
               void handleOpenCurrentFolderInExplorer();
             }}
-            disabled={!currentAbsPath}
+            disabled={currentFolderPath === null}
           >
             {t('context.open_explorer')}
           </ContextMenuItem>
@@ -100,7 +100,7 @@ export default function FolderGridContent({
       <div
         ref={parentRef}
         className={cn(
-          'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 hover:scrollbar-thumb-base-content/40 transition-opacity duration-150',
+          'folder-grid-scroll relative z-0 -mt-[var(--folder-grid-chrome-height)] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-[calc(var(--folder-grid-chrome-height)+var(--folder-grid-content-gap))] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 transition-opacity duration-150 hover:scrollbar-thumb-base-content/40',
           isPlaceholderData ? 'opacity-70 pointer-events-none select-none' : 'opacity-100',
           !isLoading && !isError && visibleFolders.length > 0 ? 'block' : 'hidden',
         )}

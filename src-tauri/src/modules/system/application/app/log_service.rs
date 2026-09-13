@@ -1,6 +1,7 @@
 //! Application-level log access service.
 
 use crate::shared::errors::AppError;
+use std::collections::VecDeque;
 use std::io::BufRead;
 use std::path::Path;
 
@@ -14,13 +15,19 @@ pub fn read_last_n_lines(log_path: &Path, n: usize) -> Result<Vec<String>, AppEr
     let file = std::fs::File::open(log_path)?;
     let reader = std::io::BufReader::new(file);
 
-    let all_lines: Result<Vec<String>, _> = reader.lines().collect();
-    let all_lines = all_lines?;
+    if n == 0 {
+        return Ok(Vec::new());
+    }
 
-    let count = all_lines.len();
-    let skip = count.saturating_sub(n);
+    let mut tail = VecDeque::with_capacity(n);
+    for line in reader.lines() {
+        if tail.len() == n {
+            tail.pop_front();
+        }
+        tail.push_back(line?);
+    }
 
-    Ok(all_lines.into_iter().skip(skip).collect())
+    Ok(tail.into_iter().collect())
 }
 
 /// Open the logs directory in the OS file explorer.

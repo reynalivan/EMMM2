@@ -3,11 +3,18 @@ import FolderGrid from './FolderGrid';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { createWrapper } from '../../tests/testing/test-utils';
 import { ModFolder } from '@/entities/game-object';
+import type { ReactNode } from 'react';
 
 // Mock the hook!
 const mockUseFolderGrid = vi.fn();
 vi.mock('./hooks/useFolderGrid', () => ({
   useFolderGrid: () => mockUseFolderGrid(),
+}));
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  ),
 }));
 
 const mockAppStoreState = {
@@ -73,6 +80,10 @@ vi.mock('./modals/FolderGridModals', () => ({
 
 vi.mock('./components/BulkProgressBar', () => ({
   default: () => <div data-testid="bulk-progress-bar" />,
+}));
+
+vi.mock('./components/FolderGridFooter', () => ({
+  default: () => <div data-testid="folder-grid-footer" />,
 }));
 
 const defaultHookReturn = {
@@ -184,6 +195,19 @@ describe('FolderGrid', () => {
     });
     render(<FolderGrid />, { wrapper: createWrapper });
     expect(screen.getByText('No mods installed yet.')).toBeInTheDocument();
+  });
+
+  it('uses the grid pane as the container-query boundary for floating controls', () => {
+    const { container } = render(<FolderGrid />, { wrapper: createWrapper });
+
+    expect(screen.getByTestId('folder-grid')).toHaveClass('folder-grid-container');
+    expect(container.querySelector('[class*="folder-grid-chrome-height"]')).toBeInTheDocument();
+    expect(container.querySelector('.folder-grid-scroll')).toBeInTheDocument();
+    expect(screen.getByTestId('folder-grid-footer').parentElement).toHaveClass(
+      'absolute',
+      'bottom-0',
+      'pointer-events-none',
+    );
   });
 
   it('renders loading state', () => {

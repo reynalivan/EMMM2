@@ -1,5 +1,5 @@
 import { formatAppError } from '../../../shared/lib/appError';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { join } from '@tauri-apps/api/path';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
@@ -18,7 +18,6 @@ import { applyRuntimeMutationResult } from '@/features/workspace-runtime';
 
 interface UseFolderGridActionsOptions {
   activeGame: ReturnType<typeof useActiveGame>['activeGame'];
-  currentPath: string[];
   explorerSubPath: string | undefined;
   ancestorDisabledBy: string | null;
   ancestorDisabledPath: string | null;
@@ -28,9 +27,13 @@ interface UseFolderGridActionsOptions {
   sourceAvailable: boolean;
 }
 
+interface CreateFolderTarget {
+  gameId: string;
+  parentPath: string;
+}
+
 export function useFolderGridActions({
   activeGame,
-  currentPath,
   explorerSubPath,
   ancestorDisabledBy,
   ancestorDisabledPath,
@@ -48,6 +51,9 @@ export function useFolderGridActions({
   });
   const switchActions = useWorkspaceSwitchActions();
   const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
+  const activeGameId = activeGame?.id;
+  const [createFolderTarget, setCreateFolderTarget] = useState<CreateFolderTarget | null>(null);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
 
   const enableParentDialog = useMemo(() => {
     if (dialogState.kind !== 'folderEnableParent') {
@@ -67,14 +73,15 @@ export function useFolderGridActions({
     };
   }, [dialogState]);
 
-  const currentAbsPath = useMemo(() => {
-    if (!sourceAvailable || !activeGame?.mod_path) {
+  // `currentPath` is a display breadcrumb. `explorerSubPath` is the canonical
+  // workspace path and remains correct when an object is nested under a group.
+  const currentFolderPath = useMemo(() => {
+    if (!sourceAvailable || !activeGameId) {
       return null;
     }
 
-    const parts = [activeGame.mod_path, ...currentPath.filter(Boolean)];
-    return parts.join('\\');
-  }, [activeGame, currentPath, sourceAvailable]);
+    return explorerSubPath ?? '';
+  }, [activeGameId, explorerSubPath, sourceAvailable]);
 
   const refreshWorkspaceQueries = useCallback(() => {
     void applyRuntimeMutationResult(queryClient, 'workspaceStructure');
@@ -103,17 +110,55 @@ export function useFolderGridActions({
   );
 
   const handleOpenCurrentFolderInExplorer = useCallback(async () => {
-    if (!currentAbsPath || !activeGame?.id) {
+    if (currentFolderPath === null || !activeGameId) {
       return;
     }
 
     try {
-      await commands.openInExplorer(activeGame.id, currentAbsPath);
+      await commands.openInExplorer(activeGameId, currentFolderPath);
     } catch (error) {
       const message = formatAppError(error);
       toast.error(message);
     }
-  }, [activeGame, currentAbsPath]);
+  }, [activeGameId, currentFolderPath]);
+
+  const openCreateFolderDialog = useCallback(() => {
+    if (currentFolderPath !== null && activeGameId) {
+      setCreateFolderTarget({ gameId: activeGameId, parentPath: currentFolderPath });
+    }
+  }, [activeGameId, currentFolderPath]);
+
+  const closeCreateFolderDialog = useCallback(() => {
+    if (!isCreatingFolder) {
+      setCreateFolderTarget(null);
+    }
+  }, [isCreatingFolder]);
+
+  const handleCreateFolder = useCallback(
+    async (folderName: string) => {
+      if (!createFolderTarget) {
+        return;
+      }
+
+      setIsCreatingFolder(true);
+      try {
+        await commands.createModFolder(
+          createFolderTarget.parentPath,
+          folderName,
+          createFolderTarget.gameId,
+        );
+        clearGridSelection();
+        await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
+        toast.success(`Created folder "${folderName}"`);
+      } catch (error) {
+        toast.error(`Could not create folder: ${formatAppError(error)}`);
+        throw error;
+      } finally {
+        setIsCreatingFolder(false);
+      }
+    },
+    [clearGridSelection, createFolderTarget, queryClient],
+  );
 
   const handleToggleSelf = useCallback(
     async (enable: boolean) => {
@@ -172,8 +217,13 @@ export function useFolderGridActions({
     switchActions,
     enableParentDialog,
     handleRevealInExplorer,
-    currentAbsPath,
+    currentFolderPath,
     handleOpenCurrentFolderInExplorer,
+    isCreateFolderOpen: createFolderTarget !== null,
+    isCreatingFolder,
+    openCreateFolderDialog,
+    closeCreateFolderDialog,
+    handleCreateFolder,
     handleToggleSelf,
     openEnableParentDialog,
     closeEnableParentDialog,

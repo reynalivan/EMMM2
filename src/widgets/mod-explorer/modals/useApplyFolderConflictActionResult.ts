@@ -37,17 +37,17 @@ export function useApplyFolderConflictActionResult() {
     const currentGroups = useAppStore.getState().folderConflictsByGame[result.game_id] ?? [];
     const effectiveResult = preserveRemainingConflictGroups(result, currentGroups, resolvedGroupId);
     if (useAppStore.getState().activeGameId !== result.game_id) {
-      useAppStore.getState().setFolderConflicts(result.game_id, effectiveResult.folder_conflicts);
-      useAppStore
-        .getState()
-        .setRenameConfirmations(result.game_id, effectiveResult.rename_confirmations);
-      return false;
+      const appStore = useAppStore.getState();
+      if (!appStore.applyFolderConflictReconcileResult(effectiveResult)) {
+        return false;
+      }
+      appStore.setRenameConfirmations(result.game_id, effectiveResult.rename_confirmations);
+      return true;
     }
-    applyDiskReconcileResult(
+    return applyDiskReconcileResult(
       effectiveResult,
       queryClient,
       activeGame?.id === effectiveResult.game_id ? activeGame : null,
     );
-    return true;
   };
 }

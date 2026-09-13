@@ -57,7 +57,7 @@ impl MasterDb {
                 return Err(ScannerError::Parse {
                     what: "MasterDB".to_string(),
                     detail: "expected an object with an 'entries' key".to_string(),
-                })
+                });
             }
         };
 

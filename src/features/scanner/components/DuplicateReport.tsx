@@ -71,8 +71,8 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
 
           const failedGroupIds = new Set(summary.errors.map((entry) => entry.groupId));
           if (failedGroupIds.size > 0) {
-            setSelections((current) =>
-              new Map([...current].filter(([groupId]) => failedGroupIds.has(groupId))),
+            setSelections(
+              (current) => new Map([...current].filter(([groupId]) => failedGroupIds.has(groupId))),
             );
           }
         },
@@ -100,7 +100,7 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
   // Error state
   if (error) {
     return (
-      <div className="alert alert-error shadow-lg">
+      <div className="alert alert-error">
         <AlertCircle className="w-5 h-5" />
         <div>
           <h3 className="font-bold">{t('scanner:report.error_title')}</h3>
@@ -113,7 +113,7 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
   // No report yet
   if (!report) {
     return (
-      <div className="alert alert-info shadow-lg">
+      <div className="alert alert-info">
         <AlertCircle className="w-5 h-5" />
         <div>
           <h3 className="font-bold">{t('scanner:report.no_results')}</h3>
@@ -126,7 +126,7 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
   // Empty report (no duplicates found)
   if (report.groups.length === 0) {
     return (
-      <div className="alert alert-success shadow-lg">
+      <div className="alert alert-success">
         <AlertCircle className="w-5 h-5" />
         <div>
           <h3 className="font-bold">{t('scanner:report.clean_title')}</h3>
@@ -141,7 +141,7 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
       {/* Header */}
       <div className="flex items-center justify-between mt-2">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
             {t('scanner:report.title')}
           </h2>
           <p className="text-sm text-base-content/60">
@@ -174,6 +174,7 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
       {/* Duplicate Table */}
       <DuplicateTable
         groups={filteredGroups}
+        gameId={gameId}
         selections={selections}
         onSelectionChange={handleActionChange}
         disabled={isPending}

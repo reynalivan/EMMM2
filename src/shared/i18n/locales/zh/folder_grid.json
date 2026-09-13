@@ -24,6 +24,8 @@
     "complete_title": "所有冲突均已解决",
     "complete_summary": "已解决 {{resolved}} / {{total}} 个冲突",
     "complete_description": "Mods 文件夹和数据库已与最新磁盘状态同步。",
+    "external_complete_title": "已在此对话框外解决",
+    "external_complete_description": "最新磁盘检查不再发现此冲突。",
     "groups": "冲突组",
     "enabled": "已启用",
     "disabled": "已禁用",

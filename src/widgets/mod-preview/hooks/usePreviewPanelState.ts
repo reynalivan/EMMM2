@@ -150,8 +150,8 @@ export function usePreviewPanelState() {
     const validIds = new Set(keyBindSections.map((section) => section.id));
     setOpenSectionIds((prev) => {
       const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
-      if (next.size === 0 && keyBindSections[0]) {
-        next.add(keyBindSections[0].id);
+      if (next.size === 0) {
+        keyBindSections.forEach((section) => next.add(section.id));
       }
       return areStringSetsEqual(prev, next) ? prev : next;
     });

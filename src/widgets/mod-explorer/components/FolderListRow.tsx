@@ -167,7 +167,7 @@ function FolderListRowInner({
         onClick={handleClick}
         onContextMenu={handleContextClick}
         className={`
-        flex items-center gap-3 p-2 rounded-md border cursor-pointer active:scale-[0.99] transition-all h-full
+        group flex h-full items-center gap-3 rounded-md border p-2 cursor-pointer transition-[background-color,border-color] duration-150
         ${item.display_mode === 'internal_assets' ? 'opacity-50' : ''}
         ${!item.is_effectively_active ? 'opacity-[0.65] grayscale-[0.8]' : ''}
         ${
@@ -197,14 +197,14 @@ function FolderListRowInner({
             <File size={18} className="text-base-content/20" />
           )}
 
-          {/* Bulk Multi-Select Checkbox Overlay: positioned in top-right corner */}
+          {/* Bulk selection stays centered over the thumbnail in the compact row layout. */}
           <div
-            className={`absolute top-0.5 right-0.5 transition-all duration-200 z-20
-              ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'}`}
+            className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-150
+              ${isSelected ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
           >
             <input
               type="checkbox"
-              className="checkbox checkbox-primary checkbox-xs border shadow-sm bg-base-100"
+              className="pointer-events-auto checkbox checkbox-primary checkbox-xs border shadow-sm bg-base-100"
               checked={isSelected}
               onChange={(e) => {
                 e.stopPropagation();
@@ -237,24 +237,31 @@ function FolderListRowInner({
             </div>
           )}
 
-          {hasFolderNameConflict && (
-            <div
-              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-warning/20 text-warning rounded-md shrink-0"
-              title={t('card.name_conflict_title')}
-            >
-              <AlertTriangle size={10} />
-              <span className="text-[9px] font-bold">{t('card.name_conflict')}</span>
-            </div>
-          )}
-
-          {/* Conflict badge */}
-          {hasConflict && !hasFolderNameConflict && (
-            <div
-              className="flex items-center gap-0.5 px-1.5 py-0.5 bg-warning/20 text-warning rounded-md shrink-0"
-              title={t('card.hash_conflict_title')}
-            >
-              <Copy size={10} />
-              <span className="text-[9px] font-bold">{t('card.conflict')}</span>
+          {(hasFolderNameConflict || hasConflict) && (
+            <div className="flex shrink-0 items-center rounded-md border border-base-content/10 bg-base-100 p-0.5">
+              {hasFolderNameConflict && (
+                <div
+                  role="img"
+                  aria-label={t('card.name_conflict')}
+                  className="flex h-5 w-5 items-center justify-center rounded-sm text-warning"
+                  title={t('card.name_conflict_title')}
+                >
+                  <AlertTriangle size={10} />
+                </div>
+              )}
+              {hasFolderNameConflict && hasConflict && (
+                <span className="h-3 w-px bg-base-content/15" />
+              )}
+              {hasConflict && (
+                <div
+                  role="img"
+                  aria-label={t('card.shared_hash')}
+                  className="flex h-5 w-5 items-center justify-center rounded-sm text-info"
+                  title={t('card.hash_conflict_title')}
+                >
+                  <Copy size={10} />
+                </div>
+              )}
             </div>
           )}
 
@@ -278,11 +285,11 @@ function FolderListRowInner({
                 }
                 onToggleFavorite?.(item);
               }}
-              className={`p-1 rounded-full transition-all duration-200
+              className={`rounded-full p-1 transition-[color,opacity] duration-150
                  ${
                    item.is_favorite
-                     ? 'text-warning opacity-100 hover:scale-110'
-                     : 'text-base-content/20 opacity-0 group-hover:opacity-100 hover:text-warning hover:scale-110'
+                     ? 'text-warning opacity-100'
+                     : 'text-base-content/45 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 hover:text-warning'
                  }
                `}
               title={t(item.is_favorite ? 'card.unfavorite' : 'card.favorite')}

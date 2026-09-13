@@ -23,6 +23,7 @@ pub async fn get_filtered_objects(
             o.matched_reason,
             o.matched_source,
             o.object_type,
+            o.randomizer_mode,
             o.sub_category,
             o.status,
             COALESCE(o.metadata, '{{}}') as metadata,

@@ -11,6 +11,7 @@
     "search_placeholder": "Search mods...",
     "item_count_one": "{{count}} item",
     "item_count_other": "{{count}} items",
+    "add_folder": "Add folder",
     "view_grid": "Grid view",
     "view_list": "List view"
   },
@@ -65,14 +66,21 @@
     "delete_confirm_btn": "Move to Trash",
     "bulk_delete_title": "Delete {{count}} Mods?",
     "bulk_delete_msg": "Are you sure you want to move {{count}} mods to trash?",
-    "bulk_delete_confirm_btn": "Move All to Trash"
+    "bulk_delete_confirm_btn": "Move All to Trash",
+    "create_folder_title": "Add folder",
+    "create_folder_description": "Create an empty folder in the current location.",
+    "create_folder_name_label": "Folder name",
+    "create_folder_name_placeholder": "e.g. Variants",
+    "create_folder_name_required": "Enter a folder name.",
+    "create_folder_name_duplicate": "A folder with this name already exists here.",
+    "create_folder_submit": "Add folder"
   },
   "badges": {
     "corrupt": "Corrupt"
   },
   "card": {
-    "aria_label_enabled": "{{name}} — enabled",
-    "aria_label_disabled": "{{name}} — disabled",
+    "aria_label_enabled": "{{name}}, enabled",
+    "aria_label_disabled": "{{name}}, disabled",
     "mod_pack": "Mod Pack",
     "variants": "Variants",
     "flat_mod": "Flat Mod",
@@ -81,6 +89,7 @@
     "misplaced_title": "Misplaced: Character mismatch detected in info.json",
     "hash_conflict_title": "Hash conflict: shares shader/buffer hashes with another enabled mod",
     "conflict": "Conflict",
+    "shared_hash": "Shared Hash",
     "name_conflict_title": "Naming conflict: both enabled and disabled versions exist",
     "name_conflict": "Name Conflict",
     "status_enabled": "Enabled",
@@ -108,6 +117,10 @@
     "unfavorite": "Unfavorite",
     "select_all": "Select All",
     "open_explorer": "Open in Explorer",
+    "open_mod_viewer": "Open in Mod Viewer",
+    "open_mod_viewer_experimental": "Open in Mod Viewer (Experimental)",
+    "open_mod_viewer_experimental_tooltip": "Experimental: Mod Viewer support for SRMI may be incomplete.",
+    "mod_viewer_launch_failed": "Could not launch Mod Viewer. Go to Settings > Integrations and verify its executable: {{error}}",
     "rename": "Rename",
     "enable": "Enable",
     "disable": "Disable",

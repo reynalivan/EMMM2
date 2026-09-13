@@ -79,24 +79,11 @@ pub async fn paste_thumbnail_inner(
     folder_path: String,
     image_data: Vec<u8>,
 ) -> Result<String, AppError> {
-    use image::ImageFormat;
-    use std::io::Cursor;
-
-    crate::modules::library::application::mods::preview_ops::ensure_image_size(&image_data)?;
-
+    let encoded = crate::modules::library::application::mods::preview_ops::normalize_thumbnail_png(
+        &image_data,
+    )?;
     let path = validate_path(config, &game_id, &folder_path)?;
-
-    let img = image::load_from_memory(&image_data).map_err(|e| {
-        AppError::Metadata(crate::shared::errors::MetadataError::Validation(format!(
-            "Invalid image data: {}",
-            e
-        )))
-    })?;
     let target_path = path.join("preview_custom.png");
-
-    let mut encoded = Vec::new();
-    img.write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
-        .map_err(|e| AppError::Io(format!("Failed to encode image: {e}")))?;
     crate::platform::fs::atomic_file::atomic_write(&target_path, &encoded)?;
 
     // Invalidate stale cache entries (both image-keyed and folder-keyed)

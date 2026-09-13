@@ -29,6 +29,41 @@ async checkConfigStatus() : Promise<Result<ConfigStatus, AppError>> {
 }
 },
 /**
+ * Returns a single privacy-safe indication that the last session did not
+ * close normally. The underlying report never contains the panic message.
+ */
+async getPendingCrashReport() : Promise<Result<PendingCrashReportSummary | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_pending_crash_report") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Discard the local abnormal-exit marker without uploading it.
+ */
+async discardPendingCrashReport() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discard_pending_crash_report") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Records an IPC failure after the shared frontend command boundary has
+ * reduced it to bounded enums. Raw error text is never accepted here.
+ */
+async recordNativeErrorMetric(operation: string, errorCode: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("record_native_error_metric", { operation, errorCode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Fetch all dashboard data in a single command for minimal IPC overhead.
  *
  */
@@ -203,14 +238,73 @@ async getObject(id: string) : Promise<Result<GameObject | null, AppError>> {
 }
 },
 /**
- * Get the MasterDB JSON for a specific game type.
- * Loads from `resources/databases/{game_type}.json`.
+ * Get the user-installed MasterDB catalog for a specific game type.
  * Returns DbEntry array directly, eliminating manual String parsing.
  * When hash_db is present in source, merges hashes into matching entries.
  */
 async getMasterDb(gameType: number) : Promise<Result<DbEntry[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_master_db", { gameType }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Report whether a user-installed, data-only catalog pack is available.
+ */
+async getCatalogPackStatus() : Promise<CatalogPackStatus> {
+    return await TAURI_INVOKE("get_catalog_pack_status");
+},
+/**
+ * Open the user-writable folder where a manually extracted catalog pack belongs.
+ */
+async openCatalogPackFolder() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_catalog_pack_folder") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validate the candidate pack before replacing cached catalog data.
+ */
+async refreshCatalogPack() : Promise<Result<CatalogPackRefreshResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_catalog_pack") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Check the fixed public catalog release channel. This is read-only and uses
+ * no GitHub credentials from the user or the application.
+ */
+async checkCatalogUpdate() : Promise<Result<CatalogUpdateCheck, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_catalog_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Download, verify, validate, and atomically activate the latest signed
+ * catalog release. The active catalog is left untouched on every failure.
+ */
+async installCatalogUpdate() : Promise<Result<CatalogUpdateInstallResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("install_catalog_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setCatalogAutoInstall(enabled: boolean) : Promise<Result<AppSettings, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_catalog_auto_install", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -299,6 +393,14 @@ async openIniInEditor(gameId: string, folderPath: string, fileName: string) : Pr
 async revealObjectInExplorer(gameId: string, objectId: string, objectName: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reveal_object_in_explorer", { gameId, objectId, objectName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createModFolder(parentPath: string, folderName: string, gameId: string) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_mod_folder", { parentPath, folderName, gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -428,9 +530,25 @@ async toggleModSafe(gameId: string, folderPath: string, safe: boolean) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async suggestRandomMods(gameId: string) : Promise<Result<RandomModProposal[], AppError>> {
+async suggestRandomMods(input: SuggestRandomModsInput) : Promise<Result<RandomModProposal[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("suggest_random_mods", { gameId }) };
+    return { status: "ok", data: await TAURI_INVOKE("suggest_random_mods", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async previewRandomizedLoadout(input: PreviewRandomizedLoadoutInput) : Promise<Result<RandomizedLoadoutPreview, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_randomized_loadout", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async applyRandomizedLoadout(input: ApplyRandomizedLoadoutInput) : Promise<Result<ApplyRandomizedLoadoutResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_randomized_loadout", { input }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -586,6 +704,14 @@ async removeModPreviewImage(gameId: string, folderPath: string, imagePath: strin
 async clearModPreviewImages(gameId: string, folderPath: string) : Promise<Result<string[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_mod_preview_images", { gameId, folderPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async analyzeModHealth(gameId: string, folderPath: string) : Promise<Result<ModHealthReport, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("analyze_mod_health", { gameId, folderPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -872,6 +998,34 @@ async setActiveGame(gameId: string | null) : Promise<Result<null, AppError>> {
 async setAutoCloseLauncher(enabled: boolean) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_auto_close_launcher", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Persist explicit diagnostics consent. Opting out clears every queued
+ * aggregate and crash envelope before the setting change is reported as done.
+ */
+async setTelemetryEnabled(enabled: boolean) : Promise<Result<AppSettings, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_telemetry_enabled", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setModViewerExecutable(path: string | null) : Promise<Result<AppSettings, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_mod_viewer_executable", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async launchModViewer(gameId: string, modFolder: string) : Promise<Result<ModViewerLaunchReceipt, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("launch_mod_viewer", { gameId, modFolder }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1165,6 +1319,21 @@ async resolveRenameConfirmations(gameId: string, resolutions: RenameConfirmation
     else return { status: "error", error: e  as any };
 }
 },
+async getStorageSizeBackfillStatus() : Promise<StorageSizeBackfillStatus> {
+    return await TAURI_INVOKE("get_storage_size_backfill_status");
+},
+/**
+ * Starts the one-time low-priority size backfill. The command returns before
+ * filesystem work begins so the Dashboard remains responsive.
+ */
+async startStorageSizeBackfill() : Promise<Result<StorageSizeBackfillStatus, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_storage_size_backfill") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Start the file watcher for a specific path.
  * Emits `mod_watch:event` to the frontend.
@@ -1240,32 +1409,6 @@ async getIgnoredPairs(gameId: string) : Promise<Result<WhitelistEntry[], AppErro
 async removeIgnoredPair(entryId: string) : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("remove_ignored_pair", { entryId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Check for metadata updates from the remote manifest.
- *
- * Returns whether an update was applied and the current version.
- */
-async checkMetadataUpdate() : Promise<Result<MetadataSyncResult, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("check_metadata_update") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Fetch a missing asset file from the remote CDN.
- *
- * Returns the local path to the cached asset, or null if the fetch failed.
- */
-async fetchMissingAsset(assetName: string) : Promise<Result<string | null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("fetch_missing_asset", { assetName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1374,11 +1517,141 @@ async browserReloadTab(label: string) : Promise<Result<null, AppError>> {
 }
 },
 /**
- * Clear cookies and cache for a specific browser tab.
+ * Open a Discover URL in the user's default external browser.
  */
-async browserClearData(label: string) : Promise<Result<null, AppError>> {
+async browserOpenExternally(url: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("browser_clear_data", { label }) };
+    return { status: "ok", data: await TAURI_INVOKE("browser_open_externally", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Change the zoom level for one Discover tab.
+ */
+async browserSetZoom(label: string, zoom: number) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_set_zoom", { label, zoom }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Find text in one Discover tab.
+ */
+async browserFindInPage(label: string, query: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_find_in_page", { label, query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return the persisted Discover ad-block setting (enabled by default).
+ */
+async browserGetAdblockEnabled() : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_get_adblock_enabled") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Persist Discover's ad-block toggle. Existing tabs pick it up on reload.
+ */
+async browserSetAdblockEnabled(enabled: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_set_adblock_enabled", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Clear cookies plus site data for the shared Discover profile.
+ */
+async browserClearCookiesAndSiteData(label: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_clear_cookies_and_site_data", { label }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Clear only disk cache for the shared Discover profile.
+ */
+async browserClearCache(label: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_clear_cache", { label }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserListBookmarks() : Promise<Result<BrowserBookmark[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_list_bookmarks") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserAddBookmark(url: string, title: string | null, favicon: string | null) : Promise<Result<BrowserBookmark, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_add_bookmark", { url, title, favicon }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserDeleteBookmark(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_delete_bookmark", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserListHistory(limit: number) : Promise<Result<BrowserHistoryEntry[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_list_history", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserClearHistory() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_clear_history") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserGetSessionTabs(gameId: string) : Promise<Result<BrowserSessionTab[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_get_session_tabs", { gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserSaveSessionTabs(gameId: string, tabs: BrowserSessionTab[]) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_save_session_tabs", { gameId, tabs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserGetPrivacySummary() : Promise<Result<BrowserPrivacySummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_get_privacy_summary") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1387,9 +1660,9 @@ async browserClearData(label: string) : Promise<Result<null, AppError>> {
 /**
  * Get the configured browser homepage URL.
  */
-async browserGetHomepage() : Promise<Result<string, AppError>> {
+async browserGetHomepage(gameId: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("browser_get_homepage") };
+    return { status: "ok", data: await TAURI_INVOKE("browser_get_homepage", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1398,9 +1671,9 @@ async browserGetHomepage() : Promise<Result<string, AppError>> {
 /**
  * Set a new browser homepage URL. Validates http/https scheme.
  */
-async browserSetHomepage(url: string) : Promise<Result<null, AppError>> {
+async browserSetHomepage(gameId: string, url: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("browser_set_homepage", { url }) };
+    return { status: "ok", data: await TAURI_INVOKE("browser_set_homepage", { gameId, url }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1431,9 +1704,9 @@ async browserSetRetentionDays(days: number) : Promise<Result<null, AppError>> {
 /**
  * Return all browser downloads ordered by most recent first.
  */
-async browserListDownloads() : Promise<Result<BrowserDownloadDto[], AppError>> {
+async browserListDownloads(gameId: string) : Promise<Result<BrowserDownloadDto[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("browser_list_downloads") };
+    return { status: "ok", data: await TAURI_INVOKE("browser_list_downloads", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1449,6 +1722,28 @@ async browserListDownloads() : Promise<Result<BrowserDownloadDto[], AppError>> {
 async browserCancelDownload(id: string, deleteFile: boolean | null) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("browser_cancel_download", { id, deleteFile }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Pause a live native WebView2 download when the server supports it.
+ */
+async browserPauseDownload(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_pause_download", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Resume a paused or interrupted native WebView2 download when available.
+ */
+async browserResumeDownload(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_resume_download", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1482,6 +1777,28 @@ async browserRejectDownload(requestId: string) : Promise<Result<null, AppError>>
 async browserRetryDownload(id: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("browser_retry_download", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reload the source tab so a host can issue a fresh download URL.
+ */
+async browserRefreshDownloadLink(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_refresh_download_link", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Open the original source URL in a new Discover tab.
+ */
+async browserOpenDownloadSource(id: string) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_open_download_source", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1524,7 +1841,8 @@ async browserClearOldDownloads() : Promise<Result<number, AppError>> {
 /**
  * A keybinding entry extracted from an enabled mod's INI file.
  */
-export type ActiveKeyBinding = { mod_name: string; section_name: string; key: string | null; back: string | null }
+export type ActiveKeyBinding = { mod_name: string; folder_path: string; section_name: string; key: string | null; back: string | null; control_kind: ActiveKeyControlKind; value_summary: string | null }
+export type ActiveKeyControlKind = "key_binding" | "key_toggle"
 export type AiConfig = { enabled: boolean; has_api_key: boolean; base_url: string | null }
 export type AnalyzeImportBatchOptions = { batchId: string; password: string | null; unpackNested: boolean | null }
 /**
@@ -1544,7 +1862,7 @@ export type AppSettings = {
 /**
  * Optimistic-concurrency token for whole-settings IPC saves.
  */
-revision?: number; theme: string; language: string; games: GameConfig[]; active_game_id: string | null; safety: SafetyConfig; ai: AiConfig; auto_close_launcher: boolean; hotkeys?: HotkeyConfig; keyviewer?: KeyViewerConfig }
+revision?: number; theme: string; language: string; games: GameConfig[]; active_game_id: string | null; safety: SafetyConfig; ai: AiConfig; auto_close_launcher: boolean; hotkeys?: HotkeyConfig; keyviewer?: KeyViewerConfig; external_tools?: ExternalToolsConfig; catalog_updates?: CatalogUpdateConfig; diagnostics?: DiagnosticsSettings }
 export type AppUpdateInfo = { version: string; currentVersion: string; body: string | null }
 export type AppUpdateProgress = { event: "Started"; data: { contentLength: number | null } } | { event: "Progress"; data: { chunkLength: number } } | { event: "Finished" }
 export type ApplyGameModsDirectoryRequest = { game_id: string; candidate_path: string; expected_fingerprint: string; confirm_empty: boolean; different_confirmation_game_name: string | null }
@@ -1557,24 +1875,39 @@ export type ApplyObjectClassificationItem = { objectId: string; decision: Object
  */
 export type ApplyPreview = { collection_name: string; current_tree_nodes: PreviewTreeNode[]; target_tree_nodes: PreviewTreeNode[]; current_state_name: string | null; current_state_is_unsaved: boolean; current_projected_state: ProjectedCollectionState; target_projected_state: ProjectedCollectionState }
 export type ApplyProgressSnapshot = { game_id: string; phase: string; completed: number; total: number; current_item: string | null; warnings: string[]; final_state_name: string | null; success: boolean }
+export type ApplyRandomizedLoadoutInput = { game_id: string; mod_ids: string[]; safety_filter: RandomizerSafetyFilter; scope: RandomizerScope; backup: RandomizedLoadoutBackupInput | null; preview_fingerprint: string }
+export type ApplyRandomizedLoadoutResult = { impact: WorkspaceImpact; backup: RandomizedLoadoutBackupResult | null; sync_warning: CommittedMutationSyncWarning | null; history_warning: string | null }
 /**
  * Result of applying a collection.
  */
 export type ApplyResult = { mods_enabled: number; mods_disabled: number; warnings: string[]; final_state_name: string | null; partial_apply: boolean; skipped_missing_paths: string[]; runtime_path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
 export type ArchiveErrorKind = "dictionary_too_large" | "unsupported_compression"
+export type BrowserBookmark = { id: string; url: string; title: string; favicon: string | null; created_at: number; updated_at: number }
 /**
  * DTO for the frontend download list.
  */
-export type BrowserDownloadDto = { id: string; session_id: string | null; filename: string; file_path: string | null; source_url: string | null; status: string; bytes_total: number | null; bytes_received: number; error_msg: string | null; queue_order: number; started_at: string; finished_at: string | null }
+export type BrowserDownloadDto = { id: string; game_id: string; session_id: string | null; filename: string; file_path: string | null; source_url: string | null; status: string; bytes_total: number | null; bytes_received: number; error_msg: string | null; can_resume: boolean | null; tab_label: string | null; queue_order: number; started_at: string; finished_at: string | null }
 /**
  * Errors from the in-app browser: webview lifecycle, downloads, and the
  * import pipeline that turns a download into a placed mod.
  */
 export type BrowserError = "WindowUnavailable" | { WebviewNotFound: { label: string } } | { InvalidUrl: string } | { InvalidSetting: string } | { Download: string } | { JobIncomplete: { job_id: string; field: string } } | { Import: string } | "QueueClosed" | "QueueFull" | "DownloadAlreadyActive" | "DownloadConfirmationUnavailable" | { Io: string } | { Db: string }
+export type BrowserHistoryEntry = { url: string; hostname: string; title: string; favicon: string | null; visit_count: number; last_visited_at: number }
+export type BrowserPrivacySummary = { bookmarks: number; history_entries: number; saved_permissions: number }
+export type BrowserSessionTab = { position: number; url: string; title: string; active: boolean }
 export type BulkActionError = { path: string; error: AppError }
 export type BulkResult = { success: string[]; failures: BulkActionError[]; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
 export type CanonicalClassificationCatalogEntry = { entryKey: string; name: string; category: StableCategory; metadata: JsonValue; thumbnailPath: string | null; aliases: string[] }
 export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; matchStatus?: ImportMatchStatus; evidence: MatchEvidence[] }
+export type CatalogPackRefreshResult = { state: string; entries: number; thumbnails_applied: number; missing_assets: number; skipped_invalid_files: number }
+export type CatalogPackStatus = { state: string; pack_id: string | null; version: string | null; message: string | null; entries: number; missing_assets: number }
+export type CatalogUpdateCheck = { state: string; current_version: string | null; available_version: string | null; release_notes: string | null }
+/**
+ * Preferences for the signed, public catalog release channel. This contains
+ * no GitHub account data or credentials.
+ */
+export type CatalogUpdateConfig = { auto_check?: boolean; auto_install?: boolean; last_successful_check_unix_seconds?: number | null }
+export type CatalogUpdateInstallResult = { version: string; entries: number; missing_assets: number }
 export type CategoryCount = { object_type: string; count: number }
 export type CategoryDef = { name: string;
 /**
@@ -1690,8 +2023,13 @@ size_bytes: number }
 export type CreateCollectionMode = "save_current_state" | "clone_snapshot"
 export type CreateImportBatchInput = { gameId: string; flow: ImportFlow; targetMode: TargetMode; targetObjectId: string | null; targetSubpath: string | null; sources: ImportSourceInput[] }
 export type CreateModInboxBatchInput = { gameId: string; entryKeys: string[] }
-export type CreateObjectInput = { game_id: string; name: string; folder_path: string | null; object_type: string; sub_category: string | null; status: number | null; metadata: JsonValue | null; thumbnail_url: string | null; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null }
+export type CreateObjectInput = { game_id: string; name: string; folder_path: string | null; object_type: string; sub_category: string | null; status: number | null; metadata: JsonValue | null; thumbnail?: CreateObjectThumbnail | null; thumbnail_url: string | null; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null }
 export type CreateObjectResult = { id: string; sync_warning: CommittedMutationSyncWarning | null }
+/**
+ * A user-provided thumbnail to be materialized into the new object's folder.
+ * The source itself is never persisted: every variant becomes `preview_custom.png`.
+ */
+export type CreateObjectThumbnail = { kind: "file"; source_path: string } | { kind: "clipboard"; image_data: number[] } | { kind: "url"; url: string }
 /**
  * A named skin/outfit with aliases.
  */
@@ -1727,12 +2065,21 @@ export type DeleteProcessedModInboxSourcesInput = { gameId: string; sourceIds: s
 export type DestinationKind = "specific_target" | "existing_object" | "create_canonical"
 export type DestinationMatchMethod = "canonical_identity" | "exact_name" | "exact_alias" | "name_substring" | "alias_substring" | "token_substring" | "fuzzy_name" | "no_name_match"
 export type DestinationSuggestion = { kind: DestinationKind; objectId: string | null; canonicalEntryKey: string | null; folderName: string; targetPath: string; confidencePercentage: number; confidenceTier: ConfidenceTier; matchMethod?: DestinationMatchMethod; warning: string | null }
+/**
+ * Explicit consent for the anonymous diagnostics channel. This contains no
+ * endpoint, token, or user identity, all delivery configuration is build-time.
+ */
+export type DiagnosticsSettings = { telemetry_enabled?: boolean }
 export type DiskReconcileChangeCounts = { added: number; removed: number; renamed: number; modified: number }
 export type DiskReconcileChangeSummary = { object_changes: DiskReconcileChangeCounts; mod_changes: DiskReconcileChangeCounts; object_sample_names: string[]; mod_sample_names: string[]; has_user_visible_changes: boolean }
 export type DiskReconcilePathKind = "Object" | "Mod"
 export type DiskReconcilePathUpdate = { from: string; to: string; kind: DiskReconcilePathKind }
-export type DiskReconcileReason = "StartupBoot" | "OnboardingCompleted" | "ModsViewEntered" | "WindowRefocused" | "WatcherBatch" | "ManualRepair" | "GameSwitched" | "InternalMutation"
-export type DiskReconcileResult = { game_id: string; reason: DiskReconcileReason; status: DiskReconcileStatus; folder_conflicts: FolderNameConflictGroup[]; rename_confirmations: RenameConfirmationGroup[]; error_message: string | null; changed_roots: string[]; objects_changed: boolean; folders_changed: boolean; collections_changed: boolean; runtime_file_changed: boolean; thumbnail_roots: string[]; cleared_selection_paths: string[]; path_updates: DiskReconcilePathUpdate[]; collection_reference_impact: CollectionReferenceImpact; change_summary: DiskReconcileChangeSummary; pending_runtime_effects: PendingRuntimeEffects; warnings: DiskReconcileWarning[] }
+export type DiskReconcileReason = "StartupBoot" | "OnboardingCompleted" | "ModsViewEntered" | "WindowRefocused" | "WatcherBatch" | "ManualRepair" | "GameSwitched" | "InternalMutation" | "StorageSizeBackfill"
+export type DiskReconcileResult = { game_id: string;
+/**
+ * Monotonic per-game revision assigned after this disk observation finishes.
+ */
+reconcile_revision: number; reason: DiskReconcileReason; status: DiskReconcileStatus; folder_conflicts: FolderNameConflictGroup[]; rename_confirmations: RenameConfirmationGroup[]; error_message: string | null; changed_roots: string[]; objects_changed: boolean; folders_changed: boolean; collections_changed: boolean; runtime_file_changed: boolean; thumbnail_roots: string[]; cleared_selection_paths: string[]; path_updates: DiskReconcilePathUpdate[]; collection_reference_impact: CollectionReferenceImpact; change_summary: DiskReconcileChangeSummary; pending_runtime_effects: PendingRuntimeEffects; warnings: DiskReconcileWarning[] }
 export type DiskReconcileStatus = "Applied" | "AppliedWithFolderConflicts" | "SourceUnavailable" | "NeedsRenameConfirmation"
 export type DiskReconcileWarning = { kind: DiskReconcileWarningKind; message: string }
 export type DiskReconcileWarningKind = "RuntimeEffectsPending"
@@ -1792,6 +2139,11 @@ export type DuplicateModInfo = { mod_id: string; object_id: string; folder_path:
  */
 export type EntryKind = "canonical" | "taxonomy"
 /**
+ * User-selected optional executables for integrations that EMMM does not
+ * download, bundle, or manage.
+ */
+export type ExternalToolsConfig = { mod_viewer_executable?: string | null }
+/**
  * Progress events streamed to frontend during archive extraction via `Channel<ExtractionEvent>`.
  */
 export type ExtractionEvent =
@@ -1831,7 +2183,7 @@ export type GameModsDirectoryInspection = { game_id: string; candidate_path: str
 /**
  * Represents a row in the `objects` table.
  */
-export type GameObject = { id: string; game_id: string; name: string; folder_path: string; folder_path_key: string; status: number; object_type: string; sub_category: string | null; tags: string; metadata: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_pinned: boolean; is_auto_sync: boolean; created_at: string }
+export type GameObject = { id: string; game_id: string; name: string; folder_path: string; folder_path_key: string; status: number; object_type: string; randomizer_mode: RandomizerMode | null; sub_category: string | null; tags: string; metadata: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_pinned: boolean; is_auto_sync: boolean; created_at: string }
 /**
  * Game schema defines available categories and filter fields per game type.
  * Loaded from bundled JSON resources, with fallback to defaults.
@@ -1930,6 +2282,11 @@ export type LastChangesSource = "live" | "draft"
  */
 export type LaunchMode = "standalone" | "xxmi_managed"
 export type LineTerminator = "None" | "Lf" | "CrLf" | "Cr"
+export type LiquidAppearance = "light" | "dark" | "auto"
+export type LiquidMaterial = "clear" | "thin" | "regular" | "thick" | "ultra" | "adaptive"
+export type LiquidQuality = "high" | "medium" | "low"
+export type LiquidRoleConfig = { material?: LiquidMaterial | null; appearance?: LiquidAppearance | null; tint?: string | null; tint_opacity?: number | null; blur?: number | null; refraction_strength?: number | null; bezel_width?: number | null; chromatic_aberration?: number | null; edge_highlight?: number | null; specular_strength?: number | null; light_angle?: number | null; quality?: LiquidQuality | null }
+export type LiquidThemeConfig = { nav?: LiquidRoleConfig | null; control?: LiquidRoleConfig | null; indicator?: LiquidRoleConfig | null; overlay?: LiquidRoleConfig | null }
 export type MatchEvidence = { source: string; value: string; score: number }
 /**
  * The kind of member in a collection.
@@ -1939,10 +2296,16 @@ export type MemberKind = "mod" | "object"
  * Errors specific to Metadata operations.
  */
 export type MetadataError = { Security: string } | { NotFound: string } | { Io: string } | { Db: string } | { Validation: string }
-/**
- * Result of a metadata sync check
- */
-export type MetadataSyncResult = { updated: boolean; version: number | null }
+export type ModAssetEntry = { relative_path: string; size_bytes: number; source_files: string[] }
+export type ModAssetManifest = { referenced: ModAssetEntry[]; inactive_only: ModAssetEntry[]; orphan: ModAssetEntry[]; external_reference: ModAssetEntry[]; counts: ModAssetManifestCounts }
+export type ModAssetManifestCounts = { referenced: number; inactive_only: number; orphan: number; external_reference: number }
+export type ModControl = { kind: ModControlKind; section: string; file_path: string; key: string | null; back: string | null; variable: string | null; values: string[]; default_value: string | null }
+export type ModControlKind = "key_toggle" | "menu_toggle" | "present" | "shape_variable"
+export type ModFileManifestEntry = { relative_path: string; size_bytes: number; blake3: string }
+export type ModHealthIssue = { severity: ModHealthSeverity; code: string; message: string; file_path: string | null; section: string | null; line: number | null }
+export type ModHealthReport = { support_level: ModHealthSupportLevel; issues: ModHealthIssue[]; manifest: ModAssetManifest; file_manifest: ModFileManifestEntry[]; controls: ModControl[] }
+export type ModHealthSeverity = "error" | "warning" | "info"
+export type ModHealthSupportLevel = "basic" | "supported" | "experimental"
 export type ModInboxEntry = { entryKey: string; name: string; path: string; kind: ModInboxEntryKind; archiveFormat: string | null; sizeBytes: number | null; modifiedUnixMs: string; layout: ModInboxLayout; detectedRootCount: number; pendingBatchId: string | null }
 export type ModInboxEntryKind = "folder" | "archive"
 export type ModInboxLayout = "direct_mod" | "folder_pack" | "wrapper" | "unknown"
@@ -1959,6 +2322,7 @@ export type ModInfo = { actual_name?: string; author?: string; description?: str
  * Partial update struct — only fields that are `Some` will be updated.
  */
 export type ModInfoUpdate = { actual_name: string | null; author: string | null; description: string | null; version: string | null; tags: string[] | null; tags_add: string[] | null; tags_remove: string[] | null; is_safe: boolean | null; is_favorite: boolean | null; is_pinned: boolean | null; is_auto_sync: boolean | null; preset_name_add: string[] | null; preset_name_remove: string[] | null; metadata: Partial<{ [key in string]: string }> | null }
+export type ModViewerLaunchReceipt = { game_id: string; mod_folder: string; file_manifest: ModFileManifestEntry[] }
 export type MoveModsToObjectInput = { game_id: string; folder_paths: string[]; target_object_id: string; target_subpath: string | null; status: string | null }
 export type NewlineStyle = "Lf" | "CrLf"
 export type ObjectClassificationDecision = { kind: "canonical"; entryKey: string } | { kind: "manual"; category: StableCategory; subCategory: string | null; metadata: JsonValue }
@@ -1969,16 +2333,18 @@ export type ObjectClassificationPreviewItem = { objectId: string; objectName: st
  * out at twenty sites.
  */
 export type ObjectFilter = { game_id: string; search_query: string | null; object_type: string | null; meta_filters: Partial<{ [key in string]: string[] }> | null; sort_by: string | null; status_filter: number | null }
-export type ObjectSummary = { id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }
+export type ObjectSummary = { id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; randomizer_mode: RandomizerMode | null; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }
 export type OnboardingIndexingWorkPlan = { game_id: string; file_count: number; total_bytes: number; work_units: number; roots: IndexingRootWork[] }
 /**
  * A compact, list-safe summary of a full payload manifest. The detailed file
  * entries remain in SQLite until the detail view requests them.
  */
 export type PayloadManifestSummary = { version: number; fileCount: number; totalSizeBytes: string; contentSha256: string }
+export type PendingCrashReportSummary = { error_code: string }
 export type PendingRuntimeEffects = { collections_dirty: boolean; overlay_refresh: boolean }
 export type PipelineTask = { id: string; game_id: string; task_type: string; status: TaskStatus; target_id: string | null; rollback_collection_id: string | null; rollback_active_collection_id: string | null; final_active_collection_id: string | null; created_at: string; updated_at: string }
 export type PreviewObjectClassificationBatchInput = { gameId: string; objectIds: string[] }
+export type PreviewRandomizedLoadoutInput = { game_id: string; mod_ids: string[]; safety_filter: RandomizerSafetyFilter; scope: RandomizerScope }
 export type PreviewRelocationBatchInput = { gameId: string; sourcePaths: string[]; currentObjectId: string | null }
 export type PreviewTreeNode = { kind: PreviewTreeNodeKind; id: string; name: string; path: string | null; object_id: string | null; node_type: string | null; is_enabled: boolean; is_effectively_active: boolean; inactive_reason: string | null; show_inactive_chip: boolean; status_kind: string | null; collapse_children: boolean; warnings: string[]; mod_count: number | null; children: PreviewTreeNode[] }
 export type PreviewTreeNodeKind = "object" | "folder" | "mod"
@@ -1988,11 +2354,26 @@ export type ProjectedActiveRoot = { object_id: string; root_key: string; display
 export type ProjectedCollectionState = { object_states: ProjectedObjectState[]; active_roots: ProjectedActiveRoot[]; summary: ProjectedStateSummary }
 export type ProjectedObjectState = { object_id: string; display_name: string; path_key: string; is_enabled: boolean; active_root_count: number }
 export type ProjectedStateSummary = { object_count: number; enabled_object_count: number; active_root_count: number; missing_root_count: number }
-export type RandomModProposal = { object_id: string; object_name: string; mod_id: string; name: string; thumbnail_path: string | null; folder_path: string }
+export type RandomModProposal = { object_id: string; object_name: string; object_type: string | null; mode: RandomizerLoadoutMode; is_safe: boolean; active_mod_names: string[]; mod_id: string; name: string; thumbnail_path: string | null; folder_path: string }
+export type RandomizedLoadoutBackupInput = { collection_name: string }
+export type RandomizedLoadoutBackupResult = { collection_id: string; collection_name: string; reused: boolean }
+export type RandomizedLoadoutPreview = { fingerprint: string; items: RandomizedLoadoutPreviewItem[]; enable_count: number; disable_count: number; unsafe_mod_names: string[]; runtime_conflicts: ConflictInfo[] }
+export type RandomizedLoadoutPreviewItem = { object_id: string; object_name: string; object_type: string | null; mode: RandomizerLoadoutMode; selected_mod_name: string; selected_mod_id: string; active_mod_names: string[]; disable_count: number }
+export type RandomizerLoadoutMode = "exclusive" | "additive"
+export type RandomizerMode = "default" | "exclusive" | "additive"
+/**
+ * Safety scope selected in the global explorer controls and enforced by both
+ * randomizer generation and loadout application.
+ */
+export type RandomizerSafetyFilter = "all" | "safe" | "unsafe"
+/**
+ * Object categories included in one randomizer roll.
+ */
+export type RandomizerScope = { categories: StableCategory[]; include_unclassified: boolean }
 /**
  * A recently indexed mod for the activity widget.
  */
-export type RecentMod = { id: string; name: string; game_name: string; object_name: string | null; indexed_at: string | null }
+export type RecentMod = { id: string; game_id: string; name: string; game_name: string; object_name: string | null; folder_path: string; indexed_at: string | null }
 export type RecoveryAction = "RETRY" | "ROLLBACK" | "IGNORE"
 export type RelocationPreviewItem = { sourcePath: string; sourceName: string; category: StableCategory; suggestions: DestinationSuggestion[] }
 export type RenameConfirmationGroup = { group_id: string; kind: RenameConfirmationKind; reason: RenameConfirmationReason; scope_key: string; previous_paths: string[]; current_paths: string[]; previous_path_count: number; current_path_count: number; candidates_truncated: boolean }
@@ -2026,20 +2407,33 @@ export type SaveSettingsResult = { settings: AppSettings; sync_warning: Committe
  * Errors from scanning the mods tree: walking folders, matching against the
  * MasterDB, duplicate detection, and committing a scan into the index.
  */
-export type ScannerError = { PathNotFound: { path: string } } | { NotADirectory: { path: string } } | { PathEscape: { path: string } } | { Parse: { what: string; detail: string } } | { Network: string } | { Io: string } | { Db: string } | { Validation: string }
+export type ScannerError = { Security: string } | { PathNotFound: { path: string } } | { NotADirectory: { path: string } } | { PathEscape: { path: string } } | { Parse: { what: string; detail: string } } | { Network: string } | { Io: string } | { Db: string } | { Validation: string }
 export type SearchResultEntry = { item: DbEntry; score: number }
 export type SetImportItemClassificationInput = { itemId: string; category: StableCategory; subCategory: string | null; metadata: JsonValue }
 export type SetImportItemDecisionInput = { itemId: string; decision: ImportDecision; destinationObjectId: string | null; destinationPath: string | null; canonicalEntryKey: string | null; matchedAlias: string | null }
 export type SourceFingerprint = { path: string; modifiedUnixMs: string; sizeBytes: string; fileCount: number }
 export type StableCategory = "Character" | "Weapon" | "UI" | "Other"
+export type StorageSizeBackfillStateKind = "Idle" | "Running" | "Completed" | "Failed"
+export type StorageSizeBackfillStatus = { state: StorageSizeBackfillStateKind; total_games: number; completed_games: number; current_game_id: string | null; errors: string[] }
+export type SuggestRandomModsInput = { game_id: string; safety_filter: RandomizerSafetyFilter; scope: RandomizerScope;
+/**
+ * The last three selected ids per Object in the current modal session.
+ */
+recent_mod_ids_by_object: Partial<{ [key in string]: string[] }>; excluded_object_ids?: string[] }
 export type TAURI_CHANNEL<TSend> = null
 export type TargetComparison = { outcome: TargetComparisonOutcome; targetPath: string; sameFiles: number; changedFiles: number; missingFiles: number; additionalFiles: number; suggestedSeparateName: string | null; reason: string }
 export type TargetComparisonOutcome = "already_installed" | "target_has_additional_files" | "same_name_different_content" | "incomplete"
 export type TargetMode = "auto" | "specific"
 export type TaskStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
-export type ThemeConfig = { colors: Partial<{ [key in string]: string }>; glass: Partial<{ [key in string]: string }> }
+export type ThemeBackground = { kind: ThemeBackgroundKind; value: string; dim_opacity: number }
+export type ThemeBackgroundKind = "solid" | "gradient" | "image"
+export type ThemeConfig = { colors: Partial<{ [key in string]: string }>; glass: Partial<{ [key in string]: string }>; liquid: LiquidThemeConfig; background: ThemeBackground }
 export type ThemeMetadata = { id: string; label: string }
-export type UpdateObjectInput = { name: string | null; object_type: string | null; sub_category: string | null; metadata: JsonValue | null; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_auto_sync: boolean | null; is_pinned: boolean | null; tags: string[] | null }
+export type UpdateObjectInput = { name: string | null; object_type: string | null;
+/**
+ * `Default` clears the nullable database override.
+ */
+randomizer_mode: RandomizerMode | null; sub_category: string | null; metadata: JsonValue | null; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_auto_sync: boolean | null; is_pinned: boolean | null; tags: string[] | null }
 export type WhitelistEntry = { id: string; folderAId: string; folderBId: string; folderAName: string; folderBName: string; reason: string; ignoredAt: string }
 export type WorkspaceCapabilities = { can_toggle: boolean; can_rename: boolean; can_delete: boolean; can_move: boolean; can_toggle_safe: boolean; can_sync: boolean; can_enable_only_this: boolean; can_pin: boolean; can_edit_metadata: boolean; can_reveal_in_explorer: boolean; can_move_category: boolean; can_open_in_explorer: boolean }
 export type WorkspaceDisplayMode = "container_folder" | "mod_pack" | "variant" | "flat_mod" | "internal_assets" | "unknown"
@@ -2052,7 +2446,7 @@ export type WorkspaceModInfoSummary = { actual_name: string; author: string; ver
 export type WorkspaceMoveTarget = { object_id: string; object_name: string; object_folder_path: string; target_subpath: string | null; display_path: string; depth: number }
 export type WorkspaceNode = WorkspaceExplorerNode | WorkspaceObjectNode
 export type WorkspaceNodeKind = "object" | "container" | "terminal_mod" | "inactive_branch"
-export type WorkspaceObjectNode = ({ id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }) & { is_registered: boolean; node_kind: WorkspaceNodeKind; display_mode: WorkspaceDisplayMode; type_chip: WorkspaceTypeChip | null; display_name: string; is_effectively_active: boolean; inactive_reason: WorkspaceReason | null; warning_state: WorkspaceWarningState; primary_warning: WorkspaceWarning | null; switch_state: WorkspaceSwitchState; switch_reason: WorkspaceReason | null; switch_policy_key: WorkspaceSwitchPolicyKey; capabilities: WorkspaceCapabilities }
+export type WorkspaceObjectNode = ({ id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; randomizer_mode: RandomizerMode | null; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }) & { is_registered: boolean; node_kind: WorkspaceNodeKind; display_mode: WorkspaceDisplayMode; type_chip: WorkspaceTypeChip | null; display_name: string; is_effectively_active: boolean; inactive_reason: WorkspaceReason | null; warning_state: WorkspaceWarningState; primary_warning: WorkspaceWarning | null; switch_state: WorkspaceSwitchState; switch_reason: WorkspaceReason | null; switch_policy_key: WorkspaceSwitchPolicyKey; capabilities: WorkspaceCapabilities }
 export type WorkspacePathRewrite = { old_path: string; new_path: string }
 export type WorkspacePreview = { selected_path: string | null; selected_node: WorkspaceNode | null; is_flat_mod_root: boolean; display_title: string | null; display_subtitle: string | null; mod_info_summary: WorkspaceModInfoSummary | null; ini_summary: WorkspaceIniSummary | null; image_summary: WorkspaceImageSummary | null; warning_summary: WorkspaceWarningSummary }
 export type WorkspaceReason = { code: WorkspaceReasonCode; args: Partial<{ [key in string]: string }> }

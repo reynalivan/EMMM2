@@ -22,7 +22,7 @@
     "password_placeholder": "Kunci",
     "rename_tooltip": "Klik untuk mengubah nama",
     "duplicate_name": "Nama folder duplikat",
-    "duplicate_name_action": "Nama duplikat — akan diubah nama otomatis atau ditimpa",
+    "duplicate_name_action": "Nama duplikat. Nama akan diubah otomatis atau ditimpa",
     "password_required": "Memerlukan kata sandi untuk mengekstrak",
     "option_auto_rename": "Ubah nama folder otomatis jika ada konflik nama",
     "option_overwrite": "Timpa folder yang sudah ada",
@@ -68,7 +68,7 @@
   },
   "optimizer": {
     "title": "Pengoptimal Penyimpanan",
-    "description": "Reklamasi ruang disk dengan mengidentifikasi dan menghapus file mod yang berlebihan. EMMM menganalisis pustaka Anda dengan aman untuk menemukan duplikat yang identik.",
+    "description": "Temukan file mod duplikat.",
     "start_button": "Mulai Pindai",
     "stop_button": "Berhenti Pindai",
     "ignored_button": "Diabaikan ({{count}})",

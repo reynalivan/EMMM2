@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { AlertCircle, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -6,6 +6,7 @@ import {
   useWorkspaceRuntimeSelector,
 } from '@/features/workspace-runtime/@x/file-watcher';
 import { pathBasename } from '../../../shared/lib/pathKey';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 export const FileInUseDialog: React.FC = () => {
   const { t } = useTranslation('common');
@@ -15,10 +16,13 @@ export const FileInUseDialog: React.FC = () => {
   const path = runtimeFileInUse?.path ?? null;
   const processes = runtimeFileInUse?.processes ?? [];
   const onRetry = runtimeFileInUse?.onRetry;
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const closeDialog = () => {
     closeWorkspaceDialog('fileInUse');
   };
+
+  useDialogSync(dialogRef, open);
 
   if (!open) return null;
 
@@ -30,13 +34,20 @@ export const FileInUseDialog: React.FC = () => {
   const folderName = pathBasename(path ?? '') || t('file_in_use.folder_fallback');
 
   return (
-    <div className="modal modal-open">
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      aria-labelledby="file-in-use-title"
+      onClose={closeDialog}
+    >
       <div className="modal-box max-w-md border border-warning/20 bg-base-200">
         <div className="flex items-center gap-3 mb-4">
           <div className="btn btn-circle btn-warning btn-sm no-animation pointer-events-none">
             <AlertCircle className="w-5 h-5" />
           </div>
-          <h3 className="text-xl font-bold text-base-content">{t('file_in_use.title')}</h3>
+          <h3 id="file-in-use-title" className="text-xl font-bold text-base-content">
+            {t('file_in_use.title')}
+          </h3>
         </div>
 
         <div className="space-y-4">
@@ -71,7 +82,9 @@ export const FileInUseDialog: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="modal-backdrop bg-black/60 backdrop-blur-sm" onClick={closeDialog}></div>
-    </div>
+      <form method="dialog" className="modal-backdrop bg-black/60 backdrop-blur-sm">
+        <button onClick={closeDialog}>{t('actions.close')}</button>
+      </form>
+    </dialog>
   );
 };

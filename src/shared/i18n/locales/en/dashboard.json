@@ -33,6 +33,13 @@
     "collections": "Collections",
     "presets_desc": "Presets saved"
   },
+  "storage_backfill": {
+    "running_title": "Calculating storage size",
+    "running_progress": "Processed {{completed}} of {{total}} games. You can continue using EMMM.",
+    "failed_title": "Storage size calculation failed",
+    "failed_message": "Some storage sizes could not be calculated.",
+    "retry": "Retry storage scan"
+  },
   "waste": {
     "title": "Duplicate Waste Detected",
     "subtitle": "{{size}} wasted on duplicate mods. Run Optimizer to clean up."
@@ -59,6 +66,12 @@
     "table_section": "Section",
     "table_key": "Key",
     "table_back": "Back",
+    "table_control": "Control",
+    "table_values": "Cycle values",
+    "control_kind": {
+      "key_binding": "Key binding",
+      "key_toggle": "Key toggle"
+    },
     "no_bindings": "No keybindings found in enabled mods"
   }
 }

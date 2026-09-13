@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { launchConfiguredGame } from './launchConfiguredGame';
 import { commands } from '@/shared/api/tauri/bindings';
 
@@ -10,6 +10,10 @@ vi.mock('@/shared/api/tauri/bindings', () => ({
 }));
 
 describe('launchConfiguredGame', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('exits only after a successful launch when auto-close is enabled', async () => {
     await launchConfiguredGame('game-1', true);
 

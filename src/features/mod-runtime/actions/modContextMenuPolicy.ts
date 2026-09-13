@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import {
   ArrowRightLeft,
+  Box,
   ClipboardPaste,
   ExternalLink,
   FolderOpen,
@@ -29,6 +30,8 @@ export interface ModContextMenuItemConfig {
 
 export interface ModContextMenuActionHandlers {
   openExplorer?: () => void;
+  openModViewer?: () => void;
+  modViewerExperimental?: boolean;
   rename: () => void;
   toggleEnabled: () => void;
   enableOnlyThis?: () => void;
@@ -54,6 +57,17 @@ export function buildModContextMenuItems(
       icon: ExternalLink,
       onClick: handlers.openExplorer ?? (() => undefined),
       hidden: !handlers.openExplorer || !folder.capabilities.can_open_in_explorer,
+    },
+    {
+      id: 'open-mod-viewer',
+      label: t(
+        handlers.modViewerExperimental
+          ? 'context.open_mod_viewer_experimental'
+          : 'context.open_mod_viewer',
+      ),
+      icon: Box,
+      onClick: handlers.openModViewer ?? (() => undefined),
+      hidden: !handlers.openModViewer,
     },
     {
       id: 'rename',

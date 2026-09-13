@@ -1,7 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { CanonicalClassificationCatalogEntry } from '../../../shared/api/tauri/bindings.gen';
 import { CanonicalObjectCombobox } from './CanonicalObjectCombobox';
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 
 const entries: CanonicalClassificationCatalogEntry[] = [
   {

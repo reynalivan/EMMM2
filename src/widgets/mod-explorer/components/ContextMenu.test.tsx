@@ -1,12 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { ContextMenu } from '../../../shared/ui/components/ui/ContextMenu';
-import { describe, it, expect, vi } from 'vitest';
-
-// Mock Lucide icons
-vi.mock('lucide-react', () => ({
-  ExternalLink: () => <div data-testid="icon-external-link" />,
-  // Add others if needed
-}));
+import { describe, it, expect } from 'vitest';
 
 describe('ContextMenu', () => {
   it('renders children', () => {

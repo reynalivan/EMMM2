@@ -17,6 +17,9 @@ macro_rules! emmm_collect_commands {
         tauri_specta::collect_commands![
             crate::modules::system::adapters::tauri::app_cmds::exit_app,
             crate::modules::system::adapters::tauri::app_cmds::check_config_status,
+            crate::modules::system::adapters::tauri::app_cmds::get_pending_crash_report,
+            crate::modules::system::adapters::tauri::app_cmds::discard_pending_crash_report,
+            crate::modules::system::adapters::tauri::app_cmds::record_native_error_metric,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_dashboard_stats,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_active_keybindings,
             crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_view_model,
@@ -34,6 +37,12 @@ macro_rules! emmm_collect_commands {
             crate::modules::catalog::adapters::tauri::master_db_cmds::get_game_schema,
             crate::modules::catalog::adapters::tauri::master_db_cmds::get_object,
             crate::modules::catalog::adapters::tauri::master_db_cmds::get_master_db,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::get_catalog_pack_status,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::open_catalog_pack_folder,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::refresh_catalog_pack,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::check_catalog_update,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::install_catalog_update,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::set_catalog_auto_install,
             crate::modules::catalog::adapters::tauri::master_db_cmds::search_master_db,
             crate::modules::catalog::adapters::tauri::master_db_cmds::pin_object,
             crate::modules::workspace::adapters::tauri::scanner_conflict_cmds::detect_conflicts_cmd,
@@ -42,6 +51,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::library::adapters::tauri::mod_core_cmds::open_in_explorer,
             crate::modules::library::adapters::tauri::mod_core_cmds::open_ini_in_editor,
             crate::modules::library::adapters::tauri::mod_core_cmds::reveal_object_in_explorer,
+            crate::modules::library::adapters::tauri::mod_core_cmds::create_mod_folder,
             crate::modules::library::adapters::tauri::conflict_cmds::get_folder_conflict_details,
             crate::modules::library::adapters::tauri::conflict_cmds::resolve_folder_name_conflict,
             crate::modules::library::adapters::tauri::conflict_cmds::trash_folder_conflict_candidate,
@@ -58,6 +68,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::library::adapters::tauri::mod_bulk_cmds::bulk_cancel,
             crate::modules::library::adapters::tauri::mod_meta_cmds::toggle_mod_safe,
             crate::modules::library::adapters::tauri::mod_meta_cmds::suggest_random_mods,
+            crate::modules::library::adapters::tauri::mod_meta_cmds::preview_randomized_loadout,
+            crate::modules::library::adapters::tauri::mod_meta_cmds::apply_randomized_loadout,
             crate::modules::library::adapters::tauri::mod_meta_cmds::get_active_mod_conflicts,
             crate::modules::library::adapters::tauri::mod_meta_cmds::read_mod_info,
             crate::modules::library::adapters::tauri::mod_meta_cmds::update_mod_info,
@@ -77,6 +89,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::library::adapters::tauri::preview_cmds::save_mod_preview_image,
             crate::modules::library::adapters::tauri::preview_cmds::remove_mod_preview_image,
             crate::modules::library::adapters::tauri::preview_cmds::clear_mod_preview_images,
+            crate::modules::library::adapters::tauri::mod_health_cmds::analyze_mod_health,
             modules::ingestion::adapters::tauri::tauri::create_import_batch,
             modules::ingestion::adapters::tauri::tauri::get_import_batch,
             modules::ingestion::adapters::tauri::tauri::list_import_batches,
@@ -112,6 +125,9 @@ macro_rules! emmm_collect_commands {
             crate::modules::settings::adapters::tauri::settings_cmds::test_ai_connection,
             crate::modules::settings::adapters::tauri::settings_cmds::set_active_game,
             crate::modules::settings::adapters::tauri::settings_cmds::set_auto_close_launcher,
+            crate::modules::settings::adapters::tauri::settings_cmds::set_telemetry_enabled,
+            crate::modules::settings::adapters::tauri::settings_cmds::set_mod_viewer_executable,
+            crate::modules::settings::adapters::tauri::settings_cmds::launch_mod_viewer,
             crate::modules::settings::adapters::tauri::settings_cmds::run_maintenance,
             crate::modules::settings::adapters::tauri::settings_cmds::clear_old_thumbnails,
             crate::modules::system::adapters::tauri::theme_cmds::list_custom_themes,
@@ -148,6 +164,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::plan_onboarding_indexing_work,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::inspect_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::resolve_rename_confirmations,
+            crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_storage_size_backfill_status,
+            crate::modules::dashboard::adapters::tauri::dashboard_cmds::start_storage_size_backfill,
             crate::modules::workspace::adapters::tauri::watcher_cmds::start_watcher,
             crate::modules::workspace::adapters::tauri::watcher_cmds::stop_watcher,
             crate::modules::duplicates::adapters::tauri::tauri::dup_scan_start,
@@ -156,8 +174,6 @@ macro_rules! emmm_collect_commands {
             crate::modules::duplicates::adapters::tauri::tauri::dup_resolve_batch,
             crate::modules::duplicates::adapters::tauri::tauri::get_ignored_pairs,
             crate::modules::duplicates::adapters::tauri::tauri::remove_ignored_pair,
-            crate::modules::updates::adapters::tauri::update_cmds::check_metadata_update,
-            crate::modules::updates::adapters::tauri::update_cmds::fetch_missing_asset,
             crate::modules::updates::adapters::tauri::update_cmds::check_app_update,
             crate::modules::updates::adapters::tauri::update_cmds::install_app_update,
             crate::modules::automation::adapters::tauri::hotkey_cmds::update_hotkey_config,
@@ -167,16 +183,34 @@ macro_rules! emmm_collect_commands {
             modules::browser::adapters::tauri::tauri::browser_go_back,
             modules::browser::adapters::tauri::tauri::browser_go_forward,
             modules::browser::adapters::tauri::tauri::browser_reload_tab,
-            modules::browser::adapters::tauri::tauri::browser_clear_data,
+            modules::browser::adapters::tauri::tauri::browser_open_externally,
+            modules::browser::adapters::tauri::tauri::browser_set_zoom,
+            modules::browser::adapters::tauri::tauri::browser_find_in_page,
+            modules::browser::adapters::tauri::tauri::browser_get_adblock_enabled,
+            modules::browser::adapters::tauri::tauri::browser_set_adblock_enabled,
+            modules::browser::adapters::tauri::tauri::browser_clear_cookies_and_site_data,
+            modules::browser::adapters::tauri::tauri::browser_clear_cache,
+            modules::browser::adapters::tauri::tauri::browser_list_bookmarks,
+            modules::browser::adapters::tauri::tauri::browser_add_bookmark,
+            modules::browser::adapters::tauri::tauri::browser_delete_bookmark,
+            modules::browser::adapters::tauri::tauri::browser_list_history,
+            modules::browser::adapters::tauri::tauri::browser_clear_history,
+            modules::browser::adapters::tauri::tauri::browser_get_session_tabs,
+            modules::browser::adapters::tauri::tauri::browser_save_session_tabs,
+            modules::browser::adapters::tauri::tauri::browser_get_privacy_summary,
             modules::browser::adapters::tauri::tauri::browser_get_homepage,
             modules::browser::adapters::tauri::tauri::browser_set_homepage,
             modules::browser::adapters::tauri::tauri::browser_get_retention_days,
             modules::browser::adapters::tauri::tauri::browser_set_retention_days,
             modules::browser::adapters::tauri::tauri::browser_list_downloads,
             modules::browser::adapters::tauri::tauri::browser_cancel_download,
+            modules::browser::adapters::tauri::tauri::browser_pause_download,
+            modules::browser::adapters::tauri::tauri::browser_resume_download,
             modules::browser::adapters::tauri::tauri::browser_confirm_download,
             modules::browser::adapters::tauri::tauri::browser_reject_download,
             modules::browser::adapters::tauri::tauri::browser_retry_download,
+            modules::browser::adapters::tauri::tauri::browser_refresh_download_link,
+            modules::browser::adapters::tauri::tauri::browser_open_download_source,
             modules::browser::adapters::tauri::tauri::browser_delete_download,
             modules::browser::adapters::tauri::tauri::browser_clear_old_downloads,
         ]
@@ -217,6 +251,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
+                .max_file_size(1_048_576)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
                 .targets([
                     Target::new(TargetKind::Stdout),
                     Target::new(TargetKind::LogDir {
@@ -231,6 +267,9 @@ pub fn run() {
         .manage(crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState::default())
         .manage(crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState::new())
         .manage(crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new())
+        .manage(crate::modules::dashboard::application::storage_backfill::StorageSizeBackfillState::default())
+        .manage(crate::modules::browser::application::browser::browser_service::BrowserAdblockState::default())
+        .manage(crate::modules::workspace::application::scanner::master_db::CatalogUpdateState::default())
         .manage(crate::modules::mutation::coordinator::MutationCoordinator::unconfigured())
         .setup(move |app| {
             let app_handle = app.handle();
@@ -240,12 +279,41 @@ pub fn run() {
             #[cfg(desktop)]
             app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
 
-            if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+            let previous_session = if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
                 crate::platform::images::thumbnail_cache::ThumbnailCache::init(&app_data_dir);
 
                 #[cfg(desktop)]
                 app.manage(crate::modules::system::application::app::bootstrap::init_pool(&app_data_dir));
-            }
+                let crash_marker = crate::modules::system::application::telemetry::CrashMarker::new(
+                    app_data_dir.join("telemetry-session-marker.json"),
+                );
+                let previous_session = crash_marker.take_previous_session().ok().flatten();
+                if crash_marker
+                    .begin_session(env!("CARGO_PKG_VERSION"), chrono::Utc::now())
+                    .is_err()
+                {
+                    log::warn!("Could not write the local abnormal-exit marker");
+                }
+                let panic_marker = crash_marker.clone();
+                let previous_hook = std::panic::take_hook();
+                std::panic::set_hook(Box::new(move |info| {
+                    let location = info.location().map(|location| {
+                        format!("{}:{}:{}", location.file(), location.line(), location.column())
+                    });
+                    let fingerprint = crate::modules::system::application::telemetry::ErrorFingerprint::from_stack_frame(
+                        env!("CARGO_PKG_VERSION"),
+                        crate::modules::system::application::telemetry::TelemetryOperation::Error,
+                        crate::modules::system::application::telemetry::TelemetryErrorCode::Panic,
+                        location.as_deref(),
+                    );
+                    let _ = panic_marker.record_panic(&fingerprint);
+                    previous_hook(info);
+                }));
+                app.manage(crash_marker);
+                previous_session
+            } else {
+                None
+            };
 
             let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
             let credential_store =
@@ -264,6 +332,86 @@ pub fn run() {
             config_service.set_ai_key_status(has_ai_api_key);
             app.manage(credential_store);
             app.manage(config_service);
+            let telemetry_store =
+                crate::modules::system::application::telemetry::TelemetryStore::new(pool_ref.inner().clone());
+            app.manage(telemetry_store.clone());
+            if let Some(previous_session) = previous_session {
+                let diagnostics_enabled = app_handle
+                    .state::<crate::modules::settings::application::config::ConfigService>()
+                    .get_settings()
+                    .diagnostics
+                    .telemetry_enabled;
+                let was_panic = previous_session.panic_fingerprint.is_some();
+                let crash_fingerprint = previous_session.panic_fingerprint.clone().map(|digest| {
+                    crate::modules::system::application::telemetry::ErrorFingerprint {
+                        release: previous_session.release.clone(),
+                        operation: crate::modules::system::application::telemetry::TelemetryOperation::Error,
+                        error_code: crate::modules::system::application::telemetry::TelemetryErrorCode::Panic,
+                        digest,
+                    }
+                }).unwrap_or_else(|| {
+                    crate::modules::system::application::telemetry::ErrorFingerprint::from_stack_frame(
+                        &previous_session.release,
+                        crate::modules::system::application::telemetry::TelemetryOperation::Error,
+                        crate::modules::system::application::telemetry::TelemetryErrorCode::Unknown,
+                        None,
+                    )
+                });
+                tauri::async_runtime::spawn(async move {
+                    if diagnostics_enabled {
+                        let _ = telemetry_store
+                            .record_rollup(
+                                env!("CARGO_PKG_VERSION"),
+                                crate::modules::system::application::telemetry::TelemetryEvent::new(
+                                    crate::modules::system::application::telemetry::TelemetryOperation::Error,
+                                    crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
+                                    if was_panic {
+                                        crate::modules::system::application::telemetry::TelemetryErrorCode::Panic
+                                    } else {
+                                        crate::modules::system::application::telemetry::TelemetryErrorCode::Unknown
+                                    },
+                                ),
+                                chrono::Utc::now(),
+                            )
+                            .await;
+                    }
+                    let _ = telemetry_store
+                        .save_pending_crash(crate::modules::system::application::telemetry::PendingCrashReport {
+                            fingerprint: crash_fingerprint,
+                            source: if was_panic {
+                                crate::modules::system::application::telemetry::CrashSource::RustPanic
+                            } else {
+                                crate::modules::system::application::telemetry::CrashSource::PreviousSession
+                            },
+                            created_at_utc: chrono::Utc::now().to_rfc3339(),
+                        })
+                        .await;
+                });
+            }
+            let telemetry_exporter =
+                crate::modules::system::application::telemetry_exporter::TelemetryExporter::from_build_environment();
+            let telemetry_handle = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let enabled = telemetry_handle
+                        .try_state::<crate::modules::settings::application::config::ConfigService>()
+                        .map(|config| config.get_settings().diagnostics.telemetry_enabled)
+                        .unwrap_or(false);
+                    let store = telemetry_handle
+                        .try_state::<crate::modules::system::application::telemetry::TelemetryStore>()
+                        .map(|state| state.inner().clone());
+                    if enabled {
+                        if let Some(store) = store {
+                            telemetry_exporter.export_scheduled(&store).await;
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
+                }
+            });
+
+            crate::modules::catalog::adapters::tauri::master_db_cmds::schedule_catalog_auto_update(
+                app_handle.clone(),
+            );
 
             let config_ref: tauri::State<'_, crate::modules::settings::application::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
@@ -282,8 +430,15 @@ pub fn run() {
         .manage(crate::modules::library::adapters::tauri::mod_bulk_cmds::BulkCancelState::new())
         .manage(crate::modules::workspace::application::scanner::master_db::MasterDbCache::default())
         .invoke_handler(builder.invoke_handler())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }) {
+                if let Some(marker) = app.try_state::<crate::modules::system::application::telemetry::CrashMarker>() {
+                    let _ = marker.clear();
+                }
+            }
+        });
 }
 
 #[cfg(test)]

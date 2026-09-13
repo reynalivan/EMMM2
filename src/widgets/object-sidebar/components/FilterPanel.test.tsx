@@ -7,7 +7,14 @@
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import FilterPanel from './FilterPanel';
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  ),
+}));
 
 describe('FilterPanel Component', () => {
   const mockFilters = [
@@ -75,6 +82,7 @@ describe('FilterPanel Component', () => {
 
     fireEvent.click(screen.getByText('Element'));
     expect(screen.getByText('Pyro')).toBeInTheDocument();
+    expect(screen.getByText('Pyro').closest('.w-56')).toHaveClass('w-56');
 
     fireEvent.click(screen.getByText('Element'));
     expect(screen.queryByText('Pyro')).not.toBeInTheDocument();
@@ -114,6 +122,32 @@ describe('FilterPanel Component', () => {
 
     const badges = screen.getAllByText('2');
     expect(badges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('uses quiet theme surfaces for active chips', () => {
+    render(
+      <FilterPanel
+        filters={mockFilters}
+        activeFilters={{ element: ['Pyro'] }}
+        onFilterChange={mockOnFilterChange}
+        onClearAll={mockOnClearAll}
+        statusFilter="enabled"
+        onStatusFilterChange={vi.fn()}
+        {...defaultCategorySortProps}
+        categories={[{ name: 'modpack', label: 'Mod Pack', icon: 'package', color: 'primary' }]}
+        selectedCategory="modpack"
+      />,
+    );
+
+    const enabledChip = screen.getByRole('button', { name: 'Enabled' });
+    const modPackChip = screen.getByRole('button', { name: 'Mod Pack' });
+    const elementChip = screen.getByRole('button', { name: 'Element1' });
+
+    expect(enabledChip).toHaveClass('bg-base-200', 'text-success');
+    expect(enabledChip).not.toHaveClass('btn-success');
+    expect(modPackChip).toHaveClass('bg-base-200', 'text-primary');
+    expect(modPackChip).not.toHaveClass('btn-primary');
+    expect(elementChip).toHaveClass('bg-base-200', 'text-primary');
   });
 
   it('shows Clear All button when active filters exist', () => {

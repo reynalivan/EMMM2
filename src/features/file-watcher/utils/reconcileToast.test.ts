@@ -10,6 +10,7 @@ vi.mock('@/shared/ui/toast', () => ({
 function manualResult(): DiskReconcileResult {
   return {
     game_id: 'game-1',
+    reconcile_revision: 1,
     reason: 'ManualRepair',
     status: 'Applied',
     folder_conflicts: [],

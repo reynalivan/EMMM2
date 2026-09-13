@@ -341,6 +341,33 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
             ),
         )
         .await;
+        if config.get_settings().diagnostics.telemetry_enabled {
+            let (outcome, error_code) = match &reconcile_result {
+                Ok(_) => (
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                    crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                ),
+                Err(error) => (
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
+                    crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(error),
+                ),
+            };
+            let telemetry = app
+                .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+                .inner()
+                .clone();
+            let _ = telemetry
+                .record_rollup(
+                    env!("CARGO_PKG_VERSION"),
+                    crate::modules::system::application::telemetry::TelemetryEvent::new(
+                        crate::modules::system::application::telemetry::TelemetryOperation::Reconcile,
+                        outcome,
+                        error_code,
+                    ),
+                    chrono::Utc::now(),
+                )
+                .await;
+        }
         let recovery_outcome = match reconcile_result {
             Ok(result) => {
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(Box::new(

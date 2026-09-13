@@ -108,3 +108,16 @@ pub async fn update_mod_object_id_and_type_tx(
         .await?;
     Ok(())
 }
+
+pub async fn update_mod_size_bytes_tx(
+    conn: &mut sqlx::SqliteConnection,
+    id: &str,
+    size_bytes: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE mods SET size_bytes = ? WHERE id = ?")
+        .bind(size_bytes)
+        .bind(id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}

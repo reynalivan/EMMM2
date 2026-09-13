@@ -8,6 +8,19 @@ import { X } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FilterDef, CategoryDef } from '@/entities/game-object';
+import { LiquidSurface } from '@/shared/ui/liquid';
+
+const QUIET_CHIP_BASE =
+  'btn btn-xs border bg-base-200 transition-[background-color,border-color,color] duration-150';
+const QUIET_CHIP_IDLE =
+  'border-base-content/10 text-base-content/60 hover:border-base-content/20 hover:bg-base-300 hover:text-base-content';
+const QUIET_CHIP_ACTIVE = {
+  neutral:
+    'border-base-content/20 text-base-content hover:border-base-content/30 hover:bg-base-300',
+  primary: 'border-primary/25 text-primary hover:border-primary/35 hover:bg-base-300',
+  success: 'border-success/25 text-success hover:border-success/35 hover:bg-base-300',
+  warning: 'border-warning/25 text-warning hover:border-warning/35 hover:bg-base-300',
+} as const;
 
 interface FilterPanelProps {
   /** Metadata filters (Element, Weapon, Rarity, Gender) */
@@ -83,8 +96,8 @@ export default function FilterPanel({
           {SORT_OPTIONS.map((opt) => (
             <button
               key={opt.value}
-              className={`btn btn-xs rounded-md transition-all duration-150 ${
-                sortBy === opt.value ? 'btn-accent text-accent-content' : 'btn-soft'
+              className={`${QUIET_CHIP_BASE} rounded-md ${
+                sortBy === opt.value ? QUIET_CHIP_ACTIVE.primary : QUIET_CHIP_IDLE
               }`}
               onClick={() => onSortChange(opt.value)}
             >
@@ -106,14 +119,14 @@ export default function FilterPanel({
             {(['all', 'enabled', 'disabled'] as const).map((status) => (
               <button
                 key={status}
-                className={`btn btn-xs rounded-full transition-all duration-150 ${
+                className={`${QUIET_CHIP_BASE} rounded-full ${
                   statusFilter === status
                     ? status === 'enabled'
-                      ? 'btn-success text-success-content'
+                      ? QUIET_CHIP_ACTIVE.success
                       : status === 'disabled'
-                        ? 'btn-warning text-warning-content'
-                        : 'btn-neutral text-neutral-content'
-                    : 'btn-soft'
+                        ? QUIET_CHIP_ACTIVE.warning
+                        : QUIET_CHIP_ACTIVE.neutral
+                    : QUIET_CHIP_IDLE
                 }`}
                 onClick={() => onStatusFilterChange(status)}
               >
@@ -131,8 +144,8 @@ export default function FilterPanel({
         {categories.length > 0 && (
           <div className="flex flex-wrap gap-1">
             <button
-              className={`btn btn-xs rounded-full transition-all duration-150 ${
-                !selectedCategory ? 'btn-primary' : 'btn-soft'
+              className={`${QUIET_CHIP_BASE} rounded-full ${
+                !selectedCategory ? QUIET_CHIP_ACTIVE.primary : QUIET_CHIP_IDLE
               }`}
               onClick={() => onSelectCategory(null)}
             >
@@ -141,8 +154,8 @@ export default function FilterPanel({
             {categories.map((cat) => (
               <button
                 key={cat.name}
-                className={`btn btn-xs rounded-full transition-all duration-150 ${
-                  selectedCategory === cat.name ? 'btn-primary' : 'btn-soft'
+                className={`${QUIET_CHIP_BASE} rounded-full ${
+                  selectedCategory === cat.name ? QUIET_CHIP_ACTIVE.primary : QUIET_CHIP_IDLE
                 }`}
                 onClick={() => onSelectCategory(selectedCategory === cat.name ? null : cat.name)}
               >
@@ -162,14 +175,14 @@ export default function FilterPanel({
               return (
                 <div key={filter.key} className="relative">
                   <button
-                    className={`btn btn-xs rounded-full gap-1 transition-all duration-150 ${
-                      selected.length > 0 ? 'btn-primary' : 'btn-soft'
+                    className={`${QUIET_CHIP_BASE} rounded-full gap-1 ${
+                      selected.length > 0 ? QUIET_CHIP_ACTIVE.primary : QUIET_CHIP_IDLE
                     }`}
                     onClick={() => setExpandedFilter(isExpanded ? null : filter.key)}
                   >
                     <span className="text-[11px]">{filter.label}</span>
                     {selected.length > 0 && (
-                      <span className="badge badge-xs bg-base-100/20 text-inherit border-0">
+                      <span className="badge badge-xs border-0 bg-base-content/10 text-inherit">
                         {selected.length}
                       </span>
                     )}
@@ -177,43 +190,48 @@ export default function FilterPanel({
 
                   {/* Dropdown options */}
                   {isExpanded && (
-                    <div className="absolute top-full left-0 mt-1 z-50 p-1.5 rounded-lg bg-base-100/95 backdrop-blur-xl border border-base-content/10 shadow-xl min-w-40 max-h-52 overflow-y-auto">
-                      {selected.length > 0 && (
-                        <button
-                          className="w-full text-left text-[10px] text-error/70 hover:text-error px-2 py-1 mb-0.5 transition-colors flex items-center gap-1"
-                          onClick={() => onFilterChange(filter.key, [])}
-                        >
-                          <X size={10} />
-                          {t('filter.clear_filter', { label: filter.label })}
-                        </button>
-                      )}
-                      {filter.options.map((option) => {
-                        const isActive = selected.includes(option);
-                        return (
-                          <label
-                            key={option}
-                            className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
-                              isActive
-                                ? 'bg-primary/10 hover:bg-primary/15'
-                                : 'hover:bg-base-200/50'
-                            }`}
+                    <LiquidSurface
+                      liquidRole="overlay"
+                      className="absolute left-0 top-full z-[var(--workspace-layer-popover)] mt-1 w-56 max-w-[calc(100vw-2rem)] max-h-52 rounded-lg shadow-xl"
+                    >
+                      <div className="max-h-52 overflow-y-auto p-1.5">
+                        {selected.length > 0 && (
+                          <button
+                            className="w-full text-left text-[10px] text-error/70 hover:text-error px-2 py-1 mb-0.5 transition-colors flex items-center gap-1"
+                            onClick={() => onFilterChange(filter.key, [])}
                           >
-                            <input
-                              type="checkbox"
-                              className="checkbox checkbox-xs checkbox-primary"
-                              checked={isActive}
-                              onChange={() => {
-                                const next = isActive
-                                  ? selected.filter((v) => v !== option)
-                                  : [...selected, option];
-                                onFilterChange(filter.key, next);
-                              }}
-                            />
-                            <span className="text-xs text-base-content/80">{option}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                            <X size={10} />
+                            {t('filter.clear_filter', { label: filter.label })}
+                          </button>
+                        )}
+                        {filter.options.map((option) => {
+                          const isActive = selected.includes(option);
+                          return (
+                            <label
+                              key={option}
+                              className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                                isActive
+                                  ? 'bg-primary/10 hover:bg-primary/15'
+                                  : 'hover:bg-base-200/50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="checkbox checkbox-xs checkbox-primary"
+                                checked={isActive}
+                                onChange={() => {
+                                  const next = isActive
+                                    ? selected.filter((v) => v !== option)
+                                    : [...selected, option];
+                                  onFilterChange(filter.key, next);
+                                }}
+                              />
+                              <span className="text-xs text-base-content/80">{option}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </LiquidSurface>
                   )}
                 </div>
               );

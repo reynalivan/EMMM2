@@ -1,6 +1,13 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { describe, it, expect, vi } from 'vitest';
+import type { ReactNode } from 'react';
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children, liquidRole }: { children: ReactNode; liquidRole: string }) => (
+    <div data-liquid-role={liquidRole}>{children}</div>
+  ),
+}));
 
 describe('ContextMenu (Radix)', () => {
   it('renders children and shows menu on right click', async () => {
@@ -20,6 +27,9 @@ describe('ContextMenu (Radix)', () => {
 
     // Menu should appear
     expect(await screen.findByText('Action Item')).toBeDefined();
+    expect(
+      screen.getByTestId('trigger').ownerDocument.querySelector('[data-liquid-role="overlay"]'),
+    ).not.toBeNull();
   });
 
   it('fires onClick when item is selected', async () => {

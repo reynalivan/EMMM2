@@ -11,6 +11,7 @@ vi.mock('react-i18next', () => ({
         'create_modal.title': 'Create New Object',
         'create_modal.submit': 'Create Object',
         'create_modal.placeholder_name': 'e.g. Eula',
+        'create_modal.validation.name_too_short': 'Name must have at least 2 characters.',
       };
 
       return labels[key] ?? key;
@@ -24,7 +25,12 @@ vi.mock('@/features/workspace-runtime', () => ({
 
 vi.mock('../hooks/useObjectQueries', () => ({
   useGameSchema: vi.fn(() => ({
-    data: { categories: [{ name: 'Character', label: 'Characters', filters: [] }] },
+    data: {
+      categories: [
+        { name: 'Character', label: 'Characters', filters: [], subcategories: [] },
+        { name: 'Other', label: 'Other', filters: [], subcategories: ['Bangboo'] },
+      ],
+    },
   })),
 }));
 vi.mock('@/entities/game', () => ({
@@ -44,7 +50,7 @@ describe('CreateObjectModal', () => {
     fireEvent.click(screen.getByText('Create Object'));
 
     await waitFor(() => {
-      expect(screen.getByText(/Name must be at least 2 characters/i)).toBeInTheDocument();
+      expect(screen.getByText(/Name must have at least 2 characters/i)).toBeInTheDocument();
     });
   });
 
@@ -71,5 +77,24 @@ describe('CreateObjectModal', () => {
       );
       expect(onClose).toHaveBeenCalled();
     });
+  });
+
+  it('only shows subcategories declared by the selected schema category', () => {
+    render(<CreateObjectModal open={true} onClose={vi.fn()} />);
+
+    expect(screen.queryByText('create_modal.sub_category')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Other' } });
+
+    expect(screen.getByText('create_modal.sub_category')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Bangboo' })).toBeInTheDocument();
+  });
+
+  it('can open after an initial closed render without changing hook order', () => {
+    const { rerender } = render(<CreateObjectModal open={false} onClose={vi.fn()} />);
+
+    expect(screen.queryByText('Create New Object')).not.toBeInTheDocument();
+    rerender(<CreateObjectModal open onClose={vi.fn()} />);
+    expect(screen.getByText('Create New Object')).toBeInTheDocument();
   });
 });

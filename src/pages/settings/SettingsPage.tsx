@@ -1,8 +1,7 @@
 import { formatAppError } from '../../shared/lib/appError';
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import {
-  ArrowLeft,
-  DownloadCloud,
+  Database,
   Gamepad2,
   Globe,
   Keyboard,
@@ -10,58 +9,74 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  PlugZap,
   Wrench,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '@/entities/settings';
-import { useAppStore } from '@/app/store'; // Import Store
+import { useAppStore } from '@/app/store';
 import GamesTab from './components/tabs/GamesTab';
 import PrivacyTab from './components/tabs/PrivacyTab';
 import MaintenanceTab from './components/tabs/MaintenanceTab';
 import GeneralTab from './components/tabs/GeneralTab';
 import LogsTab from './components/tabs/LogsTab';
 import AITab from './components/tabs/AITab';
-import UpdateTab from './components/tabs/UpdateTab';
 import HotkeyTab from './components/tabs/HotkeyTab';
 import BrowserTab from './components/tabs/BrowserTab';
+import IntegrationsTab from './components/tabs/IntegrationsTab';
+import CatalogTab from './components/tabs/CatalogTab';
+import {
+  WorkspacePageContent,
+  WorkspacePageFrame,
+} from '@/shared/ui/components/layout/WorkspacePageFrame';
 
-// `dividerBefore` keeps the visual break above Logs without a second array.
 const TABS = [
   { id: 'general', Component: GeneralTab, Icon: SlidersHorizontal },
   { id: 'games', Component: GamesTab, Icon: Gamepad2 },
+  { id: 'catalog', Component: CatalogTab, Icon: Database },
   { id: 'browser', Component: BrowserTab, Icon: Globe },
   { id: 'privacy', Component: PrivacyTab, Icon: Shield },
   { id: 'hotkeys', Component: HotkeyTab, Icon: Keyboard },
   { id: 'ai', Component: AITab, Icon: Sparkles },
   { id: 'maintenance', Component: MaintenanceTab, Icon: Wrench },
-  { id: 'updates', Component: UpdateTab, Icon: DownloadCloud },
+  { id: 'integrations', Component: IntegrationsTab, Icon: PlugZap },
   { id: 'logs', Component: LogsTab, Icon: ScrollText, dividerBefore: true },
 ] as const;
 
 type Tab = (typeof TABS)[number]['id'];
 
+function resolveTab(tab: string): Tab {
+  return TABS.some((candidate) => candidate.id === tab) ? (tab as Tab) : 'general';
+}
+
 export default function SettingsPage() {
   const { t } = useTranslation(['settings', 'common']);
-  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const requestedTab = useAppStore((state) => state.settingsTab);
+  const savedTab = requestedTab as string;
   const persistActiveTab = useAppStore((state) => state.setSettingsTab);
   const { isLoading, error } = useSettings();
-  const [activeTab, setActiveTab] = useState<Tab>(requestedTab ?? 'general');
+  const [activeTab, setActiveTab] = useState<Tab>(() => resolveTab(savedTab));
+
+  useEffect(() => {
+    if (savedTab !== 'updates') return;
+    setActiveTab('general');
+    persistActiveTab('general');
+  }, [persistActiveTab, savedTab]);
 
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
     persistActiveTab?.(tab);
   };
 
-  const handleBack = () => {
-    // Close Settings View and return to Dashboard
-    setWorkspaceView('dashboard');
-  };
-
-  if (isLoading) return <div className="p-10 text-center">{t('common:status.loading')}</div>;
+  if (isLoading)
+    return (
+      <div className="p-10 pt-[calc(var(--workspace-topbar-height)+2.5rem)] text-center">
+        {t('common:status.loading')}
+      </div>
+    );
   if (error)
     return (
-      <div className="p-10 text-center text-error">
+      <div className="p-10 pt-[calc(var(--workspace-topbar-height)+2.5rem)] text-center text-error">
         {t('common:status.error')}: {formatAppError(error)}
       </div>
     );
@@ -69,44 +84,83 @@ export default function SettingsPage() {
   const ActiveTabComponent = TABS.find((tab) => tab.id === activeTab)?.Component ?? GeneralTab;
 
   return (
-    <div className="h-full flex flex-col bg-base-100 overflow-hidden" data-testid="settings-page">
-      <div className="navbar bg-base-200 min-h-12 px-4 border-b border-base-300 gap-4">
-        <button className="btn btn-ghost btn-circle btn-sm" onClick={handleBack}>
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h2 className="text-xl font-bold flex-1">{t('page.title')}</h2>
+    <WorkspacePageFrame data-testid="settings-page">
+      <div className="border-b border-base-300 px-4 pb-3 pt-[calc(var(--workspace-topbar-height)+0.75rem)] md:hidden">
+        <label className="sr-only" htmlFor="settings-section-select">
+          {t('page.title')}
+        </label>
+        <select
+          id="settings-section-select"
+          className="select select-sm select-bordered w-full bg-base-100"
+          value={activeTab}
+          onChange={(event) => handleTabChange(event.target.value as Tab)}
+        >
+          {TABS.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {t(`tabs.${tab.id}`)}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar Navigation for Settings */}
-        <aside className="w-60 bg-base-200/50 flex flex-col border-r border-base-300 overflow-y-auto">
-          <ul className="menu w-full p-2 gap-0.5">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <aside className="workspace-scroll-owner hidden w-52 shrink-0 flex-col overflow-y-auto border-r border-base-300 bg-base-200/15 px-2 pb-3 pt-[calc(var(--workspace-topbar-height)+0.75rem)] md:flex">
+          <ul className="menu w-full gap-1 p-0">
             {TABS.map((tab) => (
               <Fragment key={tab.id}>
-                {'dividerBefore' in tab && <div className="divider my-1"></div>}
+                {'dividerBefore' in tab && <div className="my-2 border-t border-base-300" />}
                 <li>
-                  <button
-                    data-testid={`settings-tab-${tab.id}`}
-                    aria-current={activeTab === tab.id ? 'page' : undefined}
-                    className={`gap-3 ${activeTab === tab.id ? 'active font-medium' : 'text-base-content/70'}`}
+                  <SettingsTabButton
+                    active={activeTab === tab.id}
+                    testId={`settings-tab-${tab.id}`}
+                    label={t(`tabs.${tab.id}`)}
+                    icon={<tab.Icon size={16} className="shrink-0" />}
                     onClick={() => handleTabChange(tab.id)}
-                  >
-                    <tab.Icon size={16} className="shrink-0" />
-                    {t(`tabs.${tab.id}`)}
-                  </button>
+                  />
                 </li>
               </Fragment>
             ))}
           </ul>
         </aside>
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto bg-base-100 relative">
-          <div className="max-w-4xl mx-auto p-6">
+        <main className="relative flex min-w-0 flex-1 flex-col">
+          <WorkspacePageContent density="form" className="pb-7 sm:pb-9">
             <ActiveTabComponent />
-          </div>
+          </WorkspacePageContent>
         </main>
       </div>
-    </div>
+    </WorkspacePageFrame>
   );
+}
+
+function SettingsTabButton({
+  active,
+  testId,
+  label,
+  icon,
+  onClick,
+}: {
+  active: boolean;
+  testId: string;
+  label: string;
+  icon: ReactNode;
+  onClick: () => void;
+}) {
+  const button = (
+    <button
+      data-testid={testId}
+      aria-current={active ? 'page' : undefined}
+      className={`relative flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-sm transition-colors duration-150 ${
+        active
+          ? 'bg-base-content/7 font-medium text-base-content before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary'
+          : 'text-base-content/65 hover:bg-base-content/4 hover:text-base-content'
+      }`}
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  return button;
 }

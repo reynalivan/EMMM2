@@ -2,6 +2,8 @@ export type {
   ActiveKeyBinding,
   AiConfig,
   AppSettings,
+  CatalogUpdateConfig,
+  ExternalToolsConfig,
   HotkeyConfig,
   KeyViewerConfig,
   SafetyConfig,

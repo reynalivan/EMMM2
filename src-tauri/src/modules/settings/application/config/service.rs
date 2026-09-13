@@ -1,9 +1,12 @@
 use crate::shared::errors::AppError;
 use crate::shared::sync::lock;
 use sqlx::SqlitePool;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Mutex,
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
 };
 use tauri::AppHandle;
 
@@ -228,10 +231,78 @@ impl ConfigService {
         })
     }
 
+    /// Update the diagnostics consent without accepting a stale full settings snapshot.
+    pub fn set_telemetry_enabled(&self, enabled: bool) -> Result<AppSettings, AppError> {
+        self.update_settings(move |settings| {
+            settings.diagnostics.telemetry_enabled = enabled;
+            Ok(())
+        })?;
+        Ok(self.get_settings())
+    }
+
+    /// Store the optional Mod Viewer executable without accepting a complete
+    /// settings snapshot, so unrelated stale Settings saves cannot race this
+    /// integration update.
+    pub fn set_mod_viewer_executable(
+        &self,
+        executable: Option<PathBuf>,
+    ) -> Result<AppSettings, AppError> {
+        if let Some(path) = executable.as_deref() {
+            validate_mod_viewer_executable(path)?;
+        }
+
+        self.update_settings(move |settings| {
+            settings.external_tools.mod_viewer_executable = executable;
+            Ok(())
+        })?;
+        Ok(self.get_settings())
+    }
+
+    pub fn set_catalog_auto_install(&self, enabled: bool) -> Result<AppSettings, AppError> {
+        self.update_settings(move |settings| {
+            settings.catalog_updates.auto_install = enabled;
+            settings.catalog_updates.auto_check = true;
+            Ok(())
+        })?;
+        Ok(self.get_settings())
+    }
+
+    pub fn record_catalog_update_check(&self, unix_seconds: i64) -> Result<(), AppError> {
+        self.update_settings(move |settings| {
+            settings.catalog_updates.last_successful_check_unix_seconds = Some(unix_seconds);
+            Ok(())
+        })
+    }
+
     /// Get a reference to the pool (for use in commands that need direct DB access).
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
+}
+
+pub(crate) fn validate_mod_viewer_executable(path: &Path) -> Result<(), AppError> {
+    if !path.is_absolute() {
+        return Err(AppError::Validation(
+            "3DMigoto Mod Viewer executable path must be absolute".to_string(),
+        ));
+    }
+    if !path.is_file() {
+        return Err(AppError::NotFound(format!(
+            "3DMigoto Mod Viewer executable not found at: {}",
+            path.display()
+        )));
+    }
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+    {
+        return Err(AppError::Validation(format!(
+            "3DMigoto Mod Viewer executable must be a .exe file: {}",
+            path.display()
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

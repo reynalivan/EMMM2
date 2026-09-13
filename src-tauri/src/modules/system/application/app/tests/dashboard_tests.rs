@@ -152,7 +152,63 @@ async fn test_get_active_keybindings_service_with_ini() {
 
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].mod_name, "Mod 1");
+    assert_eq!(bindings[0].folder_path, mod_dir.to_string_lossy());
     assert_eq!(bindings[0].section_name, "KeyBinding1");
     assert_eq!(bindings[0].key.as_deref(), Some("F4"));
     assert_eq!(bindings[0].back.as_deref(), Some("shift"));
+    assert!(matches!(
+        bindings[0].control_kind,
+        crate::modules::system::application::app::dashboard::ActiveKeyControlKind::KeyBinding
+    ));
+    assert_eq!(bindings[0].value_summary, None);
+}
+
+#[tokio::test]
+async fn active_keybindings_include_cycle_toggle_summary() {
+    let pool = setup_test_db().await;
+    let temp_dir = TempDir::new().unwrap();
+    let mod_dir = temp_dir.path().join("mod1");
+    fs::create_dir_all(&mod_dir).unwrap();
+    fs::write(
+        mod_dir.join("mod.ini"),
+        "[KeyOutfit]\ntype = cycle\nkey = F4\n$outfit = 0, 1, 2",
+    )
+    .unwrap();
+
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "G1",
+            game_type: GameType::GIMI,
+            path: "/g1",
+            mods_path: Some("/g1/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "mod1",
+            game_id: "g1",
+            object_id: None,
+            actual_name: "Mod 1",
+            folder_path: mod_dir.to_str().unwrap(),
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Other"),
+            mods_path: Some("/g1/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+
+    let bindings = get_active_keybindings_service(&pool, "g1").await.unwrap();
+    assert_eq!(bindings.len(), 1);
+    assert!(matches!(
+        bindings[0].control_kind,
+        crate::modules::system::application::app::dashboard::ActiveKeyControlKind::KeyToggle
+    ));
+    assert_eq!(bindings[0].value_summary.as_deref(), Some("0, 1, 2"));
 }

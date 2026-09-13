@@ -33,6 +33,13 @@
     "collections": "Koleksi",
     "presets_desc": "Preset tersimpan"
   },
+  "storage_backfill": {
+    "running_title": "Menghitung ukuran penyimpanan",
+    "running_progress": "Memproses {{completed}} dari {{total}} game. Anda dapat terus menggunakan EMMM.",
+    "failed_title": "Penghitungan ukuran penyimpanan gagal",
+    "failed_message": "Sebagian ukuran penyimpanan tidak dapat dihitung.",
+    "retry": "Coba lagi pemindaian penyimpanan"
+  },
   "waste": {
     "title": "Sampah Duplikat Terdeteksi",
     "subtitle": "{{size}} terbuang pada mod duplikat. Jalankan Pengoptimal untuk membersihkan."
@@ -59,6 +66,12 @@
     "table_section": "Bagian",
     "table_key": "Tombol",
     "table_back": "Kembali",
+    "table_control": "Kontrol",
+    "table_values": "Nilai siklus",
+    "control_kind": {
+      "key_binding": "Binding tombol",
+      "key_toggle": "Toggle tombol"
+    },
     "no_bindings": "Tidak ada pemetaan tombol ditemukan pada mod aktif"
   }
 }

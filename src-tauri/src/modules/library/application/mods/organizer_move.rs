@@ -395,7 +395,7 @@ fn parse_target_subpath(target_subpath: Option<&str>) -> Result<Option<PathBuf>,
             _ => {
                 return Err(AppError::Security(format!(
                     "Invalid target subfolder: {trimmed}"
-                )))
+                )));
             }
         }
     }

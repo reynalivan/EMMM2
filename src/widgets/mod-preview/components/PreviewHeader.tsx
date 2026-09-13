@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { ChevronRight, X } from 'lucide-react';
+import { useMemo, useRef } from 'react';
+import { Box, ChevronRight, Pencil, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceExplorerNode, WorkspaceNode } from '@/entities/workspace';
 import { isWorkspaceExplorerNode } from '@/entities/workspace';
@@ -8,6 +8,8 @@ import { buildWorkspaceSwitchPolicy } from '@/features/workspace-runtime';
 import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime';
 import { WorkspaceSwitchControl } from '@/features/workspace-runtime';
 import { WorkspaceSwitchLabel } from '@/features/workspace-runtime';
+import { useModViewerLaunch } from '@/features/mod-runtime';
+import { LiquidSurface } from '@/shared/ui/liquid';
 import PreviewPanelContextMenu from './PreviewPanelContextMenu';
 
 type PreviewActions = ReturnType<typeof useSharedModActions>;
@@ -44,98 +46,73 @@ export default function PreviewHeader({
   onClearSelection,
 }: PreviewHeaderProps) {
   const { t } = useTranslation(['preview', 'common']);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const actionFolder = useMemo(
     () => (selectedFolder ? maskWorkspaceNodeCapabilities(selectedFolder, !canEdit) : null),
     [canEdit, selectedFolder],
   );
   const switchPolicy = buildWorkspaceSwitchPolicy(t, actionFolder);
+  const modViewer = useModViewerLaunch(actionFolder);
 
   return (
-    <div
-      className={`sticky top-0 z-20 -mx-6 mb-6 px-6 transition-all duration-200 flex flex-col justify-center border-b ${
-        isScrolled
-          ? 'pt-4 pb-2 bg-base-100/95 backdrop-blur-md border-base-content/10 shadow-sm'
-          : 'pt-6 pb-2 bg-transparent border-transparent'
+    <LiquidSurface
+      liquidRole="nav"
+      className={`sticky top-[var(--workspace-topbar-height)] z-20 -mx-6 mb-5 block transition-[padding,border-color] duration-200 ${
+        isScrolled ? 'py-3' : 'pb-2 pt-5'
       }`}
+      contentClassName="h-auto px-6"
     >
-      <div className="flex items-center justify-between transition-all duration-200">
+      <div className="flex items-center justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 transition-all duration-200 mb-0">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={onBackToGrid}
               aria-label={t('preview:actions.back_to_grid')}
-              className={`btn btn-circle btn-ghost text-base-content/50 hover:text-base-content md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+              className={`btn btn-circle btn-ghost text-base-content/50 hover:text-base-content md:hidden ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
             >
               <ChevronRight className="rotate-180" size={isScrolled ? 14 : 16} />
             </button>
             <input
+              ref={titleInputRef}
               type="text"
-              className={`bg-transparent p-0 m-0 border-none outline-none focus:ring-1 focus:ring-primary focus:bg-base-200/50 rounded px-1 -ml-1 truncate tracking-tight text-base-content transition-all duration-200 origin-left hover:bg-base-content/5 ${
-                isScrolled ? 'text-sm font-semibold' : 'text-xl font-bold'
+              aria-label={t('preview:actions.rename_mod')}
+              title={canEdit ? t('preview:actions.rename_mod') : undefined}
+              className={`min-w-0 flex-1 rounded bg-transparent p-0 px-1 -ml-1 tracking-tight text-base-content outline-none transition-[background-color,font-size] duration-150 hover:bg-base-content/5 focus:bg-base-200/50 focus:ring-1 focus:ring-primary ${
+                isScrolled ? 'text-sm font-semibold' : 'text-lg font-semibold'
               }`}
               value={titleDraft || ''}
               placeholder={resolvedTitle || t('preview:empty.no_mod_selected')}
               onChange={(event) => onTitleChange(event.target.value)}
               disabled={!canEdit}
             />
+            {canEdit && (
+              <button
+                type="button"
+                className="btn btn-circle btn-ghost btn-xs shrink-0 text-base-content/45 hover:text-base-content"
+                aria-label={t('preview:actions.rename_mod')}
+                title={t('preview:actions.rename_mod')}
+                onClick={() => titleInputRef.current?.focus()}
+              >
+                <Pencil size={13} />
+              </button>
+            )}
           </div>
-          {resolvedSubtitle && (
-            <p
-              className={`truncate text-base-content/50 transition-all duration-200 ${
-                isScrolled ? 'mt-0.5 text-[10px]' : 'mt-1 text-xs'
-              }`}
-              title={resolvedSubtitle}
-            >
-              {resolvedSubtitle}
-            </p>
-          )}
-          <label
-            className={`label cursor-pointer justify-start gap-2 p-0 opacity-80 hover:opacity-100 transition-all duration-200 ${isScrolled ? '-mt-0.5' : 'mt-1'}`}
-          >
-            <WorkspaceSwitchControl
-              node={actionFolder}
-              policy={switchPolicy}
-              isPending={
-                !canEdit ||
-                actions.isSwitchPending ||
-                (isWorkspaceExplorerNode(actionFolder) &&
-                  actions.isFolderSwitchPending(actionFolder))
-              }
-              isBusy={
-                isWorkspaceExplorerNode(actionFolder) && actions.isFolderSwitchPending(actionFolder)
-              }
-              size={isScrolled ? 'xs' : 'sm'}
-              ariaLabel={t('preview:actions.toggle_enabled')}
-              onToggle={(node: WorkspaceNode) => {
-                if (isWorkspaceExplorerNode(node)) {
-                  void actions.handleToggleEnabled(node);
-                }
-              }}
-            />
-            <WorkspaceSwitchLabel
-              node={actionFolder}
-              policy={switchPolicy}
-              className={`font-medium text-base-content/60 transition-all duration-200 ${isScrolled ? 'text-[10px]' : 'text-sm'}`}
-            />
-          </label>
-          {sourceUnavailableMessage && (
-            <p className="mt-1 truncate text-warning/80 text-xs" title={sourceUnavailableMessage}>
-              {sourceUnavailableMessage}
-            </p>
-          )}
-          {warningText && (
-            <p
-              className={`mt-1 truncate text-warning/80 transition-all duration-200 ${
-                isScrolled ? 'text-[10px]' : 'text-xs'
-              }`}
-              title={warningTooltip ?? warningText}
-            >
-              {warningText}
-            </p>
-          )}
         </div>
 
         <div className="ml-2 flex items-center gap-1">
+          {modViewer.visible && (
+            <button
+              type="button"
+              className={`btn btn-circle btn-ghost text-base-content/70 hover:text-base-content ${
+                isScrolled ? 'btn-xs' : 'btn-sm'
+              }`}
+              aria-label={modViewer.actionLabel}
+              title={modViewer.tooltip}
+              onClick={() => void modViewer.launch()}
+            >
+              <Box size={isScrolled ? 14 : 16} />
+            </button>
+          )}
           {actionFolder && (
             <PreviewPanelContextMenu
               folder={actionFolder}
@@ -151,7 +128,7 @@ export default function PreviewHeader({
           <button
             onClick={onClearSelection}
             aria-label={t('preview:actions.unselect_mod')}
-            className={`btn btn-circle btn-ghost hidden text-base-content/30 hover:bg-base-content/5 hover:text-base-content md:inline-flex transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+            className={`btn btn-circle btn-ghost hidden text-base-content/30 hover:bg-base-content/5 hover:text-base-content md:inline-flex ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
             title={t('preview:actions.close')}
           >
             <X size={isScrolled ? 16 : 18} />
@@ -159,12 +136,51 @@ export default function PreviewHeader({
           <button
             onClick={onBackToGrid}
             aria-label={t('preview:actions.close')}
-            className={`btn btn-circle btn-ghost text-base-content/30 hover:text-base-content md:hidden transition-all duration-200 ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
+            className={`btn btn-circle btn-ghost text-base-content/30 hover:text-base-content md:hidden ${isScrolled ? 'btn-xs' : 'btn-sm'}`}
           >
             <X size={isScrolled ? 16 : 18} />
           </button>
         </div>
       </div>
-    </div>
+      <div
+        className={`mt-1 flex min-w-0 items-center gap-2 ${isScrolled ? 'text-[10px]' : 'text-xs'}`}
+      >
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-base-content/65 hover:text-base-content">
+          <WorkspaceSwitchControl
+            node={actionFolder}
+            policy={switchPolicy}
+            isPending={
+              !canEdit ||
+              actions.isSwitchPending ||
+              (isWorkspaceExplorerNode(actionFolder) && actions.isFolderSwitchPending(actionFolder))
+            }
+            isBusy={
+              isWorkspaceExplorerNode(actionFolder) && actions.isFolderSwitchPending(actionFolder)
+            }
+            size="xs"
+            ariaLabel={t('preview:actions.toggle_enabled')}
+            onToggle={(node: WorkspaceNode) => {
+              if (isWorkspaceExplorerNode(node)) {
+                void actions.handleToggleEnabled(node);
+              }
+            }}
+          />
+          <WorkspaceSwitchLabel node={actionFolder} policy={switchPolicy} className="font-medium" />
+        </label>
+        {resolvedSubtitle && (
+          <span className="min-w-0 flex-1 truncate text-base-content/55" title={resolvedSubtitle}>
+            {resolvedSubtitle}
+          </span>
+        )}
+        {(sourceUnavailableMessage || warningText) && (
+          <span
+            className="max-w-1/2 shrink truncate text-warning/85"
+            title={sourceUnavailableMessage ?? warningTooltip ?? warningText ?? undefined}
+          >
+            {sourceUnavailableMessage ?? warningText}
+          </span>
+        )}
+      </div>
+    </LiquidSurface>
   );
 }

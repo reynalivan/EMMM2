@@ -19,10 +19,16 @@ fn ini_editor_path_accepts_existing_ini_file() {
 }
 
 #[test]
-fn ini_editor_path_rejects_nested_or_traversal_names() {
+fn ini_editor_path_accepts_nested_paths_but_rejects_traversal() {
     let tmp = TempDir::new().unwrap();
+    fs::create_dir(tmp.path().join("nested")).unwrap();
+    let nested_ini = tmp.path().join("nested/config.ini");
+    fs::write(&nested_ini, "[Constants]").unwrap();
 
-    assert!(resolve_ini_editor_path(tmp.path(), "nested/config.ini").is_err());
+    assert_eq!(
+        resolve_ini_editor_path(tmp.path(), "nested/config.ini").unwrap(),
+        nested_ini.canonicalize().unwrap()
+    );
     assert!(resolve_ini_editor_path(tmp.path(), "..\\config.ini").is_err());
 }
 
@@ -32,6 +38,33 @@ fn ini_editor_path_rejects_non_ini_files() {
     fs::write(tmp.path().join("notes.txt"), "notes").unwrap();
 
     assert!(resolve_ini_editor_path(tmp.path(), "notes.txt").is_err());
+}
+
+#[test]
+fn create_folder_rejects_empty_or_duplicate_disk_names() {
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir(tmp.path().join("Variants")).unwrap();
+
+    let empty = prepare_folder_create(tmp.path(), "").expect_err("empty name is invalid");
+    assert!(empty.to_string().contains("cannot be empty"));
+
+    let duplicate = prepare_folder_create(tmp.path(), "variants")
+        .expect_err("case-insensitive duplicate must be rejected");
+    assert!(duplicate.to_string().contains("already exists"));
+}
+
+#[test]
+fn create_folder_stages_and_promotes_one_new_directory() {
+    let tmp = TempDir::new().unwrap();
+    let prepared = prepare_folder_create(tmp.path(), "Variants").unwrap();
+
+    prepared.prepare().unwrap();
+    assert!(prepared.stage.is_dir());
+    assert!(!prepared.target.exists());
+
+    prepared.promote().unwrap();
+    assert!(prepared.target.is_dir());
+    assert!(!prepared.stage.exists());
 }
 
 #[test]

@@ -18,13 +18,14 @@ fn now_stamp() -> String {
 /// Insert a new `requested` download record.
 pub async fn create_download(
     db: &SqlitePool,
+    game_id: &str,
     session_id: Option<&str>,
     filename: &str,
     source_url: &str,
     file_path: &str,
 ) -> Result<String, BrowserError> {
     let id = Uuid::new_v4().to_string();
-    create_download_with_id(db, &id, session_id, filename, source_url, file_path, 0).await?;
+    create_download_with_id(db, &id, game_id, session_id, filename, source_url, file_path, 0, None).await?;
     Ok(id)
 }
 
@@ -33,11 +34,13 @@ pub async fn create_download(
 pub async fn create_download_with_id(
     db: &SqlitePool,
     id: &str,
+    game_id: &str,
     session_id: Option<&str>,
     filename: &str,
     source_url: &str,
     file_path: &str,
     queue_order: i64,
+    tab_label: Option<&str>,
 ) -> Result<(), BrowserError> {
     let now = now_stamp();
 
@@ -45,12 +48,14 @@ pub async fn create_download_with_id(
         db,
         browser::NewDownloadRow {
             id,
+            game_id,
             session_id,
             filename,
             source_url,
             file_path,
             queue_order,
             started_at: &now,
+            tab_label,
         },
     )
     .await?;
@@ -84,9 +89,41 @@ pub async fn update_status(
     Ok(())
 }
 
+/// Update state for a live WebView2 download. `can_resume` is only meaningful
+/// while the originating WebView remains alive.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_native_status(
+    db: &SqlitePool,
+    download_id: &str,
+    status: &str,
+    bytes_received: Option<i64>,
+    bytes_total: Option<i64>,
+    error_msg: Option<&str>,
+    file_path: Option<&str>,
+    can_resume: bool,
+) -> Result<(), BrowserError> {
+    let finished_at = matches!(status, "finished" | "failed" | "canceled").then(now_stamp);
+    browser::update_native_status(
+        db,
+        download_id,
+        status,
+        bytes_received,
+        bytes_total,
+        error_msg,
+        file_path,
+        can_resume,
+        finished_at,
+    )
+    .await?;
+    Ok(())
+}
+
 /// List all downloads ordered by most recent first.
-pub async fn list_downloads(db: &SqlitePool) -> Result<Vec<BrowserDownloadDto>, BrowserError> {
-    Ok(browser::list_downloads(db).await?)
+pub async fn list_downloads(
+    db: &SqlitePool,
+    game_id: &str,
+) -> Result<Vec<BrowserDownloadDto>, BrowserError> {
+    Ok(browser::list_downloads(db, game_id).await?)
 }
 
 /// Delete a download record and optionally the file on disk.
@@ -134,6 +171,9 @@ pub async fn cancel_download_with_feedback(
     download_id: &str,
     delete_file: Option<bool>,
 ) -> Result<(), BrowserError> {
+    if download_handler::cancel_native_download(app, download_id)? {
+        return Ok(());
+    }
     match download_handler::request_cancel(download_id) {
         Some(download_handler::CancelRequest::InProgress) => Ok(()),
         Some(download_handler::CancelRequest::Queued) => {
@@ -158,6 +198,46 @@ pub async fn cancel_download_with_feedback(
     }
 }
 
+pub fn pause_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
+    download_handler::pause_native_download(app, download_id)
+}
+
+pub fn resume_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
+    download_handler::resume_native_download(app, download_id)
+}
+
+/// Reload the tab that issued a non-resumable native download. Many mod hosts
+/// use short-lived signed URLs, so this lets the page produce a fresh link.
+pub async fn refresh_download_link(
+    db: &SqlitePool,
+    app: AppHandle,
+    download_id: &str,
+) -> Result<(), BrowserError> {
+    let row = browser::get_retryable_download(db, download_id)
+        .await?
+        .ok_or_else(|| BrowserError::Download("Only failed or canceled downloads can be refreshed".into()))?;
+    let label = row.tab_label.ok_or_else(|| {
+        BrowserError::Download("The source tab is no longer available for refresh".into())
+    })?;
+    browser_service::reload_tab(app, &label).await
+}
+
+/// Open the saved source URL in a fresh Discover tab when a server does not
+/// support resuming the original download operation.
+pub async fn open_download_source(
+    db: &SqlitePool,
+    app: AppHandle,
+    download_id: &str,
+) -> Result<String, BrowserError> {
+    let row = browser::get_retryable_download(db, download_id)
+        .await?
+        .ok_or_else(|| BrowserError::Download("Only failed or canceled downloads can be reopened".into()))?;
+    let source_url = row
+        .source_url
+        .ok_or_else(|| BrowserError::Download("The original download URL is unavailable".into()))?;
+    browser_service::open_tab(app, db.clone(), source_url, row.session_id).await
+}
+
 /// Request confirmation for re-downloading a failed or canceled item. A retry
 /// remains subject to the same explicit user approval as a fresh browser link.
 pub async fn retry_download(
@@ -173,15 +253,17 @@ pub async fn retry_download(
     let source_url = row
         .source_url
         .ok_or_else(|| BrowserError::Download("The original download URL is unavailable".into()))?;
-    let downloads_root = browser_service::get_downloads_root(app, db).await;
+    let downloads_root = browser_service::get_downloads_root_for_game(app, db, &row.game_id).await;
 
     download_handler::request_download_confirmation(
         app,
+        row.game_id,
         source_url,
         row.filename,
         downloads_root,
         row.session_id,
     )
+    .await
 }
 
 /// Remove old downloads that exceed the retention period.

@@ -13,6 +13,7 @@ import type {
 } from '../../../shared/api/tauri/bindings.gen';
 import type { ObjectSummary } from '@/entities/game-object';
 import { destinationDecision } from '../utils/importBatchDecision';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 type Props = {
   batch: ImportBatch;
@@ -182,97 +183,102 @@ export function ImportBatchWizardDestinationPanel({
         createPortal(
           <div
             ref={popoverRef}
-            className="fixed z-[1000] overflow-hidden rounded-xl border border-base-300 bg-base-100 shadow-2xl"
+            className="fixed z-[var(--workspace-layer-overlay)]"
             style={popoverPosition}
           >
-            <label className="relative block border-b border-base-300 p-2">
-              <Search
-                size={14}
-                className="absolute left-5 top-1/2 -translate-y-1/2 text-base-content/40"
-              />
-              <input
-                className="input input-sm input-bordered w-full pl-8"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t('destination.search_placeholder')}
-                autoFocus
-              />
-            </label>
-            <div
-              className="overflow-y-auto px-1.5 pb-1.5"
-              style={{ maxHeight: Math.max(96, popoverPosition.maxHeight - 53) }}
+            <LiquidSurface
+              liquidRole="overlay"
+              className="w-full overflow-hidden rounded-xl shadow-2xl"
             >
-              {filteredSuggestions.length > 0 && (
-                <DestinationGroupLabel>{t('destination.potential')}</DestinationGroupLabel>
-              )}
-              {filteredSuggestions.map((suggestion) => {
-                const object = suggestion.objectId
-                  ? (objectById.get(suggestion.objectId) ?? null)
-                  : null;
-                return (
-                  <button
-                    key={`${suggestion.kind}:${suggestion.objectId ?? suggestion.canonicalEntryKey}`}
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200"
-                    onClick={() => void chooseSuggestion(suggestion)}
-                  >
-                    <DestinationAvatar object={object} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">
-                        {object?.name ?? suggestion.folderName}
-                      </span>
-                      <span className="block truncate text-[11px] text-base-content/50">
-                        {object?.object_type ??
-                          t(`match_methods.${effectiveMatchMethod(suggestion)}`)}
-                      </span>
-                    </span>
-                    <span
-                      className={`badge badge-sm tabular-nums ${confidenceBadgeClass(
-                        suggestion.confidenceTier,
-                      )}`}
+              <label className="relative block border-b border-base-content/10 p-2">
+                <Search
+                  size={14}
+                  className="absolute left-5 top-1/2 -translate-y-1/2 text-base-content/40"
+                />
+                <input
+                  className="input input-sm input-bordered w-full pl-8"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={t('destination.search_placeholder')}
+                  autoFocus
+                />
+              </label>
+              <div
+                className="overflow-y-auto px-1.5 pb-1.5"
+                style={{ maxHeight: Math.max(96, popoverPosition.maxHeight - 53) }}
+              >
+                {filteredSuggestions.length > 0 && (
+                  <DestinationGroupLabel>{t('destination.potential')}</DestinationGroupLabel>
+                )}
+                {filteredSuggestions.map((suggestion) => {
+                  const object = suggestion.objectId
+                    ? (objectById.get(suggestion.objectId) ?? null)
+                    : null;
+                  return (
+                    <button
+                      key={`${suggestion.kind}:${suggestion.objectId ?? suggestion.canonicalEntryKey}`}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200"
+                      onClick={() => void chooseSuggestion(suggestion)}
                     >
-                      {suggestion.confidencePercentage}%
-                    </span>
-                  </button>
-                );
-              })}
+                      <DestinationAvatar object={object} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">
+                          {object?.name ?? suggestion.folderName}
+                        </span>
+                        <span className="block truncate text-[11px] text-base-content/50">
+                          {object?.object_type ??
+                            t(`match_methods.${effectiveMatchMethod(suggestion)}`)}
+                        </span>
+                      </span>
+                      <span
+                        className={`badge badge-sm tabular-nums ${confidenceBadgeClass(
+                          suggestion.confidenceTier,
+                        )}`}
+                      >
+                        {suggestion.confidencePercentage}%
+                      </span>
+                    </button>
+                  );
+                })}
 
-              {allObjects.length > 0 && (
-                <DestinationGroupLabel>{t('destination.all')}</DestinationGroupLabel>
-              )}
-              {allObjects.map((object) => {
-                const suggestion = suggestionByObjectId.get(object.id);
-                return (
-                  <button
-                    key={object.id}
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200"
-                    onClick={() => void chooseObject(object.id)}
-                  >
-                    <DestinationAvatar object={object} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{object.name}</span>
-                      <span className="block truncate text-[11px] text-base-content/50">
-                        {object.object_type} ·{' '}
-                        {t(`match_methods.${effectiveMatchMethod(suggestion)}`)}
-                      </span>
-                    </span>
-                    <span
-                      className={`badge badge-sm tabular-nums ${confidenceBadgeClass(
-                        suggestion?.confidenceTier ?? 'no_match',
-                      )}`}
+                {allObjects.length > 0 && (
+                  <DestinationGroupLabel>{t('destination.all')}</DestinationGroupLabel>
+                )}
+                {allObjects.map((object) => {
+                  const suggestion = suggestionByObjectId.get(object.id);
+                  return (
+                    <button
+                      key={object.id}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200"
+                      onClick={() => void chooseObject(object.id)}
                     >
-                      {suggestion?.confidencePercentage ?? 0}%
-                    </span>
-                  </button>
-                );
-              })}
-              {filteredSuggestions.length === 0 && allObjects.length === 0 && (
-                <p className="px-3 py-6 text-center text-sm text-base-content/50">
-                  {t('destination.no_results')}
-                </p>
-              )}
-            </div>
+                      <DestinationAvatar object={object} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{object.name}</span>
+                        <span className="block truncate text-[11px] text-base-content/50">
+                          {object.object_type} ·{' '}
+                          {t(`match_methods.${effectiveMatchMethod(suggestion)}`)}
+                        </span>
+                      </span>
+                      <span
+                        className={`badge badge-sm tabular-nums ${confidenceBadgeClass(
+                          suggestion?.confidenceTier ?? 'no_match',
+                        )}`}
+                      >
+                        {suggestion?.confidencePercentage ?? 0}%
+                      </span>
+                    </button>
+                  );
+                })}
+                {filteredSuggestions.length === 0 && allObjects.length === 0 && (
+                  <p className="px-3 py-6 text-center text-sm text-base-content/50">
+                    {t('destination.no_results')}
+                  </p>
+                )}
+              </div>
+            </LiquidSurface>
           </div>,
           document.body,
         )}

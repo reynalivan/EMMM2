@@ -3,7 +3,7 @@
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::shared::errors::AppError;
 use crate::shared::sync::lock;
-use tauri::State;
+use tauri::{Manager, State};
 
 /// Start the file watcher for a specific path.
 /// Emits `mod_watch:event` to the frontend.
@@ -20,17 +20,33 @@ pub async fn start_watcher(
     pool: State<'_, sqlx::SqlitePool>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<(), AppError> {
+    let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let started_at = std::time::Instant::now();
     let configured_root = crate::platform::fs::guard::validate_mods_root(&config, &game_id, &path)?;
     let db_pool = (*pool).clone();
-    Ok(
-        crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
-            app,
-            &state,
-            db_pool,
-            configured_root.to_string_lossy().into_owned(),
-            game_id,
-        )?,
-    )
+    let result = crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
+        app,
+        &state,
+        db_pool,
+        configured_root.to_string_lossy().into_owned(),
+        game_id,
+    );
+    if diagnostics_enabled && result.is_ok() {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::Watcher,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+        )
+        .with_duration(started_at.elapsed());
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+    result.map_err(Into::into)
 }
 
 /// Stop the file watcher. Cleanly drops the `RecommendedWatcher`,

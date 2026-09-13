@@ -4,6 +4,7 @@ import { QueryClient } from '@tanstack/react-query';
 import i18next from 'i18next';
 import { useAppStore } from '@/app/store';
 import type { GameConfig } from '@/entities/game';
+import { modHealthKeys } from '@/entities/mod';
 import {
   commands,
   type DiskReconcileReason,
@@ -17,16 +18,18 @@ import {
   isPreviewAffected,
 } from '../utils/reconcileSelection';
 import { maybeShowExternalChangeToast } from '../utils/reconcileToast';
-import { applyWorkspacePathRewrites } from '@/features/workspace-runtime/@x/file-watcher';
 import { toast } from '@/shared/ui/toast';
 import {
+  applyWorkspacePathRewrites,
+  formatCollectionReferenceImpact,
   openFolderConflictManagerDialog,
   openRenameConfirmationDialog,
+  workspaceKeys,
 } from '@/features/workspace-runtime/@x/file-watcher';
 import { useWatcherLifecycle } from '../utils/watcherLifecycle';
-import { workspaceKeys } from '@/features/workspace-runtime/@x/file-watcher';
 import { useDiskReconcileProgress } from '../utils/reconcileProgress';
 import { isDuplicateWatcherError, type WatchErrorPayload } from '../utils/watcherError';
+import { reconcileModViewerExternalReviews } from '@/features/mod-runtime/@x/file-watcher';
 
 const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
@@ -88,17 +91,20 @@ export function applyDiskReconcileResult(
   queryClient: QueryClient,
   activeGame: GameConfig | null,
   presentRepairDialogs = true,
-) {
+): boolean {
   // Disk Reconcile owns filesystem truth and global runtime refresh for disk-backed changes.
   const appStore = useAppStore.getState();
+  if (!appStore.applyFolderConflictReconcileResult(result)) {
+    return false;
+  }
+
   if (result.status === 'SourceUnavailable') {
-    appStore.setFolderConflicts(result.game_id, []);
     appStore.setRenameConfirmations(result.game_id, []);
     appStore.setDiskSourceUnavailable(
       result.game_id,
       result.error_message ?? 'Mods folder is unavailable',
     );
-    return;
+    return true;
   }
 
   maybeShowRuntimeEffectsWarning(result);
@@ -106,7 +112,6 @@ export function applyDiskReconcileResult(
   const hasFolderConflicts = result.status === 'AppliedWithFolderConflicts';
   if (hasFolderConflicts) {
     appStore.setDiskSourceUnavailable(result.game_id, null);
-    appStore.setFolderConflicts(result.game_id, result.folder_conflicts);
     appStore.setRenameConfirmations(result.game_id, []);
     const reportKey = result.folder_conflicts
       .map((group) => {
@@ -135,7 +140,6 @@ export function applyDiskReconcileResult(
 
   if (result.status === 'NeedsRenameConfirmation') {
     appStore.setDiskSourceUnavailable(result.game_id, null);
-    appStore.setFolderConflicts(result.game_id, []);
     appStore.setRenameConfirmations(result.game_id, result.rename_confirmations);
     const reportKey = result.rename_confirmations
       .map(
@@ -157,13 +161,10 @@ export function applyDiskReconcileResult(
       );
       openRenameConfirmationDialog();
     }
-    return;
+    return true;
   }
 
   appStore.setDiskSourceUnavailable(result.game_id, null);
-  if (!hasFolderConflicts) {
-    appStore.setFolderConflicts(result.game_id, []);
-  }
   appStore.setRenameConfirmations(result.game_id, []);
   if (!hasFolderConflicts) {
     autoOpenedConflictReportByGame.delete(result.game_id);
@@ -179,8 +180,19 @@ export function applyDiskReconcileResult(
   applyWorkspacePathRewrites(buildDiskReconcilePathRewrites(result, activeGame), 'disk_reconcile');
   clearStaleSelections(result, activeGame);
   publishDiskReconcileRefresh(queryClient, result, isPreviewAffected(result, activeGame));
+  void queryClient.invalidateQueries({
+    queryKey: modHealthKeys.all,
+    refetchType: 'active',
+  });
+  void reconcileModViewerExternalReviews(
+    result,
+    queryClient,
+    activeGame?.mod_path,
+    formatCollectionReferenceImpact(result.collection_reference_impact),
+  );
 
   maybeShowExternalChangeToast(result);
+  return true;
 }
 
 export function useDiskReconcileCoordinator(
@@ -287,8 +299,9 @@ export function useDiskReconcileCoordinator(
             null,
             currentRefresh.forceFull,
           );
-          applyDiskReconcileResult(result, queryClient, activeGame, workspaceView === 'mods');
-          recordReconcileOutcome(result);
+          if (applyDiskReconcileResult(result, queryClient, activeGame, workspaceView === 'mods')) {
+            recordReconcileOutcome(result);
+          }
         } catch (error) {
           console.error('[DiskReconcile] Refresh failed:', error);
           requiresFullReconcileByGameRef.current[gameId] = true;
@@ -361,8 +374,11 @@ export function useDiskReconcileCoordinator(
         return;
       }
 
-      applyDiskReconcileResult(event.payload, queryClient, activeGame, workspaceView === 'mods');
-      recordReconcileOutcome(event.payload);
+      if (
+        applyDiskReconcileResult(event.payload, queryClient, activeGame, workspaceView === 'mods')
+      ) {
+        recordReconcileOutcome(event.payload);
+      }
     });
 
     return () => {

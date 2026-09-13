@@ -1,4 +1,4 @@
-import { Edit2, ExternalLink, Keyboard, TriangleAlert } from 'lucide-react';
+import { ChevronDown, ChevronUp, Edit2, ExternalLink, Keyboard, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/shared/ui/toast';
@@ -46,6 +46,7 @@ export default function IniEditorSection({
   const { t } = useTranslation(['preview']);
   const [isEditing, setIsEditing] = useState(false);
   const [advancedKeybindFieldId, setAdvancedKeybindFieldId] = useState<string | null>(null);
+  const shouldStickToolbar = isEditing || editorDirty;
 
   useEffect(() => {
     if (!canEdit && isEditing) {
@@ -55,8 +56,12 @@ export default function IniEditorSection({
 
   return (
     <div className="mb-6 relative">
-      <div className="sticky top-17 z-10 -mx-6 mb-2 flex items-center justify-between bg-base-100/95 px-6 py-2 backdrop-blur-sm border-b border-base-content/10">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-base-content/40">
+      <div
+        className={`${
+          shouldStickToolbar ? 'glass-surface sticky top-17 z-10 -mx-6 px-6' : 'bg-transparent'
+        } mb-2 flex items-center justify-between border-b border-base-content/10 py-2`}
+      >
+        <h3 className="text-sm font-semibold text-base-content/80">
           {t('preview:ini_editor.title')}
         </h3>
         <div className="flex items-center gap-2">
@@ -107,64 +112,81 @@ export default function IniEditorSection({
         </div>
       </div>
 
-      <div className="space-y-4" onDoubleClick={() => canEdit && setIsEditing(true)}>
+      <div className="space-y-2">
         {sections.length === 0 && (
           <div className="text-xs text-base-content/50">{t('preview:ini_editor.no_sections')}</div>
         )}
 
         {sections.map((fileGroup) => {
           const isOpen = openSectionIds.has(fileGroup.id);
+          const fields = fileGroup.sections.flatMap((section) => section.fields);
+          const bindingCount = fields.filter(
+            (field) => field.label === 'key' || field.label === 'back',
+          ).length;
+          const changedCount = editorDirty
+            ? fields.filter((field) => (draftByField[field.id] ?? field.value) !== field.value)
+                .length
+            : 0;
           return (
             <div
               key={fileGroup.id}
-              className="rounded-lg border border-base-content/10 overflow-hidden"
+              className="overflow-hidden rounded-md border border-base-content/10"
             >
-              <div className="flex w-full items-center bg-base-200/50 px-3 py-2">
-                <div
-                  className="flex flex-1 items-center justify-between cursor-pointer group"
+              <div className="flex w-full items-center bg-base-200/35 px-3 py-2">
+                <button
+                  type="button"
+                  className="group flex min-w-0 flex-1 items-center justify-between text-left"
                   onClick={() => onToggleSection(fileGroup.id)}
+                  aria-expanded={isOpen}
                 >
-                  <div className="flex items-center">
-                    <span className="text-sm font-bold text-base-content/90 mr-2 group-hover:text-primary transition-colors">
+                  <div className="flex min-w-0 items-center">
+                    <span className="mr-2 truncate text-sm font-semibold text-base-content/90 transition-colors group-hover:text-primary">
                       {fileGroup.fileName}
                     </span>
-                    <button
-                      className="btn btn-ghost btn-xs px-1 hover:bg-base-content/10"
-                      title={t('preview:ini_editor.open_in_editor')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (activeGameId && activePath && canEdit) {
-                          void commands
-                            .openIniInEditor(activeGameId, activePath, fileGroup.fileName)
-                            .catch((error) => {
-                              toast.error(
-                                t('preview:errors.open_location_failed', {
-                                  error: formatAppError(error),
-                                }),
-                              );
-                            });
-                        }
-                      }}
-                      disabled={!canEdit || !activeGameId}
-                    >
-                      <ExternalLink size={12} className="opacity-70" />
-                    </button>
                   </div>
-                  <div className="text-[11px] text-base-content/50 pr-2 flex items-center gap-1.5 font-mono">
-                    <span>{fileGroup.rangeLabel}</span>
-                    <span className="text-[8px] opacity-70">{isOpen ? '▲' : '▼'}</span>
+                  <div className="ml-2 flex shrink-0 items-center gap-1.5 pr-2 text-[10px] text-base-content/50">
+                    <span className="hidden sm:inline">{fileGroup.rangeLabel}</span>
+                    <span>{t('preview:ini_editor.binding_count', { count: bindingCount })}</span>
+                    {changedCount > 0 && (
+                      <span className="rounded bg-primary/10 px-1 py-0.5 text-primary">
+                        {t('preview:ini_editor.unsaved_count', { count: changedCount })}
+                      </span>
+                    )}
+                    {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </div>
-                </div>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs ml-1 shrink-0 px-1 hover:bg-base-content/10"
+                  title={t('preview:ini_editor.open_in_editor')}
+                  aria-label={t('preview:ini_editor.open_in_editor')}
+                  onClick={() => {
+                    if (activeGameId && activePath && canEdit) {
+                      void commands
+                        .openIniInEditor(activeGameId, activePath, fileGroup.fileName)
+                        .catch((error) => {
+                          toast.error(
+                            t('preview:errors.open_location_failed', {
+                              error: formatAppError(error),
+                            }),
+                          );
+                        });
+                    }
+                  }}
+                  disabled={!canEdit || !activeGameId}
+                >
+                  <ExternalLink size={12} className="opacity-70" />
+                </button>
               </div>
 
               {isOpen && (
-                <div className="flex flex-col bg-base-100/10">
+                <div className="flex flex-col">
                   {fileGroup.sections.map((section, idx) => (
                     <div
                       key={`${fileGroup.id}-${section.sectionName}-${idx}`}
-                      className={`space-y-2 p-3 ${idx > 0 ? 'border-t border-base-content/10' : ''}`}
+                      className={`space-y-2 px-3 py-2.5 ${idx > 0 ? 'border-t border-base-content/10' : ''}`}
                     >
-                      <div className="text-sm font-bold text-primary mb-2">
+                      <div className="mb-1.5 text-xs font-semibold text-base-content/70">
                         {section.sectionName}
                       </div>
                       <div className="flex flex-col gap-2">
@@ -179,7 +201,7 @@ export default function IniEditorSection({
                               return (
                                 <div
                                   key={field.id}
-                                  className={`flex items-center gap-3 w-full px-3 py-1.5 rounded-lg border transition-all ${
+                                  className={`flex w-full items-center gap-3 rounded-md border px-3 py-1.5 transition-[background-color,border-color] duration-150 ${
                                     isPrimary
                                       ? 'bg-primary/5 border-primary/30 shadow-sm'
                                       : 'bg-base-200/30 border-base-content/10'
@@ -235,10 +257,10 @@ export default function IniEditorSection({
                             return (
                               <div
                                 key={field.id}
-                                className={`flex items-center gap-3 w-full px-4 py-1.5 rounded-lg border transition-all ${
+                                className={`flex w-full items-center gap-3 rounded-md border px-3 py-1.5 transition-[background-color,border-color] duration-150 ${
                                   isPrimary
-                                    ? 'bg-base-200/50 border-primary/10'
-                                    : 'bg-base-100 border-transparent'
+                                    ? 'bg-primary/5 border-primary/15'
+                                    : 'border-transparent bg-transparent'
                                 }`}
                               >
                                 <span
@@ -286,7 +308,7 @@ export default function IniEditorSection({
                                   key={field.id}
                                   className="flex items-center px-1.5 py-1 rounded-sm text-[10px] font-mono bg-base-300/30 border border-base-content/5 text-base-content/60 leading-tight"
                                 >
-                                  <span className="opacity-50 mr-1">{field.label}:</span>
+                                  <span className="text-muted mr-1">{field.label}:</span>
                                   <span className="break-all font-medium text-base-content/80">
                                     {field.value}
                                   </span>

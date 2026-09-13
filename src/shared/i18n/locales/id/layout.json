@@ -5,6 +5,8 @@
     "mod_inbox": "Kotak Masuk Mod",
     "collections": "Koleksi",
     "settings": "Pengaturan",
+    "browser": "Browser",
+    "downloads": "Unduhan",
     "storage_optimizer": "Pengoptimal Penyimpanan",
     "app_menu_tip": "Menu Aplikasi",
     "quick_play": "Main Cepat",
@@ -42,6 +44,7 @@
   "context": {
     "loading": "Memuat...",
     "collections_title": "Koleksi",
+    "active_collection": "Koleksi aktif",
     "save_current": "Simpan Sekarang",
     "no_collections": "Tidak ada koleksi tersimpan",
     "manage_collections": "Kelola Koleksi"
@@ -51,6 +54,7 @@
     "launching": "Meluncurkan...",
     "randomizer": "Acak (Gacha)",
     "conflicts": "Konflik Aktif",
+    "shared_hashes": "Hash bersama",
     "conflict_toast": "{{count}} Konflik Mod Aktif"
   },
   "app": {

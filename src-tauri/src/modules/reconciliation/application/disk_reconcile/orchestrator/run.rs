@@ -90,6 +90,7 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
 
     DiskReconcileResult {
         game_id: request.game_id.to_string(),
+        reconcile_revision: 0,
         reason: request.reason,
         status: request.outcome.status,
         error_message: request.outcome.error_message,

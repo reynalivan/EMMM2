@@ -2,6 +2,7 @@ import { useEffect, type RefObject } from 'react';
 import { Webview } from '@tauri-apps/api/webview';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import type { BrowserTab } from '@/entities/browser';
+import { isDemoMode } from '@/shared/lib/appMode';
 
 /**
  * Keeps the native Tauri webviews positioned over `containerRef`, showing only
@@ -15,6 +16,10 @@ export function useWebviewSync(
   overlayOpen: boolean,
 ): void {
   useEffect(() => {
+    if (isDemoMode) {
+      return;
+    }
+
     let resizeObserver: ResizeObserver | null = null;
     let isSyncing = false;
     let pendingSync = false;

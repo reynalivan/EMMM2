@@ -189,4 +189,10 @@ describe('CollectionTreeView', () => {
       screen.getByLabelText('[WARNING] Corrupt INI file: variants.ini (0 KB)'),
     ).toBeInTheDocument();
   });
+
+  it('provides a thumbnail and path detail overlay for active mod rows', () => {
+    render(<CollectionTreeView nodes={createTree()} gameId="game-1" />);
+
+    expect(screen.getByText('AINOZ/Loose Skin.ini')).toBeInTheDocument();
+  });
 });

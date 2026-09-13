@@ -50,6 +50,7 @@ function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileRes
     folder_conflicts: [],
     rename_confirmations: [],
     game_id: 'game-1',
+    reconcile_revision: 1,
     reason: 'WatcherBatch',
     status: 'Applied',
     error_message: null,
@@ -142,6 +143,7 @@ describe('ExternalChangeHandler integration', () => {
     await act(async () => {
       eventHandlers['disk_reconcile:result']({
         payload: createResult({
+          reconcile_revision: 2,
           changed_roots: ['ALBEDO'],
           objects_changed: true,
           folders_changed: true,

@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
+use walkdir::WalkDir;
 
 use crate::modules::workspace::domain::classifier::{classify_folder_strict, NodeType};
 use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
@@ -25,6 +26,67 @@ pub struct DiskModEntry {
     pub raw_name: String,
     pub absolute_path: PathBuf,
     pub filesystem_identity: Option<String>,
+    /// `None` when an incremental reconcile did not need to rescan this mod.
+    pub size_bytes: Option<i64>,
+}
+
+/// Restricts size metadata walks to new or changed terminal mods. The initial
+/// backfill opts into every terminal mod once, rather than taxing every scan.
+#[derive(Debug, Clone, Default)]
+pub struct DiskSizeScan {
+    scan_all: bool,
+    known_mod_keys: HashSet<String>,
+    changed_path_keys: Vec<String>,
+}
+
+impl DiskSizeScan {
+    pub fn full() -> Self {
+        Self {
+            scan_all: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn incremental(
+        mods_path: &Path,
+        known_mod_keys: HashSet<String>,
+        changed_paths: &[String],
+    ) -> Self {
+        let changed_path_keys = changed_paths
+            .iter()
+            .filter_map(|value| Path::new(value).strip_prefix(mods_path).ok())
+            .filter(|relative| !relative.as_os_str().is_empty())
+            .map(|relative| {
+                crate::shared::path_key::folder_path_key(&relative.to_string_lossy(), None)
+            })
+            .collect();
+        Self {
+            scan_all: changed_paths
+                .iter()
+                .any(|value| Path::new(value) == mods_path),
+            known_mod_keys,
+            changed_path_keys,
+        }
+    }
+
+    fn should_measure(&self, mod_key: &str) -> bool {
+        self.scan_all
+            || !self.known_mod_keys.contains(mod_key)
+            || self
+                .changed_path_keys
+                .iter()
+                .any(|changed_key| path_key_is_ancestor_or_descendant(mod_key, changed_key))
+    }
+}
+
+fn path_key_is_ancestor_or_descendant(left: &str, right: &str) -> bool {
+    left == right
+        || left
+            .strip_prefix(right)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+        || right
+            .strip_prefix(left)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 #[derive(Debug, Clone, Default)]
@@ -256,6 +318,7 @@ fn collect_terminal_mods(
     object_folder_path_key: &str,
     path: &Path,
     classified_directories: &AtomicUsize,
+    size_scan: Option<&DiskSizeScan>,
 ) -> DiskProjectionResult<()> {
     classified_directories.fetch_add(1, Ordering::Relaxed);
     let (node_type, _reasons, _warnings) = classify_folder_strict(path)
@@ -272,13 +335,19 @@ fn collect_terminal_mods(
                         path.display()
                     ))
                 })?;
+            let folder_path_key = crate::shared::path_key::folder_path_key(&folder_path, None);
+            let size_bytes = size_scan
+                .filter(|scan| scan.should_measure(&folder_path_key))
+                .map(|_| collect_directory_size_bytes(path))
+                .transpose()?;
             mods.push(DiskModEntry {
                 folder_path: folder_path.clone(),
-                folder_path_key: crate::shared::path_key::folder_path_key(&folder_path, None),
+                folder_path_key,
                 object_folder_path_key: object_folder_path_key.to_string(),
                 raw_name,
                 absolute_path: path.to_path_buf(),
                 filesystem_identity: filesystem_identity(path),
+                size_bytes,
             });
             Ok(())
         }
@@ -291,11 +360,45 @@ fn collect_terminal_mods(
                     object_folder_path_key,
                     &child_path,
                     classified_directories,
+                    size_scan,
                 )?;
             }
             Ok(())
         }
     }
+}
+
+fn collect_directory_size_bytes(path: &Path) -> DiskProjectionResult<i64> {
+    let mut total_bytes = 0_u64;
+    for entry in WalkDir::new(path).follow_links(false) {
+        let entry = entry.map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to read file metadata while sizing '{}': {error}",
+                path.display()
+            ))
+        })?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to read file metadata for '{}': {error}",
+                entry.path().display()
+            ))
+        })?;
+        total_bytes = total_bytes.checked_add(metadata.len()).ok_or_else(|| {
+            DiskProjectionError::Failed(format!(
+                "Storage size overflow while sizing '{}'",
+                path.display()
+            ))
+        })?;
+    }
+    i64::try_from(total_bytes).map_err(|_| {
+        DiskProjectionError::Failed(format!(
+            "Storage size exceeds supported range for '{}'",
+            path.display()
+        ))
+    })
 }
 
 pub fn collect_disk_projection(
@@ -312,8 +415,14 @@ pub fn collect_disk_projection_with_progress(
     scoped: bool,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<DiskProjection> {
-    collect_disk_projection_with_progress_and_stats(mods_path, changed_roots, scoped, progress)
-        .map(|(projection, _)| projection)
+    collect_disk_projection_with_progress_and_stats(
+        mods_path,
+        changed_roots,
+        scoped,
+        progress,
+        None,
+    )
+    .map(|(projection, _)| projection)
 }
 
 fn collect_disk_projection_with_progress_and_stats(
@@ -321,6 +430,7 @@ fn collect_disk_projection_with_progress_and_stats(
     changed_roots: &[String],
     scoped: bool,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
+    size_scan: Option<&DiskSizeScan>,
 ) -> DiskProjectionResult<(DiskProjection, usize)> {
     if !mods_path.exists() || !mods_path.is_dir() {
         return Err(DiskProjectionError::SourceUnavailable(format!(
@@ -392,6 +502,7 @@ fn collect_disk_projection_with_progress_and_stats(
                     &object_entry.folder_path_key,
                     &mod_path,
                     &classified_directories,
+                    size_scan,
                 )?;
             }
 
@@ -424,6 +535,7 @@ pub fn collect_scoped_disk_discovery_with_progress(
     mods_path: &Path,
     changed_roots: &[String],
     scoped: bool,
+    size_scan: Option<&DiskSizeScan>,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<DiskScopedDiscovery> {
     let census = collect_disk_identity_census(mods_path)?;
@@ -433,6 +545,7 @@ pub fn collect_scoped_disk_discovery_with_progress(
         changed_roots,
         scoped,
         progress,
+        size_scan,
     )?;
     let classified_roots = if scoped {
         changed_roots.iter().collect::<BTreeSet<_>>().len()
@@ -513,6 +626,51 @@ mod tests {
     }
 
     #[test]
+    fn storage_scan_measures_only_changed_or_new_terminal_mods() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        let blue = temp.path().join("Alice").join("Blue");
+        let red = temp.path().join("Alice").join("Red");
+        std::fs::create_dir_all(&blue).expect("blue folder");
+        std::fs::create_dir_all(&red).expect("red folder");
+        std::fs::write(blue.join("mod.ini"), "[TextureOverrideBlue]\nhash = abc\n")
+            .expect("blue ini");
+        std::fs::write(red.join("mod.ini"), "[TextureOverrideRed]\nhash = def\n").expect("red ini");
+        std::fs::write(red.join("mesh.buf"), [1_u8; 8]).expect("red asset");
+        std::fs::write(temp.path().join("Alice").join("outside.bin"), [2_u8; 64])
+            .expect("object-only asset");
+
+        let changed_file = red.join("mesh.buf").to_string_lossy().to_string();
+        let known_mod_keys = ["Alice/Blue", "Alice/Red"]
+            .into_iter()
+            .map(|path| crate::shared::path_key::folder_path_key(path, None))
+            .collect();
+        let size_scan = DiskSizeScan::incremental(temp.path(), known_mod_keys, &[changed_file]);
+        let discovery = collect_scoped_disk_discovery_with_progress(
+            temp.path(),
+            &[],
+            false,
+            Some(&size_scan),
+            None,
+        )
+        .expect("snapshot should succeed");
+
+        let blue = discovery
+            .projection
+            .mods
+            .iter()
+            .find(|entry| entry.raw_name == "Blue")
+            .expect("blue mod");
+        let red = discovery
+            .projection
+            .mods
+            .iter()
+            .find(|entry| entry.raw_name == "Red")
+            .expect("red mod");
+        assert_eq!(blue.size_bytes, None);
+        assert_eq!(red.size_bytes, Some(40));
+    }
+
+    #[test]
     fn scoped_discovery_classifies_only_changed_root_after_global_name_census() {
         let temp = tempfile::tempdir().expect("tempdir should be created");
         for object in ["Alice", "Bob", "Carol"] {
@@ -529,6 +687,7 @@ mod tests {
             temp.path(),
             &["Alice".to_string()],
             true,
+            None,
             None,
         )
         .expect("scoped discovery should succeed");
@@ -579,7 +738,7 @@ mod tests {
         }
 
         let started = std::time::Instant::now();
-        let full = collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None)
+        let full = collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None, None)
             .expect("full snapshot should succeed");
         let full_elapsed = started.elapsed();
         let started = std::time::Instant::now();
@@ -587,6 +746,7 @@ mod tests {
             temp.path(),
             &["Object 000".to_string()],
             true,
+            None,
             None,
         )
         .expect("scoped snapshot should succeed");

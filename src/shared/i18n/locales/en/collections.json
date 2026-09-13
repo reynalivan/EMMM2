@@ -1,7 +1,7 @@
 {
   "page": {
     "title": "Collections",
-    "desc": "Save your currently enabled mods and variants as a named collection. Apply collections atomically to instantly switch your entire game loadout.",
+    "desc": "Manage saved mod loadouts.",
     "no_active_game": {
       "title": "No Active Game",
       "desc": "Select a game first, then open Collections."
@@ -134,8 +134,8 @@
   },
   "randomizer": {
     "title": "Smart Randomizer",
-    "desc": "Recommends 1 random disabled mod for every active Character. Review and apply.",
-    "no_eligible": "No eligible character mods found (check filters or ensure you have disabled mods).",
+    "desc": "Choose the Object categories to include, then roll recommendations.",
+    "no_eligible": "No eligible mods found for the selected scope (check filters or ensure you have disabled mods).",
     "apply_no_change": "{{name}} could not be activated.",
     "consulting": "Consulting the RNG Gods...",
     "reroll": "Reroll All",
@@ -145,7 +145,34 @@
     "select_all": "Select All",
     "deselect_all": "Deselect All",
     "selection_status": "{{selected}} of {{total}} selected",
-    "empty_desc": "Click 'Roll Luck' to generate recommendations."
+    "empty_desc": "Click 'Roll Luck' to generate recommendations.",
+    "scope_title": "Roll scope",
+    "scope_character": "Character",
+    "scope_weapon": "Weapon",
+    "scope_ui": "UI",
+    "scope_other": "Other",
+    "scope_unclassified": "Unclassified",
+    "scope_required": "Select at least one scope before rolling.",
+    "backup_enabled": "Backup selected mods to new Collection",
+    "backup_unavailable": "No active mods are available to back up.",
+    "backup_name_placeholder": "Backup Collection name",
+    "backup_created": "Backup Collection created: {{name}}",
+    "backup_reused": "Using existing backup Collection: {{name}}",
+    "mode_exclusive": "Replace",
+    "mode_additive": "Add",
+    "current_mods": "Current: {{names}}",
+    "keep_current": "Keep current",
+    "keeping_current": "Keeping current",
+    "review_changes": "Review changes ({{count}})",
+    "reviewing": "Reviewing...",
+    "review_title": "Changes to apply",
+    "review_totals": "Enable {{enable}}, disable {{disable}}, keep {{keep}} unchanged.",
+    "review_replace": "replace with {{name}} (disable {{count}})",
+    "review_add": "add {{name}}",
+    "warning_unsafe": "Unsafe mod: {{names}}",
+    "warning_conflicts": "{{count}} runtime conflict(s) need review.",
+    "warning_acknowledge": "I understand these warnings.",
+    "confirm_apply": "Confirm & Apply ({{count}})"
   },
   "toast": {
     "created": "Created collection: {{name}}",
@@ -153,7 +180,7 @@
     "deleted": "Collection deleted",
     "applied": "Applied collection ({{count}} changes)",
     "applied_with_state": "Applied collection ({{count}} changes) -> {{name}}",
-    "reload_hint": "Applied — press {{key}} in-game to reload"
+    "reload_hint": "Applied. Press {{key}} in-game to reload"
   },
   "mod_row": {
     "unknown": "Unknown Mod",

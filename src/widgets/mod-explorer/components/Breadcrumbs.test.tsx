@@ -1,7 +1,12 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import ExplorerBreadcrumbs from './Breadcrumbs';
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 
 describe('ExplorerBreadcrumbs', () => {
   it('renders correctly with root hidden', () => {
@@ -68,6 +73,40 @@ describe('ExplorerBreadcrumbs', () => {
     expect(onNavigate).toHaveBeenCalledWith(0);
   });
 
+  it('collapses the leading path when the breadcrumb has limited width', async () => {
+    class ResizeObserverStub {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+
+      observe() {
+        this.callback(
+          [{ contentRect: { width: 200 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
+      }
+
+      disconnect() {}
+      unobserve() {}
+    }
+
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+
+    try {
+      render(
+        <ExplorerBreadcrumbs
+          path={['Folder1', 'Folder2', 'Folder3', 'Folder4', 'Folder5']}
+          onNavigate={vi.fn()}
+          onGoHome={vi.fn()}
+        />,
+      );
+
+      await waitFor(() => expect(screen.queryByText('Folder1')).toBeNull());
+      expect(screen.getByText('…')).toBeInTheDocument();
+      expect(screen.getByText('Folder5')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('shows searchable, scrollable sibling folders when hovering the previous breadcrumb', () => {
     const onNavigateToPreviousFolder = vi.fn();
     const folders = [
@@ -106,7 +145,7 @@ describe('ExplorerBreadcrumbs', () => {
 
     const menu = screen.getByRole('dialog', { name: 'Folders in SkinSelectImpact' });
     expect(menu).toBeInTheDocument();
-    expect(menu.parentElement).toHaveClass('pt-2');
+    expect(menu.parentElement?.parentElement).toHaveClass('pt-2');
     expect(screen.getByText('Aglaea')).toBeInTheDocument();
     expect(screen.getByText('Castorice')).toBeInTheDocument();
     expect(screen.getByText('Readme')).toBeInTheDocument();

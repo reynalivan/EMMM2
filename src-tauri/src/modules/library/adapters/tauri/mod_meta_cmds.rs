@@ -4,6 +4,7 @@ use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::guard::validate_path;
 use crate::shared::errors::AppError;
+use tauri::Manager;
 
 async fn object_absolute_path(
     pool: &sqlx::SqlitePool,
@@ -48,6 +49,12 @@ pub async fn toggle_mod_safe(
     crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult,
     AppError,
 > {
+    let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let started_at = std::time::Instant::now();
     let folder = validate_path(&config, &game_id, &folder_path)?;
     let preflight_paths = [folder.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
@@ -73,20 +80,267 @@ pub async fn toggle_mod_safe(
         )
         .await,
     );
-    Ok(
+    let result =
         crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult {
             sync_warning: settlement.sync_warning,
-        },
-    )
+        };
+    if diagnostics_enabled {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::Toggle,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+        )
+        .with_duration(started_at.elapsed());
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+    Ok(result)
 }
 
 #[specta::specta]
 #[tauri::command]
 pub async fn suggest_random_mods(
     pool: tauri::State<'_, sqlx::SqlitePool>,
-    game_id: String,
+    input: metadata::SuggestRandomModsInput,
 ) -> Result<Vec<metadata::RandomModProposal>, AppError> {
-    metadata::suggest_random_mods(pool.inner(), &game_id).await
+    metadata::suggest_random_mods(pool.inner(), &input).await
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn preview_randomized_loadout(
+    config: tauri::State<'_, ConfigService>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    input: metadata::PreviewRandomizedLoadoutInput,
+) -> Result<metadata::RandomizedLoadoutPreview, AppError> {
+    metadata::preview_randomized_loadout(config.inner(), pool.inner(), &input).await
+}
+
+#[specta::specta]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri boundary: injected runtime services plus the batch payload.
+pub async fn apply_randomized_loadout(
+    app: tauri::AppHandle,
+    config: tauri::State<'_, ConfigService>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    watcher: tauri::State<'_, WatcherState>,
+    disk_reconcile_state: tauri::State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+    op_lock: tauri::State<'_, MutationCoordinator>,
+    input: metadata::ApplyRandomizedLoadoutInput,
+) -> Result<metadata::ApplyRandomizedLoadoutResult, AppError> {
+    let preflight = crate::modules::reconciliation::application::disk_reconcile::emit::mutation_preflight_report_for_paths(
+        &app,
+        pool.inner(),
+        &input.game_id,
+        None,
+    )
+    .await?;
+    let game_guard = disk_reconcile_state
+        .game_lock(&input.game_id)
+        .lock_owned()
+        .await;
+    let preview_input = metadata::PreviewRandomizedLoadoutInput {
+        game_id: input.game_id.clone(),
+        mod_ids: input.mod_ids.clone(),
+        safety_filter: input.safety_filter,
+        scope: input.scope.clone(),
+    };
+    let preview =
+        metadata::preview_randomized_loadout(config.inner(), pool.inner(), &preview_input).await?;
+    if preview.fingerprint != input.preview_fingerprint {
+        return Err(AppError::Validation(
+            "The randomizer review is stale. Review changes again before applying.".to_string(),
+        ));
+    }
+    let target_paths = metadata::validate_randomized_loadout(pool.inner(), &input).await?;
+    let exclusive_object_ids = preview
+        .items
+        .iter()
+        .filter(|item| item.mode == metadata::RandomizerLoadoutMode::Exclusive)
+        .map(|item| item.object_id.clone())
+        .collect::<std::collections::HashSet<_>>();
+
+    let backup = if let Some(backup) = input.backup.as_ref() {
+        let name = backup.collection_name.trim();
+        if name.is_empty() {
+            return Err(AppError::Validation(
+                "A backup collection name is required".to_string(),
+            ));
+        }
+        let _backup_guard = op_lock
+            .acquire_exempt(
+                crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+            )
+            .await?;
+        let snapshot =
+            crate::modules::collections::application::collection::snapshot_live_state_passively(
+                pool.inner(),
+                &input.game_id,
+                name,
+            )
+            .await
+            .map_err(|error| AppError::Validation(error.to_string()))?;
+        Some(metadata::RandomizedLoadoutBackupResult {
+            collection_id: snapshot.collection_id,
+            collection_name: snapshot.collection_name,
+            reused: !snapshot.created,
+        })
+    } else {
+        None
+    };
+
+    let prepared = crate::modules::workspace::application::workspace::switch::prepare_randomized_loadout_switch(
+        config.inner(),
+        pool.inner(),
+        &input.game_id,
+        &target_paths,
+        &exclusive_object_ids,
+    )
+    .await?;
+    let planned_renames = prepared.journal_steps();
+    let preflight_paths = planned_renames
+        .iter()
+        .flat_map(|(_, old_path, new_path)| {
+            [
+                old_path.to_string_lossy().into_owned(),
+                new_path.to_string_lossy().into_owned(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    if crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
+        &preflight.folder_conflicts,
+        &preflight_paths,
+    ) {
+        return Err(
+            crate::modules::reconciliation::application::disk_reconcile::emit::folder_conflict_mutation_error(),
+        );
+    }
+    let journal_steps = planned_renames
+        .into_iter()
+        .map(|(sequence, old_path, new_path)| {
+            crate::modules::mutation::api::PlannedStep::rename(sequence, old_path, new_path)
+        })
+        .collect::<Vec<_>>();
+    if journal_steps.is_empty() {
+        let _guard = op_lock
+            .acquire_exempt(
+                crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
+            )
+            .await?;
+        let result = prepared.execute(&app, &watcher)?;
+        let history_warning =
+            crate::modules::library::adapters::sqlite::mods::record_randomizer_history(
+                pool.inner(),
+                &input.game_id,
+                &preview
+                    .items
+                    .iter()
+                    .map(|item| (item.object_id.clone(), item.selected_mod_id.clone()))
+                    .collect::<Vec<_>>(),
+            )
+            .await
+            .err()
+            .map(|error| {
+                format!("Loadout was applied, but anti-repeat history was not saved: {error}")
+            });
+        return Ok(metadata::ApplyRandomizedLoadoutResult {
+            impact: result.impact,
+            backup,
+            sync_warning: result.sync_warning,
+            history_warning,
+        });
+    }
+
+    let operation_guard = op_lock
+        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
+            "randomized-loadout",
+            input.game_id.clone(),
+            journal_steps,
+        ))
+        .await?;
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+        game_guard,
+        operation_guard,
+    );
+    let result = match prepared.execute_with_outcome(&app, &watcher) {
+        Ok(result) => result,
+        Err(
+            crate::modules::workspace::application::workspace::switch::PreparedWorkspaceExecutionError::Apply(error),
+        ) => {
+            for (sequence, _, _) in prepared.journal_steps() {
+                mutation_lease.mark_step_rolled_back(sequence)?;
+            }
+            mutation_lease.begin_rollback()?;
+            mutation_lease.finish_rollback()?;
+            return Err(error);
+        }
+        Err(
+            crate::modules::workspace::application::workspace::switch::PreparedWorkspaceExecutionError::Compensation(error),
+        ) => {
+            mutation_lease.fail(format!(
+                "Randomized loadout compensation failed; workspace requires recovery: {error}"
+            ))?;
+            return Err(error);
+        }
+    };
+    for (sequence, _, _) in prepared.journal_steps() {
+        mutation_lease.mark_step_applied(sequence)?;
+    }
+    match crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+        &app,
+        pool.inner(),
+        &input.game_id,
+        &mutation_lease,
+    )
+    .await
+    {
+        Ok(reconcile) if reconcile.status.applied() => {
+            mutation_lease.mark_db_committed()?;
+            mutation_lease.commit()?;
+            let history_warning = crate::modules::library::adapters::sqlite::mods::record_randomizer_history(
+                pool.inner(),
+                &input.game_id,
+                &preview.items.iter().map(|item| (item.object_id.clone(), item.selected_mod_id.clone())).collect::<Vec<_>>(),
+            ).await.err().map(|error| format!("Loadout was applied, but anti-repeat history was not saved: {error}"));
+            Ok(metadata::ApplyRandomizedLoadoutResult {
+                impact: result.impact,
+                backup,
+                sync_warning: None,
+                history_warning,
+            })
+        }
+        outcome => {
+            let error = match outcome {
+                Ok(reconcile) => AppError::Io(format!(
+                    "Randomized loadout reconcile requires attention: {:?}",
+                    reconcile.status
+                )),
+                Err(error) => error,
+            };
+            mutation_lease.begin_rollback()?;
+            if let Err(rollback_error) = prepared.rollback(&watcher) {
+                let combined = format!("{error}; randomized loadout rollback failed: {rollback_error}");
+                mutation_lease.fail(combined.clone())?;
+                return Err(AppError::Io(combined));
+            }
+            for (sequence, _, _) in prepared.journal_steps() {
+                mutation_lease.mark_step_rolled_back(sequence)?;
+            }
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+                &app,
+                pool.inner(),
+                &input.game_id,
+                &mutation_lease,
+            )
+            .await?;
+            mutation_lease.finish_rollback()?;
+            Err(error)
+        }
+    }
 }
 
 #[specta::specta]

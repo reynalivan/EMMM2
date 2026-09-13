@@ -81,7 +81,7 @@ export function useWorkspaceSwitchActions() {
 
       return nextPath;
     },
-    [activeGame, queryClient, t],
+    [activeGame, queryClient],
   );
 
   const setObjectNodeEnabled = useCallback(
@@ -191,7 +191,7 @@ export function useWorkspaceSwitchActions() {
         markPending(pendingKey, false);
       }
     },
-    [activeGame, markPending, queryClient, t],
+    [activeGame, markPending, queryClient],
   );
 
   const resolveDuplicateForceEnable = useCallback(
@@ -218,7 +218,7 @@ export function useWorkspaceSwitchActions() {
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, queryClient, t],
+    [activeGame, queryClient],
   );
 
   const resolveDuplicateEnableOnly = useCallback(
@@ -245,7 +245,7 @@ export function useWorkspaceSwitchActions() {
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, queryClient, t],
+    [activeGame, queryClient],
   );
 
   const isPending = useMemo(() => Object.keys(pendingKeys).length > 0, [pendingKeys]);

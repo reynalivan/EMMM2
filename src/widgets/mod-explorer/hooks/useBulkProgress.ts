@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { isDemoMode } from '@/shared/lib/appMode';
 
 export interface BulkProgressPayload {
   label: string;
@@ -17,6 +18,10 @@ export function useBulkProgress() {
   });
 
   useEffect(() => {
+    if (isDemoMode) {
+      return;
+    }
+
     let unlisten: () => void;
 
     const setupListener = async () => {

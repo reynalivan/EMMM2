@@ -11,6 +11,8 @@ import { commands } from '../../../../shared/api/tauri/bindings';
 import type { GameModsDirectoryInspection } from '../../../../shared/api/tauri/bindings';
 import { pathsEqual } from '../../../../shared/lib/pathKey';
 import { applyDiskReconcileResult } from '@/features/file-watcher';
+import ConfirmDialog from '@/shared/ui/components/ui/ConfirmDialog';
+import { SettingsSection } from '../SettingsLayout';
 
 interface PendingSourceChange {
   game: GameConfig;
@@ -30,6 +32,7 @@ export default function GamesTab() {
   const [sourceConfirmation, setSourceConfirmation] = useState('');
   const [sourceChangeError, setSourceChangeError] = useState<string | null>(null);
   const [sourceChangePending, setSourceChangePending] = useState(false);
+  const [pendingDeleteGameId, setPendingDeleteGameId] = useState<string | null>(null);
 
   const handleAdd = () => {
     setEditingGame(null);
@@ -41,17 +44,20 @@ export default function GamesTab() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!settings) return;
-    if (window.confirm(t('settings:games.delete_confirm'))) {
-      const newGames = settings.games.filter((g) => g.id !== id);
-      await saveSettingsAsync({ ...settings, games: newGames });
+  const handleDelete = (id: string) => {
+    setPendingDeleteGameId(id);
+  };
 
-      // If deleted active game, deselect it
-      if (activeGameId === id) {
-        setActiveGameId(null);
-      }
+  const confirmDelete = async () => {
+    if (!settings) return;
+    if (!pendingDeleteGameId) return;
+    const newGames = settings.games.filter((game) => game.id !== pendingDeleteGameId);
+    await saveSettingsAsync({ ...settings, games: newGames });
+
+    if (activeGameId === pendingDeleteGameId) {
+      setActiveGameId(null);
     }
+    setPendingDeleteGameId(null);
   };
 
   const applySourceChange = async (
@@ -131,103 +137,110 @@ export default function GamesTab() {
   if (!settings) return <div>{t('common:status.loading')}</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center bg-base-200/50 p-4 rounded-xl border border-base-300">
-        <div>
-          <h2 className="text-xl font-bold">{t('settings:games.title')}</h2>
-          <p className="mt-1 text-sm opacity-70">{t('settings:games.desc')}</p>
-        </div>
-        <button className="btn btn-primary gap-2" data-testid="games-add" onClick={handleAdd}>
-          <Plus size={18} /> {t('settings:games.add')}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4">
-        {settings.games.length === 0 ? (
-          <div className="text-center py-12 opacity-50 border-2 border-dashed border-base-300 rounded-xl">
-            <p>{t('settings:games.empty')}</p>
-          </div>
-        ) : (
-          settings.games.map((game) => (
-            <div
-              key={game.id}
-              className={`card bg-base-200 shadow-md border-l-4 transition-all hover:shadow-lg ${activeGameId === game.id ? 'border-primary' : 'border-base-300 opacity-90 hover:opacity-100'}`}
-            >
-              <div className="card-body p-5 flex flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-base-300 rounded-lg flex items-center justify-center font-bold text-xl text-primary/50">
-                    {game.name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="card-title text-base flex items-center gap-2">
-                      {game.name}
-                      {activeGameId === game.id && (
-                        <span className="badge badge-primary badge-xs">
-                          {t('settings:games.active')}
-                        </span>
-                      )}
-                    </h3>
-                    <div className="text-xs space-y-1 mt-1 opacity-70">
-                      <p className="flex items-center gap-1">
-                        <span className="font-semibold">
-                          {t('settings:games.form.path_label_short')}:
-                        </span>{' '}
-                        {game.mod_path}
-                      </p>
-                      <p className="flex items-center gap-1">
-                        <span className="font-semibold">
+    <div>
+      <SettingsSection
+        id="games-settings-heading"
+        title={t('settings:games.title')}
+        description={t('settings:games.desc')}
+        action={
+          <button
+            className="btn btn-primary btn-sm gap-2 whitespace-nowrap"
+            data-testid="games-add"
+            onClick={handleAdd}
+          >
+            <Plus size={18} /> {t('settings:games.add')}
+          </button>
+        }
+      >
+        <div className="divide-y divide-base-300">
+          {settings.games.length === 0 ? (
+            <div className="border border-dashed border-base-300 py-10 text-center text-sm text-base-content/60">
+              <p>{t('settings:games.empty')}</p>
+            </div>
+          ) : (
+            settings.games.map((game) => (
+              <div
+                key={game.id}
+                className={`py-3 transition-colors duration-150 ${
+                  activeGameId === game.id ? 'bg-primary/5' : 'hover:bg-base-content/3'
+                }`}
+              >
+                <div className="flex flex-col items-start justify-between gap-3 px-2 sm:flex-row sm:items-center">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-base-300/70 text-sm font-semibold text-base-content/60">
+                      {game.name.charAt(0)}
+                    </div>
+                    <div>
+                      <h3 className="flex items-center gap-2 text-sm font-semibold">
+                        {game.name}
+                        {activeGameId === game.id && (
+                          <span className="badge badge-primary badge-xs">
+                            {t('settings:games.active')}
+                          </span>
+                        )}
+                      </h3>
+                      <div className="mt-1 space-y-0.5 text-xs text-base-content/60">
+                        <p className="flex items-center gap-1">
+                          <span className="font-semibold">
+                            {t('settings:games.form.path_label_short')}:
+                          </span>{' '}
+                          {game.mod_path}
+                        </p>
+                        <p className="flex items-center gap-1">
+                          <span className="font-semibold">
+                            {game.launch_mode === 'xxmi_managed'
+                              ? t('settings:games.form.xxmi_label_short')
+                              : t('settings:games.form.exe_label_short')}
+                            :
+                          </span>{' '}
                           {game.launch_mode === 'xxmi_managed'
-                            ? t('settings:games.form.xxmi_label_short')
-                            : t('settings:games.form.exe_label_short')}
-                          :
-                        </span>{' '}
-                        {game.launch_mode === 'xxmi_managed'
-                          ? game.xxmi_launcher_exe
-                          : game.game_exe}
-                      </p>
+                            ? game.xxmi_launcher_exe
+                            : game.game_exe}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="join">
-                  <button
-                    className="btn btn-ghost btn-sm join-item text-accent"
-                    onClick={() => {
-                      setActiveGameId(game.id);
-                      setWorkspaceView('mod-inbox');
-                    }}
-                    title={t('settings:games.actions.scan_ready_to_move')}
-                  >
-                    <Inbox size={16} />
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm join-item text-primary"
-                    onClick={() => setActiveGameId(game.id)}
-                    disabled={activeGameId === game.id}
-                    title={t('settings:games.actions.set_active')}
-                  >
-                    <Play size={16} />
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm join-item"
-                    onClick={() => handleEdit(game)}
-                    title={t('settings:games.actions.edit')}
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm join-item text-error hover:bg-error/10"
-                    onClick={() => void handleDelete(game.id)}
-                    title={t('settings:games.actions.remove')}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="join">
+                    <button
+                      className="btn btn-ghost btn-sm join-item"
+                      onClick={() => {
+                        setActiveGameId(game.id);
+                        setWorkspaceView('mod-inbox');
+                      }}
+                      title={t('settings:games.actions.scan_ready_to_move')}
+                    >
+                      <Inbox size={16} />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm join-item text-primary"
+                      onClick={() => setActiveGameId(game.id)}
+                      disabled={activeGameId === game.id}
+                      title={t('settings:games.actions.set_active')}
+                    >
+                      <Play size={16} />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm join-item"
+                      onClick={() => handleEdit(game)}
+                      title={t('settings:games.actions.edit')}
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm join-item text-error hover:bg-error/10"
+                      onClick={() => handleDelete(game.id)}
+                      title={t('settings:games.actions.remove')}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
-        )}
-      </div>
+            ))
+          )}
+        </div>
+      </SettingsSection>
 
       <GameFormModal
         isOpen={isModalOpen}
@@ -237,6 +250,14 @@ export default function GamesTab() {
         existingModPaths={settings.games
           .filter((game) => game.id !== editingGame?.id)
           .map((game) => game.mod_path)}
+      />
+      <ConfirmDialog
+        open={pendingDeleteGameId !== null}
+        title={t('settings:games.actions.remove')}
+        message={t('settings:games.delete_confirm')}
+        danger
+        onCancel={() => setPendingDeleteGameId(null)}
+        onConfirm={() => void confirmDelete()}
       />
       {pendingSourceChange && (
         <dialog open className="modal modal-open" aria-labelledby="settings-source-change-title">

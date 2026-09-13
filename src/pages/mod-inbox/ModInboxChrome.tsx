@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderInput, FolderOpen, Inbox, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ModInboxSnapshot } from './types';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 export function NoGameState() {
   const { t } = useTranslation('mod_inbox');
 
   return (
-    <div className="grid h-full place-items-center bg-base-100 p-8">
+    <div className="grid h-full place-items-center bg-base-100 p-8 pt-[calc(var(--workspace-topbar-height)+2rem)]">
       <div className="max-w-md text-center">
         <Inbox className="mx-auto mb-4 h-12 w-12 text-base-content/30" />
         <h1 className="text-xl font-bold">{t('no_game.title')}</h1>
@@ -24,12 +25,14 @@ export function ModInboxHeader({
   onSettings,
   onOpen,
   onRefresh,
+  topBarAction,
 }: {
   snapshot: ModInboxSnapshot | null;
   loading: boolean;
   onSettings: () => void;
   onOpen: () => void;
   onRefresh: () => void;
+  topBarAction?: ReactNode;
 }) {
   const { t } = useTranslation('mod_inbox');
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
@@ -79,6 +82,7 @@ export function ModInboxHeader({
       >
         <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
       </button>
+      {topBarAction}
     </>,
     portalTarget,
   );
@@ -88,38 +92,86 @@ export function ModInboxTabs({
   activeTab,
   readyCount,
   processedCount,
+  allSelected,
+  selectionDisabled,
+  onToggleSelectAll,
   onChange,
 }: {
   activeTab: 'ready' | 'processed';
   readyCount: number;
   processedCount: number;
+  allSelected: boolean;
+  selectionDisabled: boolean;
+  onToggleSelectAll: () => void;
   onChange: (tab: 'ready' | 'processed') => void;
 }) {
   const { t } = useTranslation('mod_inbox');
 
   return (
-    <div className="tabs tabs-border border-b border-base-300 px-5" role="tablist">
-      <button
-        type="button"
-        role="tab"
-        aria-label={t('tabs.ready')}
-        aria-selected={activeTab === 'ready'}
-        className={`tab gap-2 ${activeTab === 'ready' ? 'tab-active' : ''}`}
-        onClick={() => onChange('ready')}
-      >
-        {t('tabs.ready')} <span className="badge badge-sm">{readyCount}</span>
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-label={t('tabs.processed')}
-        aria-selected={activeTab === 'processed'}
-        className={`tab gap-2 ${activeTab === 'processed' ? 'tab-active' : ''}`}
-        onClick={() => onChange('processed')}
-      >
-        {t('tabs.processed')} <span className="badge badge-sm">{processedCount}</span>
-      </button>
-    </div>
+    <LiquidSurface liquidRole="nav" className="block w-full" contentClassName="h-auto">
+      <div className="flex items-center justify-between gap-3 px-5 pb-3 pt-[calc(var(--workspace-topbar-height)+0.75rem)] lg:pt-[calc(var(--workspace-topbar-height)+0.75rem)]">
+        <div className="min-w-0" role="tablist" aria-label={t('tabs.label', 'Inbox status')}>
+          <LiquidSurface
+            liquidRole="control"
+            className="rounded-[var(--radius-box)]"
+            contentClassName="flex gap-1 p-1"
+          >
+            <InboxTab
+              active={activeTab === 'ready'}
+              label={t('tabs.ready')}
+              count={readyCount}
+              onClick={() => onChange('ready')}
+            />
+            <InboxTab
+              active={activeTab === 'processed'}
+              label={t('tabs.processed')}
+              count={processedCount}
+              onClick={() => onChange('processed')}
+            />
+          </LiquidSurface>
+        </div>
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-sm"
+            aria-label={t(activeTab === 'ready' ? 'ready.select_all' : 'processed.select_all')}
+            checked={allSelected}
+            disabled={selectionDisabled}
+            onChange={onToggleSelectAll}
+          />
+          {t('actions.select_all')}
+        </label>
+      </div>
+    </LiquidSurface>
+  );
+}
+
+function InboxTab({
+  active,
+  label,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-label={label}
+      aria-selected={active}
+      className={`flex min-h-8 items-center justify-center gap-2 rounded-[calc(var(--radius-box)-0.25rem)] px-3 text-sm font-medium transition-[background-color,color] duration-150 ${
+        active
+          ? 'bg-base-content/[0.08] text-base-content'
+          : 'text-base-content/55 hover:bg-base-content/[0.05] hover:text-base-content'
+      }`}
+      onClick={onClick}
+    >
+      {label} <span className="text-xs tabular-nums text-base-content/45">{count}</span>
+    </button>
   );
 }
 
@@ -138,8 +190,8 @@ export function MissingInboxState({
 
   return (
     <main className="grid flex-1 place-items-center overflow-auto p-6">
-      <section className="max-w-lg rounded-3xl border border-dashed border-base-300 bg-base-200/40 p-10 text-center">
-        <FolderInput className="mx-auto h-14 w-14 text-primary/60" />
+      <section className="max-w-lg rounded-xl border border-dashed border-base-300 bg-base-200/40 p-8 text-center">
+        <FolderInput className="mx-auto h-12 w-12 text-base-content/40" />
         <h2 className="mt-5 text-xl font-bold">{t('missing.title')}</h2>
         <p className="mt-2 text-sm text-base-content/60">{t('missing.description')}</p>
         <code className="mt-4 block break-all rounded-xl bg-base-300/60 p-3 text-xs">

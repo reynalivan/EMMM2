@@ -31,6 +31,7 @@ describe('FolderConflictManager', () => {
     useAppStore.setState({
       activeGameId: 'game-1',
       workspaceDialogState: { kind: 'folderConflicts' },
+      folderConflictReportsByGame: {},
       folderConflictsByGame: {
         'game-1': [
           {
@@ -140,6 +141,7 @@ describe('FolderConflictManager', () => {
     ]);
     resolveFolderNameConflict.mockResolvedValue({
       game_id: 'game-1',
+      reconcile_revision: 2,
       reason: 'InternalMutation',
       status: 'Applied',
       folder_conflicts: [],
@@ -278,7 +280,7 @@ describe('FolderConflictManager', () => {
     expect(screen.queryByRole('dialog', { name: 'Folder Info' })).not.toBeInTheDocument();
   });
 
-  it('keeps the resolved total visible when the queue becomes empty', async () => {
+  it('identifies an empty report as externally resolved without crediting a dialog action', async () => {
     getFolderConflictDetails.mockResolvedValue([]);
 
     render(<FolderConflictManager />, {
@@ -288,10 +290,22 @@ describe('FolderConflictManager', () => {
     });
 
     await screen.findAllByRole('textbox');
-    act(() => useAppStore.getState().setFolderConflicts('game-1', []));
+    act(() => {
+      useAppStore.setState({
+        folderConflictsByGame: { 'game-1': [] },
+        folderConflictReportsByGame: {
+          'game-1': {
+            revision: 2,
+            groups: [],
+            status: 'resolvedExternally',
+            reason: 'WatcherBatch',
+          },
+        },
+      });
+    });
 
-    expect(await screen.findByText('All conflicts resolved')).toBeInTheDocument();
-    expect(screen.getByText('1 of 1 conflicts resolved')).toBeInTheDocument();
+    expect(await screen.findByText('Resolved outside this dialog')).toBeInTheDocument();
+    expect(screen.queryByText('All conflicts resolved')).not.toBeInTheDocument();
   });
 
   it('switches the keep action to the exact folder selected by the user', async () => {

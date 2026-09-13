@@ -1,6 +1,9 @@
+use crate::modules::games::domain::models::GameType;
 use crate::modules::settings::application::config::{AppSettings, ConfigService};
+use crate::platform::fs::guard::validate_path;
 use crate::shared::errors::AppError;
 use secrecy::ExposeSecret;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{Emitter, State};
 
@@ -204,6 +207,167 @@ pub async fn set_auto_close_launcher(
     state.set_auto_close_launcher(enabled)
 }
 
+/// Persist explicit diagnostics consent. Opting out clears every queued
+/// aggregate and crash envelope before the setting change is reported as done.
+#[specta::specta]
+#[tauri::command]
+pub async fn set_telemetry_enabled(
+    enabled: bool,
+    state: State<'_, ConfigService>,
+    telemetry: State<'_, crate::modules::system::application::telemetry::TelemetryStore>,
+) -> Result<AppSettings, AppError> {
+    if !enabled {
+        telemetry.purge_all().await.map_err(|_| {
+            AppError::Db("Could not clear queued diagnostics while opting out".to_string())
+        })?;
+    }
+    state.set_telemetry_enabled(enabled)
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn set_mod_viewer_executable(
+    path: Option<String>,
+    state: State<'_, ConfigService>,
+) -> Result<AppSettings, AppError> {
+    state.set_mod_viewer_executable(path.map(PathBuf::from))
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn launch_mod_viewer(
+    game_id: String,
+    mod_folder: String,
+    config: State<'_, ConfigService>,
+) -> Result<crate::modules::library::api::mod_health::types::ModViewerLaunchReceipt, AppError> {
+    let (executable, game_type) = mod_viewer_launch_inputs(&config, &game_id)?;
+    ensure_mod_viewer_supports(game_type)?;
+    ensure_configured_mod_viewer_executable(&executable)?;
+
+    let requested_mod_folder = mod_folder;
+    let mod_folder = validate_mod_viewer_folder(&config, &game_id, &requested_mod_folder)?;
+    let receipt_game_id = game_id.clone();
+    let receipt_folder = requested_mod_folder.clone();
+    let receipt_root = mod_folder.clone();
+    let receipt = tokio::task::spawn_blocking(move || {
+        crate::modules::library::api::mod_health::service::create_mod_viewer_launch_receipt(
+            receipt_game_id,
+            receipt_folder,
+            &receipt_root,
+        )
+    })
+    .await??;
+
+    let disabled_ini = should_pass_disabled_ini(&mod_folder)?;
+    let mut command = build_mod_viewer_command(&executable, &mod_folder, disabled_ini);
+    command.spawn().map_err(|error| {
+        AppError::Io(format!(
+            "Failed to start 3DMigoto Mod Viewer: {error}. Check Settings > Integrations."
+        ))
+    })?;
+
+    Ok(receipt)
+}
+
+fn build_mod_viewer_command(
+    executable: &Path,
+    mod_folder: &Path,
+    disabled_ini: bool,
+) -> std::process::Command {
+    let mut command = std::process::Command::new(executable);
+    command.arg(mod_folder);
+    if disabled_ini {
+        command.arg("--disabled-ini");
+    }
+    command
+}
+
+fn validate_mod_viewer_folder(
+    config: &ConfigService,
+    game_id: &str,
+    mod_folder: &str,
+) -> Result<PathBuf, AppError> {
+    let mod_folder = validate_path(config, game_id, mod_folder)?.into_path_buf();
+    if !mod_folder.is_dir() {
+        return Err(AppError::Validation(
+            "3DMigoto Mod Viewer target must be a mod folder".to_string(),
+        ));
+    }
+    Ok(mod_folder)
+}
+
+fn mod_viewer_launch_inputs(
+    config: &ConfigService,
+    game_id: &str,
+) -> Result<(PathBuf, GameType), AppError> {
+    config.with_settings(|settings| {
+        let executable = settings
+            .external_tools
+            .mod_viewer_executable
+            .clone()
+            .ok_or_else(|| {
+                AppError::Validation(
+                    "3DMigoto Mod Viewer is not configured. Select its executable in Settings > Integrations."
+                        .to_string(),
+                )
+            })?;
+        let game_type = settings
+            .games
+            .iter()
+            .find(|game| game.id == game_id)
+            .map(|game| game.game_type)
+            .ok_or_else(|| AppError::NotFound(format!("Game not found: {game_id}")))?;
+        Ok((executable, game_type))
+    })
+}
+
+fn ensure_mod_viewer_supports(game_type: GameType) -> Result<(), AppError> {
+    match game_type {
+        GameType::GIMI | GameType::ZZMI | GameType::WWMI | GameType::SRMI => Ok(()),
+        GameType::EFMI => Err(AppError::Validation(
+            "3DMigoto Mod Viewer is not available for EFMI".to_string(),
+        )),
+    }
+}
+
+fn ensure_configured_mod_viewer_executable(executable: &Path) -> Result<(), AppError> {
+    crate::modules::settings::application::config::validate_mod_viewer_executable(executable)
+        .map_err(|error| {
+            AppError::Validation(format!(
+                "Configured 3DMigoto Mod Viewer executable is no longer valid ({error}). Select it again in Settings > Integrations."
+            ))
+        })
+}
+
+fn should_pass_disabled_ini(mod_folder: &Path) -> Result<bool, AppError> {
+    let mut has_disabled_ini = false;
+    for entry in std::fs::read_dir(mod_folder)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        if !path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"))
+        {
+            continue;
+        }
+
+        let name = entry.file_name();
+        if name
+            .to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("DISABLED")
+        {
+            has_disabled_ini = true;
+        } else {
+            return Ok(false);
+        }
+    }
+    Ok(has_disabled_ini)
+}
+
 #[specta::specta]
 #[tauri::command]
 pub async fn run_maintenance(
@@ -379,10 +543,14 @@ pub async fn test_ai_connection(
 
 #[cfg(test)]
 mod tests {
-    use super::completed_settings_save;
+    use super::{
+        build_mod_viewer_command, completed_settings_save, ensure_mod_viewer_supports,
+        should_pass_disabled_ini, validate_mod_viewer_folder,
+    };
+    use crate::modules::games::domain::models::{GameType, LaunchMode};
     use crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile;
     use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
-    use crate::modules::settings::application::config::AppSettings;
+    use crate::modules::settings::application::config::{AppSettings, ConfigService, GameConfig};
 
     #[test]
     fn persisted_settings_remain_success_when_follow_up_reconcile_fails() {
@@ -398,6 +566,111 @@ mod tests {
         assert_eq!(
             result.sync_warning.expect("typed warning").kind,
             CommittedMutationSyncWarningKind::ReconcileFailed
+        );
+    }
+
+    #[test]
+    fn disabled_ini_flag_uses_only_direct_disabled_ini_files() {
+        let folder = tempfile::tempdir().expect("temporary mod folder should create");
+        std::fs::write(folder.path().join("DISABLED_mod.ini"), "[Constants]")
+            .expect("disabled ini fixture should write");
+        assert!(
+            should_pass_disabled_ini(folder.path()).expect("direct disabled ini should inspect")
+        );
+
+        let nested = folder.path().join("nested");
+        std::fs::create_dir(&nested).expect("nested folder should create");
+        std::fs::write(nested.join("active.ini"), "[Constants]")
+            .expect("nested active ini fixture should write");
+        assert!(
+            should_pass_disabled_ini(folder.path()).expect("nested ini should be ignored"),
+            "nested files must not affect the direct-file launch argument"
+        );
+    }
+
+    #[test]
+    fn active_ini_wins_over_disabled_ini_and_folder_name() {
+        let folder = tempfile::Builder::new()
+            .prefix("DISABLED ")
+            .tempdir()
+            .expect("temporary disabled-folder-named mod should create");
+        std::fs::write(folder.path().join("DISABLED_mod.ini"), "[Constants]")
+            .expect("disabled ini fixture should write");
+        std::fs::write(folder.path().join("active.INI"), "[Constants]")
+            .expect("active ini fixture should write");
+
+        assert!(
+            !should_pass_disabled_ini(folder.path())
+                .expect("active and disabled ini should inspect"),
+            "a folder name starting with DISABLED must not force --disabled-ini"
+        );
+    }
+
+    #[test]
+    fn only_supported_mod_viewer_games_can_launch() {
+        for game_type in [
+            GameType::GIMI,
+            GameType::ZZMI,
+            GameType::WWMI,
+            GameType::SRMI,
+        ] {
+            assert!(ensure_mod_viewer_supports(game_type).is_ok());
+        }
+        assert!(ensure_mod_viewer_supports(GameType::EFMI).is_err());
+    }
+
+    #[test]
+    fn mod_viewer_command_passes_executable_and_folder_as_separate_arguments() {
+        let executable = std::path::Path::new("C:/Tools/3DMigoto Mod Viewer.exe");
+        let mod_folder = std::path::Path::new("C:/Mods/Character With Spaces");
+        let command = build_mod_viewer_command(executable, mod_folder, true);
+
+        assert_eq!(command.get_program(), executable.as_os_str());
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![
+                mod_folder.as_os_str(),
+                std::ffi::OsStr::new("--disabled-ini")
+            ]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn mod_viewer_folder_validation_rejects_paths_outside_the_game_mods_root() {
+        let pool = crate::test_utils::init_test_db().await.pool;
+        let service = ConfigService::new_for_test(pool);
+        let temp = tempfile::tempdir().expect("temporary game directory should create");
+        let mods_root = temp.path().join("Mods");
+        let mod_folder = mods_root.join("Valid Mod");
+        let outside_folder = temp.path().join("Outside Mod");
+        std::fs::create_dir_all(&mod_folder).expect("mod folder should create");
+        std::fs::create_dir(&outside_folder).expect("outside folder should create");
+
+        let mut settings = AppSettings::default();
+        settings.games.push(GameConfig {
+            id: "game-a".to_string(),
+            name: "Game A".to_string(),
+            game_type: GameType::GIMI,
+            instance_path: temp.path().to_path_buf(),
+            mod_path: mods_root,
+            ready_to_move_path: None,
+            launch_mode: LaunchMode::Standalone,
+            game_exe: None,
+            loader_exe: None,
+            xxmi_launcher_exe: None,
+            launch_args: None,
+            warnings: Vec::new(),
+        });
+        service
+            .save_settings(settings)
+            .expect("game settings should save");
+
+        assert!(
+            validate_mod_viewer_folder(&service, "game-a", &mod_folder.to_string_lossy(),).is_ok()
+        );
+        assert!(
+            validate_mod_viewer_folder(&service, "game-a", &outside_folder.to_string_lossy(),)
+                .is_err()
         );
     }
 }

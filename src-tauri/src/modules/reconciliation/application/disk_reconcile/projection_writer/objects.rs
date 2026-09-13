@@ -197,6 +197,14 @@ pub(super) async fn apply_disk_objects(
         state.touched_object_ids.insert(object_id.clone());
 
         let existing_by_id = index.object_by_id(&object_id);
+        // The index is a snapshot from before this pass. Read the persisted
+        // category after identity resolution so child mods inherit a
+        // MasterDB recategorization in the same reconcile run.
+        let object_type: String =
+            sqlx::query_scalar("SELECT object_type FROM objects WHERE id = ?")
+                .bind(&object_id)
+                .fetch_one(&mut *conn)
+                .await?;
 
         // The row may be indexed under a key the disk entry no longer produces;
         // retire every key that resolved to it so prune leaves it alone.
@@ -220,9 +228,7 @@ pub(super) async fn apply_disk_objects(
             disk_object.folder_path_key.clone(),
             ObjectBinding {
                 id: object_id,
-                object_type: existing_by_id
-                    .map(|row| row.object_type.clone())
-                    .unwrap_or_else(|| "Other".to_string()),
+                object_type,
             },
         );
     }

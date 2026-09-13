@@ -84,6 +84,45 @@ pub async fn get_by_id_tx(
     Ok(row.as_ref().map(row_to_collection))
 }
 
+/// Named collections with a matching projected-state signature. Runtime drafts
+/// are excluded because they are implementation details, not reusable presets.
+pub async fn named_ids_by_signature_tx(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+    signature: &str,
+) -> Result<Vec<String>, CollectionError> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT c.id
+        FROM collections c
+        LEFT JOIN collection_runtime_state runtime ON runtime.game_id = c.game_id
+        WHERE c.game_id = ?
+          AND c.signature = ?
+          AND (runtime.draft_collection_id IS NULL OR runtime.draft_collection_id != c.id)
+        ORDER BY c.id ASC"#,
+    )
+    .bind(game_id)
+    .bind(signature)
+    .fetch_all(&mut *conn)
+    .await?)
+}
+
+/// Check canonical collection-name availability while the caller owns a write
+/// transaction. This keeps generated suffixes deterministic.
+pub async fn name_exists_tx(
+    conn: &mut SqliteConnection,
+    game_id: &str,
+    name: &str,
+) -> Result<bool, CollectionError> {
+    let name_key = canonical_name_key(name);
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM collections WHERE game_id = ? AND name_key = ?)",
+    )
+    .bind(game_id)
+    .bind(name_key)
+    .fetch_one(&mut *conn)
+    .await?)
+}
+
 /// Create a new collection.
 #[cfg(test)]
 pub async fn create(

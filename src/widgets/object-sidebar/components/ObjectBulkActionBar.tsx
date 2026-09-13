@@ -69,15 +69,13 @@ export default function ObjectBulkActionBar({
           icon: Power,
           label: t('bulk.enable'),
           onClick: onEnable,
-          className: 'text-success',
           dividerBefore: true,
         },
-        { icon: PowerOff, label: t('bulk.disable'), onClick: onDisable, className: 'text-warning' },
+        { icon: PowerOff, label: t('bulk.disable'), onClick: onDisable },
         {
           icon: Sparkles,
           label: t('bulk.classify_match'),
           onClick: onClassifyMatch,
-          className: 'text-info',
           dividerBefore: true,
         },
         { icon: StarOff, label: t('bulk.unfavorite'), onClick: () => onFavorite(false) },
@@ -86,7 +84,6 @@ export default function ObjectBulkActionBar({
           icon: Tags,
           label: t('bulk.remove_tags'),
           onClick: onRemoveTags,
-          className: 'text-error',
         },
       ]}
     />

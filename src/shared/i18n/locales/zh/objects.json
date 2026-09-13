@@ -1,6 +1,6 @@
 {
   "toolbar": {
-    "search_placeholder": "搜索...",
+    "search_placeholder": "搜索对象...",
     "auto_organize": "自动整理",
     "hide_filters": "隐藏过滤器",
     "show_filters": "显示过滤器",
@@ -96,7 +96,7 @@
     "rename_folder": "重命名文件夹",
     "skip_mod": "跳过此模组",
     "include_mod": "包括此模组",
-    "click_to_assign": "无匹配项 — 点击分配"
+    "click_to_assign": "无匹配项。点击分配"
   },
   "bulk": {
     "clear_selection": "清除选择",
@@ -126,8 +126,24 @@
     "select_category": "选择类别",
     "sub_category": "子类别",
     "placeholder_name": "例如：优菈",
-    "placeholder_sub": "例如：敌人, NPC, 视觉效果",
+    "validation": {
+      "name_too_short": "名称至少需要 2 个字符。",
+      "name_too_long": "名称最多可包含 255 个字符。",
+      "object_type_required": "请选择对象类型。"
+    },
     "metadata": "元数据",
+    "thumbnail": {
+      "label": "缩略图",
+      "alt": "已选缩略图",
+      "select_file": "文件",
+      "paste": "粘贴",
+      "remove": "移除",
+      "url_placeholder": "图片 URL",
+      "use_url": "添加",
+      "no_clipboard_image": "剪贴板中没有图片。",
+      "file_error": "无法选择图片：{{error}}",
+      "paste_error": "无法粘贴图片：{{error}}"
+    },
     "success_message": "成功创建 \"{{name}}\"。",
     "error_message": "创建对象失败：{{error}}",
     "submit": "创建对象"
@@ -143,6 +159,10 @@
       "active": "激活"
     },
     "status": "状态",
+    "randomizer_mode": "随机行为",
+    "randomizer_default": "类别默认值",
+    "randomizer_exclusive": "互斥：替换活动 Mod",
+    "randomizer_additive": "叠加：保留活动 Mod",
     "enabled": "已启用",
     "disabled": "已禁用",
     "skin_mapping": "皮肤映射",

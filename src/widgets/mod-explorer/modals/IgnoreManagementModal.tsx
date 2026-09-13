@@ -62,7 +62,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
 
         <div className="p-6">
           {ignoredConflicts.length === 0 ? (
-            <div className="py-12 flex flex-col items-center justify-center text-center opacity-40">
+            <div className="py-12 flex flex-col items-center justify-center text-center text-muted">
               <ShieldAlert size={48} className="mb-4" />
               <p className="text-sm font-medium">{t('ignore_management.empty_title')}</p>
               <p className="text-xs">{t('ignore_management.empty_subtitle')}</p>
@@ -72,7 +72,7 @@ export default function IgnoreManagementModal({ open, onClose }: IgnoreManagemen
               {ignoredConflicts.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-base-200/30 border border-base-content/5 rounded-xl p-4 flex items-center justify-between gap-4 group hover:border-primary/20 hover:bg-primary/5 transition-all"
+                  className="group flex items-center justify-between gap-4 rounded-xl border border-base-content/5 bg-base-200/30 p-4 transition-[background-color,border-color] duration-150 hover:border-primary/20 hover:bg-primary/5"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">

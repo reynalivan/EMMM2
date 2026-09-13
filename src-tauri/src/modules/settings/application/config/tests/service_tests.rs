@@ -22,6 +22,114 @@ fn game(mod_path: &str) -> GameConfig {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn missing_external_tools_setting_defaults_to_no_mod_viewer_executable() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let service = ConfigService::new_for_test(pool);
+
+    assert_eq!(
+        service.get_settings().external_tools.mod_viewer_executable,
+        None
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn catalog_auto_install_is_opt_in_and_persists_without_credentials() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let service = ConfigService::new_for_test(pool.clone());
+
+    let defaults = service.get_settings().catalog_updates;
+    assert!(defaults.auto_check);
+    assert!(!defaults.auto_install);
+    assert_eq!(defaults.last_successful_check_unix_seconds, None);
+
+    let saved = service
+        .set_catalog_auto_install(true)
+        .expect("catalog preference should save");
+    assert!(saved.catalog_updates.auto_check);
+    assert!(saved.catalog_updates.auto_install);
+
+    service
+        .record_catalog_update_check(1_700_000_000)
+        .expect("catalog check timestamp should save");
+    let reloaded = ConfigService::new_for_test(pool);
+    assert!(reloaded.get_settings().catalog_updates.auto_install);
+    assert_eq!(
+        reloaded
+            .get_settings()
+            .catalog_updates
+            .last_successful_check_unix_seconds,
+        Some(1_700_000_000)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mod_viewer_executable_set_replace_clear_and_reload() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let service = ConfigService::new_for_test(pool.clone());
+    let temp = tempfile::TempDir::new().expect("temporary tool directory should create");
+    let first = temp.path().join("mod-viewer.EXE");
+    let replacement = temp.path().join("mod-viewer-replacement.exe");
+    std::fs::write(&first, "first viewer").expect("first viewer fixture should write");
+    std::fs::write(&replacement, "replacement viewer")
+        .expect("replacement viewer fixture should write");
+
+    let saved = service
+        .set_mod_viewer_executable(Some(first.clone()))
+        .expect("first executable should save");
+    assert_eq!(saved.external_tools.mod_viewer_executable, Some(first));
+
+    let replaced = service
+        .set_mod_viewer_executable(Some(replacement.clone()))
+        .expect("replacement executable should save");
+    assert_eq!(
+        replaced.external_tools.mod_viewer_executable,
+        Some(replacement.clone())
+    );
+
+    let reloaded = ConfigService::new_for_test(pool.clone());
+    assert_eq!(
+        reloaded.get_settings().external_tools.mod_viewer_executable,
+        Some(replacement)
+    );
+
+    service
+        .set_mod_viewer_executable(None)
+        .expect("clearing executable should save");
+    let cleared = ConfigService::new_for_test(pool);
+    assert_eq!(
+        cleared.get_settings().external_tools.mod_viewer_executable,
+        None
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mod_viewer_executable_rejects_relative_missing_directory_and_non_exe_paths() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let service = ConfigService::new_for_test(pool);
+    let temp = tempfile::TempDir::new().expect("temporary tool directory should create");
+    let missing = temp.path().join("missing.exe");
+    let non_executable = temp.path().join("mod-viewer.txt");
+    std::fs::write(&non_executable, "not an executable")
+        .expect("non-executable fixture should write");
+
+    for invalid in [
+        PathBuf::from("mod-viewer.exe"),
+        missing,
+        temp.path().to_path_buf(),
+        non_executable,
+    ] {
+        assert!(
+            service.set_mod_viewer_executable(Some(invalid)).is_err(),
+            "invalid Mod Viewer executable should be rejected"
+        );
+    }
+    assert_eq!(
+        service.get_settings().external_tools.mod_viewer_executable,
+        None
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stale_full_snapshot_cannot_restore_previous_active_game() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let service = Arc::new(ConfigService::new_for_test(pool));

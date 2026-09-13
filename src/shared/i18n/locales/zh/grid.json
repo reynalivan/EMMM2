@@ -1,5 +1,6 @@
 {
   "toolbar": {
+    "add_folder": "Add folder",
     "sort_by": "排序方式",
     "sort_label": "排序模组",
     "sort_name_asc": "名称（A–Z）",
@@ -22,7 +23,7 @@
     "disable_mod": "禁用模组",
     "enable_mod": "启用模组",
     "view_details": "查看详情",
-    "parent_disabled_title": "容器 \"{{name}}\" 已禁用 — 目录已锁定",
+    "parent_disabled_title": "容器 \"{{name}}\" 已禁用。目录已锁定",
     "parent_disabled_object_title": "\"{{name}}\" 中的对象模组已禁用",
     "enable_parent_btn": "启用父级",
     "preview_impact": "预览影响",
@@ -58,6 +59,13 @@
     "import_folder": "导入文件夹"
   },
   "modals": {
+    "create_folder_title": "Add folder",
+    "create_folder_description": "Create an empty folder in the current location.",
+    "create_folder_name_label": "Folder name",
+    "create_folder_name_placeholder": "e.g. Variants",
+    "create_folder_name_required": "Enter a folder name.",
+    "create_folder_name_duplicate": "A folder with this name already exists here.",
+    "create_folder_submit": "Add folder",
     "delete_title": "删除到回收站？",
     "delete_msg_with_count_one": "\"{{name}}\" 包含 {{count}} 个项目。移动到回收站？",
     "delete_msg_with_count_other": "\"{{name}}\" 包含 {{count}} 个项目。移动到回收站？",
@@ -68,8 +76,8 @@
     "bulk_delete_confirm_btn": "全部移动到回收站"
   },
   "card": {
-    "aria_label_enabled": "{{name}} — 已启用",
-    "aria_label_disabled": "{{name}} — 已禁用",
+    "aria_label_enabled": "{{name}}，已启用",
+    "aria_label_disabled": "{{name}}，已禁用",
     "mod_pack": "模组包",
     "variants": "变体",
     "flat_mod": "平铺模组",
@@ -78,6 +86,7 @@
     "misplaced_title": "放置错误：在 info.json 中检测到角色不匹配",
     "hash_conflict_title": "哈希冲突：与其他已启用的模组共享着色器/缓冲区哈希",
     "conflict": "冲突",
+    "shared_hash": "共享哈希",
     "name_conflict_title": "命名冲突：同时存在启用和禁用的版本",
     "name_conflict": "名称冲突",
     "status_enabled": "已启用",
@@ -105,6 +114,10 @@
     "unfavorite": "取消收藏",
     "select_all": "全选",
     "open_explorer": "在资源管理器中打开",
+    "open_mod_viewer": "在 Mod Viewer 中打开",
+    "open_mod_viewer_experimental": "在 Mod Viewer 中打开（实验性）",
+    "open_mod_viewer_experimental_tooltip": "实验性：Mod Viewer 对 SRMI 的支持可能不完整。",
+    "mod_viewer_launch_failed": "无法启动 Mod Viewer。请前往“设置 > 集成”并检查其可执行文件：{{error}}",
     "rename": "重命名",
     "enable": "启用",
     "disable": "禁用",

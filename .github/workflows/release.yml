@@ -9,6 +9,12 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      EMMM_GRAFANA_OTLP_METRICS_ENDPOINT: ${{ secrets.EMMM_GRAFANA_OTLP_METRICS_ENDPOINT }}
+      EMMM_GRAFANA_OTLP_AUTHORIZATION: ${{ secrets.EMMM_GRAFANA_OTLP_AUTHORIZATION }}
+      VITE_GRAFANA_FARO_URL: ${{ secrets.VITE_GRAFANA_FARO_URL }}
+      VITE_GRAFANA_FARO_API_KEY: ${{ secrets.VITE_GRAFANA_FARO_API_KEY }}
+      VITE_APP_VERSION: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +36,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate Grafana observability configuration
+        if: ${{ secrets.EMMM_GRAFANA_OTLP_METRICS_ENDPOINT != '' || secrets.EMMM_GRAFANA_OTLP_AUTHORIZATION != '' || secrets.VITE_GRAFANA_FARO_URL != '' || secrets.VITE_GRAFANA_FARO_API_KEY != '' }}
+        env:
+          EMMM_REQUIRE_GRAFANA_OBSERVABILITY: 'true'
+        run: pnpm validate:observability
 
       - uses: tauri-apps/tauri-action@v0
         env:

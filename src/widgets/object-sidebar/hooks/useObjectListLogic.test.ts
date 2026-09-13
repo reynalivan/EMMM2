@@ -166,7 +166,7 @@ describe('useObjectListLogic', () => {
     expect(result.current.state.objects.map((o) => o.id)).toEqual(['1', '3']);
   });
 
-  it('filters parent objects by matching child safety counts', () => {
+  it('keeps parent objects visible when the safety filter changes', () => {
     useWorkspaceViewModelMock.mockReturnValue({
       data: {
         objects: [
@@ -182,7 +182,11 @@ describe('useObjectListLogic', () => {
 
     const { result } = renderHook(() => useObjectListLogic(), { wrapper: createWrapper() });
 
-    expect(result.current.state.objects.map((object) => object.id)).toEqual(['mixed']);
+    expect(result.current.state.objects.map((object) => object.id)).toEqual([
+      'safe',
+      'mixed',
+      'unknown',
+    ]);
   });
 
   it('initializes basic state correctly', () => {

@@ -8,13 +8,13 @@
 /// the mod folder belongs to, improving enrichment relevance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GameBananaGame {
-    /// GIMI — Genshin Impact
+    /// GIMI
     Genshin,
     /// SRMI — Honkai: Star Rail
     StarRail,
-    /// ZZMI — Zenless Zone Zero
+    /// ZZMI
     ZenlessZoneZero,
-    /// WWMI — Wuthering Waves
+    /// WWMI
     WutheringWaves,
     /// EFMI — Arknights: Endfield
     ArknightsEndfield,

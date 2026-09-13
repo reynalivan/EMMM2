@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'motion/react';
 import { usePrefersReducedMotion } from '../../../../shared/lib/hooks/usePrefersReducedMotion';
+import { LiquidSurface } from '../../../../shared/ui/liquid';
 import { SCENE_DURATION_MS } from './demoTypes';
 
 import DemoAutoOrganize from './scenes/DemoAutoOrganize';
@@ -60,53 +61,57 @@ export default function SmartDemoStrip({
   const { Component: Scene } = SCENES[currentSceneIdx];
 
   return (
-    <div
-      className="w-full max-w-3xl mx-auto h-75 [@media(max-height:750px)]:h-60 relative rounded-2xl bg-base-100/40 backdrop-blur-md border border-base-content/10 shadow-xl overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      tabIndex={0}
-      aria-label={t('demo.aria_label')}
+    <LiquidSurface
+      liquidRole="control"
+      className="mx-auto h-75 w-full max-w-3xl rounded-2xl [@media(max-height:750px)]:h-60"
+      contentClassName="h-full"
     >
-      <div className="w-full h-75 absolute top-0 left-0 origin-top [@media(max-height:750px)]:scale-[0.8] transition-transform duration-500">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentSceneIdx}
-            variants={sceneVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="w-full h-full absolute inset-0"
-          >
-            <Scene />
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      <div
+        className="relative h-full w-full overflow-hidden rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        tabIndex={0}
+        aria-label={t('demo.aria_label')}
+      >
+        <div className="absolute top-0 left-0 h-75 w-full origin-top transition-transform duration-500 [@media(max-height:750px)]:scale-[0.8]">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentSceneIdx}
+              variants={sceneVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="absolute inset-0 h-full w-full"
+            >
+              <Scene />
+            </motion.div>
+          </AnimatePresence>
+        </div>
 
-      {/* Progress indicators — the active one fills over the scene's own duration,
-          and freezes in place while the strip is paused. */}
-      <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2 z-30">
-        {SCENES.map((scene, idx) => (
-          <button
-            key={idx}
-            aria-label={t('demo.aria_go_to_scene', { count: idx + 1 })}
-            onClick={() => setCurrentSceneIdx(idx)}
-            className={`h-1.5 overflow-hidden rounded-full transition-all duration-300 ${
-              idx === currentSceneIdx
-                ? 'w-6 bg-primary/25'
-                : 'w-2 bg-base-content/20 hover:bg-base-content/40'
-            }`}
-          >
-            {idx === currentSceneIdx && (
-              <span
-                key={currentSceneIdx}
-                className="demo-progress-fill block h-full w-full rounded-full bg-primary"
-                style={{
-                  animationDuration: `${scene.duration + 350}ms`,
-                  animationPlayState: isPausedFromParent ? 'paused' : 'running',
-                }}
-              />
-            )}
-          </button>
-        ))}
+        <div className="absolute right-0 bottom-3 left-0 z-30 flex justify-center gap-2">
+          {SCENES.map((scene, idx) => (
+            <button
+              key={idx}
+              aria-label={t('demo.aria_go_to_scene', { count: idx + 1 })}
+              onClick={() => setCurrentSceneIdx(idx)}
+              className={`h-1.5 overflow-hidden rounded-full transition-all duration-300 ${
+                idx === currentSceneIdx
+                  ? 'w-6 bg-primary/25'
+                  : 'w-2 bg-base-content/20 hover:bg-base-content/40'
+              }`}
+            >
+              {idx === currentSceneIdx && (
+                <span
+                  key={currentSceneIdx}
+                  className="demo-progress-fill block h-full w-full rounded-full bg-primary"
+                  style={{
+                    animationDuration: `${scene.duration + 350}ms`,
+                    animationPlayState: isPausedFromParent ? 'paused' : 'running',
+                  }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
+    </LiquidSurface>
   );
 }

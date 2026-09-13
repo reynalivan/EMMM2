@@ -8,6 +8,10 @@
     "description": "Auto-detect scans your XXMI Launcher folder for installed games.",
     "select_folder_title": "Select your XXMI Launcher folder",
     "duplicate_error": "This game folder is already added as \"{{name}}\".",
+    "diagnostics": {
+      "title": "Help improve EMMM with anonymous diagnostics",
+      "description": "Optional daily aggregate reliability counts and one short diagnostic code for a new error. No paths, names, URLs, messages, or user identifiers are sent. You can change this later in Settings."
+    },
     "language": {
       "change": "Change language",
       "options": {
@@ -29,11 +33,11 @@
     "submit_button": "Add Game",
     "submitting": "Validating...",
     "game_types": {
-      "gimi": "Genshin Impact",
-      "srmi": "Star Rail",
-      "zzmi": "ZZZ",
-      "wwmi": "Wuthering Waves",
-      "efmi": "Arknight Endfield"
+      "gimi": "GIMI",
+      "srmi": "SRMI",
+      "zzmi": "ZZMI",
+      "wwmi": "WWMI",
+      "efmi": "EFMI"
     },
     "validation": {
       "game_type_required": "Please select a game type",
@@ -49,7 +53,7 @@
     "title_other": "{{count}} Games Found!",
     "subtitle": "The following games have been detected and are ready to manage.",
     "remove_tip": "Remove from detection",
-    "warnings_header": "Setup Warnings — you can still proceed",
+    "warnings_header": "Setup warnings. You can still proceed",
     "add_another": "Add Another",
     "confirm": "Confirm"
   },

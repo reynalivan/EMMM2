@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 
 import type { WorkspaceObjectNode } from '@/entities/workspace';
@@ -22,6 +23,7 @@ describe('useObjectListVirtualizer', () => {
   beforeEach(() => {
     virtualizerState.measurementsCache.length = 0;
     virtualizerState.scrollToIndex.mockClear();
+    vi.mocked(useVirtualizer).mockClear();
   });
 
   const mockSchema = {
@@ -205,6 +207,21 @@ describe('useObjectListVirtualizer', () => {
     });
 
     expect(result.current.selectedIndex).toBe(-1);
+  });
+
+  it('reserves a visual gutter between mobile object rows', () => {
+    renderHook(() =>
+      useObjectListVirtualizer({
+        objects: mockObjects,
+        schema: mockSchema as unknown as import('@/entities/game-object/model/object').GameSchema,
+        selectedObjectFolderPath: null,
+        isMobile: true,
+      }),
+    );
+
+    const calls = vi.mocked(useVirtualizer).mock.calls;
+    const options = calls[calls.length - 1]?.[0];
+    expect(options?.estimateSize(1)).toBe(92);
   });
 
   it('keeps pinned objects at the top of each section', () => {

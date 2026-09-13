@@ -2,8 +2,13 @@ import { Gamepad2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GAME_OPTIONS, useActiveGame, type GameConfig } from '@/entities/game';
 import { useGameSwitch } from '@/features/workspace-runtime';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
-export default function GameSelector() {
+interface GameSelectorProps {
+  compact?: boolean;
+}
+
+export default function GameSelector({ compact = false }: GameSelectorProps) {
   const { t } = useTranslation('layout');
   const { activeGame, games = [], isLoading } = useActiveGame();
   const { switchGame } = useGameSwitch();
@@ -15,62 +20,118 @@ export default function GameSelector() {
       ?.label.split(' (')[0]
       .split(' ')
       .map((w: string) => w[0])
-      .join('') ?? '—';
+      .join('') ?? '-';
   if (isLoading) {
+    if (compact) {
+      return (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm btn-square"
+          disabled
+          aria-label={t('game_selector.loading')}
+        >
+          <span className="loading loading-spinner loading-xs text-primary" />
+        </button>
+      );
+    }
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-base-200/30 border border-base-content/10">
-        <div className="loading loading-spinner loading-xs text-primary" />
-        <span className="text-sm text-base-content/70">{t('game_selector.loading')}</span>
+      <div className="flex min-w-36 items-center px-2 py-1">
+        <div className="flex min-w-0 flex-col">
+          <span className="text-sm font-bold leading-none tracking-tight text-base-content">
+            {t('app.name')}
+          </span>
+          <span className="mt-0.5 flex items-center gap-1 text-[10px] text-base-content/55">
+            <span className="loading loading-spinner loading-xs text-primary" />
+            {t('game_selector.loading')}
+          </span>
+        </div>
       </div>
     );
   }
 
   if (games.length === 0) {
+    if (compact) {
+      return (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm btn-square"
+          disabled
+          aria-label={t('game_selector.add_game')}
+        >
+          <Plus size={16} aria-hidden="true" />
+        </button>
+      );
+    }
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-base-200/30 border border-warning/30">
-        <Plus size={14} className="text-warning" />
-        <span className="text-sm text-warning/80">{t('game_selector.add_game')}</span>
+      <div className="flex min-w-36 items-center px-2 py-1">
+        <div className="flex min-w-0 flex-col">
+          <span className="text-sm font-bold leading-none tracking-tight text-base-content">
+            {t('app.name')}
+          </span>
+          <span className="mt-0.5 flex items-center gap-1 text-[10px] text-warning/80">
+            <Plus size={12} aria-hidden="true" />
+            {t('game_selector.add_game')}
+          </span>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="dropdown dropdown-bottom">
-      <div
-        tabIndex={0}
-        role="button"
-        className="flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1.5 rounded-full bg-base-200/30 border border-base-content/10 hover:border-primary/50 hover:bg-base-200/50 transition-all cursor-pointer group"
+      <button
+        type="button"
+        className={
+          compact
+            ? 'btn btn-ghost btn-sm btn-square text-base-content/75 hover:text-base-content'
+            : 'group flex min-w-36 max-w-52 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-base-content/75 transition-[background-color,color] duration-150 hover:bg-base-content/5 hover:text-base-content md:px-3'
+        }
+        aria-label={t('game_selector.select_game')}
       >
-        <div className="p-1 rounded-full bg-base-100/50 text-primary group-hover:text-primary-content transition-colors">
-          <Gamepad2 size={12} className="md:w-3.5 md:h-3.5" />
-        </div>
-        <span className="hidden sm:inline text-sm font-medium text-base-content group-hover:text-primary transition-colors">
-          {activeLabel}
-        </span>
-        <span className="sm:hidden font-bold text-sm text-base-content/90">{activeShort}</span>
-        <span className="opacity-50 text-[10px] group-hover:opacity-100 transition-opacity">▼</span>
-      </div>
-      <ul
-        tabIndex={0}
-        className="dropdown-content z-1 menu p-2 shadow-xl bg-base-100/90 backdrop-blur-xl rounded-box w-56 border border-base-content/10 mt-2"
+        <Gamepad2
+          size={15}
+          className="shrink-0 text-base-content/45 transition-colors group-hover:text-primary"
+        />
+        {!compact && (
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-sm font-bold leading-none tracking-tight text-base-content">
+              {t('app.name')}
+            </span>
+            <span className="mt-0.5 truncate text-[10px] font-medium text-base-content/55 group-hover:text-base-content/75">
+              <span className="hidden sm:inline">{activeLabel}</span>
+              <span className="sm:hidden">{activeShort}</span>
+            </span>
+          </span>
+        )}
+        {!compact && (
+          <span className="text-[10px] opacity-50 transition-opacity group-hover:opacity-100">
+            ▼
+          </span>
+        )}
+      </button>
+      <LiquidSurface
+        liquidRole="overlay"
+        className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-56 rounded-box shadow-lg"
       >
-        {games.map((game: GameConfig) => {
-          const isActive = activeGame?.id === game.id;
+        <ul tabIndex={0} className="menu w-full p-2">
+          {games.map((game: GameConfig) => {
+            const isActive = activeGame?.id === game.id;
 
-          return (
-            <li key={game.id}>
-              <button
-                onClick={() => switchGame(game.id)}
-                className={`hover:bg-base-content/10 ${
-                  isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
-                }`}
-              >
-                <span>{game.name}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+            return (
+              <li key={game.id}>
+                <button
+                  onClick={() => switchGame(game.id)}
+                  className={`hover:bg-base-content/10 ${
+                    isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
+                  }`}
+                >
+                  <span>{game.name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </LiquidSurface>
     </div>
   );
 }

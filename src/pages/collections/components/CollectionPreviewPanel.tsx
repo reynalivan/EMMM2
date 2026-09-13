@@ -74,7 +74,7 @@ export function CollectionPreviewPanel({
 
     return (
       <div className="flex flex-col h-full w-full relative">
-        <div className="h-14 bg-base-300/50 backdrop-blur-md border-b border-base-content/5 flex items-center justify-between px-4 shrink-0 z-10">
+        <div className="z-10 flex h-14 shrink-0 items-center justify-between border-b border-base-content/5 bg-base-300 px-4">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="flex flex-col min-w-0">
               <h2 className="font-bold text-sm leading-tight flex items-center gap-2 truncate">
@@ -96,6 +96,7 @@ export function CollectionPreviewPanel({
           <div className="max-w-3xl mx-auto">
             <CollectionTreeView
               nodes={runtimeSnapshot.current_tree_nodes}
+              gameId={gameId}
               colorClass="text-primary"
               emptyMessage={t('collections:preview.empty')}
             />
@@ -118,7 +119,7 @@ export function CollectionPreviewPanel({
   return (
     <div className="flex flex-col h-full w-full relative">
       {/* Header */}
-      <div className="h-14 bg-base-300/50 backdrop-blur-md border-b border-base-content/5 flex items-center justify-between px-4 shrink-0 z-10">
+      <div className="z-10 flex h-14 shrink-0 items-center justify-between border-b border-base-content/5 bg-base-300 px-4">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="flex flex-col min-w-0">
             <h2 className="font-bold text-sm leading-tight flex items-center gap-2 truncate">
@@ -143,6 +144,7 @@ export function CollectionPreviewPanel({
         <div className="max-w-3xl mx-auto">
           <CollectionTreeView
             nodes={preview.tree_nodes}
+            gameId={gameId}
             colorClass="text-primary"
             emptyMessage={t('collections:preview.empty')}
           />

@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DropZone } from '../hooks/useObjectListDropZones';
 import type { WorkspaceObjectNode } from '@/entities/workspace';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 interface ObjectListDropIndicatorsProps {
   isDragging: boolean;
@@ -46,18 +47,16 @@ export default function ObjectListDropIndicators({
         </div>
       )}
 
-      <div
-        ref={bottomRef}
-        className={`px-3 border-t transition-all duration-200 relative z-30 ${
-          isDragging
-            ? activeDropZone === 'new-object'
-              ? 'py-5 border-primary bg-primary/15 border-dashed border-t-2'
-              : 'py-5 border-base-300/50 bg-base-200/70 border-dashed border-t-2'
-            : 'py-1.5 border-base-300/20'
-        }`}
-        style={isDragging ? { animation: 'slideUp 200ms ease-out' } : undefined}
-      >
-        {isDragging ? (
+      {isDragging ? (
+        <div
+          ref={bottomRef}
+          className={`relative z-30 border-t border-dashed border-t-2 px-3 py-5 transition-all duration-200 ${
+            activeDropZone === 'new-object'
+              ? 'border-primary bg-primary/15'
+              : 'border-base-300/50 bg-base-200/70'
+          }`}
+          style={{ animation: 'slideUp 200ms ease-out' }}
+        >
           <div
             className={`flex items-center justify-center gap-2 ${
               activeDropZone === 'new-object' ? 'text-primary' : 'text-base-content/50'
@@ -69,24 +68,29 @@ export default function ObjectListDropIndicators({
             />
             <span className="text-xs font-medium">{t('item.append_new')}</span>
           </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-base-content/30">
-              {t('item.object_count', { count: objectCount })}
-            </span>
-            <div className="flex items-center gap-3">
-              {selectedObjectType && (
-                <button
-                  className="text-[10px] text-primary/60 hover:text-primary transition-colors"
-                  onClick={onShowAll}
-                >
-                  {t('item.show_all')}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <footer
+          ref={bottomRef}
+          data-testid="object-list-count-overlay"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center justify-end gap-3 px-2 pb-2 pt-1.5"
+        >
+          {selectedObjectType && (
+            <button
+              className="pointer-events-auto text-[10px] text-primary/60 transition-colors hover:text-primary"
+              onClick={onShowAll}
+            >
+              {t('item.show_all')}
+            </button>
+          )}
+          <LiquidSurface
+            liquidRole="overlay"
+            className="rounded-lg px-2.5 py-1 text-[10px] font-medium tabular-nums text-base-content/55 shadow-sm"
+          >
+            <span aria-live="polite">{t('item.object_count', { count: objectCount })}</span>
+          </LiquidSurface>
+        </footer>
+      )}
     </>
   );
 }

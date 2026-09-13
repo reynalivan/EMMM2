@@ -136,6 +136,52 @@ export function useSettings() {
     },
   });
 
+  const modViewerExecutableMutation = useMutation({
+    mutationFn: (path: string | null) => commands.setModViewerExecutable(path),
+    onSuccess: (savedSettings, path) => {
+      queryClient.setQueryData(settingsKeys.all, savedSettings);
+      addToast(
+        'success',
+        t(
+          path === null
+            ? 'settings:integrations.mod_viewer.removed_success'
+            : 'settings:integrations.mod_viewer.configured_success',
+        ),
+      );
+    },
+    onError: (err) => {
+      console.error(err);
+      addToast('error', t('settings:integrations.mod_viewer.save_failed', { error: String(err) }));
+    },
+  });
+
+  const catalogAutoInstallMutation = useMutation({
+    mutationFn: (enabled: boolean) => commands.setCatalogAutoInstall(enabled),
+    onSuccess: async (savedSettings) => {
+      queryClient.setQueryData(settingsKeys.all, savedSettings);
+      await publishQueryScopes(queryClient, ['settings']);
+    },
+    onError: (err) => {
+      console.error(err);
+      addToast(
+        'error',
+        t('settings:general.catalog_assets.auto_update_failed', { error: String(err) }),
+      );
+    },
+  });
+
+  const telemetryEnabledMutation = useMutation({
+    mutationFn: (enabled: boolean) => commands.setTelemetryEnabled(enabled),
+    onSuccess: async (savedSettings) => {
+      queryClient.setQueryData(settingsKeys.all, savedSettings);
+      await publishQueryScopes(queryClient, ['settings']);
+    },
+    onError: (err) => {
+      console.error(err);
+      addToast('error', t('settings:diagnostics.save_failed', { error: String(err) }));
+    },
+  });
+
   return {
     settings: settingsQuery.data,
     isLoading: settingsQuery.isLoading,
@@ -147,6 +193,9 @@ export function useSettings() {
     setAiApiKey,
     deleteAiApiKey,
     updateTheme: updateThemeMutation,
+    setModViewerExecutable: modViewerExecutableMutation,
+    setCatalogAutoInstall: catalogAutoInstallMutation,
+    setTelemetryEnabled: telemetryEnabledMutation,
     updateLanguage: useMutation({
       mutationFn: async (language: string) => {
         if (!settingsQuery.data) throw new Error('Settings not loaded');

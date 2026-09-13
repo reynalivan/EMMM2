@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { commands } from '@/shared/api/tauri/bindings';
+import { gameGateway } from './gameGateway';
 
 export function useActiveGame() {
   // ponytail: read the settings query directly rather than useSettings() — that
@@ -11,7 +11,7 @@ export function useActiveGame() {
     error,
   } = useQuery({
     queryKey: ['settings'],
-    queryFn: () => commands.getSettings(),
+    queryFn: () => gameGateway.getSettings(),
   });
 
   const games = settings?.games || [];

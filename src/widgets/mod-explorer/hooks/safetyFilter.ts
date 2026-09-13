@@ -9,7 +9,11 @@ export function filterFoldersBySafety(
     return folders;
   }
 
-  return folders.filter((folder) =>
-    filter === 'safe' ? folder.contains_safe_mods : folder.contains_unsafe_mods,
-  );
+  return folders.filter((folder) => {
+    if (folder.node_kind !== 'terminal_mod') {
+      return true;
+    }
+
+    return filter === 'safe' ? folder.contains_safe_mods : folder.contains_unsafe_mods;
+  });
 }

@@ -265,6 +265,7 @@ vi.mock('motion/react', () => ({
   motion: {
     div: createMockMotionElement('div'),
     button: createMockMotionElement('button'),
+    label: createMockMotionElement('label'),
     span: createMockMotionElement('span'),
     h1: createMockMotionElement('h1'),
     h2: createMockMotionElement('h2'),
@@ -289,4 +290,9 @@ vi.mock('motion/react', () => ({
     Group: createMockMotionElement('div'),
     Item: createMockMotionElement('div'),
   },
+}));
+
+vi.mock('quick-liquid/react', () => ({
+  LiquidGlass: ({ children, className }: { children?: React.ReactNode; className?: string }) =>
+    React.createElement('div', { className }, children),
 }));

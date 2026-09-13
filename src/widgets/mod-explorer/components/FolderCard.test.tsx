@@ -213,6 +213,20 @@ describe('FolderCard', () => {
     expect(screen.getAllByRole('checkbox', { hidden: true })[1]).not.toBeChecked();
   });
 
+  it('keeps selection available when the card receives keyboard focus', () => {
+    render(
+      <FolderCard
+        folder={mockFolder}
+        isSelected={false}
+        onNavigate={vi.fn()}
+        toggleSelection={vi.fn()}
+      />,
+    );
+
+    const selectionCheckbox = screen.getAllByRole('checkbox', { hidden: true })[0];
+    expect(selectionCheckbox.parentElement).toHaveClass('sm:group-focus-within:opacity-100');
+  });
+
   it('disables switch mutations when source is unavailable', () => {
     const onToggleEnabled = vi.fn();
 
@@ -248,6 +262,22 @@ describe('FolderCard', () => {
     const card = screen.getByRole('gridcell');
     expect(card).toHaveClass('border-warning/60');
     expect(card).toHaveClass('ring-warning/40');
+  });
+
+  it('shows name and hash conflict indicators together', () => {
+    const conflictFolder = { ...mockFolder, conflict_state: 'both' } as WorkspaceExplorerNode;
+    render(
+      <FolderCard
+        folder={conflictFolder}
+        isSelected={false}
+        onNavigate={vi.fn()}
+        toggleSelection={vi.fn()}
+        hasConflict
+      />,
+    );
+
+    expect(screen.getByRole('img', { name: 'Name Conflict' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Shared Hash' })).toBeInTheDocument();
   });
 
   it('allows conflict selection for the read-only info panel but blocks navigation and mutation', () => {

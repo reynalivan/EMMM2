@@ -18,6 +18,90 @@ const MAX_THEME_FILE_SIZE: usize = 64 * 1024;
 pub struct ThemeConfig {
     pub colors: std::collections::HashMap<String, String>,
     pub glass: std::collections::HashMap<String, String>,
+    pub liquid: LiquidThemeConfig,
+    pub background: ThemeBackground,
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct ThemeBackground {
+    pub kind: ThemeBackgroundKind,
+    pub value: String,
+    pub dim_opacity: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeBackgroundKind {
+    Solid,
+    Gradient,
+    Image,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, specta::Type)]
+pub struct LiquidThemeConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nav: Option<LiquidRoleConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<LiquidRoleConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indicator: Option<LiquidRoleConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay: Option<LiquidRoleConfig>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, specta::Type)]
+pub struct LiquidRoleConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<LiquidMaterial>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<LiquidAppearance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint_opacity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blur: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refraction_strength: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bezel_width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chromatic_aberration: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_highlight: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub specular_strength: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub light_angle: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<LiquidQuality>,
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum LiquidMaterial {
+    Clear,
+    Thin,
+    Regular,
+    Thick,
+    Ultra,
+    Adaptive,
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum LiquidAppearance {
+    Light,
+    Dark,
+    Auto,
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum LiquidQuality {
+    High,
+    Medium,
+    Low,
 }
 
 #[derive(Debug, Serialize, Deserialize, specta::Type)]
@@ -93,6 +177,91 @@ fn validate_config_map(
     Ok(())
 }
 
+fn validate_optional_number(
+    value: Option<f64>,
+    field: &str,
+    minimum: f64,
+    maximum: f64,
+) -> Result<(), AppError> {
+    if let Some(value) = value {
+        if !value.is_finite() || !(minimum..=maximum).contains(&value) {
+            return Err(validation_error(format!(
+                "Theme liquid {field} must be a finite number between {minimum} and {maximum}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_liquid_role(role: &LiquidRoleConfig) -> Result<(), AppError> {
+    if let Some(tint) = &role.tint {
+        validate_css_value(tint)?;
+    }
+    validate_optional_number(role.tint_opacity, "tint_opacity", 0.0, 1.0)?;
+    validate_optional_number(role.blur, "blur", 0.0, 64.0)?;
+    validate_optional_number(role.refraction_strength, "refraction_strength", 0.0, 64.0)?;
+    validate_optional_number(role.bezel_width, "bezel_width", 0.0, 96.0)?;
+    validate_optional_number(role.chromatic_aberration, "chromatic_aberration", 0.0, 1.0)?;
+    validate_optional_number(role.edge_highlight, "edge_highlight", 0.0, 2.0)?;
+    validate_optional_number(role.specular_strength, "specular_strength", 0.0, 1.0)?;
+    validate_optional_number(role.light_angle, "light_angle", -360.0, 360.0)?;
+    Ok(())
+}
+
+fn validate_liquid_config(config: &LiquidThemeConfig) -> Result<(), AppError> {
+    for role in [
+        config.nav.as_ref(),
+        config.control.as_ref(),
+        config.indicator.as_ref(),
+        config.overlay.as_ref(),
+    ] {
+        if let Some(role) = role {
+            validate_liquid_role(role)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_theme_background(background: &ThemeBackground) -> Result<(), AppError> {
+    validate_optional_number(
+        Some(background.dim_opacity),
+        "background.dim_opacity",
+        0.0,
+        1.0,
+    )?;
+
+    match background.kind {
+        ThemeBackgroundKind::Solid | ThemeBackgroundKind::Gradient => {
+            validate_css_value(&background.value)?;
+        }
+        ThemeBackgroundKind::Image => {
+            let path = Path::new(&background.value);
+            let extension = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .map(str::to_ascii_lowercase);
+            let supported_image = matches!(
+                extension.as_deref(),
+                Some("png" | "jpg" | "jpeg" | "webp" | "avif" | "gif")
+            );
+            if background.value.len() > MAX_THEME_CONFIG_VALUE_LEN
+                || background.value.chars().any(|character| {
+                    character.is_control()
+                        || matches!(character, '"' | '\'' | ';' | '{' | '}' | '<' | '>')
+                })
+                || !path.is_absolute()
+                || !path.is_file()
+                || !supported_image
+            {
+                return Err(validation_error(
+                    "Theme image background must be an existing absolute PNG, JPEG, WebP, AVIF, or GIF file",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_theme(theme: &CustomTheme) -> Result<(), AppError> {
     validate_slug(&theme.id, "Theme ID", MAX_THEME_ID_LEN)?;
     if theme.label.trim().is_empty()
@@ -110,6 +279,8 @@ fn validate_theme(theme: &CustomTheme) -> Result<(), AppError> {
     }
     validate_config_map(&theme.config.colors, "color")?;
     validate_config_map(&theme.config.glass, "glass")?;
+    validate_liquid_config(&theme.config.liquid)?;
+    validate_theme_background(&theme.config.background)?;
     Ok(())
 }
 
@@ -307,7 +478,30 @@ mod tests {
                     "bg".to_string(),
                     "color-mix(in srgb, var(--color-base-100) 40%, transparent)".to_string(),
                 )]),
+                liquid: LiquidThemeConfig::default(),
+                background: ThemeBackground {
+                    kind: ThemeBackgroundKind::Solid,
+                    value: "#101827".to_string(),
+                    dim_opacity: 0.72,
+                },
             },
+        }
+    }
+
+    fn valid_liquid_role() -> LiquidRoleConfig {
+        LiquidRoleConfig {
+            material: Some(LiquidMaterial::Regular),
+            appearance: Some(LiquidAppearance::Auto),
+            tint: Some("oklch(65% 0.2 250 / 0.5)".to_string()),
+            tint_opacity: Some(0.5),
+            blur: Some(24.0),
+            refraction_strength: Some(16.0),
+            bezel_width: Some(12.0),
+            chromatic_aberration: Some(0.2),
+            edge_highlight: Some(1.0),
+            specular_strength: Some(0.5),
+            light_angle: Some(45.0),
+            quality: Some(LiquidQuality::High),
         }
     }
 
@@ -392,5 +586,133 @@ mod tests {
         assert_eq!(loaded.config.colors, theme.config.colors);
         assert!(load_theme_from_dir(themes_dir.path(), "../outside").is_err());
         assert!(delete_theme_from_dir(themes_dir.path(), "../outside").is_err());
+    }
+
+    #[test]
+    fn rejects_theme_json_without_liquid_config() {
+        let missing_liquid = br##"{
+            "id": "incomplete-theme",
+            "label": "Incomplete Theme",
+            "config": {
+                "colors": { "primary": "#ffffff" },
+                "glass": { "bg": "rgba(0, 0, 0, 0.4)" }
+            }
+        }"##;
+
+        assert!(parse_theme_bytes(missing_liquid).is_err());
+    }
+
+    #[test]
+    fn validates_custom_theme_backgrounds() {
+        let mut theme = valid_theme();
+        theme.config.background.dim_opacity = 1.01;
+        assert!(validate_theme(&theme).is_err());
+
+        theme = valid_theme();
+        theme.config.background = ThemeBackground {
+            kind: ThemeBackgroundKind::Gradient,
+            value: "linear-gradient(135deg, #10213b, #4b2f83)".to_string(),
+            dim_opacity: 0.45,
+        };
+        validate_theme(&theme).expect("accept a safe gradient background");
+
+        let image_dir = tempdir().expect("create image directory");
+        let image_path = image_dir.path().join("ocean.png");
+        fs::write(&image_path, [0u8]).expect("write image fixture");
+        theme.config.background = ThemeBackground {
+            kind: ThemeBackgroundKind::Image,
+            value: image_path.to_string_lossy().into_owned(),
+            dim_opacity: 0.6,
+        };
+        validate_theme(&theme).expect("accept a local image background");
+    }
+
+    #[test]
+    fn rejects_invalid_liquid_enums_and_out_of_range_values() {
+        macro_rules! assert_invalid_liquid_number {
+            ($field:ident, $value:expr) => {{
+                let mut theme = valid_theme();
+                theme.config.liquid = LiquidThemeConfig {
+                    nav: Some(LiquidRoleConfig {
+                        $field: Some($value),
+                        ..LiquidRoleConfig::default()
+                    }),
+                    ..LiquidThemeConfig::default()
+                };
+                assert!(
+                    validate_theme(&theme).is_err(),
+                    "accepted invalid {} value {}",
+                    stringify!($field),
+                    $value
+                );
+            }};
+        }
+
+        let invalid_material = br##"{
+            "id": "invalid-material", "label": "Invalid Material",
+            "config": { "colors": {}, "glass": {},
+                "liquid": { "nav": { "material": "frosted" } }
+            }
+        }"##;
+        assert!(parse_theme_bytes(invalid_material).is_err());
+
+        let invalid_quality = br##"{
+            "id": "invalid-quality", "label": "Invalid Quality",
+            "config": { "colors": {}, "glass": {},
+                "liquid": { "nav": { "quality": "maximum" } }
+            }
+        }"##;
+        assert!(parse_theme_bytes(invalid_quality).is_err());
+
+        let invalid_appearance = br##"{
+            "id": "invalid-appearance", "label": "Invalid Appearance",
+            "config": { "colors": {}, "glass": {},
+                "liquid": { "nav": { "appearance": "system" } }
+            }
+        }"##;
+        assert!(parse_theme_bytes(invalid_appearance).is_err());
+
+        assert_invalid_liquid_number!(tint_opacity, 1.01);
+        assert_invalid_liquid_number!(blur, 64.01);
+        assert_invalid_liquid_number!(refraction_strength, 64.01);
+        assert_invalid_liquid_number!(bezel_width, 96.01);
+        assert_invalid_liquid_number!(chromatic_aberration, 1.01);
+        assert_invalid_liquid_number!(edge_highlight, 2.01);
+        assert_invalid_liquid_number!(specular_strength, 1.01);
+        assert_invalid_liquid_number!(light_angle, 360.01);
+        assert_invalid_liquid_number!(light_angle, -360.01);
+
+        let mut unsafe_tint = valid_theme();
+        unsafe_tint.config.liquid = LiquidThemeConfig {
+            control: Some(LiquidRoleConfig {
+                tint: Some("url(https://example.test/tint)".to_string()),
+                ..valid_liquid_role()
+            }),
+            ..LiquidThemeConfig::default()
+        };
+        assert!(validate_theme(&unsafe_tint).is_err());
+    }
+
+    #[test]
+    fn preserves_liquid_config_through_theme_persistence() {
+        let themes_dir = tempdir().expect("create themes directory");
+        let mut theme = valid_theme();
+        theme.config.liquid = LiquidThemeConfig {
+            nav: Some(valid_liquid_role()),
+            overlay: Some(LiquidRoleConfig {
+                material: Some(LiquidMaterial::Thick),
+                quality: Some(LiquidQuality::Low),
+                ..LiquidRoleConfig::default()
+            }),
+            ..LiquidThemeConfig::default()
+        };
+
+        save_theme_to_dir(themes_dir.path(), &theme).expect("save theme with liquid config");
+        let loaded = load_theme_from_dir(themes_dir.path(), &theme.id).expect("load saved theme");
+        let serialized = serialize_theme(&loaded).expect("serialize loaded theme");
+
+        assert!(std::str::from_utf8(&serialized)
+            .expect("valid UTF-8 JSON")
+            .contains("\"liquid\""));
     }
 }

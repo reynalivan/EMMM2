@@ -1,6 +1,164 @@
 use super::*;
 
 #[tokio::test]
+async fn passive_snapshot_reuses_an_identical_named_collection() {
+    let ctx = init_test_db().await;
+    seed_game(&ctx.pool, "game-passive-reuse", Some("E:/Mods")).await;
+    seed_ainoz_object(&ctx.pool, "object-passive-reuse", "game-passive-reuse").await;
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-passive-reuse",
+            game_id: "game-passive-reuse",
+            object_id: Some("object-passive-reuse"),
+            actual_name: "Blue",
+            folder_path: "AINOZ/Blue",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert active mod");
+    let saved = create_collection(
+        &ctx.pool,
+        CreateCollectionInput {
+            game_id: "game-passive-reuse".to_string(),
+            name: "Existing state".to_string(),
+            save_mode: Some(CreateCollectionMode::SaveCurrentState),
+            source_collection_id: None,
+        },
+    )
+    .await
+    .expect("save existing state");
+
+    let backup = snapshot_live_state_passively(&ctx.pool, "game-passive-reuse", "Backup")
+        .await
+        .expect("reuse identical state");
+
+    assert!(!backup.created);
+    assert_eq!(backup.collection_id, saved.id);
+    assert_eq!(backup.collection_name, "Existing state");
+    assert_eq!(
+        collection::list_for_game(&ctx.pool, "game-passive-reuse")
+            .await
+            .expect("list collections")
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn passive_snapshot_creates_a_suffixed_name_without_changing_runtime_state() {
+    let ctx = init_test_db().await;
+    seed_game(&ctx.pool, "game-passive-create", Some("E:/Mods")).await;
+    seed_ainoz_object(&ctx.pool, "object-passive-create", "game-passive-create").await;
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-passive-create",
+            game_id: "game-passive-create",
+            object_id: Some("object-passive-create"),
+            actual_name: "Blue",
+            folder_path: "AINOZ/Blue",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert active mod");
+    let baseline = create_collection(
+        &ctx.pool,
+        CreateCollectionInput {
+            game_id: "game-passive-create".to_string(),
+            name: "Baseline".to_string(),
+            save_mode: Some(CreateCollectionMode::SaveCurrentState),
+            source_collection_id: None,
+        },
+    )
+    .await
+    .expect("save baseline");
+    collection::create(
+        &ctx.pool,
+        "existing-backup-name",
+        "game-passive-create",
+        "Backup",
+        true,
+        false,
+    )
+    .await
+    .expect("create name collision");
+    collection::create(
+        &ctx.pool,
+        "existing-backup-suffix",
+        "game-passive-create",
+        "Backup (2)",
+        true,
+        false,
+    )
+    .await
+    .expect("create suffixed name collision");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-passive-create-green",
+            game_id: "game-passive-create",
+            object_id: Some("object-passive-create"),
+            actual_name: "Green",
+            folder_path: "AINOZ/Green",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("change live state");
+
+    let backup = snapshot_live_state_passively(&ctx.pool, "game-passive-create", "Backup")
+        .await
+        .expect("save distinct state");
+
+    assert!(backup.created);
+    assert_eq!(backup.collection_name, "Backup (3)");
+    assert_eq!(
+        collection::get_mods(&ctx.pool, &backup.collection_id)
+            .await
+            .expect("load backup members")
+            .len(),
+        2
+    );
+    let runtime = collection::runtime::get(&ctx.pool, "game-passive-create")
+        .await
+        .expect("load runtime")
+        .expect("runtime exists");
+    assert_eq!(
+        runtime.active_collection_id.as_deref(),
+        Some(baseline.id.as_str())
+    );
+    assert!(runtime.draft_collection_id.is_none());
+}
+
+#[tokio::test]
+async fn passive_snapshot_rejects_an_empty_live_state() {
+    let ctx = init_test_db().await;
+    seed_game(&ctx.pool, "game-passive-empty", Some("E:/Mods")).await;
+
+    let error = snapshot_live_state_passively(&ctx.pool, "game-passive-empty", "Backup")
+        .await
+        .expect_err("empty state must not be saved");
+
+    assert!(matches!(error, CollectionError::Validation(_)));
+    assert!(collection::list_for_game(&ctx.pool, "game-passive-empty")
+        .await
+        .expect("list collections")
+        .is_empty());
+}
+
+#[tokio::test]
 async fn create_collection_rolls_back_row_when_snapshot_persistence_fails() {
     let ctx = init_test_db().await;
     seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;

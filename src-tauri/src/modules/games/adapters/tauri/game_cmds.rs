@@ -4,6 +4,7 @@ use crate::modules::settings::application::config::{ConfigService, GameConfig};
 use crate::shared::errors::AppError;
 use crate::shared::path_key::folder_path_key;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use uuid::Uuid;
 
 fn canonical_game_path_key(path: &str) -> String {
@@ -164,9 +165,37 @@ pub async fn add_game_manual_inner(
 #[tauri::command]
 pub async fn save_onboarding_games(
     state: tauri::State<'_, ConfigService>,
+    telemetry: tauri::State<'_, crate::modules::system::application::telemetry::TelemetryStore>,
     games: Vec<GameConfig>,
 ) -> Result<(), AppError> {
-    save_onboarding_games_inner(&state, games).await
+    let diagnostics_enabled = state.get_settings().diagnostics.telemetry_enabled;
+    let started_at = Instant::now();
+    if diagnostics_enabled {
+        let _ = telemetry
+            .record_rollup(
+                env!("CARGO_PKG_VERSION"),
+                crate::modules::system::application::telemetry::TelemetryEvent::new(
+                    crate::modules::system::application::telemetry::TelemetryOperation::Onboarding,
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Started,
+                    crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                ),
+                chrono::Utc::now(),
+            )
+            .await;
+    }
+    let result = save_onboarding_games_inner(&state, games).await;
+    if diagnostics_enabled && result.is_ok() {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::Onboarding,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+        )
+        .with_duration(started_at.elapsed());
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+    result
 }
 
 pub async fn save_onboarding_games_inner(
@@ -211,18 +240,33 @@ pub async fn get_games(
 #[tauri::command]
 pub async fn launch_game(
     state: tauri::State<'_, ConfigService>,
+    telemetry: tauri::State<'_, crate::modules::system::application::telemetry::TelemetryStore>,
     game_id: String,
 ) -> Result<(), AppError> {
+    let diagnostics_enabled = state.get_settings().diagnostics.telemetry_enabled;
+    let started_at = Instant::now();
     let games = get_games(state).await?;
     let game = games
         .into_iter()
         .find(|g| g.id == game_id)
         .ok_or_else(|| AppError::NotFound("Game config not found".to_string()))?;
 
-    match game.launch_mode {
+    let result = match game.launch_mode {
         LaunchMode::XxmiManaged => launch_xxmi_managed_game(&game),
         LaunchMode::Standalone => launch_standalone_game(&game).await,
+    };
+    if diagnostics_enabled && result.is_ok() {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::Launch,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+        )
+        .with_duration(started_at.elapsed());
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
     }
+    result
 }
 
 fn launch_xxmi_managed_game(game: &GameConfig) -> Result<(), AppError> {
@@ -232,11 +276,12 @@ fn launch_xxmi_managed_game(game: &GameConfig) -> Result<(), AppError> {
     ensure_executable_file(launcher_path, "XXMI launcher")?;
 
     let launcher_dir = launcher_path.parent().unwrap_or(launcher_path);
-    std::process::Command::new(launcher_path)
-        .current_dir(launcher_dir)
-        .args(xxmi_launch_args(game.game_type))
-        .spawn()
-        .map_err(|error| AppError::Io(format!("Failed to start XXMI launcher: {error}")))?;
+    crate::platform::process::launch_elevated_with_args(
+        launcher_path,
+        launcher_dir,
+        &xxmi_launch_args(game.game_type),
+    )
+    .map_err(|error| AppError::Io(format!("Failed to start XXMI launcher: {error}")))?;
 
     Ok(())
 }

@@ -93,7 +93,7 @@ export function CollectionList({
         <h3 className="text-lg font-medium opacity-80 mb-2">
           {t('list.empty_all', 'No collections found')}
         </h3>
-        <p className="text-sm opacity-50 max-w-sm">
+        <p className="text-sm text-muted max-w-sm">
           {t(
             'list.empty_all_desc',
             'Create your first collection by clicking "Save Current State" at the top right.',
@@ -105,8 +105,8 @@ export function CollectionList({
 
   return (
     <>
-      <table className="table table-auto w-full">
-        <thead className="sticky top-0 bg-base-200/95 backdrop-blur z-10 border-b border-base-content/5 shadow-sm">
+      <table className="table table-auto min-w-[40rem] w-full">
+        <thead className="sticky top-0 z-10 border-b border-base-content/5 bg-base-200 shadow-sm">
           <tr className="border-none text-base-content/50">
             <th className="w-1/2">{t('list.table.name')}</th>
             <th>{t('list.table.mods')}</th>
@@ -198,7 +198,7 @@ export function CollectionList({
                       )}
                       {collection && (
                         <button
-                          className="btn btn-xs btn-square btn-ghost opacity-0 group-hover:opacity-100 transition-opacity text-base-content/40 hover:text-base-content shrink-0"
+                          className="btn btn-xs btn-square btn-ghost shrink-0 text-base-content/40 opacity-100 transition-opacity hover:text-base-content sm:opacity-0 sm:group-hover:opacity-100"
                           onClick={(e) => {
                             e.stopPropagation();
                             startEdit(collection.id, collection.name);

@@ -4,11 +4,12 @@
  */
 
 import { Folder, Home, Search, Star } from 'lucide-react';
-import { useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/app/store';
 import { useThumbnail } from '@/entities/mod';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 interface BreadcrumbsProps {
   path: string[];
@@ -23,6 +24,13 @@ interface PreviousFolderItemProps {
   folder: WorkspaceExplorerNode;
   onNavigate: (name: string) => void;
 }
+
+interface VisiblePathSegment {
+  label: string;
+  realIndex: number | null;
+}
+
+const COMPACT_BREADCRUMB_WIDTH = 260;
 
 function PreviousFolderItem({ folder, onNavigate }: PreviousFolderItemProps) {
   const activeGameId = useAppStore((state) => state.activeGameId);
@@ -39,7 +47,7 @@ function PreviousFolderItem({ folder, onNavigate }: PreviousFolderItemProps) {
           <img
             src={thumbnailSrc}
             alt=""
-            className="size-full object-cover transition-transform duration-200 group-hover:scale-105"
+            className="size-full object-cover transition-opacity duration-150 group-hover:opacity-85"
           />
         ) : (
           <Folder size={16} className="m-auto text-base-content/35" aria-hidden="true" />
@@ -66,20 +74,27 @@ export default function ExplorerBreadcrumbs({
   const { t } = useTranslation('folder_grid');
   const [isPreviousFolderOpen, setIsPreviousFolderOpen] = useState(false);
   const [previousFolderSearch, setPreviousFolderSearch] = useState('');
+  const [isCompact, setIsCompact] = useState(false);
+  const breadcrumbRef = useRef<HTMLDivElement>(null);
   const previousFolderButtonRef = useRef<HTMLButtonElement>(null);
-  // Truncate middle segments when path is too deep
-  const MAX_VISIBLE = 4;
+  const maxVisibleSegments = isCompact ? 2 : 4;
+  const MAX_VISIBLE = maxVisibleSegments;
   const shouldTruncate = path.length > MAX_VISIBLE;
-
-  const visiblePath = shouldTruncate ? [path[0], '...', ...path.slice(-2)] : path;
-
-  // Map visible indices back to real path indices for navigation
-  const getRealIndex = (visibleIndex: number): number => {
-    if (!shouldTruncate) return visibleIndex;
-    if (visibleIndex === 0) return 0;
-    if (visibleIndex === 1) return -1; // "..." placeholder — not clickable
-    return path.length - visiblePath.length + visibleIndex;
-  };
+  const visiblePath: VisiblePathSegment[] = shouldTruncate
+    ? isCompact
+      ? [
+          { label: '…', realIndex: null },
+          { label: path[path.length - 1], realIndex: path.length - 1 },
+        ]
+      : [
+          { label: path[0], realIndex: 0 },
+          { label: '…', realIndex: null },
+          ...path.slice(-2).map((label, index) => ({
+            label,
+            realIndex: path.length - 2 + index,
+          })),
+        ]
+    : path.map((label, realIndex) => ({ label, realIndex }));
   const previousPathIndex = path.length - 2;
   const previousFolders = [...previousFolderItems]
     .filter((folder) =>
@@ -94,6 +109,20 @@ export default function ExplorerBreadcrumbs({
     });
 
   const closePreviousFolder = () => setIsPreviousFolderOpen(false);
+
+  useEffect(() => {
+    const element = breadcrumbRef.current;
+    if (!element || !('ResizeObserver' in window)) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      setIsCompact(entry.contentRect.width < COMPACT_BREADCRUMB_WIDTH);
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const handlePreviousFolderBlur = (event: FocusEvent<HTMLDivElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget)) {
       closePreviousFolder();
@@ -108,7 +137,10 @@ export default function ExplorerBreadcrumbs({
   };
 
   return (
-    <div className="breadcrumbs text-sm text-base-content/50 font-medium min-w-0 overflow-visible">
+    <div
+      ref={breadcrumbRef}
+      className="breadcrumbs text-sm text-base-content/50 font-medium min-w-0 overflow-visible"
+    >
       <ul className="flex-nowrap">
         {!isRootHidden && (
           <li>
@@ -121,15 +153,19 @@ export default function ExplorerBreadcrumbs({
             </button>
           </li>
         )}
-        {visiblePath.map((segment, i) => {
-          const realIndex = getRealIndex(i);
-          const isPlaceholder = segment === '...';
+        {visiblePath.map(({ label, realIndex }, index) => {
+          const isPlaceholder = realIndex === null;
           const isPreviousFolder = realIndex === previousPathIndex && onNavigateToPreviousFolder;
 
           return (
-            <li key={`${segment}-${i}`}>
+            <li key={`${label}-${index}`}>
               {isPlaceholder ? (
-                <span className="text-base-content/30 text-xs">…</span>
+                <span
+                  className="text-base-content/30 text-xs"
+                  title={path.slice(0, -1).join(' / ')}
+                >
+                  …
+                </span>
               ) : isPreviousFolder ? (
                 <div
                   className="relative"
@@ -146,48 +182,53 @@ export default function ExplorerBreadcrumbs({
                     aria-expanded={isPreviousFolderOpen}
                     aria-controls="breadcrumb-previous-folder-menu"
                     className="hover:text-primary transition-colors hover:underline truncate max-w-30 text-xs"
-                    title={segment}
+                    title={label}
                   >
-                    {segment}
+                    {label}
                   </button>
 
                   {isPreviousFolderOpen && (
                     <div className="absolute left-0 top-full z-50 pt-2">
-                      <div
-                        id="breadcrumb-previous-folder-menu"
-                        role="dialog"
-                        aria-label={t('breadcrumbs.previous_folder_menu', { folder: segment })}
-                        className="w-[40rem] max-w-[calc(100vw-2rem)] animate-in fade-in-0 zoom-in-95 rounded-xl border border-base-content/10 bg-base-100/95 p-3 shadow-2xl backdrop-blur-xl duration-150"
+                      <LiquidSurface
+                        liquidRole="overlay"
+                        className="w-[40rem] max-w-[calc(100vw-2rem)] animate-in fade-in-0 zoom-in-95 rounded-xl shadow-xl duration-150"
                       >
-                        <label className="input input-sm flex h-10 items-center gap-2 rounded-lg border-base-content/8 bg-base-200/65 px-3 shadow-none">
-                          <Search size={15} className="text-base-content/45" aria-hidden="true" />
-                          <input
-                            autoFocus
-                            type="search"
-                            value={previousFolderSearch}
-                            onChange={(event) => setPreviousFolderSearch(event.target.value)}
-                            placeholder={t('breadcrumbs.search_previous_folder')}
-                            aria-label={t('breadcrumbs.search_previous_folder')}
-                            className="grow text-sm"
-                          />
-                        </label>
-
-                        <div className="custom-scrollbar mt-3 grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
-                          {previousFolders.map((folder) => (
-                            <PreviousFolderItem
-                              key={folder.path}
-                              folder={folder}
-                              onNavigate={onNavigateToPreviousFolder}
+                        <div
+                          id="breadcrumb-previous-folder-menu"
+                          role="dialog"
+                          aria-label={t('breadcrumbs.previous_folder_menu', { folder: label })}
+                          className="p-3"
+                        >
+                          <label className="input input-sm flex h-10 items-center gap-2 rounded-lg border-base-content/8 bg-base-200/65 px-3 shadow-none">
+                            <Search size={15} className="text-base-content/45" aria-hidden="true" />
+                            <input
+                              autoFocus
+                              type="search"
+                              value={previousFolderSearch}
+                              onChange={(event) => setPreviousFolderSearch(event.target.value)}
+                              placeholder={t('breadcrumbs.search_previous_folder')}
+                              aria-label={t('breadcrumbs.search_previous_folder')}
+                              className="grow text-sm"
                             />
-                          ))}
-                        </div>
+                          </label>
 
-                        {previousFolders.length === 0 && (
-                          <p className="px-1 py-3 text-center text-xs text-base-content/50">
-                            {t('breadcrumbs.no_previous_folder_results')}
-                          </p>
-                        )}
-                      </div>
+                          <div className="custom-scrollbar mt-3 grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+                            {previousFolders.map((folder) => (
+                              <PreviousFolderItem
+                                key={folder.path}
+                                folder={folder}
+                                onNavigate={onNavigateToPreviousFolder}
+                              />
+                            ))}
+                          </div>
+
+                          {previousFolders.length === 0 && (
+                            <p className="px-1 py-3 text-center text-xs text-base-content/50">
+                              {t('breadcrumbs.no_previous_folder_results')}
+                            </p>
+                          )}
+                        </div>
+                      </LiquidSurface>
                     </div>
                   )}
                 </div>
@@ -195,9 +236,9 @@ export default function ExplorerBreadcrumbs({
                 <button
                   onClick={() => onNavigate(realIndex)}
                   className="hover:text-primary transition-colors hover:underline truncate max-w-30 text-xs"
-                  title={segment}
+                  title={label}
                 >
-                  {segment}
+                  {label}
                 </button>
               )}
             </li>

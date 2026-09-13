@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 import type { DupScanGroup, DuplicateSelection } from '@/entities/workspace';
 import { formatBytes } from '../../../shared/lib/utils/formatters';
 import { useTranslation } from 'react-i18next';
+import { ModThumbnail } from '@/entities/mod';
 
 type RadialProgressStyle = CSSProperties & {
   '--value': number;
@@ -21,12 +22,19 @@ function createRadialProgressStyle(value: number): RadialProgressStyle {
 
 interface Props {
   groups: DupScanGroup[];
+  gameId?: string;
   selections: Map<string, DuplicateSelection>;
   onSelectionChange: (groupId: string, action: DuplicateSelection) => void;
   disabled?: boolean;
 }
 
-export default function DuplicateTable({ groups, selections, onSelectionChange, disabled }: Props) {
+export default function DuplicateTable({
+  groups,
+  gameId = '',
+  selections,
+  onSelectionChange,
+  disabled,
+}: Props) {
   const { t } = useTranslation(['scanner']);
   if (groups.length === 0) {
     return (
@@ -61,7 +69,7 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
               <tr key={group.groupId} className="hover:bg-base-200/30 transition-colors">
                 {/* ID/Index */}
                 <td className="text-center">
-                  <span className="badge badge-outline font-mono text-xs opacity-50">
+                  <span className="badge badge-outline font-mono text-xs text-muted">
                     {index + 1}
                   </span>
                 </td>
@@ -72,7 +80,7 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
                     {group.members.map((member, mIdx) => (
                       <div
                         key={member.folderPath}
-                        className={`p-3 rounded-lg border transition-all ${
+                        className={`rounded-lg border p-3 transition-[background-color,border-color,opacity] duration-150 ${
                           selectedAction?.type === 'Keep' &&
                           selectedAction.targetPath === member.folderPath
                             ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20'
@@ -82,10 +90,15 @@ export default function DuplicateTable({ groups, selections, onSelectionChange, 
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
                             <span className="badge badge-sm font-bold bg-base-content text-base-100">
                               {String.fromCharCode(65 + mIdx)}
                             </span>
+                            <ModThumbnail
+                              gameId={gameId}
+                              folderPath={member.folderPath}
+                              sizeClassName="size-10"
+                            />
                             <div className="flex flex-col">
                               <span
                                 className="font-medium text-sm truncate max-w-50"

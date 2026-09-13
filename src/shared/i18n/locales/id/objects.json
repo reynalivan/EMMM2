@@ -1,6 +1,6 @@
 {
   "toolbar": {
-    "search_placeholder": "Cari...",
+    "search_placeholder": "Cari objek...",
     "auto_organize": "Atur Otomatis",
     "hide_filters": "Sembunyikan Filter",
     "show_filters": "Tampilkan Filter",
@@ -96,7 +96,7 @@
     "rename_folder": "Ganti Nama Folder",
     "skip_mod": "Lewati mod ini",
     "include_mod": "Sertakan mod ini",
-    "click_to_assign": "Tidak ada kecocokan — klik untuk menentukan"
+    "click_to_assign": "Tidak ada kecocokan. Klik untuk menentukan"
   },
   "bulk": {
     "clear_selection": "Bersihkan pilihan",
@@ -126,8 +126,24 @@
     "select_category": "Pilih Kategori",
     "sub_category": "Sub-kategori",
     "placeholder_name": "misal: Eula",
-    "placeholder_sub": "misal: Enemy, NPC, VFX",
+    "validation": {
+      "name_too_short": "Nama harus memiliki minimal 2 karakter.",
+      "name_too_long": "Nama dapat memiliki maksimal 255 karakter.",
+      "object_type_required": "Pilih tipe objek."
+    },
     "metadata": "Metadata",
+    "thumbnail": {
+      "label": "Thumbnail",
+      "alt": "Thumbnail terpilih",
+      "select_file": "File",
+      "paste": "Tempel",
+      "remove": "Hapus",
+      "url_placeholder": "URL gambar",
+      "use_url": "Tambah",
+      "no_clipboard_image": "Tidak ada gambar di clipboard.",
+      "file_error": "Gagal memilih gambar: {{error}}",
+      "paste_error": "Gagal menempel gambar: {{error}}"
+    },
     "success_message": "Berhasil membuat \"{{name}}\".",
     "error_message": "Gagal membuat objek: {{error}}",
     "submit": "Buat Objek"
@@ -143,6 +159,10 @@
       "active": "Aktif"
     },
     "status": "Status",
+    "randomizer_mode": "Perilaku shuffle",
+    "randomizer_default": "Default kategori",
+    "randomizer_exclusive": "Eksklusif: ganti mod aktif",
+    "randomizer_additive": "Additive: pertahankan mod aktif",
     "enabled": "Aktif",
     "disabled": "Nonaktif",
     "skin_mapping": "Mapping Skin",

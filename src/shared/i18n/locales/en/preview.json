@@ -20,7 +20,8 @@
     "save": "Save",
     "close": "Close",
     "edit": "Edit",
-    "more_actions": "More Actions"
+    "more_actions": "More Actions",
+    "rename_mod": "Rename mod"
   },
   "metadata": {
     "title": "Metadata",
@@ -55,25 +56,27 @@
     "next_image": "Next image",
     "fullscreen": "Fullscreen",
     "slider_label": "Preview image slider",
+    "actions_label": "Preview image actions",
+    "add_preview_image": "Add preview image",
     "go_to_image": "Go to image {{index}}",
     "no_image_in_clipboard": "No image found in the clipboard.",
-    "thumbnail_pasted": "Thumbnail pasted.",
-    "paste_error": "Failed to paste thumbnail: {{error}}",
-    "thumbnail_removed": "Thumbnail removed.",
-    "remove_error": "Failed to remove thumbnail: {{error}}",
-    "all_thumbnails_cleared": "All thumbnails cleared.",
-    "clear_all_error": "Failed to clear thumbnails: {{error}}",
-    "remove_confirm_message": "Remove the selected thumbnail?",
-    "clear_all_confirm_message": "Remove all thumbnails from this mod?",
-    "no_thumbnail_selected": "No thumbnail selected.",
-    "no_thumbnails_to_clear": "There are no thumbnails to clear.",
-    "import_error": "Failed to import thumbnail: {{error}}",
+    "thumbnail_pasted": "Preview image pasted.",
+    "paste_error": "Failed to paste preview image: {{error}}",
+    "thumbnail_removed": "Preview image deleted.",
+    "remove_error": "Failed to delete preview image: {{error}}",
+    "all_thumbnails_cleared": "All preview images deleted.",
+    "clear_all_error": "Failed to delete preview images: {{error}}",
+    "remove_confirm_message": "Delete the selected preview image?",
+    "clear_all_confirm_message": "Delete all preview images from this mod?",
+    "no_thumbnail_selected": "No preview image selected.",
+    "no_thumbnails_to_clear": "There are no preview images to delete.",
+    "import_error": "Failed to import preview image: {{error}}",
     "menu": {
-      "paste": "Paste Thumbnail",
-      "import": "Import Thumbnail",
-      "remove_current": "Remove This Thumbnail",
-      "clear_all": "Clear All Thumbnails",
-      "thumbnail_imported": "Thumbnail imported."
+      "paste": "Paste image from clipboard",
+      "import": "Import preview image",
+      "remove_current": "Delete current preview image",
+      "clear_all": "Delete all preview images",
+      "thumbnail_imported": "Preview image imported."
     }
   },
   "modals": {
@@ -118,7 +121,51 @@
     "alt_restriction_disabled": "Alt is part of the combo, cannot restrict.",
     "invalid_values": "Fix invalid INI values before saving.",
     "saved": "INI editor saved.",
-    "save_error": "Cannot save INI: {{error}}"
+    "save_error": "Cannot save INI: {{error}}",
+    "binding_count": "{{count}} bindings",
+    "unsaved_count": "{{count}} unsaved"
+  },
+  "mod_health": {
+    "title": "Mod Health",
+    "loading": "Checking mod files…",
+    "error": "Mod Health could not be checked: {{error}}",
+    "recheck": "Recheck",
+    "view_details": "Details",
+    "open_ini": "Open INI",
+    "details_title": "Details",
+    "error_count": "{{count}} error",
+    "warning_count": "{{count}} warning",
+    "control_count": "{{count}} controls",
+    "no_issues": "No issues found.",
+    "no_controls": "No supported controls found.",
+    "default_value": "Default: {{value}}",
+    "support": { "full": "Full", "experimental": "Experimental", "baseline": "Baseline" },
+    "tabs": { "issues": "Issues", "assets": "Assets", "controls": "Controls" },
+    "assets": {
+      "referenced": "Referenced",
+      "inactive_only": "Inactive only",
+      "orphan": "Orphan",
+      "external_reference": "External reference"
+    },
+    "control_kind": {
+      "key_toggle": "Key Toggle",
+      "menu_toggle": "Menu Toggle",
+      "present": "PRESENT",
+      "shape": "Shape"
+    },
+    "external_review": {
+      "title": "Changes detected after Mod Viewer launch",
+      "dismiss": "Dismiss",
+      "toast": "{{count}} external file changes detected after Mod Viewer launch.",
+      "category": {
+        "ini": "INI files",
+        "dds": "DDS textures",
+        "backup": "Backups",
+        "metadata": "Viewer metadata",
+        "other": "Other files"
+      },
+      "change": { "added": "Added", "modified": "Modified", "removed": "Removed" }
+    }
   },
   "errors": {
     "open_location_failed": "Failed to open file location: {{error}}"

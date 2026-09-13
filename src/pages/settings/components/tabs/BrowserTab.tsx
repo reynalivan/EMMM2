@@ -1,11 +1,13 @@
 import { formatAppError } from '../../../../shared/lib/appError';
-import { Globe, HardDrive, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../../shared/api/tauri/bindings';
 import { useToastStore } from '@/shared/ui/toast';
+import { useAppStore } from '@/app/store';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
+import { SettingsRow, SettingsSection } from '../SettingsLayout';
 
 const LEGACY_BROWSER_STORE_KEY = 'emmm-browser-store';
 
@@ -41,13 +43,15 @@ function removeLegacyBrowserStore(): void {
 export default function BrowserTab() {
   const { t } = useTranslation(['settings', 'common']);
   const queryClient = useQueryClient();
+  const activeGameId = useAppStore((state) => state.activeGameId);
   const { addToast } = useToastStore();
   const [homepageDraft, setHomepageDraft] = useState('https://www.google.com');
   const [retentionDaysDraft, setRetentionDaysDraft] = useState('');
 
   const { data: homepageUrl } = useQuery({
-    queryKey: ['browser_homepage'],
-    queryFn: () => commands.browserGetHomepage(),
+    queryKey: ['browser_homepage', activeGameId],
+    queryFn: () => commands.browserGetHomepage(activeGameId!),
+    enabled: Boolean(activeGameId),
   });
   const { data: retentionDays } = useQuery({
     queryKey: ['browser-retention-days'],
@@ -72,9 +76,9 @@ export default function BrowserTab() {
   }, [retentionDays]);
 
   const setHomepageMutation = useMutation({
-    mutationFn: (url: string) => commands.browserSetHomepage(url),
+    mutationFn: (url: string) => commands.browserSetHomepage(activeGameId!, url),
     onSuccess: async (_, url) => {
-      queryClient.setQueryData(['browser_homepage'], url);
+      queryClient.setQueryData(['browser_homepage', activeGameId], url);
       await publishQueryScopes(queryClient, ['browserHomepage']);
       addToast('success', t('settings:browser.homepage_success'));
     },
@@ -108,7 +112,7 @@ export default function BrowserTab() {
 
   const saveHomepage = () => {
     const url = homepageDraft.trim();
-    if (url && url !== homepageUrl) {
+    if (activeGameId && url && url !== homepageUrl) {
       setHomepageMutation.mutate(url);
     }
   };
@@ -127,23 +131,17 @@ export default function BrowserTab() {
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Browser Core */}
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <Globe size={20} className="text-info" />
-            {t('settings:browser.title')}
-          </h3>
-
-          <div className="form-control w-full max-w-lg mt-2">
-            <label className="label">
-              <span className="label-text font-medium">{t('settings:browser.homepage')}</span>
-            </label>
-            <div className="flex gap-2">
+    <div>
+      <SettingsSection id="browser-settings-heading" title={t('settings:browser.title')}>
+        <SettingsRow
+          label={t('settings:browser.homepage')}
+          description={t('settings:browser.homepage_desc')}
+          control={
+            <div className="flex w-full gap-2 sm:w-96">
               <input
                 type="url"
-                className="input input-bordered flex-1"
+                aria-label={t('settings:browser.homepage')}
+                className="input input-bordered input-sm min-w-0 flex-1"
                 value={homepageDraft}
                 onChange={(event) => setHomepageDraft(event.target.value)}
                 onBlur={saveHomepage}
@@ -154,7 +152,7 @@ export default function BrowserTab() {
                 }}
               />
               <button
-                className="btn btn-outline"
+                className="btn btn-outline btn-sm"
                 onClick={() => {
                   const defaultHomepage = 'https://www.google.com';
                   setHomepageDraft(defaultHomepage);
@@ -164,33 +162,22 @@ export default function BrowserTab() {
                 {t('settings:browser.reset')}
               </button>
             </div>
-            <label className="label">
-              <span className="label-text-alt text-base-content/60">
-                {t('settings:browser.homepage_desc')}
-              </span>
-            </label>
-          </div>
-        </div>
-      </div>
+          }
+        />
+      </SettingsSection>
 
-      {/* Storage & Retention */}
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <HardDrive size={20} className="text-warning" />
-            {t('settings:browser.storage_title')}
-          </h3>
-
-          <div className="form-control w-full max-w-xs mt-4">
-            <label className="label">
-              <span className="label-text font-medium">{t('settings:browser.retention')}</span>
-            </label>
+      <SettingsSection id="browser-storage-heading" title={t('settings:browser.storage_title')}>
+        <SettingsRow
+          label={t('settings:browser.retention')}
+          description={t('settings:browser.retention_desc')}
+          control={
             <div className="flex items-center gap-2">
               <input
                 type="number"
+                aria-label={t('settings:browser.retention')}
                 min="1"
                 max="365"
-                className="input input-bordered w-24"
+                className="input input-bordered input-sm w-20"
                 value={retentionDaysDraft}
                 onChange={(event) => setRetentionDaysDraft(event.target.value)}
                 onBlur={saveRetentionDays}
@@ -203,29 +190,21 @@ export default function BrowserTab() {
               />
               <span className="text-sm text-base-content/70">{t('settings:browser.days')}</span>
             </div>
-            <label className="label">
-              <span className="label-text-alt text-base-content/60">
-                {t('settings:browser.retention_desc')}
-              </span>
-            </label>
-          </div>
-
-          <div className="divider opacity-30 my-2" />
-
-          <div className="flex flex-wrap gap-3 mt-2">
-            <button
-              className="btn btn-outline btn-error gap-2"
-              onClick={() => clearOldDownloadsMutation.mutate()}
-              disabled={clearOldDownloadsMutation.isPending || retentionDays === undefined}
-            >
-              <Trash2 size={18} />
-              {clearOldDownloadsMutation.isPending
-                ? t('settings:browser.clearing')
-                : t('settings:browser.clear_downloads')}
-            </button>
-          </div>
+          }
+        />
+        <div className="flex justify-end border-t border-base-300/70 pt-3">
+          <button
+            className="btn btn-ghost btn-sm gap-2 text-error hover:bg-error/10"
+            onClick={() => clearOldDownloadsMutation.mutate()}
+            disabled={clearOldDownloadsMutation.isPending || retentionDays === undefined}
+          >
+            <Trash2 size={15} />
+            {clearOldDownloadsMutation.isPending
+              ? t('settings:browser.clearing')
+              : t('settings:browser.clear_downloads')}
+          </button>
         </div>
-      </div>
+      </SettingsSection>
     </div>
   );
 }

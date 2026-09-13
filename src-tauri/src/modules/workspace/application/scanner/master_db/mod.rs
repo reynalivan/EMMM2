@@ -12,63 +12,17 @@ use crate::modules::matching::application::deep_matcher::analysis::content::{
     IniTokenizationConfig, PreparedTokenFilters,
 };
 use crate::modules::matching::application::deep_matcher::{DbEntry, EntryKind, MasterDb};
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct MasterDbPayload {
-    entries: Vec<DbEntry>,
-}
-
+use crate::modules::workspace::application::scanner::master_db::asset_pack::CatalogPack;
 /// Load and parse the MasterDB JSON for a given game type from `resource_dir`.
 pub fn load_master_db_entries(
-    resource_dir: &Path,
+    app_data_dir: &Path,
     game_type: i32,
 ) -> Result<Vec<DbEntry>, ScannerError> {
-    let canonical = schema_loader::normalize_game_type(game_type);
-    let db_path = resource_dir
-        .join("databases")
-        .join(format!("{}.json", canonical));
-
-    if !db_path.exists() {
-        log::warn!(
-            "MasterDB not found for {}: {}",
-            game_type,
-            db_path.display()
-        );
-        return Ok(Vec::new());
+    match CatalogPack::load(app_data_dir).and_then(|pack| pack.entries_for(game_type)) {
+        Ok(entries) => Ok(entries),
+        Err(error) if error.to_string().contains("not installed") => Ok(Vec::new()),
+        Err(error) => Err(error),
     }
-
-    let json_content = std::fs::read_to_string(&db_path)?;
-
-    // Only accept strict object format
-    let payload: MasterDbPayload =
-        serde_json::from_str(&json_content).map_err(|e| ScannerError::Parse {
-            what: "MasterDB".to_string(),
-            detail: format!("expected an object with an 'entries' key: {}", e),
-        })?;
-
-    let mut entries = payload.entries;
-    for entry in entries.iter_mut() {
-        // We can reuse the `absolutize_thumbnails` logic by swapping out the entry
-        // with an empty dummy, transforming it, and placing it back.
-        // A cleaner way since `absolutize_thumbnails` takes ownership:
-        let old = std::mem::replace(
-            entry,
-            DbEntry {
-                name: String::new(),
-                aliases: vec![],
-                object_type: String::new(),
-                entry_kind: Default::default(),
-                custom_skins: vec![],
-                thumbnail_path: None,
-                metadata: None,
-                hash_db: Default::default(),
-            },
-        );
-        *entry = absolutize_thumbnails(old, resource_dir);
-    }
-
-    Ok(entries)
 }
 
 pub fn ini_filters(resource_dir: Option<&Path>, game_type: i32) -> PreparedTokenFilters {
@@ -239,6 +193,10 @@ pub fn search_master_db_service(
 
 mod cache;
 pub use cache::{get_cached, MasterDbCache};
+pub(crate) mod asset_pack;
+pub use asset_pack::{CatalogPackRefreshResult, CatalogPackStatus};
+pub(crate) mod catalog_update;
+pub use catalog_update::{CatalogUpdateCheck, CatalogUpdateInstallResult, CatalogUpdateState};
 
 #[cfg(test)]
 #[path = "tests.rs"]

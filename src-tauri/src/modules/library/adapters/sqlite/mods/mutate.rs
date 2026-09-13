@@ -18,9 +18,10 @@ pub async fn insert_mod_tx(
     is_favorite: bool,
     is_safe: bool,
     safety_source: &str,
+    size_bytes: i64,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, safety_source, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)"
+        "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, safety_source, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(id)
     .bind(game_id)
@@ -33,6 +34,7 @@ pub async fn insert_mod_tx(
     .bind(is_favorite)
     .bind(is_safe)
     .bind(safety_source)
+    .bind(size_bytes)
     .execute(conn)
     .await?;
     Ok(())

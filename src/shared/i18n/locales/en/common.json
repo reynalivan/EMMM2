@@ -52,6 +52,22 @@
       "invalid": "Invalid input"
     }
   },
+  "diagnostics": {
+    "report": {
+      "title": "Help diagnose this error?",
+      "description": "You can send an anonymous diagnostic code to help improve EMMM. It never includes your files, folders, mod names, URLs, or error message.",
+      "code": "Diagnostic code: {{code}}",
+      "unavailable": "Diagnostics delivery is not configured in this build.",
+      "send": "Send anonymous report",
+      "dismiss": "Do not send"
+    },
+    "crash": {
+      "title": "EMMM did not close normally",
+      "description": "A short anonymous diagnostic code was saved locally. You can send it to help us investigate, or remove it. It does not include your files, folders, mod names, URLs, or error message.",
+      "send": "Send anonymous report",
+      "dismiss": "Remove report"
+    }
+  },
   "status": {
     "none": "None",
     "loading": "Loading...",

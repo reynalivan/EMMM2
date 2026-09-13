@@ -19,6 +19,7 @@ export const DOWNLOAD_STATUS_BADGE: Record<DownloadStatus, DownloadStatusBadge> 
     icon: RefreshCw,
     spin: true,
   },
+  paused: { labelKey: 'downloads.status.paused', cls: 'badge-warning' },
   finished: { labelKey: 'downloads.status.ready', cls: 'badge-success', icon: CheckCircle2 },
   failed: { labelKey: 'downloads.status.failed', cls: 'badge-error', icon: AlertCircle },
   canceled: { labelKey: 'downloads.status.canceled', cls: 'badge-warning' },

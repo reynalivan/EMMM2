@@ -31,7 +31,12 @@ export default function FolderConflictManager() {
   const activeGameId = useAppStore((state) => state.activeGameId);
   const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
   const conflictsByGame = useAppStore((state) => state.folderConflictsByGame);
-  const groups = activeGameId ? (conflictsByGame[activeGameId] ?? EMPTY_GROUPS) : EMPTY_GROUPS;
+  const reportsByGame = useAppStore((state) => state.folderConflictReportsByGame);
+  const report = activeGameId ? (reportsByGame[activeGameId] ?? null) : null;
+  const groups = activeGameId
+    ? (report?.groups ?? conflictsByGame[activeGameId] ?? EMPTY_GROUPS)
+    : EMPTY_GROUPS;
+  const resolvedExternally = report?.status === 'resolvedExternally';
   const applyConflictActionResult = useApplyFolderConflictActionResult();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -93,10 +98,10 @@ export default function FolderConflictManager() {
     setSelectedId((current) => selectNextFolderConflictGroup(previous, groups, current));
     previousGroupsRef.current = groups;
 
-    if (groups.length === 0 && previous.length === 0) {
+    if (groups.length === 0 && previous.length === 0 && !resolvedExternally) {
       closeWorkspaceDialog('folderConflicts');
     }
-  }, [activeGameId, groups]);
+  }, [activeGameId, groups, resolvedExternally]);
 
   useEffect(() => {
     draftsRef.current = drafts;
@@ -364,8 +369,15 @@ export default function FolderConflictManager() {
           <section className="min-h-0 overflow-y-auto p-4">
             {isComplete && (
               <FolderConflictCompletion
+                kind="action"
                 resolved={completedGroups.length}
                 total={totalGroups}
+                onClose={() => closeWorkspaceDialog('folderConflicts')}
+              />
+            )}
+            {resolvedExternally && !isComplete && (
+              <FolderConflictCompletion
+                kind="external"
                 onClose={() => closeWorkspaceDialog('folderConflicts')}
               />
             )}
@@ -383,7 +395,7 @@ export default function FolderConflictManager() {
                 </button>
               </div>
             )}
-            {!loadingDetails && !detailsError && selected && (
+            {!resolvedExternally && !loadingDetails && !detailsError && selected && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="mb-4">
                   <p className="text-sm font-medium text-base-content/80">

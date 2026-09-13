@@ -45,7 +45,7 @@ fn test_game_enum_resolution() {
 #[test]
 #[ignore = "requires the live GameBanana API and a mutable community item"]
 fn test_live_api_fetch_and_validate() {
-    // A known Genshin Impact mod (from your request or recent subfeed)
+    // A known GIMI mod (from the supplied or recent subfeed)
     // Mod ID: 654298 -> "❤️Zibai❤️ Lunar Qilin"
     let gb_ref = GameBananaRef {
         item_type: "Mod".to_string(),

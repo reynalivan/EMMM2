@@ -9,7 +9,7 @@
 ![React](https://img.shields.io/badge/React-v19-blue?style=flat-square&logo=react)
 ![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite)
 
-**EMMM** is a high-performance, intelligent mod manager designed for 3DMigoto-based games (Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Wuthering Waves, and Arknights: Endfield). EMMM bridges the gap between raw filesystem operations and the modern user's expectation for speed, safety, and visual excellence.
+**EMMM** is a high-performance, intelligent mod manager for XXMI-compatible 3DMigoto workflows, including GIMI, SRMI, WWMI, ZZMI, and EFMI. EMMM is an independent third-party tool and is not affiliated with any game developer, publisher, or platform.
 
 ---
 
@@ -125,6 +125,10 @@ EMMM is a **Premium Orchestrator**. We prioritize visual excellence and tactile 
 
 1. `.\setup.ps1` — Validate Node/Rust, install the locked frontend dependencies, and fetch Cargo crates.
 2. `corepack pnpm tauri dev` — Start the application in development mode with HMR.
+
+### Development catalog pack
+
+`pnpm tauri dev` requires a sibling checkout at `../3dm-catalog-asset` and installs its `manifest.json`, `catalog/`, and `images/` into the isolated development profile before starting. The development profile is `%APPDATA%\\com.reynalivan.emmm.dev\\asset-pack`, so it never changes the release profile or bundle. Set `EMMM_DEV_CATALOG_SOURCE` to use a different local checkout. A missing source, invalid manifest, or catalog checksum blocks the development launch.
 
 ### Essential Commands
 

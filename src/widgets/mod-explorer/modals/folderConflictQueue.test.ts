@@ -14,7 +14,7 @@ const group = (groupId: string, candidatePaths: string[]) => ({
 });
 
 describe('folder conflict queue', () => {
-  it('marks a disappeared group complete and selects the next unresolved group', () => {
+  it('marks only the explicitly resolved group complete and selects the next unresolved group', () => {
     const previous = [
       group('one', ['one/a']),
       group('two', ['two/a']),
@@ -22,7 +22,7 @@ describe('folder conflict queue', () => {
     ];
     const next = [group('one', ['one/a']), group('three', ['three/a'])];
 
-    expect(reconcileFolderConflictQueue(previous, next, [])).toEqual([
+    expect(reconcileFolderConflictQueue(previous, next, [], 'two')).toEqual([
       { group_id: 'two', fingerprint: 'two:two/a:1', display_name: 'two' },
     ]);
     expect(selectNextFolderConflictGroup(previous, next, 'two')).toBe('three');
@@ -46,8 +46,8 @@ describe('folder conflict queue', () => {
     expect(selectNextFolderConflictGroup(previous, current, 'two')).toBe('two');
   });
 
-  it('does not mark every group resolved when a report briefly becomes empty', () => {
-    const previous = [group('one', ['one/a']), group('two', ['two/a'])];
+  it('does not mark a single group resolved when a report becomes empty without an action', () => {
+    const previous = [group('one', ['one/a'])];
 
     expect(reconcileFolderConflictQueue(previous, [], [])).toEqual([]);
   });

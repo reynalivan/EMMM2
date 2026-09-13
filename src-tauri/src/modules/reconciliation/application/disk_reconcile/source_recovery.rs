@@ -418,6 +418,7 @@ mod tests {
             safety_source: None,
             object_type: Some("Other".to_string()),
             filesystem_identity: identity.map(str::to_string),
+            size_bytes: 0,
         }
     }
 
@@ -444,6 +445,7 @@ mod tests {
             raw_name: path.to_string(),
             absolute_path: std::path::PathBuf::from(path),
             filesystem_identity: identity.map(str::to_string),
+            size_bytes: None,
         }
     }
 
@@ -883,7 +885,12 @@ mod tests {
         let configured_root = config.mods_root_for("game-1");
         assert_eq!(
             configured_root,
-            Some(candidate.path().canonicalize().expect("canonical candidate")),
+            Some(
+                candidate
+                    .path()
+                    .canonicalize()
+                    .expect("canonical candidate")
+            ),
             "projection committed (objects={object_count}, mods={mod_count}) but source recovery rolled the config back after runtime effects failed: {apply_result:?}"
         );
         let reconcile = apply_result

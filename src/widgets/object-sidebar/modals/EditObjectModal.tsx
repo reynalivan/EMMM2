@@ -12,6 +12,8 @@ import { useMasterDbSync, type DbEntryFull } from '../hooks/useMasterDbSync';
 import { EditObjectTabManual } from './EditObjectTabManual';
 import { EditObjectTabAuto } from './EditObjectTabAuto';
 import { EditObjectTabThumbnail } from './EditObjectTabThumbnail';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 interface EditObjectModalProps {
   open: boolean;
@@ -23,6 +25,7 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
   const { t } = useTranslation(['objects', 'common']);
   const { activeGame } = useActiveGame();
   const { data: gameSchema } = useGameSchema();
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Thumbnail state (UI only)
   const [selectedThumbnailPath, setSelectedThumbnailPath] = useState<string | null>(null);
@@ -241,10 +244,17 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
     setSelectedThumbnailPath(null);
   };
 
+  useDialogSync(dialogRef, open && Boolean(object));
+
   if (!open || !object) return null;
 
   return (
-    <div className="modal modal-open">
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      aria-labelledby="edit-object-title"
+      onClose={onClose}
+    >
       <div className="modal-box relative flex h-[90vh] max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-hidden">
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2 z-60"
@@ -255,8 +265,10 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
         </button>
 
         {/* Header with Context */}
-        <h3 className="font-bold text-lg mb-1">{t('edit_modal.title')}</h3>
-        <p className="text-sm opacity-50 mb-4 truncate">
+        <h3 id="edit-object-title" className="font-bold text-lg mb-1">
+          {t('edit_modal.title')}
+        </h3>
+        <p className="text-sm text-muted mb-4 truncate">
           {t('edit_modal.original')}: <span className="font-mono">{originalName}</span>
         </p>
 
@@ -264,38 +276,49 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
           <div className="flex justify-center p-8">{t('common:states.loading')}</div>
         ) : (
           <form onSubmit={handleSubmit} className="flex h-full min-h-0 flex-col gap-4">
-            {/* Tabs: Manual vs Auto Sync */}
-            <div
-              role="tablist"
-              className="tabs tabs-bordered -mx-6 border-b border-base-200 bg-base-100 px-6"
-            >
-              <a
-                role="tab"
-                className={`tab ${activeTab === 'manual' ? 'tab-active font-bold border-b-2 border-primary' : ''}`}
-                onClick={() => handleTabSwitch('manual')}
+            <div role="tablist" aria-label={t('edit_modal.title')}>
+              <LiquidSurface
+                liquidRole="control"
+                className="rounded-[var(--radius-box)]"
+                contentClassName="flex gap-1 p-1"
               >
-                {t('edit_modal.tabs.manual')}
-              </a>
-              <a
-                role="tab"
-                className={`tab gap-2 ${activeTab === 'auto' ? 'tab-active font-bold border-b-2 border-primary' : ''}`}
-                onClick={() => activeGame && handleTabSwitch('auto')}
-                style={{
-                  opacity: activeGame ? 1 : 0.5,
-                  cursor: activeGame ? 'pointer' : 'not-allowed',
-                }}
-              >
-                {t('edit_modal.tabs.auto')}
-                {watch('is_auto_sync') ? (
-                  <div className="badge badge-sm badge-success text-success-content">
-                    {t('edit_modal.badges.active')}
-                  </div>
-                ) : (
-                  suggestions.length > 0 && (
-                    <div className="badge badge-sm badge-secondary">{suggestions.length}</div>
-                  )
-                )}
-              </a>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'manual'}
+                  className={`flex min-h-8 items-center justify-center rounded-[calc(var(--radius-box)-0.25rem)] px-3 text-sm font-medium transition-[background-color,color] duration-150 ${
+                    activeTab === 'manual'
+                      ? 'bg-base-content/[0.08] text-base-content'
+                      : 'text-base-content/55 hover:bg-base-content/[0.05] hover:text-base-content'
+                  }`}
+                  onClick={() => handleTabSwitch('manual')}
+                >
+                  {t('edit_modal.tabs.manual')}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'auto'}
+                  disabled={!activeGame}
+                  className={`flex min-h-8 items-center justify-center gap-2 rounded-[calc(var(--radius-box)-0.25rem)] px-3 text-sm font-medium transition-[background-color,color] duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+                    activeTab === 'auto'
+                      ? 'bg-base-content/[0.08] text-base-content'
+                      : 'text-base-content/55 hover:bg-base-content/[0.05] hover:text-base-content'
+                  }`}
+                  onClick={() => handleTabSwitch('auto')}
+                >
+                  {t('edit_modal.tabs.auto')}
+                  {watch('is_auto_sync') ? (
+                    <span className="badge badge-sm badge-success text-success-content">
+                      {t('edit_modal.badges.active')}
+                    </span>
+                  ) : (
+                    suggestions.length > 0 && (
+                      <span className="badge badge-sm badge-secondary">{suggestions.length}</span>
+                    )
+                  )}
+                </button>
+              </LiquidSurface>
             </div>
 
             <div className="min-h-0 -mx-6 flex-1 overflow-y-scroll px-6 pt-4 [scrollbar-gutter:stable]">
@@ -358,7 +381,9 @@ export default function EditObjectModal({ open, object, onClose }: EditObjectMod
           </form>
         )}
       </div>
-      <div className="modal-backdrop" onClick={onClose}></div>
-    </div>
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>{t('common:actions.close')}</button>
+      </form>
+    </dialog>
   );
 }

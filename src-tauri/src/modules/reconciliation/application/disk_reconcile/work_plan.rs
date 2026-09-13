@@ -61,9 +61,12 @@ fn list_mod_roots(mods_path: &Path) -> Result<Vec<(String, PathBuf)>, AppError> 
                     entry.path().display()
                 ))
             })?;
-            Ok(file_type
-                .is_dir()
-                .then(|| (entry.file_name().to_string_lossy().to_string(), entry.path())))
+            Ok(file_type.is_dir().then(|| {
+                (
+                    entry.file_name().to_string_lossy().to_string(),
+                    entry.path(),
+                )
+            }))
         })
         .collect::<Result<Vec<_>, AppError>>()?
         .into_iter()
@@ -84,7 +87,10 @@ fn measure_root_work(root_name: String, root_path: PathBuf) -> Result<IndexingRo
             continue;
         }
         let metadata = entry.metadata().map_err(|error| {
-            AppError::Io(format!("Could not inspect '{}': {error}", entry.path().display()))
+            AppError::Io(format!(
+                "Could not inspect '{}': {error}",
+                entry.path().display()
+            ))
         })?;
         file_count = file_count.saturating_add(1);
         total_bytes = total_bytes.saturating_add(metadata.len());
@@ -134,6 +140,9 @@ mod tests {
         assert_eq!(plan[0].file_count, 2);
         assert_eq!(plan[0].total_bytes, 103);
         assert_eq!(plan[0].roots[0].root_name, "UI");
-        assert_eq!(plan[0].roots[0].work_units, 2 * FILE_METADATA_WORK_BYTES + 103);
+        assert_eq!(
+            plan[0].roots[0].work_units,
+            2 * FILE_METADATA_WORK_BYTES + 103
+        );
     }
 }

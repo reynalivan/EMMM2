@@ -1,5 +1,5 @@
 use crate::modules::catalog::application::objects::classification::{
-    CanonicalClassificationMatch, ObjectClassificationInput, apply_object_classification,
+    apply_object_classification, CanonicalClassificationMatch, ObjectClassificationInput,
 };
 
 async fn setup_classification_fixture() -> sqlx::SqlitePool {
@@ -164,11 +164,9 @@ async fn classification_writer_rejects_unstable_category_without_writes() {
         .await
         .expect_err("legacy category must be rejected");
 
-    assert!(
-        error
-            .to_string()
-            .contains("Character, Weapon, UI, or Other")
-    );
+    assert!(error
+        .to_string()
+        .contains("Character, Weapon, UI, or Other"));
     let object_type: String = sqlx::query_scalar("SELECT object_type FROM objects WHERE id = 'o1'")
         .fetch_one(&pool)
         .await
@@ -224,11 +222,11 @@ async fn classification_writer_requires_canonical_match_before_learning_alias() 
 #[tokio::test]
 async fn classification_batch_preflights_every_item_before_writing_any_item() {
     use crate::modules::catalog::application::match_engine::inspection::{
-        InspectionRequest, inspect_source,
+        inspect_source, InspectionRequest,
     };
     use crate::modules::catalog::application::objects::classification_batch::{
-        ApplyObjectClassificationBatchInput, ApplyObjectClassificationItem,
-        ObjectClassificationDecision, apply_object_classification_batch,
+        apply_object_classification_batch, ApplyObjectClassificationBatchInput,
+        ApplyObjectClassificationItem, ObjectClassificationDecision,
     };
     use crate::modules::ingestion::application::import_batch::types::StableCategory;
     use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
@@ -317,12 +315,12 @@ async fn classification_batch_preflights_every_item_before_writing_any_item() {
 #[tokio::test]
 async fn classification_batch_revalidates_canonical_identity_against_master_db() {
     use crate::modules::catalog::application::match_engine::inspection::{
-        InspectionRequest, inspect_source,
+        inspect_source, InspectionRequest,
     };
     use crate::modules::catalog::application::objects::classification_batch::{
+        apply_object_classification_batch, list_canonical_classification_catalog,
         ApplyObjectClassificationBatchInput, ApplyObjectClassificationItem,
-        ObjectClassificationDecision, apply_object_classification_batch,
-        list_canonical_classification_catalog,
+        ObjectClassificationDecision,
     };
     use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
     use crate::modules::matching::application::deep_matcher::{DbEntry, MasterDb};

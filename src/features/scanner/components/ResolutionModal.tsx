@@ -88,7 +88,7 @@ export default function ResolutionModal({
                 className="p-4 rounded-xl border border-base-300 bg-base-200/30"
               >
                 <div className="flex justify-between items-start mb-2">
-                  <span className="text-xs font-mono opacity-50 uppercase tracking-tighter">
+                  <span className="text-xs font-mono text-muted uppercase tracking-tighter">
                     {t('scanner:table.header.group')}: {group?.groupId.slice(0, 8)}...
                   </span>
                   {action?.type === 'Keep' ? (
@@ -142,11 +142,7 @@ export default function ResolutionModal({
             <button className="btn btn-ghost" onClick={onCancel} disabled={isPending}>
               {t('common:actions.cancel')}
             </button>
-            <button
-              className="btn btn-primary px-8 shadow-lg shadow-primary/20"
-              onClick={onConfirm}
-              disabled={isPending}
-            >
+            <button className="btn btn-primary px-8" onClick={onConfirm} disabled={isPending}>
               {isPending ? (
                 <>
                   <span className="loading loading-spinner loading-xs"></span>

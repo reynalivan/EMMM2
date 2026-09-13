@@ -1,6 +1,6 @@
 use crate::shared::errors::AppError;
 use std::path::{Component, Path};
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
@@ -110,6 +110,12 @@ pub async fn reconcile_disk_state_cmd(
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
 > {
+    let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
+    let started_at = std::time::Instant::now();
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
     // Opening Mods can race the workspace query which starts initial recovery.
     // Reuse that single pass instead of queueing a second full scan behind it.
     if should_wait_for_initial_recovery(
@@ -139,7 +145,7 @@ pub async fn reconcile_disk_state_cmd(
             reason.clone(),
         ),
     );
-    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+    let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
             config: config.inner(),
@@ -155,7 +161,19 @@ pub async fn reconcile_disk_state_cmd(
             force_full.unwrap_or(false),
         ),
     )
-    .await
+    .await;
+    if diagnostics_enabled && result.is_ok() {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::Reconcile,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+        )
+        .with_duration(started_at.elapsed());
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+    result
 }
 
 #[tauri::command]
@@ -168,7 +186,7 @@ pub async fn plan_onboarding_indexing_work(
         crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingWorkPlan,
     >,
     AppError,
-> {
+>{
     let configured_games = config.get_settings().games;
     let requested_games = game_ids
         .iter()

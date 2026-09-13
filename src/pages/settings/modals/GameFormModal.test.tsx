@@ -27,7 +27,7 @@ describe('GameFormModal', () => {
         onSave={onSave}
         initialData={{
           id: 'game-1',
-          name: 'Genshin Impact',
+          name: 'GIMI',
           game_type: GameType.GIMI,
           mod_path: 'E:/GIMI/Mods',
           game_exe: 'E:/GIMI/GenshinImpact.exe',
@@ -57,7 +57,7 @@ describe('GameFormModal', () => {
         onSave={vi.fn().mockRejectedValue(new Error('source apply failed'))}
         initialData={{
           id: 'game-1',
-          name: 'Genshin Impact',
+          name: 'GIMI',
           game_type: GameType.GIMI,
           mod_path: 'E:/GIMI/Mods',
           game_exe: 'E:/GIMI/GenshinImpact.exe',
@@ -92,7 +92,7 @@ describe('GameFormModal', () => {
       target: { value: 'E:/XXMI/Resources/Bin/XXMI Launcher.exe' },
     });
     fireEvent.change(screen.getByPlaceholderText('games.form.name_placeholder'), {
-      target: { value: 'Wuthering Waves' },
+      target: { value: 'WWMI' },
     });
 
     const submit = screen.getByTestId('game-form-submit');

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { DashboardPayload } from './model/dashboard';
 import { useAppStore } from '@/app/store';
 import { useDashboardStats } from './hooks/useDashboardStats';
+import { useStorageSizeBackfill } from './hooks/useStorageSizeBackfill';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 import { useActiveGame } from '@/entities/game';
 import { formatBytes } from '../../shared/lib/utils/formatters';
@@ -10,6 +11,7 @@ import { DashboardActivity } from './components/DashboardActivity';
 import { DashboardCharts } from './components/DashboardCharts';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { DashboardStats } from './components/DashboardStats';
+import { DashboardStorageBackfillStatus } from './components/DashboardStorageBackfillStatus';
 import {
   DashboardEmptyState,
   DashboardErrorState,
@@ -30,6 +32,8 @@ export default function Dashboard() {
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const { data, isLoading, isError, refresh } = useDashboardStats();
+  const { status: storageSizeBackfillStatus, retry: retryStorageSizeBackfill } =
+    useStorageSizeBackfill();
   const { activeGame } = useActiveGame();
   const { keybindings, isLoading: keybindingsLoading } = useActiveKeybindings();
 
@@ -52,8 +56,8 @@ export default function Dashboard() {
   const recentMods: DashboardPayload['recent_mods'] = data.recent_mods ?? [];
 
   return (
-    <div className="h-full overflow-y-auto bg-base-100">
-      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="workspace-scroll-owner h-full overflow-y-auto bg-base-100/85">
+      <div className="max-w-7xl mx-auto space-y-6 p-6 pt-[calc(var(--workspace-topbar-height)+1.5rem)]">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{t('header.title')}</h1>
@@ -66,6 +70,10 @@ export default function Dashboard() {
         </div>
 
         <DashboardQuickActions activeGameId={activeGameId} setWorkspaceView={setWorkspaceView} />
+        <DashboardStorageBackfillStatus
+          status={storageSizeBackfillStatus}
+          onRetry={retryStorageSizeBackfill}
+        />
         <DashboardStats stats={stats} />
 
         {duplicateWasteBytes > 0 && (

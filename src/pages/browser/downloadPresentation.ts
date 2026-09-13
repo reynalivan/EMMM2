@@ -15,3 +15,23 @@ export function getQueuePosition(downloads: BrowserDownloadItem[], id: string): 
 
   return index === -1 ? null : index + 1;
 }
+
+/** Maps persisted backend codes and legacy request text to user-facing copy. */
+export function getDownloadFailureMessageKey(errorMessage: string | null): string {
+  switch (errorMessage) {
+    case 'download.timeout':
+      return 'downloads.failure.timeout';
+    case 'download.offline':
+      return 'downloads.failure.offline';
+    case 'download.access_denied':
+      return 'downloads.failure.access_denied';
+    case 'download.not_found':
+      return 'downloads.failure.not_found';
+    case 'download.server':
+      return 'downloads.failure.server';
+    default:
+      if (errorMessage?.toLowerCase().includes('timed out')) return 'downloads.failure.timeout';
+      if (errorMessage?.toLowerCase().includes('connect')) return 'downloads.failure.offline';
+      return 'downloads.failure.unknown';
+  }
+}

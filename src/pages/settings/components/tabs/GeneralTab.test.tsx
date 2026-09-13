@@ -1,7 +1,7 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GeneralTab from './GeneralTab';
-import type { CustomTheme, ThemeMetadata } from '../../../../shared/api/tauri/bindings';
+import type { ThemeMetadata } from '../../../../shared/api/tauri/bindings';
 
 let mockAutoClose = false;
 let mockTheme = 'dark';
@@ -9,28 +9,38 @@ let mockCustomThemes: ThemeMetadata[] = [];
 const mockSetAutoClose = vi.fn();
 const mockUpdateThemeMutate = vi.fn();
 const mockUpdateLanguageMutate = vi.fn();
-const mockRefreshCustomThemes = vi.fn();
-const mockAddToast = vi.fn();
-const mockImportCustomTheme = vi.fn();
-const mockExportCustomTheme = vi.fn();
+const mockSetTelemetryEnabledMutate = vi.fn();
+const mockCheckForUpdate = vi.fn();
 
-vi.mock('../../../../shared/api/tauri/bindings', () => ({
-  commands: {
-    deleteCustomTheme: vi.fn(),
-    importCustomTheme: (...args: unknown[]) => mockImportCustomTheme(...args),
-    exportCustomTheme: (...args: unknown[]) => mockExportCustomTheme(...args),
-  },
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue({
+    state: 'not_installed',
+    pack_id: null,
+    version: null,
+    message: null,
+    entries: 0,
+    missing_assets: 0,
+  }),
 }));
 
 vi.mock('../../hooks/useCustomThemes', () => ({
   useCustomThemes: () => ({
     customThemes: mockCustomThemes,
-    refreshCustomThemes: mockRefreshCustomThemes,
   }),
 }));
 
-vi.mock('@/shared/ui/toast', () => ({
-  useToastStore: () => ({ addToast: mockAddToast }),
+vi.mock('../../hooks/useAppUpdater', () => ({
+  useAppUpdater: () => ({
+    update: null,
+    isChecking: false,
+    isInstalling: false,
+    progress: null,
+    error: null,
+    hasChecked: false,
+    checkForUpdate: mockCheckForUpdate,
+    downloadAndInstall: vi.fn(),
+    dismiss: vi.fn(),
+  }),
 }));
 
 vi.mock('@/entities/settings', () => ({
@@ -64,6 +74,11 @@ vi.mock('@/entities/settings', () => ({
         overlay_toggle_key: '',
         keybinds_dir: '',
       },
+      catalog_updates: {
+        auto_check: true,
+        auto_install: false,
+        last_successful_check_unix_seconds: null,
+      },
     },
     updateTheme: {
       mutate: mockUpdateThemeMutate,
@@ -71,6 +86,10 @@ vi.mock('@/entities/settings', () => ({
     },
     updateLanguage: {
       mutate: mockUpdateLanguageMutate,
+      isPending: false,
+    },
+    setTelemetryEnabled: {
+      mutate: mockSetTelemetryEnabledMutate,
       isPending: false,
     },
   }),
@@ -87,21 +106,23 @@ describe('GeneralTab (TC-04)', () => {
     mockAutoClose = false;
     mockTheme = 'dark';
     mockCustomThemes = [];
-    mockImportCustomTheme.mockReset();
-    mockExportCustomTheme.mockReset();
   });
 
-  it('renders Appearance and System sections', () => {
+  it('keeps General settings focused on user-facing preferences', () => {
     render(<GeneralTab />);
     expect(screen.getByText('Appearance')).toBeInTheDocument();
-    expect(screen.getByText('System Information')).toBeInTheDocument();
+    expect(screen.getByText('System')).toBeInTheDocument();
+    expect(screen.queryByText('Tauri Version')).not.toBeInTheDocument();
+    expect(screen.queryByText('Database')).not.toBeInTheDocument();
+    expect(screen.queryByText('Engine')).not.toBeInTheDocument();
+    expect(screen.queryByText('Theme Information')).not.toBeInTheDocument();
   });
 
   it('toggles Auto-Close launcher setting', () => {
     render(<GeneralTab />);
 
     // It starts with our mocked false value
-    const toggle = screen.getByRole('checkbox', { name: /Auto-Close on Launch/i });
+    const toggle = screen.getByRole('checkbox', { name: /Close after launch/i });
     expect(toggle).not.toBeChecked();
 
     fireEvent.click(toggle);
@@ -114,63 +135,45 @@ describe('GeneralTab (TC-04)', () => {
     mockAutoClose = true;
     render(<GeneralTab />);
 
-    const toggle = screen.getByRole('checkbox', { name: /Auto-Close on Launch/i });
+    const toggle = screen.getByRole('checkbox', { name: /Close after launch/i });
     expect(toggle).toBeChecked();
   });
 
   it('updates only theme when user selects a new option', () => {
     render(<GeneralTab />);
 
-    const select = screen.getByRole('combobox', { name: 'Theme Selection' });
+    const select = screen.getByRole('combobox', { name: 'Theme' });
     fireEvent.change(select, { target: { value: 'light' } });
 
     expect(mockUpdateThemeMutate).toHaveBeenCalledWith('light');
   });
 
-  it('imports themes through Rust and refreshes after success', async () => {
-    const importedTheme: CustomTheme = {
-      id: 'ocean-night',
-      label: 'Ocean Night',
-      config: { colors: {}, glass: {} },
-    };
-    mockImportCustomTheme.mockResolvedValueOnce(importedTheme);
+  it('lists custom themes in the same theme selector', () => {
+    mockCustomThemes = [{ id: 'ocean-night', label: 'Ocean Night' }];
     render(<GeneralTab />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import Theme' }));
-
-    await waitFor(() => expect(mockImportCustomTheme).toHaveBeenCalledWith());
-    expect(mockRefreshCustomThemes).toHaveBeenCalledTimes(1);
-    expect(mockAddToast).toHaveBeenCalledWith('success', expect.stringContaining('Ocean Night'));
+    expect(screen.getByRole('option', { name: 'Ocean Night' })).toBeInTheDocument();
   });
 
-  it('treats a cancelled Rust import as a no-op', async () => {
-    mockImportCustomTheme.mockResolvedValueOnce(null);
+  it('opens the privacy policy and terms of use from System', () => {
     render(<GeneralTab />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import Theme' }));
-
-    await waitFor(() => expect(mockImportCustomTheme).toHaveBeenCalledWith());
-    expect(mockRefreshCustomThemes).not.toHaveBeenCalled();
-    expect(mockAddToast).not.toHaveBeenCalled();
-  });
-
-  it('exports themes through Rust without reading or writing files in React', async () => {
-    const exportedTheme: CustomTheme = {
-      id: 'ocean-night',
-      label: 'Ocean Night',
-      config: { colors: {}, glass: {} },
-    };
-    mockTheme = exportedTheme.id;
-    mockCustomThemes = [{ id: exportedTheme.id, label: exportedTheme.label }];
-    mockExportCustomTheme.mockResolvedValueOnce('ocean-night.json');
-    render(<GeneralTab />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
-
-    await waitFor(() => expect(mockExportCustomTheme).toHaveBeenCalledWith('ocean-night'));
-    expect(mockAddToast).toHaveBeenCalledWith(
-      'success',
-      expect.stringContaining('ocean-night.json'),
+    fireEvent.click(screen.getByRole('button', { name: /Privacy Policy/i }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'EMMM does not read or transmit website passwords',
     );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    fireEvent.click(screen.getByRole('button', { name: /Terms of Use/i }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('independent third-party utility');
+  });
+
+  it('keeps application updates within System', () => {
+    render(<GeneralTab />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
+
+    expect(screen.getByText('Application Updates')).toBeInTheDocument();
+    expect(mockCheckForUpdate).toHaveBeenCalledOnce();
   });
 });

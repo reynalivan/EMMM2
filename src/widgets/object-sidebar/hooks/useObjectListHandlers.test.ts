@@ -124,6 +124,7 @@ describe('useObjectListHandlers', () => {
         display_mode: 'unknown' as const,
         type_chip: null,
         object_type: 'Character',
+        randomizer_mode: null,
         is_pinned: false,
         thumbnail_path: null,
         folder_path: '',

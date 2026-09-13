@@ -16,6 +16,7 @@ import {
   SubContent,
 } from '@radix-ui/react-context-menu';
 import { LucideIcon, ChevronRight } from 'lucide-react';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 /* ── Root + Trigger + Content (convenience wrapper) ────────────── */
 
@@ -32,11 +33,13 @@ export function ContextMenu({ children, content }: ContextMenuProps) {
         <Content
           collisionPadding={8}
           onCloseAutoFocus={(event) => event.preventDefault()}
-          className="context-menu-content min-w-45 rounded-lg border border-base-content/10 bg-base-100 shadow-xl text-sm p-1 z-1000
+          className="context-menu-content z-[var(--workspace-layer-overlay)]
             data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95
             data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >
-          {content}
+          <LiquidSurface liquidRole="overlay" className="min-w-45 rounded-lg text-sm shadow-xl">
+            <div className="p-1">{content}</div>
+          </LiquidSurface>
         </Content>
       </Portal>
     </Root>
@@ -107,11 +110,13 @@ export function ContextMenuSub({ label, children, icon: Icon }: ContextMenuSubPr
       <Portal>
         <SubContent
           collisionPadding={8}
-          className="min-w-40 rounded-lg border border-base-content/10 bg-base-100 shadow-xl text-sm p-1 z-1000
+          className="z-[var(--workspace-layer-overlay)]
             data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95
             data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >
-          {children}
+          <LiquidSurface liquidRole="overlay" className="min-w-40 rounded-lg text-sm shadow-xl">
+            <div className="p-1">{children}</div>
+          </LiquidSurface>
         </SubContent>
       </Portal>
     </Sub>

@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import { filterFoldersBySafety } from './safetyFilter';
 
-function folder(path: string, isSafe: boolean, classified = true): WorkspaceExplorerNode {
+function folder(
+  path: string,
+  isSafe: boolean,
+  classified = true,
+  nodeKind: WorkspaceExplorerNode['node_kind'] = 'terminal_mod',
+): WorkspaceExplorerNode {
   return {
     path,
     is_safe: isSafe,
     is_safety_classified: classified,
     contains_safe_mods: classified && isSafe,
     contains_unsafe_mods: classified && !isSafe,
+    node_kind: nodeKind,
   } as WorkspaceExplorerNode;
 }
 
@@ -25,14 +31,19 @@ describe('filterFoldersBySafety', () => {
     expect(folders).toHaveLength(3);
   });
 
-  it('keeps mixed parent folders navigable in both filtered views', () => {
-    const mixedParent = {
-      ...folder('Mixed', false, false),
-      contains_safe_mods: true,
-      contains_unsafe_mods: true,
-    };
+  it('keeps neutral navigation folders visible while filtering terminal mods', () => {
+    const container = folder('Container', false, false, 'container');
+    const inactiveBranch = folder('Inactive', false, false, 'inactive_branch');
 
-    expect(filterFoldersBySafety([mixedParent], 'safe')).toEqual([mixedParent]);
-    expect(filterFoldersBySafety([mixedParent], 'unsafe')).toEqual([mixedParent]);
+    expect(
+      filterFoldersBySafety([...folders, container, inactiveBranch], 'safe').map(
+        (entry) => entry.path,
+      ),
+    ).toEqual(['Safe', 'Container', 'Inactive']);
+    expect(
+      filterFoldersBySafety([...folders, container, inactiveBranch], 'unsafe').map(
+        (entry) => entry.path,
+      ),
+    ).toEqual(['Unsafe', 'Container', 'Inactive']);
   });
 });

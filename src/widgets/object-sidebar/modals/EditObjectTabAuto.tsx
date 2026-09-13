@@ -6,6 +6,7 @@ import type { DbEntryFull } from '../hooks/useMasterDbSync';
 import { Search, ChevronDown, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 interface EditObjectTabAutoProps {
   form: UseFormReturn<EditObjectFormData>;
@@ -72,63 +73,68 @@ export function EditObjectTabAuto({
 
             {/* Floating Search Overlay - Standard Absolute Position */}
             {isDbOpen && (
-              <div className="absolute left-0 top-full z-80 mt-1 w-full rounded-box border border-base-300 bg-base-100 p-2 shadow-xl">
-                <input
-                  type="text"
-                  placeholder={t('edit_modal.db_filter_placeholder')}
-                  className="input input-sm input-bordered w-full mb-2"
-                  autoFocus
-                  value={dbSearch}
-                  onChange={(e) => setDbSearch(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <div className="h-64 overflow-y-auto">
-                  {isLoading ? (
-                    <div className="flex h-full items-center justify-center text-center text-sm opacity-50">
-                      {t('edit_modal.db_loading')}
-                    </div>
-                  ) : dbOptions.length > 0 ? (
-                    <ul className="menu menu-xs p-0 w-full">
-                      {dbOptions.map((opt) => (
-                        <li key={opt.name} className="w-full">
-                          <button
-                            type="button"
-                            onClick={() => handleDbSelect(opt)}
-                            className="flex items-center gap-3 py-2 w-full"
-                          >
-                            {opt.thumbnail_path ? (
-                              <img
-                                src={convertFileSrc(opt.thumbnail_path)}
-                                className="w-8 h-8 rounded-md object-cover bg-base-300 shrink-0"
-                                alt=""
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-md bg-base-300 flex items-center justify-center shrink-0">
-                                <ImageIcon size={14} className="opacity-30" />
-                              </div>
-                            )}
-                            <div className="flex flex-col items-start overflow-hidden flex-1">
-                              <span className="font-bold truncate w-full text-left">
-                                {opt.name}
-                              </span>
-                              {opt.aliases && (
-                                <span className="text-xs opacity-50 truncate w-full text-left">
-                                  {opt.aliases[0]}
-                                </span>
+              <LiquidSurface
+                liquidRole="overlay"
+                className="absolute left-0 top-full z-[var(--workspace-layer-popover)] mt-1 w-full rounded-box shadow-xl"
+              >
+                <div className="p-2">
+                  <input
+                    type="text"
+                    placeholder={t('edit_modal.db_filter_placeholder')}
+                    className="input input-sm input-bordered w-full mb-2"
+                    autoFocus
+                    value={dbSearch}
+                    onChange={(e) => setDbSearch(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="h-64 overflow-y-auto">
+                    {isLoading ? (
+                      <div className="flex h-full items-center justify-center text-center text-sm text-muted">
+                        {t('edit_modal.db_loading')}
+                      </div>
+                    ) : dbOptions.length > 0 ? (
+                      <ul className="menu menu-xs p-0 w-full">
+                        {dbOptions.map((opt) => (
+                          <li key={opt.name} className="w-full">
+                            <button
+                              type="button"
+                              onClick={() => handleDbSelect(opt)}
+                              className="flex items-center gap-3 py-2 w-full"
+                            >
+                              {opt.thumbnail_path ? (
+                                <img
+                                  src={convertFileSrc(opt.thumbnail_path)}
+                                  className="w-8 h-8 rounded-md object-cover bg-base-300 shrink-0"
+                                  alt=""
+                                />
+                              ) : (
+                                <div className="w-8 h-8 rounded-md bg-base-300 flex items-center justify-center shrink-0">
+                                  <ImageIcon size={14} className="opacity-30" />
+                                </div>
                               )}
-                            </div>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-center text-sm opacity-50">
-                      {error ? t('edit_modal.db_error') : t('edit_modal.db_no_matches')}
-                    </div>
-                  )}
+                              <div className="flex flex-col items-start overflow-hidden flex-1">
+                                <span className="font-bold truncate w-full text-left">
+                                  {opt.name}
+                                </span>
+                                {opt.aliases && (
+                                  <span className="text-xs text-muted truncate w-full text-left">
+                                    {opt.aliases[0]}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-center text-sm text-muted">
+                        {error ? t('edit_modal.db_error') : t('edit_modal.db_no_matches')}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 h-4 text-[10px] opacity-60">{t('edit_modal.db_hint')}</p>
                 </div>
-                <p className="mt-2 h-4 text-[10px] opacity-60">{t('edit_modal.db_hint')}</p>
-              </div>
+              </LiquidSurface>
             )}
           </div>
 
@@ -159,7 +165,7 @@ export function EditObjectTabAuto({
                     )}
                     <div className="flex flex-col overflow-hidden">
                       <span className="text-xs font-bold truncate">{sugg.name}</span>
-                      <span className="text-[10px] opacity-50 truncate">
+                      <span className="text-[10px] text-muted truncate">
                         {t('edit_modal.match_percent', { percent: (sugg.score * 100).toFixed(0) })}
                       </span>
                     </div>
@@ -215,7 +221,7 @@ export function EditObjectTabAuto({
                   </div>
                 ))
               ) : (
-                <div className="text-sm italic opacity-50 px-1">-</div>
+                <div className="text-sm italic text-muted px-1">-</div>
               )}
             </div>
           </div>

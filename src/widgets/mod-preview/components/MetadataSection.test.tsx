@@ -60,4 +60,14 @@ describe('MetadataSection', () => {
       expect(onAuthorChangeMock).toHaveBeenCalledWith('New Author');
     });
   });
+
+  it('uses the visible Edit action instead of a hidden double-click interaction', () => {
+    render(<MetadataSection {...defaultProps} />);
+
+    fireEvent.doubleClick(screen.getByText('Original Description'));
+
+    expect(screen.queryByLabelText('Author')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Edit Metadata'));
+    expect(screen.getByLabelText('Author')).toBeInTheDocument();
+  });
 });

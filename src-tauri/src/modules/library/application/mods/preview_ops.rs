@@ -35,6 +35,26 @@ pub fn ensure_image_size(image_data: &[u8]) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Decode and normalize externally supplied thumbnail bytes before saving them.
+/// Keeping this here makes clipboard and object-creation imports share the same
+/// size limit, decoder validation, and durable PNG representation.
+pub fn normalize_thumbnail_png(image_data: &[u8]) -> Result<Vec<u8>, AppError> {
+    use image::ImageFormat;
+    use std::io::Cursor;
+
+    ensure_image_size(image_data)?;
+    let image = image::load_from_memory(image_data).map_err(|error| {
+        AppError::Metadata(MetadataError::Validation(format!(
+            "Invalid image data: {error}"
+        )))
+    })?;
+    let mut encoded = Vec::new();
+    image
+        .write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
+        .map_err(|error| AppError::Io(format!("Failed to encode image: {error}")))?;
+    Ok(encoded)
+}
+
 fn validate_ini_filename(file_name: &str) -> Result<(), AppError> {
     if file_name.trim().is_empty() {
         return Err(AppError::Metadata(MetadataError::Validation(

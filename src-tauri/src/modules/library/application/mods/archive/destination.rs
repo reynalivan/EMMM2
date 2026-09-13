@@ -100,9 +100,7 @@ fn available_disk_space(path: &Path) -> Option<u64> {
     let mut disks = lock(mutex);
     disks.refresh(true);
 
-    let search_path = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let search_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     let mut available_space = 0_u64;
     let mut matched_len = 0_usize;

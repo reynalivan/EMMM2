@@ -55,21 +55,9 @@ export function reconcileFolderConflictQueue(
     }
   }
 
-  // An empty report can be a transient/stale reconcile result. It cannot tell
-  // us which of several previous groups was actually resolved. A single
-  // previous group is unambiguous and remains compatible with the initial
-  // checklist completion flow.
-  if (current.length === 0) {
-    if (previous.length === 1) {
-      addCompletedGroup(previous[0]);
-    }
-    return next;
-  }
-
-  for (const group of previous) {
-    addCompletedGroup(group);
-  }
-
+  // A changed disk report is evidence of current filesystem state, not proof
+  // that the user completed a resolution in this dialog. Only an explicit
+  // successful action may mark a group complete.
   return next;
 }
 

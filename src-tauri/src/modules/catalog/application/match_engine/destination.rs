@@ -73,13 +73,14 @@ fn resolve_destination_candidates_inner(
     let mut seen_objects = BTreeSet::new();
 
     if let Some(target) = context.specific_target {
-        let warning = (context.enforce_category && target.category != context.category).then(|| {
-            format!(
-                "Specific target category '{}' differs from confirmed category '{}'",
-                target.category.as_str(),
-                context.category.as_str()
-            )
-        });
+        let warning =
+            (context.enforce_category && target.category != context.category).then(|| {
+                format!(
+                    "Specific target category '{}' differs from confirmed category '{}'",
+                    target.category.as_str(),
+                    context.category.as_str()
+                )
+            });
         seen_objects.insert(target.object_id.clone());
         suggestions.push(existing_suggestion(
             target,
@@ -135,8 +136,7 @@ fn resolve_destination_candidates_inner(
             .then_with(|| left.name.cmp(&right.name))
     });
     for &(target, score) in &scored_existing {
-        if score.value >= 45 && seen_objects.insert(target.object_id.clone())
-        {
+        if score.value >= 45 && seen_objects.insert(target.object_id.clone()) {
             suggestions.push(existing_suggestion(
                 target,
                 context.mods_root,
@@ -251,7 +251,8 @@ fn destination_score(
         ));
     }
     if best.value > 0 {
-        if let Some(category) = source_category.filter(|category| *category != StableCategory::Other)
+        if let Some(category) =
+            source_category.filter(|category| *category != StableCategory::Other)
         {
             best.value = if target.category == category {
                 best.value.saturating_add(5).min(100)

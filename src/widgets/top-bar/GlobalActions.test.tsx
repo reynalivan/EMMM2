@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GlobalActions from './GlobalActions';
 import { commands, type DiskReconcileResult } from '@/shared/api/tauri/bindings';
@@ -29,9 +30,13 @@ vi.mock('@/widgets/launch-bar/LaunchBar', () => ({
   default: () => null,
 }));
 
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
 const activeGame = {
   id: 'game-1',
-  name: 'Genshin Impact',
+  name: 'GIMI',
   game_type: 0,
   mod_path: 'E:\\Mods',
   game_exe: 'E:\\Game.exe',
@@ -42,6 +47,7 @@ const activeGame = {
 function reconcileResult(status: DiskReconcileResult['status'] = 'Applied'): DiskReconcileResult {
   return {
     game_id: activeGame.id,
+    reconcile_revision: 1,
     reason: 'ManualRepair',
     status,
     folder_conflicts: [],
@@ -88,7 +94,7 @@ describe('GlobalActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.setState({
-      workspaceView: 'dashboard',
+      workspaceView: 'mods',
       isPreviewOpen: false,
       diskReconcileByGame: {},
     });
@@ -105,6 +111,21 @@ describe('GlobalActions', () => {
     renderActions();
 
     expect(screen.queryByTitle('actions.trash')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('actions.settings')).not.toBeInTheDocument();
+  });
+
+  it('provides stable compact-menu targets for collection and launch actions', () => {
+    renderActions();
+
+    expect(document.getElementById('topbar-more-collection-portal')).toBeInTheDocument();
+    expect(document.getElementById('topbar-more-launch-portal')).toBeInTheDocument();
+  });
+
+  it('shows sync only in Mods Manager', () => {
+    useAppStore.setState({ workspaceView: 'dashboard' });
+    renderActions();
+
+    expect(screen.queryByTitle('actions.refresh')).not.toBeInTheDocument();
   });
 
   it('runs one forced full reconcile from the global refresh action', async () => {
@@ -160,6 +181,7 @@ describe('GlobalActions', () => {
           at: 0,
           pending: true,
           unavailable: null,
+          revision: 0,
           progress: {
             game_id: activeGame.id,
             run_id: 'run-1',

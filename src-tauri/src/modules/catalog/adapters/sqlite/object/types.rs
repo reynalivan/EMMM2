@@ -1,5 +1,5 @@
 use crate::modules::catalog::domain::objects::{
-    CategoryCount, ObjectRuntimeDescriptor, ObjectSummary,
+    CategoryCount, ObjectRuntimeDescriptor, ObjectSummary, RandomizerMode,
 };
 use crate::modules::games::domain::models::{CustomSkinsPayload, GameObject, HashDbPayload};
 
@@ -19,6 +19,11 @@ fn optional_json<T: serde::de::DeserializeOwned>(
         .transpose()
 }
 
+fn randomizer_mode(row: &SqliteRow) -> Result<Option<RandomizerMode>, sqlx::Error> {
+    let value: Option<String> = row.try_get("randomizer_mode")?;
+    Ok(value.as_deref().and_then(RandomizerMode::from_persisted))
+}
+
 impl<'r> FromRow<'r, SqliteRow> for ObjectSummary {
     fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
         Ok(Self {
@@ -31,6 +36,7 @@ impl<'r> FromRow<'r, SqliteRow> for ObjectSummary {
             matched_reason: row.try_get("matched_reason")?,
             matched_source: row.try_get("matched_source")?,
             object_type: row.try_get("object_type")?,
+            randomizer_mode: randomizer_mode(row)?,
             sub_category: row.try_get("sub_category")?,
             status: row.try_get("status")?,
             metadata: row.try_get("metadata")?,
@@ -87,6 +93,7 @@ impl<'r> FromRow<'r, SqliteRow> for GameObject {
             folder_path_key: row.try_get("folder_path_key")?,
             status: row.try_get("status")?,
             object_type: row.try_get("object_type")?,
+            randomizer_mode: randomizer_mode(row)?,
             sub_category: row.try_get("sub_category")?,
             tags: row.try_get("tags")?,
             metadata: row.try_get("metadata")?,

@@ -56,7 +56,7 @@ export function EditObjectTabThumbnail({
         </div>
       )}
       {thumbnailAction === 'update' && (
-        <div className="text-xs opacity-50 truncate max-w-32">
+        <div className="text-xs text-muted truncate max-w-32">
           {t('edit_modal.thumbnail.selected')}
         </div>
       )}

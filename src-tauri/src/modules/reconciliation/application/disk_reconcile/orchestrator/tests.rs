@@ -14,6 +14,7 @@ fn applied_result(
 ) -> crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult {
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult {
         game_id: game_id.to_string(),
+        reconcile_revision: 0,
         reason: DiskReconcileReason::StartupBoot,
         status: DiskReconcileStatus::Applied,
         folder_conflicts: Vec::new(),
@@ -37,11 +38,25 @@ fn applied_result(
 #[test]
 fn recent_applied_result_remains_available_for_activation_reuse() {
     let state = DiskReconcileState::new();
-    state.record_result("game-1", &applied_result("game-1"));
+    let mut result = applied_result("game-1");
+    state.record_result("game-1", &mut result);
 
     assert!(state
         .recent_applied_result("game-1", std::time::Duration::from_secs(5))
         .is_some());
+}
+
+#[test]
+fn recorded_results_receive_monotonic_per_game_revisions() {
+    let state = DiskReconcileState::new();
+    let mut first = applied_result("game-1");
+    let mut second = applied_result("game-1");
+
+    state.record_result("game-1", &mut first);
+    state.record_result("game-1", &mut second);
+
+    assert_eq!(first.reconcile_revision, 1);
+    assert_eq!(second.reconcile_revision, 2);
 }
 
 use crate::modules::games::domain::models::{GameType, ItemStatus};

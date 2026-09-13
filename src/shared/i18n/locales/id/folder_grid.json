@@ -24,6 +24,8 @@
     "complete_title": "Semua konflik selesai",
     "complete_summary": "{{resolved}} dari {{total}} konflik selesai",
     "complete_description": "Folder Mods dan database telah tersinkron dengan kondisi disk terbaru.",
+    "external_complete_title": "Selesai di luar dialog ini",
+    "external_complete_description": "Pemeriksaan disk terbaru tidak lagi menemukan konflik ini.",
     "groups": "Kelompok konflik",
     "enabled": "Aktif",
     "disabled": "Nonaktif",

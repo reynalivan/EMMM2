@@ -2,16 +2,14 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import {
-  applyDiskReconcileResult,
-  useDiskReconcileCoordinator,
-} from './useFileWatcher';
+import { applyDiskReconcileResult, useDiskReconcileCoordinator } from './useFileWatcher';
 import { isPreviewAffected } from '../utils/reconcileSelection';
 import { useWatcherLifecycle } from '../utils/watcherLifecycle';
 import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { runtimeQueryKeys } from '@/shared/lib/queryRefresh';
 import { GameType, type GameConfig } from '@/entities/game';
+import { modHealthKeys } from '@/entities/mod';
 import { useAppStore } from '@/app/store';
 import { workspaceKeys } from '@/features/workspace-runtime/@x/file-watcher';
 
@@ -33,15 +31,17 @@ vi.mock('@/app/store', () => {
     gridSelection: new Set<string>(),
     diskReconcileByGame: {} as Record<
       string,
-      { at: number; pending: boolean; unavailable: string | null }
+      { at: number; pending: boolean; unavailable: string | null; revision: number }
     >,
     folderConflictsByGame: {},
+    folderConflictReportsByGame: {},
     renameConfirmationsByGame: {},
     setDiskReconcileTimestamp: vi.fn(),
     setDiskReconcileProgress: vi.fn(),
     markDiskReconcilePending: vi.fn(),
     setDiskSourceUnavailable: vi.fn(),
     setFolderConflicts: vi.fn(),
+    applyFolderConflictReconcileResult: vi.fn(() => true),
     setRenameConfirmations: vi.fn(),
     setExplorerSubPath: vi.fn(),
     setCurrentPath: vi.fn(),
@@ -102,6 +102,7 @@ vi.mock('@/shared/ui/toast', () => ({
 function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileResult {
   return {
     game_id: 'game-1',
+    reconcile_revision: 1,
     reason: 'WatcherBatch',
     changed_roots: [],
     objects_changed: false,
@@ -180,6 +181,9 @@ describe('applyDiskReconcileResult', () => {
   const queryClient = {
     invalidateQueries: vi.fn(),
     setQueriesData: vi.fn(),
+    getQueryData: vi.fn(),
+    setQueryData: vi.fn(),
+    removeQueries: vi.fn(),
   };
 
   beforeEach(() => {
@@ -190,6 +194,24 @@ describe('applyDiskReconcileResult', () => {
     state.selectedModPath = null;
     state.gridSelection = new Set();
     state.diskReconcileByGame = {};
+  });
+
+  it('ignores a stale reconcile report before applying runtime effects', () => {
+    const state = useAppStore.getState();
+    vi.mocked(state.applyFolderConflictReconcileResult).mockReturnValueOnce(false);
+
+    expect(
+      applyDiskReconcileResult(
+        createResult({ folders_changed: true }),
+        queryClient as unknown as import('@tanstack/react-query').QueryClient,
+        createActiveGame(),
+      ),
+    ).toBe(false);
+
+    expect(state.setDiskReconcileTimestamp).not.toHaveBeenCalled();
+    expect(state.setDiskSourceUnavailable).not.toHaveBeenCalled();
+    expect(state.setRenameConfirmations).not.toHaveBeenCalled();
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
   });
 
   it('refreshes ObjectList when folders change', async () => {
@@ -222,6 +244,10 @@ describe('applyDiskReconcileResult', () => {
     });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: runtimeQueryKeys.folderStructure,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: modHealthKeys.all,
       refetchType: 'active',
     });
   });
@@ -282,7 +308,9 @@ describe('applyDiskReconcileResult', () => {
       createActiveGame(),
     );
 
-    expect(state.setFolderConflicts).toHaveBeenCalledWith('game-1', [group]);
+    expect(state.applyFolderConflictReconcileResult).toHaveBeenCalledWith(
+      expect.objectContaining({ folder_conflicts: [group] }),
+    );
     expect(state.dispatchWorkspaceRuntime).toHaveBeenCalledTimes(2);
     expect(state.dispatchWorkspaceRuntime).toHaveBeenCalledWith({
       type: 'DIALOG_OPENED',
@@ -319,7 +347,9 @@ describe('applyDiskReconcileResult', () => {
     );
     await Promise.resolve();
 
-    expect(state.setFolderConflicts).toHaveBeenCalledWith('game-1', [group]);
+    expect(state.applyFolderConflictReconcileResult).toHaveBeenCalledWith(
+      expect.objectContaining({ folder_conflicts: [group] }),
+    );
     expect(state.setDiskReconcileTimestamp).toHaveBeenCalled();
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: runtimeQueryKeys.folderStructure,

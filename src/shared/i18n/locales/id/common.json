@@ -52,6 +52,22 @@
     },
     "clipboard_not_supported": "Akses clipboard tidak didukung di perangkat ini."
   },
+  "diagnostics": {
+    "report": {
+      "title": "Bantu mendiagnosis error ini?",
+      "description": "Anda dapat mengirim kode diagnostik anonim untuk membantu memperbaiki EMMM. Laporan tidak berisi file, folder, nama mod, URL, atau pesan error Anda.",
+      "code": "Kode diagnostik: {{code}}",
+      "unavailable": "Pengiriman diagnostik belum dikonfigurasi pada build ini.",
+      "send": "Kirim laporan anonim",
+      "dismiss": "Jangan kirim"
+    },
+    "crash": {
+      "title": "EMMM tidak tertutup secara normal",
+      "description": "Kode diagnostik anonim singkat disimpan secara lokal. Anda dapat mengirimnya untuk membantu kami menyelidiki, atau menghapusnya. Kode ini tidak memuat file, folder, nama mod, URL, atau pesan error Anda.",
+      "send": "Kirim laporan anonim",
+      "dismiss": "Hapus laporan"
+    }
+  },
   "status": {
     "none": "Tidak ada",
     "no_subfolders": "Tidak ada subfolder yang ditemukan",

@@ -16,7 +16,7 @@ fn test_game_type_from_str_invalid() {
 #[test]
 fn test_game_type_display() {
     assert_eq!(GameType::GIMI.to_string(), "GIMI");
-    assert_eq!(GameType::ZZMI.display_name(), "Zenless Zone Zero");
+    assert_eq!(GameType::ZZMI.display_name(), "ZZMI");
 }
 
 use crate::shared::errors::AppError;

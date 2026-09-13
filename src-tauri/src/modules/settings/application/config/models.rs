@@ -47,6 +47,48 @@ pub struct AiConfig {
     pub base_url: Option<String>,
 }
 
+/// User-selected optional executables for integrations that EMMM does not
+/// download, bundle, or manage.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, specta::Type)]
+pub struct ExternalToolsConfig {
+    #[serde(default)]
+    pub mod_viewer_executable: Option<PathBuf>,
+}
+
+/// Preferences for the signed, public catalog release channel. This contains
+/// no GitHub account data or credentials.
+#[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
+pub struct CatalogUpdateConfig {
+    #[serde(default = "default_catalog_update_check")]
+    pub auto_check: bool,
+    #[serde(default)]
+    pub auto_install: bool,
+    #[serde(default)]
+    pub last_successful_check_unix_seconds: Option<i64>,
+}
+
+const fn default_catalog_update_check() -> bool {
+    true
+}
+
+impl Default for CatalogUpdateConfig {
+    fn default() -> Self {
+        Self {
+            auto_check: true,
+            auto_install: false,
+            last_successful_check_unix_seconds: None,
+        }
+    }
+}
+
+/// Explicit consent for the anonymous diagnostics channel. This contains no
+/// endpoint, token, or user identity, all delivery configuration is build-time.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, specta::Type)]
+pub struct DiagnosticsSettings {
+    #[serde(default)]
+    pub telemetry_enabled: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
 pub struct AppSettings {
     /// Optimistic-concurrency token for whole-settings IPC saves.
@@ -64,6 +106,12 @@ pub struct AppSettings {
     pub hotkeys: HotkeyConfig,
     #[serde(default)]
     pub keyviewer: KeyViewerConfig,
+    #[serde(default)]
+    pub external_tools: ExternalToolsConfig,
+    #[serde(default)]
+    pub catalog_updates: CatalogUpdateConfig,
+    #[serde(default)]
+    pub diagnostics: DiagnosticsSettings,
 }
 
 impl AppSettings {
@@ -88,6 +136,9 @@ impl Default for AppSettings {
             auto_close_launcher: false,
             hotkeys: HotkeyConfig::default(),
             keyviewer: KeyViewerConfig::default(),
+            external_tools: ExternalToolsConfig::default(),
+            catalog_updates: CatalogUpdateConfig::default(),
+            diagnostics: DiagnosticsSettings::default(),
         }
     }
 }

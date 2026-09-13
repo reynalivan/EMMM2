@@ -114,14 +114,22 @@ export async function executeWorkspaceSwitch(
       const report = await commands
         .reconcileDiskStateCmd(input.game_id, 'ManualRepair', null, true)
         .catch(() => null);
+      const appStore = useAppStore.getState();
+      const appliedReport = report ? appStore.applyFolderConflictReconcileResult(report) : false;
       if (report?.status === 'AppliedWithFolderConflicts' && report.folder_conflicts.length > 0) {
-        useAppStore.getState().setFolderConflicts(input.game_id, report.folder_conflicts);
+        if (!appliedReport) {
+          return null;
+        }
+        appStore.setRenameConfirmations(input.game_id, []);
         openFolderConflictManagerDialog();
       } else if (
         report?.status === 'NeedsRenameConfirmation' &&
         report.rename_confirmations.length > 0
       ) {
-        useAppStore.getState().setRenameConfirmations(input.game_id, report.rename_confirmations);
+        if (!appliedReport) {
+          return null;
+        }
+        appStore.setRenameConfirmations(input.game_id, report.rename_confirmations);
         openRenameConfirmationDialog();
       } else toast.error(formatAppError(error));
       return null;

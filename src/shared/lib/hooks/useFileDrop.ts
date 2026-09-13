@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { classifyDroppedPaths, allUnsupported } from '@/shared/lib/dropClassification';
+import { isDemoMode } from '@/shared/lib/appMode';
 import { toast } from '@/shared/ui/toast';
 
 interface FileDropPayload {
@@ -46,7 +47,7 @@ export function useFileDrop({
   }, [onDrop, onDragOver, onDragStateChange]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || isDemoMode) return;
 
     let unlistenDrop: (() => void) | undefined;
     let unlistenEnter: (() => void) | undefined;

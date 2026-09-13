@@ -16,6 +16,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEditObjectForm, schema } from '../hooks/useEditObjectForm';
 import type { EditObjectFormData } from '../hooks/useEditObjectForm';
+import type { ReactNode } from 'react';
 
 // Mock dependencies
 vi.mock('@/features/workspace-runtime');
@@ -67,6 +68,10 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
 // Mock invoke for data fetching
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn((cmd) => {
@@ -88,6 +93,7 @@ vi.mock('@tauri-apps/api/core', () => ({
         name: 'Diluc',
         folder_path: 'Diluc',
         object_type: 'Character',
+        randomizer_mode: 'default',
         sub_category: null,
         tags: '[]',
         metadata: '{}',
@@ -109,6 +115,7 @@ vi.mock('@tauri-apps/api/core', () => ({
             name: 'Diluc',
             tags: [],
             object_type: 'Character',
+            randomizer_mode: 'default',
             custom_skins: [{ name: 'Red Dead of Night', aliases: ['DilucRed'] }],
           },
         ]),
@@ -131,6 +138,7 @@ const mockMutate = vi.fn().mockResolvedValue({});
 const DEFAULT_FORM_VALUES: EditObjectFormData = {
   name: 'Diluc',
   object_type: 'Character',
+  randomizer_mode: 'default',
   sub_category: null,
   is_safe: true,
   is_auto_sync: false,
@@ -170,6 +178,7 @@ const mockObject: ObjectSummary = {
   name: 'Diluc',
   folder_path: 'Diluc',
   object_type: 'Character',
+  randomizer_mode: null,
   sub_category: null,
   status: 1,
   created_at: '2025-01-01T00:00:00Z',
@@ -201,7 +210,7 @@ describe('EditObjectModal', () => {
       isPending: false,
     });
     mockUseActiveGame.mockReturnValue({
-      activeGame: { id: 'genshin', name: 'Genshin Impact' },
+      activeGame: { id: 'genshin', name: 'GIMI' },
     });
     mockUseGameSchema.mockReturnValue({
       data: {
@@ -226,7 +235,20 @@ describe('EditObjectModal', () => {
     // With real useForm({defaultValues}) via mockImplementation,
     // inputs are immediately pre-populated (no async query needed).
     expect(screen.getByDisplayValue('Diluc')).toBeInTheDocument();
-    expect(screen.getByRole('combobox')).toHaveValue('Character');
+    expect(screen.getAllByRole('combobox')[1]).toHaveValue('Character');
+  });
+
+  it('uses polished segmented tabs for manual and auto sync modes', () => {
+    render(<EditObjectModal open={true} object={mockObject} onClose={vi.fn()} />, {
+      wrapper: createWrapper,
+    });
+
+    expect(screen.getByRole('tablist', { name: 'Edit Object' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Manual' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Auto Sync' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
   });
 
   it('validates required fields', () => {

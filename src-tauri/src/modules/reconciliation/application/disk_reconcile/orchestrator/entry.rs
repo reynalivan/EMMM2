@@ -89,7 +89,7 @@ async fn run_reconcile_with_owned_locks(
         }
     }
     let force_full = request.force_full || repair_evidence.is_some();
-    let result = run_refresh_once(RefreshRequest {
+    let mut result = run_refresh_once(RefreshRequest {
         context: context.clone(),
         game_id: &game_id,
         reason: request.reason,
@@ -106,6 +106,6 @@ async fn run_reconcile_with_owned_locks(
         }
     }
 
-    context.state.record_result(&game_id, &result);
+    context.state.record_result(&game_id, &mut result);
     Ok(result)
 }

@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createObject, deleteObject, updateObject, validateObjectName } from '@/entities/game-object';
+import {
+  createObject,
+  deleteObject,
+  updateObject,
+  validateObjectName,
+} from '@/entities/game-object';
 
 const createObjectCmd = vi.fn();
 const updateObjectCmd = vi.fn();

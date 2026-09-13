@@ -6,7 +6,47 @@ use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::guard::ValidatedPath;
 use crate::shared::errors::AppError;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
+
+async fn record_bulk_toggle_result(app: &AppHandle, enabled: bool, result: &bulk::BulkResult) {
+    if !enabled {
+        return;
+    }
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    for _ in &result.success {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::BulkAction,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+        );
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+    for _ in &result.failures {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::BulkAction,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::Unknown,
+        );
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+    if !result.success.is_empty() && !result.failures.is_empty() {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::BulkAction,
+            crate::modules::system::application::telemetry::TelemetryOutcome::Partial,
+            crate::modules::system::application::telemetry::TelemetryErrorCode::Unknown,
+        );
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+}
 
 /// Cooperative cancel for the two bulk actions that walk the filesystem one
 /// folder at a time. A single flag is enough: `OperationLock` already
@@ -89,6 +129,7 @@ pub async fn bulk_toggle_mods(
     paths: Vec<String>,
     enable: bool,
 ) -> Result<bulk::BulkResult, AppError> {
+    let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
     // Security validation for all paths
     let validated = crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
     let preflight_paths = validated
@@ -105,7 +146,9 @@ pub async fn bulk_toggle_mods(
     let (validated, preflight_failures) =
         partition_toggle_paths(validated, &preflight.folder_conflicts);
     if validated.is_empty() {
-        return Ok(bulk::BulkResult::new(Vec::new(), preflight_failures));
+        let result = bulk::BulkResult::new(Vec::new(), preflight_failures);
+        record_bulk_toggle_result(&app, diagnostics_enabled, &result).await;
+        return Ok(result);
     }
 
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
@@ -125,6 +168,7 @@ pub async fn bulk_toggle_mods(
             bulk::execute_prepared_bulk_toggle(&app, &state, &prepared, cancel_state.begin())
                 .result;
         result.failures.extend(preflight_failures);
+        record_bulk_toggle_result(&app, diagnostics_enabled, &result).await;
         return Ok(result);
     }
 
@@ -161,6 +205,7 @@ pub async fn bulk_toggle_mods(
     if execution.applied_sequences.is_empty() {
         mutation_lease.begin_rollback()?;
         mutation_lease.finish_rollback()?;
+        record_bulk_toggle_result(&app, diagnostics_enabled, &execution.result).await;
         return Ok(execution.result);
     }
 
@@ -178,6 +223,7 @@ pub async fn bulk_toggle_mods(
             mutation_lease.commit()?;
             let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(Ok(reconcile_result));
             apply_committed_reconcile(&mut execution.result, settlement);
+            record_bulk_toggle_result(&app, diagnostics_enabled, &execution.result).await;
             Ok(execution.result)
         }
         Err(error) => {

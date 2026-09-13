@@ -16,7 +16,7 @@ export default function PreviewFolderConflictState({
   const { t } = useTranslation(['preview', 'common']);
 
   return (
-    <aside className="mx-auto flex h-full w-full max-w-140 flex-col border-l border-base-content/5 bg-base-100/30 p-6 backdrop-blur-md">
+    <aside className="workspace-scroll-owner flex h-full w-full max-w-none flex-col overflow-y-auto border-l border-base-content/5 bg-base-100/85 p-6 pt-[var(--workspace-panel-content-inset)]">
       <button type="button" className="btn btn-sm btn-ghost self-start" onClick={onBack}>
         {t('common:actions.back')}
       </button>

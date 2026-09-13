@@ -1,7 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import ContextControls from './CollectionContextControls';
 import { useAppStore } from '@/app/store';
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 
 const mockUseCollections = vi.fn();
 const mockUseCollectionRuntime = vi.fn();
@@ -123,5 +128,25 @@ describe('ContextControls', () => {
     render(<ContextControls />);
 
     expect(screen.getByText('Descriptor Runtime')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Active collection: Descriptor Runtime' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Active collection')).not.toBeInTheDocument();
+  });
+
+  it('keeps collection actions available in the compact top-bar menu', async () => {
+    const target = document.createElement('li');
+    target.id = 'topbar-more-collection-portal';
+    document.body.appendChild(target);
+
+    const { unmount } = render(<ContextControls />);
+    const menu = within(target);
+
+    await waitFor(() => expect(menu.getByText('Save Current')).toBeInTheDocument());
+    expect(menu.getByText('202603251217')).toBeInTheDocument();
+    expect(menu.getByText('Manage Collections')).toBeInTheDocument();
+
+    unmount();
+    target.remove();
   });
 });

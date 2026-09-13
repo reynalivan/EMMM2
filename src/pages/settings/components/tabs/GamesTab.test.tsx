@@ -108,7 +108,7 @@ describe('GamesTab (TC-02)', () => {
     vi.mocked(commands.applyGameModsDirectory).mockResolvedValue({
       game: {
         id: 'g1',
-        name: 'Genshin Impact',
+        name: 'GIMI',
         game_type: 0,
         mod_path: 'D:/Replacement/Mods',
         game_exe: 'C:/Game/Genshin.exe',
@@ -125,7 +125,7 @@ describe('GamesTab (TC-02)', () => {
       games: [
         {
           id: 'g1',
-          name: 'Genshin Impact',
+          name: 'GIMI',
           game_type: 0,
           mod_path: 'D:/Replacement/Mods',
           game_exe: 'C:/Game/Genshin.exe',
@@ -144,9 +144,7 @@ describe('GamesTab (TC-02)', () => {
 
   it('renders empty state correctly', () => {
     render(<GamesTab />);
-    expect(
-      screen.getByText('No games configured. Click "Add Game" to get started.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('No games configured.')).toBeInTheDocument();
   });
 
   it('renders a list of games', () => {
@@ -155,7 +153,7 @@ describe('GamesTab (TC-02)', () => {
         games: [
           {
             id: 'g1',
-            name: 'Genshin Impact',
+            name: 'GIMI',
             game_type: 'GIMI',
             mod_path: 'C:/Mods',
             game_exe: 'C:/Game/Genshin.exe',
@@ -173,7 +171,7 @@ describe('GamesTab (TC-02)', () => {
     );
 
     render(<GamesTab />);
-    expect(screen.getByText('Genshin Impact')).toBeInTheDocument();
+    expect(screen.getByText('GIMI')).toBeInTheDocument();
     expect(screen.getByText('ACTIVE')).toBeInTheDocument();
     expect(screen.getByText('C:/Mods')).toBeInTheDocument();
     expect(screen.queryByTitle('Repair Index')).not.toBeInTheDocument();
@@ -212,8 +210,8 @@ describe('GamesTab (TC-02)', () => {
     (useSettings as any).mockReturnValue({
       settings: {
         games: [
-          { id: 'g1', name: 'Genshin Impact' },
-          { id: 'g2', name: 'Honkai Star Rail' },
+          { id: 'g1', name: 'GIMI' },
+          { id: 'g2', name: 'SRMI' },
         ],
       },
       saveSettingsAsync: mockSaveSettings,
@@ -232,11 +230,13 @@ describe('GamesTab (TC-02)', () => {
     const deleteButtons = screen.getAllByTitle('Remove Game');
     fireEvent.click(deleteButtons[0]);
 
-    // confirm is mocked to true
-    expect(window.confirm).toHaveBeenCalled();
-    expect(mockSaveSettings).toHaveBeenCalledWith({
-      games: [{ id: 'g2', name: 'Honkai Star Rail' }], // g1 is removed
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() =>
+      expect(mockSaveSettings).toHaveBeenCalledWith({
+        games: [{ id: 'g2', name: 'SRMI' }], // g1 is removed
+      }),
+    );
     await waitFor(() => expect(mockSetActiveGameId).toHaveBeenCalledWith(null)); // Because g1 was active
   });
 
@@ -247,7 +247,7 @@ describe('GamesTab (TC-02)', () => {
         games: [
           {
             id: 'g1',
-            name: 'Genshin Impact',
+            name: 'GIMI',
             game_type: 'GIMI',
             mod_path: 'C:/Mods',
             game_exe: 'C:/Game/Genshin.exe',
@@ -288,7 +288,7 @@ describe('GamesTab (TC-02)', () => {
         games: [
           {
             id: 'g1',
-            name: 'Genshin Impact',
+            name: 'GIMI',
             game_type: 'GIMI',
             mod_path: 'C:/Mods',
             game_exe: 'C:/Game/Genshin.exe',
@@ -331,8 +331,8 @@ describe('GamesTab (TC-02)', () => {
     (useSettings as any).mockReturnValue({
       settings: {
         games: [
-          { id: 'g1', name: 'Genshin Impact' },
-          { id: 'g2', name: 'Honkai Star Rail' },
+          { id: 'g1', name: 'GIMI' },
+          { id: 'g2', name: 'SRMI' },
         ],
       },
       saveSettingsAsync: mockSaveSettings,

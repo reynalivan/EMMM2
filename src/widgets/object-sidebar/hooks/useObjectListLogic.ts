@@ -51,7 +51,6 @@ export function useObjectListLogic() {
     setObjectSortBy,
     objectStatusFilter,
     setObjectStatusFilter,
-    safetyFilter,
   } = useAppStore(
     useShallow((state) => ({
       selectedObjectFolderPath: state.selectedObjectFolderPath,
@@ -65,7 +64,6 @@ export function useObjectListLogic() {
       setObjectSortBy: state.setObjectSortBy,
       objectStatusFilter: state.objectStatusFilter,
       setObjectStatusFilter: state.setObjectStatusFilter,
-      safetyFilter: state.safetyFilter,
     })),
   );
   const { focusObject } = useWorkspaceRuntime();
@@ -147,15 +145,9 @@ export function useObjectListLogic() {
       if (query && !object.name.toLowerCase().includes(query)) {
         return false;
       }
-      if (safetyFilter === 'safe') {
-        return object.safe_mod_count > 0;
-      }
-      if (safetyFilter === 'unsafe') {
-        return object.unsafe_mod_count > 0;
-      }
       return true;
     });
-  }, [allObjects, safetyFilter, sidebarSearchQuery]);
+  }, [allObjects, sidebarSearchQuery]);
 
   const isLoading = objectsLoading;
   const isError = objectsError;

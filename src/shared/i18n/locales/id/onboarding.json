@@ -8,6 +8,10 @@
     "description": "Deteksi otomatis memindai folder XXMI Launcher Anda untuk game yang terinstal.",
     "select_folder_title": "Pilih folder XXMI Launcher Anda",
     "duplicate_error": "Folder game ini sudah ditambahkan sebagai \"{{name}}\".",
+    "diagnostics": {
+      "title": "Bantu tingkatkan EMMM dengan diagnostik anonim",
+      "description": "Opsional: hitungan keandalan agregat harian dan satu kode diagnostik singkat untuk error baru. Path, nama, URL, pesan, dan pengenal pengguna tidak dikirim. Anda dapat mengubahnya nanti di Pengaturan."
+    },
     "language": {
       "change": "Ganti bahasa",
       "options": {
@@ -29,11 +33,11 @@
     "submit_button": "Tambah Game",
     "submitting": "Memvalidasi...",
     "game_types": {
-      "gimi": "Genshin Impact",
-      "srmi": "Star Rail",
-      "zzmi": "ZZZ",
-      "wwmi": "Wuthering Waves",
-      "efmi": "Arknight Endfield"
+      "gimi": "GIMI",
+      "srmi": "SRMI",
+      "zzmi": "ZZMI",
+      "wwmi": "WWMI",
+      "efmi": "EFMI"
     },
     "validation": {
       "game_type_required": "Silakan pilih tipe game",
@@ -49,7 +53,7 @@
     "title_other": "{{count}} Game Ditemukan!",
     "subtitle": "Game berikut telah terdeteksi dan siap dikelola.",
     "remove_tip": "Hapus dari deteksi",
-    "warnings_header": "Peringatan Setup — Anda masih bisa melanjutkan",
+    "warnings_header": "Peringatan setup. Anda masih bisa melanjutkan",
     "add_another": "Tambah Lagi",
     "confirm": "Konfirmasi"
   },

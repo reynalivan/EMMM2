@@ -23,6 +23,7 @@ export const schema = z
   .object({
     name: z.string().min(1, 'Name is required'),
     object_type: z.string().min(1, 'Category is required'),
+    randomizer_mode: z.enum(['default', 'exclusive', 'additive']),
     sub_category: z.string().optional().nullable(),
     is_safe: z.boolean(),
     is_auto_sync: z.boolean(),
@@ -119,6 +120,7 @@ export function useEditObjectForm(
     defaultValues: {
       name: '',
       object_type: '',
+      randomizer_mode: 'default',
       sub_category: '',
       is_safe: true,
       is_auto_sync: false,
@@ -139,6 +141,7 @@ export function useEditObjectForm(
 
     const defaultName = isFolder ? (object as ModFolder).name : (object as ObjectSummary).name;
     let defaultType = '';
+    let defaultRandomizerMode: 'default' | 'exclusive' | 'additive' = 'default';
     const defaultSafe = isFolder ? (object as ModFolder).is_safe : true;
     let defaultAutoSync: boolean;
     let defaultMeta: Record<string, unknown> = {};
@@ -170,6 +173,7 @@ export function useEditObjectForm(
     } else if (fullDetails?.type === 'object' && fullDetails.data) {
       const obj = fullDetails.data as GameObject;
       defaultType = obj.object_type;
+      defaultRandomizerMode = obj.randomizer_mode ?? 'default';
       defaultAutoSync = obj.is_auto_sync;
       try {
         if (typeof obj.metadata === 'string') {
@@ -221,6 +225,7 @@ export function useEditObjectForm(
     form.reset({
       name: defaultName,
       object_type: defaultType,
+      randomizer_mode: defaultRandomizerMode,
       sub_category: isObject ? (object as ObjectSummary).sub_category : '',
       is_safe: defaultSafe,
       is_auto_sync: defaultAutoSync,
@@ -262,6 +267,7 @@ export function useEditObjectForm(
           updates: {
             name: data.name,
             object_type: data.object_type,
+            randomizer_mode: data.randomizer_mode,
             sub_category: data.sub_category || undefined,
             is_auto_sync: data.is_auto_sync,
             hash_db: data.hash_db ? JSON.parse(data.hash_db) : null,

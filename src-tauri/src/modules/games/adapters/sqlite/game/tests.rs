@@ -69,7 +69,7 @@ async fn test_xxmi_managed_launch_fields_round_trip() {
     let launcher = "C:\\XXMI\\Resources\\Bin\\XXMI Launcher.exe";
     let game = GameRow {
         id: "wwmi".into(),
-        name: "Wuthering Waves".into(),
+        name: "WWMI".into(),
         game_type: crate::modules::games::domain::models::GameType::WWMI,
         path: "C:\\XXMI\\WWMI".into(),
         mods_path: Some("C:\\XXMI\\WWMI\\Mods".into()),

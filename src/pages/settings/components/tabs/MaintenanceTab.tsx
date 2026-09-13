@@ -1,11 +1,12 @@
 import { formatAppError } from '../../../../shared/lib/appError';
 import { useState, useRef } from 'react';
-import { Wrench, Eraser, RotateCcw, HardDrive } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '@/entities/settings';
 import { commands } from '../../../../shared/api/tauri/bindings';
 import { useToastStore } from '@/shared/ui/toast';
 import { useAppStore } from '@/app/store';
+import { SettingsSection } from '../SettingsLayout';
 
 export default function MaintenanceTab() {
   const { t } = useTranslation(['settings', 'common', 'layout']);
@@ -57,90 +58,68 @@ export default function MaintenanceTab() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body">
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="card-title text-lg flex items-center gap-2">
-                <HardDrive className="text-warning" size={20} />
-                {t('settings:maintenance.storage_title')}
-              </h3>
-              <p className="text-sm opacity-70 mt-1 max-w-2xl">
-                {t('settings:maintenance.storage_desc')}
-              </p>
-            </div>
-            <div className="card-actions shrink-0">
-              <button
-                className="btn btn-warning gap-2"
-                onClick={() => useAppStore.getState().setWorkspaceView('storage-optimizer')}
-              >
-                <HardDrive size={18} /> {t('settings:maintenance.open_optimizer')}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div>
+      <SettingsSection
+        id="storage-optimizer-heading"
+        title={t('settings:maintenance.storage_title')}
+        description={t('settings:maintenance.storage_desc')}
+        action={
+          <button
+            className="btn btn-outline btn-sm shrink-0 whitespace-nowrap"
+            onClick={() => useAppStore.getState().setWorkspaceView('storage-optimizer')}
+          >
+            {t('settings:maintenance.open_optimizer')}
+          </button>
+        }
+      />
 
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <Wrench className="text-primary" size={20} />
-            {t('settings:maintenance.system_title')}
-          </h3>
-          <p className="text-sm opacity-70">{t('settings:maintenance.system_desc')}</p>
-          <div className="card-actions justify-end mt-4">
-            <button
-              className="btn btn-primary gap-2"
-              onClick={handleMaintenance}
-              disabled={isProcessing}
-            >
-              <Wrench size={18} /> {t('settings:maintenance.run_maintenance')}
-            </button>
-          </div>
-        </div>
-      </div>
+      <SettingsSection
+        id="system-maintenance-heading"
+        title={t('settings:maintenance.system_title')}
+        description={t('settings:maintenance.system_desc')}
+        action={
+          <button
+            className="btn btn-primary btn-sm shrink-0 whitespace-nowrap"
+            onClick={handleMaintenance}
+            disabled={isProcessing}
+          >
+            {t('settings:maintenance.run_maintenance')}
+          </button>
+        }
+      />
 
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <Eraser className="text-secondary" size={20} />
-            {t('settings:maintenance.cache_title')}
-          </h3>
-          <p className="text-sm opacity-70">{t('settings:maintenance.cache_desc')}</p>
-          <div className="card-actions justify-end mt-4">
-            <button
-              className="btn btn-secondary btn-outline gap-2"
-              onClick={() => void handleClearCache()}
-              disabled={isProcessing}
-            >
-              <Eraser size={18} /> {t('settings:maintenance.clear_cache')}
-            </button>
-          </div>
-        </div>
-      </div>
+      <SettingsSection
+        id="image-cache-heading"
+        title={t('settings:maintenance.cache_title')}
+        description={t('settings:maintenance.cache_desc')}
+        action={
+          <button
+            className="btn btn-outline btn-sm shrink-0 whitespace-nowrap"
+            onClick={() => void handleClearCache()}
+            disabled={isProcessing}
+          >
+            {t('settings:maintenance.clear_cache')}
+          </button>
+        }
+      />
 
-      {/* Reset Database — Danger Zone */}
-      <div className="card bg-base-200 shadow-sm border border-error/30">
-        <div className="card-body">
-          <h3 className="card-title text-lg flex items-center gap-2">
-            <RotateCcw className="text-error" size={20} />
-            {t('settings:maintenance.danger_title')}
-          </h3>
-          <p className="text-sm opacity-70">{t('settings:maintenance.danger_desc')}</p>
-          <p className="text-sm text-info mt-1">{t('settings:maintenance.danger_info')}</p>
-          <div className="card-actions justify-end mt-4">
-            <button
-              id="btn-reset-database"
-              className="btn btn-error gap-2"
-              onClick={() => resetModalRef.current?.showModal()}
-              disabled={isProcessing}
-            >
-              <RotateCcw size={18} /> {t('settings:maintenance.reset_btn')}
-            </button>
-          </div>
-        </div>
-      </div>
+      <SettingsSection
+        id="reset-heading"
+        title={t('settings:maintenance.danger_title')}
+        description={`${t('settings:maintenance.danger_desc')} ${t('settings:maintenance.danger_info')}`}
+        className="border-error/30"
+        action={
+          <button
+            id="btn-reset-database"
+            className="btn btn-error btn-sm shrink-0 gap-2 whitespace-nowrap"
+            onClick={() => resetModalRef.current?.showModal()}
+            disabled={isProcessing}
+          >
+            <RotateCcw size={16} />
+            {t('settings:maintenance.reset_btn')}
+          </button>
+        }
+      />
 
       {/* Confirmation Modal */}
       <dialog ref={resetModalRef} className="modal modal-bottom sm:modal-middle">

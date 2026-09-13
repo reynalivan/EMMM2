@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import i18n from '@/shared/i18n/config';
+import { reportFrontendError } from '@/shared/lib/telemetry';
 
 interface Props {
   children?: ReactNode;
@@ -26,6 +27,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
+    reportFrontendError(error, 'react_render', {
+      componentStack: errorInfo.componentStack ?? undefined,
+      promptUser: true,
+    });
     this.setState({ errorInfo });
   }
 

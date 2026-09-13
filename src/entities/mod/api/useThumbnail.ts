@@ -30,7 +30,7 @@ import { thumbnailKeys } from '../model/queryKeys';
  */
 export function useThumbnail(gameId: string, folderPath: string, enabled = true) {
   return useQuery<string | null>({
-    queryKey: thumbnailKeys.folder(folderPath),
+    queryKey: thumbnailKeys.folder(folderPath, gameId),
     queryFn: async () => {
       const res = await commands.getModThumbnail(gameId, folderPath);
       return res ? convertFileSrc(res) : null;

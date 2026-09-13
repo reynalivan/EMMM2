@@ -1,6 +1,6 @@
 use crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects;
 use crate::modules::catalog::application::match_engine::inspection::{
-    InspectionRequest, inspect_source,
+    inspect_source, InspectionRequest,
 };
 use crate::modules::catalog::application::objects::classification::{
     CanonicalClassificationMatch, ObjectClassificationInput,

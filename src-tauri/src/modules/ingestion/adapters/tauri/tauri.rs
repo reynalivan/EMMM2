@@ -9,6 +9,65 @@ use crate::shared::errors::AppError;
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
+async fn record_ingestion_operation(
+    app: &tauri::AppHandle,
+    operation: crate::modules::system::application::telemetry::TelemetryOperation,
+    succeeded: bool,
+    started_at: std::time::Instant,
+) {
+    if !succeeded {
+        return;
+    }
+    let enabled = app
+        .state::<crate::modules::settings::application::config::ConfigService>()
+        .get_settings()
+        .diagnostics
+        .telemetry_enabled;
+    if !enabled {
+        return;
+    }
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+        operation,
+        crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+        crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+    )
+    .with_duration(started_at.elapsed());
+    let _ = telemetry
+        .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+        .await;
+}
+
+async fn record_ingestion_outcome(
+    app: &tauri::AppHandle,
+    operation: crate::modules::system::application::telemetry::TelemetryOperation,
+    outcome: crate::modules::system::application::telemetry::TelemetryOutcome,
+) {
+    let enabled = app
+        .state::<crate::modules::settings::application::config::ConfigService>()
+        .get_settings()
+        .diagnostics
+        .telemetry_enabled;
+    if !enabled {
+        return;
+    }
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+        operation,
+        outcome,
+        crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+    );
+    let _ = telemetry
+        .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+        .await;
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn create_import_batch(
@@ -56,6 +115,7 @@ pub async fn analyze_import_batch(
     extraction_state: State<'_, crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState>,
     batch_id: String,
 ) -> Result<ImportBatch, AppError> {
+    let started_at = std::time::Instant::now();
     let lease = extraction_state.acquire(&batch_id)?;
     let result = crate::modules::ingestion::application::import_batch::analyze::analyze_import_batch_for_app_with_options(
         &app,
@@ -68,6 +128,13 @@ pub async fn analyze_import_batch(
     )
     .await;
     drop(lease);
+    record_ingestion_operation(
+        &app,
+        crate::modules::system::application::telemetry::TelemetryOperation::Extract,
+        result.is_ok(),
+        started_at,
+    )
+    .await;
     result
 }
 
@@ -80,6 +147,7 @@ pub async fn analyze_import_batch_with_options(
     input: AnalyzeImportBatchOptions,
     on_progress: Channel<ExtractionEvent>,
 ) -> Result<ImportBatch, AppError> {
+    let started_at = std::time::Instant::now();
     let lease = extraction_state.acquire(&input.batch_id)?;
     let result = crate::modules::ingestion::application::import_batch::analyze::analyze_import_batch_for_app_with_options(
         &app,
@@ -94,6 +162,13 @@ pub async fn analyze_import_batch_with_options(
     )
     .await;
     drop(lease);
+    record_ingestion_operation(
+        &app,
+        crate::modules::system::application::telemetry::TelemetryOperation::Extract,
+        result.is_ok(),
+        started_at,
+    )
+    .await;
     result
 }
 
@@ -199,6 +274,7 @@ pub async fn refresh_import_batch_matches(
     target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     batch_id: String,
 ) -> Result<ImportBatch, AppError> {
+    let started_at = std::time::Instant::now();
     let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
         pool.inner(),
         &batch_id,
@@ -218,14 +294,44 @@ pub async fn refresh_import_batch_matches(
         Some(&resource_dir),
         game_type,
     );
-    crate::modules::ingestion::application::import_batch::coordinator::refresh_import_batch_matches_with_target_index(
+    let result = crate::modules::ingestion::application::import_batch::coordinator::refresh_import_batch_matches_with_target_index(
         pool.inner(),
         target_manifest_index.inner(),
         &batch_id,
         &master_db,
         &filters,
     )
-    .await
+    .await;
+    if let Ok(batch) = &result {
+        for item in &batch.items {
+            let outcome = match item.identity_match_status {
+                crate::modules::ingestion::application::import_batch::types::ImportMatchStatus::AutoMatched => {
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Matched
+                }
+                crate::modules::ingestion::application::import_batch::types::ImportMatchStatus::NeedsReview => {
+                    crate::modules::system::application::telemetry::TelemetryOutcome::NeedsReview
+                }
+                crate::modules::ingestion::application::import_batch::types::ImportMatchStatus::NoMatch => {
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Unmatched
+                }
+            };
+            record_ingestion_outcome(
+                &app,
+                crate::modules::system::application::telemetry::TelemetryOperation::AutoMatch,
+                outcome,
+            )
+            .await;
+        }
+    } else {
+        record_ingestion_operation(
+            &app,
+            crate::modules::system::application::telemetry::TelemetryOperation::AutoMatch,
+            false,
+            started_at,
+        )
+        .await;
+    }
+    result
 }
 
 #[tauri::command]
@@ -249,16 +355,33 @@ pub async fn mark_import_batch_review_started(
 #[tauri::command]
 #[specta::specta]
 pub async fn set_import_item_decision(
+    app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
     target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     input: SetImportItemDecisionInput,
 ) -> Result<crate::modules::ingestion::application::import_batch::types::ImportItem, AppError> {
-    crate::modules::ingestion::application::import_batch::coordinator::set_import_item_decision_with_target_index(
+    let decision = input.decision;
+    let result = crate::modules::ingestion::application::import_batch::coordinator::set_import_item_decision_with_target_index(
         pool.inner(),
         target_manifest_index.inner(),
         input,
     )
-    .await
+    .await;
+    if result.is_ok() {
+        let outcome = match decision {
+            crate::modules::ingestion::application::import_batch::types::ImportDecision::Skip => {
+                crate::modules::system::application::telemetry::TelemetryOutcome::Cancelled
+            }
+            _ => crate::modules::system::application::telemetry::TelemetryOutcome::Accepted,
+        };
+        record_ingestion_outcome(
+            &app,
+            crate::modules::system::application::telemetry::TelemetryOperation::ClassificationReview,
+            outcome,
+        )
+        .await;
+    }
+    result
 }
 
 #[tauri::command]
@@ -356,6 +479,16 @@ pub async fn commit_import_batch(
     target_manifest_index: State<'_, crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>,
     input: CommitImportBatchInput,
 ) -> Result<ImportBatchReport, AppError> {
+    let diagnostics_enabled = app
+        .state::<crate::modules::settings::application::config::ConfigService>()
+        .get_settings()
+        .diagnostics
+        .telemetry_enabled;
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let started_at = std::time::Instant::now();
     let batch_id = input.batch_id.clone();
     let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
         pool.inner(),
@@ -377,7 +510,27 @@ pub async fn commit_import_batch(
         input,
         &master_db,
     )
-    .await?;
+    .await;
+    if diagnostics_enabled {
+        let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+            crate::modules::system::application::telemetry::TelemetryOperation::Import,
+            if report.is_ok() {
+                crate::modules::system::application::telemetry::TelemetryOutcome::Success
+            } else {
+                crate::modules::system::application::telemetry::TelemetryOutcome::Failed
+            },
+            if report.is_ok() {
+                crate::modules::system::application::telemetry::TelemetryErrorCode::None
+            } else {
+                crate::modules::system::application::telemetry::TelemetryErrorCode::Unknown
+            },
+        )
+        .with_duration(started_at.elapsed());
+        let _ = telemetry
+            .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+            .await;
+    }
+    let report = report?;
     let terminal = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
         pool.inner(),
         &batch_id,
@@ -670,6 +823,19 @@ pub async fn apply_object_classification_batch(
     pool: State<'_, sqlx::SqlitePool>,
     input: ApplyObjectClassificationBatchInput,
 ) -> Result<ApplyObjectClassificationBatchResult, AppError> {
+    let started_at = std::time::Instant::now();
+    let classification_modes = input
+        .items
+        .iter()
+        .map(|item| match item.decision {
+            crate::modules::catalog::application::objects::classification_batch::ObjectClassificationDecision::Canonical { .. } => {
+                crate::modules::system::application::telemetry::TelemetryOutcome::AutoAccepted
+            }
+            crate::modules::catalog::application::objects::classification_batch::ObjectClassificationDecision::Manual { .. } => {
+                crate::modules::system::application::telemetry::TelemetryOutcome::NeedsReview
+            }
+        })
+        .collect::<Vec<_>>();
     let game_type =
         crate::modules::games::adapters::sqlite::game::get_game_type(pool.inner(), &input.game_id)
             .await?
@@ -728,6 +894,21 @@ pub async fn apply_object_classification_batch(
         }
     }
     settle_classification_runtime_effects(&app, pool.inner(), &game_id).await;
+    record_ingestion_operation(
+        &app,
+        crate::modules::system::application::telemetry::TelemetryOperation::Classification,
+        true,
+        started_at,
+    )
+    .await;
+    for outcome in classification_modes {
+        record_ingestion_outcome(
+            &app,
+            crate::modules::system::application::telemetry::TelemetryOperation::Classification,
+            outcome,
+        )
+        .await;
+    }
     Ok(result)
 }
 

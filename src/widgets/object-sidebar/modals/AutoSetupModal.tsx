@@ -3,7 +3,7 @@
  * Used in the empty state of the ObjectList.
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { X, CheckSquare, Square, Download } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '@/features/workspace-runtime';
 import { type DbEntryFull, mapToUiFormat } from '../hooks/useMasterDbSync';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 interface AutoSetupModalProps {
   open: boolean;
@@ -33,6 +34,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
   const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set());
   const [isCreating, setIsCreating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Process MasterDB into UI format
   const dbEntries = useMemo<DbEntryFull[]>(() => {
@@ -67,6 +69,8 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
       return new Set(allEntryNames);
     });
   }, [allEntryNames, open]);
+
+  useDialogSync(dialogRef, open && Boolean(activeGame));
 
   if (!open || !activeGame) return null;
 
@@ -161,7 +165,12 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
     filteredEntries.length > 0 && filteredEntries.every((entry) => selectedNames.has(entry.name));
 
   return (
-    <div className={`modal modal-open`}>
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      aria-labelledby="auto-setup-title"
+      onClose={handleClose}
+    >
       <div className="modal-box w-11/12 max-w-4xl max-h-[90vh] flex flex-col p-4 bg-base-100 shadow-2xl overflow-hidden relative">
         <button
           className="btn btn-sm btn-circle btn-ghost absolute right-4 top-4"
@@ -172,7 +181,9 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
           <X size={20} />
         </button>
 
-        <h3 className="font-bold text-xl mb-2">{t('auto_setup_modal.title')}</h3>
+        <h3 id="auto-setup-title" className="font-bold text-xl mb-2">
+          {t('auto_setup_modal.title')}
+        </h3>
         <p className="text-sm text-base-content/60 mb-4">
           {t('auto_setup_modal.description', { gameName: activeGame.name })}
         </p>
@@ -311,7 +322,9 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
           </>
         )}
       </div>
-      <div className="modal-backdrop bg-base-300/60" onClick={handleClose}></div>
-    </div>
+      <form method="dialog" className="modal-backdrop bg-base-300/60">
+        <button onClick={handleClose}>{t('common:actions.close')}</button>
+      </form>
+    </dialog>
   );
 }

@@ -1,9 +1,12 @@
 //! Collection lifecycle: list, create, delete, rename/update.
 
-use super::live_state::{live_runtime_is_safe, load_game_mods_path, load_live_runtime_state};
+use super::live_state::{
+    live_runtime_is_safe, live_runtime_matches_collection_tx, load_game_mods_path,
+    load_live_runtime_state,
+};
 use super::projection::{
     collection_members_from_projected_state, load_projected_collection_state,
-    persist_projected_state, require_collection, require_game_match,
+    persist_projected_state, persist_projected_state_tx, require_collection, require_game_match,
 };
 use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::collections::domain::collection::{
@@ -13,6 +16,17 @@ use crate::modules::collections::domain::collection::{
 use crate::modules::workspace::application::projected_state;
 use crate::shared::errors::CollectionError;
 use sqlx::SqlitePool;
+
+/// Result of saving the live runtime as a passive collection snapshot.
+///
+/// `created` is false when a named collection already represents the same
+/// effective runtime state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassiveCollectionSnapshot {
+    pub collection_id: String,
+    pub collection_name: String,
+    pub created: bool,
+}
 
 /// List every named collection for a game. Safety is display metadata only.
 pub async fn list_collections(
@@ -137,8 +151,8 @@ pub async fn create_collection(
         },
     )
     .await?;
-    persist_projected_state(
-        &mut *tx,
+    persist_projected_state_tx(
+        &mut tx,
         &id,
         &persisted_mods,
         &persisted_objects,
@@ -169,6 +183,118 @@ pub async fn create_collection(
         &collection,
         active_collection_id.as_deref(),
     ))
+}
+
+/// Save the current live state without changing the active collection or draft.
+///
+/// Existing named collections with the same projected signature and effective
+/// membership are reused. A different state with the requested canonical name
+/// gets the first available ` (n)` suffix.
+pub async fn snapshot_live_state_passively(
+    pool: &SqlitePool,
+    game_id: &str,
+    requested_name: &str,
+) -> Result<PassiveCollectionSnapshot, CollectionError> {
+    let requested_name = requested_name.trim();
+    if requested_name.is_empty() {
+        return Err(CollectionError::Validation(
+            "Collection name cannot be empty".to_string(),
+        ));
+    }
+
+    let (mods, objects) = load_live_runtime_state(pool, game_id).await?;
+    if mods.is_empty() {
+        return Err(CollectionError::Validation(
+            "A collection must contain at least 1 active mod".to_string(),
+        ));
+    }
+    let is_safe = live_runtime_is_safe(pool, game_id).await?;
+    let projected_state = projected_state::build_projected_state(
+        &mods,
+        &objects,
+        load_game_mods_path(pool, game_id).await?.as_deref(),
+    );
+    let signature = projected_state::signature_for_projected_state(&projected_state);
+
+    let mut tx = pool.begin().await?;
+    for collection_id in collection::named_ids_by_signature_tx(&mut tx, game_id, &signature).await?
+    {
+        if live_runtime_matches_collection_tx(&mut tx, game_id, &collection_id).await? {
+            let existing = collection::get_by_id_tx(&mut tx, &collection_id)
+                .await?
+                .ok_or_else(|| CollectionError::NotFound {
+                    id: collection_id.clone(),
+                })?;
+            tx.commit().await?;
+            return Ok(PassiveCollectionSnapshot {
+                collection_id: existing.id,
+                collection_name: existing.name,
+                created: false,
+            });
+        }
+    }
+
+    let name = next_available_collection_name(&mut tx, game_id, requested_name).await?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let persisted_mods = mods
+        .into_iter()
+        .map(|member| CollectionMod {
+            collection_id: id.clone(),
+            ..member
+        })
+        .collect::<Vec<_>>();
+    let persisted_objects = objects
+        .into_iter()
+        .map(|member| CollectionObject {
+            collection_id: id.clone(),
+            ..member
+        })
+        .collect::<Vec<_>>();
+
+    collection::create_tx(
+        &mut tx,
+        collection::CreateCollectionRow {
+            id: &id,
+            game_id,
+            name: &name,
+            is_safe,
+        },
+    )
+    .await?;
+    persist_projected_state(
+        &mut *tx,
+        &id,
+        &persisted_mods,
+        &persisted_objects,
+        &projected_state,
+    )
+    .await?;
+    tx.commit().await?;
+
+    Ok(PassiveCollectionSnapshot {
+        collection_id: id,
+        collection_name: name,
+        created: true,
+    })
+}
+
+async fn next_available_collection_name(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    requested_name: &str,
+) -> Result<String, CollectionError> {
+    if !collection::name_exists_tx(conn, game_id, requested_name).await? {
+        return Ok(requested_name.to_string());
+    }
+
+    for suffix in 2.. {
+        let candidate = format!("{requested_name} ({suffix})");
+        if !collection::name_exists_tx(conn, game_id, &candidate).await? {
+            return Ok(candidate);
+        }
+    }
+
+    unreachable!("usize suffix space is exhausted")
 }
 
 pub async fn delete_collection(pool: &SqlitePool, id: &str) -> Result<(), CollectionError> {

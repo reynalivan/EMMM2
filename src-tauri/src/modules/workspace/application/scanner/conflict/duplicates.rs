@@ -10,7 +10,10 @@ use crate::shared::errors::AppError;
 
 /// Finds the outermost disabled directory between `mods_root` and a terminal
 /// mod. Renaming that directory is required to make a child mod active.
-fn activation_path_for_disabled_ancestor(target_path: &Path, mods_root: &Path) -> PathBuf {
+pub(crate) fn activation_path_for_disabled_ancestor(
+    target_path: &Path,
+    mods_root: &Path,
+) -> PathBuf {
     let Ok(relative_path) = target_path.strip_prefix(mods_root) else {
         return target_path.to_path_buf();
     };

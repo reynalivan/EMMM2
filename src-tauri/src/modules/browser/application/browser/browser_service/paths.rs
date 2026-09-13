@@ -117,6 +117,31 @@ pub async fn get_downloads_root(app: &AppHandle, db: &SqlitePool) -> PathBuf {
     }
 }
 
+/// Resolve a browser download directory for a known game. Download requests
+/// retain this game id so an active-game switch cannot redirect a confirmation
+/// or retry into another Mod Inbox.
+pub async fn get_downloads_root_for_game(
+    app: &AppHandle,
+    db: &SqlitePool,
+    game_id: &str,
+) -> PathBuf {
+    if let Ok(inbox) = crate::modules::ingestion::application::import_batch::ready_to_move::resolve_mod_inbox_root(
+        app,
+        db,
+        game_id,
+        None,
+    )
+    .await
+    {
+        return inbox;
+    }
+
+    match app.path().app_data_dir() {
+        Ok(data_dir) => data_dir.join("BrowserDownloads").join(game_id),
+        Err(_) => PathBuf::from("BrowserDownloads").join(game_id),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

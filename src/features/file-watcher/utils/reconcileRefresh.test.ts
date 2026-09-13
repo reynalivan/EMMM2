@@ -9,6 +9,7 @@ function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileRes
     folder_conflicts: [],
     rename_confirmations: [],
     game_id: 'game-1',
+    reconcile_revision: 1,
     reason: 'WatcherBatch',
     status: 'Applied',
     error_message: null,

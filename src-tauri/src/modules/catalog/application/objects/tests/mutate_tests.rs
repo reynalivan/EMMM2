@@ -2,7 +2,9 @@ use crate::modules::catalog::application::objects::mutate::{
     create_object_cmd_inner, delete_object, set_object_and_mods_category, toggle_pin_object,
     update_object,
 };
-use crate::modules::catalog::domain::objects::{CreateObjectInput, UpdateObjectInput};
+use crate::modules::catalog::domain::objects::{
+    CreateObjectInput, CreateObjectThumbnail, UpdateObjectInput,
+};
 
 #[tokio::test]
 async fn object_and_child_category_roll_back_together_when_child_update_fails() {
@@ -109,6 +111,7 @@ async fn object_update_rolls_back_when_runtime_projection_write_fails() {
         &UpdateObjectInput {
             name: Some("After".to_string()),
             object_type: None,
+            randomizer_mode: None,
             sub_category: None,
             metadata: None,
             hash_db: None,
@@ -173,6 +176,108 @@ async fn category_update_rolls_back_when_runtime_projection_write_fails() {
     assert_eq!(object_type, "Character");
 }
 
+#[tokio::test]
+async fn generic_object_category_update_keeps_child_mod_categories_in_sync() {
+    let pool = setup_test_db().await;
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .expect("game seed");
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "o1",
+            game_id: "g1",
+            name: "Alice",
+            folder_path: "Alice",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("object seed");
+    crate::test_utils::insert_test_mod(
+        &pool,
+        &crate::test_utils::TestModFixture {
+            id: "m1",
+            game_id: "g1",
+            object_id: Some("o1"),
+            actual_name: "Blue",
+            folder_path: "Alice/Blue",
+            status: crate::modules::games::domain::models::ItemStatus::Disabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some("/Mods"),
+        },
+    )
+    .await
+    .expect("mod seed");
+
+    update_object(
+        &pool,
+        "o1",
+        &UpdateObjectInput {
+            name: None,
+            object_type: Some("Weapon".to_string()),
+            randomizer_mode: None,
+            sub_category: None,
+            metadata: None,
+            hash_db: None,
+            custom_skins: None,
+            thumbnail_path: None,
+            is_auto_sync: None,
+            is_pinned: None,
+            tags: None,
+        },
+    )
+    .await
+    .expect("update category");
+
+    let categories: (String, String) = sqlx::query_as(
+        "SELECT o.object_type, m.object_type FROM objects o JOIN mods m ON m.object_id = o.id WHERE o.id = 'o1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("matching categories");
+    assert_eq!(categories, ("Weapon".to_string(), "Weapon".to_string()));
+}
+
+#[tokio::test]
+async fn generic_object_category_update_rejects_noncanonical_values() {
+    let pool = setup_test_db().await;
+
+    let error = update_object(
+        &pool,
+        "missing-object",
+        &UpdateObjectInput {
+            name: None,
+            object_type: Some("Char".to_string()),
+            randomizer_mode: None,
+            sub_category: None,
+            metadata: None,
+            hash_db: None,
+            custom_skins: None,
+            thumbnail_path: None,
+            is_auto_sync: None,
+            is_pinned: None,
+            tags: None,
+        },
+    )
+    .await
+    .expect_err("invalid category must fail before the object lookup");
+
+    assert!(error
+        .to_string()
+        .contains("Character, Weapon, UI, or Other"));
+}
+
 async fn setup_test_db() -> sqlx::SqlitePool {
     crate::test_utils::init_test_db().await.pool
 }
@@ -226,6 +331,7 @@ async fn test_create_object_cmd_inner_success() {
         object_type: "Character".to_string(),
         sub_category: None,
         metadata: None,
+        thumbnail: None,
         thumbnail_url: None,
         hash_db: None,
         custom_skins: None,
@@ -243,6 +349,67 @@ async fn test_create_object_cmd_inner_success() {
         .unwrap();
     assert_eq!(count, 1);
     assert!(mods_path.join("my_folder").is_dir());
+}
+
+#[tokio::test]
+async fn create_object_writes_normalized_clipboard_thumbnail() {
+    use image::ImageFormat;
+    use std::io::Cursor;
+
+    let pool = setup_test_db().await;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mods_path = tmp.path().join("Mods");
+    std::fs::create_dir(&mods_path).unwrap();
+    let mods_path_str = mods_path.to_string_lossy().to_string();
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g_thumb",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "/",
+            mods_path: Some(&mods_path_str),
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut image_data = Vec::new();
+    image::DynamicImage::new_rgba8(2, 2)
+        .write_to(&mut Cursor::new(&mut image_data), ImageFormat::Png)
+        .unwrap();
+    let id = create_object_cmd_inner(
+        &pool,
+        None,
+        CreateObjectInput {
+            status: None,
+            game_id: "g_thumb".to_string(),
+            name: "Thumbnail Object".to_string(),
+            folder_path: Some("thumbnail_object".to_string()),
+            object_type: "Character".to_string(),
+            sub_category: None,
+            metadata: None,
+            thumbnail: Some(CreateObjectThumbnail::Clipboard { image_data }),
+            thumbnail_url: None,
+            hash_db: None,
+            custom_skins: None,
+        },
+    )
+    .await
+    .expect("object creation with clipboard thumbnail");
+
+    let thumbnail = mods_path
+        .join("thumbnail_object")
+        .join("preview_custom.png");
+    assert!(thumbnail.is_file());
+    assert!(image::open(&thumbnail).is_ok());
+    let stored_path: Option<String> =
+        sqlx::query_scalar("SELECT thumbnail_path FROM objects WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored_path.as_deref(), thumbnail.to_str());
 }
 
 #[tokio::test]
@@ -274,6 +441,7 @@ async fn test_create_object_cmd_inner_conflict() {
         object_type: "Weapon".to_string(),
         sub_category: None,
         metadata: None,
+        thumbnail: None,
         thumbnail_url: None,
         hash_db: None,
         custom_skins: None,
@@ -325,6 +493,7 @@ async fn create_object_rejects_disabled_prefix_identity_collision() {
             object_type: "Character".to_string(),
             sub_category: None,
             metadata: None,
+            thumbnail: None,
             thumbnail_url: None,
             hash_db: None,
             custom_skins: None,
@@ -367,6 +536,7 @@ async fn create_nested_object_rejects_conflicting_parent_identity() {
             object_type: "Character".to_string(),
             sub_category: None,
             metadata: None,
+            thumbnail: None,
             thumbnail_url: None,
             hash_db: None,
             custom_skins: None,
@@ -407,6 +577,7 @@ async fn test_create_object_cmd_inner_does_not_leave_db_row_when_folder_creation
         object_type: "Character".to_string(),
         sub_category: None,
         metadata: None,
+        thumbnail: None,
         thumbnail_url: None,
         hash_db: None,
         custom_skins: None,
@@ -506,6 +677,7 @@ async fn test_update_object() {
     let updates = UpdateObjectInput {
         name: Some("RenamedObj".to_string()),
         object_type: None,
+        randomizer_mode: Some(crate::modules::catalog::domain::objects::RandomizerMode::Additive),
         sub_category: None,
         metadata: None,
         thumbnail_path: None,
@@ -523,6 +695,40 @@ async fn test_update_object() {
         .await
         .unwrap();
     assert_eq!(name, "RenamedObj");
+    let mode: Option<String> =
+        sqlx::query_scalar("SELECT randomizer_mode FROM objects WHERE id = 'o1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(mode.as_deref(), Some("additive"));
+
+    update_object(
+        &pool,
+        "o1",
+        &UpdateObjectInput {
+            name: None,
+            object_type: None,
+            randomizer_mode: Some(
+                crate::modules::catalog::domain::objects::RandomizerMode::Default,
+            ),
+            sub_category: None,
+            metadata: None,
+            thumbnail_path: None,
+            is_auto_sync: None,
+            is_pinned: None,
+            tags: None,
+            hash_db: None,
+            custom_skins: None,
+        },
+    )
+    .await
+    .unwrap();
+    let cleared: Option<String> =
+        sqlx::query_scalar("SELECT randomizer_mode FROM objects WHERE id = 'o1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(cleared.is_none());
 }
 
 #[tokio::test]

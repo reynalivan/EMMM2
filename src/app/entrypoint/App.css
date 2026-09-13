@@ -1,4 +1,4 @@
-/* Hallmark · pre-emit critique: P4 H4 E5 S4 R5 V4 · genre: technical · tone: dark-austere · anchor: blue · macrostructure: existing-flow-polish · contrast: pass (40–41) · slop: pass */
+/* Hallmark · pre-emit critique: P5 H4 E5 S5 R5 V4 · genre: technical · tone: dark-austere · anchor: blue · macrostructure: workbench · contrast: pass (40–41) · slop: pass */
 @import 'tailwindcss';
 /* themes: false — otherwise daisyUI also emits its built-in `light` and `dark`
    themes. The built-in `light` collides with ours by name, and any *-content
@@ -62,6 +62,10 @@
   --focus-ring: #60a5fa;
   --glass-bg: rgba(22, 23, 29, 0.7); /* Adjusted to match neutral dark */
   --glass-border: rgba(255, 255, 255, 0.06);
+  --liquid-tint-rgb: 226, 232, 240;
+  --theme-shell-background-color: var(--color-base-100);
+  --theme-shell-background-image: none;
+  --theme-shell-dim-opacity: 0;
 
   /* 5. Scrollbar */
   --scrollbar-thumb: #2d2e38; /* Neutral dark gray thumb */
@@ -127,6 +131,10 @@
   --focus-ring: #1d4ed8;
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(15, 23, 42, 0.08);
+  --liquid-tint-rgb: 15, 23, 42;
+  --theme-shell-background-color: var(--color-base-100);
+  --theme-shell-background-image: none;
+  --theme-shell-dim-opacity: 0;
   --scrollbar-thumb: #cbd5e1;
   --scrollbar-track: #f1f5f9;
   --aurora-blend: multiply;
@@ -143,6 +151,14 @@
 @theme {
   --glow-color: color-mix(in srgb, var(--color-primary), transparent var(--glow-opacity));
   --glow-blur: var(--glow-size);
+  --workspace-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --workspace-duration-short: 160ms;
+  --workspace-layer-topbar: 1000;
+  --workspace-layer-popover: 1100;
+  --workspace-layer-modal: 1400;
+  --workspace-layer-overlay: 1300;
+  --workspace-topbar-height: 4rem;
+  --workspace-panel-content-inset: calc(var(--workspace-topbar-height) + 1rem);
 
   /* Semantic Migration Tokens */
   --color-border-subtle: color-mix(in srgb, var(--color-base-content) 5%, transparent);
@@ -151,11 +167,6 @@
 }
 
 /* Global Styles */
-html,
-body {
-  overflow-x: clip;
-}
-
 body {
   @apply bg-base-100 text-base-content antialiased selection:bg-primary/30 selection:text-base-content;
 }
@@ -202,8 +213,297 @@ body {
   border: 1px solid var(--glass-border);
 }
 
-.glow-text {
-  text-shadow: 0 0 var(--glow-blur) var(--glow-color);
+.app-theme-background,
+.app-theme-background-dim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.app-theme-background {
+  background-color: var(--theme-shell-background-color);
+  background-image: var(--theme-shell-background-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.app-theme-background-dim {
+  background: color-mix(
+    in srgb,
+    var(--color-base-100) calc(var(--theme-shell-dim-opacity) * 100%),
+    transparent
+  );
+}
+
+.liquid-surface {
+  min-width: 0;
+  color: var(--color-base-content);
+}
+
+/* QuickLiquid inserts a content host between the surface and its React child.
+   Let a height-constrained surface carry that height through the extra host. */
+.liquid-surface .ql-content,
+.liquid-surface__content {
+  min-width: 0;
+  height: 100%;
+}
+
+/* Secondary copy must remain readable in both shipped themes. */
+.text-muted {
+  color: color-mix(in srgb, var(--color-base-content) 60%, var(--color-base-100));
+}
+
+@media (pointer: coarse) {
+  .btn.btn-square {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+.liquid-surface--nav {
+  background-color: color-mix(in srgb, var(--color-base-100) 32%, transparent);
+  backdrop-filter: blur(26px) saturate(1.08);
+  -webkit-backdrop-filter: blur(26px) saturate(1.08);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-base-content) 11%, transparent);
+  border-radius: 0;
+  overflow: visible !important;
+}
+
+.workspace-scroll-owner {
+  scroll-padding-top: var(--workspace-topbar-height);
+}
+
+.workspace-scroll-owner :is(h1, h2, h3, [data-scroll-target]) {
+  scroll-margin-top: var(--workspace-topbar-height);
+}
+
+.liquid-surface--control,
+.liquid-surface--indicator,
+.liquid-surface--overlay {
+  border: 1px solid var(--glass-border);
+}
+
+.liquid-surface--overlay {
+  background-color: color-mix(in srgb, var(--color-base-100) 48%, transparent);
+  backdrop-filter: blur(26px) saturate(1.08);
+  -webkit-backdrop-filter: blur(26px) saturate(1.08);
+}
+
+.liquid-surface--overlay .ql-tint {
+  background-color: color-mix(in srgb, var(--color-base-100) 48%, transparent) !important;
+}
+
+.app-menu-overlay {
+  background-color: color-mix(in srgb, var(--color-base-100) 58%, transparent);
+  backdrop-filter: blur(28px) saturate(1.08);
+  -webkit-backdrop-filter: blur(28px) saturate(1.08);
+  border-color: color-mix(in srgb, var(--color-base-content) 12%, transparent);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--color-base-300) 48%, transparent);
+}
+
+.app-menu-overlay .ql-tint {
+  background-color: color-mix(in srgb, var(--color-base-100) 58%, transparent) !important;
+}
+
+/* Modal roots must clear all workspace chrome. Native dialogs enter the browser top layer;
+   this explicit layer also protects the remaining non-native DaisyUI modal hosts. */
+.modal {
+  z-index: var(--workspace-layer-modal) !important;
+}
+
+dialog.modal {
+  border: 0;
+  background: transparent;
+}
+
+dialog.modal::backdrop,
+.modal.modal-open > .modal-backdrop,
+.modal[open] > .modal-backdrop {
+  background-color: color-mix(in srgb, var(--color-neutral) 68%, transparent);
+  backdrop-filter: blur(3px) saturate(0.94);
+  -webkit-backdrop-filter: blur(3px) saturate(0.94);
+}
+
+.modal > .modal-box {
+  background-color: color-mix(in srgb, var(--color-base-100) 64%, transparent) !important;
+  backdrop-filter: blur(26px) saturate(1.08);
+  -webkit-backdrop-filter: blur(26px) saturate(1.08);
+  border-color: color-mix(in srgb, var(--color-base-content) 12%, transparent) !important;
+  box-shadow: 0 20px 48px color-mix(in srgb, var(--color-base-300) 56%, transparent);
+}
+
+/* The object list has dense text directly behind its anchored menu. Give that
+   local overlay more neutral material than the floating grid menu so actions
+   remain readable while retaining the same Frosted Apple language. */
+.object-bulk-action-menu {
+  background-color: color-mix(in srgb, var(--color-base-100) 76%, transparent);
+  border-color: color-mix(in srgb, var(--color-base-content) 14%, transparent);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--color-base-300) 58%, transparent);
+}
+
+.object-bulk-action-menu .ql-tint {
+  background-color: color-mix(in srgb, var(--color-base-100) 76%, transparent) !important;
+}
+
+.workspace-page-frame {
+  --workspace-context-chrome-height: 0rem;
+}
+
+.folder-grid-container {
+  --folder-grid-chrome-height: calc(var(--workspace-topbar-height) + 3.5rem);
+  --folder-grid-content-gap: 0.75rem;
+}
+
+/* The grid content intentionally scrolls under the shell and its action bar.
+   Keep that depth effect for cards, while reserving the scrollbar track below
+   the measured chrome so the thumb never cuts across controls. */
+.folder-grid-scroll {
+  scrollbar-gutter: stable;
+}
+
+.folder-grid-scroll::-webkit-scrollbar-track {
+  margin-top: var(--folder-grid-chrome-height);
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 1024px) {
+  .workspace-page-frame[data-has-context='true'] {
+    --workspace-context-chrome-height: 4rem;
+  }
+}
+
+.liquid-surface--control {
+  border-radius: var(--radius-selector);
+}
+
+.liquid-surface--indicator {
+  border-radius: 999px;
+}
+
+.workspace-surface {
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box);
+  background-color: color-mix(in srgb, var(--color-base-200) 45%, transparent);
+}
+
+.workspace-interactive {
+  transition:
+    background-color var(--workspace-duration-short) var(--workspace-ease-out),
+    border-color var(--workspace-duration-short) var(--workspace-ease-out),
+    transform var(--workspace-duration-short) var(--workspace-ease-out);
+}
+
+/* Bulk selection remains available in constrained panes: keep selection context
+   visible and move the action set into the existing More menu. */
+.bulk-action-bar--inline {
+  container-type: inline-size;
+  container-name: object-bulk-actions;
+}
+
+.bulk-action-bar__compact-only {
+  display: none;
+}
+
+.folder-grid-container {
+  container-type: inline-size;
+  container-name: folder-grid;
+}
+
+/* A wide explorer pane keeps navigation and controls on one calm toolbar row.
+   When the pane itself narrows, it returns to the deliberate two-row layout. */
+@container folder-grid (min-width: 44rem) {
+  .folder-grid-toolbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .folder-grid-toolbar-breadcrumbs {
+    flex: 1 1 auto;
+  }
+
+  .folder-grid-toolbar-controls {
+    width: auto;
+  }
+}
+
+.object-list-panel {
+  container-type: inline-size;
+  container-name: object-list;
+}
+
+@container object-bulk-actions (max-width: 28rem) {
+  .bulk-action-bar--inline .bulk-action-bar__primary {
+    display: none;
+  }
+
+  .bulk-action-bar--inline .bulk-action-bar__compact-only {
+    display: flex;
+  }
+}
+
+@container folder-grid (max-width: 34rem) {
+  .bulk-action-bar--floating {
+    right: 1rem;
+    bottom: 1rem;
+    left: auto;
+    width: max-content;
+    min-width: 0;
+    transform: none;
+    translate: none;
+  }
+
+  .bulk-action-bar--floating > .relative {
+    width: max-content;
+    gap: 0.75rem;
+  }
+
+  .bulk-action-bar--floating .bulk-action-bar__primary,
+  .bulk-action-bar--floating .bulk-action-bar__divider {
+    display: none;
+  }
+
+  .bulk-action-bar--floating .bulk-action-bar__compact-only {
+    display: flex;
+  }
+}
+
+@container folder-grid (max-width: 26rem) {
+  .folder-grid-toolbar-controls {
+    gap: 0.375rem;
+  }
+
+  .folder-grid-search.is-expanded {
+    width: min(9rem, 100%);
+  }
+}
+
+@container object-list (max-width: 20rem) {
+  .object-list-toolbar {
+    gap: 0.375rem;
+    padding-inline: 0.5rem;
+  }
+
+  .object-list-search.is-expanded {
+    width: min(10rem, 100%);
+  }
+}
+
+@media (hover: hover) {
+  .workspace-interactive:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-interactive {
+    transition-duration: 0ms;
+  }
+
+  .workspace-interactive:hover {
+    transform: none;
+  }
 }
 
 .bg-github-gradient {
@@ -215,25 +515,31 @@ body {
   );
 }
 
-/* Scrollbar Styling (Theme Aware) */
+/* Scrollbars stay visually quiet so the pane boundary, not its track, defines layout. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-base-content) 24%, transparent) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-  background-color: var(--scrollbar-track);
+  width: 6px;
+  height: 6px;
+  background-color: transparent;
 }
 
 ::-webkit-scrollbar-track {
-  background-color: var(--scrollbar-track);
-  border-radius: 4px;
+  background-color: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: color-mix(in srgb, var(--color-base-content) 24%, transparent);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--scrollbar-thumb), black 10%);
+  background-color: color-mix(in srgb, var(--color-base-content) 40%, transparent);
 }
 
 /* Custom Scrollbar (Auto-hiding, Theme Aware) */
@@ -244,7 +550,7 @@ body {
 }
 
 .custom-scrollbar:hover {
-  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-color: color-mix(in srgb, var(--color-base-content) 40%, transparent) transparent;
 }
 
 /* WebKit (Chrome/Edge/Tauri) */
@@ -267,7 +573,7 @@ body {
 }
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
+  background-color: color-mix(in srgb, var(--color-base-content) 40%, transparent);
 }
 
 /* Entrance animations.
@@ -390,31 +696,6 @@ body {
   }
 }
 
-/* Welcome CTA shine sweep (features/onboarding/WelcomeScreen.tsx).
-   The resting state declares no transition, so hover-out snaps the highlight
-   back off-screen instead of sweeping it backwards across the button. */
-.cta-shine {
-  position: relative;
-}
-
-.cta-shine > .cta-shine-bar {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  transform: translateX(-160%);
-  background: linear-gradient(
-    105deg,
-    transparent 40%,
-    color-mix(in srgb, var(--color-primary-content), transparent 78%) 50%,
-    transparent 60%
-  );
-}
-
-.cta-shine:hover > .cta-shine-bar {
-  transform: translateX(160%);
-  transition: transform 750ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
 /* Welcome demo-strip scene timer (features/onboarding/welcome/SmartDemoStrip.tsx).
    CSS-driven so `animation-play-state` can freeze it while the strip is paused. */
 @keyframes demo-progress {
@@ -432,10 +713,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cta-shine:hover > .cta-shine-bar {
-    transition: none;
-  }
-
   .demo-progress-fill {
     animation: none;
     transform: scaleX(1);

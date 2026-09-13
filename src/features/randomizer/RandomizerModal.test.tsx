@@ -1,27 +1,17 @@
-/**
- * Tests for RandomizerModal component.
- * Covers: TC-35-001 (Roll Luck / Proposal Generation),
- *         TC-35-002 (Reroll), TC-35-003 (Selection Toggle),
- *         TC-35-004 (Apply),
- *         TC-35-006 (Empty / Error States)
- */
-
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '../../tests/testing/test-utils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '../../tests/testing/test-utils';
 import RandomizerModal from './RandomizerModal';
 
 vi.mock('@tauri-apps/api/core', () => ({
+  convertFileSrc: (path: string) => path,
   invoke: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
-  initReactI18next: {
-    type: '3rdParty',
-    init: vi.fn(),
-  },
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, vars?: Record<string, unknown>) => {
-      const translations: Record<string, string> = {
+      const messages: Record<string, string> = {
         'randomizer.title': 'Randomizer',
         'randomizer.desc': 'Pick random mods',
         'randomizer.consulting': 'Consulting the RNG Gods...',
@@ -30,351 +20,312 @@ vi.mock('react-i18next', () => ({
         'randomizer.reroll': 'Reroll All',
         'randomizer.roll': 'Roll Luck',
         'randomizer.no_eligible': 'No eligible character mods found',
-        'randomizer.apply_no_change': `${String(vars?.name ?? 'Mod')} was not activated`,
         'randomizer.empty_desc': 'No results yet',
+        'randomizer.scope_title': 'Roll scope',
+        'randomizer.scope_character': 'Character',
+        'randomizer.scope_weapon': 'Weapon',
+        'randomizer.scope_ui': 'UI',
+        'randomizer.scope_other': 'Other',
+        'randomizer.scope_unclassified': 'Unclassified',
+        'randomizer.scope_required': 'Select a scope',
+        'randomizer.backup_enabled': 'Backup selected mods to new Collection',
+        'randomizer.backup_unavailable': 'There are no active mods to back up.',
+        'randomizer.backup_name_placeholder': 'Collection name',
+        'randomizer.backup_created': `Created ${String(vars?.name)}`,
+        'randomizer.backup_reused': `Reused ${String(vars?.name)}`,
+        'randomizer.review_title': 'Changes to apply',
+        'randomizer.reviewing': 'Reviewing...',
         'common:actions.close': 'Close',
       };
-
       if (key === 'randomizer.selection_status') {
-        return `${String(vars?.selected ?? 0)} of ${String(vars?.total ?? 0)} selected`;
+        return `${String(vars?.selected)} of ${String(vars?.total)} selected`;
       }
-      if (key === 'randomizer.apply') {
-        return `Apply (${String(vars?.count ?? 0)})`;
-      }
-      if (key === 'randomizer.applying') {
-        return 'Applying...';
-      }
-
-      return translations[key] ?? key;
+      if (key === 'randomizer.apply') return `Apply (${String(vars?.count)})`;
+      if (key === 'randomizer.review_changes') return `Review changes (${String(vars?.count)})`;
+      if (key === 'randomizer.confirm_apply') return `Confirm & Apply (${String(vars?.count)})`;
+      if (key === 'randomizer.applying') return 'Applying...';
+      return messages[key] ?? key;
     },
   }),
 }));
 
-import { invoke } from '@tauri-apps/api/core';
+vi.mock('@/shared/ui/toast', () => ({
+  toast: { success: vi.fn() },
+}));
 
-const mockProposals = [
+import { invoke } from '@tauri-apps/api/core';
+import { toast } from '@/shared/ui/toast';
+
+const proposals = [
   {
     object_id: 'obj-1',
     object_name: 'Hu Tao',
+    object_type: 'Character',
+    mode: 'exclusive',
+    is_safe: true,
+    active_mod_names: [],
     mod_id: 'mod-a',
     name: 'Hu Tao Galaxy Skin',
+    thumbnail_path: null,
     folder_path: 'E:/Mods/Hu Tao Galaxy',
   },
   {
     object_id: 'obj-2',
     object_name: 'Kazuha',
+    object_type: 'Character',
+    mode: 'exclusive',
+    is_safe: true,
+    active_mod_names: [],
     mod_id: 'mod-b',
     name: 'Kazuha Samurai Skin',
+    thumbnail_path: null,
     folder_path: 'E:/Mods/Kazuha Samurai',
   },
 ];
 
-describe('RandomizerModal - TC-35', () => {
+const activeRuntime = {
+  is_dirty: true,
+  current_mods: [{ folder_path: 'E:/Mods/Old active mod' }],
+};
+const emptyRuntime = { is_dirty: false, current_mods: [] };
+
+function previewResponse() {
+  return {
+    fingerprint: 'preview-1',
+    enable_count: 2,
+    disable_count: 0,
+    unsafe_mod_names: [],
+    runtime_conflicts: [],
+    items: proposals.map((proposal) => ({
+      object_id: proposal.object_id,
+      object_name: proposal.object_name,
+      object_type: proposal.object_type,
+      mode: proposal.mode,
+      selected_mod_name: proposal.name,
+      selected_mod_id: proposal.mod_id,
+      active_mod_names: proposal.active_mod_names,
+      disable_count: 0,
+    })),
+  };
+}
+
+function mockCommands(runtime = activeRuntime) {
+  vi.mocked(invoke).mockImplementation((command) => {
+    if (command === 'suggest_random_mods') return Promise.resolve(proposals);
+    if (command === 'get_collection_runtime_state') return Promise.resolve(runtime);
+    if (command === 'preview_randomized_loadout') return Promise.resolve(previewResponse());
+    if (command === 'apply_randomized_loadout') {
+      return Promise.resolve({
+        impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
+        backup: { collection_id: 'backup-1', collection_name: 'Backup', reused: false },
+        sync_warning: null,
+      });
+    }
+    return Promise.resolve(null);
+  });
+}
+
+async function reviewAndApply() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /review changes/i }));
+  });
+  await screen.findByText('Changes to apply');
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /confirm.*apply/i }));
+  });
+}
+
+async function rollRandomizer() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /roll luck/i }));
+  });
+}
+
+describe('RandomizerModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock HTMLDialogElement.showModal() — not available in jsdom
-    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+      this.open = true;
+    });
     HTMLDialogElement.prototype.close = vi.fn();
+    mockCommands();
   });
 
-  describe('TC-35-001: Roll Luck - Automatic on Open', () => {
-    it('invokes suggest_random_mods when modal opens', async () => {
-      vi.mocked(invoke).mockResolvedValue(mockProposals);
+  it('waits for Roll and sends the selected scope with safety and history', async () => {
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
 
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
+    expect(
+      vi.mocked(invoke).mock.calls.some(([command]) => command === 'suggest_random_mods'),
+    ).toBe(false);
+    expect(screen.getByRole('button', { name: /roll luck/i })).toHaveClass('btn-primary');
+    expect(screen.queryByRole('button', { name: /review changes/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Character' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Weapon' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Unclassified' }));
 
-      await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('suggest_random_mods', {
-          gameId: 'g-1',
-        });
-      });
+    await rollRandomizer();
+
+    expect(invoke).toHaveBeenCalledWith('suggest_random_mods', {
+      input: {
+        game_id: 'g-1',
+        safety_filter: 'all',
+        scope: { categories: ['Character', 'Weapon'], include_unclassified: true },
+        recent_mod_ids_by_object: {},
+        excluded_object_ids: [],
+      },
     });
 
-    it('renders proposals after successful roll', async () => {
-      vi.mocked(invoke).mockResolvedValue(mockProposals);
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
-        expect(screen.getByText('Kazuha Samurai Skin')).toBeInTheDocument();
-      });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /reroll all/i }));
     });
 
-    it('shows "Consulting the RNG Gods..." loading state', async () => {
-      // Delay response to capture loading state
-      vi.mocked(invoke).mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            setTimeout(() => resolve(mockProposals), 500);
-          }),
-      );
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      expect(screen.getByText('Consulting the RNG Gods...')).toBeInTheDocument();
-    });
-  });
-
-  describe('TC-35-002: Reroll', () => {
-    it('invokes suggest_random_mods again when Reroll All is clicked', async () => {
-      vi.mocked(invoke).mockResolvedValue(mockProposals);
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
-      });
-
-      // First call was on open; now click Reroll
-      const rerollBtn = screen.getByText(/Reroll All/i, { selector: 'button' });
-      await act(async () => {
-        fireEvent.click(rerollBtn);
-      });
-
-      await waitFor(() => {
-        expect(invoke).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('suggest_random_mods', {
+        input: expect.objectContaining({
+          scope: { categories: ['Character', 'Weapon'], include_unclassified: true },
+          recent_mod_ids_by_object: { 'obj-1': ['mod-a'], 'obj-2': ['mod-b'] },
+          excluded_object_ids: [],
+        }),
       });
     });
   });
 
-  describe('TC-35-003: Selection Toggle', () => {
-    it('all proposals are selected by default', async () => {
-      vi.mocked(invoke).mockResolvedValue(mockProposals);
+  it('enables backup by default and pre-fills an editable name', async () => {
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
 
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
+    await rollRandomizer();
+    await waitFor(() => expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument());
+    expect(screen.getByRole('checkbox', { name: /backup selected mods/i })).toBeChecked();
+    expect(
+      screen.getByDisplayValue(/^Backup before shuffle \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/),
+    ).toBeEnabled();
+  });
 
-      await waitFor(() => {
-        expect(screen.getByText('2 of 2 selected')).toBeInTheDocument();
+  it('hides backup when the current runtime has already been saved', async () => {
+    mockCommands(emptyRuntime);
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+
+    await rollRandomizer();
+    await screen.findByText('Hu Tao Galaxy Skin');
+    expect(
+      screen.queryByRole('checkbox', { name: /backup selected mods/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Collection name')).not.toBeInTheDocument();
+  });
+
+  it('applies without backup when there are no active mods', async () => {
+    mockCommands(emptyRuntime);
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+    await rollRandomizer();
+    await screen.findByText('Hu Tao Galaxy Skin');
+
+    await reviewAndApply();
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('apply_randomized_loadout', {
+        input: expect.objectContaining({ backup: null }),
       });
-    });
-
-    it('toggles a single proposal selection on click', async () => {
-      vi.mocked(invoke).mockResolvedValue(mockProposals);
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
-      });
-
-      // Click on the Hu Tao proposal to deselect
-      const huTaoProposal = screen
-        .getByText('Hu Tao Galaxy Skin')
-        .closest('div[class*=flex]') as HTMLElement;
-      await act(async () => {
-        fireEvent.click(huTaoProposal);
-      });
-
-      expect(screen.getByText('1 of 2 selected')).toBeInTheDocument();
-    });
-
-    it('deselects all when "Deselect All" clicked', async () => {
-      vi.mocked(invoke).mockResolvedValue(mockProposals);
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Deselect All/i)).toBeInTheDocument();
-      });
-
-      await act(async () => {
-        fireEvent.click(screen.getByText(/Deselect All/i));
-      });
-
-      expect(screen.getByText('0 of 2 selected')).toBeInTheDocument();
     });
   });
 
-  describe('TC-35-004: Apply Selection', () => {
-    it('calls execute_workspace_switch for each selected proposal', async () => {
-      vi.mocked(invoke).mockResolvedValueOnce(mockProposals);
-      vi.mocked(invoke).mockResolvedValue({
-        status: 'applied',
-        changed_folder_paths: [],
-        impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
-      });
+  it('validates a required backup name before Apply', async () => {
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+    await rollRandomizer();
+    const name = await screen.findByDisplayValue(/^Backup before shuffle/);
+    fireEvent.change(name, { target: { value: '   ' } });
 
-      const onClose = vi.fn();
-      render(<RandomizerModal open={true} onClose={onClose} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
-      });
-
-      const applyBtn = screen.getByText(/Apply/i, { selector: 'button' });
-      await act(async () => {
-        fireEvent.click(applyBtn);
-      });
-
-      await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('execute_workspace_switch', {
-          input: {
-            game_id: 'g-1',
-            target: {
-              kind: 'mod_path',
-              value: 'E:/Mods/Hu Tao Galaxy',
-            },
-            desired_enabled: true,
-            resolution: 'enable_only_this',
-            origin_surface: 'collections',
-          },
-        });
-        expect(invoke).toHaveBeenCalledWith('execute_workspace_switch', {
-          input: {
-            game_id: 'g-1',
-            target: {
-              kind: 'mod_path',
-              value: 'E:/Mods/Kazuha Samurai',
-            },
-            desired_enabled: true,
-            resolution: 'enable_only_this',
-            origin_surface: 'collections',
-          },
-        });
-        expect(onClose).toHaveBeenCalled();
-      });
-    });
-
-    it('continues applying safe proposals after an earlier switch fails', async () => {
-      vi.mocked(invoke)
-        .mockResolvedValueOnce(mockProposals)
-        .mockRejectedValueOnce(new Error('Folder conflict'))
-        .mockResolvedValueOnce({
-          status: 'applied',
-          changed_folder_paths: [],
-          impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
-        });
-
-      const onClose = vi.fn();
-      render(<RandomizerModal open={true} onClose={onClose} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
-      });
-
-      await act(async () => {
-        fireEvent.click(screen.getByText(/Apply/i, { selector: 'button' }));
-      });
-
-      await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('execute_workspace_switch', {
-          input: expect.objectContaining({
-            target: { kind: 'mod_path', value: 'E:/Mods/Kazuha Samurai' },
-          }),
-        });
-        expect(screen.getByText('Folder conflict')).toBeInTheDocument();
-      });
-
-      expect(onClose).not.toHaveBeenCalled();
-    });
-
-    it('keeps the modal open when a selected mod cannot be activated', async () => {
-      vi.mocked(invoke)
-        .mockResolvedValueOnce(mockProposals)
-        .mockResolvedValueOnce({
-          status: 'noop',
-          changed_folder_paths: [],
-          impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
-        })
-        .mockResolvedValueOnce({
-          status: 'applied',
-          changed_folder_paths: [],
-          impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
-        });
-
-      const onClose = vi.fn();
-      render(<RandomizerModal open={true} onClose={onClose} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
-      });
-
-      await act(async () => {
-        fireEvent.click(screen.getByText(/Apply/i, { selector: 'button' }));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin was not activated')).toBeInTheDocument();
-      });
-      expect(onClose).not.toHaveBeenCalled();
-    });
-
-    it('disables apply button when nothing is selected', async () => {
-      vi.mocked(invoke).mockResolvedValue(mockProposals);
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Deselect All/i)).toBeInTheDocument();
-      });
-
-      // Deselect all
-      const deselectBtn = screen.getByText(/Deselect All/i).closest('button')!;
-      await act(async () => {
-        fireEvent.click(deselectBtn);
-      });
-      await waitFor(() => {
-        expect(screen.getByText('0 of 2 selected')).toBeInTheDocument();
-      });
-
-      const applyBtn = screen.getByText(/Apply/i, { selector: 'button' });
-      expect(applyBtn).toBeDisabled();
-    });
+    expect(screen.getByRole('button', { name: /review changes/i })).toBeDisabled();
   });
 
-  // TC-35-005 (client-side Safe Mode toggle) was removed: classification is
-  // derived server-side from Settings and can no longer be chosen per roll.
+  it('applies all selected mods as one batch and reports a created backup', async () => {
+    const onClose = vi.fn();
+    render(<RandomizerModal open onClose={onClose} gameId="g-1" />);
+    await rollRandomizer();
+    await screen.findByText('Hu Tao Galaxy Skin');
+    const name = await screen.findByDisplayValue(/^Backup before shuffle/);
+    fireEvent.change(name, { target: { value: 'Before gacha' } });
 
-  describe('TC-35-006: Empty / Error States', () => {
-    it('clears old proposals before rolling for a newly selected game', async () => {
-      const gameTwoProposals = [
-        {
-          object_id: 'obj-3',
-          object_name: 'Furina',
-          mod_id: 'mod-c',
-          name: 'Furina Ocean Skin',
-          folder_path: 'E:/Mods/Furina Ocean',
+    await reviewAndApply();
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('apply_randomized_loadout', {
+        input: {
+          game_id: 'g-1',
+          mod_ids: ['mod-a', 'mod-b'],
+          safety_filter: 'all',
+          scope: { categories: ['Character'], include_unclassified: false },
+          preview_fingerprint: 'preview-1',
+          backup: { collection_name: 'Before gacha' },
         },
-      ];
-      vi.mocked(invoke)
-        .mockResolvedValueOnce(mockProposals)
-        .mockResolvedValueOnce(gameTwoProposals);
-
-      const { rerender } = render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument();
       });
+      expect(toast.success).toHaveBeenCalledWith('Created Backup');
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+  });
 
-      rerender(<RandomizerModal open={false} onClose={vi.fn()} gameId="g-1" />);
-      rerender(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-2" />);
+  it('reports when an identical backup Collection was reused', async () => {
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === 'suggest_random_mods') return Promise.resolve(proposals);
+      if (command === 'get_collection_runtime_state') return Promise.resolve(activeRuntime);
+      if (command === 'preview_randomized_loadout') return Promise.resolve(previewResponse());
+      if (command === 'apply_randomized_loadout') {
+        return Promise.resolve({
+          impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
+          backup: { collection_id: 'backup-1', collection_name: 'Existing backup', reused: true },
+          sync_warning: null,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+    await rollRandomizer();
+    await screen.findByText('Hu Tao Galaxy Skin');
 
-      await waitFor(() => {
-        expect(screen.getByText('Furina Ocean Skin')).toBeInTheDocument();
-      });
+    await reviewAndApply();
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('Reused Existing backup');
+    });
+  });
+
+  it('keeps the modal open if the atomic batch fails', async () => {
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === 'suggest_random_mods') return Promise.resolve(proposals);
+      if (command === 'get_collection_runtime_state') return Promise.resolve(activeRuntime);
+      if (command === 'preview_randomized_loadout') return Promise.resolve(previewResponse());
+      if (command === 'apply_randomized_loadout') return Promise.reject(new Error('Rename failed'));
+      return Promise.resolve(null);
+    });
+    const onClose = vi.fn();
+    render(<RandomizerModal open onClose={onClose} gameId="g-1" />);
+    await rollRandomizer();
+    await screen.findByText('Hu Tao Galaxy Skin');
+
+    await reviewAndApply();
+
+    await waitFor(() => expect(screen.getByText('Rename failed')).toBeInTheDocument());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('clears a rolled recommendation when the scope changes', async () => {
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+    await rollRandomizer();
+    await screen.findByText('Hu Tao Galaxy Skin');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Weapon' }));
+
+    await waitFor(() => {
       expect(screen.queryByText('Hu Tao Galaxy Skin')).not.toBeInTheDocument();
-      expect(invoke).toHaveBeenCalledWith('suggest_random_mods', { gameId: 'g-2' });
+      expect(screen.queryByRole('button', { name: /review changes/i })).not.toBeInTheDocument();
     });
+  });
 
-    it('shows error alert when no eligible mods found', async () => {
-      vi.mocked(invoke).mockResolvedValue([]);
+  it('requires a non-empty scope before Roll', () => {
+    render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
 
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Character' }));
 
-      await waitFor(() => {
-        expect(screen.getByText(/No eligible character mods found/i)).toBeInTheDocument();
-      });
-    });
-
-    it('shows error alert when invoke throws', async () => {
-      vi.mocked(invoke).mockRejectedValue(new Error('Backend crashed'));
-
-      render(<RandomizerModal open={true} onClose={vi.fn()} gameId="g-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Backend crashed/i)).toBeInTheDocument();
-      });
-    });
+    expect(screen.getByText('Select a scope')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /roll luck/i })).toBeDisabled();
   });
 });

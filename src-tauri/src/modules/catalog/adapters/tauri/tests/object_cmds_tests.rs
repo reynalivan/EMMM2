@@ -152,6 +152,7 @@ async fn test_create_object_cmd() -> CommandResult<()> {
         object_type: "Weapon".to_string(),
         sub_category: None,
         metadata: Some(serde_json::json!({})),
+        thumbnail: None,
         thumbnail_url: None,
         hash_db: None,
         custom_skins: None,
@@ -212,6 +213,7 @@ async fn test_update_object_cmd() -> CommandResult<()> {
     let payload = UpdateObjectInput {
         name: Some("NewName".to_string()),
         object_type: Some("Character".to_string()),
+        randomizer_mode: None,
         sub_category: None,
         metadata: Some(serde_json::json!({"test":true})),
         thumbnail_path: None,

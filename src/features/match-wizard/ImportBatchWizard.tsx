@@ -109,6 +109,8 @@ export function ImportBatchWizard({
   onRetry,
   onSkip,
 }: Props) {
+  // TanStack Virtual exposes imperative functions; React Compiler must not memoize this component.
+  'use no memo';
   const { t } = useTranslation(['match_wizard', 'common']);
   const [filter, setFilter] = useState<ConfidenceFilter>('all');
   const [search, setSearch] = useState('');

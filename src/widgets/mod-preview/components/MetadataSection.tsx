@@ -54,7 +54,7 @@ export default function MetadataSection({
     return (
       <div className="mb-6 flex flex-col">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-base-content/40">
+          <h3 className="text-sm font-semibold text-base-content/80">
             {t('preview:metadata.title')}
           </h3>
           <div className="flex items-center gap-2">
@@ -75,13 +75,7 @@ export default function MetadataSection({
           </div>
         </div>
 
-        <div
-          className="flex-1 cursor-pointer rounded-lg hover:bg-base-content/5 p-2 -mx-2 transition-colors group"
-          onDoubleClick={() => {
-            if (activePath && canEdit) setIsEditing(true);
-          }}
-          title={activePath ? t('preview:metadata.double_click_edit') : undefined}
-        >
+        <div className="flex-1 rounded-lg p-2 -mx-2">
           <div className="flex items-center gap-2 text-xs text-base-content/60 mb-3">
             <span>{authorDraft || t('preview:metadata.unknown_author')}</span>
             <span className="w-1 h-1 rounded-full bg-base-content/30" />
@@ -105,15 +99,15 @@ export default function MetadataSection({
   return (
     <div className="mb-6 flex flex-col">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="font-bold text-sm tracking-tight flex items-center gap-2">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-base-content/80">
           {t('preview:metadata.title')}
           {metadataDirty && ( // Use metadataDirty for auto-saving status
-            <span className="text-[10px] font-normal text-primary/70 animate-pulse bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
+            <span className="rounded border border-primary/10 bg-primary/5 px-1.5 py-0.5 text-[10px] font-normal normal-case tracking-normal text-primary/70">
               {t('preview:metadata.auto_saving_label')}
             </span>
           )}
           {showSavedStatus && (
-            <span className="text-[10px] font-normal text-success/70 bg-success/5 px-1.5 py-0.5 rounded border border-success/10 flex items-center gap-1">
+            <span className="flex items-center gap-1 rounded border border-success/10 bg-success/5 px-1.5 py-0.5 text-[10px] font-normal normal-case tracking-normal text-success/70">
               <span className="w-1 h-1 rounded-full bg-success/50" />
               {t('preview:metadata.done_label')}
             </span>

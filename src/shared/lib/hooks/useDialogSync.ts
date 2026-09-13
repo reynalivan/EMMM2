@@ -14,9 +14,9 @@ export function useDialogSync(dialogRef: RefObject<HTMLDialogElement | null>, op
       return;
     }
 
-    if (open && !dialog.open) {
+    if (open && !dialog.open && typeof dialog.showModal === 'function') {
       dialog.showModal();
-    } else if (!open && dialog.open) {
+    } else if (!open && dialog.open && typeof dialog.close === 'function') {
       dialog.close();
     }
   }, [dialogRef, open]);

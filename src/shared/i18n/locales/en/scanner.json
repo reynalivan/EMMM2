@@ -22,7 +22,7 @@
     "password_placeholder": "Key",
     "rename_tooltip": "Click to rename",
     "duplicate_name": "Duplicate folder name",
-    "duplicate_name_action": "Duplicate name — will auto-rename or overwrite",
+    "duplicate_name_action": "Duplicate name. It will be renamed automatically or overwritten",
     "password_required": "Requires password to extract",
     "option_auto_rename": "Auto rename folder if name conflict",
     "option_overwrite": "Overwrite existing folder",
@@ -68,7 +68,7 @@
   },
   "optimizer": {
     "title": "Storage Optimizer",
-    "description": "Reclaim disk space by identifying and removing redundant mod files. EMMM safely analyzes your library to find bit-perfect duplicates.",
+    "description": "Find duplicate mod files.",
     "start_button": "Start Scan",
     "stop_button": "Stop Scan",
     "ignored_button": "Ignored ({{count}})",

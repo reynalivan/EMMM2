@@ -4,6 +4,7 @@ import type { BrowserDownloadItem } from '../types';
 
 const terminalDownload: BrowserDownloadItem = {
   id: 'download-1',
+  game_id: 'game-1',
   session_id: null,
   filename: 'mod.zip',
   file_path: 'C:/Downloads/mod.zip',
@@ -12,6 +13,8 @@ const terminalDownload: BrowserDownloadItem = {
   bytes_total: 100,
   bytes_received: 100,
   error_msg: null,
+  can_resume: false,
+  tab_label: null,
   queue_order: 1,
   started_at: '2026-09-11T00:00:00Z',
   finished_at: '2026-09-11T00:01:00Z',

@@ -44,8 +44,10 @@ pub struct GameSlice {
 #[derive(Debug, Clone, Serialize, serde::Deserialize, specta::Type)]
 pub struct RecentMod {
     pub id: String,
+    pub game_id: String,
     pub name: String,
     pub game_name: String,
     pub object_name: Option<String>,
+    pub folder_path: String,
     pub indexed_at: Option<String>,
 }

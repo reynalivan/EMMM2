@@ -16,6 +16,7 @@ export function EditObjectTabManual({
   form,
   gameSchema,
   categoryFilters,
+  isObject = false,
 }: EditObjectTabManualProps) {
   const { t } = useTranslation(['objects', 'common']);
   const {
@@ -46,6 +47,19 @@ export function EditObjectTabManual({
         />
         {errors.name && <span className="text-error text-xs mt-1">{errors.name.message}</span>}
       </div>
+
+      {isObject && (
+        <div className="form-control w-full">
+          <label className="label py-1">
+            <span className="label-text font-medium">{t('edit_modal.randomizer_mode')}</span>
+          </label>
+          <select className="select select-bordered w-full" {...register('randomizer_mode')}>
+            <option value="default">{t('edit_modal.randomizer_default')}</option>
+            <option value="exclusive">{t('edit_modal.randomizer_exclusive')}</option>
+            <option value="additive">{t('edit_modal.randomizer_additive')}</option>
+          </select>
+        </div>
+      )}
 
       {/* Category Dropdown */}
       <div className="form-control w-full">

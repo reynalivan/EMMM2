@@ -43,13 +43,19 @@ export function DashboardQuickActions({
   };
 
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 lg:grid-cols-8">
       {/* Launching the game is the only action that earns colour. The rest are
           navigation, and navigation that shouts in warning-orange or error-red
           reads as an alert about a problem that isn't there. */}
       <ActionTile
         label={t('actions.quick_play')}
-        icon={isLaunching ? <span className="loading loading-spinner loading-md" /> : <PlayCircle size={26} />}
+        icon={
+          isLaunching ? (
+            <span className="loading loading-spinner loading-md" />
+          ) : (
+            <PlayCircle size={26} />
+          )
+        }
         onClick={() => void handleQuickPlay()}
         disabled={!activeGameId || isLaunching}
         emphasis
@@ -110,33 +116,37 @@ function ActionTile({
   disabled?: boolean;
   emphasis?: boolean;
 }) {
-  return (
+  const button = (
     <button
       id={id}
       onClick={onClick}
       disabled={disabled}
-      className={`group flex flex-col items-center gap-2.5 py-5 px-3 rounded-2xl border bg-base-200/60 transition-[background-color,border-color,transform] duration-150 cursor-pointer active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 ${
+      className={`group flex h-full w-full cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-col sm:gap-2.5 sm:px-3 sm:py-5 ${
         emphasis
-          ? 'border-primary/30 bg-primary/10 hover:bg-primary/15 hover:border-primary/50'
-          : 'border-base-300 hover:bg-base-300/60 hover:border-base-content/15'
+          ? 'border-base-300 bg-base-200/60 hover:border-base-content/15 hover:bg-base-300/60'
+          : 'border-base-300 bg-base-200/60 hover:bg-base-300/60 hover:border-base-content/15'
       }`}
     >
       <span
         className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors duration-150 ${
           emphasis
-            ? 'bg-primary/20 text-primary group-hover:bg-primary/30'
+            ? 'bg-primary/15 text-primary group-hover:bg-primary/20'
             : 'bg-base-content/5 text-base-content/60 group-hover:bg-base-content/10 group-hover:text-base-content'
         }`}
       >
         {icon}
       </span>
       <span
-        className={`text-xs font-medium text-center leading-tight transition-colors duration-150 ${
-          emphasis ? 'text-primary' : 'text-base-content/70 group-hover:text-base-content'
+        className={`whitespace-nowrap text-xs font-medium leading-tight transition-colors duration-150 sm:text-center ${
+          emphasis
+            ? 'text-base-content/80 group-hover:text-base-content'
+            : 'text-base-content/70 group-hover:text-base-content'
         }`}
       >
         {label}
       </span>
     </button>
   );
+
+  return button;
 }

@@ -27,7 +27,7 @@
     "preset_on": "Preset ON",
     "preset_off": "Preset OFF",
     "keybinds_instantly": "Hotkeys, while you play",
-    "press_help": "Works with the game focused — no alt-tab",
+    "press_help": "Works while the game is focused. No alt-tab needed",
     "action_next_preset": "Next preset",
     "action_toggle_overlay": "Toggle overlay",
     "action_next_variant": "Next variant"

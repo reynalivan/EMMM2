@@ -43,19 +43,17 @@ pub async fn get_cached(
         return Ok(Some(hit));
     }
 
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|error| ScannerError::Io(format!("failed to resolve resource dir: {error}")))?;
-    let db_path = resource_dir
-        .join("databases")
-        .join(format!("{canonical}.json"));
-    if !db_path.exists() {
-        return Ok(None);
-    }
-
-    let json = std::fs::read_to_string(&db_path)?;
-    let mut db = deep_matcher::MasterDb::from_json(&json)?;
+    let app_data_dir = app.path().app_data_dir().map_err(|error| {
+        ScannerError::Io(format!("failed to resolve app data directory: {error}"))
+    })?;
+    let entries = match super::asset_pack::CatalogPack::load(&app_data_dir)
+        .and_then(|pack| pack.entries_for(game_type))
+    {
+        Ok(entries) => entries,
+        Err(error) if error.to_string().contains("not installed") => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mut db = deep_matcher::MasterDb::new(entries);
     attach_user_aliases(
         &mut db,
         &load_user_aliases(&app.state::<sqlx::SqlitePool>()).await,

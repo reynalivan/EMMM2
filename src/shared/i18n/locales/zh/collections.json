@@ -1,7 +1,7 @@
 {
   "page": {
     "title": "收藏集",
-    "desc": "将当前启用的 Mod 和变体保存为命名的收藏集。原子化应用收藏集以立即切换整个游戏的加载项。",
+    "desc": "管理已保存的模组加载项。",
     "no_active_game": {
       "title": "无活动游戏",
       "desc": "请先选择一个游戏，然后打开收藏集。"
@@ -134,8 +134,8 @@
   },
   "randomizer": {
     "title": "智能随机生成器",
-    "desc": "为每个活动角色推荐 1 个随机禁用的 Mod。查看并应用。",
-    "no_eligible": "未找到符合条件的角色 Mod（请检查过滤器或确保您有禁用的 Mod）。",
+    "desc": "选择要包含的 Object 分类，然后生成推荐。",
+    "no_eligible": "所选范围内没有符合条件的 Mod（请检查筛选条件或确认有已禁用的 Mod）。",
     "apply_no_change": "无法启用 {{name}}。",
     "consulting": "正在咨询 RNG 大神...",
     "reroll": "全部重抽",
@@ -145,7 +145,34 @@
     "select_all": "全选",
     "deselect_all": "全不选",
     "selection_status": "已选 {{selected}} / {{total}}",
-    "empty_desc": "点击“碰碰运气”生成推荐。"
+    "empty_desc": "点击“碰碰运气”生成推荐。",
+    "scope_title": "生成范围",
+    "scope_character": "角色",
+    "scope_weapon": "武器",
+    "scope_ui": "UI",
+    "scope_other": "其他",
+    "scope_unclassified": "未分类",
+    "scope_required": "请至少选择一个范围后再生成。",
+    "backup_enabled": "将活动 Mod 备份到新收藏集",
+    "backup_unavailable": "没有可备份的活动 Mod。",
+    "backup_name_placeholder": "备份收藏集名称",
+    "backup_created": "已创建备份收藏集：{{name}}",
+    "backup_reused": "使用已有备份收藏集：{{name}}",
+    "mode_exclusive": "替换",
+    "mode_additive": "添加",
+    "current_mods": "当前：{{names}}",
+    "keep_current": "保留当前",
+    "keeping_current": "保留当前",
+    "review_changes": "检查更改 ({{count}})",
+    "reviewing": "正在检查...",
+    "review_title": "将应用的更改",
+    "review_totals": "启用 {{enable}}，禁用 {{disable}}，保留 {{keep}} 项不变。",
+    "review_replace": "替换为 {{name}}（禁用 {{count}}）",
+    "review_add": "添加 {{name}}",
+    "warning_unsafe": "不安全 Mod：{{names}}",
+    "warning_conflicts": "有 {{count}} 个运行时冲突需要检查。",
+    "warning_acknowledge": "我了解这些警告。",
+    "confirm_apply": "确认并应用 ({{count}})"
   },
   "toast": {
     "created": "已创建收藏集：{{name}}",
@@ -153,7 +180,7 @@
     "deleted": "收藏集已删除",
     "applied": "已应用收藏集（{{count}} 项更改）",
     "applied_with_state": "已应用收藏集（{{count}} 项更改）-> {{name}}",
-    "reload_hint": "已应用 — 在游戏中按 {{key}} 重新加载"
+    "reload_hint": "已应用。请在游戏中按 {{key}} 重新加载"
   },
   "mod_row": {
     "unknown": "未知 Mod",

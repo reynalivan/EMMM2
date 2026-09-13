@@ -9,6 +9,7 @@ import type { AppSliceCreator } from './sliceTypes';
 import type {
   DiskReconcileResult,
   DiskReconcileProgress,
+  DiskReconcileReason,
   FolderNameConflictGroup,
   RenameConfirmationGroup,
 } from '@/shared/api/tauri/bindings';
@@ -23,6 +24,8 @@ export interface DiskReconcileEntry {
   unavailable: string | null;
   /** Latest measured scan progress, cleared by every terminal result. */
   progress: DiskReconcileProgress | null;
+  /** Monotonic backend revision of the newest disk observation for this game. */
+  revision: number;
 }
 
 const EMPTY_DISK_RECONCILE: DiskReconcileEntry = {
@@ -30,7 +33,18 @@ const EMPTY_DISK_RECONCILE: DiskReconcileEntry = {
   pending: false,
   unavailable: null,
   progress: null,
+  revision: 0,
 };
+
+export type FolderConflictReportStatus = 'open' | 'resolvedExternally' | 'cleared';
+
+/** Latest disk-authoritative folder-conflict report for one game. */
+export interface FolderConflictReport {
+  revision: number;
+  groups: FolderNameConflictGroup[];
+  status: FolderConflictReportStatus;
+  reason: DiskReconcileReason;
+}
 
 export interface GameSlice {
   // Global Settings (Persisted in config.json)
@@ -40,6 +54,7 @@ export interface GameSlice {
   // One entry per game so the three fields can never drift apart.
   diskReconcileByGame: Record<string, DiskReconcileEntry>;
   folderConflictsByGame: Record<string, FolderNameConflictGroup[]>;
+  folderConflictReportsByGame: Record<string, FolderConflictReport>;
   renameConfirmationsByGame: Record<string, RenameConfirmationGroup[]>;
 
   initStore: () => Promise<void>;
@@ -50,6 +65,7 @@ export interface GameSlice {
   markDiskReconcilePending: (gameId: string, dirty: boolean) => void;
   setDiskSourceUnavailable: (gameId: string, message: string | null) => void;
   setFolderConflicts: (gameId: string, conflicts: FolderNameConflictGroup[]) => void;
+  applyFolderConflictReconcileResult: (result: DiskReconcileResult) => boolean;
   setRenameConfirmations: (gameId: string, groups: RenameConfirmationGroup[]) => void;
 }
 
@@ -59,18 +75,28 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
 
   diskReconcileByGame: {},
   folderConflictsByGame: {},
+  folderConflictReportsByGame: {},
   renameConfirmationsByGame: {},
 
   initStore: async () => {
-    const startupReport = { current: null as DiskReconcileResult | null };
+    const startupReportsByGame = new Map<string, DiskReconcileResult>();
+    let startupInitialized = false;
     const unlisten = await listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
-      startupReport.current = event.payload;
+      if (startupInitialized) {
+        get().applyFolderConflictReconcileResult(event.payload);
+        return;
+      }
+
+      const current = startupReportsByGame.get(event.payload.game_id);
+      if (!current || event.payload.reconcile_revision > current.reconcile_revision) {
+        startupReportsByGame.set(event.payload.game_id, event.payload);
+      }
     }).catch(() => null);
     try {
       const settings = await commands.getSettings();
       const activeGameId = settings.active_game_id;
-      const report = startupReport.current;
-      const activeReport = report?.game_id === activeGameId ? report : null;
+      const activeReport = activeGameId ? (startupReportsByGame.get(activeGameId) ?? null) : null;
+      const activeReportRevision = activeReport?.reconcile_revision ?? 0;
 
       set({
         activeGameId,
@@ -86,10 +112,23 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
                       ? (activeReport.error_message ?? 'Mods folder is unavailable')
                       : null,
                   progress: null,
+                  revision: activeReportRevision,
                 },
               },
               folderConflictsByGame: {
                 [activeGameId]: activeReport.folder_conflicts,
+              },
+              folderConflictReportsByGame: {
+                [activeGameId]: {
+                  revision: activeReportRevision,
+                  groups: activeReport.folder_conflicts,
+                  status:
+                    activeReport.status === 'AppliedWithFolderConflicts' &&
+                    activeReport.folder_conflicts.length > 0
+                      ? 'open'
+                      : 'cleared',
+                  reason: activeReport.reason,
+                },
               },
               renameConfirmationsByGame: {
                 [activeGameId]: activeReport.rename_confirmations,
@@ -97,6 +136,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
             }
           : {}),
       });
+      startupInitialized = true;
 
       if (activeGameId) {
         await Promise.all([
@@ -177,14 +217,23 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
     }
   },
 
-  // A successful reconcile resets the whole entry, so it replaces rather than patches.
+  // A successful reconcile resets volatile state while retaining its ordering revision.
   setDiskReconcileTimestamp: (gameId, timestamp) =>
-    set((state) => ({
-      diskReconcileByGame: {
-        ...state.diskReconcileByGame,
-        [gameId]: { at: timestamp, pending: false, unavailable: null, progress: null },
-      },
-    })),
+    set((state) => {
+      const current = state.diskReconcileByGame[gameId] ?? EMPTY_DISK_RECONCILE;
+      return {
+        diskReconcileByGame: {
+          ...state.diskReconcileByGame,
+          [gameId]: {
+            ...current,
+            at: timestamp,
+            pending: false,
+            unavailable: null,
+            progress: null,
+          },
+        },
+      };
+    }),
   setDiskReconcileProgress: (gameId, progress) =>
     set((state) => ({
       diskReconcileByGame: {
@@ -225,6 +274,59 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
         [gameId]: conflicts,
       },
     })),
+  applyFolderConflictReconcileResult: (result) => {
+    let applied = false;
+    set((state) => {
+      const diskState = state.diskReconcileByGame[result.game_id] ?? EMPTY_DISK_RECONCILE;
+      if (result.reconcile_revision <= diskState.revision) {
+        return state;
+      }
+
+      const currentReport = state.folderConflictReportsByGame[result.game_id];
+      const hasFolderConflicts =
+        result.status === 'AppliedWithFolderConflicts' && result.folder_conflicts.length > 0;
+      const preserveOpenConflictReport =
+        result.status === 'SourceUnavailable' && currentReport?.status === 'open';
+      const verifiedNoFolderConflicts =
+        result.status === 'Applied' || result.status === 'NeedsRenameConfirmation';
+      let report: FolderConflictReport;
+      if (preserveOpenConflictReport && currentReport) {
+        report = currentReport;
+      } else {
+        const status: FolderConflictReportStatus = hasFolderConflicts
+          ? 'open'
+          : verifiedNoFolderConflicts &&
+              (currentReport?.status === 'open' || currentReport?.status === 'resolvedExternally')
+            ? 'resolvedExternally'
+            : 'cleared';
+        report = {
+          revision: result.reconcile_revision,
+          groups: hasFolderConflicts ? result.folder_conflicts : [],
+          status,
+          reason: result.reason,
+        };
+      }
+      applied = true;
+      return {
+        diskReconcileByGame: {
+          ...state.diskReconcileByGame,
+          [result.game_id]: {
+            ...diskState,
+            revision: result.reconcile_revision,
+          },
+        },
+        folderConflictsByGame: {
+          ...state.folderConflictsByGame,
+          [result.game_id]: report.groups,
+        },
+        folderConflictReportsByGame: {
+          ...state.folderConflictReportsByGame,
+          [result.game_id]: report,
+        },
+      };
+    });
+    return applied;
+  },
   setRenameConfirmations: (gameId, groups) =>
     set((state) => ({
       renameConfirmationsByGame: {

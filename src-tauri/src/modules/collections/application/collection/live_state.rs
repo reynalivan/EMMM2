@@ -7,6 +7,7 @@ use crate::modules::workspace::domain::normalizer::is_disabled_folder;
 use crate::shared::errors::CollectionError;
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::HashMap;
+use std::path::Path;
 
 fn is_object_enabled(path_key: Option<&str>) -> bool {
     let Some(path_key) = path_key else {
@@ -82,6 +83,30 @@ pub(crate) async fn load_live_runtime_state(
     }
 
     Ok((current_mods, current_objects))
+}
+
+/// Absolute roots of the active mods that a current-runtime snapshot records.
+///
+/// Folder-conflict candidates use filesystem paths, while `mods.folder_path`
+/// is stored relative to the configured Mods root.
+pub(crate) async fn active_runtime_snapshot_scope_paths(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Vec<String>, CollectionError> {
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| {
+            CollectionError::Validation(format!("Game '{game_id}' has no configured Mods path"))
+        })?;
+    let mods_root = Path::new(&mods_path);
+    let active_paths =
+        crate::modules::library::adapters::sqlite::mods::get_enabled_mods_paths(pool, game_id)
+            .await?;
+
+    Ok(active_paths
+        .into_iter()
+        .map(|path| path.resolve(mods_root).to_string_lossy().to_string())
+        .collect())
 }
 
 pub(crate) async fn live_runtime_is_safe(

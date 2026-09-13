@@ -30,7 +30,7 @@ export function ReadyEntryRow({
   };
 
   return (
-    <article className="flex items-center gap-4 rounded-2xl border border-base-300 bg-base-200/45 p-4">
+    <article className="workspace-surface flex items-center gap-4 p-4">
       <input
         type="checkbox"
         className="checkbox checkbox-sm"
@@ -39,7 +39,7 @@ export function ReadyEntryRow({
         disabled={Boolean(entry.pendingBatchId)}
         onChange={onToggle}
       />
-      <div className="rounded-xl bg-base-300/70 p-2.5 text-primary">
+      <div className="rounded-lg bg-base-300 p-2.5 text-base-content/65">
         {entry.kind === 'archive' ? <Archive size={20} /> : <FolderOpen size={20} />}
       </div>
       <div className="min-w-0 flex-1">
@@ -90,7 +90,7 @@ export function ProcessedSourceRow({
       : t('processed.source_moved');
 
   return (
-    <article className="rounded-2xl border border-base-300 bg-base-200/45 p-4">
+    <article className="workspace-surface p-4">
       <div className="flex items-start gap-4">
         <input
           type="checkbox"
@@ -100,7 +100,7 @@ export function ProcessedSourceRow({
           disabled={!sourceRetained}
           onChange={onToggle}
         />
-        <div className="rounded-xl bg-base-300/70 p-2.5 text-secondary">
+        <div className="rounded-lg bg-base-300 p-2.5 text-base-content/65">
           {source.sourceKind === 'archive' ? <Archive size={20} /> : <FolderOpen size={20} />}
         </div>
         <div className="min-w-0 flex-1">
@@ -124,7 +124,7 @@ export function ProcessedSourceRow({
           source.destinations.map((destination) => (
             <div
               key={`${destination.objectId}:${destination.placedPath}`}
-              className="flex flex-wrap items-center gap-3 rounded-xl bg-base-100/70 p-3"
+              className="flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-100/70 p-3"
             >
               <Boxes size={17} className="text-primary" />
               <div className="min-w-0 flex-1">
@@ -173,7 +173,7 @@ export function EmptyState({
   description: string;
 }) {
   return (
-    <div className="rounded-3xl border border-dashed border-base-300 py-16 text-center text-base-content/50">
+    <div className="rounded-xl border border-dashed border-base-300 py-16 text-center text-base-content/50">
       <div className="mx-auto mb-3 w-fit">{icon}</div>
       <h2 className="font-semibold text-base-content/80">{title}</h2>
       <p className="mx-auto mt-1 max-w-md text-sm">{description}</p>

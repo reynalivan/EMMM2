@@ -1,5 +1,9 @@
 import { DOWNLOAD_STATUS_BADGE } from '../downloadStatusBadge';
-import { getDownloadProgress, getQueuePosition } from '../downloadPresentation';
+import {
+  getDownloadFailureMessageKey,
+  getDownloadProgress,
+  getQueuePosition,
+} from '../downloadPresentation';
 import { useShallow } from 'zustand/react/shallow';
 import { useBrowserStore } from '@/entities/browser';
 import { useAppStore } from '@/app/store';
@@ -7,10 +11,11 @@ import { useDownloads } from '../hooks/useDownloads';
 import { useTranslation } from 'react-i18next';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '@/shared/lib/utils/formatters';
-import { RefreshCw, RotateCcw, X } from 'lucide-react';
+import { ExternalLink, Pause, Play, RefreshCw, RotateCcw, X } from 'lucide-react';
 
 export function DownloadManagerPanel() {
   const { t } = useTranslation(['browser']);
+  const activeGameId = useAppStore((state) => state.activeGameId);
   const { isDownloadPanelOpen, closeDownloadPanel } = useBrowserStore(
     useShallow((state) => ({
       isDownloadPanelOpen: state.isDownloadPanelOpen,
@@ -22,10 +27,14 @@ export function DownloadManagerPanel() {
     downloads,
     deleteDownload,
     cancelDownload,
+    pauseDownload,
+    resumeDownload,
+    refreshDownloadLink,
+    openDownloadSource,
     retryDownload,
     refreshDownloads,
     isRefreshing,
-  } = useDownloads();
+  } = useDownloads(activeGameId);
 
   return (
     <div
@@ -119,6 +128,10 @@ export function DownloadManagerPanel() {
               queuePosition={getQueuePosition(downloads, item.id)}
               onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
               onCancel={() => cancelDownload(item.id)}
+              onPause={() => pauseDownload(item.id)}
+              onResume={() => resumeDownload(item.id)}
+              onRefreshLink={() => refreshDownloadLink(item.id)}
+              onOpenSource={() => openDownloadSource(item.id)}
               onRetry={() => retryDownload(item.id)}
             />
           ))
@@ -133,10 +146,24 @@ interface RowProps {
   queuePosition: number | null;
   onDelete: (deleteFile: boolean) => void;
   onCancel: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onRefreshLink: () => void;
+  onOpenSource: () => void;
   onRetry: () => void;
 }
 
-function DownloadRow({ item, queuePosition, onDelete, onCancel, onRetry }: RowProps) {
+function DownloadRow({
+  item,
+  queuePosition,
+  onDelete,
+  onCancel,
+  onPause,
+  onResume,
+  onRefreshLink,
+  onOpenSource,
+  onRetry,
+}: RowProps) {
   const { t } = useTranslation(['browser']);
   const badge = DOWNLOAD_STATUS_BADGE[item.status];
   const progress = getDownloadProgress(item);
@@ -172,8 +199,14 @@ function DownloadRow({ item, queuePosition, onDelete, onCancel, onRetry }: RowPr
           </div>
         )}
 
+        {item.status === 'paused' && (
+          <p className="mt-1 text-xs text-base-content/55">{t('downloads.status.paused')}</p>
+        )}
+
         {item.status === 'failed' && (
-          <p className="text-xs text-error mt-1">{t('downloads.failure_details')}</p>
+          <p className="mt-1 text-xs text-error">
+            {t(getDownloadFailureMessageKey(item.error_msg))}
+          </p>
         )}
       </div>
 
@@ -186,6 +219,66 @@ function DownloadRow({ item, queuePosition, onDelete, onCancel, onRetry }: RowPr
             aria-label={t('downloads.cancel_title')}
           >
             <X size={14} />
+          </button>
+        )}
+        {item.status === 'in_progress' && item.can_resume && (
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={onPause}
+            title={t('downloads.pause_title')}
+            aria-label={t('downloads.pause_title')}
+          >
+            <Pause size={14} />
+          </button>
+        )}
+        {item.status === 'paused' && item.can_resume && (
+          <button
+            className="btn btn-ghost btn-xs text-primary"
+            onClick={onResume}
+            title={t('downloads.resume_title')}
+            aria-label={t('downloads.resume_title')}
+          >
+            <Play size={14} />
+          </button>
+        )}
+        {item.status === 'paused' && (
+          <button
+            className="btn btn-ghost btn-xs text-warning"
+            onClick={onCancel}
+            title={t('downloads.cancel_title')}
+            aria-label={t('downloads.cancel_title')}
+          >
+            <X size={14} />
+          </button>
+        )}
+        {item.status === 'failed' && item.can_resume && (
+          <button
+            className="btn btn-ghost btn-xs text-primary"
+            onClick={onResume}
+            title={t('downloads.resume_title')}
+            aria-label={t('downloads.resume_title')}
+          >
+            <Play size={14} />
+          </button>
+        )}
+        {item.status === 'failed' && !item.can_resume && item.tab_label && (
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={onRefreshLink}
+            title={t('downloads.refresh_link_title')}
+            aria-label={t('downloads.refresh_link_title')}
+          >
+            <RefreshCw size={14} />
+          </button>
+        )}
+        {item.status === 'failed' && !item.can_resume && item.source_url && (
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={onOpenSource}
+            title={t('downloads.open_source_title')}
+            aria-label={t('downloads.open_source_title')}
+          >
+            <ExternalLink size={14} />
           </button>
         )}
         {(item.status === 'failed' || item.status === 'canceled') && (

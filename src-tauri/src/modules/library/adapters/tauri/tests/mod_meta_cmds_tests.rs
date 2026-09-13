@@ -194,7 +194,10 @@ async fn test_info_json_favorite_flag_writes() {
 
 #[tokio::test]
 async fn test_suggest_random_mods() {
-    use crate::modules::library::application::mods::metadata::suggest_random_mods;
+    use crate::modules::ingestion::application::import_batch::types::StableCategory;
+    use crate::modules::library::application::mods::metadata::{
+        suggest_random_mods, RandomizerSafetyFilter, RandomizerScope, SuggestRandomModsInput,
+    };
 
     let pool = setup_test_db().await;
 
@@ -217,6 +220,8 @@ async fn test_suggest_random_mods() {
         ("obj1", "Hu Tao", "Hu Tao", "Character"),
         ("obj2", "Kazuha", "Kazuha", "Character"),
         ("obj3", "Weapon", "Weapon", "Weapon"),
+        ("obj4", "Menu", "Menu", "UI"),
+        ("obj5", "Legacy", "Legacy", "Legacy"),
     ] {
         insert_test_object(
             &pool,
@@ -282,6 +287,30 @@ async fn test_suggest_random_mods() {
             "DISABLED",
             true,
         ),
+        (
+            "m7",
+            Some("obj1"),
+            "Hu Tao Skin 3",
+            "/Mods/Hu Tao/Skin3",
+            "DISABLED",
+            true,
+        ),
+        (
+            "m9",
+            Some("obj4"),
+            "Menu Mod",
+            "/Mods/Menu/Mod",
+            "DISABLED",
+            true,
+        ),
+        (
+            "m10",
+            Some("obj5"),
+            "Legacy Mod",
+            "/Mods/Legacy/Mod",
+            "DISABLED",
+            true,
+        ),
     ] {
         insert_test_mod(
             &pool,
@@ -302,7 +331,23 @@ async fn test_suggest_random_mods() {
         .unwrap();
     }
 
-    let proposals = suggest_random_mods(&pool, "g1").await.unwrap();
+    let input = |safety_filter, recent_mod_ids_by_object| SuggestRandomModsInput {
+        game_id: "g1".to_string(),
+        safety_filter,
+        scope: RandomizerScope {
+            categories: vec![StableCategory::Character],
+            include_unclassified: false,
+        },
+        recent_mod_ids_by_object,
+        excluded_object_ids: Vec::new(),
+    };
+
+    let proposals = suggest_random_mods(
+        &pool,
+        &input(RandomizerSafetyFilter::All, Default::default()),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         proposals.len(),
@@ -310,9 +355,13 @@ async fn test_suggest_random_mods() {
         "Should return 1 mod per character object"
     );
     let obj1_prop = proposals.iter().find(|p| p.object_id == "obj1").unwrap();
+    assert_eq!(
+        obj1_prop.mode,
+        crate::modules::library::application::mods::metadata::RandomizerLoadoutMode::Exclusive
+    );
     assert!(
-        obj1_prop.mod_id == "m1" || obj1_prop.mod_id == "m3",
-        "Obj1 should get m1 or m3"
+        ["m1", "m3", "m7"].contains(&obj1_prop.mod_id.as_str()),
+        "All filter should accept both safe and unsafe candidates"
     );
 
     let obj2_prop = proposals.iter().find(|p| p.object_id == "obj2").unwrap();
@@ -320,11 +369,120 @@ async fn test_suggest_random_mods() {
         obj2_prop.mod_id, "m4",
         "Obj2 should get m4, skipping dot prefix"
     );
+
+    let safe = suggest_random_mods(
+        &pool,
+        &input(RandomizerSafetyFilter::Safe, Default::default()),
+    )
+    .await
+    .unwrap();
+    assert!(safe.iter().all(|proposal| proposal.mod_id != "m3"));
+
+    let unsafe_only = suggest_random_mods(
+        &pool,
+        &input(RandomizerSafetyFilter::Unsafe, Default::default()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(unsafe_only.len(), 1);
+    assert_eq!(unsafe_only[0].mod_id, "m3");
+
+    let multi_scope = suggest_random_mods(
+        &pool,
+        &SuggestRandomModsInput {
+            game_id: "g1".to_string(),
+            safety_filter: RandomizerSafetyFilter::All,
+            scope: RandomizerScope {
+                categories: vec![StableCategory::Weapon, StableCategory::UI],
+                include_unclassified: false,
+            },
+            recent_mod_ids_by_object: Default::default(),
+            excluded_object_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(multi_scope.len(), 2);
+    assert!(multi_scope
+        .iter()
+        .all(|proposal| matches!(proposal.object_type.as_deref(), Some("Weapon" | "UI"))));
+    assert!(multi_scope.iter().any(|proposal| proposal.object_type.as_deref() == Some("Weapon")
+        && proposal.mode == crate::modules::library::application::mods::metadata::RandomizerLoadoutMode::Exclusive));
+    assert!(multi_scope.iter().any(|proposal| proposal.object_type.as_deref() == Some("UI")
+        && proposal.mode == crate::modules::library::application::mods::metadata::RandomizerLoadoutMode::Additive));
+
+    sqlx::query("UPDATE objects SET object_type = NULL WHERE id = 'obj5'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let unclassified = suggest_random_mods(
+        &pool,
+        &SuggestRandomModsInput {
+            game_id: "g1".to_string(),
+            safety_filter: RandomizerSafetyFilter::All,
+            scope: RandomizerScope {
+                categories: vec![],
+                include_unclassified: true,
+            },
+            recent_mod_ids_by_object: Default::default(),
+            excluded_object_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(unclassified.len(), 1);
+    assert_eq!(unclassified[0].mod_id, "m10");
+    assert_eq!(
+        unclassified[0].mode,
+        crate::modules::library::application::mods::metadata::RandomizerLoadoutMode::Additive
+    );
+
+    let locked = suggest_random_mods(
+        &pool,
+        &SuggestRandomModsInput {
+            game_id: "g1".to_string(),
+            safety_filter: RandomizerSafetyFilter::All,
+            scope: RandomizerScope {
+                categories: vec![StableCategory::Character],
+                include_unclassified: false,
+            },
+            recent_mod_ids_by_object: Default::default(),
+            excluded_object_ids: vec!["obj1".to_string()],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(locked.iter().all(|proposal| proposal.object_id != "obj1"));
+
+    let reroll = suggest_random_mods(
+        &pool,
+        &input(
+            RandomizerSafetyFilter::All,
+            [("obj1".to_string(), vec!["m1".to_string(), "m3".to_string()])]
+                .into_iter()
+                .collect(),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        reroll
+            .iter()
+            .find(|proposal| proposal.object_id == "obj1")
+            .unwrap()
+            .mod_id,
+        "m7",
+        "Reroll should avoid recent candidates while an alternative exists"
+    );
 }
 
 #[tokio::test]
 async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
-    use crate::modules::library::application::mods::metadata::suggest_random_mods;
+    use crate::modules::ingestion::application::import_batch::types::StableCategory;
+    use crate::modules::library::application::mods::metadata::{
+        suggest_random_mods, RandomizerSafetyFilter, RandomizerScope, SuggestRandomModsInput,
+    };
 
     let pool = setup_test_db().await;
 
@@ -371,12 +529,58 @@ async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
     .await
     .unwrap();
 
-    let proposals = suggest_random_mods(&pool, "g_effective_disabled")
-        .await
-        .unwrap();
+    let proposals = suggest_random_mods(
+        &pool,
+        &SuggestRandomModsInput {
+            game_id: "g_effective_disabled".to_string(),
+            safety_filter: RandomizerSafetyFilter::All,
+            scope: RandomizerScope {
+                categories: vec![StableCategory::Character],
+                include_unclassified: false,
+            },
+            recent_mod_ids_by_object: Default::default(),
+            excluded_object_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(proposals.len(), 1);
     assert_eq!(proposals[0].mod_id, "m_effective");
+}
+
+#[tokio::test]
+async fn randomized_loadout_rejects_a_mod_outside_the_rolled_scope() {
+    use crate::modules::ingestion::application::import_batch::types::StableCategory;
+    use crate::modules::library::application::mods::metadata::{
+        validate_randomized_loadout, ApplyRandomizedLoadoutInput, RandomizerSafetyFilter,
+        RandomizerScope,
+    };
+
+    let pool = setup_object_mods_fixture().await;
+    sqlx::query("UPDATE objects SET object_type = 'Weapon' WHERE id = 'obj3'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let error = validate_randomized_loadout(
+        &pool,
+        &ApplyRandomizedLoadoutInput {
+            game_id: "g_object_mods".to_string(),
+            mod_ids: vec!["m4".to_string()],
+            safety_filter: RandomizerSafetyFilter::All,
+            scope: RandomizerScope {
+                categories: vec![StableCategory::Character],
+                include_unclassified: false,
+            },
+            backup: None,
+            preview_fingerprint: String::new(),
+        },
+    )
+    .await
+    .expect_err("a Weapon proposal must not apply in a Character-only scope");
+
+    assert!(error.to_string().contains("no longer eligible"));
 }
 
 #[tokio::test]

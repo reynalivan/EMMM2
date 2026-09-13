@@ -7,7 +7,6 @@ interface BulkTagModalState {
 }
 
 interface UseObjectListBulkToolbarPropsInput {
-  activePane: string;
   mutationsDisabled: boolean;
   bulkSelect: ReturnType<typeof useObjectBulkSelect>;
   setBulkTagModal: (state: BulkTagModalState) => void;
@@ -21,7 +20,6 @@ interface UseObjectListBulkToolbarPropsInput {
 }
 
 export function useObjectListBulkToolbarProps({
-  activePane,
   mutationsDisabled,
   bulkSelect,
   setBulkTagModal,
@@ -52,7 +50,7 @@ export function useObjectListBulkToolbarProps({
     };
 
     return {
-      isAnySelected: activePane === 'objectList' && bulkSelect.isAnySelected,
+      isAnySelected: bulkSelect.isAnySelected,
       selectionCount: bulkSelect.selectionCount,
       mutationsDisabled,
       onDelete: run(handleBulkDelete),
@@ -67,7 +65,6 @@ export function useObjectListBulkToolbarProps({
       onClear: bulkSelect.clearSelection,
     };
   }, [
-    activePane,
     bulkSelect.isAnySelected,
     bulkSelect.selectionCount,
     bulkSelect.selectedIds,

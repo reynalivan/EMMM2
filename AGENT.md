@@ -30,6 +30,14 @@ EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 - **Tools**: Use `context7`, `fetch`, `deepwiki`, `exa` for research, `narsil-mcp`, `sequential-thinking` before coding.
 - **i18n**: Namespace modularity + descriptive keys Include tooltips/aria.
 
+## 6. Frontend Demo Mode
+
+- Read `docs/frontend-demo.md` before demo work.
+- Run only `pnpm dev:demo`. Demo is fixture-only, in-memory, and must never reach user data or native services.
+- Reuse the existing app, shell, routes, pages, modals, and controls. Never add alternate demo UI.
+- Use typed bindings. Missing demo handlers reject rather than calling Tauri.
+- Verify the existing UI in a browser, including states, interactions, responsive layout, keyboard access, and console errors.
+
 ## 3. Workflow
 
 1. **HISTORY**: Read the 3-4 latest files from `.docs/history/` to understand recent context, patterns, and avoid regressions.

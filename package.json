@@ -10,11 +10,13 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:demo": "vite --mode demo",
     "dev:tauri": "node scripts/tauri-dev-server.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "native:prepare": "node scripts/tauri.mjs --prepare-only",
     "tauri": "node scripts/tauri.mjs",
+    "validate:observability": "node scripts/validate-observability-env.mjs",
     "i18n:status": "i18next-cli status",
     "i18n:lint": "i18next-cli lint",
     "i18n:sync": "i18next-cli sync",
@@ -28,6 +30,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@grafana/faro-web-sdk": "^2.11.0",
     "@hookform/resolvers": "^5.4.0",
     "@radix-ui/react-context-menu": "^2.3.2",
     "@tanstack/react-query": "^5.101.2",
@@ -40,6 +43,7 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^1.23.0",
     "motion": "^12.42.2",
+    "quick-liquid": "0.1.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-hook-form": "^7.80.0",

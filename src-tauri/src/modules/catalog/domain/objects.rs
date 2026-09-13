@@ -8,6 +8,32 @@ use std::collections::HashMap;
 
 use crate::modules::games::domain::models::ItemStatus;
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RandomizerMode {
+    Default,
+    Exclusive,
+    Additive,
+}
+
+impl RandomizerMode {
+    pub fn from_persisted(value: &str) -> Option<Self> {
+        match value {
+            "exclusive" => Some(Self::Exclusive),
+            "additive" => Some(Self::Additive),
+            _ => None,
+        }
+    }
+
+    pub fn persisted(self) -> Option<&'static str> {
+        match self {
+            Self::Default => None,
+            Self::Exclusive => Some("exclusive"),
+            Self::Additive => Some("additive"),
+        }
+    }
+}
+
 /// `Default` is the unfiltered query. Callers spell out only
 /// the axes they actually constrain — the full seven-field literal was written
 /// out at twenty sites.
@@ -38,6 +64,7 @@ pub struct ObjectSummary {
     pub matched_reason: Option<String>,
     pub matched_source: Option<String>,
     pub object_type: String,
+    pub randomizer_mode: Option<RandomizerMode>,
     pub sub_category: Option<String>,
     pub status: ItemStatus, // 1: ENABLED, 0: DISABLED
     pub metadata: String,
@@ -91,15 +118,29 @@ pub struct CreateObjectInput {
     pub sub_category: Option<String>,
     pub status: Option<ItemStatus>,
     pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub thumbnail: Option<CreateObjectThumbnail>,
     pub thumbnail_url: Option<String>,
     pub hash_db: Option<crate::modules::games::domain::models::HashDbPayload>,
     pub custom_skins: Option<crate::modules::games::domain::models::CustomSkinsPayload>,
 }
 
-#[derive(Serialize, Deserialize, specta::Type)]
+/// A user-provided thumbnail to be materialized into the new object's folder.
+/// The source itself is never persisted: every variant becomes `preview_custom.png`.
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CreateObjectThumbnail {
+    File { source_path: String },
+    Clipboard { image_data: Vec<u8> },
+    Url { url: String },
+}
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
 pub struct UpdateObjectInput {
     pub name: Option<String>,
     pub object_type: Option<String>,
+    /// `Default` clears the nullable database override.
+    pub randomizer_mode: Option<RandomizerMode>,
     pub sub_category: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub hash_db: Option<crate::modules::games::domain::models::HashDbPayload>,

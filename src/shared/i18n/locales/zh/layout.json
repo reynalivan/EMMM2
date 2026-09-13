@@ -5,6 +5,8 @@
     "mod_inbox": "模组收件箱",
     "collections": "收藏集",
     "settings": "设置",
+    "browser": "浏览器",
+    "downloads": "下载",
     "storage_optimizer": "存储优化器",
     "app_menu_tip": "应用菜单",
     "quick_play": "快速开始",
@@ -42,6 +44,7 @@
   "context": {
     "loading": "加载中...",
     "collections_title": "收藏集",
+    "active_collection": "当前收藏集",
     "save_current": "保存当前状态",
     "no_collections": "无已保存的收藏",
     "manage_collections": "管理收藏集"
@@ -51,6 +54,7 @@
     "launching": "启动中...",
     "randomizer": "随机化 (扭蛋)",
     "conflicts": "已启用冲突",
+    "shared_hashes": "共享哈希",
     "conflict_toast": "{{count}} 个已启用模组冲突"
   },
   "app": {

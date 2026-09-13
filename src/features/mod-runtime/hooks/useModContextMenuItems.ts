@@ -6,6 +6,7 @@ import {
   type ModContextMenuActionHandlers,
   type ModContextMenuItemConfig as ContextMenuItemConfig,
 } from '../actions/modContextMenuPolicy';
+import { useModViewerLaunch } from '../actions/useModViewerLaunch';
 
 export interface UseModContextMenuItemsProps {
   folder: WorkspaceExplorerNode;
@@ -39,8 +40,11 @@ export function useModContextMenuItems({
   onImportThumbnail,
 }: UseModContextMenuItemsProps): ContextMenuItemConfig[] {
   const { t } = useTranslation(['grid']);
+  const modViewer = useModViewerLaunch(folder);
   const handlers: ModContextMenuActionHandlers = {
     openExplorer: onOpenExplorer,
+    openModViewer: modViewer.visible ? () => void modViewer.launch() : undefined,
+    modViewerExperimental: modViewer.experimental,
     rename: onRename,
     toggleEnabled: onToggleEnabled,
     enableOnlyThis: onEnableOnlyThis,

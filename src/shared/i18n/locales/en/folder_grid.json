@@ -24,6 +24,8 @@
     "complete_title": "All conflicts resolved",
     "complete_summary": "{{resolved}} of {{total}} conflicts resolved",
     "complete_description": "The Mods folder and database are synchronized with the latest disk state.",
+    "external_complete_title": "Resolved outside this dialog",
+    "external_complete_description": "The latest disk check no longer finds this conflict.",
     "groups": "Conflict groups",
     "enabled": "Enabled",
     "disabled": "Disabled",

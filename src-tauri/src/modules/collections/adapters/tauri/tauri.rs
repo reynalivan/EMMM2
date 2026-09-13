@@ -1,5 +1,5 @@
 use sqlx::SqlitePool;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::modules::collections::application::collection;
 use crate::modules::collections::application::runtime as collection_runtime;
@@ -12,6 +12,63 @@ use crate::modules::workspace::domain::runtime_state::{
     CollectionRuntimeDescriptor, CollectionRuntimeSnapshot,
 };
 use crate::shared::errors::AppError;
+
+async fn record_collection_operation(
+    app: &AppHandle,
+    enabled: bool,
+    operation: crate::modules::system::application::telemetry::TelemetryOperation,
+    succeeded: bool,
+    started_at: std::time::Instant,
+) {
+    if !enabled || !succeeded {
+        return;
+    }
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .inner()
+        .clone();
+    let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
+        operation,
+        crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+        crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+    )
+    .with_duration(started_at.elapsed());
+    let _ = telemetry
+        .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
+        .await;
+}
+
+async fn ensure_current_runtime_snapshot_preflight(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<(), AppError> {
+    let result = crate::modules::reconciliation::application::disk_reconcile::emit::mutation_preflight_report_for_paths(
+        app, pool, game_id, None,
+    )
+    .await?;
+    if result.status
+        == crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileStatus::AppliedWithFolderConflicts
+    {
+        let active_paths = collection::active_runtime_snapshot_scope_paths(pool, game_id).await?;
+        if current_runtime_snapshot_conflicts_block(&result.folder_conflicts, &active_paths) {
+            return Err(
+                crate::modules::reconciliation::application::disk_reconcile::emit::folder_conflict_mutation_error(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn current_runtime_snapshot_conflicts_block(
+    conflicts: &[crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup],
+    active_paths: &[String],
+) -> bool {
+    crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
+        conflicts,
+        active_paths,
+    )
+}
 
 // ============================================================================
 // Runtime state commands
@@ -77,12 +134,7 @@ pub async fn create_collection(
         None => source_collection_id.is_none(),
     };
     let operation_guard = if captures_current_state {
-        crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
-            &app,
-            pool.inner(),
-            &game_id,
-        )
-        .await?;
+        ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
         Some(
             op_lock
                 .acquire_exempt(
@@ -114,12 +166,7 @@ pub async fn save_current_runtime_as_collection(
     game_id: String,
     name: String,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
-        &app,
-        pool.inner(),
-        &game_id,
-    )
-    .await?;
+    ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
     let _guard = op_lock
         .acquire_exempt(
             crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
@@ -154,7 +201,9 @@ pub async fn apply_collection(
     collection_id: String,
     ignore_missing: Option<bool>,
 ) -> Result<ApplyResult, AppError> {
+    let started_at = std::time::Instant::now();
     let settings = config.get_settings();
+    let diagnostics_enabled = settings.diagnostics.telemetry_enabled;
     let game = settings
         .games
         .iter()
@@ -196,10 +245,18 @@ pub async fn apply_collection(
         },
         op_lock.inner(),
     )
-    .await?;
+    .await;
 
     drop(mutation_lease);
-    Ok(result)
+    record_collection_operation(
+        &app,
+        diagnostics_enabled,
+        crate::modules::system::application::telemetry::TelemetryOperation::CollectionApply,
+        result.is_ok(),
+        started_at,
+    )
+    .await;
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -224,12 +281,7 @@ pub async fn replace_collection_with_current_state(
     game_id: String,
     collection_id: String,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
-        &app,
-        pool.inner(),
-        &game_id,
-    )
-    .await?;
+    ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
     let operation_guard = op_lock
         .acquire_exempt(
             crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
@@ -253,12 +305,7 @@ pub async fn save_collection_changes(
     collection_id: String,
     confirm_remove_missing: bool,
 ) -> Result<CollectionSummary, AppError> {
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
-        &app,
-        pool.inner(),
-        &game_id,
-    )
-    .await?;
+    ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
     let _guard = op_lock
         .acquire_exempt(
             crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
@@ -328,6 +375,7 @@ pub async fn restore_last_changes(
     op_lock: State<'_, MutationCoordinator>,
     game_id: String,
 ) -> Result<ApplyResult, AppError> {
+    let started_at = std::time::Instant::now();
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         &app,
         pool.inner(),
@@ -345,6 +393,7 @@ pub async fn restore_last_changes(
         .draft_collection_id
         .ok_or_else(|| AppError::Validation("No Last changes snapshot exists".to_string()))?;
     let settings = config.get_settings();
+    let diagnostics_enabled = settings.diagnostics.telemetry_enabled;
     let game = settings
         .games
         .iter()
@@ -378,7 +427,16 @@ pub async fn restore_last_changes(
         &game_id,
     )
     .await;
-    Ok(settle_restore_reconcile(result, reconcile))
+    let result = settle_restore_reconcile(result, reconcile);
+    record_collection_operation(
+        &app,
+        diagnostics_enabled,
+        crate::modules::system::application::telemetry::TelemetryOperation::Restore,
+        true,
+        started_at,
+    )
+    .await;
+    Ok(result)
 }
 
 fn settle_restore_reconcile(
@@ -525,7 +583,9 @@ pub async fn resolve_recovery_task(
 #[cfg(test)]
 mod tests {
     use crate::modules::collections::domain::collection::ApplyResult;
-    use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
+    use crate::modules::reconciliation::application::disk_reconcile::types::{
+        CommittedMutationSyncWarningKind, FolderNameConflictCandidate, FolderNameConflictGroup,
+    };
     use crate::shared::errors::AppError;
 
     #[test]
@@ -545,6 +605,69 @@ mod tests {
             !apply_command.contains("run_full_internal_disk_reconcile"),
             "a committed apply must not be converted to Err by an outer reconcile"
         );
+    }
+
+    #[test]
+    fn current_runtime_snapshot_preflight_blocks_only_active_conflict_scopes() {
+        let inactive_conflicts = vec![FolderNameConflictGroup {
+            group_id: "blue".to_string(),
+            identity: "ainoz/blue".to_string(),
+            display_name: "Blue".to_string(),
+            candidates: vec![FolderNameConflictCandidate {
+                path: "E:/Mods/AINOZ/DISABLED Blue".to_string(),
+                folder_name: "DISABLED Blue".to_string(),
+                base_name: "Blue".to_string(),
+                is_enabled: false,
+            }],
+        }];
+
+        let active_paths = vec!["E:/Mods/AINOZ/Active".to_string()];
+        assert!(!super::current_runtime_snapshot_conflicts_block(
+            &inactive_conflicts,
+            &active_paths,
+        ));
+        assert!(!super::current_runtime_snapshot_conflicts_block(
+            &[],
+            &active_paths,
+        ));
+
+        let active_conflicts = vec![FolderNameConflictGroup {
+            group_id: "active-blue".to_string(),
+            identity: "ainoz/blue".to_string(),
+            display_name: "Blue".to_string(),
+            candidates: vec![FolderNameConflictCandidate {
+                path: "E:/Mods/AINOZ/Active".to_string(),
+                folder_name: "Active".to_string(),
+                base_name: "Active".to_string(),
+                is_enabled: true,
+            }],
+        }];
+        assert!(super::current_runtime_snapshot_conflicts_block(
+            &active_conflicts,
+            &active_paths,
+        ));
+    }
+
+    #[test]
+    fn current_runtime_snapshot_commands_share_scoped_preflight() {
+        let source = include_str!("tauri.rs");
+        for command in [
+            "pub async fn create_collection(",
+            "pub async fn save_current_runtime_as_collection(",
+            "pub async fn replace_collection_with_current_state(",
+            "pub async fn save_collection_changes(",
+        ] {
+            let start = source.find(command).expect("collection command");
+            let remainder = &source[start..];
+            let end = remainder[1..]
+                .find("#[tauri::command]")
+                .map(|offset| offset + 1)
+                .unwrap_or(remainder.len());
+            assert!(
+                remainder[..end].contains("ensure_current_runtime_snapshot_preflight"),
+                "{command} must scope folder-conflict blocking to active snapshot roots"
+            );
+        }
     }
 
     #[test]

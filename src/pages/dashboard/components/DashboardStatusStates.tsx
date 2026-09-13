@@ -4,7 +4,7 @@ import { useAppStore } from '@/app/store';
 
 export function DashboardLoadingState() {
   return (
-    <div className="h-full flex items-center justify-center bg-base-100">
+    <div className="flex h-full items-center justify-center bg-base-100 pt-[var(--workspace-topbar-height)]">
       <span className="loading loading-spinner loading-lg text-primary"></span>
     </div>
   );
@@ -14,7 +14,7 @@ export function DashboardErrorState({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation(['dashboard']);
 
   return (
-    <div className="h-full flex items-center justify-center bg-base-100">
+    <div className="flex h-full items-center justify-center bg-base-100 pt-[var(--workspace-topbar-height)]">
       <div className="alert alert-error max-w-md">
         <div>
           <h3 className="font-bold">{t('error.message')}</h3>
@@ -32,7 +32,7 @@ export function DashboardEmptyState() {
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
 
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-base-100 relative overflow-hidden">
+    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden bg-base-100 pt-[var(--workspace-topbar-height)]">
       <div className="absolute inset-0 bg-linear-to-tr from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
       <div className="z-10 text-center max-w-md px-6">
         <div className="mb-6 relative inline-block">

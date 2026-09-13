@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '../../../tests/testing/test-utils';
+import type { ReactNode } from 'react';
+import { fireEvent, render, screen, waitFor } from '../../../tests/testing/test-utils';
 import GallerySection from './GallerySection';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -7,9 +8,14 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
 describe('GallerySection', () => {
   const defaultProps = {
     images: ['E:/Mods/TestMod/preview_1.png', 'E:/Mods/TestMod/preview_2.png'],
+    imageRefreshKey: 0,
     currentImageIndex: 0,
     isFetching: false,
     canEdit: true,
@@ -34,6 +40,46 @@ describe('GallerySection', () => {
     await waitFor(() => {
       expect(screen.getByText('No preview available')).toBeInTheDocument();
     });
+    expect(screen.getByRole('button', { name: 'Add preview image' })).toBeInTheDocument();
+  });
+
+  it('opens the shared action menu from the empty-state CTA and pastes an image', () => {
+    const onPaste = vi.fn();
+    render(<GallerySection {...defaultProps} images={[]} onPaste={onPaste} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add preview image' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Paste image from clipboard' }));
+
+    expect(onPaste).toHaveBeenCalledOnce();
+  });
+
+  it('exposes the same actions through the overflow menu and disables destructive actions without an image', () => {
+    render(<GallerySection {...defaultProps} images={[]} />);
+
+    fireEvent.click(screen.getByTitle('Preview image actions'));
+
+    expect(screen.getByRole('button', { name: 'Import preview image' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Delete current preview image' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete all preview images' })).toBeDisabled();
+  });
+
+  it('pastes an image directly from the gallery context menu', async () => {
+    const onPaste = vi.fn();
+    render(<GallerySection {...defaultProps} onPaste={onPaste} />);
+
+    fireEvent.contextMenu(screen.getByRole('region', { name: 'Preview image slider' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('menuitem', { name: 'Paste image from clipboard' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('menuitem', { name: 'Delete current preview image' }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Paste image from clipboard' }));
+    expect(onPaste).toHaveBeenCalledOnce();
   });
 
   // Covers: TC-6.2-01 (Gallery image count display)
@@ -134,13 +180,19 @@ describe('GallerySection', () => {
   });
 
   // Covers: TC-6.2-01 (Broken image onError fallback)
-  it('should handle broken image paths gracefully', async () => {
-    const props = { ...defaultProps, images: ['broken/path.png'] };
-    const { container } = render(<GallerySection {...props} />);
+  it('replaces a failed image and retries it after preview data refreshes', async () => {
+    const props = { ...defaultProps, images: ['E:/Mods/TestMod/preview.png'] };
+    const { rerender } = render(<GallerySection {...props} />);
 
-    // Verify placeholder or broken image fallback renders
+    fireEvent.error(screen.getByRole('img', { name: 'Preview image' }));
+    expect(screen.getByText('Broken image')).toBeInTheDocument();
+
+    rerender(
+      <GallerySection {...props} images={['E:/Mods/TestMod/preview.png']} imageRefreshKey={1} />,
+    );
+
     await waitFor(() => {
-      expect(container).toBeTruthy();
+      expect(screen.getByRole('img', { name: 'Preview image' })).toBeInTheDocument();
     });
   });
 

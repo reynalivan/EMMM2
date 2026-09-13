@@ -1,12 +1,9 @@
-import { Clock, Gamepad2, Keyboard, PlayCircle } from 'lucide-react';
+import { Clock, Keyboard } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { launchConfiguredGame, type GameConfig } from '@/entities/game';
-import { useAppStore } from '@/app/store';
-import { formatAppError } from '@/shared/lib/appError';
-import { toast } from '@/shared/ui/toast';
-import { useState } from 'react';
+import type { GameConfig } from '@/entities/game';
 import type { DashboardPayload } from '../model/dashboard';
 import type { ActiveKeyBinding } from '@/entities/settings';
+import { ModThumbnail } from '@/entities/mod';
 import { formatRelativeDate } from '../../../shared/lib/utils/formatters';
 
 interface DashboardActivityProps {
@@ -24,11 +21,12 @@ export function DashboardActivity({
 }: DashboardActivityProps) {
   return (
     <>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <RecentModsCard recentMods={recentMods} />
-        <QuickPlayCard activeGame={activeGame} />
-      </div>
-      <ActiveKeybindingsCard keybindings={keybindings} isLoading={keybindingsLoading} />
+      <RecentModsCard recentMods={recentMods} />
+      <ActiveKeybindingsCard
+        keybindings={keybindings}
+        isLoading={keybindingsLoading}
+        gameId={activeGame?.id ?? ''}
+      />
     </>
   );
 }
@@ -37,7 +35,7 @@ function RecentModsCard({ recentMods }: { recentMods: DashboardPayload['recent_m
   const { t } = useTranslation(['dashboard', 'common']);
 
   return (
-    <div className="card bg-base-200/50 border border-base-300 lg:col-span-2">
+    <div className="card bg-base-200/50 border border-base-300">
       <div className="card-body">
         <h2 className="card-title text-sm font-semibold text-base-content/70">
           <Clock size={16} className="mr-1" />
@@ -50,13 +48,20 @@ function RecentModsCard({ recentMods }: { recentMods: DashboardPayload['recent_m
                 key={mod.id}
                 className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-base-300/50 transition-colors"
               >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{mod.name}</p>
-                  <p className="text-xs text-base-content/50">
-                    {mod.object_name
-                      ? t('activity.category', { category: mod.object_name })
-                      : t('activity.uncategorized')}
-                  </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <ModThumbnail
+                    gameId={mod.game_id}
+                    folderPath={mod.folder_path}
+                    sizeClassName="size-9"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{mod.name}</p>
+                    <p className="text-xs text-base-content/50">
+                      {mod.object_name
+                        ? t('activity.category', { category: mod.object_name })
+                        : t('activity.uncategorized')}
+                    </p>
+                  </div>
                 </div>
                 <span className="text-xs text-base-content/40 whitespace-nowrap ml-3">
                   {formatRelativeDate(mod.indexed_at, t)}
@@ -72,61 +77,14 @@ function RecentModsCard({ recentMods }: { recentMods: DashboardPayload['recent_m
   );
 }
 
-function QuickPlayCard({ activeGame }: { activeGame: GameConfig | null }) {
-  const { t } = useTranslation(['dashboard']);
-  const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
-  const [isLaunching, setIsLaunching] = useState(false);
-
-  const handleLaunch = async () => {
-    if (!activeGame) return;
-    setIsLaunching(true);
-    try {
-      await launchConfiguredGame(activeGame.id, autoCloseLauncher);
-    } catch (cause) {
-      toast.error(formatAppError(cause));
-    } finally {
-      setIsLaunching(false);
-    }
-  };
-
-  return (
-    <div className="card bg-base-200/50 border border-base-300">
-      <div className="card-body items-center text-center">
-        <h2 className="card-title text-sm font-semibold text-base-content/70">
-          {t('actions.quick_play')}
-        </h2>
-        {activeGame ? (
-          <>
-            <div className="my-3">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <Gamepad2 size={28} className="text-primary" />
-              </div>
-            </div>
-            <p className="font-semibold text-base">{activeGame.name}</p>
-            <p className="text-xs text-base-content/50 mb-3">{t('activity.last_selected')}</p>
-            <button
-              onClick={() => void handleLaunch()}
-              disabled={isLaunching}
-              className="btn btn-primary btn-sm gap-2 w-full"
-            >
-              {isLaunching ? <span className="loading loading-spinner loading-sm" /> : <PlayCircle size={16} />}
-              {t('activity.launch')}
-            </button>
-          </>
-        ) : (
-          <p className="text-sm text-base-content/40 py-4">{t('activity.no_game')}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ActiveKeybindingsCard({
   keybindings,
   isLoading,
+  gameId,
 }: {
   keybindings: ActiveKeyBinding[];
   isLoading: boolean;
+  gameId: string;
 }) {
   const { t } = useTranslation(['dashboard']);
 
@@ -145,39 +103,132 @@ function ActiveKeybindingsCard({
             <span className="loading loading-dots loading-sm" />
           </div>
         ) : keybindings.length > 0 ? (
-          <div className="overflow-x-auto max-h-64">
-            <table className="table table-xs table-zebra">
-              <thead className="sticky top-0 bg-base-200">
-                <tr>
-                  <th>{t('keys.table_mod')}</th>
-                  <th>{t('keys.table_section')}</th>
-                  <th>{t('keys.table_key')}</th>
-                  <th>{t('keys.table_back')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {keybindings.map((keybinding, index) => (
-                  <tr key={`${keybinding.mod_name}-${keybinding.section_name}-${index}`}>
-                    <td
-                      className="truncate max-w-40"
-                      title={String(keybinding.mod_name ?? '') || undefined}
-                    >
-                      {String(keybinding.mod_name ?? '')}
-                    </td>
-                    <td className="text-base-content/60">{keybinding.section_name}</td>
-                    <td>{keybinding.key && <kbd className="kbd kbd-xs">{keybinding.key}</kbd>}</td>
-                    <td>
-                      {keybinding.back && <kbd className="kbd kbd-xs">{keybinding.back}</kbd>}
-                    </td>
+          <>
+            <div className="space-y-2 sm:hidden" data-testid="active-keybindings-mobile-cards">
+              {keybindings.map((keybinding, index) => (
+                <ActiveKeybindingMobileCard
+                  key={`${keybinding.mod_name}-${keybinding.section_name}-${index}`}
+                  gameId={gameId}
+                  keybinding={keybinding}
+                />
+              ))}
+            </div>
+            <div className="hidden max-h-64 overflow-x-auto sm:block">
+              <table className="table table-xs table-zebra">
+                <thead className="sticky top-0 bg-base-200">
+                  <tr>
+                    <th>{t('keys.table_mod')}</th>
+                    <th>{t('keys.table_section')}</th>
+                    <th>{t('keys.table_key')}</th>
+                    <th>{t('keys.table_back')}</th>
+                    <th>{t('keys.table_control')}</th>
+                    <th>{t('keys.table_values')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {keybindings.map((keybinding, index) => (
+                    <tr key={`${keybinding.mod_name}-${keybinding.section_name}-${index}`}>
+                      <td className="max-w-48">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <ModThumbnail
+                            gameId={gameId}
+                            folderPath={keybinding.folder_path}
+                            sizeClassName="size-7"
+                          />
+                          <span
+                            className="truncate"
+                            title={String(keybinding.mod_name ?? '') || undefined}
+                          >
+                            {String(keybinding.mod_name ?? '')}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="text-base-content/60">{keybinding.section_name}</td>
+                      <td>
+                        {keybinding.key && <kbd className="kbd kbd-xs">{keybinding.key}</kbd>}
+                      </td>
+                      <td>
+                        {keybinding.back && <kbd className="kbd kbd-xs">{keybinding.back}</kbd>}
+                      </td>
+                      <td>
+                        <span className="badge badge-ghost badge-xs">
+                          {t(`keys.control_kind.${keybinding.control_kind}`)}
+                        </span>
+                      </td>
+                      <td
+                        className="max-w-40 truncate text-base-content/60"
+                        title={keybinding.value_summary ?? undefined}
+                      >
+                        {keybinding.value_summary ?? '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <p className="text-sm text-base-content/40 py-4 text-center">{t('keys.no_bindings')}</p>
         )}
       </div>
     </div>
+  );
+}
+
+function ActiveKeybindingMobileCard({
+  gameId,
+  keybinding,
+}: {
+  gameId: string;
+  keybinding: ActiveKeyBinding;
+}) {
+  const { t } = useTranslation(['dashboard']);
+
+  return (
+    <article className="rounded-lg border border-base-300 bg-base-100/40 p-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <ModThumbnail gameId={gameId} folderPath={keybinding.folder_path} sizeClassName="size-9" />
+        <div className="min-w-0">
+          <p
+            className="truncate text-sm font-medium"
+            title={String(keybinding.mod_name ?? '') || undefined}
+          >
+            {String(keybinding.mod_name ?? '')}
+          </p>
+          <p className="truncate text-xs text-base-content/60">{keybinding.section_name}</p>
+        </div>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        <div>
+          <dt className="text-base-content/50">{t('keys.table_key')}</dt>
+          <dd className="mt-0.5">
+            {keybinding.key ? <kbd className="kbd kbd-xs">{keybinding.key}</kbd> : '-'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-base-content/50">{t('keys.table_back')}</dt>
+          <dd className="mt-0.5">
+            {keybinding.back ? <kbd className="kbd kbd-xs">{keybinding.back}</kbd> : '-'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-base-content/50">{t('keys.table_control')}</dt>
+          <dd className="mt-0.5">
+            <span className="badge badge-ghost badge-xs">
+              {t(`keys.control_kind.${keybinding.control_kind}`)}
+            </span>
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-base-content/50">{t('keys.table_values')}</dt>
+          <dd
+            className="mt-0.5 truncate text-base-content/70"
+            title={keybinding.value_summary ?? undefined}
+          >
+            {keybinding.value_summary ?? '-'}
+          </dd>
+        </div>
+      </dl>
+    </article>
   );
 }

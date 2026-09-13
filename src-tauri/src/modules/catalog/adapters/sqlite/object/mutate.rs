@@ -77,7 +77,9 @@ pub async fn delete_object_and_mods_by_folder(
 
     log::info!(
         "delete_object_and_mods_by_folder: removed object folder='{}' game='{}', {} child mods deleted",
-        folder_path, game_id, mods_deleted
+        folder_path,
+        game_id,
+        mods_deleted
     );
     Ok(mods_deleted)
 }

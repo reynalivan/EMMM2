@@ -500,4 +500,64 @@ describe('usePreviewPanelState', () => {
       expect(result.current.keyBindSections).toBeDefined();
     });
   });
+
+  it('opens every keybind file by default so bindings are immediately readable', async () => {
+    const useModIniFilesMock = usePreviewDataModule.useModIniFiles as any;
+    const useAllModIniDocumentsMock = usePreviewDataModule.useAllModIniDocuments as any;
+    const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
+    useModIniFilesMock.mockReturnValue(
+      createMockQuery([{ filename: 'alpha.ini' }, { filename: 'beta.ini' }], true),
+    );
+    useAllModIniDocumentsMock.mockReturnValue([
+      {
+        data: {
+          source_hash: 'alpha-source',
+          mode: 'Structured',
+          raw_lines: ['[KeyAlpha]', 'key = a'],
+          variables: [],
+          key_bindings: [
+            {
+              section_name: 'KeyAlpha',
+              key: 'a',
+              back: null,
+              key_line_idx: 1,
+              back_line_idx: null,
+            },
+          ],
+        },
+      },
+      {
+        data: {
+          source_hash: 'beta-source',
+          mode: 'Structured',
+          raw_lines: ['[KeyBeta]', 'key = b'],
+          variables: [],
+          key_bindings: [
+            { section_name: 'KeyBeta', key: 'b', back: null, key_line_idx: 1, back_line_idx: null },
+          ],
+        },
+      },
+    ]);
+    useWorkspaceViewModelMock.mockReturnValue({
+      data: {
+        preview: {
+          selected_path: 'E:/Mods/Readable',
+          selected_node: null,
+          is_flat_mod_root: false,
+          display_title: null,
+          display_subtitle: null,
+          mod_info_summary: null,
+          ini_summary: null,
+          image_summary: null,
+          warning_summary: { state: 'none', messages: [] },
+        },
+      },
+    });
+
+    const { result } = renderHook(() => usePreviewPanelState());
+
+    await waitFor(() => {
+      expect(result.current.openSectionIds).toEqual(new Set(['alpha.ini', 'beta.ini']));
+    });
+  });
 });

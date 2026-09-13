@@ -33,6 +33,7 @@ export function reduceDedupProgress(
     case 'progress':
       return {
         ...current,
+        totalFolders: event.data.totalFolders,
         scannedFolders: event.data.processedFolders,
         currentFolder: event.data.currentFolder,
       };

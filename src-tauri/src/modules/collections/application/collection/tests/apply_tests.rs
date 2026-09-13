@@ -76,6 +76,97 @@ async fn collection_preflight_scope_includes_active_nonmembers_and_excludes_disa
 }
 
 #[tokio::test]
+async fn active_runtime_snapshot_scope_includes_only_effectively_enabled_mod_roots() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    seed_game(&ctx.pool, "game-1", Some(&mods_path)).await;
+    seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
+    for (id, folder_path, status) in [
+        ("active", "AINOZ/Active", ItemStatus::Enabled),
+        (
+            "disabled-ancestor",
+            "AINOZ/DISABLED Variant/Blue",
+            ItemStatus::Enabled,
+        ),
+        ("disabled", "AINOZ/DISABLED Disabled", ItemStatus::Disabled),
+    ] {
+        insert_test_mod(
+            &ctx.pool,
+            &TestModFixture {
+                id,
+                game_id: "game-1",
+                object_id: Some("object-1"),
+                actual_name: id,
+                folder_path,
+                status,
+                is_safe: true,
+                object_type: Some("Character"),
+                mods_path: Some(&mods_path),
+            },
+        )
+        .await
+        .expect("insert mod");
+    }
+
+    let paths = active_runtime_snapshot_scope_paths(&ctx.pool, "game-1")
+        .await
+        .expect("build active snapshot scope");
+    let normalized = paths
+        .iter()
+        .map(|path| path.replace('\\', "/"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(normalized.len(), 1);
+    assert!(normalized[0].ends_with("/AINOZ/Active"));
+}
+
+#[tokio::test]
+async fn active_runtime_snapshot_scope_uses_game_path_when_mods_path_is_blank() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-fallback",
+            name: "game-fallback",
+            game_type: GameType::GIMI,
+            path: &mods_path,
+            mods_path: Some(""),
+        },
+    )
+    .await
+    .expect("insert fallback game");
+    seed_ainoz_object(&ctx.pool, "object-fallback", "game-fallback").await;
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "active-fallback",
+            game_id: "game-fallback",
+            object_id: Some("object-fallback"),
+            actual_name: "Active",
+            folder_path: "AINOZ/Active",
+            status: ItemStatus::Enabled,
+            is_safe: true,
+            object_type: Some("Character"),
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert active mod");
+
+    let paths = active_runtime_snapshot_scope_paths(&ctx.pool, "game-fallback")
+        .await
+        .expect("build fallback active snapshot scope");
+
+    assert_eq!(paths.len(), 1);
+    assert!(paths[0].replace('\\', "/").ends_with("/AINOZ/Active"));
+}
+
+#[tokio::test]
 async fn apply_collection_returns_missing_mods_before_disk_mutation_when_not_ignoring() {
     let ctx = init_test_db().await;
     let mods_root = tempfile::tempdir().expect("create mods root");

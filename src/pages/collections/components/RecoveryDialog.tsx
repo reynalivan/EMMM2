@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { PipelineTask, RecoveryAction } from '@/entities/task';
 import { toast } from '@/shared/ui/toast';
 import { formatAppError } from '../../../shared/lib/appError';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 interface RecoveryDialogProps {
   tasks: PipelineTask[];
@@ -14,7 +15,10 @@ interface RecoveryDialogProps {
 export function RecoveryDialog({ tasks, onResolved }: RecoveryDialogProps) {
   const { t } = useTranslation('collections');
   const [pendingAction, setPendingAction] = useState<RecoveryAction | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const primaryTask = tasks[0] ?? null;
+
+  useDialogSync(dialogRef, tasks.length > 0);
 
   const resolveTasks = async (): Promise<void> => {
     const remainingTasks = await commands.appStartupCheck();
@@ -53,14 +57,21 @@ export function RecoveryDialog({ tasks, onResolved }: RecoveryDialogProps) {
   if (tasks.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-9999 bg-base-300/90 backdrop-blur-sm flex items-center justify-center p-4">
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      aria-labelledby="recovery-dialog-title"
+      onCancel={(event) => event.preventDefault()}
+    >
       <div className="bg-base-100 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-error/20">
         <div className="bg-error/10 p-6 flex items-start gap-4 border-b border-error/10">
           <div className="bg-error/20 p-3 rounded-full text-error shrink-0">
             <AlertTriangle size={32} />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-error mb-1">{t('recovery.title')}</h2>
+            <h2 id="recovery-dialog-title" className="text-xl font-bold text-error mb-1">
+              {t('recovery.title')}
+            </h2>
             <p className="text-base-content/70 text-sm">{t('recovery.desc')}</p>
           </div>
         </div>
@@ -144,6 +155,6 @@ export function RecoveryDialog({ tasks, onResolved }: RecoveryDialogProps) {
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

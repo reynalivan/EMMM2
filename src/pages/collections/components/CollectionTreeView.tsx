@@ -10,10 +10,12 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { PreviewTreeNode } from '@/entities/collection';
+import { ModThumbnail } from '@/entities/mod';
 import { buildCollectionPreviewNodeSemantics } from '../collectionPreviewSemantics';
 
 interface CollectionTreeViewProps {
   nodes?: PreviewTreeNode[];
+  gameId?: string | null;
   colorClass?: string;
   emptyMessage?: string;
 }
@@ -98,10 +100,46 @@ function iconForNode(node: PreviewTreeNode, expanded: boolean) {
   );
 }
 
-function TreeLeaf({ node, depth }: { node: PreviewTreeNode; depth: number }) {
+function isModRoot(node: PreviewTreeNode) {
+  return (
+    node.kind === 'mod' ||
+    node.node_type === 'FlatModRoot' ||
+    node.node_type === 'ModPackRoot' ||
+    node.node_type === 'VariantContainer'
+  );
+}
+
+function NodeVisual({
+  node,
+  gameId,
+  expanded,
+}: {
+  node: PreviewTreeNode;
+  gameId: string;
+  expanded: boolean;
+}) {
+  if (isModRoot(node) && node.path) {
+    return <ModThumbnail gameId={gameId} folderPath={node.path} sizeClassName="size-6" />;
+  }
+
+  return iconForNode(node, expanded);
+}
+
+function TreeLeaf({
+  node,
+  depth,
+  gameId,
+}: {
+  node: PreviewTreeNode;
+  depth: number;
+  gameId: string;
+}) {
+  const hasActiveModDetail =
+    node.kind === 'mod' && node.is_effectively_active && Boolean(node.path);
+
   return (
     <div
-      className={`group flex items-center gap-2 rounded-lg border border-transparent py-1.5 pr-3 text-xs transition-all ${
+      className={`group relative flex items-center gap-2 rounded-lg border border-transparent py-1.5 pr-3 text-xs transition-[background-color,border-color,color] duration-150 ${
         node.is_effectively_active
           ? 'opacity-95 hover:border-base-content/8 hover:bg-base-content/[0.03]'
           : 'opacity-55 hover:bg-base-content/[0.02]'
@@ -110,16 +148,35 @@ function TreeLeaf({ node, depth }: { node: PreviewTreeNode; depth: number }) {
       title={node.path ?? node.name}
     >
       <span className="font-mono text-[10px] text-base-content/18">└</span>
-      {iconForNode(node, false)}
+      <NodeVisual node={node} gameId={gameId} expanded={false} />
       <span className="min-w-0 flex-1 truncate font-medium text-base-content/80">{node.name}</span>
       <NodeTypeChip nodeType={node.node_type} />
       <StatusChip node={node} />
       <WarningIcon node={node} />
+      {hasActiveModDetail && (
+        <div className="pointer-events-none absolute inset-x-1 top-1 z-10 flex min-w-0 items-center gap-2 rounded-md border border-base-content/10 bg-base-100/92 px-2 py-1.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100">
+          <ModThumbnail gameId={gameId} folderPath={node.path} sizeClassName="size-6" />
+          <span
+            className="min-w-0 truncate font-mono text-[10px] text-base-content/70"
+            title={node.path ?? undefined}
+          >
+            {node.path}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-function TreeFolder({ node, depth }: { node: PreviewTreeNode; depth: number }) {
+function TreeFolder({
+  node,
+  depth,
+  gameId,
+}: {
+  node: PreviewTreeNode;
+  depth: number;
+  gameId: string;
+}) {
   const hasChildren = node.children.length > 0 && !node.collapse_children;
   const [collapsed, setCollapsed] = useState(false);
 
@@ -132,7 +189,7 @@ function TreeFolder({ node, depth }: { node: PreviewTreeNode; depth: number }) {
             setCollapsed((value) => !value);
           }
         }}
-        className={`group flex w-full items-center gap-2 rounded-lg border border-transparent py-1.5 pr-3 text-left transition-all ${
+        className={`group flex w-full items-center gap-2 rounded-lg border border-transparent py-1.5 pr-3 text-left transition-[background-color,border-color,color] duration-150 ${
           hasChildren ? 'hover:border-base-content/8 hover:bg-base-content/[0.03]' : ''
         } ${node.is_effectively_active ? '' : 'opacity-65'}`}
         style={{ paddingLeft: `${depth * 1.1 + 0.45}rem` }}
@@ -149,7 +206,7 @@ function TreeFolder({ node, depth }: { node: PreviewTreeNode; depth: number }) {
             <span className="block w-3" />
           )}
         </span>
-        {iconForNode(node, !collapsed)}
+        <NodeVisual node={node} gameId={gameId} expanded={!collapsed} />
         <span className="min-w-0 flex-1 truncate text-xs font-semibold text-base-content/78">
           {node.name}
         </span>
@@ -162,9 +219,9 @@ function TreeFolder({ node, depth }: { node: PreviewTreeNode; depth: number }) {
         <div className="relative ml-3 border-l border-base-content/8 pl-1.5">
           {node.children.map((child) =>
             child.kind === 'mod' ? (
-              <TreeLeaf key={child.id} node={child} depth={depth + 1} />
+              <TreeLeaf key={child.id} node={child} depth={depth + 1} gameId={gameId} />
             ) : (
-              <TreeFolder key={child.id} node={child} depth={depth + 1} />
+              <TreeFolder key={child.id} node={child} depth={depth + 1} gameId={gameId} />
             ),
           )}
         </div>
@@ -173,7 +230,7 @@ function TreeFolder({ node, depth }: { node: PreviewTreeNode; depth: number }) {
   );
 }
 
-function InactiveSection({ node }: { node: PreviewTreeNode }) {
+function InactiveSection({ node, gameId }: { node: PreviewTreeNode; gameId: string }) {
   const { t } = useTranslation('collections');
 
   return (
@@ -190,9 +247,9 @@ function InactiveSection({ node }: { node: PreviewTreeNode }) {
       <div className="p-2">
         {node.children.map((child) =>
           child.kind === 'mod' ? (
-            <TreeLeaf key={child.id} node={child} depth={0} />
+            <TreeLeaf key={child.id} node={child} depth={0} gameId={gameId} />
           ) : (
-            <TreeFolder key={child.id} node={child} depth={0} />
+            <TreeFolder key={child.id} node={child} depth={0} gameId={gameId} />
           ),
         )}
       </div>
@@ -200,7 +257,15 @@ function InactiveSection({ node }: { node: PreviewTreeNode }) {
   );
 }
 
-function ObjectRow({ node, colorClass }: { node: PreviewTreeNode; colorClass: string }) {
+function ObjectRow({
+  node,
+  colorClass,
+  gameId,
+}: {
+  node: PreviewTreeNode;
+  colorClass: string;
+  gameId: string;
+}) {
   const { t } = useTranslation(['collections', 'common']);
   const [collapsed, setCollapsed] = useState(false);
   const inactiveSection = node.children.find((child) => child.node_type === SECTION_NODE_TYPE);
@@ -211,7 +276,7 @@ function ObjectRow({ node, colorClass }: { node: PreviewTreeNode; colorClass: st
       <button
         type="button"
         onClick={() => setCollapsed((value) => !value)}
-        className="group flex w-full items-center gap-2 rounded-xl border border-base-content/8 bg-base-300/[0.18] px-3 py-2.5 text-left transition-all hover:border-base-content/12 hover:bg-base-300/[0.28]"
+        className="group flex w-full items-center gap-2 rounded-xl border border-base-content/8 bg-base-300/[0.18] px-3 py-2.5 text-left transition-[background-color,border-color] duration-150 hover:border-base-content/12 hover:bg-base-300/[0.28]"
       >
         <span className="shrink-0 text-base-content/40">
           {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
@@ -239,9 +304,9 @@ function ObjectRow({ node, colorClass }: { node: PreviewTreeNode; colorClass: st
             <div className="space-y-0.5">
               {activeChildren.map((child) =>
                 child.kind === 'mod' ? (
-                  <TreeLeaf key={child.id} node={child} depth={0} />
+                  <TreeLeaf key={child.id} node={child} depth={0} gameId={gameId} />
                 ) : (
-                  <TreeFolder key={child.id} node={child} depth={0} />
+                  <TreeFolder key={child.id} node={child} depth={0} gameId={gameId} />
                 ),
               )}
             </div>
@@ -250,7 +315,7 @@ function ObjectRow({ node, colorClass }: { node: PreviewTreeNode; colorClass: st
               {t('common:status.no_subfolders')}
             </div>
           ) : null}
-          {inactiveSection ? <InactiveSection node={inactiveSection} /> : null}
+          {inactiveSection ? <InactiveSection node={inactiveSection} gameId={gameId} /> : null}
         </div>
       )}
     </div>
@@ -259,6 +324,7 @@ function ObjectRow({ node, colorClass }: { node: PreviewTreeNode; colorClass: st
 
 export function CollectionTreeView({
   nodes,
+  gameId,
   colorClass = 'text-primary',
   emptyMessage,
 }: CollectionTreeViewProps) {
@@ -276,7 +342,12 @@ export function CollectionTreeView({
   return (
     <div className="space-y-1">
       {tree.map((objectNode) => (
-        <ObjectRow key={objectNode.id} node={objectNode} colorClass={colorClass} />
+        <ObjectRow
+          key={objectNode.id}
+          node={objectNode}
+          colorClass={colorClass}
+          gameId={gameId ?? ''}
+        />
       ))}
     </div>
   );

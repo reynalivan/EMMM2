@@ -1,11 +1,16 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ReactNode } from 'react';
 import GameSelector from './GameSelector';
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 
 // Mock useActiveGame hook
 const mockActiveGame = {
   id: 'uuid-gimi',
-  name: 'Genshin Impact',
+  name: 'GIMI',
   game_type: 'GIMI',
   path: 'C:\\Games\\GIMI',
   mods_path: 'C:\\Games\\GIMI\\Mods',
@@ -27,8 +32,8 @@ const mockGames = [
 
 vi.mock('@/entities/game', () => ({
   GAME_OPTIONS: [
-    { value: 'GIMI', label: 'Genshin Impact (GIMI)' },
-    { value: 'SRMI', label: 'Honkai: Star Rail (SRMI)' },
+    { value: 'GIMI', label: 'GIMI' },
+    { value: 'SRMI', label: 'SRMI' },
   ],
   useActiveGame: () => ({
     activeGame: mockActiveGame,
@@ -51,15 +56,16 @@ describe('GameSelector', () => {
     vi.clearAllMocks();
   });
 
-  it('renders correctly with active game name', () => {
+  it('combines the app identity with the active game label', () => {
     render(<GameSelector />);
-    const elements = screen.getAllByText('Genshin Impact');
+    expect(screen.getByText('EMMM')).toBeInTheDocument();
+    const elements = screen.getAllByText('GIMI');
     expect(elements.length).toBeGreaterThan(0);
   });
 
   it('renders all games in dropdown', () => {
     render(<GameSelector />);
-    const giElements = screen.getAllByText('Genshin Impact');
+    const giElements = screen.getAllByText('GIMI');
     expect(giElements.length).toBeGreaterThan(0);
     expect(screen.getByText('Star Rail')).toBeInTheDocument();
   });

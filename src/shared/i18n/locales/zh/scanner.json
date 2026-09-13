@@ -22,7 +22,7 @@
     "password_placeholder": "密钥",
     "rename_tooltip": "点击重命名",
     "duplicate_name": "文件夹名称重复",
-    "duplicate_name_action": "名称重复 — 将自动重命名或覆盖",
+    "duplicate_name_action": "名称重复。将自动重命名或覆盖",
     "password_required": "提取需要密码",
     "option_auto_rename": "名称冲突时自动重命名文件夹",
     "option_overwrite": "覆盖现有文件夹",
@@ -68,7 +68,7 @@
   },
   "optimizer": {
     "title": "存储优化器",
-    "description": "通过识别和删除冗余模组文件来回收磁盘空间。EMMM 会安全地分析您的库以查找完全相同的重复项。",
+    "description": "查找重复模组文件。",
     "start_button": "开始扫描",
     "stop_button": "停止扫描",
     "ignored_button": "已忽略 ({{count}})",

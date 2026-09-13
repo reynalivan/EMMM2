@@ -226,7 +226,7 @@ fn test_scan_xxmi_partial() {
     let results = scan_xxmi_root(&root);
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].game_type, GameType::GIMI);
-    assert_eq!(results[0].game_type.display_name(), "Genshin Impact");
+    assert_eq!(results[0].game_type.display_name(), "GIMI");
 
     let _ = fs::remove_dir_all(&root);
 }

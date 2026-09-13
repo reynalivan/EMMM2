@@ -4,9 +4,9 @@ use crate::modules::ingestion::application::import_batch::types::{
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::modules::matching::application::deep_matcher::models::result_summary::score_to_percentage;
-use crate::modules::matching::application::deep_matcher::{MasterDb, Reason, match_folder_phased};
+use crate::modules::matching::application::deep_matcher::{match_folder_phased, MasterDb, Reason};
 use crate::modules::workspace::application::scanner::core::walker::{
-    ModCandidate, scan_folder_content,
+    scan_folder_content, ModCandidate,
 };
 use std::path::Path;
 

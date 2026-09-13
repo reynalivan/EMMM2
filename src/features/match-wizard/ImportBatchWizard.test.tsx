@@ -1,9 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ImportBatch, ImportItem } from '../../shared/api/tauri/bindings.gen';
 import { ImportBatchWizard } from './ImportBatchWizard';
 
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => path }));
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: (options: { count: number; estimateSize: () => number }) => {
     const size = options.estimateSize();
@@ -344,6 +348,7 @@ describe('ImportBatchWizard', () => {
             matched_reason: null,
             matched_source: null,
             object_type: 'Other',
+            randomizer_mode: null,
             sub_category: null,
             status: 1,
             metadata: '{}',

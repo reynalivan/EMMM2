@@ -5,6 +5,7 @@ import { commands } from '../../../../shared/api/tauri/bindings';
 import { formatAppError } from '../../../../shared/lib/appError';
 import { ExternalLink, RefreshCcw } from 'lucide-react';
 import { useToastStore } from '@/shared/ui/toast';
+import { SettingsSection } from '../SettingsLayout';
 
 type LogLevel = 'ALL' | 'INFO' | 'WARN' | 'ERROR';
 
@@ -64,66 +65,58 @@ export default function LogsTab() {
   }, [level, lines]);
 
   return (
-    <div className="space-y-4">
-      <div className="card border border-base-300 bg-base-200 shadow-sm">
-        <div className="card-body">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="card-title text-lg">{t('settings:logs.title')}</h3>
-              <p className="text-sm text-base-content/70">{t('settings:logs.desc')}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                className="select select-bordered select-sm"
-                value={level}
-                onChange={(event) => setLevel(event.target.value as LogLevel)}
-                aria-label={t('settings:logs.filter_label')}
-              >
-                <option value="ALL">{t('settings:logs.levels.all')}</option>
-                <option value="INFO">{t('settings:logs.levels.info')}</option>
-                <option value="WARN">{t('settings:logs.levels.warn')}</option>
-                <option value="ERROR">{t('settings:logs.levels.error')}</option>
-              </select>
+    <SettingsSection
+      id="logs-heading"
+      title={t('settings:logs.title')}
+      description={t('settings:logs.desc')}
+      action={
+        <div className="flex items-center gap-2">
+          <select
+            className="select select-bordered select-sm"
+            value={level}
+            onChange={(event) => setLevel(event.target.value as LogLevel)}
+            aria-label={t('settings:logs.filter_label')}
+          >
+            <option value="ALL">{t('settings:logs.levels.all')}</option>
+            <option value="INFO">{t('settings:logs.levels.info')}</option>
+            <option value="WARN">{t('settings:logs.levels.warn')}</option>
+            <option value="ERROR">{t('settings:logs.levels.error')}</option>
+          </select>
 
-              <button
-                type="button"
-                className="btn btn-sm btn-neutral gap-2"
-                onClick={() => void loadLogs()}
-                disabled={isLoading}
-              >
-                <RefreshCcw size={14} className={isLoading ? 'animate-spin' : ''} />
-                {t('settings:logs.refresh')}
-              </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-neutral gap-2"
+            onClick={() => void loadLogs()}
+            disabled={isLoading}
+          >
+            <RefreshCcw size={14} className={isLoading ? 'animate-spin' : ''} />
+            {t('settings:logs.refresh')}
+          </button>
 
-              <button
-                type="button"
-                className="btn btn-sm btn-outline gap-2"
-                onClick={() => void openLogFolder()}
-              >
-                <ExternalLink size={14} />
-                {t('settings:logs.open_folder')}
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-lg border border-base-300 bg-base-100 p-3">
-            <div className="max-h-112 overflow-auto font-mono text-xs leading-5">
-              {visibleLines.length === 0 ? (
-                <p className="text-base-content/60">{t('settings:logs.empty')}</p>
-              ) : (
-                visibleLines.map((line, index) => (
-                  <div
-                    key={`${index}-${line.slice(0, 16)}`}
-                    className="whitespace-pre-wrap break-all"
-                  >
-                    {line}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline gap-2"
+            onClick={() => void openLogFolder()}
+          >
+            <ExternalLink size={14} />
+            {t('settings:logs.open_folder')}
+          </button>
+        </div>
+      }
+    >
+      <div className="mt-2 border border-base-300 bg-base-200/20 p-3">
+        <div className="max-h-112 overflow-auto font-mono text-xs leading-5">
+          {visibleLines.length === 0 ? (
+            <p className="text-base-content/60">{t('settings:logs.empty')}</p>
+          ) : (
+            visibleLines.map((line, index) => (
+              <div key={`${index}-${line.slice(0, 16)}`} className="whitespace-pre-wrap break-all">
+                {line}
+              </div>
+            ))
+          )}
         </div>
       </div>
-    </div>
+    </SettingsSection>
   );
 }

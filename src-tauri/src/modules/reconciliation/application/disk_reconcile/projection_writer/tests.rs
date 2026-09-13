@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
-use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_disk_projection;
 use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcilePathKind, DiskReconcilePathUpdate,
 };
@@ -31,8 +30,16 @@ async fn run_writer(
     changed_roots: &[String],
     force_full: bool,
 ) -> WriterRun {
-    let projection = collect_disk_projection(mods_path, changed_roots, false)
-        .expect("disk projection should be collected");
+    let size_scan = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskSizeScan::full();
+    let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_scoped_disk_discovery_with_progress(
+        mods_path,
+        changed_roots,
+        false,
+        Some(&size_scan),
+        None,
+    )
+    .expect("disk projection should be collected")
+    .projection;
     let mut path_updates = Vec::new();
     let mut impact = CollectionReferenceImpact::default();
     let mut change_summary = ChangeSummaryBuilder::default();
@@ -175,20 +182,55 @@ async fn inserts_new_objects_and_mods_discovered_on_disk() {
         .join("Blue Dress")
         .to_string_lossy()
         .to_string();
-    let mod_row: (String, String, i64, String) =
-        sqlx::query_as("SELECT id, folder_path, status, safety_source FROM mods WHERE game_id = ?")
-            .bind("game-1")
-            .fetch_one(&ctx.pool)
-            .await
-            .expect("mod row");
+    let mod_row: (String, String, i64, String, i64) = sqlx::query_as(
+        "SELECT id, folder_path, status, safety_source, size_bytes FROM mods WHERE game_id = ?",
+    )
+    .bind("game-1")
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("mod row");
     assert_eq!(mod_row.0, generate_stable_id("game-1", &expected_rel));
     assert_eq!(mod_row.1, expected_rel);
     assert_eq!(mod_row.2, ItemStatus::Enabled as i64);
     assert_eq!(mod_row.3, SAFETY_SOURCE_UNKNOWN);
+    assert_eq!(
+        mod_row.4,
+        std::fs::metadata(mods_path.join("Alice").join("Blue Dress").join("mod.ini"))
+            .expect("mod ini metadata")
+            .len() as i64
+            + std::fs::metadata(mods_path.join("Alice").join("Blue Dress").join("mesh.buf"))
+                .expect("mesh metadata")
+                .len() as i64
+    );
 
     assert_eq!(run.change_summary.object_changes.added, 1);
     assert_eq!(run.change_summary.mod_changes.added, 1);
     assert!(run.change_summary.has_user_visible_changes);
+}
+
+#[tokio::test]
+async fn full_reconcile_updates_an_existing_mod_storage_size() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    let terminal = create_terminal_mod(&mods_path, "Alice", "Blue Dress");
+    seed_game(&ctx.pool, "game-1", &mods_path).await;
+    run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
+    let initial_size: i64 =
+        sqlx::query_scalar("SELECT size_bytes FROM mods WHERE game_id = 'game-1'")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("initial size");
+
+    std::fs::write(terminal.join("mesh.buf"), [3_u8; 64]).expect("updated mesh");
+    run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
+
+    let refreshed_size: i64 =
+        sqlx::query_scalar("SELECT size_bytes FROM mods WHERE game_id = 'game-1'")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("refreshed size");
+    assert_eq!(refreshed_size, initial_size + 60);
 }
 
 #[tokio::test]
@@ -255,7 +297,7 @@ async fn full_reconcile_repairs_an_object_name_leaked_by_an_earlier_stage() {
 }
 
 #[tokio::test]
-async fn full_reconcile_preserves_an_existing_mod_category_with_the_same_owner() {
+async fn full_reconcile_repairs_a_stale_mod_category_from_its_owner() {
     let ctx = init_test_db().await;
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_path = temp.path().join("Mods");
@@ -265,7 +307,7 @@ async fn full_reconcile_preserves_an_existing_mod_category_with_the_same_owner()
     sqlx::query("UPDATE mods SET object_type = 'Outfit' WHERE game_id = 'game-1'")
         .execute(&ctx.pool)
         .await
-        .expect("custom category should be stored");
+        .expect("stale category should be stored");
 
     run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
 
@@ -274,7 +316,7 @@ async fn full_reconcile_preserves_an_existing_mod_category_with_the_same_owner()
             .fetch_one(&ctx.pool)
             .await
             .expect("category should load");
-    assert_eq!(category, "Outfit");
+    assert_eq!(category, "Other");
 }
 
 #[tokio::test]

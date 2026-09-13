@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
-import { useSettings } from '@/entities/settings';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { useCustomTheme, useSettings } from '@/entities/settings';
 import { type CustomTheme } from '../../../../shared/api/tauri/bindings';
-import { useCustomTheme } from '../../hooks/useCustomThemes';
 
 const BUILTIN_THEME_IDS = new Set(['onyx', 'light', 'system']);
 
@@ -78,6 +78,35 @@ function generateThemeCss(theme: CustomTheme): string {
     css += `  --glass-bg: color-mix(in srgb, var(--color-base-100) 40%, transparent);\n`;
   }
 
+  // QuickLiquid consumes a comma-separated RGB triplet; role-level tints are
+  // resolved by the shared wrapper at render time.
+  const baseTint = hexToRgb(config.colors?.['base-100']);
+  if (baseTint) {
+    css += `  --liquid-tint-rgb: ${baseTint};\n`;
+  }
+
+  const { background } = config;
+  css += `  --theme-shell-dim-opacity: ${background.dim_opacity};\n`;
+  if (background.kind === 'image') {
+    css += `  --theme-shell-background-image: url("${convertFileSrc(background.value)}");\n`;
+    css += `  --theme-shell-background-color: var(--color-base-100);\n`;
+  } else if (background.kind === 'gradient') {
+    css += `  --theme-shell-background-image: ${background.value};\n`;
+    css += `  --theme-shell-background-color: var(--color-base-100);\n`;
+  } else {
+    css += `  --theme-shell-background-image: none;\n`;
+    css += `  --theme-shell-background-color: ${background.value};\n`;
+  }
+
   css += `}\n`;
   return css;
+}
+
+function hexToRgb(value: string | undefined): string | null {
+  if (!value) return null;
+  const hex = value.trim().replace(/^#/, '');
+  if (!/^[\da-f]{3}([\da-f]{3})?$/i.test(hex)) return null;
+
+  const normalized = hex.length === 3 ? [...hex].map((channel) => channel + channel).join('') : hex;
+  return `${Number.parseInt(normalized.slice(0, 2), 16)}, ${Number.parseInt(normalized.slice(2, 4), 16)}, ${Number.parseInt(normalized.slice(4, 6), 16)}`;
 }

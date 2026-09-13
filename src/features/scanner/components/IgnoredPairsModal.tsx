@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useIgnoredPairs, useRemoveIgnoredPair } from '../hooks/useDedup';
 import { X, RefreshCw } from 'lucide-react';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 interface IgnoredPairsModalProps {
   gameId: string;
@@ -12,6 +13,8 @@ export const IgnoredPairsModal: React.FC<IgnoredPairsModalProps> = ({ gameId, on
   const { t, i18n } = useTranslation(['scanner']);
   const { data: ignoredPairs, isLoading } = useIgnoredPairs(gameId);
   const { mutate: recoverPair, isPending: isRecovering } = useRemoveIgnoredPair();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useDialogSync(dialogRef, true);
 
   const formatDate = (dateStr: string) => {
     try {
@@ -33,11 +36,16 @@ export const IgnoredPairsModal: React.FC<IgnoredPairsModalProps> = ({ gameId, on
   };
 
   return (
-    <div className="modal modal-open">
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      aria-labelledby="ignored-pairs-title"
+      onClose={onClose}
+    >
       <div className="modal-box max-w-4xl bg-base-300 border border-base-content/10 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-xl font-bold flex items-center gap-2">
+            <h3 id="ignored-pairs-title" className="text-xl font-bold flex items-center gap-2">
               <span className="text-primary">{t('scanner:ignored_pairs.title_primary')}</span>{' '}
               {t('scanner:ignored_pairs.title', { primary: '' }).trim()}
             </h3>
@@ -60,7 +68,7 @@ export const IgnoredPairsModal: React.FC<IgnoredPairsModalProps> = ({ gameId, on
             </div>
           ) : !ignoredPairs || ignoredPairs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center bg-base-200/50 rounded-xl border border-dashed border-base-content/20">
-              <p className="text-lg font-medium opacity-40">
+              <p className="text-lg font-medium text-muted">
                 {t('scanner:ignored_pairs.no_results')}
               </p>
               <p className="text-sm opacity-30 mt-1">
@@ -120,7 +128,9 @@ export const IgnoredPairsModal: React.FC<IgnoredPairsModalProps> = ({ gameId, on
           </button>
         </div>
       </div>
-      <div className="modal-backdrop bg-overlay-mask backdrop-blur-sm" onClick={onClose}></div>
-    </div>
+      <form method="dialog" className="modal-backdrop bg-overlay-mask backdrop-blur-sm">
+        <button onClick={onClose}>{t('scanner:ignored_pairs.action_close')}</button>
+      </form>
+    </dialog>
   );
 };

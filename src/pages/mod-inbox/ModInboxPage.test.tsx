@@ -6,6 +6,7 @@ import { openImportBatchWizard } from '@/features/import-batches';
 import { modInboxCommands } from './api';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import ModInboxPage from './ModInboxPage';
+import { StrictMode, type ReactNode } from 'react';
 import type { AppSettings } from '../../shared/api/tauri/bindings.gen';
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
@@ -56,6 +57,10 @@ vi.mock('../../shared/api/tauri/bindings', () => ({
 
 vi.mock('@/features/import-batches/launcher', () => ({
   openImportBatchWizard: vi.fn(),
+}));
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 const readySnapshot = {
@@ -206,12 +211,18 @@ describe('ModInboxPage', () => {
     });
   });
 
-  it('selects every ready entry and opens the created batch in the shared wizard', async () => {
+  it('selects every ready entry by default and opens the created batch in the shared wizard', async () => {
     vi.mocked(modInboxCommands.createModInboxBatch).mockResolvedValue({ id: 'batch-1' } as never);
-    render(<ModInboxPage />);
+    render(
+      <StrictMode>
+        <ModInboxPage />
+      </StrictMode>,
+    );
 
     await screen.findByText('Raiden Pack');
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all ready entries' }));
+    expect(screen.getByRole('checkbox', { name: 'Select all ready entries' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select Raiden Pack' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select Nahida.zip' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Review selected (2)' }));
 
     await waitFor(() => {
@@ -223,6 +234,38 @@ describe('ModInboxPage', () => {
         kind: 'existing',
         batchId: 'batch-1',
       });
+    });
+  });
+
+  it('preserves ready deselection and drops entries that become pending after a watcher refresh', async () => {
+    let changeHandler: (() => void) | undefined;
+    const refreshedSnapshot = {
+      ...readySnapshot,
+      readyEntries: [
+        { ...readySnapshot.readyEntries[0], pendingBatchId: 'batch-1' },
+        readySnapshot.readyEntries[1],
+      ],
+    };
+    vi.mocked(modInboxCommands.getModInbox)
+      .mockResolvedValueOnce(readySnapshot)
+      .mockResolvedValueOnce(refreshedSnapshot);
+    vi.mocked(listen).mockImplementation(async (_event, handler) => {
+      changeHandler = () => handler({ payload: {} } as never);
+      return () => undefined;
+    });
+
+    render(<ModInboxPage />);
+
+    const nahidaSelection = await screen.findByRole('checkbox', { name: 'Select Nahida.zip' });
+    fireEvent.click(nahidaSelection);
+    expect(nahidaSelection).not.toBeChecked();
+
+    changeHandler?.();
+
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: 'Select Raiden Pack' })).toBeDisabled();
+      expect(screen.getByRole('checkbox', { name: 'Select Nahida.zip' })).not.toBeChecked();
+      expect(screen.getByRole('button', { name: 'Review selected (0)' })).toBeDisabled();
     });
   });
 
@@ -347,6 +390,10 @@ describe('ModInboxPage', () => {
     render(<ModInboxPage />);
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Processed' }));
+    expect(
+      screen.getByRole('checkbox', { name: 'Select all processed sources' }),
+    ).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select Raiden Pack' })).not.toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select all processed sources' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete selected (1)' }));
 

@@ -1,0 +1,14 @@
+{
+  "title": "EMMM Observability",
+  "uid": "emmm-observability",
+  "schemaVersion": 41,
+  "tags": ["emmm", "desktop", "privacy-preserving"],
+  "templating": {"list": [{"name": "release", "type": "query", "datasource": {"type": "prometheus", "uid": "__PROMETHEUS_DATASOURCE_UID__"}, "query": "label_values(emmm_operation_total, release)", "includeAll": true, "allValue": ".*"}]},
+  "panels": [
+    {"id": 1, "title": "Operation error rate (24h)", "type": "stat", "datasource": {"type": "prometheus", "uid": "__PROMETHEUS_DATASOURCE_UID__"}, "targets": [{"expr": "sum(increase(emmm_operation_total{release=~\"$release\",outcome=\"failed\"}[24h])) / clamp_min(sum(increase(emmm_operation_total{release=~\"$release\"}[24h])), 1)", "refId": "A"}]},
+    {"id": 2, "title": "Onboarding success rate (24h)", "type": "stat", "datasource": {"type": "prometheus", "uid": "__PROMETHEUS_DATASOURCE_UID__"}, "targets": [{"expr": "sum(increase(emmm_operation_total{release=~\"$release\",operation=\"onboarding\",outcome=\"success\"}[24h])) / clamp_min(sum(increase(emmm_operation_total{release=~\"$release\",operation=\"onboarding\"}[24h])), 1)", "refId": "A"}]},
+    {"id": 3, "title": "Auto-match outcomes (24h)", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "__PROMETHEUS_DATASOURCE_UID__"}, "targets": [{"expr": "sum by (outcome) (increase(emmm_operation_total{release=~\"$release\",operation=\"auto_match\"}[24h]))", "legendFormat": "{{outcome}}", "refId": "A"}]},
+    {"id": 4, "title": "Watcher and reconcile failures (24h)", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "__PROMETHEUS_DATASOURCE_UID__"}, "targets": [{"expr": "sum by (operation, error_code) (increase(emmm_operation_total{release=~\"$release\",operation=~\"watcher|reconcile\",outcome=\"failed\"}[24h]))", "legendFormat": "{{operation}} {{error_code}}", "refId": "A"}]},
+    {"id": 5, "title": "Mutation outcomes (24h)", "type": "barchart", "datasource": {"type": "prometheus", "uid": "__PROMETHEUS_DATASOURCE_UID__"}, "targets": [{"expr": "sum by (operation, outcome) (increase(emmm_operation_total{release=~\"$release\",operation=~\"toggle|bulk_action|collection_apply|restore\"}[24h]))", "legendFormat": "{{operation}} {{outcome}}", "refId": "A"}]}
+  ]
+}

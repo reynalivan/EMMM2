@@ -9,7 +9,7 @@ import WorkspaceSourceUnavailableDialog from './WorkspaceSourceUnavailableDialog
 const fixtures = vi.hoisted(() => ({
   activeGame: {
     id: 'game-1',
-    name: 'Genshin Impact',
+    name: 'GIMI',
     game_type: 0,
     mod_path: 'E:/Missing/Mods',
     game_exe: 'E:/GIMI',
@@ -200,14 +200,14 @@ describe('WorkspaceSourceUnavailableDialog', () => {
     });
     expect(confirmButton).toBeDisabled();
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Genshin Impact' } });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'GIMI' } });
     expect(confirmButton).toBeEnabled();
     fireEvent.click(confirmButton);
 
     await waitFor(() =>
       expect(commands.applyGameModsDirectory).toHaveBeenCalledWith(
         expect.objectContaining({
-          different_confirmation_game_name: 'Genshin Impact',
+          different_confirmation_game_name: 'GIMI',
         }),
       ),
     );

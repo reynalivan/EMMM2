@@ -2,7 +2,10 @@ import { useMemo } from 'react';
 import { useActiveConflicts } from './useFolderMutations';
 import { useAppStore } from '@/app/store';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import type { FolderNameConflictGroup } from '@/shared/api/tauri/bindings';
 import { normalizeWorkspacePath } from '@/features/workspace-runtime';
+
+const EMPTY_FOLDER_CONFLICTS: FolderNameConflictGroup[] = [];
 
 interface UseFolderGridViewModelInput {
   sortedFolders: WorkspaceExplorerNode[];
@@ -25,7 +28,9 @@ export function useFolderGridViewModel({
   const isIgnoreManagementOpen = useAppStore((state) => state.isIgnoreManagementOpen);
   const setIsIgnoreManagementOpen = useAppStore((state) => state.setIgnoreManagementOpen);
   const folderNameConflicts = useAppStore((state) =>
-    activeGameId ? (state.folderConflictsByGame[activeGameId] ?? []) : [],
+    activeGameId
+      ? (state.folderConflictsByGame[activeGameId] ?? EMPTY_FOLDER_CONFLICTS)
+      : EMPTY_FOLDER_CONFLICTS,
   );
   const hasBlockingDiskReport = useAppStore((state) =>
     activeGameId ? (state.renameConfirmationsByGame[activeGameId]?.length ?? 0) > 0 : false,

@@ -27,7 +27,7 @@
     "preset_on": "预设 开启",
     "preset_off": "预设 关闭",
     "keybinds_instantly": "游戏中随手切换",
-    "press_help": "游戏窗口聚焦时可用 — 无需切出",
+    "press_help": "游戏窗口聚焦时可用。无需切出",
     "action_next_preset": "下一个预设",
     "action_toggle_overlay": "切换悬浮层",
     "action_next_variant": "下一个变体"

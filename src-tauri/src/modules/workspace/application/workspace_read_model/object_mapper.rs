@@ -115,6 +115,7 @@ fn runtime_root_object(folder: &ModFolder) -> ObjectSummary {
         matched_reason: None,
         matched_source: None,
         object_type: "Other".to_string(),
+        randomizer_mode: None,
         sub_category: None,
         status: if folder.is_enabled {
             ItemStatus::Enabled

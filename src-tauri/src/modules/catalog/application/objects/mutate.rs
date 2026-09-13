@@ -1,8 +1,143 @@
-use tauri::Manager;
+use futures_util::StreamExt;
 use uuid::Uuid;
 
-use crate::modules::catalog::domain::objects::{CreateObjectInput, UpdateObjectInput};
+use crate::modules::catalog::domain::objects::{
+    CreateObjectInput, CreateObjectThumbnail, UpdateObjectInput,
+};
 use crate::shared::errors::AppError;
+
+const REMOTE_THUMBNAIL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+fn invalid_remote_thumbnail_url(message: impl Into<String>) -> AppError {
+    AppError::Validation(format!("Invalid thumbnail URL: {}", message.into()))
+}
+
+fn is_disallowed_thumbnail_address(address: std::net::IpAddr) -> bool {
+    match address {
+        std::net::IpAddr::V4(ip) => {
+            ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
+        }
+        std::net::IpAddr::V6(ip) => ip.is_loopback() || ip.is_unspecified() || ip.is_unique_local(),
+    }
+}
+
+fn validate_remote_thumbnail_url(value: &str) -> Result<reqwest::Url, AppError> {
+    let url = reqwest::Url::parse(value.trim())
+        .map_err(|_| invalid_remote_thumbnail_url("enter a valid HTTP(S) URL"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(invalid_remote_thumbnail_url(
+            "only HTTP(S) URLs are allowed",
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(invalid_remote_thumbnail_url("credentials are not allowed"));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| invalid_remote_thumbnail_url("a host is required"))?;
+    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
+        return Err(invalid_remote_thumbnail_url("local hosts are not allowed"));
+    }
+    let normalized_host = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(address) = normalized_host.parse::<std::net::IpAddr>() {
+        if is_disallowed_thumbnail_address(address) {
+            return Err(invalid_remote_thumbnail_url(
+                "local network addresses are not allowed",
+            ));
+        }
+    }
+    Ok(url)
+}
+
+async fn ensure_remote_thumbnail_host_is_public(url: &reqwest::Url) -> Result<(), AppError> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| invalid_remote_thumbnail_url("a host is required"))?;
+    let normalized_host = host.trim_start_matches('[').trim_end_matches(']');
+    if normalized_host.parse::<std::net::IpAddr>().is_ok() {
+        return Ok(());
+    }
+    let port = url.port_or_known_default().unwrap_or(443);
+    let mut addresses = tokio::net::lookup_host((normalized_host, port))
+        .await
+        .map_err(|error| invalid_remote_thumbnail_url(format!("host lookup failed: {error}")))?;
+    if addresses.any(|address| is_disallowed_thumbnail_address(address.ip())) {
+        return Err(invalid_remote_thumbnail_url(
+            "local network addresses are not allowed",
+        ));
+    }
+    Ok(())
+}
+
+async fn fetch_remote_thumbnail(url: &str) -> Result<Vec<u8>, AppError> {
+    let url = validate_remote_thumbnail_url(url)?;
+    ensure_remote_thumbnail_host_is_public(&url).await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(REMOTE_THUMBNAIL_TIMEOUT)
+        .build()
+        .map_err(|error| AppError::Io(format!("Failed to prepare thumbnail download: {error}")))?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| AppError::Io(format!("Failed to download thumbnail: {error}")))?;
+    if !response.status().is_success() {
+        return Err(AppError::Validation(format!(
+            "Thumbnail URL returned HTTP {}",
+            response.status()
+        )));
+    }
+
+    if response
+        .content_length()
+        .is_some_and(|length| length > 10 * 1024 * 1024)
+    {
+        return Err(AppError::Validation(
+            "Thumbnail image is larger than 10MB".to_string(),
+        ));
+    }
+
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .map_err(|error| AppError::Io(format!("Failed to download thumbnail: {error}")))?;
+        if bytes.len().saturating_add(chunk.len()) > 10 * 1024 * 1024 {
+            return Err(AppError::Validation(
+                "Thumbnail image is larger than 10MB".to_string(),
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+async fn materialize_thumbnail_source(source: &CreateObjectThumbnail) -> Result<Vec<u8>, AppError> {
+    let bytes = match source {
+        CreateObjectThumbnail::File { source_path } => {
+            std::fs::read(source_path).map_err(|error| {
+                AppError::Io(format!(
+                    "Failed to read thumbnail file '{source_path}': {error}"
+                ))
+            })?
+        }
+        CreateObjectThumbnail::Clipboard { image_data } => image_data.clone(),
+        CreateObjectThumbnail::Url { url } => fetch_remote_thumbnail(url).await?,
+    };
+    crate::modules::library::application::mods::preview_ops::normalize_thumbnail_png(&bytes)
+}
+
+fn normalize_object_category(category: &str) -> Result<&str, AppError> {
+    let category = category.trim();
+    if matches!(category, "Character" | "Weapon" | "UI" | "Other") {
+        Ok(category)
+    } else {
+        Err(AppError::Validation(
+            "Category must be Character, Weapon, UI, or Other".to_string(),
+        ))
+    }
+}
 
 pub struct PreparedObjectCreate {
     stage: std::path::PathBuf,
@@ -41,6 +176,7 @@ pub async fn prepare_object_create(
     pool: &sqlx::SqlitePool,
     input: &CreateObjectInput,
 ) -> Result<PreparedObjectCreate, AppError> {
+    normalize_object_category(&input.object_type)?;
     let folder_path = input.folder_path.as_deref().unwrap_or(&input.name);
     validate_relative_object_folder(folder_path)?;
     let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(
@@ -131,6 +267,7 @@ pub async fn create_object_cmd_inner(
     app_handle: Option<&tauri::AppHandle>,
     input: CreateObjectInput,
 ) -> Result<String, AppError> {
+    let object_type = normalize_object_category(&input.object_type)?;
     let id = Uuid::new_v4().to_string();
     let metadata_str = input
         .metadata
@@ -142,7 +279,7 @@ pub async fn create_object_cmd_inner(
     validate_relative_object_folder(&folder_path)?;
 
     let mut thumbnail_abs_path: Option<String> = None;
-    let mut pending_thumbnail_copy = None;
+    let mut pending_thumbnail = None;
     let mut previous_thumbnail = None;
 
     let mods_path = crate::modules::games::adapters::sqlite::game::get_configured_mods_path(
@@ -166,15 +303,30 @@ pub async fn create_object_cmd_inner(
         );
     }
 
-    if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
-        if let Ok(res_dir) = app.path().resource_dir() {
-            let source_thumb: std::path::PathBuf = res_dir.join("databases").join(thumb);
-            if source_thumb.exists() {
+    if let Some(source) = input.thumbnail.as_ref() {
+        let destination = target_dir.join("preview_custom.png");
+        thumbnail_abs_path = Some(destination.to_string_lossy().to_string());
+        pending_thumbnail = Some((destination, materialize_thumbnail_source(source).await?));
+    } else if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
+        use tauri::Manager;
+        if let Ok(app_data_dir) = app.path().app_data_dir() {
+            let asset_root = app_data_dir.join("asset-pack");
+            let source_thumb = std::path::PathBuf::from(thumb);
+            if source_thumb.is_absolute()
+                && source_thumb.is_file()
+                && source_thumb.starts_with(&asset_root)
+            {
                 let ext = source_thumb.extension().unwrap_or_default();
                 let dest_thumb = target_dir.join(format!("preview.{}", ext.to_string_lossy()));
 
+                let thumbnail_bytes = std::fs::read(&source_thumb).map_err(|error| {
+                    AppError::Io(format!(
+                        "Failed to read object thumbnail '{}': {error}",
+                        source_thumb.display()
+                    ))
+                })?;
                 thumbnail_abs_path = Some(dest_thumb.to_string_lossy().to_string());
-                pending_thumbnail_copy = Some((source_thumb, dest_thumb));
+                pending_thumbnail = Some((dest_thumb, thumbnail_bytes));
             }
         }
     }
@@ -194,7 +346,7 @@ pub async fn create_object_cmd_inner(
         )));
     }
 
-    if let Some((src, dest)) = &pending_thumbnail_copy {
+    if let Some((dest, thumbnail_bytes)) = &pending_thumbnail {
         previous_thumbnail = Some(match std::fs::read(dest) {
             Ok(bytes) => Some(bytes),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -203,18 +355,11 @@ pub async fn create_object_cmd_inner(
                 return Err(error.into());
             }
         });
-        let thumbnail_bytes = std::fs::read(src).map_err(|error| {
-            cleanup_created_object_folder(&target_dir, created_folder);
-            AppError::Io(format!(
-                "Failed to read object thumbnail '{}': {error}",
-                src.display()
-            ))
-        })?;
         crate::platform::fs::atomic_file::atomic_write(dest, &thumbnail_bytes).map_err(
             |error| {
                 cleanup_created_object_folder(&target_dir, created_folder);
                 AppError::Io(format!(
-                    "Failed to copy object thumbnail to '{}': {error}",
+                    "Failed to save object thumbnail to '{}': {error}",
                     dest.display()
                 ))
             },
@@ -228,7 +373,7 @@ pub async fn create_object_cmd_inner(
         &input.game_id,
         &input.name,
         &folder_path,
-        &input.object_type,
+        object_type,
         input.sub_category.as_ref(),
         input.status,
         &metadata_str,
@@ -251,7 +396,7 @@ pub async fn create_object_cmd_inner(
             Ok(id)
         }
         Err(e) => {
-            if let Some((_, destination)) = pending_thumbnail_copy.as_ref() {
+            if let Some((destination, _)) = pending_thumbnail.as_ref() {
                 let rollback = match previous_thumbnail.as_ref() {
                     Some(Some(bytes)) => {
                         crate::platform::fs::atomic_file::atomic_write(destination, bytes)
@@ -367,6 +512,30 @@ fn cleanup_created_object_folder(path: &std::path::Path, created_folder: bool) {
     }
 }
 
+#[cfg(test)]
+mod thumbnail_url_tests {
+    use super::validate_remote_thumbnail_url;
+
+    #[test]
+    fn remote_thumbnail_urls_reject_unsafe_origins() {
+        for url in [
+            "file:///C:/thumbnail.png",
+            "http://localhost/thumbnail.png",
+            "http://127.0.0.1/thumbnail.png",
+            "http://192.168.1.5/thumbnail.png",
+            "http://[::1]/thumbnail.png",
+        ] {
+            assert!(validate_remote_thumbnail_url(url).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn remote_thumbnail_urls_allow_public_http_and_https() {
+        assert!(validate_remote_thumbnail_url("https://example.com/thumbnail.png").is_ok());
+        assert!(validate_remote_thumbnail_url("http://example.com/thumbnail.png").is_ok());
+    }
+}
+
 /// Toggle the pinned state of an object.
 pub async fn toggle_pin_object(
     pool: &sqlx::SqlitePool,
@@ -382,12 +551,30 @@ pub async fn update_object(
     id: &str,
     updates: &UpdateObjectInput,
 ) -> Result<(), AppError> {
+    let mut normalized_updates = updates.clone();
+    if let Some(category) = updates.object_type.as_deref() {
+        normalized_updates.object_type = Some(normalize_object_category(category)?.to_string());
+    }
     let mut tx = pool.begin().await?;
     let object_game_id =
         crate::modules::catalog::adapters::sqlite::object::get_game_id_conn(&mut tx, id).await?;
     let update_result = async {
-        crate::modules::catalog::adapters::sqlite::object::update_object(&mut *tx, id, updates).await?;
+        crate::modules::catalog::adapters::sqlite::object::update_object(
+            &mut *tx,
+            id,
+            &normalized_updates,
+        )
+        .await?;
         if let Some(game_id) = object_game_id.as_deref() {
+            if let Some(category) = normalized_updates.object_type.as_deref() {
+                crate::modules::library::adapters::sqlite::mods::set_object_type_for_object(
+                    &mut *tx,
+                    game_id,
+                    id,
+                    category,
+                )
+                .await?;
+            }
             crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
                 &mut tx,
                 game_id,
@@ -414,10 +601,7 @@ pub async fn set_object_and_mods_category(
     object_id: &str,
     category: &str,
 ) -> Result<usize, AppError> {
-    let category = category.trim();
-    if category.is_empty() {
-        return Err(AppError::Validation("Category is required".to_string()));
-    }
+    let category = normalize_object_category(category)?;
 
     let mut tx = pool.begin().await?;
     let object_updated =

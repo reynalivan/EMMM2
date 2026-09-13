@@ -6,19 +6,23 @@
   "tabs": {
     "general": "General",
     "games": "Games",
-    "browser": "Browser & Import",
-    "privacy": "Privacy & Safety",
-    "hotkeys": "Hotkeys & KeyViewer",
-    "ai": "AI Configuration",
+    "catalog": "Catalog Assets",
+    "browser": "Browser",
+    "privacy": "Safety",
+    "hotkeys": "Hotkeys",
+    "ai": "AI",
     "maintenance": "Maintenance",
-    "updates": "Updates",
+    "integrations": "Integrations",
     "logs": "Logs"
   },
   "general": {
     "appearance": {
       "title": "Appearance",
       "import": "Import Theme",
-      "theme_select": "Theme Selection",
+      "theme_select": "Theme",
+      "download_template": "Download template",
+      "import_theme": "Import theme",
+      "download_template_hint": "JSON templates include liquid and background settings.",
       "groups": {
         "builtin": "Built-in",
         "custom": "Custom Themes"
@@ -47,7 +51,7 @@
     },
     "language": {
       "title": "Language",
-      "label": "Select Language",
+      "label": "Interface language",
       "options": {
         "en": "English (US)",
         "id": "Bahasa Indonesia",
@@ -55,19 +59,74 @@
       }
     },
     "behavior": {
-      "title": "App Behavior",
-      "auto_close": "Auto-Close on Launch",
-      "auto_close_desc": "Automatically close EMMM completely when you successfully launch a game."
+      "title": "Behavior",
+      "auto_close": "Close after launch",
+      "auto_close_desc": "Close EMMM after a game launches."
     },
     "system": {
-      "title": "System Information",
+      "title": "System",
       "app_version": "App Version",
       "tauri_version": "Tauri Version",
       "database": "Database",
       "engine": "Engine",
       "db_val": "SQLite (SQLx)",
       "engine_val": "Vite + React"
+    },
+    "catalog_assets": {
+      "title": "Catalog assets",
+      "not_installed": "No catalog pack installed.",
+      "installed": "{{name}} {{version}} · {{entries}} catalog entries",
+      "invalid": "The installed catalog pack could not be validated.",
+      "status_unavailable": "Catalog asset status is unavailable.",
+      "open_folder": "Open folder",
+      "refresh": "Refresh catalog",
+      "updates_title": "Signed catalog updates",
+      "updates_desc": "Checked weekly from the public release channel.",
+      "auto_install": "Auto-install",
+      "check_update": "Check now",
+      "install_update": "Install {{version}}",
+      "update_available": "Version {{version}} is ready to install.",
+      "up_to_date": "Catalog is up to date.",
+      "update_idle": "Updates are verified before installation.",
+      "update_check_failed": "Could not check for catalog updates. Your installed catalog is unchanged.",
+      "update_install_failed": "Could not install the signed catalog update. Your installed catalog is unchanged.",
+      "auto_update_failed": "Could not save catalog update preference: {{error}}"
+    },
+    "diagnostics": {
+      "title": "Anonymous diagnostics",
+      "description": "Share anonymous reliability counts. Personal and game data are never sent.",
+      "toggle": "Share diagnostics"
+    },
+    "trust": {
+      "title": "Trust and privacy",
+      "close": "Close",
+      "close_dialog": "Close dialog",
+      "privacy": {
+        "card_title": "Privacy Policy",
+        "card_desc": "Local data, browser sessions, and optional diagnostics.",
+        "title": "Privacy Policy",
+        "section_one": "Data stored on this device",
+        "body_one": "EMMM stores settings, local mod metadata, Discover bookmarks and history, restored tab addresses, and download records on this device. This data remains local unless you enable an optional sharing feature.",
+        "section_two": "Browser data",
+        "body_two": "Discover uses a separate browser profile for website sessions. EMMM does not read or transmit website passwords, cookies, OAuth tokens, or form contents.",
+        "section_three": "Optional diagnostics",
+        "body_three": "Anonymous diagnostics are optional. When enabled, EMMM sends its release, limited operation and outcome codes, aggregate durations, and short diagnostic codes to Grafana Cloud. Paths, mod or game names, URLs, messages, website data, and user identifiers are excluded. Crash reports require confirmation. Disabling diagnostics clears the local queue."
+      },
+      "terms": {
+        "card_title": "Terms of Use",
+        "card_desc": "Responsibilities for games, mods, and external tools.",
+        "title": "Terms of Use",
+        "section_one": "Independent software",
+        "body_one": "EMMM is an independent third-party utility. It is not affiliated with, endorsed by, or sponsored by any game developer, publisher, or platform.",
+        "section_two": "Permitted use",
+        "body_two": "Use EMMM only with games, mods, accounts, and content you are permitted to use. You are responsible for following the terms and rules of each game, platform, website, and third-party tool.",
+        "section_three": "External content",
+        "body_three": "External downloads and tools operate outside EMMM. Review files and keep backups before making changes. EMMM does not endorse or guarantee third-party content."
+      }
     }
+  },
+  "diagnostics": {
+    "save_failed": "Could not save diagnostics preference: {{error}}"
   },
   "toast": {
     "save_success": "Settings saved successfully.",
@@ -79,10 +138,10 @@
     "lang_failed": "Failed to update language: {{error}}"
   },
   "games": {
-    "title": "Games Library",
-    "desc": "Manage your install locations and game configurations.",
+    "title": "Games",
+    "desc": "Install paths and launch settings.",
     "add": "Add Game",
-    "empty": "No games configured. Click \"Add Game\" to get started.",
+    "empty": "No games configured.",
     "active": "ACTIVE",
     "actions": {
       "set_active": "Set as Active",
@@ -92,20 +151,20 @@
     },
     "delete_confirm": "Are you sure you want to remove this game configuration?",
     "types": {
-      "gimi": "Genshin Impact",
-      "srmi": "Star Rail",
-      "zzmi": "ZZZ",
-      "wwmi": "Wuthering Waves",
-      "efmi": "Arknight Endfield"
+      "gimi": "GIMI",
+      "srmi": "SRMI",
+      "zzmi": "ZZMI",
+      "wwmi": "WWMI",
+      "efmi": "EFMI"
     },
     "form": {
       "title_add": "Add New Game",
       "title_edit": "Edit Game",
       "name_label": "Display Name",
-      "name_placeholder": "e.g. Genshin Impact",
+      "name_placeholder": "e.g. GIMI",
       "type_label": "Game Type",
       "path_label": "Mods Folder Path",
-      "path_placeholder": "C:/Games/Genshin Impact/Mods",
+      "path_placeholder": "C:/Games/GIMI/Mods",
       "path_help": "Select the folder where you store your Mods.",
       "ready_to_move_label": "Mod Inbox (Optional)",
       "ready_to_move_placeholder": "Defaults to Downloads/mods/<game-name>",
@@ -114,7 +173,7 @@
       "launch_mode_standalone": "Standalone 3DMigoto",
       "launch_mode_xxmi": "Managed by XXMI",
       "exe_label": "Game Executable (.exe)",
-      "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
+      "exe_placeholder": "C:/Games/GIMI/Game.exe",
       "advanced_title": "Advanced Options",
       "loader_label": "3DMigoto Loader (Optional)",
       "loader_placeholder": "3DMigoto Loader.exe",
@@ -146,14 +205,14 @@
     }
   },
   "ai": {
-    "title": "AI Intelligent Reranking",
-    "desc": "When enabled, EMMM will use an LLM via the provided OpenAI-compatible endpoint to attempt recovery of mod folders that were marked as \"Needs Review\" by the local scoring pipeline.",
-    "enable": "Enable AI Reranking",
-    "base_url": "API Provider Base URL",
-    "base_url_desc": "(Must be an OpenAI-compatible /v1/chat/completions endpoint)",
-    "api_key": "AI API Key",
-    "api_key_desc": "Stored in your operating system credential vault and sent only to the configured base URL.",
-    "api_key_stored": "A key is stored securely. Enter a new key only to replace it.",
+    "title": "AI Reranking",
+    "desc": "Review uncertain mod folders with an OpenAI-compatible endpoint.",
+    "enable": "Enable reranking",
+    "base_url": "Endpoint",
+    "base_url_desc": "OpenAI-compatible chat completions URL.",
+    "api_key": "API key",
+    "api_key_desc": "Stored in the system credential vault.",
+    "api_key_stored": "A key is stored. Enter a new one to replace it.",
     "stored_key_placeholder": "Secure key stored",
     "remove_key": "Remove Key",
     "show_key": "Show Key",
@@ -179,12 +238,12 @@
   "browser": {
     "title": "Discover & Browser",
     "homepage": "Homepage URL",
-    "homepage_desc": "The default page opened when you click Discover (must start with http/https).",
+    "homepage_desc": "Default page for Discover. Use an http or https URL.",
     "reset": "Reset",
-    "storage_title": "Storage & Retention",
-    "retention": "Retention Days",
-    "retention_desc": "How long to keep downloaded archives before automatic cleanup.",
-    "clear_downloads": "Clear Old Downloads Now",
+    "storage_title": "Downloads",
+    "retention": "Keep archives",
+    "retention_desc": "Delete older downloads automatically.",
+    "clear_downloads": "Clear old downloads",
     "clearing": "Clearing...",
     "clear_success": "Cleared {{count}} old downloads.",
     "clear_failed": "Failed to clear downloads: {{error}}",
@@ -196,24 +255,24 @@
     "days": "days"
   },
   "hotkeys": {
-    "title": "Global Hotkeys",
+    "title": "Global hotkeys",
     "enabled": "Enabled",
-    "desc": "System-wide keyboard shortcuts for quick actions while gaming. These shortcuts are intercepted when the game window is active.",
+    "desc": "Shortcuts available while the game window is active.",
     "cooldown": "Action Cooldown",
-    "cooldown_desc": "Prevent accidental double-trigger",
+    "cooldown_desc": "Prevents duplicate input.",
     "conflicts_title": "Key Conflicts Detected",
     "labels": {
-      "next_preset": "Switch to Next Preset",
-      "prev_preset": "Switch to Previous Preset",
-      "toggle_overlay": "Toggle Overlay (Banner + KeyViewer)",
-      "next_variant": "Switch to Next Variant",
-      "prev_variant": "Switch to Previous Variant"
+      "next_preset": "Next preset",
+      "prev_preset": "Previous preset",
+      "toggle_overlay": "Toggle overlay",
+      "next_variant": "Next variant",
+      "prev_variant": "Previous variant"
     },
     "viewer_title": "KeyViewer Overlay",
     "auto_reload": "Auto-Reload",
-    "viewer_desc": "Automatically generates and manages in-game keybind lists based on the character/object currently detected via 3DMigoto hashes. Toggled along with the Status Banner using {{key}}.",
-    "infrastructure_title": "Runtime Infrastructure",
-    "infrastructure_desc": "Artifacts are managed in .emmm_data/. No user configuration required for deployment.",
+    "viewer_desc": "Shows detected in-game keybinds. Toggle with {{key}}.",
+    "infrastructure_title": "Runtime files",
+    "infrastructure_desc": "Managed automatically in .emmm_data/.",
     "reset": "Reset All to Defaults",
     "reset_success": "Hotkey settings reset to defaults.",
     "save_failed": "Failed to save hotkey settings: {{error}}",
@@ -234,17 +293,17 @@
   "maintenance": {
     "open_optimizer": "Open Optimizer",
     "storage_title": "Storage Optimizer",
-    "storage_desc": "Find large mods, duplicate files, and cleanup opportunities before they waste disk space.",
+    "storage_desc": "Review large and duplicate files.",
     "retention_title": "Storage Retention",
     "system_title": "System Maintenance",
-    "system_desc": "Run automated cleanup tasks, verify database integrity, and prune orphaned metadata.",
+    "system_desc": "Clean data and verify the database.",
     "run_maintenance": "Run Maintenance",
     "cache_title": "Clear Image Cache",
-    "cache_desc": "Remove old generated thumbnails (older than 30 days) to save space. They will be regenerated as needed.",
+    "cache_desc": "Remove thumbnails older than 30 days.",
     "clear_cache": "Clear Old Cache",
     "clear_failed": "Failed to clear cache: {{error}}",
     "danger_title": "Reset Application Setup",
-    "danger_desc": "Clear all game registrations, mod metadata, and settings from the database. The application will return to the initial setup screen. A backup of the database will be saved to the trash folder.",
+    "danger_desc": "Clear registrations, metadata, collections, and settings. A backup is kept in Trash.",
     "danger_info": "Your mod files and folders on disk will not be deleted.",
     "reset_btn": "Reset & Re-Setup",
     "modal_title": "Are you sure?",
@@ -262,18 +321,42 @@
     "checking": "Checking...",
     "check_btn": "Check for Updates",
     "install_btn": "Install & Restart",
-    "downloading": "Downloading... {{downloaded}} / {{total}}",
-    "metadata_title": "Metadata Sync",
-    "metadata_desc": "Synchronize character and weapon databases from the remote server. This happens automatically on startup but can also be triggered manually.",
-    "sync_btn": "Sync Now",
-    "syncing": "Syncing...",
-    "sync_success": "Metadata updated to version {{version}}",
-    "sync_up_to_date": "Metadata already up-to-date.",
-    "sync_failed": "Metadata sync failed: {{error}}"
+    "downloading": "Downloading... {{downloaded}} / {{total}}"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "mod_viewer": {
+      "title": "3DMigoto Mod Viewer",
+      "description": "Open mods in an external viewer.",
+      "recommended_version": "Portable v2.3.0 or newer recommended.",
+      "path": "Executable path",
+      "status": {
+        "not_configured": "Not configured",
+        "configured": "Configured",
+        "missing": "Configured executable was not found",
+        "checking": "Checking executable…"
+      },
+      "view_latest_release": "View latest release",
+      "select_executable": "Select executable",
+      "replace": "Replace",
+      "remove": "Remove",
+      "disclosure": {
+        "title": "Use an external Mod Viewer?",
+        "body": "3DMigoto Mod Viewer is an independent external application. It can modify INI and DDS files, create backups, and write .mod_viewer.json in your mod folder. These changes happen outside EMMM transactions and recovery.",
+        "official_source": "Only select a binary you downloaded from the official GitHub release.",
+        "cancel": "Cancel",
+        "continue": "Continue"
+      },
+      "picker_error": "Could not select an executable: {{error}}",
+      "release_error": "Could not open the latest release page: {{error}}",
+      "save_failed": "Could not save the Mod Viewer executable: {{error}}",
+      "configured_success": "Mod Viewer executable configured.",
+      "removed_success": "Mod Viewer configuration removed. The executable was not deleted."
+    }
   },
   "privacy": {
     "title": "Safety Classification",
-    "desc": "Safe and unsafe are collection/mod classifications only. Keywords help classify sensitive mods; they do not switch the active runtime.",
+    "desc": "Keywords classify sensitive mods and collections. They do not change runtime mode.",
     "keywords_title": "Classification Keywords",
     "keywords_placeholder": "e.g. skin, lewd, bikini",
     "keywords_add": "Add Keyword",

@@ -106,6 +106,15 @@ describe('FolderListRow', () => {
     expect(screen.getByText('Folder 1')).toBeInTheDocument();
   });
 
+  it('centers the selection checkbox over the thumbnail in compact rows', () => {
+    render(<FolderListRow item={dummyFolder} isSelected toggleSelection={vi.fn()} />);
+
+    const selectionCheckbox = screen.getAllByRole('checkbox', { hidden: true })[0];
+    expect(selectionCheckbox.parentElement).toHaveClass('inset-0');
+    expect(selectionCheckbox.parentElement).toHaveClass('items-center');
+    expect(selectionCheckbox.parentElement).toHaveClass('justify-center');
+  });
+
   it('calls selection correctly on click', () => {
     const toggleSelection = vi.fn();
     const onActivate = vi.fn();

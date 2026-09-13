@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
+import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { initLogger } from '@/shared/lib/logger';
 import { useAppStore } from '@/app/store';
@@ -11,6 +11,11 @@ import { RecoveryDialog } from '@/pages/collections';
 import { WelcomeScreen } from '@/pages/onboarding';
 import { commands } from '@/shared/api/tauri/bindings';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
+import { setFrontendTelemetryEnabled } from '@/shared/lib/telemetry';
+import { dismissSplash } from '@/shared/lib/dismissSplash';
+import { isDemoMode } from '@/shared/lib/appMode';
+import { DiagnosticsErrorDialog } from '@/shared/ui/components/ui/DiagnosticsErrorDialog';
+import { CrashRecoveryDialog } from '@/shared/ui/components/ui/CrashRecoveryDialog';
 import { AppShell } from '@/widgets/app-shell';
 import { TopBar } from '@/widgets/top-bar';
 import { Dashboard } from '@/pages/dashboard';
@@ -27,29 +32,23 @@ import { ObjectList } from '@/widgets/object-sidebar';
 import { LaunchBar } from '@/widgets/launch-bar';
 import { BrowserPage, DownloadConfirmationHost, DownloadsPage } from '@/pages/browser';
 
-/** Duration of the splash fade-out; must match the `#splash` transition in `index.html`. */
-const SPLASH_FADE_MS = 220;
-
-/**
- * Fades out and removes the boot splash that `index.html` paints before React
- * mounts. Removal is on a timer rather than `transitionend` so a skipped
- * transition (reduced motion, backgrounded window) can never strand the
- * overlay on top of the app.
- */
-function dismissSplash() {
-  const splash = document.getElementById('splash');
-  if (!splash) return;
-  splash.classList.add('is-done');
-  setTimeout(() => splash.remove(), SPLASH_FADE_MS);
-}
-
 function AppRouter() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [pendingTasks, setPendingTasks] = useState<PipelineTask[]>([]);
   const [isCheckingRecovery, setIsCheckingRecovery] = useState(true);
 
   useEffect(() => {
+    if (isDemoMode) {
+      if (location.pathname !== '/welcome') {
+        navigate('/dashboard', { replace: true });
+      }
+      dismissSplash();
+      setIsCheckingRecovery(false);
+      return;
+    }
+
     initLogger().catch(console.error);
 
     // Passive startup must not rename anything on disk.
@@ -103,13 +102,8 @@ function AppRouter() {
           navigate('/welcome', { replace: true });
           dismissSplash();
         });
-
-      // Epic 12: Silent background metadata sync on startup
-      commands
-        .checkMetadataUpdate()
-        .catch((e: unknown) => console.warn('Metadata sync skipped:', e));
     }
-  }, [navigate]);
+  }, [location.pathname, navigate]);
 
   if (isCheckingRecovery) {
     return (
@@ -171,11 +165,13 @@ function DashboardWorkspace() {
       selectedObjectFolderPath={selectedObjectFolderPath}
       topBar={<TopBar launchBar={<LaunchBar />} contextControls={<CollectionContextControls />} />}
       runtimeHosts={
-        <>
-          <ExternalChangeHandler />
-          <ImportBatchWizardHost />
-          <ObjectClassificationWizardHost />
-        </>
+        isDemoMode ? undefined : (
+          <>
+            <ExternalChangeHandler />
+            <ImportBatchWizardHost />
+            <ObjectClassificationWizardHost />
+          </>
+        )
       }
       dashboard={<Dashboard />}
       collections={<CollectionsPage />}
@@ -210,16 +206,26 @@ export default function App() {
     }
   }, [settings?.language]);
 
+  useEffect(() => {
+    setFrontendTelemetryEnabled(settings?.diagnostics?.telemetry_enabled ?? false);
+  }, [settings?.diagnostics?.telemetry_enabled]);
+
   return (
     <div className="flex flex-col h-screen bg-base-100 text-base-content overflow-hidden font-sans antialiased selection:bg-primary selection:text-primary-content">
       <AppRouter />
-      <DownloadConfirmationHost />
       <DynamicThemeInjector />
       <ToastContainer />
-      <FolderConflictManager />
-      <RenameConfirmationManager />
-      <FileInUseDialog />
-      <WorkspaceSourceUnavailableDialog />
+      {!isDemoMode && (
+        <>
+          <DownloadConfirmationHost />
+          <FolderConflictManager />
+          <RenameConfirmationManager />
+          <FileInUseDialog />
+          <WorkspaceSourceUnavailableDialog />
+          <DiagnosticsErrorDialog />
+          <CrashRecoveryDialog />
+        </>
+      )}
     </div>
   );
 }

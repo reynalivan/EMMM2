@@ -183,7 +183,9 @@ fn replace_file_with_hardlink_at(
             ))),
             Err(rollback_error) => Err(ScannerError::Io(format!(
                 "failed to create hardlink '{}' -> '{}': {link_error}; original file rollback failed: {rollback_error}; preserved backup: {}",
-                source.display(), target.display(), backup.display()
+                source.display(),
+                target.display(),
+                backup.display()
             ))),
         };
     }

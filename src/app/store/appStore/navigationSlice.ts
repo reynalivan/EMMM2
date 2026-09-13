@@ -13,12 +13,13 @@ export type MobilePane = 'sidebar' | 'grid' | 'details';
 export type SettingsTab =
   | 'general'
   | 'games'
+  | 'catalog'
   | 'browser'
   | 'privacy'
   | 'hotkeys'
   | 'ai'
   | 'maintenance'
-  | 'updates'
+  | 'integrations'
   | 'logs';
 
 export interface NavigationSlice {

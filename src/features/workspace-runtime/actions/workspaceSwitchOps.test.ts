@@ -16,7 +16,7 @@ const reconcileDiskStateCommand = vi.fn();
 const openFolderConflictManagerDialog = vi.fn();
 const openRenameConfirmationDialog = vi.fn();
 const openWorkspaceFileInUseDialog = vi.fn();
-const setFolderConflicts = vi.fn();
+const applyFolderConflictReconcileResult = vi.fn(() => true);
 const setRenameConfirmations = vi.fn();
 const toastError = vi.fn();
 const toastInfo = vi.fn();
@@ -38,7 +38,7 @@ vi.mock('../state/workspaceDialogs', () => ({
 
 vi.mock('@/app/store', () => ({
   useAppStore: {
-    getState: () => ({ setFolderConflicts, setRenameConfirmations }),
+    getState: () => ({ applyFolderConflictReconcileResult, setRenameConfirmations }),
   },
 }));
 
@@ -200,14 +200,45 @@ describe('workspace switch ops', () => {
       );
       const folderConflicts = [{ group_id: 'group-1', candidates: [] }];
       reconcileDiskStateCommand.mockResolvedValue({
+        game_id: 'game-1',
+        reconcile_revision: 1,
         status: 'AppliedWithFolderConflicts',
         folder_conflicts: folderConflicts,
+        rename_confirmations: [],
       });
 
       await expect(executeWorkspaceSwitch(input)).resolves.toBeNull();
 
-      expect(setFolderConflicts).toHaveBeenCalledWith('game-1', folderConflicts);
+      expect(applyFolderConflictReconcileResult).toHaveBeenCalledWith(
+        expect.objectContaining({ folder_conflicts: folderConflicts }),
+      );
       expect(openFolderConflictManagerDialog).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies an empty preflight report so an open queue can resolve externally', async () => {
+      executeWorkspaceSwitchCommand.mockRejectedValue(
+        new Error(
+          JSON.stringify({
+            type: 'RenameConflict',
+            attempted_target: 'E:/Mods/B',
+            existing_path: 'E:/Mods/A',
+            base_name: 'A',
+          }),
+        ),
+      );
+      const report = {
+        game_id: 'game-1',
+        reconcile_revision: 2,
+        status: 'Applied',
+        folder_conflicts: [],
+        rename_confirmations: [],
+      };
+      reconcileDiskStateCommand.mockResolvedValue(report);
+
+      await expect(executeWorkspaceSwitch(input)).resolves.toBeNull();
+
+      expect(applyFolderConflictReconcileResult).toHaveBeenCalledWith(report);
+      expect(openFolderConflictManagerDialog).not.toHaveBeenCalled();
     });
 
     it('routes file-in-use failures to the file-in-use dialog', async () => {

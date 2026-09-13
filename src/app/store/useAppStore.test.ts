@@ -1,8 +1,61 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useToastStore } from '@/shared/ui/toast';
+import type { DiskReconcileResult, FolderNameConflictGroup } from '@/shared/api/tauri/bindings';
 import { useAppStore } from './useAppStore';
+
+const folderConflict: FolderNameConflictGroup = {
+  group_id: 'alice-blue',
+  identity: 'alice/blue',
+  display_name: 'Blue',
+  candidates: [
+    { path: 'C:/Mods/Alice/Blue', folder_name: 'Blue', base_name: 'Blue', is_enabled: true },
+    {
+      path: 'C:/Mods/Alice/DISABLED Blue',
+      folder_name: 'DISABLED Blue',
+      base_name: 'Blue',
+      is_enabled: false,
+    },
+  ],
+};
+
+function diskReconcileResult(overrides: Partial<DiskReconcileResult> = {}): DiskReconcileResult {
+  return {
+    game_id: 'g1',
+    reconcile_revision: 1,
+    reason: 'WatcherBatch',
+    status: 'Applied',
+    folder_conflicts: [],
+    rename_confirmations: [],
+    error_message: null,
+    changed_roots: [],
+    objects_changed: false,
+    folders_changed: false,
+    collections_changed: false,
+    runtime_file_changed: false,
+    thumbnail_roots: [],
+    cleared_selection_paths: [],
+    path_updates: [],
+    collection_reference_impact: {
+      affected_collection_count: 0,
+      affected_collection_names: [],
+      rewritten_paths: [],
+      missing_paths: [],
+    },
+    change_summary: {
+      object_changes: { added: 0, removed: 0, renamed: 0, modified: 0 },
+      mod_changes: { added: 0, removed: 0, renamed: 0, modified: 0 },
+      object_sample_names: [],
+      mod_sample_names: [],
+      has_user_visible_changes: false,
+    },
+    pending_runtime_effects: { collections_dirty: false, overlay_refresh: false },
+    warnings: [],
+    ...overrides,
+  };
+}
 
 // Snapshot the pristine state (defaults + actions) once, restore before each test.
 const initialState = useAppStore.getState();
@@ -47,6 +100,50 @@ describe('useAppStore smoke net', () => {
 
       const toasts = useToastStore.getState().toasts;
       expect(toasts[toasts.length - 1]?.message).toContain('startup disk scan failed');
+    });
+
+    it('applies a newer recovery event received while startup queries are pending', async () => {
+      let emitReconcile!: (event: { payload: DiskReconcileResult }) => void;
+      let releasePrefetch!: () => void;
+      const pendingPrefetch = new Promise<void>((resolve) => {
+        releasePrefetch = resolve;
+      });
+      vi.mocked(listen).mockImplementationOnce(async (_event, handler) => {
+        emitReconcile = handler as unknown as (event: { payload: DiskReconcileResult }) => void;
+        return () => undefined;
+      });
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') {
+          emitReconcile({
+            payload: diskReconcileResult({
+              game_id: 'genshin',
+              reconcile_revision: 1,
+              status: 'AppliedWithFolderConflicts',
+              folder_conflicts: [folderConflict],
+            }),
+          });
+          return Promise.resolve({ active_game_id: 'genshin', auto_close_launcher: false });
+        }
+        return pendingPrefetch;
+      });
+
+      const initializing = useAppStore.getState().initStore();
+      try {
+        await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
+        emitReconcile({
+          payload: diskReconcileResult({ game_id: 'genshin', reconcile_revision: 2 }),
+        });
+
+        expect(useAppStore.getState().folderConflictReportsByGame.genshin).toMatchObject({
+          revision: 2,
+          status: 'resolvedExternally',
+          groups: [],
+        });
+      } finally {
+        releasePrefetch();
+        await initializing;
+        vi.mocked(invoke).mockReset();
+      }
     });
   });
 
@@ -266,6 +363,7 @@ describe('useAppStore smoke net', () => {
         pending: false,
         unavailable: 'gone',
         progress: null,
+        revision: 0,
       });
 
       useAppStore.getState().setDiskReconcileTimestamp('g1', 1234);
@@ -274,6 +372,85 @@ describe('useAppStore smoke net', () => {
         pending: false,
         unavailable: null,
         progress: null,
+        revision: 0,
+      });
+    });
+
+    it('preserves a newer conflict report and labels a newer empty report as external', () => {
+      const store = useAppStore.getState();
+      expect(
+        store.applyFolderConflictReconcileResult(
+          diskReconcileResult({
+            reconcile_revision: 4,
+            status: 'AppliedWithFolderConflicts',
+            folder_conflicts: [folderConflict],
+          }),
+        ),
+      ).toBe(true);
+
+      expect(
+        useAppStore
+          .getState()
+          .applyFolderConflictReconcileResult(diskReconcileResult({ reconcile_revision: 3 })),
+      ).toBe(false);
+      expect(useAppStore.getState().folderConflictReportsByGame.g1).toMatchObject({
+        revision: 4,
+        status: 'open',
+        groups: [folderConflict],
+      });
+
+      expect(
+        useAppStore
+          .getState()
+          .applyFolderConflictReconcileResult(diskReconcileResult({ reconcile_revision: 5 })),
+      ).toBe(true);
+      expect(useAppStore.getState().folderConflictReportsByGame.g1).toMatchObject({
+        revision: 5,
+        status: 'resolvedExternally',
+        groups: [],
+      });
+      expect(
+        useAppStore
+          .getState()
+          .applyFolderConflictReconcileResult(diskReconcileResult({ reconcile_revision: 5 })),
+      ).toBe(false);
+    });
+
+    it('keeps an open conflict while the source is unavailable, then accepts a verified empty report', () => {
+      const store = useAppStore.getState();
+      expect(
+        store.applyFolderConflictReconcileResult(
+          diskReconcileResult({
+            reconcile_revision: 1,
+            status: 'AppliedWithFolderConflicts',
+            folder_conflicts: [folderConflict],
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        useAppStore
+          .getState()
+          .applyFolderConflictReconcileResult(
+            diskReconcileResult({ reconcile_revision: 2, status: 'SourceUnavailable' }),
+          ),
+      ).toBe(true);
+      expect(useAppStore.getState().folderConflictReportsByGame.g1).toMatchObject({
+        revision: 1,
+        status: 'open',
+        groups: [folderConflict],
+      });
+
+      expect(
+        useAppStore
+          .getState()
+          .applyFolderConflictReconcileResult(
+            diskReconcileResult({ reconcile_revision: 3, status: 'NeedsRenameConfirmation' }),
+          ),
+      ).toBe(true);
+      expect(useAppStore.getState().folderConflictReportsByGame.g1).toMatchObject({
+        revision: 3,
+        status: 'resolvedExternally',
+        groups: [],
       });
     });
   });

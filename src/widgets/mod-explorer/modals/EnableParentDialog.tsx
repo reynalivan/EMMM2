@@ -99,7 +99,7 @@ export default function EnableParentDialog({
                 </div>
                 <ul className="divide-y divide-base-content/5 max-h-24 overflow-y-auto scrollbar-thin scrollbar-thumb-base-content/10">
                   {stayDisabled.map((f) => (
-                    <li key={f.path} className="flex items-center gap-2 px-3 py-1.5 opacity-50">
+                    <li key={f.path} className="flex items-center gap-2 px-3 py-1.5 text-muted">
                       {nodeIcon(f.node_type)}
                       <span className="text-xs truncate line-through text-base-content/50">
                         {f.name}

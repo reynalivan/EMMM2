@@ -211,6 +211,9 @@ impl From<tauri::Error> for BrowserError {
 /// MasterDB, duplicate detection, and committing a scan into the index.
 #[derive(Debug, Clone, Error, Serialize, Deserialize, specta::Type)]
 pub enum ScannerError {
+    #[error("Security violation: {0}")]
+    Security(String),
+
     #[error("Path not found: {path}")]
     PathNotFound { path: String },
 

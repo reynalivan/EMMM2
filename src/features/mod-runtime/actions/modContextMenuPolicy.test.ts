@@ -56,4 +56,24 @@ describe('buildModContextMenuItems', () => {
       expect(favoriteItem?.label).toBe(expectedLabel);
     },
   );
+
+  it('shows the experimental Mod Viewer label only when the shared handler marks it experimental', () => {
+    const normalItems = buildModContextMenuItems(translate, baseFolder, {
+      ...handlers,
+      openModViewer: () => undefined,
+    });
+    const experimentalItems = buildModContextMenuItems(translate, baseFolder, {
+      ...handlers,
+      openModViewer: () => undefined,
+      modViewerExperimental: true,
+    });
+
+    expect(normalItems.find((item) => item.id === 'open-mod-viewer')?.hidden).toBe(false);
+    expect(normalItems.find((item) => item.id === 'open-mod-viewer')?.label).toBe(
+      'context.open_mod_viewer',
+    );
+    expect(experimentalItems.find((item) => item.id === 'open-mod-viewer')?.label).toBe(
+      'context.open_mod_viewer_experimental',
+    );
+  });
 });

@@ -7,8 +7,15 @@ import { commands } from '@/shared/api/tauri/bindings';
 import { useAppStore } from '@/app/store';
 import { useBrowserStore } from '@/entities/browser';
 import { toast } from '@/shared/ui/toast';
-import type { DownloadConfirmationRequest } from '../types';
+import type {
+  DownloadConfirmationRequest,
+  DownloadInformationFailure,
+  DownloadInformationLoading,
+} from '../types';
 import { DownloadConfirmationDialog } from './DownloadConfirmationDialog';
+import { DownloadInformationLoadingDialog } from './DownloadInformationLoadingDialog';
+
+const DOWNLOAD_INFORMATION_TIMEOUT_MS = 10_000;
 
 /**
  * App-level host for native WebView download confirmations. It stays mounted
@@ -19,12 +26,22 @@ export function DownloadConfirmationHost() {
   const { t } = useTranslation(['browser']);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const [requests, setRequests] = useState<DownloadConfirmationRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState<DownloadInformationLoading[]>([]);
+  const [informationFailures, setInformationFailures] = useState<DownloadInformationFailure[]>([]);
   const currentRequest = requests[0] ?? null;
+  const currentLoadingRequest = loadingRequests[0] ?? null;
+  const currentInformationFailure = informationFailures[0] ?? null;
 
   useEffect(() => {
-    useBrowserStore.getState().setDownloadConfirmationOpen(currentRequest !== null);
+    useBrowserStore
+      .getState()
+      .setDownloadConfirmationOpen(
+        currentRequest !== null ||
+          currentLoadingRequest !== null ||
+          currentInformationFailure !== null,
+      );
     return () => useBrowserStore.getState().setDownloadConfirmationOpen(false);
-  }, [currentRequest]);
+  }, [currentInformationFailure, currentLoadingRequest, currentRequest]);
 
   const confirmDownloadMutation = useMutation({
     mutationFn: (request: DownloadConfirmationRequest) =>
@@ -36,7 +53,10 @@ export function DownloadConfirmationHost() {
         onClick: () => setWorkspaceView('downloads'),
       });
     },
-    onError: () => toast.error(t('downloads.confirmation.confirm_failed')),
+    onError: (_error, request) => {
+      setRequests((current) => current.filter((item) => item.id !== request.id));
+      toast.error(t('downloads.confirmation.confirm_failed'));
+    },
   });
 
   const rejectDownloadMutation = useMutation({
@@ -45,14 +65,46 @@ export function DownloadConfirmationHost() {
     onSuccess: (_result, request) => {
       setRequests((current) => current.filter((item) => item.id !== request.id));
     },
-    onError: () => toast.error(t('downloads.confirmation.cancel_failed')),
+    onError: (_error, request) => {
+      setRequests((current) => current.filter((item) => item.id !== request.id));
+      toast.error(t('downloads.confirmation.cancel_failed'));
+    },
   });
 
   useEffect(() => {
     const unlistenConfirmation = listen<DownloadConfirmationRequest>(
       'browser:download-confirmation-requested',
       (event) => {
+        setInformationFailures((current) =>
+          current.filter((request) => request.id !== event.payload.id),
+        );
+        setLoadingRequests((current) =>
+          current.filter((request) => request.id !== event.payload.id),
+        );
         setRequests((current) =>
+          current.some((request) => request.id === event.payload.id)
+            ? current
+            : [...current, event.payload],
+        );
+      },
+    );
+    const unlistenLoading = listen<DownloadInformationLoading>(
+      'browser:download-information-loading',
+      (event) => {
+        setLoadingRequests((current) =>
+          current.some((request) => request.id === event.payload.id)
+            ? current
+            : [...current, event.payload],
+        );
+      },
+    );
+    const unlistenFailure = listen<DownloadInformationFailure>(
+      'browser:download-information-failed',
+      (event) => {
+        setLoadingRequests((current) =>
+          current.filter((request) => request.id !== event.payload.id),
+        );
+        setInformationFailures((current) =>
           current.some((request) => request.id === event.payload.id)
             ? current
             : [...current, event.payload],
@@ -62,19 +114,49 @@ export function DownloadConfirmationHost() {
 
     return () => {
       unlistenConfirmation.then((unlisten) => unlisten());
+      unlistenLoading.then((unlisten) => unlisten());
+      unlistenFailure.then((unlisten) => unlisten());
     };
   }, []);
 
-  if (!currentRequest) return null;
+  useEffect(() => {
+    const timers = loadingRequests.map((request) =>
+      window.setTimeout(() => {
+        setLoadingRequests((current) => current.filter((item) => item.id !== request.id));
+        setInformationFailures((current) =>
+          current.some((item) => item.id === request.id)
+            ? current
+            : [...current, { ...request, reason: 'timeout' }],
+        );
+      }, DOWNLOAD_INFORMATION_TIMEOUT_MS),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [loadingRequests]);
+
+  if (!currentRequest && !currentLoadingRequest && !currentInformationFailure) return null;
 
   return createPortal(
-    <DownloadConfirmationDialog
-      key={currentRequest.id}
-      request={currentRequest}
-      isSubmitting={confirmDownloadMutation.isPending || rejectDownloadMutation.isPending}
-      onConfirm={() => confirmDownloadMutation.mutate(currentRequest)}
-      onReject={() => rejectDownloadMutation.mutate(currentRequest)}
-    />,
+    currentRequest ? (
+      <DownloadConfirmationDialog
+        key={currentRequest.id}
+        request={currentRequest}
+        isSubmitting={confirmDownloadMutation.isPending || rejectDownloadMutation.isPending}
+        onConfirm={() => confirmDownloadMutation.mutate(currentRequest)}
+        onReject={() => rejectDownloadMutation.mutate(currentRequest)}
+      />
+    ) : (
+      <DownloadInformationLoadingDialog
+        request={currentInformationFailure ?? currentLoadingRequest!}
+        failure={currentInformationFailure}
+        onDismiss={() =>
+          setInformationFailures((current) =>
+            currentInformationFailure
+              ? current.filter((request) => request.id !== currentInformationFailure.id)
+              : current,
+          )
+        }
+      />
+    ),
     document.body,
   );
 }

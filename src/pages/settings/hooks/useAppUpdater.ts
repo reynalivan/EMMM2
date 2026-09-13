@@ -15,6 +15,7 @@ export function useAppUpdater() {
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasChecked, setHasChecked] = useState(false);
 
   const checkForUpdate = useCallback(async () => {
     setIsChecking(true);
@@ -22,6 +23,7 @@ export function useAppUpdater() {
     try {
       const found = await commands.checkAppUpdate();
       setUpdate(found);
+      setHasChecked(true);
     } catch (e) {
       setError(formatAppError(e));
     } finally {
@@ -62,6 +64,7 @@ export function useAppUpdater() {
     setUpdate(null);
     setProgress(null);
     setError(null);
+    setHasChecked(false);
   }, []);
 
   return {
@@ -70,6 +73,7 @@ export function useAppUpdater() {
     isInstalling,
     progress,
     error,
+    hasChecked,
     checkForUpdate,
     downloadAndInstall,
     dismiss,

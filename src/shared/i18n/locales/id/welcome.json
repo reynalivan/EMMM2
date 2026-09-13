@@ -27,7 +27,7 @@
     "preset_on": "Preset AKTIF",
     "preset_off": "Preset MATI",
     "keybinds_instantly": "Hotkey, sambil bermain",
-    "press_help": "Bekerja saat game aktif — tanpa alt-tab",
+    "press_help": "Bekerja saat game aktif. Tidak perlu alt-tab",
     "action_next_preset": "Preset berikutnya",
     "action_toggle_overlay": "Alihkan overlay",
     "action_next_variant": "Varian berikutnya"

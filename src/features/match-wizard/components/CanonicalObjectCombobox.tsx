@@ -3,6 +3,7 @@ import type {
   CanonicalClassificationCatalogEntry,
   CanonicalSuggestion,
 } from '../../../shared/api/tauri/bindings.gen';
+import { LiquidSurface } from '@/shared/ui/liquid';
 
 type CanonicalObjectComboboxProps = {
   disabled?: boolean;
@@ -129,41 +130,42 @@ export function CanonicalObjectCombobox({
         }}
       />
       {isOpen && (
-        <ul
-          className="menu absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow-xl"
-          id={listId}
-          role="listbox"
+        <LiquidSurface
+          liquidRole="overlay"
+          className="absolute z-[var(--workspace-layer-popover)] mt-1 max-h-72 w-full rounded-box shadow-xl"
         >
-          {visibleEntries.length === 0 ? (
-            <li className="pointer-events-none px-3 py-2 text-sm opacity-60">{emptyLabel}</li>
-          ) : (
-            visibleEntries.map((entry, index) => {
-              const suggestion = suggestions.find((item) => item.entryKey === entry.entryKey);
-              return (
-                <li key={entry.entryKey}>
-                  <button
-                    aria-selected={entry.entryKey === selectedEntryKey}
-                    className={index === activeIndex ? 'active' : undefined}
-                    id={`${listId}-${entry.entryKey}`}
-                    role="option"
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => selectEntry(entry.entryKey)}
-                  >
-                    <span className="flex min-w-0 flex-col items-start">
-                      <span className="truncate font-medium">{entry.name}</span>
-                      <span className="text-xs opacity-70">
-                        {entry.category}
-                        {suggestion ? ` · ${suggestion.confidencePercentage}%` : ''}
+          <ul className="menu max-h-72 w-full overflow-y-auto p-1" id={listId} role="listbox">
+            {visibleEntries.length === 0 ? (
+              <li className="pointer-events-none px-3 py-2 text-sm opacity-60">{emptyLabel}</li>
+            ) : (
+              visibleEntries.map((entry, index) => {
+                const suggestion = suggestions.find((item) => item.entryKey === entry.entryKey);
+                return (
+                  <li key={entry.entryKey}>
+                    <button
+                      aria-selected={entry.entryKey === selectedEntryKey}
+                      className={index === activeIndex ? 'active' : undefined}
+                      id={`${listId}-${entry.entryKey}`}
+                      role="option"
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onClick={() => selectEntry(entry.entryKey)}
+                    >
+                      <span className="flex min-w-0 flex-col items-start">
+                        <span className="truncate font-medium">{entry.name}</span>
+                        <span className="text-xs opacity-70">
+                          {entry.category}
+                          {suggestion ? ` · ${suggestion.confidencePercentage}%` : ''}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </LiquidSurface>
       )}
     </div>
   );

@@ -6,19 +6,23 @@
   "tabs": {
     "general": "Umum",
     "games": "Game",
-    "browser": "Browser & Impor",
-    "privacy": "Privasi & Keamanan",
-    "hotkeys": "Hotkey & KeyViewer",
-    "ai": "Konfigurasi AI",
+    "catalog": "Aset Katalog",
+    "browser": "Browser",
+    "privacy": "Keamanan",
+    "hotkeys": "Hotkey",
+    "ai": "AI",
     "maintenance": "Pemeliharaan",
-    "updates": "Pembaruan",
+    "integrations": "Integrasi",
     "logs": "Log"
   },
   "general": {
     "appearance": {
       "title": "Tampilan",
       "import": "Impor Tema",
-      "theme_select": "Pilih Tema",
+      "theme_select": "Tema",
+      "download_template": "Unduh template",
+      "import_theme": "Impor tema",
+      "download_template_hint": "Template JSON mencakup pengaturan liquid dan background.",
       "groups": {
         "builtin": "Bawaan",
         "custom": "Tema Kustom"
@@ -47,7 +51,7 @@
     },
     "language": {
       "title": "Bahasa",
-      "label": "Pilih Bahasa",
+      "label": "Bahasa antarmuka",
       "options": {
         "en": "English (US)",
         "id": "Bahasa Indonesia",
@@ -55,19 +59,74 @@
       }
     },
     "behavior": {
-      "title": "Perilaku Aplikasi",
-      "auto_close": "Tutup Otomatis saat Meluncurkan",
-      "auto_close_desc": "Tutup EMMM secara otomatis saat Anda berhasil meluncurkan game."
+      "title": "Perilaku",
+      "auto_close": "Tutup setelah launch",
+      "auto_close_desc": "Tutup EMMM setelah game berjalan."
     },
     "system": {
-      "title": "Informasi Sistem",
+      "title": "Sistem",
       "app_version": "Versi Aplikasi",
       "tauri_version": "Versi Tauri",
       "database": "Database",
       "engine": "Engine",
       "db_val": "SQLite (SQLx)",
       "engine_val": "Vite + React"
+    },
+    "catalog_assets": {
+      "title": "Aset katalog",
+      "not_installed": "Pack katalog belum terpasang.",
+      "installed": "{{name}} {{version}} · {{entries}} entri katalog",
+      "invalid": "Pack katalog yang terpasang tidak dapat divalidasi.",
+      "status_unavailable": "Status aset katalog tidak tersedia.",
+      "open_folder": "Buka folder",
+      "refresh": "Refresh katalog",
+      "updates_title": "Pembaruan katalog bertanda tangan",
+      "updates_desc": "Diperiksa tiap minggu dari channel rilis publik.",
+      "auto_install": "Instal otomatis",
+      "check_update": "Periksa sekarang",
+      "install_update": "Instal {{version}}",
+      "update_available": "Versi {{version}} siap diinstal.",
+      "up_to_date": "Katalog sudah mutakhir.",
+      "update_idle": "Pembaruan diverifikasi sebelum dipasang.",
+      "update_check_failed": "Tidak dapat memeriksa pembaruan katalog. Katalog terpasang tidak berubah.",
+      "update_install_failed": "Tidak dapat memasang pembaruan katalog bertanda tangan. Katalog terpasang tidak berubah.",
+      "auto_update_failed": "Tidak dapat menyimpan preferensi pembaruan katalog: {{error}}"
+    },
+    "diagnostics": {
+      "title": "Diagnostik anonim",
+      "description": "Bagikan data keandalan anonim. Data pribadi dan game tidak dikirim.",
+      "toggle": "Bagikan diagnostik"
+    },
+    "trust": {
+      "title": "Kepercayaan dan privasi",
+      "close": "Tutup",
+      "close_dialog": "Tutup dialog",
+      "privacy": {
+        "card_title": "Kebijakan Privasi",
+        "card_desc": "Data lokal, sesi browser, dan diagnostik opsional.",
+        "title": "Kebijakan Privasi",
+        "section_one": "Data yang disimpan di perangkat",
+        "body_one": "EMMM menyimpan pengaturan, metadata mod lokal, bookmark dan riwayat Discover, alamat tab yang dipulihkan, serta catatan unduhan di perangkat ini. Data tetap lokal kecuali Anda mengaktifkan fitur berbagi opsional.",
+        "section_two": "Data browser",
+        "body_two": "Discover memakai profil browser terpisah untuk sesi situs. EMMM tidak membaca atau mengirim kata sandi, cookie, token OAuth, maupun isi formulir situs.",
+        "section_three": "Diagnostik opsional",
+        "body_three": "Diagnostik anonim bersifat opsional. Saat aktif, EMMM mengirim versi rilis, kode operasi dan hasil terbatas, durasi agregat, serta kode diagnostik singkat ke Grafana Cloud. Path, nama mod atau game, URL, pesan, data situs, dan pengenal pengguna tidak disertakan. Laporan crash memerlukan konfirmasi. Mematikan diagnostik menghapus antrean lokal."
+      },
+      "terms": {
+        "card_title": "Ketentuan Penggunaan",
+        "card_desc": "Tanggung jawab atas game, mod, dan tool eksternal.",
+        "title": "Ketentuan Penggunaan",
+        "section_one": "Perangkat lunak independen",
+        "body_one": "EMMM adalah utilitas pihak ketiga yang independen. EMMM tidak berafiliasi dengan, didukung oleh, atau disponsori pengembang, penerbit, maupun platform game mana pun.",
+        "section_two": "Penggunaan yang diizinkan",
+        "body_two": "Gunakan EMMM hanya dengan game, mod, akun, dan konten yang boleh Anda gunakan. Anda bertanggung jawab mematuhi ketentuan setiap game, platform, situs, dan tool pihak ketiga.",
+        "section_three": "Konten eksternal",
+        "body_three": "Unduhan dan tool eksternal berjalan di luar EMMM. Periksa file dan simpan backup sebelum melakukan perubahan. EMMM tidak mendukung atau menjamin konten pihak ketiga."
+      }
     }
+  },
+  "diagnostics": {
+    "save_failed": "Tidak dapat menyimpan preferensi diagnostik: {{error}}"
   },
   "toast": {
     "save_success": "Pengaturan berhasil disimpan.",
@@ -79,10 +138,10 @@
     "lang_failed": "Gagal memperbarui bahasa: {{error}}"
   },
   "games": {
-    "title": "Perpustakaan Game",
-    "desc": "Kelola lokasi instalasi dan konfigurasi game Anda.",
+    "title": "Game",
+    "desc": "Path instalasi dan pengaturan launch.",
     "add": "Tambah Game",
-    "empty": "Belum ada game yang dikonfigurasi. Klik \"Tambah Game\" untuk memulai.",
+    "empty": "Belum ada game.",
     "active": "AKTIF",
     "actions": {
       "set_active": "Jadikan Aktif",
@@ -92,20 +151,20 @@
     },
     "delete_confirm": "Apakah Anda yakin ingin menghapus konfigurasi game ini?",
     "types": {
-      "gimi": "Genshin Impact",
-      "srmi": "Star Rail",
-      "zzmi": "ZZZ",
-      "wwmi": "Wuthering Waves",
-      "efmi": "Arknight Endfield"
+      "gimi": "GIMI",
+      "srmi": "SRMI",
+      "zzmi": "ZZMI",
+      "wwmi": "WWMI",
+      "efmi": "EFMI"
     },
     "form": {
       "title_add": "Tambah Game Baru",
       "title_edit": "Edit Game",
       "name_label": "Nama Tampilan",
-      "name_placeholder": "misal: Genshin Impact",
+      "name_placeholder": "misal: GIMI",
       "type_label": "Tipe Game",
       "path_label": "Path Folder Mod",
-      "path_placeholder": "C:/Games/Genshin Impact/Mods",
+      "path_placeholder": "C:/Games/GIMI/Mods",
       "path_help": "Pilih folder tempat Anda menyimpan Mod.",
       "ready_to_move_label": "Mod Inbox (Opsional)",
       "ready_to_move_placeholder": "Default: Downloads/mods/<nama-game>",
@@ -114,7 +173,7 @@
       "launch_mode_standalone": "3DMigoto Mandiri",
       "launch_mode_xxmi": "Dikelola oleh XXMI",
       "exe_label": "Executable Game (.exe)",
-      "exe_placeholder": "C:/Games/Genshin Impact/GenshinImpact.exe",
+      "exe_placeholder": "C:/Games/GIMI/Game.exe",
       "advanced_title": "Opsi Lanjutan",
       "loader_label": "Loader 3DMigoto (Opsional)",
       "loader_placeholder": "3DMigoto Loader.exe",
@@ -146,14 +205,14 @@
     }
   },
   "ai": {
-    "title": "AI Intelligent Reranking",
-    "desc": "Saat diaktifkan, EMMM akan menggunakan LLM melalui endpoint OpenAI-compatible yang disediakan untuk mencoba memulihkan folder mod yang ditandai sebagai \"Perlu Ditinjau\" oleh pipeline penilaian lokal.",
-    "enable": "Aktifkan AI Reranking",
-    "base_url": "Base URL Penyedia API",
-    "base_url_desc": "(Harus endpoint OpenAI-compatible /v1/chat/completions)",
-    "api_key": "Kunci API AI",
-    "api_key_desc": "Disimpan di brankas kredensial sistem operasi dan hanya dikirim ke URL basis yang dikonfigurasi.",
-    "api_key_stored": "Kunci tersimpan dengan aman. Masukkan kunci baru hanya untuk menggantinya.",
+    "title": "AI Reranking",
+    "desc": "Tinjau folder mod yang meragukan melalui endpoint OpenAI-compatible.",
+    "enable": "Aktifkan reranking",
+    "base_url": "Endpoint",
+    "base_url_desc": "URL chat completions yang kompatibel dengan OpenAI.",
+    "api_key": "Kunci API",
+    "api_key_desc": "Disimpan di brankas kredensial sistem.",
+    "api_key_stored": "Kunci tersimpan. Isi baru untuk menggantinya.",
     "stored_key_placeholder": "Kunci aman tersimpan",
     "remove_key": "Hapus Kunci",
     "show_key": "Tampilkan Kunci",
@@ -179,12 +238,12 @@
   "browser": {
     "title": "Temukan & Browser",
     "homepage": "URL Beranda",
-    "homepage_desc": "Halaman default yang dibuka saat Anda mengklik Temukan (harus dimulai dengan http/https).",
+    "homepage_desc": "Halaman awal Discover. Gunakan URL http atau https.",
     "reset": "Reset",
-    "storage_title": "Penyimpanan & Retensi",
-    "retention": "Hari Retensi",
-    "retention_desc": "Berapa lama menyimpan arsip yang diunduh sebelum pembersihan otomatis.",
-    "clear_downloads": "Bersihkan Unduhan Lama Sekarang",
+    "storage_title": "Unduhan",
+    "retention": "Simpan arsip",
+    "retention_desc": "Hapus unduhan lama secara otomatis.",
+    "clear_downloads": "Bersihkan unduhan lama",
     "clearing": "Membersihkan...",
     "clear_success": "Berhasil membersihkan {{count}} unduhan lama.",
     "clear_failed": "Gagal membersihkan unduhan: {{error}}",
@@ -198,22 +257,22 @@
   "hotkeys": {
     "title": "Hotkey Global",
     "enabled": "Diaktifkan",
-    "desc": "Pintasan keyboard seluruh sistem untuk tindakan cepat saat bermain game. Pintasan ini ditangkap saat jendela game aktif.",
+    "desc": "Pintasan yang aktif saat jendela game digunakan.",
     "cooldown": "Cooldown Tindakan",
-    "cooldown_desc": "Mencegah pemicuan ganda yang tidak disengaja",
+    "cooldown_desc": "Mencegah input ganda.",
     "conflicts_title": "Konflik Kunci Terdeteksi",
     "labels": {
-      "next_preset": "Beralih ke Preset Berikutnya",
-      "prev_preset": "Beralih ke Preset Sebelumnya",
-      "toggle_overlay": "Alihkan Overlay (Banner + KeyViewer)",
-      "next_variant": "Beralih ke Varian Berikutnya",
-      "prev_variant": "Beralih ke Varian Sebelumnya"
+      "next_preset": "Preset berikutnya",
+      "prev_preset": "Preset sebelumnya",
+      "toggle_overlay": "Tampilkan overlay",
+      "next_variant": "Varian berikutnya",
+      "prev_variant": "Varian sebelumnya"
     },
     "viewer_title": "Overlay KeyViewer",
     "auto_reload": "Muat Ulang Otomatis",
-    "viewer_desc": "Secara otomatis menghasilkan dan mengelola daftar keybind dalam game berdasarkan karakter/objek yang sedang terdeteksi melalui hash 3DMigoto. Dialihkan bersama dengan Banner Status menggunakan {{key}}.",
-    "infrastructure_title": "Infrastruktur Runtime",
-    "infrastructure_desc": "Artefak dikelola di .emmm_data/. Tidak diperlukan konfigurasi pengguna untuk penerapan.",
+    "viewer_desc": "Tampilkan keybind yang terdeteksi. Buka dengan {{key}}.",
+    "infrastructure_title": "File runtime",
+    "infrastructure_desc": "Dikelola otomatis di .emmm_data/.",
     "reset": "Atur Ulang Semua ke Default",
     "reset_success": "Pengaturan hotkey diatur ulang ke default.",
     "save_failed": "Gagal menyimpan pengaturan hotkey: {{error}}",
@@ -234,17 +293,17 @@
   "maintenance": {
     "open_optimizer": "Buka Pengoptimal",
     "storage_title": "Pengoptimal Penyimpanan",
-    "storage_desc": "Temukan mod besar, file duplikat, dan peluang pembersihan sebelum memenuhi ruang disk.",
+    "storage_desc": "Tinjau file besar dan duplikat.",
     "retention_title": "Retensi Penyimpanan",
     "system_title": "Pemeliharaan Sistem",
-    "system_desc": "Jalankan tugas pembersihan otomatis, verifikasi integritas database, dan bersihkan metadata yatim piatu.",
+    "system_desc": "Bersihkan data dan verifikasi database.",
     "run_maintenance": "Jalankan Pemeliharaan",
     "cache_title": "Bersihkan Cache Gambar",
-    "cache_desc": "Hapus thumbnail lama (lebih dari 30 hari) untuk menghemat ruang. Mereka akan dibuat ulang saat dibutuhkan.",
+    "cache_desc": "Hapus thumbnail yang lebih lama dari 30 hari.",
     "clear_cache": "Bersihkan Cache Lama",
     "clear_failed": "Gagal membersihkan cache: {{error}}",
     "danger_title": "Atur Ulang Pengaturan Aplikasi",
-    "danger_desc": "Hapus semua registrasi game, metadata mod, dan pengaturan dari database. Aplikasi akan kembali ke layar pengaturan awal. Cadangan database akan disimpan ke folder sampah.",
+    "danger_desc": "Hapus registrasi, metadata, koleksi, dan pengaturan. Backup disimpan di Sampah.",
     "danger_info": "File dan folder mod Anda di disk tidak akan dihapus.",
     "reset_btn": "Atur Ulang & Siapkan Ulang",
     "modal_title": "Apakah Anda yakin?",
@@ -262,18 +321,42 @@
     "checking": "Memeriksa...",
     "check_btn": "Periksa Pembaruan",
     "install_btn": "Instal & Mulai Ulang",
-    "downloading": "Mengunduh... {{downloaded}} / {{total}}",
-    "metadata_title": "Sinkronisasi Metadata",
-    "metadata_desc": "Sinkronkan database karakter dan senjata dari server remote. Ini terjadi secara otomatis saat startup tetapi juga dapat dipicu secara manual.",
-    "sync_btn": "Sinkronkan Sekarang",
-    "syncing": "Menyinkronkan...",
-    "sync_success": "Metadata diperbarui ke versi {{version}}",
-    "sync_up_to_date": "Metadata sudah mutakhir.",
-    "sync_failed": "Gagal sinkronisasi metadata: {{error}}"
+    "downloading": "Mengunduh... {{downloaded}} / {{total}}"
+  },
+  "integrations": {
+    "title": "Integrasi",
+    "mod_viewer": {
+      "title": "3DMigoto Mod Viewer",
+      "description": "Buka mod di viewer eksternal.",
+      "recommended_version": "Disarankan portable v2.3.0 atau lebih baru.",
+      "path": "Path executable",
+      "status": {
+        "not_configured": "Belum dikonfigurasi",
+        "configured": "Dikonfigurasi",
+        "missing": "Executable yang dikonfigurasi tidak ditemukan",
+        "checking": "Memeriksa executable…"
+      },
+      "view_latest_release": "Lihat rilis terbaru",
+      "select_executable": "Pilih executable",
+      "replace": "Ganti",
+      "remove": "Hapus",
+      "disclosure": {
+        "title": "Gunakan Mod Viewer eksternal?",
+        "body": "3DMigoto Mod Viewer adalah aplikasi eksternal independen. Aplikasi ini dapat mengubah file INI dan DDS, membuat backup, serta menulis .mod_viewer.json di folder mod Anda. Perubahan ini terjadi di luar transaksi dan pemulihan EMMM.",
+        "official_source": "Pilih hanya binary yang Anda unduh dari rilis GitHub resmi.",
+        "cancel": "Batal",
+        "continue": "Lanjutkan"
+      },
+      "picker_error": "Tidak dapat memilih executable: {{error}}",
+      "release_error": "Tidak dapat membuka halaman rilis terbaru: {{error}}",
+      "save_failed": "Tidak dapat menyimpan executable Mod Viewer: {{error}}",
+      "configured_success": "Executable Mod Viewer dikonfigurasi.",
+      "removed_success": "Konfigurasi Mod Viewer dihapus. Executable tidak dihapus."
+    }
   },
   "privacy": {
     "title": "Klasifikasi Keamanan",
-    "desc": "Safe dan unsafe hanya menjadi klasifikasi mod/koleksi. Kata kunci membantu mengklasifikasikan mod sensitif; tidak ada perpindahan runtime.",
+    "desc": "Kata kunci mengklasifikasikan mod sensitif. Mode runtime tidak berubah.",
     "keywords_title": "Kata Kunci Klasifikasi",
     "keywords_placeholder": "misal: skin, lewd, bikini",
     "keywords_add": "Tambah Kata Kunci",

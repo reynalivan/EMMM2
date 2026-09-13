@@ -230,9 +230,14 @@ pub fn finalize_review(
         let second_score = candidates.get(1).map(|c| c.score).unwrap_or(0.0);
         debug!(
             "[MATCHER_CALIBRATION] finalize_review: decision | mode={:?} best_score={:.2} second_score={:.2} margin={:.2} primary_evidence={} pack_multi={} scanned_ini={} scanned_names={}",
-            config.mode, best.score, second_score, best.score - second_score,
-            primary_flags.first().copied().unwrap_or(false), ambiguity.pack_multi_entity,
-            signals.scanned_ini_files, signals.scanned_name_items
+            config.mode,
+            best.score,
+            second_score,
+            best.score - second_score,
+            primary_flags.first().copied().unwrap_or(false),
+            ambiguity.pack_multi_entity,
+            signals.scanned_ini_files,
+            signals.scanned_name_items
         );
     }
 
@@ -357,9 +362,16 @@ fn log_stage_decision(
 
     debug!(
         "[MATCHER_CALIBRATION] stage_decision: {} | mode={:?} best={:.2} second={:.2} margin={:.2} primary=[{},{}] foreign_hits={} scanned_ini={} scanned_names={}",
-        decision, mode, best_score, second_score, margin,
-        best_has_primary, second_has_primary, foreign_hits,
-        signals.scanned_ini_files, signals.scanned_name_items
+        decision,
+        mode,
+        best_score,
+        second_score,
+        margin,
+        best_has_primary,
+        second_has_primary,
+        foreign_hits,
+        signals.scanned_ini_files,
+        signals.scanned_name_items
     );
 }
 

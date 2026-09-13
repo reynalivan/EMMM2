@@ -7,6 +7,7 @@ import { Search, RefreshCw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GameSchema, FilterDef, CategoryDef } from '@/entities/game-object';
+import { LiquidSurface } from '@/shared/ui/liquid';
 import FilterPanel from './FilterPanel';
 import ObjectBulkActionBar from './ObjectBulkActionBar';
 
@@ -77,6 +78,7 @@ export default function ObjectListToolbar({
 }: ToolbarProps) {
   const { t } = useTranslation(['objects']);
   const [filterOpen, setFilterOpen] = useState(true);
+  const [isSearchActive, setIsSearchActive] = useState(false);
 
   /** Count of active filters for badge */
   const activeCount = useMemo(() => {
@@ -91,90 +93,110 @@ export default function ObjectListToolbar({
   return (
     <>
       {/* Compact toolbar: Search + Filter + Sync + Create */}
-      <div className="p-2 border-b border-base-300/30 flex items-center gap-1.5 relative">
-        {/* Auto Organize drop overlay — slides in from top, solid on hover */}
-        {isDragging && (
-          <div
-            className={`absolute inset-0 z-20 flex items-center justify-center rounded-lg transition-all duration-300 animate-[slideDown_200ms_ease-out] ${
-              isActiveZone
-                ? 'bg-base-300 border-2 border-primary shadow-lg'
-                : 'bg-base-200 border-2 border-dashed border-base-300/50'
-            }`}
-            style={{ animation: 'slideDown 200ms ease-out' }}
-          >
+      <LiquidSurface
+        liquidRole="nav"
+        className="object-list-action-bar relative z-20 block w-full shrink-0"
+        contentClassName="h-auto"
+      >
+        <div className="object-list-toolbar relative flex min-h-14 items-center gap-2 px-2.5 py-2">
+          {/* Auto Organize drop overlay — slides in from top, solid on hover */}
+          {isDragging && (
             <div
-              className={`flex items-center gap-2 ${isActiveZone ? 'text-primary font-bold' : 'text-base-content/50'}`}
+              className={`absolute inset-0 z-20 flex items-center justify-center rounded-lg transition-all duration-300 animate-[slideDown_200ms_ease-out] ${
+                isActiveZone
+                  ? 'bg-base-300 border-2 border-primary shadow-lg'
+                  : 'bg-base-200 border-2 border-dashed border-base-300/50'
+              }`}
+              style={{ animation: 'slideDown 200ms ease-out' }}
             >
-              <Sparkles size={20} className={isActiveZone ? 'animate-pulse' : ''} />
-              <span className="text-sm font-semibold">{t('toolbar.auto_organize')}</span>
+              <div
+                className={`flex items-center gap-2 ${isActiveZone ? 'text-primary font-bold' : 'text-base-content/50'}`}
+              >
+                <Sparkles size={20} className={isActiveZone ? 'animate-pulse' : ''} />
+                <span className="text-sm font-semibold">{t('toolbar.auto_organize')}</span>
+              </div>
             </div>
+          )}
+          <div className="flex h-8 min-w-0 flex-1 items-center">
+            {bulkSelect?.isAnySelected ? (
+              <ObjectBulkActionBar count={bulkSelect.selectionCount} {...bulkSelect} />
+            ) : (
+              <label
+                data-testid="object-list-search"
+                className={`object-list-search group relative block h-8 max-w-full shrink-0 transition-[width] duration-150 ease-out ${
+                  isSearchActive || sidebarSearchQuery ? 'is-expanded w-56' : 'w-8'
+                }`}
+              >
+                <Search
+                  size={14}
+                  data-testid="object-list-search-icon"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-base-content/55 transition-colors group-focus-within:text-primary"
+                />
+                <input
+                  type="search"
+                  placeholder={t('toolbar.search_placeholder')}
+                  aria-label={t('toolbar.search_placeholder')}
+                  className={`input input-sm h-8 w-full border-base-content/10 bg-base-200/50 pl-9 pr-2 text-sm placeholder:text-base-content/30 hover:border-base-content/15 focus:border-primary/40 focus:bg-base-100 ${
+                    isSearchActive || sidebarSearchQuery
+                      ? 'opacity-100'
+                      : 'cursor-pointer border-transparent bg-transparent opacity-0'
+                  }`}
+                  value={sidebarSearchQuery}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  onFocus={() => setIsSearchActive(true)}
+                  onBlur={() => setIsSearchActive(false)}
+                />
+              </label>
+            )}
           </div>
-        )}
-        <div className="relative flex-1 min-w-0 flex items-center h-8">
-          {bulkSelect?.isAnySelected ? (
-            <ObjectBulkActionBar count={bulkSelect.selectionCount} {...bulkSelect} />
-          ) : (
+
+          {/* Right-side buttons (hidden when bulk selection is active) */}
+          {!bulkSelect?.isAnySelected && (
             <>
-              <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30"
-              />
-              <input
-                type="text"
-                placeholder={t('toolbar.search_placeholder')}
-                className="input input-sm w-full pl-8 bg-base-200/40 border-base-300/20 focus:border-primary/40 text-sm focus:outline-none"
-                value={sidebarSearchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-              />
+              {/* Filter toggle */}
+              {showFilterPanel && (
+                <button
+                  className={`btn btn-sm btn-square relative transition-all duration-200 ${
+                    filterOpen
+                      ? 'btn-primary btn-outline'
+                      : activeCount > 0
+                        ? 'btn-ghost text-primary'
+                        : 'btn-ghost text-base-content/50 hover:text-primary'
+                  }`}
+                  onClick={() => setFilterOpen((prev) => !prev)}
+                  aria-pressed={filterOpen}
+                  title={filterOpen ? t('toolbar.hide_filters') : t('toolbar.show_filters')}
+                >
+                  <SlidersHorizontal size={15} />
+                  {activeCount > 0 && !filterOpen && (
+                    <span className="absolute -top-1 -right-1 badge badge-xs badge-primary font-bold">
+                      {activeCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              <button
+                className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
+                onClick={onSync}
+                title={t('toolbar.auto_reorganize')}
+                disabled={isSyncing || mutationsDisabled}
+              >
+                <RefreshCw size={16} />
+              </button>
+              <button
+                className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
+                onClick={onCreateNew}
+                title={t('toolbar.create_new')}
+                disabled={mutationsDisabled}
+              >
+                <Plus size={16} />
+              </button>
             </>
           )}
         </div>
-
-        {/* Right-side buttons (hidden when bulk selection is active) */}
-        {!bulkSelect?.isAnySelected && (
-          <>
-            {/* Filter toggle */}
-            {showFilterPanel && (
-              <button
-                className={`btn btn-sm btn-square relative transition-all duration-200 ${
-                  filterOpen
-                    ? 'btn-primary btn-outline'
-                    : activeCount > 0
-                      ? 'btn-ghost text-primary'
-                      : 'btn-ghost text-base-content/50 hover:text-primary'
-                }`}
-                onClick={() => setFilterOpen((prev) => !prev)}
-                aria-pressed={filterOpen}
-                title={filterOpen ? t('toolbar.hide_filters') : t('toolbar.show_filters')}
-              >
-                <SlidersHorizontal size={15} />
-                {activeCount > 0 && !filterOpen && (
-                  <span className="absolute -top-1 -right-1 badge badge-xs badge-primary font-bold">
-                    {activeCount}
-                  </span>
-                )}
-              </button>
-            )}
-
-            <button
-              className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
-              onClick={onSync}
-              title={t('toolbar.auto_reorganize')}
-              disabled={isSyncing || mutationsDisabled}
-            >
-              <RefreshCw size={16} />
-            </button>
-            <button
-              className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
-              onClick={onCreateNew}
-              title={t('toolbar.create_new')}
-              disabled={mutationsDisabled}
-            >
-              <Plus size={16} />
-            </button>
-          </>
-        )}
-      </div>
+      </LiquidSurface>
 
       {/* Filter panel — collapsible, with category + sort + status + metadata */}
       {showFilterPanel && filterOpen && (

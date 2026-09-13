@@ -1,10 +1,10 @@
 /**
  * Tests for Dashboard component.
- * Covers: TC-33-001, TC-33-003, TC-33-006 (Stat Cards, Empty State, Quick Play)
+ * Covers: TC-33-001, TC-33-003 (Stat Cards and Empty State)
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '../../tests/testing/test-utils';
+import { render, screen, fireEvent } from '../../tests/testing/test-utils';
 import Dashboard from './Dashboard';
 
 // Mock Tauri invoke
@@ -37,6 +37,10 @@ vi.mock('./hooks/useDashboardStats', () => ({
   useDashboardStats: vi.fn(),
 }));
 
+vi.mock('./hooks/useStorageSizeBackfill', () => ({
+  useStorageSizeBackfill: vi.fn(),
+}));
+
 vi.mock('./hooks/useActiveKeybindings', () => ({
   sparse: (value: unknown) => value,
   useActiveKeybindings: vi.fn(),
@@ -46,7 +50,7 @@ vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({
     activeGame: {
       id: 'g-1',
-      name: 'Genshin Impact',
+      name: 'GIMI',
       game_type: 'GIMI',
       mod_path: 'E:/Mods',
       game_exe: 'E:/Game/Genshin.exe',
@@ -59,6 +63,7 @@ vi.mock('@/entities/game', () => ({
 }));
 
 import { useDashboardStats } from './hooks/useDashboardStats';
+import { useStorageSizeBackfill } from './hooks/useStorageSizeBackfill';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 
 const mockFullStats = {
@@ -77,15 +82,17 @@ const mockFullStats = {
     { category: 'UI', count: 7 },
   ],
   game_distribution: [
-    { game_id: 'g-1', game_name: 'Genshin Impact', count: 30 },
+    { game_id: 'g-1', game_name: 'GIMI', count: 30 },
     { game_id: 'g-2', game_name: 'HSR', count: 12 },
   ],
   recent_mods: [
     {
       id: 'mod-1',
+      game_id: 'g-1',
       name: 'Hu Tao Quantum Mod',
-      game_name: 'Genshin Impact',
+      game_name: 'GIMI',
       object_name: 'Character',
+      folder_path: 'Character/Hu Tao Quantum Mod',
       indexed_at: '2026-05-13T00:00:00',
     },
   ],
@@ -99,6 +106,10 @@ describe('Dashboard - TC-33', () => {
       keybindings: [],
       isLoading: false,
       isError: false,
+    });
+    vi.mocked(useStorageSizeBackfill).mockReturnValue({
+      status: null,
+      retry: vi.fn(),
     });
   });
 
@@ -251,8 +262,8 @@ describe('Dashboard - TC-33', () => {
     });
   });
 
-  describe('TC-33-006: Quick Play', () => {
-    it('shows active game name in quick play panel', () => {
+  describe('TC-33-005a: Storage Size Backfill', () => {
+    it('shows non-blocking storage calculation progress', () => {
       vi.mocked(useDashboardStats).mockReturnValue({
         data: mockFullStats,
         isLoading: false,
@@ -260,17 +271,26 @@ describe('Dashboard - TC-33', () => {
         error: null,
         refresh: vi.fn(),
       });
+      vi.mocked(useStorageSizeBackfill).mockReturnValue({
+        status: {
+          state: 'Running',
+          total_games: 3,
+          completed_games: 1,
+          current_game_id: 'g-2',
+          errors: [],
+        },
+        retry: vi.fn(),
+      });
 
       render(<Dashboard />);
 
-      expect(screen.getByText('Genshin Impact')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /launch/i })).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Calculating storage size');
+      expect(screen.getByRole('status')).toHaveTextContent('Processed 1 of 3 games');
+      expect(screen.getByText('42')).toBeInTheDocument();
     });
 
-    it('calls launch_game invoke on quick play button click', async () => {
-      const { invoke } = await import('@tauri-apps/api/core');
-      vi.mocked(invoke).mockResolvedValueOnce(undefined);
-
+    it('offers a retry when storage calculation fails', () => {
+      const retry = vi.fn();
       vi.mocked(useDashboardStats).mockReturnValue({
         data: mockFullStats,
         isLoading: false,
@@ -278,14 +298,22 @@ describe('Dashboard - TC-33', () => {
         error: null,
         refresh: vi.fn(),
       });
+      vi.mocked(useStorageSizeBackfill).mockReturnValue({
+        status: {
+          state: 'Failed',
+          total_games: 3,
+          completed_games: 1,
+          current_game_id: null,
+          errors: ['The mod directory is unavailable.'],
+        },
+        retry,
+      });
 
       render(<Dashboard />);
 
-      fireEvent.click(screen.getByRole('button', { name: /launch/i }));
-
-      await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith('launch_game', { gameId: 'g-1' });
-      });
+      expect(screen.getByRole('alert')).toHaveTextContent('The mod directory is unavailable.');
+      fireEvent.click(screen.getByRole('button', { name: 'Retry storage scan' }));
+      expect(retry).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -303,9 +331,12 @@ describe('Dashboard - TC-33', () => {
         keybindings: [
           {
             mod_name: 'Hu Tao Mod',
+            folder_path: 'Character/Hu Tao Mod',
             section_name: '[Key1]',
             key: 'F1',
             back: 'F2',
+            control_kind: 'key_toggle',
+            value_summary: '0, 1',
           },
         ],
         isLoading: false,
@@ -315,8 +346,12 @@ describe('Dashboard - TC-33', () => {
       render(<Dashboard />);
 
       expect(screen.getByText('Active Key Mapping')).toBeInTheDocument();
-      expect(screen.getByText('Hu Tao Mod')).toBeInTheDocument();
-      expect(screen.getByText('F1')).toBeInTheDocument();
+      expect(screen.getAllByText('Hu Tao Mod')).toHaveLength(2);
+      expect(screen.getAllByText('F1')).toHaveLength(2);
+      expect(screen.getAllByText('Key toggle')).toHaveLength(2);
+      expect(screen.getAllByText('0, 1')).toHaveLength(2);
+      expect(screen.getByTestId('active-keybindings-mobile-cards')).toHaveClass('sm:hidden');
+      expect(screen.getByRole('table').parentElement).toHaveClass('hidden', 'sm:block');
     });
 
     it('shows empty keybinding message when no keybindings found', () => {

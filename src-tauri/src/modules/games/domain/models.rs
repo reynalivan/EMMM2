@@ -7,11 +7,11 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GameType {
-    GIMI = 0, // Genshin Impact
-    SRMI = 1, // Honkai Star Rail
-    WWMI = 2, // Wuthering Waves
-    ZZMI = 3, // Zenless Zone Zero
-    EFMI = 4, // Arknight Endfield
+    GIMI = 0,
+    SRMI = 1,
+    WWMI = 2,
+    ZZMI = 3,
+    EFMI = 4,
 }
 
 // serde_repr serializes this enum as its numeric discriminant, but the specta
@@ -112,11 +112,11 @@ impl GameType {
 
     pub fn display_name(&self) -> &'static str {
         match self {
-            GameType::GIMI => "Genshin Impact",
-            GameType::SRMI => "Honkai Star Rail",
-            GameType::WWMI => "Wuthering Waves",
-            GameType::ZZMI => "Zenless Zone Zero",
-            GameType::EFMI => "Arknight Endfield",
+            GameType::GIMI => "GIMI",
+            GameType::SRMI => "SRMI",
+            GameType::WWMI => "WWMI",
+            GameType::ZZMI => "ZZMI",
+            GameType::EFMI => "EFMI",
         }
     }
 
@@ -202,6 +202,7 @@ pub struct GameObject {
     pub folder_path_key: String,
     pub status: ItemStatus,
     pub object_type: String,
+    pub randomizer_mode: Option<crate::modules::catalog::domain::objects::RandomizerMode>,
     pub sub_category: Option<String>,
     pub tags: String,
     pub metadata: String,

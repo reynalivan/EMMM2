@@ -4,6 +4,9 @@ import { useBrowserStore } from './useBrowserStore';
 describe('useBrowserStore', () => {
   beforeEach(() => {
     useBrowserStore.setState({
+      gameId: null,
+      tabs: [],
+      activeTabId: null,
       isDownloadPanelOpen: false,
       isDownloadConfirmationOpen: false,
     });
@@ -23,4 +26,17 @@ describe('useBrowserStore', () => {
     expect(useBrowserStore.getState().isDownloadPanelOpen).toBe(false);
   });
 
+  it('clears tabs when the active game changes', () => {
+    const store = useBrowserStore.getState();
+    store.setGameContext('game-1');
+    store.addTab({ id: 'tab-1', url: 'https://example.test', title: 'Example' });
+
+    useBrowserStore.getState().setGameContext('game-2');
+
+    expect(useBrowserStore.getState()).toMatchObject({
+      gameId: 'game-2',
+      tabs: [],
+      activeTabId: null,
+    });
+  });
 });

@@ -18,6 +18,13 @@ import PreviewConfirmDialogs from './components/PreviewConfirmDialogs';
 import PreviewHeader from './components/PreviewHeader';
 import { openFolderConflictManagerDialog } from '@/features/workspace-runtime';
 import PreviewFolderConflictState from './components/PreviewFolderConflictState';
+import ModHealthSection from './components/ModHealthSection';
+import { useModHealth } from './hooks/useModHealth';
+import { toModHealthPanelData } from './utils/modHealthPresentation';
+import { useModViewerExternalReview } from '@/features/mod-runtime';
+import { commands } from '@/shared/api/tauri/bindings';
+import { formatAppError } from '@/shared/lib/appError';
+import { toast } from '@/shared/ui/toast';
 
 export default function PreviewPanel() {
   const { t } = useTranslation(['preview', 'common']);
@@ -72,6 +79,11 @@ export default function PreviewPanel() {
   });
   const canEdit = Boolean(activePath) && !sourceUnavailableMessage && !folderNameConflict;
   const interactiveActivePath = folderNameConflict ? null : activePath;
+  const modHealth = useModHealth(sourceUnavailableMessage ? null : interactiveActivePath);
+  const modViewerExternalReview = useModViewerExternalReview(
+    sourceUnavailableMessage ? null : interactiveActivePath,
+  );
+  const modHealthReport = modHealth.data ? toModHealthPanelData(modHealth.data) : null;
 
   const boundedImageIndex = Math.min(currentImageIndex, Math.max(images.length - 1, 0));
   const currentImagePath = images[boundedImageIndex] ?? null;
@@ -147,7 +159,7 @@ export default function PreviewPanel() {
 
   return (
     <div
-      className="mx-auto flex h-full w-full max-w-140 flex-col overflow-y-auto border-l border-base-content/5 bg-base-100/30 px-6 pb-6 pt-0 backdrop-blur-md"
+      className="workspace-scroll-owner flex h-full w-full max-w-none flex-col overflow-y-auto border-l border-base-content/5 bg-base-100/85 px-6 pb-6"
       onScroll={handleScroll}
     >
       <input
@@ -215,6 +227,7 @@ export default function PreviewPanel() {
 
       <GallerySection
         images={images}
+        imageRefreshKey={previewImagesQuery.dataUpdatedAt}
         currentImageIndex={currentImageIndex}
         isFetching={previewImagesQuery.isFetching}
         canEdit={canEdit}
@@ -287,13 +300,33 @@ export default function PreviewPanel() {
         </button>
       </div>
 
+      <ModHealthSection
+        report={modHealthReport}
+        isLoading={modHealth.isFetching}
+        errorMessage={modHealth.isError ? formatAppError(modHealth.error) : null}
+        onRecheck={() => {
+          void modHealth.refetch();
+        }}
+        externalReview={modViewerExternalReview.review}
+        onDismissReview={modViewerExternalReview.dismiss}
+        onOpenIssueFile={(filePath) => {
+          if (!activeGame?.id || !interactiveActivePath) {
+            return;
+          }
+          void commands
+            .openIniInEditor(activeGame.id, interactiveActivePath, filePath)
+            .catch((error) => {
+              toast.error(
+                t('preview:errors.open_location_failed', { error: formatAppError(error) }),
+              );
+            });
+        }}
+      />
+
       <PreviewPanelModals
         deleteConfirm={actions.deleteConfirm}
         setDeleteConfirm={actions.setDeleteConfirm}
         handleDeleteConfirm={actions.handleDeleteConfirm}
-        renameDialog={actions.renameDialog}
-        handleRenameCancel={actions.handleRenameCancel}
-        handleRenameSubmit={actions.handleRenameSubmit}
         duplicateWarning={actions.duplicateWarning}
         handleDuplicateForceEnable={actions.handleDuplicateForceEnable}
         handleDuplicateEnableOnly={actions.handleDuplicateEnableOnly}

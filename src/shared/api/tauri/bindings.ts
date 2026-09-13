@@ -12,11 +12,15 @@
 
 import { commands as gen } from './bindings.gen';
 import type { DiskReconcileReason, Result } from './bindings.gen';
+import { resolveDemoCommand } from '@/demo/commands';
 
 // Re-export the generated types that callers historically imported from this
 // module, so `import type { X } from './bindings'` keeps working.
 export type {
   AppSettings,
+  BrowserBookmark,
+  BrowserHistoryEntry,
+  BrowserPrivacySummary,
   ApplyGameModsDirectoryRequest,
   ApplyGameModsDirectoryResult,
   ConfigStatus,
@@ -49,6 +53,11 @@ export type {
   ImportItemStatus,
   ImportSourceKind,
   KeyBinding,
+  LiquidAppearance,
+  LiquidMaterial,
+  LiquidQuality,
+  LiquidRoleConfig,
+  LiquidThemeConfig,
   MoveModsToObjectInput,
   ModInboxEntry,
   ModInboxEntryKind,
@@ -58,15 +67,27 @@ export type {
   PipelineTask,
   ProcessedModInboxDestination,
   ProcessedModInboxSource,
+  ApplyRandomizedLoadoutInput,
+  ApplyRandomizedLoadoutResult,
   RandomModProposal,
+  RandomizedLoadoutPreview,
+  RandomizedLoadoutPreviewItem,
+  RandomizedLoadoutBackupInput,
+  RandomizedLoadoutBackupResult,
+  RandomizerSafetyFilter,
+  RandomizerLoadoutMode,
+  RandomizerScope,
   RenameConfirmationGroup,
   RenameConfirmationKind,
   RenameConfirmationReason,
   RenameConfirmationResolution,
   RenameConfirmationResolutionAction,
   StableCategory,
+  SuggestRandomModsInput,
   TargetMode,
   TaskStatus,
+  ThemeBackground,
+  ThemeBackgroundKind,
   ThemeConfig,
   ThemeMetadata,
   WorkspaceMoveTarget,
@@ -132,9 +153,132 @@ function unwrap(value: unknown): unknown {
   throw value.error;
 }
 
+function telemetryOperation(commandName: string): string {
+  const normalized = commandName.toLowerCase();
+  if (normalized.includes('refreshimportitemsuggestions')) return 'auto_match';
+  if (normalized.includes('setimportitemdecision')) return 'classification_review';
+  if (normalized.includes('classification')) return 'classification';
+  if (normalized.includes('reconcile')) return 'reconcile';
+  if (normalized.includes('watcher')) return 'watcher';
+  if (normalized.includes('import')) return 'import';
+  if (normalized.includes('extract') || normalized.includes('analyze')) return 'extract';
+  if (normalized.includes('collection')) return 'collection_apply';
+  if (normalized.includes('restore')) return 'restore';
+  if (normalized.includes('launch')) return 'launch';
+  if (normalized.includes('bulk')) return 'bulk_action';
+  if (normalized.includes('toggle') || normalized.includes('setmod')) return 'toggle';
+  return 'error';
+}
+
+function telemetryErrorCode(error: unknown): string {
+  if (typeof error !== 'object' || error === null || !('type' in error)) return 'unknown';
+  const type = String((error as { type: unknown }).type);
+  const payload = (error as { payload?: unknown }).payload;
+  const nestedType =
+    typeof payload === 'string'
+      ? payload
+      : typeof payload === 'object' && payload !== null
+        ? Object.keys(payload)[0]
+        : undefined;
+  if (type === 'Collection') {
+    const codes: Record<string, string> = {
+      NotFound: 'not_found',
+      MissingMods: 'not_found',
+      DuplicateName: 'conflict',
+      Validation: 'validation',
+      Db: 'database',
+      RuntimeState: 'invariant',
+      Io: 'io',
+      FileInUse: 'external',
+      PathBusy: 'external',
+    };
+    return nestedType === undefined ? 'unknown' : (codes[nestedType] ?? 'unknown');
+  }
+  if (type === 'Metadata') {
+    const codes: Record<string, string> = {
+      Security: 'permission',
+      NotFound: 'not_found',
+      Io: 'io',
+      Db: 'database',
+      Validation: 'validation',
+    };
+    return nestedType === undefined ? 'unknown' : (codes[nestedType] ?? 'unknown');
+  }
+  if (type === 'Browser') {
+    const codes: Record<string, string> = {
+      InvalidUrl: 'validation',
+      InvalidSetting: 'validation',
+      JobIncomplete: 'validation',
+      Download: 'network',
+      QueueFull: 'conflict',
+      DownloadAlreadyActive: 'conflict',
+      DownloadConfirmationUnavailable: 'not_found',
+      Io: 'io',
+      Db: 'database',
+      WindowUnavailable: 'external',
+      WebviewNotFound: 'external',
+      Import: 'external',
+      QueueClosed: 'external',
+    };
+    return nestedType === undefined ? 'unknown' : (codes[nestedType] ?? 'unknown');
+  }
+  if (type === 'Scanner') {
+    const codes: Record<string, string> = {
+      Security: 'permission',
+      PathEscape: 'permission',
+      PathNotFound: 'not_found',
+      NotADirectory: 'not_found',
+      Parse: 'validation',
+      Validation: 'validation',
+      Network: 'network',
+      Io: 'io',
+      Db: 'database',
+    };
+    return nestedType === undefined ? 'unknown' : (codes[nestedType] ?? 'unknown');
+  }
+  const codes: Record<string, string> = {
+    Db: 'database',
+    Io: 'io',
+    Validation: 'validation',
+    NotFound: 'not_found',
+    Security: 'permission',
+    Cancelled: 'cancelled',
+    ArchiveUnsupported: 'unsupported',
+    DuplicateConflict: 'conflict',
+    PathBusy: 'external',
+    FileInUse: 'external',
+    RuntimeState: 'invariant',
+    RuntimePathNotFound: 'not_found',
+    Internal: 'invariant',
+    ArchivePasswordRequired: 'validation',
+    ArchivePasswordIncorrect: 'validation',
+    ObjectHasMods: 'conflict',
+  };
+  return codes[type] ?? 'unknown';
+}
+
+function recordNativeCommandFailure(commandName: string, error: unknown): void {
+  if (commandName === 'recordNativeErrorMetric') return;
+  void gen
+    .recordNativeErrorMetric(telemetryOperation(commandName), telemetryErrorCode(error))
+    .catch(() => undefined);
+}
+
 export const commands: Commands = new Proxy({} as Commands, {
   get(_target, name: string) {
     const command = gen[name as keyof typeof gen] as (...args: unknown[]) => Promise<unknown>;
-    return (...args: unknown[]) => command(...args).then(unwrap);
+    return (...args: unknown[]) => {
+      const demoResult = resolveDemoCommand(name, args);
+      if (demoResult.handled) {
+        return Promise.resolve(demoResult.value);
+      }
+
+      return command(...args)
+        .then(unwrap)
+        .catch((error: unknown) => {
+          recordNativeCommandFailure(name, error);
+          throw error;
+        });
+    };
   },
 });

@@ -8,14 +8,18 @@ import type { BrowserDownloadItem } from '../types';
 vi.mock('@/entities/browser');
 vi.mock('../hooks/useDownloads');
 vi.mock('@/app/store', () => ({
-  useAppStore: {
-    getState: () => ({ setWorkspaceView: vi.fn() }),
-  },
+  useAppStore: Object.assign(
+    vi.fn((selector: (state: { activeGameId: string }) => unknown) =>
+      selector({ activeGameId: 'game-1' }),
+    ),
+    { getState: () => ({ setWorkspaceView: vi.fn() }) },
+  ),
 }));
 
 const mockDownloads: BrowserDownloadItem[] = [
   {
     id: 'dl-1',
+    game_id: 'game-1',
     filename: 'mod_pack.zip',
     status: 'finished',
     bytes_total: 100,
@@ -24,12 +28,15 @@ const mockDownloads: BrowserDownloadItem[] = [
     file_path: 'path',
     source_url: 'url',
     error_msg: null,
+    can_resume: false,
+    tab_label: null,
     queue_order: 1,
     started_at: 'now',
     finished_at: 'now',
   },
   {
     id: 'dl-2',
+    game_id: 'game-1',
     filename: 'downloading.rar',
     status: 'in_progress',
     bytes_total: 200,
@@ -38,6 +45,8 @@ const mockDownloads: BrowserDownloadItem[] = [
     file_path: 'path',
     source_url: 'url',
     error_msg: null,
+    can_resume: false,
+    tab_label: null,
     queue_order: 2,
     started_at: 'now',
     finished_at: null,

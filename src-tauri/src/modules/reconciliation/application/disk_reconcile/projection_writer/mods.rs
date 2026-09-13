@@ -85,15 +85,10 @@ pub(super) async fn apply_disk_mods(
             let status_changed = persisted_mod.status != metadata.status;
             let safety_changed = persisted_mod.is_safe != metadata.is_safe
                 || existing_safety_source != metadata.safety_source;
-            let owner_changed = persisted_mod.object_id.as_deref() != Some(object_id.as_str());
-            let desired_mod_type = if owner_changed {
-                object_type.as_str()
-            } else {
-                persisted_mod
-                    .object_type
-                    .as_deref()
-                    .unwrap_or(object_type.as_str())
-            };
+            // `mods.object_type` is a denormalized projection of its owning
+            // Object. Reconcile repairs stale child rows even when the mod did
+            // not move, so filters and the randomizer observe one taxonomy.
+            let desired_mod_type = object_type.as_str();
             let object_changed = existing_mod.object_id.as_deref() != Some(object_id.as_str());
             let type_changed = existing_mod.object_type.as_deref() != Some(desired_mod_type);
             let id_changed = existing_mod.id != new_id;
@@ -144,6 +139,17 @@ pub(super) async fn apply_disk_mods(
                 state.folders_changed = true;
             }
 
+            if let Some(size_bytes) = disk_mod
+                .size_bytes
+                .filter(|value| *value != persisted_mod.size_bytes)
+            {
+                crate::modules::library::adapters::sqlite::mods::update_mod_size_bytes_tx(
+                    &mut *conn, &new_id, size_bytes,
+                )
+                .await?;
+                state.folders_changed = true;
+            }
+
             if path_changed
                 && !is_runtime_prefix_transition(&persisted_mod.folder_path, &disk_mod.folder_path)
                 && !identity_transitions
@@ -182,6 +188,12 @@ pub(super) async fn apply_disk_mods(
                 false,
                 metadata.is_safe,
                 metadata.safety_source,
+                disk_mod.size_bytes.ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Storage size missing for newly discovered mod '{}'",
+                        disk_mod.folder_path
+                    ))
+                })?,
             )
             .await?;
             state.folders_changed = true;

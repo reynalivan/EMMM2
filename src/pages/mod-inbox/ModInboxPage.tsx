@@ -6,6 +6,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatAppError } from '../../shared/lib/appError';
 import { commands } from '../../shared/api/tauri/bindings';
+import { isDemoMode } from '@/shared/lib/appMode';
 import { useAppStore } from '@/app/store';
 import { toast } from '@/shared/ui/toast';
 import { openImportBatchWizard } from '@/features/import-batches';
@@ -20,6 +21,10 @@ import {
 import { EmptyState, ProcessedSourceRow, ReadyEntryRow } from './ModInboxRows';
 import { openProcessedDestinationInApp } from './navigation';
 import type { ModInboxSnapshot, ProcessedModInboxDestination } from './types';
+import {
+  WorkspacePageContent,
+  WorkspacePageFrame,
+} from '@/shared/ui/components/layout/WorkspacePageFrame';
 
 export default function ModInboxPage() {
   const { t } = useTranslation('mod_inbox');
@@ -33,8 +38,28 @@ export default function ModInboxPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const refreshSequence = useRef(0);
+  const readySelectionScope = useRef<string | null>(null);
   const watcherTransition = useRef(Promise.resolve());
   const watcherErrorPrefix = t('watcher_failed', { error: '' });
+
+  const syncReadySelection = useCallback((next: ModInboxSnapshot) => {
+    if (next.rootState !== 'ready') {
+      readySelectionScope.current = null;
+      setReadySelection(new Set());
+      return;
+    }
+
+    const scope = `${next.gameId}:${next.rootPath}`;
+    const selectableEntryKeys = new Set(
+      next.readyEntries.filter((entry) => !entry.pendingBatchId).map((entry) => entry.entryKey),
+    );
+    const selectAll = readySelectionScope.current !== scope;
+    readySelectionScope.current = scope;
+    setReadySelection((current) => {
+      if (selectAll) return selectableEntryKeys;
+      return new Set([...current].filter((entryKey) => selectableEntryKeys.has(entryKey)));
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!activeGameId) {
@@ -53,6 +78,7 @@ export default function ModInboxPage() {
         return;
       }
       setSnapshot(next);
+      syncReadySelection(next);
     } catch (cause) {
       if (requestSequence !== refreshSequence.current) {
         return;
@@ -63,12 +89,16 @@ export default function ModInboxPage() {
         setLoading(false);
       }
     }
-  }, [activeGameId]);
+  }, [activeGameId, syncReadySelection]);
 
   useEffect(() => {
     if (!activeGameId) return;
 
     void refresh();
+
+    if (isDemoMode) {
+      return;
+    }
 
     const unlistenPromise = listen('mod-inbox://changed', () => void refresh());
     return () => {
@@ -81,7 +111,7 @@ export default function ModInboxPage() {
     snapshot?.gameId === activeGameId && snapshot.rootState === 'ready' ? snapshot.rootPath : null;
 
   useEffect(() => {
-    if (!activeGameId || !inboxWatcherRoot) {
+    if (isDemoMode || !activeGameId || !inboxWatcherRoot) {
       return;
     }
 
@@ -137,6 +167,7 @@ export default function ModInboxPage() {
     try {
       const next = await modInboxCommands.createModInboxFolder(activeGameId);
       setSnapshot(next);
+      syncReadySelection(next);
     } catch (cause) {
       toast.error(t('errors.create_folder', { error: formatAppError(cause) }));
     } finally {
@@ -204,7 +235,7 @@ export default function ModInboxPage() {
   };
 
   const chooseInboxLocation = async () => {
-    if (!activeGameId) return;
+    if (isDemoMode || !activeGameId) return;
     try {
       const selectedPath = await openDialog({
         directory: true,
@@ -230,7 +261,39 @@ export default function ModInboxPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-base-100">
+    <WorkspacePageFrame
+      context={
+        snapshot ? (
+          <ModInboxTabs
+            activeTab={activeTab}
+            readyCount={snapshot.readyEntries.length}
+            processedCount={snapshot.processedSources.length}
+            allSelected={activeTab === 'ready' ? allReadySelected : allProcessedSelected}
+            selectionDisabled={
+              activeTab === 'ready'
+                ? selectableReadyEntries.length === 0
+                : retainedProcessedSources.length === 0
+            }
+            onToggleSelectAll={() => {
+              if (activeTab === 'ready') {
+                setReadySelection(
+                  allReadySelected
+                    ? new Set()
+                    : new Set(selectableReadyEntries.map((entry) => entry.entryKey)),
+                );
+                return;
+              }
+              setProcessedSelection(
+                allProcessedSelected
+                  ? new Set()
+                  : new Set(retainedProcessedSources.map((source) => source.sourceId)),
+              );
+            }}
+            onChange={setActiveTab}
+          />
+        ) : undefined
+      }
+    >
       <ModInboxHeader
         snapshot={snapshot}
         loading={loading}
@@ -239,15 +302,34 @@ export default function ModInboxPage() {
           if (snapshot) void modInboxCommands.openModInboxFolder(activeGameId);
         }}
         onRefresh={() => void refresh()}
+        topBarAction={
+          activeTab === 'ready' ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={busyAction === 'create-batch' || readySelection.size === 0}
+              onClick={() => void createBatch()}
+            >
+              {busyAction === 'create-batch' && <span className="loading loading-spinner" />}
+              {t('ready.review_selected', { count: readySelection.size })}
+            </button>
+          ) : null
+        }
       />
 
       {error ? (
-        <div className="m-5 alert alert-error">
-          <span>{t('errors.load', { error })}</span>
-          <button type="button" className="btn btn-sm" onClick={() => void refresh()}>
-            {t('actions.retry')}
-          </button>
-        </div>
+        <WorkspacePageContent>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-error/25 bg-error/8 p-4">
+            <span className="text-sm">{t('errors.load', { error })}</span>
+            <button
+              type="button"
+              className="btn btn-error btn-outline btn-sm"
+              onClick={() => void refresh()}
+            >
+              {t('actions.retry')}
+            </button>
+          </div>
+        </WorkspacePageContent>
       ) : !snapshot && loading ? (
         <div className="grid flex-1 place-items-center">
           <span className="loading loading-spinner loading-lg text-primary" />
@@ -261,49 +343,9 @@ export default function ModInboxPage() {
         />
       ) : snapshot ? (
         <>
-          <ModInboxTabs
-            activeTab={activeTab}
-            readyCount={snapshot.readyEntries.length}
-            processedCount={snapshot.processedSources.length}
-            onChange={setActiveTab}
-          />
-
-          <main className="flex-1 overflow-auto p-5">
+          <WorkspacePageContent>
             {activeTab === 'ready' ? (
               <section className="mx-auto max-w-6xl space-y-3">
-                <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-sm"
-                      aria-label={t('ready.select_all')}
-                      checked={allReadySelected}
-                      disabled={selectableReadyEntries.length === 0}
-                      onChange={() =>
-                        setReadySelection(
-                          allReadySelected
-                            ? new Set()
-                            : new Set(selectableReadyEntries.map((entry) => entry.entryKey)),
-                        )
-                      }
-                    />
-                    {t('actions.select_all')}
-                  </label>
-                  {readySelection.size > 0 && (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={busyAction === 'create-batch'}
-                      onClick={() => void createBatch()}
-                    >
-                      {busyAction === 'create-batch' && (
-                        <span className="loading loading-spinner" />
-                      )}
-                      {t('ready.review_selected', { count: readySelection.size })}
-                    </button>
-                  )}
-                </div>
-
                 {snapshot.readyEntries.length === 0 ? (
                   <EmptyState
                     icon={<PackageOpen size={34} />}
@@ -331,25 +373,8 @@ export default function ModInboxPage() {
               </section>
             ) : (
               <section className="mx-auto max-w-6xl space-y-3">
-                <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-sm"
-                      aria-label={t('processed.select_all')}
-                      checked={allProcessedSelected}
-                      disabled={retainedProcessedSources.length === 0}
-                      onChange={() =>
-                        setProcessedSelection(
-                          allProcessedSelected
-                            ? new Set()
-                            : new Set(retainedProcessedSources.map((source) => source.sourceId)),
-                        )
-                      }
-                    />
-                    {t('actions.select_all')}
-                  </label>
-                  {processedSelection.size > 0 && (
+                {processedSelection.size > 0 && (
+                  <div className="flex min-h-10 justify-end">
                     <button
                       type="button"
                       className="btn btn-error btn-outline btn-sm gap-2"
@@ -358,8 +383,8 @@ export default function ModInboxPage() {
                       <Trash2 size={15} />
                       {t('processed.delete_selected', { count: processedSelection.size })}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {snapshot.processedSources.length === 0 ? (
                   <EmptyState
@@ -383,7 +408,7 @@ export default function ModInboxPage() {
                 )}
               </section>
             )}
-          </main>
+          </WorkspacePageContent>
         </>
       ) : null}
 
@@ -395,6 +420,6 @@ export default function ModInboxPage() {
           onConfirm={() => void deleteProcessedSources()}
         />
       )}
-    </div>
+    </WorkspacePageFrame>
   );
 }

@@ -388,4 +388,25 @@ async fn test_recent_mods_limit() {
 
     let recents = dashboard::fetch_recent_mods(&pool, 5).await.unwrap();
     assert_eq!(recents.len(), 5, "Should return at most 5 recent mods");
+    assert!(recents.iter().all(|recent| recent.game_id == "g1"));
+    assert!(recents
+        .iter()
+        .all(|recent| recent.folder_path.starts_with("/dummy/mod/")));
+}
+
+#[tokio::test]
+async fn test_recent_mods_resolve_relative_folder_paths() {
+    let pool = setup_pool().await;
+    seed_game(&pool, "g1", "Genshin").await;
+    seed_mod(&pool, SeedMod::default()).await;
+    sqlx::query("UPDATE mods SET folder_path = ? WHERE id = ?")
+        .bind("Character/Mod1")
+        .bind("m1")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let recents = dashboard::fetch_recent_mods(&pool, 5).await.unwrap();
+
+    assert_eq!(recents[0].folder_path, "/dummy/mods/g1/Character/Mod1");
 }

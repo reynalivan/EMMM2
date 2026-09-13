@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { subscribeWorkspaceIntent } from '@/features/workspace-runtime';
+import { isDemoMode } from '@/shared/lib/appMode';
 
 interface UseObjectListEffectsOptions {
   activeGameId: string | null;
@@ -13,7 +14,7 @@ export function useObjectListEffects({
   handleDropAutoOrganize,
 }: UseObjectListEffectsOptions): void {
   useEffect(() => {
-    if (!activeGameId) {
+    if (!activeGameId || isDemoMode) {
       return;
     }
 

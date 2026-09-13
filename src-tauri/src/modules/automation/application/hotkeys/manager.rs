@@ -213,7 +213,14 @@ impl HotkeyManager {
             tauri::async_runtime::spawn(async move {
                 match execute_cycle_preset(&app_handle, direction).await {
                     Ok(summary) => log::info!("Hotkey {:?} → {}", action, summary),
-                    Err(e) => log::error!("Preset cycle hotkey {:?} failed: {e}", action),
+                    Err(error) => {
+                        crate::modules::system::application::telemetry::record_background_failure(
+                            &app_handle,
+                            &error,
+                        )
+                        .await;
+                        log::error!("Preset cycle hotkey {:?} failed: {error}", action);
+                    }
                 }
 
                 if let Some(hotkey_manager) = app_handle.try_state::<HotkeyManager>() {

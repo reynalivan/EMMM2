@@ -45,6 +45,29 @@ pub enum PreparedWorkspaceSwitch {
     Mod(PreparedModSwitch),
 }
 
+/// Distinguishes a failed mutation whose compensation completed from a failed
+/// compensation. Callers with durable journals may only close a rollback after
+/// the latter has been ruled out.
+#[derive(Debug)]
+pub(crate) enum PreparedWorkspaceExecutionError {
+    Apply(AppError),
+    Compensation(AppError),
+}
+
+impl PreparedWorkspaceExecutionError {
+    pub(crate) fn into_app_error(self) -> AppError {
+        match self {
+            Self::Apply(error) | Self::Compensation(error) => error,
+        }
+    }
+}
+
+impl From<AppError> for PreparedWorkspaceExecutionError {
+    fn from(error: AppError) -> Self {
+        Self::Apply(error)
+    }
+}
+
 impl PreparedWorkspaceSwitch {
     pub fn journal_steps(&self) -> Vec<(u32, PathBuf, PathBuf)> {
         match self {
@@ -70,6 +93,15 @@ impl PreparedWorkspaceSwitch {
         app: &tauri::AppHandle,
         watcher: &WatcherState,
     ) -> Result<WorkspaceSwitchResult, AppError> {
+        self.execute_with_outcome(app, watcher)
+            .map_err(PreparedWorkspaceExecutionError::into_app_error)
+    }
+
+    pub(crate) fn execute_with_outcome(
+        &self,
+        app: &tauri::AppHandle,
+        watcher: &WatcherState,
+    ) -> Result<WorkspaceSwitchResult, PreparedWorkspaceExecutionError> {
         match self {
             Self::Immediate(result) => Ok(result.clone()),
             Self::Object(prepared) => {
@@ -116,18 +148,24 @@ impl PreparedWorkspaceSwitch {
                     );
                     if !execution.result.failures.is_empty() {
                         for (rollback_batch, rollback_sequences) in executions.iter().rev() {
-                            crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
+                            if let Err(error) = crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
                                 watcher,
                                 rollback_batch,
                                 rollback_sequences,
-                            )?;
+                            ) {
+                                return Err(PreparedWorkspaceExecutionError::Compensation(error));
+                            }
                         }
-                        crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
+                        if let Err(error) = crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
                             watcher,
                             batch,
                             &execution.applied_sequences,
-                        )?;
-                        return Err(execution.result.failures[0].error.clone());
+                        ) {
+                            return Err(PreparedWorkspaceExecutionError::Compensation(error));
+                        }
+                        return Err(PreparedWorkspaceExecutionError::Apply(
+                            execution.result.failures[0].error.clone(),
+                        ));
                     }
                     success.extend(execution.result.success.iter().cloned());
                     rewrites.extend(execution.result.path_rewrites.iter().cloned());
@@ -277,6 +315,129 @@ pub async fn prepare_switch(
     batches.push(target_batch);
     Ok(PreparedWorkspaceSwitch::Mod(PreparedModSwitch {
         target_path,
+        changed_object_ids,
+        batches,
+    }))
+}
+
+/// Prepares one all-or-nothing randomizer loadout. Every selected target is
+/// enabled while all currently effective siblings of its Object are disabled
+/// first. A disabled Object ancestor is the actual activation target, because
+/// renaming only its already-enabled child would otherwise be a no-op.
+pub async fn prepare_randomized_loadout_switch(
+    config: &ConfigService,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    target_values: &[String],
+    exclusive_object_ids: &HashSet<String>,
+) -> Result<PreparedWorkspaceSwitch, AppError> {
+    if target_values.is_empty() {
+        return Err(AppError::Validation(
+            "A randomized loadout requires at least one mod".to_string(),
+        ));
+    }
+
+    let mods_root = config
+        .mods_root_for(game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let mut disable_paths = Vec::<PathBuf>::new();
+    let mut enable_paths = Vec::<PathBuf>::new();
+    let mut changed_object_ids = Vec::<String>::new();
+    let mut seen_objects = HashSet::<String>::new();
+    let mut seen_disable = HashSet::<String>::new();
+    let mut seen_enable = HashSet::<String>::new();
+    let mut primary_target = None;
+
+    for target_value in target_values {
+        let (target_path, object_ids) =
+            resolve_mod_target_path(pool, game_id, target_value, true).await?;
+        let validated_target =
+            crate::platform::fs::guard::validate_path(config, game_id, &target_path)?;
+        let target_rel = Path::new(validated_target.original())
+            .strip_prefix(&mods_root)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| validated_target.original().to_string());
+        for object_id in object_ids {
+            if exclusive_object_ids.contains(&object_id) {
+                let sibling_paths =
+                    crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
+                        pool,
+                        &object_id,
+                        game_id,
+                        &target_rel,
+                    )
+                    .await?;
+                for sibling_path in sibling_paths {
+                    let path = mods_root.join(sibling_path);
+                    let key = path.to_string_lossy().to_ascii_lowercase();
+                    if seen_disable.insert(key) {
+                        disable_paths.push(path);
+                    }
+                }
+                let activation_path = crate::modules::workspace::application::scanner::conflict::activation_path_for_disabled_ancestor(
+                    validated_target.as_ref(),
+                    &mods_root,
+                );
+                let all_sibling_paths =
+                    crate::modules::library::adapters::sqlite::mods::get_object_mod_paths(
+                        pool,
+                        game_id,
+                        &object_id,
+                        &target_rel,
+                    )
+                    .await?;
+                for sibling_path in all_sibling_paths {
+                    let path = mods_root.join(&sibling_path);
+                    let Ok(relative_to_activation) = path.strip_prefix(&activation_path) else {
+                        continue;
+                    };
+                    let remains_disabled = relative_to_activation.components().any(|component| {
+                        crate::modules::workspace::domain::normalizer::is_disabled_folder(
+                            &component.as_os_str().to_string_lossy(),
+                        )
+                    });
+                    if remains_disabled || !path.exists() {
+                        continue;
+                    }
+                    let key = path.to_string_lossy().to_ascii_lowercase();
+                    if seen_disable.insert(key) {
+                        disable_paths.push(path);
+                    }
+                }
+            }
+            if seen_objects.insert(object_id.clone()) {
+                changed_object_ids.push(object_id);
+            }
+        }
+
+        let activation_path = crate::modules::workspace::application::scanner::conflict::activation_path_for_disabled_ancestor(
+            validated_target.as_ref(),
+            &mods_root,
+        );
+        let activation_key = activation_path.to_string_lossy().to_ascii_lowercase();
+        if seen_enable.insert(activation_key) {
+            enable_paths.push(activation_path);
+        }
+        primary_target.get_or_insert(target_path);
+    }
+
+    let mut batches = Vec::new();
+    let mut next_sequence = 0;
+    if !disable_paths.is_empty() {
+        let mut batch = crate::modules::library::application::mods::bulk::prepare_bulk_toggle(
+            &disable_paths,
+            false,
+        );
+        next_sequence = batch.resequence(next_sequence);
+        batches.push(batch);
+    }
+    let mut enable_batch =
+        crate::modules::library::application::mods::bulk::prepare_bulk_toggle(&enable_paths, true);
+    enable_batch.resequence(next_sequence);
+    batches.push(enable_batch);
+
+    Ok(PreparedWorkspaceSwitch::Mod(PreparedModSwitch {
+        target_path: primary_target.expect("non-empty target values produce a target"),
         changed_object_ids,
         batches,
     }))

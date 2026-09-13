@@ -6,6 +6,9 @@ import SettingsPage from './SettingsPage';
 vi.mock('./components/tabs/GamesTab', () => ({
   default: () => <div data-testid="games-tab">GamesTab</div>,
 }));
+vi.mock('./components/tabs/CatalogTab', () => ({
+  default: () => <div data-testid="catalog-tab">CatalogTab</div>,
+}));
 vi.mock('./components/tabs/PrivacyTab', () => ({
   default: () => <div data-testid="privacy-tab">PrivacyTab</div>,
 }));
@@ -21,18 +24,17 @@ vi.mock('./components/tabs/LogsTab', () => ({
 vi.mock('./components/tabs/AITab', () => ({
   default: () => <div data-testid="ai-tab">AITab</div>,
 }));
-vi.mock('./components/tabs/UpdateTab', () => ({
-  default: () => <div data-testid="update-tab">UpdateTab</div>,
+vi.mock('./components/tabs/IntegrationsTab', () => ({
+  default: () => <div data-testid="integrations-tab">IntegrationsTab</div>,
 }));
 
 // Mock hooks
-const mockSetWorkspaceView = vi.fn();
 const mockSetSettingsTab = vi.fn();
+let mockSettingsTab = 'general';
 vi.mock('@/app/store', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
-      setWorkspaceView: mockSetWorkspaceView,
-      settingsTab: 'general',
+      settingsTab: mockSettingsTab,
       setSettingsTab: mockSetSettingsTab,
     }),
 }));
@@ -51,6 +53,7 @@ describe('SettingsPage (TC-04)', () => {
     vi.clearAllMocks();
     mockIsLoading = false;
     mockError = null;
+    mockSettingsTab = 'general';
   });
 
   it('shows loading state initially', () => {
@@ -68,8 +71,7 @@ describe('SettingsPage (TC-04)', () => {
   it('renders default General tab and allows navigation', () => {
     render(<SettingsPage />);
 
-    // Header
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Settings' })).not.toBeInTheDocument();
 
     // Default tab
     expect(screen.getByTestId('general-tab')).toBeInTheDocument();
@@ -79,16 +81,40 @@ describe('SettingsPage (TC-04)', () => {
     expect(screen.getByTestId('games-tab')).toBeInTheDocument();
     expect(screen.queryByTestId('general-tab')).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Catalog Assets' }));
+    expect(screen.getByTestId('catalog-tab')).toBeInTheDocument();
+
     // Click Maintenance
     fireEvent.click(screen.getByRole('button', { name: 'Maintenance' }));
     expect(screen.getByTestId('maintenance-tab')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Integrations' }));
+    expect(screen.getByTestId('integrations-tab')).toBeInTheDocument();
   });
 
-  it('handles back button correctly', () => {
+  it('provides a compact section picker for mobile layouts', () => {
     render(<SettingsPage />);
-    // The back button is the first button before the header
-    const backBtn = screen.getByRole('button', { name: '' });
-    fireEvent.click(backBtn);
-    expect(mockSetWorkspaceView).toHaveBeenCalledWith('dashboard');
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Settings' }), {
+      target: { value: 'games' },
+    });
+
+    expect(screen.getByTestId('games-tab')).toBeInTheDocument();
+    expect(mockSetSettingsTab).toHaveBeenCalledWith('games');
+  });
+
+  it('does not expose the retired Updates section', () => {
+    render(<SettingsPage />);
+
+    expect(screen.queryByRole('button', { name: 'Updates' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Updates' })).not.toBeInTheDocument();
+  });
+
+  it('migrates a saved Updates tab selection to General', () => {
+    mockSettingsTab = 'updates';
+    render(<SettingsPage />);
+
+    expect(screen.getByTestId('general-tab')).toBeInTheDocument();
+    expect(mockSetSettingsTab).toHaveBeenCalledWith('general');
   });
 });

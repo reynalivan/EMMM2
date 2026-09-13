@@ -1,6 +1,6 @@
 {
   "toolbar": {
-    "search_placeholder": "Search...",
+    "search_placeholder": "Search objects...",
     "auto_organize": "Auto Organize",
     "hide_filters": "Hide Filters",
     "show_filters": "Show Filters",
@@ -96,7 +96,7 @@
     "rename_folder": "Rename Folder",
     "skip_mod": "Skip this mod",
     "include_mod": "Include this mod",
-    "click_to_assign": "No match — click to assign"
+    "click_to_assign": "No match. Click to assign"
   },
   "bulk": {
     "clear_selection": "Clear selection",
@@ -126,8 +126,24 @@
     "select_category": "Select Category",
     "sub_category": "Sub-category",
     "placeholder_name": "e.g. Eula",
-    "placeholder_sub": "e.g. Enemy, NPC, VFX",
+    "validation": {
+      "name_too_short": "Name must have at least 2 characters.",
+      "name_too_long": "Name must have at most 255 characters.",
+      "object_type_required": "Select an object type."
+    },
     "metadata": "Metadata",
+    "thumbnail": {
+      "label": "Thumbnail",
+      "alt": "Selected thumbnail",
+      "select_file": "File",
+      "paste": "Paste",
+      "remove": "Remove",
+      "url_placeholder": "Image URL",
+      "use_url": "Add",
+      "no_clipboard_image": "No image found in the clipboard.",
+      "file_error": "Could not select image: {{error}}",
+      "paste_error": "Could not paste image: {{error}}"
+    },
     "success_message": "Created \"{{name}}\" successfully.",
     "error_message": "Failed to create object: {{error}}",
     "submit": "Create Object"
@@ -143,6 +159,10 @@
       "active": "Active"
     },
     "status": "Status",
+    "randomizer_mode": "Shuffle behavior",
+    "randomizer_default": "Default for category",
+    "randomizer_exclusive": "Exclusive: replace active mods",
+    "randomizer_additive": "Additive: keep active mods",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "skin_mapping": "Skin Mapping",

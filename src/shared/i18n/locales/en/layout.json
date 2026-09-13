@@ -9,6 +9,8 @@
     "mod_inbox": "Mod Inbox",
     "collections": "Collections",
     "settings": "Settings",
+    "browser": "Browser",
+    "downloads": "Downloads",
     "storage_optimizer": "Storage Optimizer",
     "app_menu_tip": "App Menu",
     "quick_play": "Quick Play",
@@ -46,6 +48,7 @@
   "context": {
     "loading": "Loading...",
     "collections_title": "Collections",
+    "active_collection": "Active collection",
     "save_current": "Save Current",
     "no_collections": "No collections saved",
     "manage_collections": "Manage Collections"
@@ -55,6 +58,7 @@
     "launching": "Launching...",
     "randomizer": "Randomizer (Gacha)",
     "conflicts": "Enabled Conflicts",
+    "shared_hashes": "Shared hashes",
     "conflict_toast": "{{count}} Enabled Mod Conflicts"
   }
 }

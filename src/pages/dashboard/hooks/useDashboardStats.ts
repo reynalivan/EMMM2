@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { commands } from '../../../shared/api/tauri/bindings';
 import type { DashboardPayload } from '../model/dashboard';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
+import { dashboardGateway } from '../api/dashboardGateway';
 
 export const dashboardKeys = {
   all: ['dashboard-stats'] as const,
@@ -17,7 +17,7 @@ export function useDashboardStats() {
 
   const query = useQuery<DashboardPayload>({
     queryKey: dashboardKeys.all,
-    queryFn: () => commands.getDashboardStats(),
+    queryFn: () => dashboardGateway.getDashboardStats(),
     staleTime: 30_000,
   });
 

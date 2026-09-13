@@ -13,6 +13,7 @@ pub enum DiskReconcileReason {
     ManualRepair,
     GameSwitched,
     InternalMutation,
+    StorageSizeBackfill,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -203,6 +204,8 @@ pub struct CommittedMutationResult {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct DiskReconcileResult {
     pub game_id: String,
+    /// Monotonic per-game revision assigned after this disk observation finishes.
+    pub reconcile_revision: u64,
     pub reason: DiskReconcileReason,
     pub status: DiskReconcileStatus,
     pub folder_conflicts: Vec<FolderNameConflictGroup>,

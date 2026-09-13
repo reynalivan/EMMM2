@@ -5,6 +5,7 @@ import { useSettings } from '@/entities/settings';
 import { Eye, EyeOff } from 'lucide-react';
 import { useToastStore } from '@/shared/ui/toast';
 import { commands } from '../../../../shared/api/tauri/bindings';
+import { SettingsRow, SettingsSection } from '../SettingsLayout';
 
 export default function AITab() {
   const { t } = useTranslation(['settings', 'common']);
@@ -102,59 +103,60 @@ export default function AITab() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="card bg-base-200 shadow-sm border border-base-300">
-        <div className="card-body">
-          <h2 className="card-title text-xl text-primary flex items-center gap-2">
-            {t('settings:ai.title')}
-          </h2>
-          <p className="mt-1 text-sm opacity-70">{t('settings:ai.desc')}</p>
-
-          <div className="divider my-2"></div>
-
-          <div className="form-control mb-4">
-            <label className="label cursor-pointer justify-start gap-4">
+    <div>
+      <SettingsSection
+        id="ai-settings-heading"
+        title={t('settings:ai.title')}
+        description={t('settings:ai.desc')}
+      >
+        <SettingsRow
+          label={t('settings:ai.enable')}
+          control={
+            <label className="label cursor-pointer gap-3 py-0">
               <input
                 type="checkbox"
-                className="toggle toggle-primary"
+                aria-label={t('settings:ai.enable')}
+                className="toggle toggle-primary toggle-sm"
                 checked={settings.ai.enabled}
                 onChange={handleToggle}
               />
-              <span className="label-text text-lg font-semibold">{t('settings:ai.enable')}</span>
             </label>
-          </div>
-
-          <div className="form-control w-full max-w-xl mb-4">
-            <label className="label">
-              <span className="label-text">{t('settings:ai.base_url')}</span>
-              <span className="label-text-alt text-base-content/50">
-                {t('settings:ai.base_url_desc')}
-              </span>
-            </label>
+          }
+        />
+        <SettingsRow
+          label={t('settings:ai.base_url')}
+          description={t('settings:ai.base_url_desc')}
+          control={
             <input
               type="text"
+              aria-label={t('settings:ai.base_url')}
               placeholder={
                 t('settings:ai.placeholder_url') || 'https://api.openai.com/v1/chat/completions'
               }
-              className="input input-bordered w-full"
+              className="input input-bordered input-sm w-full sm:w-96"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
             />
-          </div>
-
-          <div className="form-control w-full max-w-xl mb-6">
-            <label className="label">
-              <span className="label-text">{t('settings:ai.api_key')}</span>
-            </label>
-            <div className="join w-full">
+          }
+        />
+        <SettingsRow
+          label={t('settings:ai.api_key')}
+          description={
+            settings.ai.has_api_key
+              ? t('settings:ai.api_key_stored')
+              : t('settings:ai.api_key_desc')
+          }
+          control={
+            <div className="join w-full sm:w-96">
               <input
                 type={showKey ? 'text' : 'password'}
+                aria-label={t('settings:ai.api_key')}
                 placeholder={
                   settings.ai.has_api_key
                     ? t('settings:ai.stored_key_placeholder')
                     : t('settings:ai.status.placeholder_key') || 'sk-...'
                 }
-                className="input input-bordered join-item w-full"
+                className="input input-bordered input-sm join-item min-w-0 flex-1"
                 value={apiKey}
                 onChange={(e) => {
                   setApiKey(e.target.value);
@@ -162,41 +164,34 @@ export default function AITab() {
                 }}
               />
               <button
-                className="btn btn-square join-item"
+                className="btn btn-square btn-sm join-item"
                 onClick={() => setShowKey(!showKey)}
                 title={showKey ? t('settings:ai.hide_key') : t('settings:ai.show_key')}
               >
-                {showKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <label className="label">
-              <span className="label-text-alt text-base-content/50">
-                {settings.ai.has_api_key
-                  ? t('settings:ai.api_key_stored')
-                  : t('settings:ai.api_key_desc')}
-              </span>
-            </label>
-          </div>
+          }
+        />
 
-          <div className="card-actions justify-end">
-            <button
-              className="btn btn-outline"
-              onClick={handleTestConnection}
-              disabled={!settings.ai.has_api_key || isTesting}
-            >
-              {isTesting ? t('settings:ai.testing') : t('settings:ai.test_connection')}
+        <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-base-300/70 pt-3">
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={handleTestConnection}
+            disabled={!settings.ai.has_api_key || isTesting}
+          >
+            {isTesting ? t('settings:ai.testing') : t('settings:ai.test_connection')}
+          </button>
+          {settings.ai.has_api_key && (
+            <button className="btn btn-ghost btn-sm text-error" onClick={handleRemoveKey}>
+              {t('settings:ai.remove_key')}
             </button>
-            {settings.ai.has_api_key && (
-              <button className="btn btn-ghost text-error" onClick={handleRemoveKey}>
-                {t('settings:ai.remove_key')}
-              </button>
-            )}
-            <button className="btn btn-primary" onClick={handleSave}>
-              {t('settings:ai.save')}
-            </button>
-          </div>
+          )}
+          <button className="btn btn-primary btn-sm" onClick={handleSave}>
+            {t('settings:ai.save')}
+          </button>
         </div>
-      </div>
+      </SettingsSection>
     </div>
   );
 }

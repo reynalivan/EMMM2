@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '../../tests/testing/test-utils';
 import { invoke } from '@tauri-apps/api/core';
 import PreviewPanel from './PreviewPanel';
@@ -6,6 +7,10 @@ import * as usePreviewPanelStateModule from './hooks/usePreviewPanelState';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock('./hooks/usePreviewPanelState', () => ({
@@ -59,7 +64,7 @@ vi.mock('@/features/mod-runtime/actions/useModContextMenuActions', () => ({
 
 vi.mock('@/entities/game', () => ({
   useActiveGame: vi.fn(() => ({
-    activeGame: { id: 'GIMI', name: 'Genshin Impact' },
+    activeGame: { id: 'GIMI', name: 'GIMI' },
     isLoading: false,
   })),
 }));
@@ -206,6 +211,7 @@ function createDefaultHookState() {
 describe('PreviewPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sharedModActionsState.renameDialog = { open: false, folder: null };
     mockUsePreviewPanelState.mockReturnValue(createDefaultHookState());
   });
 
@@ -254,6 +260,23 @@ describe('PreviewPanel', () => {
     });
   });
 
+  it('fills the preview pane and keeps detail content below the shell chrome', () => {
+    const { container } = render(<PreviewPanel />);
+    const panel = container.querySelector('.workspace-scroll-owner');
+
+    expect(panel).toHaveClass('w-full', 'max-w-none');
+    expect(panel).not.toHaveClass('pt-[var(--workspace-topbar-height)]');
+    expect(panel).not.toHaveClass('mx-auto', 'max-w-140');
+  });
+
+  it('keeps rename editing on the folder card instead of opening a preview dialog', () => {
+    sharedModActionsState.renameDialog = { open: true, folder: null };
+
+    const { container } = render(<PreviewPanel />);
+
+    expect(container.querySelector('dialog.modal-open')).toBeNull();
+  });
+
   it('disables preview mutation controls when source is unavailable', async () => {
     const state = createDefaultHookState();
     state.sourceUnavailableMessage = 'Mods folder unavailable';
@@ -295,6 +318,12 @@ describe('PreviewPanel', () => {
     expect(screen.getByText('E:/Mods/TestMod')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Test Mod')).not.toBeInTheDocument();
     expect(screen.queryByText('Preview Images')).not.toBeInTheDocument();
+    const conflictPanel = document.querySelector('aside.workspace-scroll-owner');
+    expect(conflictPanel).toHaveClass(
+      'w-full',
+      'max-w-none',
+      'pt-[var(--workspace-panel-content-inset)]',
+    );
   });
 
   // Covers: NC-6.1-01 (Error handling - no mod selected)
@@ -313,6 +342,12 @@ describe('PreviewPanel', () => {
     if (viewLocationButtons.length > 0) {
       expect(viewLocationButtons[0]).toHaveAttribute('disabled');
     }
+    const emptyPanel = document.querySelector('div.border-l');
+    expect(emptyPanel).toHaveClass(
+      'w-full',
+      'max-w-none',
+      'pt-[var(--workspace-panel-content-inset)]',
+    );
   });
 
   // Covers: TC-6.2-02 (Import thumbnail)

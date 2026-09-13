@@ -55,7 +55,9 @@ export default function AppShell({
     ) : workspaceView === 'settings' ? (
       settings
     ) : workspaceView === 'browser' ? (
-      <div className="h-full bg-base-100 overflow-hidden relative">{browser}</div>
+      <div className="h-full overflow-hidden bg-base-100/85 pt-[var(--workspace-topbar-height)]">
+        {browser}
+      </div>
     ) : workspaceView === 'downloads' ? (
       downloads
     ) : workspaceView === 'storage-optimizer' ? (
@@ -82,9 +84,11 @@ export default function AppShell({
       data-workspace-view={workspaceView}
       className="flex flex-col h-screen overflow-hidden bg-base-100 font-sans text-base-content selection:bg-primary/20 relative"
     >
+      <div className="app-theme-background" aria-hidden="true" />
+      <div className="app-theme-background-dim" aria-hidden="true" />
       {runtimeHosts}
       {topBar}
-      <div className="flex-1 min-h-0 relative">
+      <div data-testid="workspace-content" className="relative min-h-0 flex-1 overflow-hidden">
         <ErrorBoundary>{content}</ErrorBoundary>
       </div>
     </div>

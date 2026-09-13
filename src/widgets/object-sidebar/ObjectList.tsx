@@ -161,7 +161,6 @@ export default function ObjectList() {
   const setActivePane = useAppStore((state) => state.setActivePane);
 
   const bulkSelectToolbarProps = useObjectListBulkToolbarProps({
-    activePane,
     mutationsDisabled,
     bulkSelect,
     setBulkTagModal,
@@ -188,7 +187,7 @@ export default function ObjectList() {
     <div
       data-testid="object-list-panel"
       className={cn(
-        'flex flex-col h-full bg-base-100/50 relative outline-none transition-shadow duration-200',
+        'object-list-panel flex h-full flex-col bg-base-100/50 pt-[var(--workspace-topbar-height)] relative outline-none transition-shadow duration-200',
         activePane === 'objectList' && 'ring-1 ring-inset ring-primary/20',
       )}
       tabIndex={-1}

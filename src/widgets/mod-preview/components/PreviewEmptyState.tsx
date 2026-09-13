@@ -16,7 +16,7 @@ export default function PreviewEmptyState({
   const mutationsDisabled = Boolean(sourceUnavailableMessage);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-140 flex-col items-center justify-center p-6 text-center border-l border-base-content/5 bg-base-100/30 backdrop-blur-md">
+    <div className="flex h-full w-full max-w-none flex-col items-center justify-center border-l border-base-content/5 bg-base-100/85 p-6 pt-[var(--workspace-panel-content-inset)] text-center">
       <div className="mb-6 text-base-content/50">
         {sourceUnavailableMessage && (
           <div className="mb-4 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">

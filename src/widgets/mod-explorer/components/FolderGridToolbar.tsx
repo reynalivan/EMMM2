@@ -1,7 +1,9 @@
-import { Search, ChevronLeft, ArrowUpDown, LayoutGrid, List } from 'lucide-react';
+import { Search, ChevronLeft, ArrowUpDown, FolderPlus, LayoutGrid, List } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SortField, SortOrder } from '@/entities/mod';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import { LiquidSurface } from '@/shared/ui/liquid';
 import ExplorerBreadcrumbs from './Breadcrumbs';
 
 const SORT_OPTIONS = [
@@ -44,7 +46,8 @@ export interface FolderGridToolbarProps {
   setViewMode: (mode: 'grid' | 'list') => void;
   explorerSearchQuery: string;
   setExplorerSearch: (query: string) => void;
-  visibleCount: number;
+  canCreateFolder: boolean;
+  onCreateFolder: () => void;
 }
 
 export default function FolderGridToolbar({
@@ -63,12 +66,17 @@ export default function FolderGridToolbar({
   setViewMode,
   explorerSearchQuery,
   setExplorerSearch,
-  visibleCount,
+  canCreateFolder,
+  onCreateFolder,
 }: FolderGridToolbarProps) {
   const { t } = useTranslation(['grid']);
-  const selectedSort =
-    SORT_OPTIONS.find((option) => option.field === sortField && option.order === sortOrder)
-      ?.value ?? SORT_OPTIONS[0].value;
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+  const selectedSortOption =
+    SORT_OPTIONS.find((option) => option.field === sortField && option.order === sortOrder) ??
+    SORT_OPTIONS[0];
+  const selectedSort = selectedSortOption.value;
 
   const handleSortChange = (value: string) => {
     const option = SORT_OPTIONS.find((candidate) => candidate.value === value);
@@ -78,14 +86,44 @@ export default function FolderGridToolbar({
     setSortOrder(option.order);
   };
 
+  useEffect(() => {
+    if (!isSortOpen) return;
+
+    const closeWhenOutside = (event: MouseEvent) => {
+      if (!sortMenuRef.current?.contains(event.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsSortOpen(false);
+    };
+
+    document.addEventListener('mousedown', closeWhenOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeWhenOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isSortOpen]);
+
   return (
-    <>
-      {/* Top Bar: Breadcrumbs & View Controls */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+    <LiquidSurface
+      liquidRole="nav"
+      className="folder-grid-action-bar relative z-20 mt-[var(--workspace-topbar-height)] block w-full shrink-0"
+      contentClassName="h-auto"
+      data-testid="folder-grid-toolbar"
+    >
+      <div
+        className="folder-grid-toolbar flex min-h-14 flex-col gap-1 px-4 py-2"
+        data-testid="folder-grid-toolbar-layout"
+      >
+        <div
+          className="folder-grid-toolbar-breadcrumbs flex h-8 min-w-0 items-center gap-2"
+          data-testid="folder-grid-toolbar-breadcrumbs"
+        >
           <button
             onClick={() => setMobilePane('sidebar')}
-            className="btn btn-ghost btn-sm btn-square md:hidden text-base-content/50 hover:text-base-content"
+            className="btn btn-ghost btn-sm btn-square text-base-content/50 hover:text-base-content md:hidden"
           >
             <ChevronLeft size={20} />
           </button>
@@ -100,31 +138,101 @@ export default function FolderGridToolbar({
           />
         </div>
 
-        {/* View and sort controls */}
-        <div className="flex items-center gap-1">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <ArrowUpDown size={14} className="text-base-content/50" aria-hidden="true" />
-            <label htmlFor="folder-sort" className="text-[10px] font-semibold hidden sm:inline">
-              {t('toolbar.sort_by')}
-            </label>
-            <select
+        <div
+          className="folder-grid-toolbar-controls flex w-full min-w-0 items-center justify-end gap-2"
+          data-testid="folder-grid-toolbar-controls"
+        >
+          <label
+            data-testid="mod-grid-search"
+            className={`folder-grid-search group relative h-8 max-w-full shrink-0 transition-[width] duration-150 ease-out ${
+              isSearchActive || explorerSearchQuery ? 'is-expanded w-56' : 'w-8'
+            }`}
+          >
+            <span
+              data-testid="mod-grid-search-icon"
+              className="pointer-events-none absolute left-2.5 top-1/2 z-10 -translate-y-1/2 text-base-content/45 transition-colors group-focus-within:text-primary"
+            >
+              <Search size={16} aria-hidden="true" />
+            </span>
+            <input
+              type="search"
+              placeholder={t('toolbar.search_placeholder')}
+              aria-label={t('toolbar.search_placeholder')}
+              className={`input input-sm h-8 w-full border-base-content/8 bg-base-300/50 pl-9 pr-2 text-base-content placeholder:text-base-content/30 focus:bg-base-100 ${
+                isSearchActive || explorerSearchQuery
+                  ? 'opacity-100'
+                  : 'cursor-pointer border-transparent bg-transparent opacity-0'
+              }`}
+              value={explorerSearchQuery}
+              onChange={(event) => setExplorerSearch(event.target.value)}
+              onFocus={() => setIsSearchActive(true)}
+              onBlur={() => setIsSearchActive(false)}
+            />
+          </label>
+
+          <button
+            type="button"
+            data-testid="add-folder"
+            aria-label={t('toolbar.add_folder')}
+            className="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/80 hover:bg-base-content/6 hover:text-base-content"
+            onClick={onCreateFolder}
+            disabled={!canCreateFolder}
+            title={t('toolbar.add_folder')}
+          >
+            <FolderPlus size={18} strokeWidth={2} aria-hidden="true" />
+          </button>
+
+          <div ref={sortMenuRef} className="relative shrink-0">
+            <button
+              type="button"
               id="folder-sort"
               data-testid="folder-sort"
               aria-label={t('toolbar.sort_label')}
-              value={selectedSort}
-              onChange={(event) => handleSortChange(event.target.value)}
-              className="select select-bordered select-xs w-32 sm:w-44 bg-base-100/60 text-base-content"
+              aria-expanded={isSortOpen}
+              aria-haspopup="listbox"
+              onClick={() => setIsSortOpen((open) => !open)}
+              className="btn btn-ghost h-8 w-28 justify-between border border-base-content/12 bg-base-100/45 px-2 text-xs font-medium normal-case text-base-content hover:border-base-content/20 hover:bg-base-100/65"
             >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {t(option.labelKey)}
-                </option>
-              ))}
-            </select>
+              <span className="min-w-0 truncate">{t(selectedSortOption.labelKey)}</span>
+              <ArrowUpDown size={14} className="shrink-0 text-base-content/45" aria-hidden="true" />
+            </button>
+
+            {isSortOpen && (
+              <LiquidSurface
+                liquidRole="overlay"
+                className="absolute right-0 top-full z-[var(--workspace-layer-popover)] mt-2 w-48 rounded-xl shadow-xl"
+                contentClassName="p-1"
+              >
+                <div role="listbox" aria-label={t('toolbar.sort_label')}>
+                  {SORT_OPTIONS.map((option) => {
+                    const isSelected = option.value === selectedSort;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        className={`flex min-h-9 w-full items-center rounded-lg px-2.5 text-left text-sm transition-colors ${
+                          isSelected
+                            ? 'bg-base-content/10 text-base-content'
+                            : 'text-base-content/75 hover:bg-base-content/8 hover:text-base-content'
+                        }`}
+                        onClick={() => {
+                          handleSortChange(option.value);
+                          setIsSortOpen(false);
+                        }}
+                      >
+                        {t(option.labelKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </LiquidSurface>
+            )}
           </div>
 
           {!isMobile && (
-            <>
+            <div className="folder-grid-view-controls flex shrink-0 items-center gap-1">
               <button
                 data-testid="view-grid"
                 onClick={() => setViewMode('grid')}
@@ -145,30 +253,10 @@ export default function FolderGridToolbar({
               >
                 <List size={14} />
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>
-
-      {/* Search toolbar */}
-      <div className="flex items-center gap-3 mb-3 bg-base-300/50 p-2 rounded-lg border border-base-content/5">
-        <div className="relative flex-1 group">
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30 group-focus-within:text-primary transition-colors"
-            size={16}
-          />
-          <input
-            type="text"
-            placeholder={t('toolbar.search_placeholder')}
-            className="input input-sm w-full pl-10 bg-transparent border-transparent focus:border-transparent text-base-content placeholder:text-base-content/20 transition-all focus:bg-base-content/5 rounded-md"
-            value={explorerSearchQuery}
-            onChange={(e) => setExplorerSearch(e.target.value)}
-          />
-        </div>
-        <span className="text-[10px] text-base-content/30 font-medium tabular-nums shrink-0">
-          {t('toolbar.item_count', { count: visibleCount })}
-        </span>
-      </div>
-    </>
+    </LiquidSurface>
   );
 }

@@ -30,11 +30,11 @@ export default function DedupFeature({
 
       {/* Progress Overlay / Indicator */}
       {isScanning && (
-        <div className="p-6 rounded-2xl bg-base-200/50 border border-base-content/10 animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className="workspace-surface p-5">
           <div className="flex justify-between text-sm mb-3">
             <span className="font-bold text-primary flex items-center gap-2">
               <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75 motion-reduce:animate-none"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
               </span>
               {t('scanner:dedup.analyzing')}
@@ -44,7 +44,7 @@ export default function DedupFeature({
             </span>
           </div>
           <progress
-            className="progress progress-primary w-full h-4 shadow-sm"
+            className="progress progress-primary h-4 w-full"
             value={scannedFolders}
             max={Math.max(1, totalFolders)}
           />

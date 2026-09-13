@@ -52,7 +52,7 @@ describe('AutoDetectResult (TC-03)', () => {
     const games = [
       {
         id: 'wwmi',
-        name: 'Wuthering Waves',
+        name: 'WWMI',
         game_type: 'WWMI',
         instance_path: 'E:/XXMI/WWMI',
         mod_path: 'E:/XXMI/WWMI/Mods',

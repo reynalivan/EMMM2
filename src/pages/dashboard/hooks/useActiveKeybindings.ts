@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { commands } from '../../../shared/api/tauri/bindings';
 import type { ActiveKeyBinding } from '@/entities/settings';
 import { useActiveGame } from '@/entities/game';
+import { dashboardGateway } from '../api/dashboardGateway';
 
 /**
  * TanStack Query hook for active keybindings.
@@ -14,7 +14,7 @@ export function useActiveKeybindings() {
 
   const query = useQuery<ActiveKeyBinding[]>({
     queryKey: ['active-keybindings', activeGame?.id],
-    queryFn: () => commands.getActiveKeybindings(activeGame!.id),
+    queryFn: () => dashboardGateway.getActiveKeybindings(activeGame!.id),
     enabled: !!activeGame?.id,
     staleTime: 60_000,
   });

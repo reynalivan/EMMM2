@@ -14,11 +14,14 @@ mod tests;
 #[tauri::command]
 #[specta::specta]
 pub async fn get_mod_thumbnail(
+    config: tauri::State<'_, ConfigService>,
     game_id: String,
     folder_path: String,
 ) -> Result<Option<String>, AppError> {
     use crate::platform::images::thumbnail_cache::ThumbnailCache;
-    ThumbnailCache::resolve(&game_id, &folder_path).await
+
+    let folder = validate_path(&config, &game_id, &folder_path)?;
+    ThumbnailCache::resolve(&game_id, &folder.to_string_lossy()).await
 }
 
 /// Delete the thumbnail file for a mod folder (if found) and invalidate cache.

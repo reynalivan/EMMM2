@@ -13,6 +13,7 @@ fn wide_null(value: &std::ffi::OsStr) -> Vec<u16> {
 fn shell_execute(
     verb: &str,
     path: &Path,
+    parameters: Option<&str>,
     working_directory: Option<&Path>,
 ) -> Result<(), AppError> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
@@ -20,8 +21,12 @@ fn shell_execute(
 
     let verb = wide_null(std::ffi::OsStr::new(verb));
     let path_wide = wide_null(path.as_os_str());
+    let parameters_wide = parameters.map(|value| wide_null(std::ffi::OsStr::new(value)));
     let working_directory_wide =
         working_directory.map(|directory| wide_null(directory.as_os_str()));
+    let parameters_ptr = parameters_wide
+        .as_ref()
+        .map_or(std::ptr::null(), |value| value.as_ptr());
     let working_directory_ptr = working_directory_wide
         .as_ref()
         .map_or(std::ptr::null(), |directory| directory.as_ptr());
@@ -32,7 +37,7 @@ fn shell_execute(
             std::ptr::null_mut(),
             verb.as_ptr(),
             path_wide.as_ptr(),
-            std::ptr::null(),
+            parameters_ptr,
             working_directory_ptr,
             SW_SHOWNORMAL,
         )
@@ -53,10 +58,47 @@ fn shell_execute(
     )))
 }
 
+fn quote_windows_arguments<T: AsRef<str>>(arguments: &[T]) -> String {
+    arguments
+        .iter()
+        .map(|argument| quote_windows_argument(argument.as_ref()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn quote_windows_argument(argument: &str) -> String {
+    if !argument.is_empty() && !argument.contains([' ', '\t', '"']) {
+        return argument.to_string();
+    }
+
+    let mut quoted = String::from('"');
+    let mut backslashes = 0;
+
+    for character in argument.chars() {
+        match character {
+            '\\' => backslashes += 1,
+            '"' => {
+                quoted.push_str(&"\\".repeat(backslashes * 2 + 1));
+                quoted.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                quoted.push_str(&"\\".repeat(backslashes));
+                quoted.push(character);
+                backslashes = 0;
+            }
+        }
+    }
+
+    quoted.push_str(&"\\".repeat(backslashes * 2));
+    quoted.push('"');
+    quoted
+}
+
 pub fn launch_elevated(executable: &Path, working_directory: &Path) -> Result<(), AppError> {
     #[cfg(target_os = "windows")]
     {
-        shell_execute("runas", executable, Some(working_directory))
+        shell_execute("runas", executable, None, Some(working_directory))
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -68,10 +110,35 @@ pub fn launch_elevated(executable: &Path, working_directory: &Path) -> Result<()
     }
 }
 
+pub fn launch_elevated_with_args(
+    executable: &Path,
+    working_directory: &Path,
+    arguments: &[String],
+) -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
+    {
+        let parameters = quote_windows_arguments(arguments);
+        shell_execute(
+            "runas",
+            executable,
+            Some(&parameters),
+            Some(working_directory),
+        )
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (executable, working_directory, arguments);
+        Err(AppError::Io(
+            "Elevated launch is only supported on Windows".to_string(),
+        ))
+    }
+}
+
 pub fn open_path(path: &Path) -> Result<(), AppError> {
     #[cfg(target_os = "windows")]
     {
-        shell_execute("open", path, path.parent())
+        shell_execute("open", path, None, path.parent())
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -102,5 +169,29 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<(), AppError> {
         Err(AppError::Io(
             "Revealing files is only supported on Windows".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn quote_windows_arguments_preserves_xxmi_launch_arguments() {
+        let args = ["--nogui", "--xxmi", "GIMI"];
+
+        assert_eq!(super::quote_windows_arguments(&args), "--nogui --xxmi GIMI");
+    }
+
+    #[test]
+    fn quote_windows_arguments_escapes_spaces_quotes_and_trailing_backslashes() {
+        let args = [
+            r#"--profile=My Profile"#,
+            r#"say\"hello\""#,
+            r#"C:\XXMI Folder\\"#,
+        ];
+
+        assert_eq!(
+            super::quote_windows_arguments(&args),
+            r#""--profile=My Profile" "say\\\"hello\\\"" "C:\XXMI Folder\\\\""#
+        );
     }
 }

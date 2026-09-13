@@ -6,6 +6,7 @@ import IgnoreManagementModal from './IgnoreManagementModal';
 import { ActiveModContextDialog, BulkTagModal } from '@/features/mod-runtime';
 import type { ObjectSummary } from '@/entities/game-object';
 import { useTranslation } from 'react-i18next';
+import CreateFolderDialog from './CreateFolderDialog';
 
 export interface FolderGridModalsProps {
   moveDialog: { open: boolean; folder: ModFolder | null };
@@ -34,6 +35,11 @@ export interface FolderGridModalsProps {
   handleActiveContextSubmit: () => void;
   currentPath?: string;
   objects: ObjectSummary[];
+  createFolderOpen: boolean;
+  existingFolderNames: string[];
+  isCreatingFolder: boolean;
+  closeCreateFolderDialog: () => void;
+  handleCreateFolder: (folderName: string) => Promise<void>;
 }
 
 export default function FolderGridModals({
@@ -57,6 +63,11 @@ export default function FolderGridModals({
   handleActiveContextSubmit,
   currentPath,
   objects,
+  createFolderOpen,
+  existingFolderNames,
+  isCreatingFolder,
+  closeCreateFolderDialog,
+  handleCreateFolder,
 }: FolderGridModalsProps) {
   const { t } = useTranslation(['grid']);
 
@@ -135,6 +146,14 @@ export default function FolderGridModals({
         isProcessing={activeContextDialog.isProcessing}
         onCancel={handleActiveContextCancel}
         onConfirm={handleActiveContextSubmit}
+      />
+
+      <CreateFolderDialog
+        open={createFolderOpen}
+        existingFolderNames={existingFolderNames}
+        isCreating={isCreatingFolder}
+        onClose={closeCreateFolderDialog}
+        onSubmit={handleCreateFolder}
       />
     </>
   );

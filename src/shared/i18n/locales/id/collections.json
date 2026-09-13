@@ -1,7 +1,7 @@
 {
   "page": {
     "title": "Koleksi",
-    "desc": "Simpan mod dan varian yang saat ini diaktifkan sebagai koleksi bernama. Terapkan koleksi secara atomik untuk mengganti seluruh loadout game Anda secara instan.",
+    "desc": "Kelola loadout mod tersimpan.",
     "no_active_game": {
       "title": "Tidak Ada Game Aktif",
       "desc": "Pilih game terlebih dahulu, lalu buka Koleksi."
@@ -134,8 +134,8 @@
   },
   "randomizer": {
     "title": "Smart Randomizer",
-    "desc": "Merekomendasikan 1 mod yang dinonaktifkan secara acak untuk setiap Karakter yang aktif. Tinjau dan terapkan.",
-    "no_eligible": "Tidak ditemukan mod karakter yang memenuhi syarat (periksa filter atau pastikan Anda memiliki mod yang dinonaktifkan).",
+    "desc": "Pilih kategori Object yang ingin diikutkan, lalu roll rekomendasi.",
+    "no_eligible": "Tidak ditemukan mod yang memenuhi syarat untuk scope terpilih (periksa filter atau pastikan Anda memiliki mod yang dinonaktifkan).",
     "apply_no_change": "{{name}} tidak dapat diaktifkan.",
     "consulting": "Berkonsultasi dengan Dewa RNG...",
     "reroll": "Acak Ulang Semua",
@@ -145,7 +145,34 @@
     "select_all": "Pilih Semua",
     "deselect_all": "Batal Pilih Semua",
     "selection_status": "{{selected}} dari {{total}} terpilih",
-    "empty_desc": "Klik 'Coba Keberuntungan' untuk menghasilkan rekomendasi."
+    "empty_desc": "Klik 'Coba Keberuntungan' untuk menghasilkan rekomendasi.",
+    "scope_title": "Cakupan roll",
+    "scope_character": "Karakter",
+    "scope_weapon": "Senjata",
+    "scope_ui": "UI",
+    "scope_other": "Lainnya",
+    "scope_unclassified": "Belum diklasifikasikan",
+    "scope_required": "Pilih setidaknya satu cakupan sebelum roll.",
+    "backup_enabled": "Cadangkan mod aktif ke Koleksi baru",
+    "backup_unavailable": "Tidak ada mod aktif yang dapat dicadangkan.",
+    "backup_name_placeholder": "Nama Koleksi cadangan",
+    "backup_created": "Koleksi cadangan dibuat: {{name}}",
+    "backup_reused": "Menggunakan Koleksi cadangan yang sudah ada: {{name}}",
+    "mode_exclusive": "Ganti",
+    "mode_additive": "Tambah",
+    "current_mods": "Saat ini: {{names}}",
+    "keep_current": "Pertahankan saat ini",
+    "keeping_current": "Dipertahankan",
+    "review_changes": "Tinjau perubahan ({{count}})",
+    "reviewing": "Meninjau...",
+    "review_title": "Perubahan yang akan diterapkan",
+    "review_totals": "Aktifkan {{enable}}, nonaktifkan {{disable}}, pertahankan {{keep}} tanpa perubahan.",
+    "review_replace": "ganti dengan {{name}} (nonaktifkan {{count}})",
+    "review_add": "tambahkan {{name}}",
+    "warning_unsafe": "Mod tidak aman: {{names}}",
+    "warning_conflicts": "{{count}} konflik runtime perlu ditinjau.",
+    "warning_acknowledge": "Saya memahami peringatan ini.",
+    "confirm_apply": "Konfirmasi & Terapkan ({{count}})"
   },
   "toast": {
     "created": "Koleksi dibuat: {{name}}",
@@ -153,7 +180,7 @@
     "deleted": "Koleksi dihapus",
     "applied": "Koleksi diterapkan ({{count}} perubahan)",
     "applied_with_state": "Koleksi diterapkan ({{count}} perubahan) -> {{name}}",
-    "reload_hint": "Diterapkan — tekan {{key}} di dalam game untuk memuat ulang"
+    "reload_hint": "Diterapkan. Tekan {{key}} di dalam game untuk memuat ulang"
   },
   "mod_row": {
     "unknown": "Mod Tidak Diketahui",

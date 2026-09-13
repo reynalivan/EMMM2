@@ -143,7 +143,7 @@ export function ManualSetupForm({ onBack, onSuccess }: ManualSetupFormProps) {
               {errors.path ? (
                 <span className="label-text-alt text-error">{errors.path.message}</span>
               ) : (
-                <span className="label-text-alt text-base-content/50">
+                <span className="label-text-alt text-muted block w-full whitespace-normal break-words">
                   {t('manual_setup.hint')}
                 </span>
               )}

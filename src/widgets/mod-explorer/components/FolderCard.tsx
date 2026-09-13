@@ -198,18 +198,18 @@ function FolderCardInner({
         onDoubleClick={handleDoubleClick}
         className={`
           group relative flex flex-col rounded-lg overflow-hidden cursor-pointer
-          transition-all duration-200 border w-full
+          border transition-[background-color,border-color,transform] duration-150 w-full
           ${!folder.is_effectively_active || isLockedByParent ? 'opacity-[0.75] grayscale-[0.8]' : ''}
           ${
             isActive
-              ? 'border-primary/60 bg-primary/10 shadow-md ring-1 ring-primary/60'
+              ? 'border-primary/60 bg-primary/10 ring-1 ring-primary/60'
               : hasNamingConflict
                 ? 'border-warning/60 ring-1 ring-warning/40'
                 : isSelected
-                  ? 'border-primary/50 bg-base-200 shadow-md ring-1 ring-primary/50'
+                  ? 'border-primary/50 bg-base-200 ring-1 ring-primary/50'
                   : isFocused
                     ? 'border-primary/30 bg-base-200 ring-2 ring-primary'
-                    : 'border-transparent bg-base-200 hover:bg-base-300 hover:shadow-lg hover:-translate-y-0.5'
+                    : 'border-transparent bg-base-200 hover:bg-base-300 hover:-translate-y-px motion-reduce:hover:translate-y-0'
           }
         `}
         role="gridcell"
