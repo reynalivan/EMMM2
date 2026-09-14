@@ -1,13 +1,4 @@
 use crate::modules::games::domain::models::ItemStatus;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Mod {
-    pub id: String,
-    pub actual_name: String,
-    pub folder_path: String,
-    pub status: ItemStatus,
-}
 
 /// A terminal mod inside a folder subtree, used to describe the exact impact
 /// of enabling one or more disabled ancestor folders.

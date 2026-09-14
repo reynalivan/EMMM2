@@ -493,7 +493,6 @@ mod tests {
             folder_path: path.to_string(),
             folder_path_key: crate::shared::path_key::folder_path_key(path, None),
             status: ItemStatus::Enabled,
-            object_type: "Other".to_string(),
             filesystem_identity: identity.map(str::to_string),
         }
     }

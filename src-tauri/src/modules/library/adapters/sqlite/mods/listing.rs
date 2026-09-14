@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::types::{Mod, ModSubtreeEntry, ReconcileModRow};
+use super::types::{ModSubtreeEntry, ReconcileModRow};
 use crate::modules::system::domain::mod_path::ModFolderPath;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
@@ -112,18 +112,6 @@ pub async fn get_mods_for_folder_subtree(
     .bind(game_id)
     .bind(folder_path_key)
     .bind(descendants)
-    .fetch_all(pool)
-    .await
-}
-
-pub async fn get_mods_by_object_id(
-    pool: &SqlitePool,
-    object_id: &str,
-) -> Result<Vec<Mod>, sqlx::Error> {
-    sqlx::query_as::<_, Mod>(
-        "SELECT id, actual_name, folder_path, status FROM mods WHERE object_id = ?",
-    )
-    .bind(object_id)
     .fetch_all(pool)
     .await
 }

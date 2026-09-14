@@ -143,7 +143,6 @@ pub struct ReconcileObjectRow {
     pub folder_path: String,
     pub folder_path_key: String,
     pub status: crate::modules::games::domain::models::ItemStatus,
-    pub object_type: String,
     pub filesystem_identity: Option<String>,
 }
 

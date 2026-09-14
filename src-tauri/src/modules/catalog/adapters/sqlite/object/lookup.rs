@@ -79,30 +79,12 @@ pub async fn get_category_counts(
     qb.build_query_as::<CategoryCount>().fetch_all(pool).await
 }
 
-pub async fn get_characters_for_game(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<Vec<(String, String)>, sqlx::Error> {
-    use sqlx::Row;
-    let rows =
-        sqlx::query("SELECT id, name FROM objects WHERE game_id = ? AND object_type = 'Character'")
-            .bind(game_id)
-            .fetch_all(pool)
-            .await?;
-
-    let mut result = Vec::new();
-    for row in rows {
-        result.push((row.try_get("id")?, row.try_get("name")?));
-    }
-    Ok(result)
-}
-
 pub async fn get_rows_for_reconcile(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
 ) -> Result<Vec<ReconcileObjectRow>, sqlx::Error> {
     sqlx::query_as::<_, ReconcileObjectRow>(
-        "SELECT id, name, folder_path, folder_path_key, status, object_type, filesystem_identity FROM objects WHERE game_id = ?",
+        "SELECT id, name, folder_path, folder_path_key, status, filesystem_identity FROM objects WHERE game_id = ?",
     )
     .bind(game_id)
     .fetch_all(&mut *conn)

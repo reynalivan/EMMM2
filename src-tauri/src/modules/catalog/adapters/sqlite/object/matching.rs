@@ -1,4 +1,3 @@
-use sqlx::SqlitePool;
 /// Every object's `(matched_entry_key, custom_skins)` pair that carries both.
 ///
 /// Feeds the MasterDB loader, which folds the user's own aliases into the
@@ -61,37 +60,4 @@ where
     .execute(executor)
     .await?;
     Ok(())
-}
-
-/// Fetch all objects that could be relevant for KeyViewer matching (primarily Characters).
-/// Returns a list of (Name, HashDb, CustomSkins).
-/// Characters and their hash sets, for KeyViewer matching.
-///
-/// Deliberately does not select `custom_skins`: the only caller discarded it,
-/// and it is a JSON blob decoded per row.
-pub async fn get_kv_matching_objects(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<Vec<(String, crate::modules::games::domain::models::HashDbPayload)>, sqlx::Error> {
-    use sqlx::Row;
-    let rows = sqlx::query(
-        "SELECT name, hash_db FROM objects WHERE game_id = ? AND object_type = 'Character'",
-    )
-    .bind(game_id)
-    .fetch_all(pool)
-    .await?;
-
-    let mut result = Vec::new();
-    for row in rows {
-        let name: String = row.try_get("name")?;
-        let hash_db_json: Option<String> = row.try_get("hash_db")?;
-        let hash_db = match hash_db_json.as_deref().map(str::trim) {
-            None | Some("") => Default::default(),
-            Some(json) => {
-                serde_json::from_str(json).map_err(|error| sqlx::Error::Decode(Box::new(error)))?
-            }
-        };
-        result.push((name, hash_db));
-    }
-    Ok(result)
 }

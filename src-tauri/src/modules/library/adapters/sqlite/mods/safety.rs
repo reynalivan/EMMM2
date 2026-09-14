@@ -23,18 +23,6 @@ pub async fn get_manual_is_safe_by_key(
     }))
 }
 
-pub async fn count_active_unsafe_mods(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mods WHERE game_id = ? AND status = 1 AND COALESCE(is_safe, 1) = 0",
-    )
-    .bind(game_id)
-    .fetch_one(pool)
-    .await
-}
-
 pub async fn set_mod_safe_by_path(
     pool: &SqlitePool,
     game_id: &str,
