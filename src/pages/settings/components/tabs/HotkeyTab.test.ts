@@ -124,10 +124,10 @@ describe('hotkey conflict detection', () => {
     expect(screen.getByText('KeyViewer runtime')).toBeInTheDocument();
     expect(screen.getByText('Published')).toBeInTheDocument();
     expect(screen.getByText('Manual: Ctrl+F10')).toBeInTheDocument();
-    expect(screen.getByText('Disabled until a game executable is configured')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for a configured game executable')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'EMMM will not remove old KeyViewer generations because it cannot verify that the game is stopped.',
+        'EMMM keeps temporary recovery files until it can verify the game is stopped or the new overlay has reloaded.',
       ),
     ).toBeInTheDocument();
   });

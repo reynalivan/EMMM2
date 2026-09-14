@@ -1106,7 +1106,9 @@ pub async fn apply_target_comparison(
         "UPDATE import_jobs
          SET target_comparison_json = ?, review_gate_json = ?, decision = ?, status = ?, result = ?,
              identity_match_status = COALESCE(?, identity_match_status),
-             destination_object_id = NULL, destination_path = NULL, placed_path = NULL,
+             destination_object_id = CASE WHEN ? THEN NULL ELSE destination_object_id END,
+             destination_path = CASE WHEN ? THEN NULL ELSE destination_path END,
+             placed_path = NULL,
              analysis_revision = analysis_revision + 1, analysis_ack_revision = NULL,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
@@ -1117,6 +1119,8 @@ pub async fn apply_target_comparison(
     .bind(status)
     .bind(result)
     .bind(identity_match_status)
+    .bind(comparison.outcome != TargetComparisonOutcome::Incomplete)
+    .bind(comparison.outcome != TargetComparisonOutcome::Incomplete)
     .bind(item_id)
     .execute(db)
     .await?;

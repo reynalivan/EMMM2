@@ -52,20 +52,50 @@ fn keyviewer_box_resource(index: usize) -> String {
     format!("ResourceEMMM_KeyViewerBox_{index}")
 }
 
-fn character_box_data(index: usize, panel_count: usize) -> String {
-    const COLUMNS: usize = 2;
-    let rows = panel_count.div_ceil(COLUMNS).max(1);
-    let column = index % COLUMNS;
-    let row = index / COLUMNS;
-    let left = if column == 0 { -0.97 } else { 0.03 };
-    let right = if column == 0 { 0.00 } else { 0.97 };
-    let available_height = 1.78_f32;
-    let height = available_height / rows as f32;
-    let top = 0.82 - row as f32 * height;
-    let bottom = top - height + 0.02;
-    let scale = (0.65 * (height / 0.44)).clamp(0.20, 0.65);
+const OVERLAY_LEFT: f32 = -0.97;
+const OVERLAY_RIGHT: f32 = 0.00;
+const OVERLAY_STATUS_TOP: f32 = -0.04;
+const OVERLAY_STATUS_BOTTOM: f32 = -0.15;
+const OVERLAY_PANEL_TOP: f32 = -0.22;
+const OVERLAY_PANEL_BOTTOM: f32 = -0.96;
+const OVERLAY_COLUMN_GAP: f32 = 0.04;
+const OVERLAY_MAX_ROWS_PER_COLUMN: usize = 3;
+
+/// Bumped when generated text geometry changes so existing overlays are republished.
+pub const KEYVIEWER_LAYOUT_REVISION: u8 = 2;
+
+fn status_box_data() -> String {
     format!(
-        "{left:.2} {top:.2} {right:.2} {bottom:.2}  1 0.9 0.2 1  0 0 0 0.78  0.01 0.01  1 2  0  {scale:.2}"
+        "{OVERLAY_LEFT:.2} {OVERLAY_STATUS_TOP:.2} {OVERLAY_RIGHT:.2} {OVERLAY_STATUS_BOTTOM:.2}  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  1.10"
+    )
+}
+
+fn character_box_data(index: usize, panel_count: usize) -> String {
+    let columns = panel_count
+        .div_ceil(OVERLAY_MAX_ROWS_PER_COLUMN)
+        .clamp(1, 2);
+    let rows = panel_count.div_ceil(columns).max(1);
+    let column = index % columns;
+    let row = index / columns;
+    let column_width =
+        (OVERLAY_RIGHT - OVERLAY_LEFT - OVERLAY_COLUMN_GAP * (columns - 1) as f32) / columns as f32;
+    let left = OVERLAY_LEFT + column as f32 * (column_width + OVERLAY_COLUMN_GAP);
+    let right = if column + 1 == columns {
+        OVERLAY_RIGHT
+    } else {
+        left + column_width
+    };
+    let available_height = OVERLAY_PANEL_TOP - OVERLAY_PANEL_BOTTOM;
+    let height = available_height / rows as f32;
+    let top = OVERLAY_PANEL_TOP - row as f32 * height;
+    let bottom = top - height + OVERLAY_COLUMN_GAP;
+    let scale = match rows {
+        1 => 1.12,
+        2 => 0.95,
+        _ => (0.82 * (3.0 / rows as f32)).clamp(0.72, 0.82),
+    };
+    format!(
+        "{left:.2} {top:.2} {right:.2} {bottom:.2}  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  {scale:.2}"
     )
 }
 
@@ -98,10 +128,9 @@ pub fn generate_keyviewer_ini(
     generate_keyviewer_ini_for_resources(matches, toggle_key, game_type, "")
 }
 
-/// Generate an entrypoint that reads immutable text resources from one
-/// generation directory. The entrypoint itself is published only after every
-/// referenced file exists, so include_recursive never observes a half-built
-/// `KeyViewer.ini`.
+/// Generate an entrypoint that reads text resources from the single stable
+/// `generations/` directory. The caller publishes that directory from a
+/// complete staging tree before refreshing the entrypoint.
 pub fn generate_keyviewer_ini_for_resources(
     matches: &[MatchResult],
     toggle_key: &str,
@@ -199,8 +228,7 @@ pub fn generate_keyviewer_ini_for_resources(
         "[ResourceEMMM_StatusBox]".to_string(),
         "type = StructuredBuffer".to_string(),
         "array = 1".to_string(),
-        "data = R32_FLOAT  -0.97 0.98 0.97 0.86  1 1 1 1  0 0 0 0.78  0.01 0.01  1 2  0  0.8"
-            .to_string(),
+        format!("data = R32_FLOAT  {}", status_box_data()),
         String::new(),
     ]);
 

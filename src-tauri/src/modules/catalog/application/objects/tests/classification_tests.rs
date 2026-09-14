@@ -127,6 +127,33 @@ async fn classification_writer_commits_metadata_children_projection_and_user_ali
 }
 
 #[tokio::test]
+async fn classification_writer_keeps_object_listing_custom_skins_decodable() {
+    let pool = setup_classification_fixture().await;
+
+    apply_object_classification(&pool, classification_input(Some("raiden32114")))
+        .await
+        .expect("classification write");
+
+    let listing = crate::modules::catalog::adapters::sqlite::object::get_filtered_objects(
+        &pool,
+        &crate::modules::catalog::domain::objects::ObjectFilter {
+            game_id: "g1".to_string(),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("object listing");
+
+    let skins = listing.objects[0]
+        .custom_skins
+        .as_ref()
+        .expect("stored custom skins");
+    assert_eq!(skins.0.len(), 1);
+    assert_eq!(skins.0[0].name, "User");
+    assert_eq!(skins.0[0].aliases, vec!["raiden32114"]);
+}
+
+#[tokio::test]
 async fn classification_writer_is_idempotent() {
     let pool = setup_classification_fixture().await;
 

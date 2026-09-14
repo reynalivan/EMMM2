@@ -98,6 +98,7 @@ export default function StorageOptimizerPage() {
             <div className="flex w-full flex-wrap items-center gap-3">
               <StorageFilterTabs activeTab={activeTab} onChange={setActiveTab} />
               <DuplicateReportApplyButton
+                className="ml-auto"
                 selectionCount={duplicateActionState.selectionCount}
                 isApplying={duplicateActionState.isApplying}
                 onApply={() => duplicateReportRef.current?.requestApply()}

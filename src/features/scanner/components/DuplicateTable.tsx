@@ -80,7 +80,42 @@ export default function DuplicateTable({
                     {group.members.map((member, mIdx) => (
                       <div
                         key={member.folderPath}
+                        role={isExactMatch && !disabled ? 'button' : undefined}
+                        tabIndex={isExactMatch && !disabled ? 0 : undefined}
+                        aria-label={
+                          isExactMatch && !disabled
+                            ? t('scanner:table.keep_label', {
+                                id: String.fromCharCode(65 + mIdx),
+                                name: member.displayName,
+                              })
+                            : undefined
+                        }
+                        onClick={() => {
+                          if (isExactMatch && !disabled) {
+                            onSelectionChange(group.groupId, {
+                              type: 'Keep',
+                              targetPath: member.folderPath,
+                            });
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            isExactMatch &&
+                            !disabled &&
+                            (event.key === 'Enter' || event.key === ' ')
+                          ) {
+                            event.preventDefault();
+                            onSelectionChange(group.groupId, {
+                              type: 'Keep',
+                              targetPath: member.folderPath,
+                            });
+                          }
+                        }}
                         className={`rounded-lg border p-3 transition-[background-color,border-color,opacity] duration-150 ${
+                          isExactMatch && !disabled
+                            ? 'cursor-pointer hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2'
+                            : ''
+                        } ${
                           selectedAction?.type === 'Keep' &&
                           selectedAction.targetPath === member.folderPath
                             ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20'

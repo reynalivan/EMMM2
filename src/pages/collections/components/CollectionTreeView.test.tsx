@@ -190,7 +190,7 @@ describe('CollectionTreeView', () => {
     ).toBeInTheDocument();
   });
 
-  it('provides a thumbnail and path detail overlay for active mod rows', () => {
+  it('shows an inline thumbnail and path detail for active mod rows', () => {
     render(<CollectionTreeView nodes={createTree()} gameId="game-1" />);
 
     expect(screen.getByText('AINOZ/Loose Skin.ini')).toBeInTheDocument();

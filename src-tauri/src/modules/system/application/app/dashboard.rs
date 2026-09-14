@@ -2,6 +2,7 @@ use crate::modules::library::application::ini::document::{
     list_ini_files, read_ini_document, IniDocument, KeyBinding,
 };
 use crate::shared::errors::AppError;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -35,39 +36,47 @@ pub async fn get_active_keybindings_service(
     let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
-    let mods_root = std::path::Path::new(&mods_root);
+    let mods_root = std::path::PathBuf::from(mods_root);
     // 1. Fetch enabled mods' folder paths and names for this game
     let rows = crate::modules::library::adapters::sqlite::mods::get_enabled_mods_names_and_paths(
         pool, game_id,
     )
     .await?;
 
-    let mut bindings: Vec<ActiveKeyBinding> = Vec::new();
+    tokio::task::spawn_blocking(move || harvest_active_keybindings_for_mods(&mods_root, rows))
+        .await?
+}
 
-    // 2. For each enabled mod, scan its INI files for keybindings
-    for (mod_name, folder_path) in &rows {
+fn harvest_active_keybindings_for_mods(
+    mods_root: &std::path::Path,
+    rows: Vec<(
+        String,
+        crate::modules::system::domain::mod_path::ModFolderPath,
+    )>,
+) -> Result<Vec<ActiveKeyBinding>, AppError> {
+    let mut bindings = Vec::new();
+    for (mod_name, folder_path) in rows {
         let folder_path = folder_path.resolve(mods_root);
         let Ok(keybinds) = harvest_active_keybindings(&folder_path) else {
             continue;
         };
-
-        let named = keybinds
-            .into_iter()
-            .filter(|binding| {
-                binding.key_binding.key.is_some() || binding.key_binding.back.is_some()
-            })
-            .map(|kb| ActiveKeyBinding {
-                mod_name: mod_name.clone(),
-                folder_path: folder_path.to_string_lossy().to_string(),
-                section_name: kb.key_binding.section_name,
-                key: kb.key_binding.key,
-                back: kb.key_binding.back,
-                control_kind: kb.control_kind,
-                value_summary: kb.value_summary,
-            });
-        bindings.extend(named);
+        bindings.extend(
+            keybinds
+                .into_iter()
+                .filter(|binding| {
+                    binding.key_binding.key.is_some() || binding.key_binding.back.is_some()
+                })
+                .map(|binding| ActiveKeyBinding {
+                    mod_name: mod_name.clone(),
+                    folder_path: folder_path.to_string_lossy().to_string(),
+                    section_name: binding.key_binding.section_name,
+                    key: binding.key_binding.key,
+                    back: binding.key_binding.back,
+                    control_kind: binding.control_kind,
+                    value_summary: binding.value_summary,
+                }),
+        );
     }
-
     Ok(bindings)
 }
 
@@ -79,9 +88,12 @@ fn harvest_active_keybindings(
         let Ok(document) = read_ini_document(&ini_path) else {
             continue;
         };
+        let descriptions = describe_key_controls(&document);
         for key_binding in &document.key_bindings {
-            let (control_kind, value_summary) =
-                describe_key_control(&document, &key_binding.section_name);
+            let (control_kind, value_summary) = descriptions
+                .get(&section_key(&key_binding.section_name))
+                .cloned()
+                .unwrap_or((ActiveKeyControlKind::KeyBinding, None));
             bindings.push(ActiveKeyBindingDetails {
                 key_binding: key_binding.clone(),
                 control_kind,
@@ -92,13 +104,30 @@ fn harvest_active_keybindings(
     Ok(bindings)
 }
 
-fn describe_key_control(
+fn section_key(section_name: &str) -> String {
+    section_name.trim().to_ascii_lowercase()
+}
+
+fn describe_key_controls(
     document: &IniDocument,
-    section_name: &str,
-) -> (ActiveKeyControlKind, Option<String>) {
-    let mut in_section = false;
-    let mut cycle = false;
-    let mut values: Option<Vec<String>> = None;
+) -> HashMap<String, (ActiveKeyControlKind, Option<String>)> {
+    #[derive(Default)]
+    struct SectionControl {
+        cycle: bool,
+        values: Option<Vec<String>>,
+    }
+
+    let mut controls = document
+        .key_bindings
+        .iter()
+        .map(|binding| {
+            (
+                section_key(&binding.section_name),
+                SectionControl::default(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut active_section: Option<String> = None;
 
     for line in &document.raw_lines {
         let trimmed = line.split([';', '#']).next().unwrap_or_default().trim();
@@ -106,22 +135,23 @@ fn describe_key_control(
             .strip_prefix('[')
             .and_then(|value| value.strip_suffix(']'))
         {
-            if in_section {
-                break;
-            }
-            in_section = header.trim().eq_ignore_ascii_case(section_name);
+            let key = section_key(header);
+            active_section = controls.contains_key(&key).then_some(key);
             continue;
         }
-        if !in_section {
+        let Some(section) = active_section.as_ref() else {
             continue;
-        }
+        };
         let Some((key, value)) = trimmed.split_once('=') else {
             continue;
         };
         let key = key.trim();
         let value = value.trim();
+        let control = controls
+            .get_mut(section)
+            .expect("active section is tracked by the controls map");
         if key.eq_ignore_ascii_case("type") && value.eq_ignore_ascii_case("cycle") {
-            cycle = true;
+            control.cycle = true;
         }
         if key.starts_with('$') {
             let parsed = value
@@ -131,18 +161,26 @@ fn describe_key_control(
                 .map(str::to_string)
                 .collect::<Vec<_>>();
             if parsed.len() >= 2 {
-                values = Some(parsed);
+                control.values = Some(parsed);
             }
         }
     }
 
-    if cycle {
-        return (
-            ActiveKeyControlKind::KeyToggle,
-            values.map(|entries| entries.join(", ")),
-        );
-    }
-    (ActiveKeyControlKind::KeyBinding, None)
+    controls
+        .into_iter()
+        .map(|(section, control)| {
+            let kind = if control.cycle {
+                ActiveKeyControlKind::KeyToggle
+            } else {
+                ActiveKeyControlKind::KeyBinding
+            };
+            let values = control
+                .cycle
+                .then(|| control.values.map(|entries| entries.join(", ")))
+                .flatten();
+            (section, (kind, values))
+        })
+        .collect()
 }
 
 /// Full dashboard payload struct (mirrors the command type).

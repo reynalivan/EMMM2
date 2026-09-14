@@ -121,8 +121,6 @@ impl HotkeyManager {
         app: &tauri::AppHandle,
         config: &HotkeyConfig,
     ) -> Result<(), AppError> {
-        // F7 is written to generated INI but is never OS-registered, so it
-        // must be validated even when OS hotkeys are disabled.
         validate_binding_configuration(config)?;
         let entries = config
             .enabled
@@ -172,6 +170,15 @@ impl HotkeyManager {
         lock(&self.key_map)
             .get(&normalize_shortcut(shortcut))
             .copied()
+    }
+
+    /// Temporarily release one OS shortcut before replaying the same key into
+    /// the game. Without this pause, the synthetic KeyViewer toggle would be
+    /// intercepted by this manager again instead of reaching 3DMigoto.
+    pub fn suspend_shortcut(&self, app: &tauri::AppHandle, shortcut: &str) -> Result<(), AppError> {
+        app.global_shortcut()
+            .unregister(shortcut)
+            .map_err(AppError::from)
     }
 
     /// Try to acquire the action lock (debounce + switch_lock).
@@ -295,12 +302,89 @@ impl HotkeyManager {
                     hotkey_manager.inner().release();
                 }
             });
+            return;
+        }
+
+        if action == HotkeyAction::ToggleOverlay {
+            if !self.try_acquire() {
+                log::debug!("Hotkey {:?} dropped (debounce/lock)", action);
+                return;
+            }
+
+            let app_handle = app.clone();
+            let release_waiter = self.arm_shortcut_release(shortcut);
+            let shortcut_name = shortcut.to_string();
+            let binding =
+                get_key_string(&settings.hotkeys, HotkeyAction::ToggleOverlay).to_string();
+            tauri::async_runtime::spawn(async move {
+                let result = match Self::wait_for_shortcut_release(release_waiter).await {
+                    Ok(()) => {
+                        let suspend_result = match app_handle.try_state::<HotkeyManager>() {
+                            Some(hotkey_manager) => hotkey_manager
+                                .inner()
+                                .suspend_shortcut(&app_handle, &shortcut_name),
+                            None => Err(AppError::Internal(
+                                "HotkeyManager is unavailable".to_string(),
+                            )),
+                        };
+                        match suspend_result {
+                            Ok(()) => {
+                                let result = match app_handle.try_state::<ConfigService>() {
+                                    Some(config_state) => {
+                                        // Re-read settings and focus after release. The user may have
+                                        // alt-tabbed while the physical shortcut was held.
+                                        super::reload::trigger_binding_while_focused(
+                                            &config_state.get_settings(),
+                                            &binding,
+                                        )
+                                    }
+                                    None => Err(AppError::Internal(
+                                        "ConfigService is unavailable".to_string(),
+                                    )),
+                                };
+                                if let Some(config_state) = app_handle.try_state::<ConfigService>()
+                                {
+                                    if let Some(hotkey_manager) =
+                                        app_handle.try_state::<HotkeyManager>()
+                                    {
+                                        if let Err(error) = hotkey_manager.inner().update_bindings(
+                                            &app_handle,
+                                            &config_state.get_settings().hotkeys,
+                                        ) {
+                                            log::error!(
+                                                "Could not restore global hotkeys after overlay replay: {error}"
+                                            );
+                                        }
+                                    }
+                                }
+                                result
+                            }
+                            Err(error) => Err(error),
+                        }
+                    }
+                    Err(error) => Err(error),
+                };
+                match result {
+                    Ok(()) => log::info!("Hotkey {:?} replayed to the active game", action),
+                    Err(error) => {
+                        crate::modules::system::application::telemetry::record_background_failure(
+                            &app_handle,
+                            &error,
+                        )
+                        .await;
+                        log::error!("Overlay hotkey failed: {error}");
+                    }
+                }
+
+                if let Some(hotkey_manager) = app_handle.try_state::<HotkeyManager>() {
+                    hotkey_manager.inner().release();
+                }
+            });
         }
     }
 }
 
-/// Validate every binding exposed in Settings. F7 is deliberately included:
-/// it is emitted into the 3DMigoto INI even though it is not OS-registered.
+/// Validate every binding exposed in Settings and registered with the OS.
 pub(crate) fn validate_binding_configuration(config: &HotkeyConfig) -> Result<(), AppError> {
     let mut configured = HashSet::new();
     for action in HotkeyAction::ALL {

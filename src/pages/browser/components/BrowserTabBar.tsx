@@ -29,6 +29,31 @@ const CONTEXT_MENU_WIDTH = 224;
 const CONTEXT_MENU_HEIGHT = 184;
 const VIEWPORT_GUTTER = 8;
 
+function TabFavicon({
+  favicon,
+  isLoading,
+  loadingLabel,
+}: Pick<BrowserTab, 'favicon' | 'isLoading'> & { loadingLabel: string }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => setFailed(false), [favicon]);
+
+  if (isLoading) {
+    return <LoaderCircle size={14} className="animate-spin" aria-label={loadingLabel} />;
+  }
+  if (favicon && !failed) {
+    return (
+      <img
+        src={favicon}
+        alt=""
+        className="h-4 w-4 rounded-sm object-contain"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return <Globe size={14} aria-hidden="true" />;
+}
+
 export function BrowserTabBar({
   tabs,
   activeTabId,
@@ -131,26 +156,12 @@ export function BrowserTabBar({
                 onClick={() => onSelectTab(tab.id)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
               >
-                <span className="relative grid h-4 w-4 shrink-0 place-items-center text-base-content/60">
-                  {tab.isLoading ? (
-                    <LoaderCircle
-                      size={14}
-                      className="animate-spin"
-                      aria-label={t('tabs.loading')}
-                    />
-                  ) : (
-                    <Globe size={14} aria-hidden="true" />
-                  )}
-                  {tab.favicon && !tab.isLoading && (
-                    <img
-                      src={tab.favicon}
-                      alt=""
-                      className="absolute inset-0 h-4 w-4 rounded-sm object-contain"
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  )}
+                <span className="grid h-4 w-4 shrink-0 place-items-center text-base-content/60">
+                  <TabFavicon
+                    favicon={tab.favicon}
+                    isLoading={tab.isLoading}
+                    loadingLabel={t('tabs.loading')}
+                  />
                 </span>
                 <span className="flex-1 truncate" title={displayLabel}>
                   {displayLabel}

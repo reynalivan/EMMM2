@@ -37,7 +37,11 @@ type Props = {
     suggestion: DestinationSuggestion,
     decision: ImportDecision,
   ) => Promise<void>;
-  onChooseManualTarget: (item: ImportItem, objectId: string) => Promise<void>;
+  onChooseManualTarget: (
+    item: ImportItem,
+    objectId: string,
+    decision?: ImportDecision,
+  ) => Promise<void>;
   onSkip: (item: ImportItem) => Promise<void>;
   onRename: (item: ImportItem, plannedName: string) => Promise<void>;
   onRetry: (item: ImportItem) => Promise<void>;

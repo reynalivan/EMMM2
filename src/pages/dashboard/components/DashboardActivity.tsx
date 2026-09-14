@@ -5,6 +5,13 @@ import type { DashboardPayload } from '../model/dashboard';
 import type { ActiveKeyBinding } from '@/entities/settings';
 import { ModThumbnail } from '@/entities/mod';
 import { formatRelativeDate } from '../../../shared/lib/utils/formatters';
+import VirtualList from '@/shared/ui/components/ui/VirtualList';
+
+const KEYBINDING_VIRTUALIZATION_THRESHOLD = 80;
+
+function keybindingKey(keybinding: ActiveKeyBinding): string {
+  return `${keybinding.folder_path}:${keybinding.section_name}:${keybinding.key ?? ''}:${keybinding.back ?? ''}`;
+}
 
 interface DashboardActivityProps {
   activeGame: GameConfig | null;
@@ -87,6 +94,7 @@ function ActiveKeybindingsCard({
   gameId: string;
 }) {
   const { t } = useTranslation(['dashboard']);
+  const shouldVirtualize = keybindings.length > KEYBINDING_VIRTUALIZATION_THRESHOLD;
 
   return (
     <div className="card bg-base-200/50 border border-base-300">
@@ -105,66 +113,95 @@ function ActiveKeybindingsCard({
         ) : keybindings.length > 0 ? (
           <>
             <div className="space-y-2 sm:hidden" data-testid="active-keybindings-mobile-cards">
-              {keybindings.map((keybinding, index) => (
-                <ActiveKeybindingMobileCard
-                  key={`${keybinding.mod_name}-${keybinding.section_name}-${index}`}
-                  gameId={gameId}
-                  keybinding={keybinding}
+              {shouldVirtualize ? (
+                <VirtualList
+                  ariaLabel={t('keys.title')}
+                  className="h-[min(55vh,34rem)]"
+                  contentClassName="pr-1"
+                  estimateSize={() => 176}
+                  getItemKey={keybindingKey}
+                  items={keybindings}
+                  renderItem={(keybinding) => (
+                    <ActiveKeybindingMobileCard gameId={gameId} keybinding={keybinding} />
+                  )}
                 />
-              ))}
+              ) : (
+                keybindings.map((keybinding) => (
+                  <ActiveKeybindingMobileCard
+                    key={keybindingKey(keybinding)}
+                    gameId={gameId}
+                    keybinding={keybinding}
+                  />
+                ))
+              )}
             </div>
-            <div className="hidden max-h-64 overflow-x-auto sm:block">
-              <table className="table table-xs table-zebra">
-                <thead className="sticky top-0 bg-base-200">
-                  <tr>
-                    <th>{t('keys.table_mod')}</th>
-                    <th>{t('keys.table_section')}</th>
-                    <th>{t('keys.table_key')}</th>
-                    <th>{t('keys.table_back')}</th>
-                    <th>{t('keys.table_control')}</th>
-                    <th>{t('keys.table_values')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {keybindings.map((keybinding, index) => (
-                    <tr key={`${keybinding.mod_name}-${keybinding.section_name}-${index}`}>
-                      <td className="max-w-48">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <ModThumbnail
-                            gameId={gameId}
-                            folderPath={keybinding.folder_path}
-                            sizeClassName="size-7"
-                          />
-                          <span
-                            className="truncate"
-                            title={String(keybinding.mod_name ?? '') || undefined}
+            <div className="hidden sm:block">
+              {shouldVirtualize ? (
+                <VirtualList
+                  ariaLabel={t('keys.title')}
+                  className="h-[min(55vh,34rem)] rounded-lg border border-base-300"
+                  estimateSize={() => 48}
+                  getItemKey={keybindingKey}
+                  items={keybindings}
+                  renderItem={(keybinding) => (
+                    <ActiveKeybindingDesktopRow gameId={gameId} keybinding={keybinding} />
+                  )}
+                />
+              ) : (
+                <div className="hidden max-h-[min(55vh,34rem)] overflow-auto sm:block">
+                  <table className="table table-xs table-zebra">
+                    <thead className="sticky top-0 bg-base-200">
+                      <tr>
+                        <th>{t('keys.table_mod')}</th>
+                        <th>{t('keys.table_section')}</th>
+                        <th>{t('keys.table_key')}</th>
+                        <th>{t('keys.table_back')}</th>
+                        <th>{t('keys.table_control')}</th>
+                        <th>{t('keys.table_values')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {keybindings.map((keybinding) => (
+                        <tr key={keybindingKey(keybinding)}>
+                          <td className="max-w-48">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <ModThumbnail
+                                gameId={gameId}
+                                folderPath={keybinding.folder_path}
+                                sizeClassName="size-7"
+                              />
+                              <span
+                                className="truncate"
+                                title={String(keybinding.mod_name ?? '') || undefined}
+                              >
+                                {String(keybinding.mod_name ?? '')}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="text-base-content/60">{keybinding.section_name}</td>
+                          <td>
+                            {keybinding.key && <kbd className="kbd kbd-xs">{keybinding.key}</kbd>}
+                          </td>
+                          <td>
+                            {keybinding.back && <kbd className="kbd kbd-xs">{keybinding.back}</kbd>}
+                          </td>
+                          <td>
+                            <span className="badge badge-ghost badge-xs">
+                              {t(`keys.control_kind.${keybinding.control_kind}`)}
+                            </span>
+                          </td>
+                          <td
+                            className="max-w-40 truncate text-base-content/60"
+                            title={keybinding.value_summary ?? undefined}
                           >
-                            {String(keybinding.mod_name ?? '')}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="text-base-content/60">{keybinding.section_name}</td>
-                      <td>
-                        {keybinding.key && <kbd className="kbd kbd-xs">{keybinding.key}</kbd>}
-                      </td>
-                      <td>
-                        {keybinding.back && <kbd className="kbd kbd-xs">{keybinding.back}</kbd>}
-                      </td>
-                      <td>
-                        <span className="badge badge-ghost badge-xs">
-                          {t(`keys.control_kind.${keybinding.control_kind}`)}
-                        </span>
-                      </td>
-                      <td
-                        className="max-w-40 truncate text-base-content/60"
-                        title={keybinding.value_summary ?? undefined}
-                      >
-                        {keybinding.value_summary ?? '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                            {keybinding.value_summary ?? '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -172,6 +209,36 @@ function ActiveKeybindingsCard({
         )}
       </div>
     </div>
+  );
+}
+
+function ActiveKeybindingDesktopRow({
+  gameId,
+  keybinding,
+}: {
+  gameId: string;
+  keybinding: ActiveKeyBinding;
+}) {
+  const { t } = useTranslation(['dashboard']);
+
+  return (
+    <article className="grid min-h-12 grid-cols-[minmax(12rem,1.4fr)_minmax(8rem,1fr)_4rem_4rem_7rem_minmax(8rem,1fr)] items-center gap-2 border-b border-base-300 px-3 py-1.5 text-xs last:border-b-0">
+      <div className="flex min-w-0 items-center gap-2">
+        <ModThumbnail gameId={gameId} folderPath={keybinding.folder_path} sizeClassName="size-7" />
+        <span className="truncate" title={keybinding.mod_name}>
+          {keybinding.mod_name}
+        </span>
+      </div>
+      <span className="truncate text-base-content/60">{keybinding.section_name}</span>
+      <span>{keybinding.key && <kbd className="kbd kbd-xs">{keybinding.key}</kbd>}</span>
+      <span>{keybinding.back && <kbd className="kbd kbd-xs">{keybinding.back}</kbd>}</span>
+      <span className="badge badge-ghost badge-xs w-fit">
+        {t(`keys.control_kind.${keybinding.control_kind}`)}
+      </span>
+      <span className="truncate text-base-content/60" title={keybinding.value_summary ?? undefined}>
+        {keybinding.value_summary ?? '-'}
+      </span>
+    </article>
   );
 }
 

@@ -17,6 +17,7 @@
   },
   "banners": {
     "disk_syncing": "Syncing mods with disk. Editing is temporarily unavailable.",
+    "disk_refreshing": "Refreshing mods from disk…",
     "disk_sync_failed": "Mods sync failed: {{error}}",
     "flat_mod_title": "Active Mod Directory",
     "flat_mod_desc": "This folder is a direct mod root (flat structure). You can enable/disable it as a single unit.",

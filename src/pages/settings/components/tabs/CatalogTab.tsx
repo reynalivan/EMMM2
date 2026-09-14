@@ -339,7 +339,7 @@ export default function CatalogTab() {
               <dd>{catalogPreview.review.entries}</dd>
             </dl>
             {catalogPreview.replacesActivePack && (
-              <p className="mt-4 rounded-box bg-warning/10 px-3 py-2 text-sm text-warning-content">
+              <p className="mt-4 rounded-box bg-warning/10 px-3 py-2 text-sm text-warning">
                 {t('general.catalog_assets.github_replaces')}
               </p>
             )}

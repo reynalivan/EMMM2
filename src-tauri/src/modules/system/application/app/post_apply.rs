@@ -12,11 +12,9 @@ use sqlx::Row;
 use sqlx::SqlitePool;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use walkdir::WalkDir;
 
-static KEYVIEWER_GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static KEYVIEWER_SYNC_LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     OnceLock::new();
 static KEYVIEWER_SYNC_REVISIONS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
@@ -27,6 +25,8 @@ const KNOWN_LEGACY_KEYVIEWER_SHA256: &str =
 
 const KEYVIEWER_MANIFEST_FILE: &str = "manifest.json";
 const KEYVIEWER_MIGRATION_JOURNAL_FILE: &str = "duplicate-migration.json";
+const KEYVIEWER_RESOURCE_ROOT: &str = "generations";
+const KEYVIEWER_ACTIVE_GENERATION_ID: &str = "active";
 
 /// The reason an overlay snapshot was requested. Keeping this typed makes it
 /// possible to force only authority-boundary refreshes while normal watcher
@@ -164,6 +164,8 @@ impl RuntimeSyncResult {
 struct KeyViewerManifest {
     version: u8,
     fingerprint: String,
+    /// Kept for compatibility with older manifests; the active resources now
+    /// always live directly under `.emmm_data/generations/`.
     generation_id: String,
 }
 
@@ -521,15 +523,6 @@ fn cleanup_staging_after_error(staging: &std::path::Path, error: AppError) -> Ap
     }
 }
 
-fn next_generation_id() -> String {
-    let sequence = KEYVIEWER_GENERATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let milliseconds = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or_default();
-    format!("g{milliseconds}-{}-{sequence}", std::process::id())
-}
-
 fn sync_lock_for_game(game_id: &str) -> Result<Arc<tokio::sync::Mutex<()>>, AppError> {
     let locks = KEYVIEWER_SYNC_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut locks = locks.lock().map_err(|_| {
@@ -661,6 +654,12 @@ fn read_manifest(emmm_data_dir: &Path) -> Option<KeyViewerManifest> {
     serde_json::from_str(&content).ok()
 }
 
+fn entrypoint_uses_stable_generation(content: &[u8]) -> bool {
+    let content = String::from_utf8_lossy(content);
+    content.contains("filename = generations/status/")
+        || content.contains("filename = generations/keybinds/")
+}
+
 fn published_artifact_matches(emmm_data_dir: &Path, entrypoint: &Path, fingerprint: &str) -> bool {
     let Some(manifest) = read_manifest(emmm_data_dir) else {
         return false;
@@ -674,12 +673,8 @@ fn published_artifact_matches(emmm_data_dir: &Path, entrypoint: &Path, fingerpri
     if !is_current_emmm_entrypoint(&content) {
         return false;
     }
-    let generation = emmm_data_dir
-        .join("generations")
-        .join(&manifest.generation_id);
-    generation.is_dir()
-        && String::from_utf8_lossy(&content)
-            .contains(&format!("generations/{}/", manifest.generation_id))
+    emmm_data_dir.join(KEYVIEWER_RESOURCE_ROOT).is_dir()
+        && entrypoint_uses_stable_generation(&content)
 }
 
 #[allow(clippy::too_many_arguments)] // These are independent immutable fingerprint inputs.
@@ -701,6 +696,7 @@ fn runtime_input_fingerprint(
         ),
         format!("namespace={}", preflight.text_namespace),
         format!("renderer={}", preflight.renderer_available),
+        format!("layout={}", generator::KEYVIEWER_LAYOUT_REVISION),
         format!("safe={}", ctx.safe_mode),
         format!("keyviewer={}", ctx.keyviewer_enabled),
         format!("hotkeys={:?}", ctx.hotkeys),
@@ -794,31 +790,63 @@ fn game_is_confirmed_stopped(
     settings: &crate::modules::settings::application::config::AppSettings,
     game_id: &str,
 ) -> bool {
-    use sysinfo::System;
-
-    let Some(executable_name) = settings
+    let game_exe = settings
         .games
         .iter()
         .find(|game| game.id == game_id)
-        .and_then(|game| game.game_exe.as_ref())
-        .and_then(|path| path.file_name())
-        .map(|name| name.to_string_lossy().to_string())
-    else {
-        // Absence of an executable is not evidence that the game stopped.
-        return false;
-    };
-
-    let mut system = System::new_all();
-    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    !system.processes().values().any(|process| {
-        process
-            .name()
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&executable_name)
-    })
+        .and_then(|game| game.game_exe.as_deref());
+    game_exe.is_some()
+        && !crate::modules::system::application::game_detector::is_game_running(game_exe)
 }
 
-fn is_owned_generation_id(name: &str) -> bool {
+fn cleanup_generation_siblings(emmm_data_dir: &Path) -> Result<(), AppError> {
+    let entries = std::fs::read_dir(emmm_data_dir)?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            (name.starts_with("generations.staging.") || name.starts_with("generations.recover."))
+                .then_some(entry.path())
+        })
+        .collect::<Vec<_>>();
+    for path in entries {
+        std::fs::remove_dir_all(&path).map_err(|error| {
+            AppError::Io(format!(
+                "Could not remove stale KeyViewer artifact {}: {error}",
+                path.display()
+            ))
+        })?;
+    }
+    cleanup_legacy_generation_children(emmm_data_dir)?;
+    Ok(())
+}
+
+/// Remove versioned trees created by the pre-stable publisher. These folders
+/// are never referenced by the current entrypoint, so removing them does not
+/// require stopping the game and keeps 3DMigoto from scanning stale copies.
+fn cleanup_legacy_generation_children(emmm_data_dir: &Path) -> Result<(), AppError> {
+    let generations_dir = emmm_data_dir.join(KEYVIEWER_RESOURCE_ROOT);
+    if !generations_dir.is_dir() {
+        return Ok(());
+    }
+    let entries = std::fs::read_dir(&generations_dir)?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter(|entry| is_legacy_generation_id(&entry.file_name().to_string_lossy()))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    for path in entries {
+        std::fs::remove_dir_all(&path).map_err(|error| {
+            AppError::Io(format!(
+                "Could not remove legacy KeyViewer generation {}: {error}",
+                path.display()
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+fn is_legacy_generation_id(name: &str) -> bool {
     let Some(value) = name.strip_prefix('g') else {
         return false;
     };
@@ -832,44 +860,11 @@ fn is_owned_generation_id(name: &str) -> bool {
     )
 }
 
-fn cleanup_obsolete_generations(emmm_data_dir: &Path) -> Result<(), AppError> {
-    let Some(manifest) = read_manifest(emmm_data_dir) else {
-        return Ok(());
-    };
-    let generations_dir = emmm_data_dir.join("generations");
-    if !generations_dir.is_dir() {
-        return Ok(());
-    }
-    let mut owned_generations = std::fs::read_dir(&generations_dir)?
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().to_string();
-            is_owned_generation_id(&name).then_some((name, entry.path()))
-        })
-        .collect::<Vec<_>>();
-    owned_generations.sort_by(|left, right| right.0.cmp(&left.0));
-
-    let mut retained_rollback = false;
-    for (name, path) in owned_generations {
-        if name == manifest.generation_id {
-            continue;
-        }
-        // A generation newer than the current manifest was never published
-        // (for example, an interrupted entrypoint swap), so it is not a
-        // rollback candidate. Keep only the latest older snapshot.
-        if name < manifest.generation_id && !retained_rollback {
-            retained_rollback = true;
-            continue;
-        }
-        std::fs::remove_dir_all(&path).map_err(|error| {
-            AppError::Io(format!(
-                "Could not remove obsolete KeyViewer generation {}: {error}",
-                path.display()
-            ))
-        })?;
-    }
-    Ok(())
+/// Keep one published generation on disk. Cleanup is only called after the
+/// game has stopped or the newly published snapshot was successfully reloaded;
+/// a manual-reload result keeps the previous folder until it is safe to remove.
+fn should_cleanup_generations(reload: &RuntimeReloadOutcome, game_stopped: bool) -> bool {
+    game_stopped || matches!(reload, RuntimeReloadOutcome::ReloadSent { .. })
 }
 
 fn is_current_emmm_entrypoint(content: &[u8]) -> bool {
@@ -1039,9 +1034,7 @@ fn recover_duplicate_migration(emmm_data_dir: &Path, entrypoint: &Path) -> Resul
 
     let published_generation = std::fs::read_to_string(entrypoint)
         .ok()
-        .is_some_and(|content| {
-            content.contains(&format!("generations/{}/", journal.generation_id))
-        });
+        .is_some_and(|content| entrypoint_uses_stable_generation(content.as_bytes()));
     if !published_generation {
         let migrations = journal
             .migrations
@@ -1600,25 +1593,25 @@ async fn run_post_apply_tasks_with_options(
         &catalog_checksum,
     );
     if !force_publish && published_artifact_matches(&emmm_data_dir, &entrypoint, &fingerprint) {
+        if let Err(error) = cleanup_legacy_generation_children(&emmm_data_dir) {
+            log::warn!("KeyViewer legacy generation cleanup was deferred: {error}");
+        }
         log::info!(
             "[post_apply] KeyViewer inputs are unchanged for game={game_id}; retaining current generation"
         );
         return Ok(PostApplyPublication::Unchanged);
     }
 
-    // Stage only text resources. No staged directory contains an INI, then
-    // publish the single entrypoint last. This is safe with include_recursive:
-    // the running game sees either the old entrypoint or one whose immutable
-    // generation already exists.
-    let generation_id = next_generation_id();
-    let generations_dir = emmm_data_dir.join("generations");
-    let final_generation = generations_dir.join(&generation_id);
+    // Stage only text resources, then replace one stable resource directory.
+    // 3DMigoto only ever follows `generations/`; it never sees versioned
+    // generation subfolders or has to scan old snapshots.
+    let generations_dir = emmm_data_dir.join(KEYVIEWER_RESOURCE_ROOT);
     let staging_artifacts = generator::create_staging_directory(&generations_dir)?;
     let kv_ini_content = generator::generate_keyviewer_ini_for_resources(
         &matches,
         &ctx.hotkeys.toggle_overlay,
         game_type,
-        &format!("generations/{generation_id}"),
+        KEYVIEWER_RESOURCE_ROOT,
     )?;
     let staging_keybinds = staging_artifacts.join("keybinds").join("active");
     let staging_status = staging_artifacts.join("status");
@@ -1634,34 +1627,18 @@ async fn run_post_apply_tasks_with_options(
     if let Err(error) = generator::write_status_file(&staging_status, &status, &ctx.hotkeys) {
         return Err(cleanup_staging_after_error(&staging_artifacts, error));
     }
-    if let Err(error) = std::fs::create_dir_all(&generations_dir) {
-        return Err(cleanup_staging_after_error(
-            &staging_artifacts,
-            error.into(),
-        ));
-    }
-    if final_generation.exists() {
-        return Err(cleanup_staging_after_error(
-            &staging_artifacts,
-            AppError::Validation(format!(
-                "KeyViewer generation collision at {}; retry the operation",
-                final_generation.display()
-            )),
-        ));
-    }
-    if let Err(error) = std::fs::rename(&staging_artifacts, &final_generation) {
-        return Err(cleanup_staging_after_error(
-            &staging_artifacts,
-            error.into(),
-        ));
-    }
-
     let migrated_entrypoints = migrate_duplicate_keyviewer_entrypoints(
         &runtime_preflight.runtime_include_roots,
         mods_path,
         &emmm_data_dir,
-        &generation_id,
+        KEYVIEWER_ACTIVE_GENERATION_ID,
     )?;
+    if let Err(error) = generator::replace_directory(&staging_artifacts, &generations_dir) {
+        rollback_duplicate_keyviewer_migrations(&migrated_entrypoints);
+        let _ = clear_duplicate_migration_journal(&emmm_data_dir);
+        return Err(error);
+    }
+
     if let Err(error) = generator::atomic_write(&entrypoint, &kv_ini_content) {
         rollback_duplicate_keyviewer_migrations(&migrated_entrypoints);
         let _ = clear_duplicate_migration_journal(&emmm_data_dir);
@@ -1677,7 +1654,7 @@ async fn run_post_apply_tasks_with_options(
     let manifest = KeyViewerManifest {
         version: 1,
         fingerprint,
-        generation_id,
+        generation_id: KEYVIEWER_ACTIVE_GENERATION_ID.to_string(),
     };
     let manifest_content = serde_json::to_string_pretty(&manifest).map_err(|error| {
         AppError::Internal(format!("Could not serialize KeyViewer manifest: {error}"))
@@ -1851,14 +1828,11 @@ async fn synchronize_overlay_context(
         RuntimeReloadOutcome::NotRequired
     };
 
-    if matches!(
-        cause,
-        OverlaySyncCause::Startup | OverlaySyncCause::Recovery
-    ) && reload_settings
+    let game_stopped = reload_settings
         .as_ref()
-        .is_some_and(|settings| game_is_confirmed_stopped(settings, &game_id))
-    {
-        if let Err(error) = cleanup_obsolete_generations(&emmm_data_dir) {
+        .is_some_and(|settings| game_is_confirmed_stopped(settings, &game_id));
+    if should_cleanup_generations(&reload, game_stopped) {
+        if let Err(error) = cleanup_generation_siblings(&emmm_data_dir) {
             // Cleanup is intentionally deferred maintenance. It must never
             // turn a valid current snapshot into a failed synchronization.
             log::warn!("KeyViewer generation cleanup was deferred: {error}");
@@ -1953,12 +1927,10 @@ mod tests {
         std::fs::write(pack_dir.join("gimi.json"), catalog).expect("write fixture catalog");
         let checksum = format!("{:x}", sha2::Sha256::digest(catalog.as_bytes()));
         let manifest = serde_json::json!({
-            "format_version": 2,
             "id": "fixture-catalog",
             "version": "2026.09.14",
             "author": "EMMM test",
             "source": "https://example.invalid/catalog",
-            "license": "MIT",
             "catalogs": { "gimi": { "path": "gimi.json", "sha256": checksum } }
         });
         std::fs::write(
@@ -2222,18 +2194,18 @@ mod tests {
     fn manifest_requires_the_entrypoint_to_reference_its_generation() {
         let temp = TempDir::new().unwrap();
         let emmm_data = temp.path().join(".emmm_data");
-        let generation = emmm_data.join("generations").join("g-test");
-        std::fs::create_dir_all(&generation).unwrap();
+        let generation = emmm_data.join(KEYVIEWER_RESOURCE_ROOT);
+        std::fs::create_dir_all(generation.join("status")).unwrap();
         let entrypoint = emmm_data.join("KeyViewer.ini");
         std::fs::write(
             &entrypoint,
-            "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\nfilename = generations/g-test/status/runtime_status.txt\n",
+            "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\nfilename = generations/status/runtime_status.txt\n",
         )
         .unwrap();
         let manifest = KeyViewerManifest {
             version: 1,
             fingerprint: "abc".to_string(),
-            generation_id: "g-test".to_string(),
+            generation_id: KEYVIEWER_ACTIVE_GENERATION_ID.to_string(),
         };
         std::fs::write(
             manifest_path(&emmm_data),
@@ -2250,31 +2222,42 @@ mod tests {
     }
 
     #[test]
-    fn startup_cleanup_retains_current_and_one_rollback_generation() {
+    fn stable_generation_directory_has_no_versioned_children() {
         let temp = TempDir::new().unwrap();
         let emmm_data = temp.path().join(".emmm_data");
         let generations = emmm_data.join("generations");
-        for generation in ["g100-1-0", "g200-1-0", "g300-1-0"] {
-            std::fs::create_dir_all(generations.join(generation)).unwrap();
-        }
-        std::fs::create_dir_all(generations.join("game-config")).unwrap();
-        std::fs::write(
-            manifest_path(&emmm_data),
-            serde_json::to_string(&KeyViewerManifest {
-                version: 1,
-                fingerprint: "fixture".to_string(),
-                generation_id: "g200-1-0".to_string(),
-            })
-            .unwrap(),
-        )
-        .unwrap();
+        std::fs::create_dir_all(generations.join("status")).unwrap();
+        std::fs::create_dir_all(generations.join("g1726262400000-1234-0")).unwrap();
+        std::fs::create_dir_all(emmm_data.join("generations.recover.123")).unwrap();
+        std::fs::create_dir_all(emmm_data.join("generations.staging.456")).unwrap();
 
-        cleanup_obsolete_generations(&emmm_data).unwrap();
+        cleanup_generation_siblings(&emmm_data).unwrap();
 
-        assert!(generations.join("g200-1-0").is_dir());
-        assert!(generations.join("g100-1-0").is_dir());
-        assert!(!generations.join("g300-1-0").exists());
-        assert!(generations.join("game-config").is_dir());
+        assert!(generations.join("status").is_dir());
+        assert!(!generations.join("g1726262400000-1234-0").exists());
+        assert!(!emmm_data.join("generations.recover.123").exists());
+        assert!(!emmm_data.join("generations.staging.456").exists());
+    }
+
+    #[test]
+    fn generation_cleanup_is_safe_after_a_confirmed_reload() {
+        assert!(should_cleanup_generations(
+            &RuntimeReloadOutcome::ReloadSent {
+                binding: "F10".to_string()
+            },
+            false
+        ));
+        assert!(should_cleanup_generations(
+            &RuntimeReloadOutcome::NotRequired,
+            true
+        ));
+        assert!(!should_cleanup_generations(
+            &RuntimeReloadOutcome::NeedsManualReload {
+                binding: Some("F10".to_string()),
+                reason: "game is not focused".to_string(),
+            },
+            false
+        ));
     }
 
     #[tokio::test]
@@ -2349,13 +2332,20 @@ mod tests {
         })
         .await
         .unwrap();
-        let generations = std::fs::read_dir(mods.join(".emmm_data").join("generations"))
-            .unwrap()
-            .count();
+        let generations = mods.join(".emmm_data").join("generations");
         assert_eq!(
-            generations, 1,
-            "unchanged inputs must retain the generation"
+            generations.file_name().and_then(|name| name.to_str()),
+            Some("generations"),
+            "unchanged inputs must retain the stable generation directory"
         );
+        assert!(generations.join("status").is_dir());
+        let nested_generation_dirs = std::fs::read_dir(&generations)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with('g'))
+            .count();
+        assert_eq!(nested_generation_dirs, 0);
     }
 
     #[tokio::test]
@@ -2430,12 +2420,7 @@ mod tests {
         assert!(entrypoint.contains("hash = a1b2c3d4"));
         assert!(entrypoint.contains("[TextureOverride_EMMMv1_Unclassified_Arlecchino"));
 
-        let generation = std::fs::read_dir(mods.join(".emmm_data").join("generations"))
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
+        let generation = mods.join(".emmm_data").join("generations");
         let keybind_text = std::fs::read_to_string(
             generation
                 .join("keybinds")
@@ -2533,12 +2518,7 @@ mod tests {
         assert!(entrypoint.contains("key = F9"));
         assert!(entrypoint.contains("type = cycle"));
 
-        let generation = std::fs::read_dir(mods.join(".emmm_data").join("generations"))
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
+        let generation = mods.join(".emmm_data").join("generations");
         let keybind_text = std::fs::read_to_string(
             generation
                 .join("keybinds")
@@ -2710,10 +2690,10 @@ mod tests {
             "g100-1-0",
         )
         .unwrap();
-        std::fs::create_dir_all(emmm_data.join("generations").join("g100-1-0")).unwrap();
+        std::fs::create_dir_all(emmm_data.join(KEYVIEWER_RESOURCE_ROOT).join("status")).unwrap();
         std::fs::write(
             &entrypoint,
-            "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\nfilename = generations/g100-1-0/status/runtime_status.txt",
+            "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\nfilename = generations/status/runtime_status.txt",
         )
         .unwrap();
 

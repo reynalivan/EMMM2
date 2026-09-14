@@ -147,6 +147,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::system::adapters::tauri::theme_cmds::delete_custom_theme,
             crate::modules::system::adapters::tauri::theme_cmds::import_custom_theme,
             crate::modules::system::adapters::tauri::theme_cmds::export_custom_theme,
+            crate::modules::system::adapters::tauri::theme_cmds::export_custom_theme_template,
             crate::modules::catalog::adapters::tauri::object_cmds::get_objects_cmd,
             crate::modules::catalog::adapters::tauri::object_cmds::get_category_counts_cmd,
             crate::modules::catalog::adapters::tauri::object_cmds::create_object_cmd,
@@ -449,10 +450,29 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building application")
         .run(|app, event| {
-            if matches!(event, tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }) {
-                if let Some(marker) = app.try_state::<crate::modules::system::application::telemetry::CrashMarker>() {
-                    let _ = marker.clear();
+            match event {
+                tauri::RunEvent::Ready => {
+                    // The native shortcut manager is ready when the event loop
+                    // starts. Retry once here so a transient startup failure
+                    // cannot leave global hotkeys permanently disabled.
+                    let settings = app
+                        .try_state::<crate::modules::settings::application::config::ConfigService>()
+                        .map(|config| config.get_settings().hotkeys);
+                    if let (Some(settings), Some(manager)) = (
+                        settings,
+                        app.try_state::<crate::modules::automation::application::hotkeys::manager::HotkeyManager>(),
+                    ) {
+                        if let Err(error) = manager.update_bindings(app, &settings) {
+                            log::warn!("ready: global hotkey registration failed: {error}");
+                        }
+                    }
                 }
+                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. } => {
+                    if let Some(marker) = app.try_state::<crate::modules::system::application::telemetry::CrashMarker>() {
+                        let _ = marker.clear();
+                    }
+                }
+                _ => {}
             }
         });
 }

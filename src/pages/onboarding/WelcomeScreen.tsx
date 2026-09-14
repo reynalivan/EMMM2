@@ -74,7 +74,7 @@ export default function WelcomeScreen({
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
-  const [shareDiagnostics, setShareDiagnostics] = useState(false);
+  const [shareDiagnostics, setShareDiagnostics] = useState(true);
   const prefersReduced = usePrefersReducedMotion();
   const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames);
 

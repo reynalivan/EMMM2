@@ -36,7 +36,7 @@ EMMM2's backend is a **Modular Monolith** using **Strict Vertical Slices**.
 11. **`mutation`**: The engine room. Houses the `MutationCoordinator`, operation journaling, and recovery systems.
 12. **`reconciliation`**: Disk-to-DB syncing. Runs silently to fix discrepancies and handles 'Safe Mode' transitions (Epic 7).
 13. **`settings`**: App-level configuration and global preferences.
-14. **`system`**: Bootstrap routines, logging, themes, and application lifecycle.
+14. **`system`**: Bootstrap routines, logging, themes, application lifecycle, and the shared game process/focus detector used by runtime hotkeys and KeyViewer maintenance.
 15. **`updates`**: Upstream update checkers for both the app and installed mods.
 16. **`workspace`**: The active mod routing, file watcher lifecycle, and live grid logic.
 

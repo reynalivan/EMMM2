@@ -5,9 +5,9 @@
 //! - `HotkeyConfig` for user-configurable key bindings
 //! - `HotkeyState` for debounce/cooldown + `switch_lock` mutual exclusion
 //!
-//! **OS Integration (Phase 4b):** The actual `global-hotkey` crate registration
-//! and `enigo`/`windows-sys` keystroke sending will be added when their
-//! Cargo.toml dependencies are introduced.
+//! OS integration is owned by `manager.rs` through Tauri's global-shortcut
+//! plugin; reload chords are replayed through `reload.rs` only after the shared
+//! system game detector confirms the game window is focused.
 
 pub mod cycle_preset;
 pub mod focus;
@@ -39,8 +39,9 @@ pub enum HotkeyAction {
 }
 
 impl HotkeyAction {
-    /// Every action exposed in Settings. The overlay key is intentionally not
-    /// registered with the OS: 3DMigoto owns it inside the game process.
+    /// Every action exposed in Settings and registered while global hotkeys
+    /// are enabled. Overlay input is replayed only after the active game has
+    /// been confirmed as the foreground process.
     pub const ALL: [HotkeyAction; 4] = [
         HotkeyAction::ToggleSafeMode,
         HotkeyAction::NextPreset,
@@ -49,10 +50,11 @@ impl HotkeyAction {
     ];
 
     /// The subset that Tauri registers as OS-level shortcuts.
-    pub const OS_ACTIONS: [HotkeyAction; 3] = [
+    pub const OS_ACTIONS: [HotkeyAction; 4] = [
         HotkeyAction::ToggleSafeMode,
         HotkeyAction::NextPreset,
         HotkeyAction::PrevPreset,
+        HotkeyAction::ToggleOverlay,
     ];
 }
 

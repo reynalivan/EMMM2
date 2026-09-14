@@ -75,6 +75,37 @@ fn keyviewer_ini_draws_status_and_detected_character_panels_directly() {
 }
 
 #[test]
+fn keyviewer_ini_docks_status_and_character_panels_at_bottom_left() {
+    let ini = generate_keyviewer_ini(
+        &[make_match_result("Albedo", &["aabb1111"])],
+        "F7",
+        ".emmm_data/keybinds/active",
+    );
+
+    assert!(ini.contains(
+        "data = R32_FLOAT  -0.97 -0.04 0.00 -0.15  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  1.10"
+    ));
+    assert!(ini.contains(
+        "data = R32_FLOAT  -0.97 -0.22 0.00 -0.92  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  1.12"
+    ));
+}
+
+#[test]
+fn keyviewer_ini_keeps_multiple_panels_inside_the_left_dock() {
+    let matches = (0..4)
+        .map(|index| make_match_result(&format!("Character{index}"), &["aabb1111"]))
+        .collect::<Vec<_>>();
+    let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
+
+    assert!(ini.contains(
+        "data = R32_FLOAT  -0.97 -0.22 -0.50 -0.55  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  0.95"
+    ));
+    assert!(ini.contains(
+        "data = R32_FLOAT  -0.47 -0.22 0.00 -0.55  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  0.95"
+    ));
+}
+
+#[test]
 fn keyviewer_ini_uses_one_text_file_per_character() {
     let matches = vec![make_match_result("Albedo", &["aabb1111"])];
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
@@ -99,7 +130,7 @@ fn keyviewer_ini_allocates_a_panel_for_every_match() {
 }
 
 #[test]
-fn keyviewer_ini_can_reference_one_immutable_resource_generation() {
+fn keyviewer_ini_uses_one_stable_resource_directory() {
     use crate::modules::automation::application::keyviewer::generator::generate_keyviewer_ini_for_resources;
     use crate::modules::games::domain::models::GameType;
 
@@ -107,12 +138,13 @@ fn keyviewer_ini_can_reference_one_immutable_resource_generation() {
         &[make_match_result("Albedo", &["aabb1111"])],
         "F7",
         GameType::GIMI,
-        "generations/20260914-1",
+        "generations",
     )
     .unwrap();
 
-    assert!(ini.contains("filename = generations/20260914-1/status/runtime_status.txt"));
-    assert!(ini.contains("filename = generations/20260914-1/keybinds/active/character_000.txt"));
+    assert!(ini.contains("filename = generations/status/runtime_status.txt"));
+    assert!(ini.contains("filename = generations/keybinds/active/character_000.txt"));
+    assert!(!ini.contains("generations/20260914-1"));
 }
 
 #[test]

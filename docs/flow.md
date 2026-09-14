@@ -404,7 +404,7 @@ Plaintext
 ```
 [Event Trigger]
   → Acquire Global OperationLock
-  → Zero-Leak Phase: fs::remove_dir_all(".emmm_data/keybinds/active")
+  → Stage Phase: build a complete `.emmm_data/generations/` tree beside the active tree
   → Harvest Phase: Scan enabled mods for hashes & keybinds
   → Match Phase: Score hashes against the Resource Pack matcher used by KeyViewer
   → Write Phase:
@@ -414,6 +414,6 @@ Plaintext
   → Notification: Send `reload_fixes` keystroke to game window (Enigo)
 ```
 
-### C. Zero-Leak Policy
+### C. Stable Resource Policy
 
-To prevent stale character info from appearing after a mod is disabled, the `keybinds/active/` directory is **force-cleared** before every regeneration. This ensures that 3DMigoto only ever sees the current, valid mod set.
+To prevent stale character info from appearing after a mod is disabled, EMMM publishes a complete `.emmm_data/generations/` tree with an atomic directory swap. The active tree contains only `keybinds/active/` and `status/`; no `generations/g...` version folders are retained for 3DMigoto to scan.

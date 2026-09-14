@@ -12,7 +12,6 @@ use crate::shared::errors::AppError;
 pub async fn update_mod_thumbnail(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
     watcher: tauri::State<'_, WatcherState>,
     op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
@@ -20,14 +19,10 @@ pub async fn update_mod_thumbnail(
     source_path: String,
 ) -> Result<String, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
-    let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
-        pool.inner(),
         &game_id,
-        Some(&preflight_paths),
-    )
-    .await?;
+    )?;
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
@@ -46,7 +41,6 @@ pub async fn update_mod_thumbnail(
 pub async fn paste_thumbnail(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
     watcher: tauri::State<'_, WatcherState>,
     op_lock: tauri::State<'_, MutationCoordinator>,
     game_id: String,
@@ -54,14 +48,10 @@ pub async fn paste_thumbnail(
     image_data: Vec<u8>,
 ) -> Result<String, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
-    let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
-        pool.inner(),
         &game_id,
-        Some(&preflight_paths),
-    )
-    .await?;
+    )?;
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;

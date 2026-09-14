@@ -29,7 +29,11 @@ type Props = {
     suggestion: DestinationSuggestion,
     decision: ImportDecision,
   ) => Promise<void>;
-  onChooseManualTarget: (item: ImportItem, objectId: string) => Promise<void>;
+  onChooseManualTarget: (
+    item: ImportItem,
+    objectId: string,
+    decision?: ImportDecision,
+  ) => Promise<void>;
   onSkip: (item: ImportItem) => Promise<void>;
   onRename: (item: ImportItem, plannedName: string) => Promise<void>;
   onRetry: (item: ImportItem) => Promise<void>;
@@ -62,6 +66,7 @@ export function ImportBatchWizardItemRow({
   const sourceDisplayName = withoutDisabledPrefix(item.plannedName);
   const [plannedName, setPlannedName] = useState(sourceDisplayName);
   const [editing, setEditing] = useState(false);
+  const [destinationRequestToken, setDestinationRequestToken] = useState(0);
   useEffect(() => setPlannedName(withoutDisabledPrefix(item.plannedName)), [item.plannedName]);
   const archiveSource = ['archive_root', 'browser_download'].includes(item.sourceKind);
   const needsRecovery = [
@@ -99,7 +104,7 @@ export function ImportBatchWizardItemRow({
     targetComparison !== null &&
     targetComparison.outcome !== 'already_installed' &&
     targetComparison.suggestedSeparateName !== null &&
-    topSuggestion !== null;
+    (topSuggestion !== null || item.destinationObjectId !== null);
   const archiveError = archiveErrorKindFromStoredMessage(item.error);
   const errorText = needsRecovery
     ? t('errors.metadata_pending')
@@ -311,6 +316,7 @@ export function ImportBatchWizardItemRow({
               busy={busy}
               item={item}
               objects={objects}
+              openRequestToken={destinationRequestToken}
               onChooseDestination={onChooseDestination}
               onChooseManualTarget={onChooseManualTarget}
             />
@@ -345,7 +351,7 @@ export function ImportBatchWizardItemRow({
           <button
             type="button"
             className={`btn btn-xs join-item justify-start ${proceed ? 'btn-success' : 'btn-ghost'}`}
-            disabled={busy || (!proceed && !topSuggestion)}
+            disabled={busy}
             onClick={() => {
               if (!proceed && topSuggestion) {
                 void onChooseDestination(
@@ -353,6 +359,8 @@ export function ImportBatchWizardItemRow({
                   topSuggestion,
                   destinationDecision(batch, topSuggestion),
                 );
+              } else if (!proceed) {
+                setDestinationRequestToken((current) => current + 1);
               }
             }}
           >
@@ -366,6 +374,8 @@ export function ImportBatchWizardItemRow({
               onClick={() => {
                 if (topSuggestion) {
                   void onChooseDestination(item, topSuggestion, 'keep_separate');
+                } else if (item.destinationObjectId) {
+                  void onChooseManualTarget(item, item.destinationObjectId, 'keep_separate');
                 }
               }}
               title={targetComparison.suggestedSeparateName ?? undefined}

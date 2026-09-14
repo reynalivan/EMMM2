@@ -1212,6 +1212,14 @@ async exportCustomTheme(id: string) : Promise<Result<string | null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async exportCustomThemeTemplate() : Promise<Result<string | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_custom_theme_template") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getObjectsCmd(filter: ObjectFilter) : Promise<Result<GetObjectsResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_objects_cmd", { filter }) };
@@ -1573,8 +1581,10 @@ async installAppUpdate(onProgress: TAURI_CHANNEL<AppUpdateProgress>) : Promise<R
 },
 /**
  * Validate and commit runtime-control settings without persisting a partial
- * shortcut while OS registration is still allowed to fail. F7 remains
- * generated for 3DMigoto, but is never registered as an OS shortcut.
+ * shortcut while OS registration is still allowed to fail. Every configured
+ * action, including the KeyViewer toggle, is registered while enabled and is
+ * dispatched only when the shared game detector reports the active game in
+ * the foreground.
  */
 async saveHotkeyConfiguration(expectedRevision: number, hotkeys: HotkeyConfig, keyviewer: KeyViewerConfig) : Promise<Result<SaveSettingsResult, AppError>> {
     try {
@@ -2182,9 +2192,9 @@ export type CreateObjectThumbnail = { kind: "file"; source_path: string } | { ki
  */
 export type CustomSkin = { name: string; aliases?: string[]; thumbnail_skin_path?: string | null; rarity?: string | null }
 /**
- * Strongly-typed payload for custom skins attached to the master DB
+ * Strongly-typed payload for custom skins attached to an object.
  */
-export type CustomSkinsPayload = Partial<{ [key in string]: string }>
+export type CustomSkinsPayload = StoredCustomSkin[]
 export type CustomTheme = { id: string; label: string; config: ThemeConfig }
 /**
  * Full dashboard payload struct (mirrors the command type).
@@ -2607,6 +2617,14 @@ export type SourceFingerprint = { path: string; modifiedUnixMs: string; sizeByte
 export type StableCategory = "Character" | "Weapon" | "UI" | "Other"
 export type StorageSizeBackfillStateKind = "Idle" | "Running" | "Completed" | "Failed"
 export type StorageSizeBackfillStatus = { state: StorageSizeBackfillStateKind; total_games: number; completed_games: number; current_game_id: string | null; errors: string[] }
+/**
+ * One custom skin/outfit stored on an object.
+ *
+ * Object rows use the same array shape as the MasterDB. Keeping this DTO in
+ * the domain layer lets object reads expose that persisted shape without
+ * depending on the matching application module.
+ */
+export type StoredCustomSkin = { name: string; aliases?: string[]; thumbnail_skin_path?: string | null; rarity?: string | null }
 export type SuggestRandomModsInput = { game_id: string; safety_filter: RandomizerSafetyFilter; scope: RandomizerScope;
 /**
  * The last three selected ids per Object in the current modal session.

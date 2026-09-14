@@ -17,6 +17,7 @@
   },
   "banners": {
     "disk_syncing": "Menyinkronkan mod dengan disk. Pengeditan sementara tidak tersedia.",
+    "disk_refreshing": "Memperbarui mod dari disk…",
     "disk_sync_failed": "Sinkronisasi mod gagal: {{error}}",
     "flat_mod_title": "Direktori Mod Aktif",
     "flat_mod_desc": "Folder ini adalah akar mod langsung (struktur datar). Anda dapat mengaktifkan/menonaktifkan sebagai satu unit.",

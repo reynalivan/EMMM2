@@ -516,13 +516,13 @@ pub async fn ensure_mutation_preflight(
     ensure_mutation_preflight_for_paths(app, pool, game_id, None).await
 }
 
-/// Opening a folder never mutates disk or the projection. Validate the target
-/// remains inside the configured Mods root (at the command boundary) and use
-/// only the ephemeral identity census to reject an ambiguous candidate.
-pub async fn ensure_open_path_preflight(
+/// Metadata and thumbnail writes still wait for the startup recovery gate, but
+/// they do not need a second topology scan before their own scoped reconcile.
+/// Their command boundary has already validated the target path, and the
+/// mutation guard plus final reconcile remain the authority for disk state.
+pub fn ensure_initial_recovery_allows_mutation(
     app: &tauri::AppHandle,
     game_id: &str,
-    path: &std::path::Path,
 ) -> Result<(), AppError> {
     if let Some(state) = app.try_state::<DiskReconcileState>() {
         if !initial_recovery_allows_mutation(state.initial_recovery_readiness(game_id)) {
@@ -532,6 +532,18 @@ pub async fn ensure_open_path_preflight(
             ));
         }
     }
+    Ok(())
+}
+
+/// Opening a folder never mutates disk or the projection. Validate the target
+/// remains inside the configured Mods root (at the command boundary) and use
+/// only the ephemeral identity census to reject an ambiguous candidate.
+pub async fn ensure_open_path_preflight(
+    app: &tauri::AppHandle,
+    game_id: &str,
+    path: &std::path::Path,
+) -> Result<(), AppError> {
+    ensure_initial_recovery_allows_mutation(app, game_id)?;
     let config = app
         .try_state::<crate::modules::settings::application::config::ConfigService>()
         .ok_or_else(|| {
@@ -584,14 +596,7 @@ pub async fn mutation_preflight_report_for_paths(
     game_id: &str,
     paths: Option<&[String]>,
 ) -> Result<DiskReconcileResult, AppError> {
-    if let Some(state) = app.try_state::<DiskReconcileState>() {
-        if !initial_recovery_allows_mutation(state.initial_recovery_readiness(game_id)) {
-            return Err(AppError::Io(
-                "Mods are still synchronizing with disk. Try again when sync completes."
-                    .to_string(),
-            ));
-        }
-    }
+    ensure_initial_recovery_allows_mutation(app, game_id)?;
     let result = match paths {
         Some(paths) if !paths.is_empty() => {
             run_internal_disk_reconcile(app, pool, game_id, paths.to_vec()).await?

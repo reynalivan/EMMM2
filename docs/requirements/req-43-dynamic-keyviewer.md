@@ -9,11 +9,14 @@
 > `CatalogUpgradeRequired`; bukan teks `Runtime ready`.
 >
 > Satu entrypoint milik EMMM berada di
-> `runtimeModsRoot/.emmm_data/KeyViewer.ini`. Resource dibuat dalam generation
-> immutable, lalu entrypoint diganti atomically sesudah seluruh referensi ada.
-> Staging tidak pernah mengandung `.ini`. Duplikat hanya dimigrasikan jika
-> manifest/checksum ownership cocok; sampel atau file user tidak diubah
-> otomatis.
+> `runtimeModsRoot/.emmm_data/KeyViewer.ini`. Semua resource runtime berada di
+> satu direktori aktif `runtimeModsRoot/.emmm_data/generations/`; direktori ini
+> ditulis lengkap di staging lalu ditukar atomically. Tidak ada folder
+> `generations/g...` atau snapshot versi yang dibiarkan untuk dibaca 3DMigoto.
+> Staging/recovery hanya boleh muncul sebagai sibling sementara dan dibersihkan
+> setelah game berhenti atau reload berhasil. Duplikat entrypoint hanya
+> dimigrasikan jika manifest/checksum ownership cocok; sampel atau file user
+> tidak diubah otomatis.
 >
 > Entry point menggunakan `global persist $emmm_kv_active`, `type = cycle`,
 > flag deteksi integer per karakter, dan renderer langsung
@@ -47,7 +50,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Users who have tens of mods enabled across multiple characters have no in-game reference for which keybinds control which mod — displaying all keybinds at once clutters the screen; showing nothing requires memorization.
-- **Proposed Solution**: A background generator in EMMM that monitors active mod sets and character hashes, producing a set of keybind text files in `Mods/.emmm_data/keybinds/active/`. A `KeyViewer.ini` system mod manages a 3DMigoto-level arbitration tree using a unified toggle (`$kv_active`). It uses the `help.ini` pipeline (`ResourceNotification` + `FormatText`) to render text persistently. Character detection is handled via `$kv_active_code` and a `$kv_last_seen` timestamp logic with a 1.5s threshold to prevent flickering during scene transitions or animation breaks.
+- **Proposed Solution**: A background generator in EMMM that monitors active mod sets and character hashes, producing a set of keybind text files in the single stable tree `Mods/.emmm_data/generations/keybinds/active/`. A `KeyViewer.ini` system mod manages a 3DMigoto-level arbitration tree using a unified toggle (`$kv_active`). Character detection is handled by the generated sentinel sections and package text renderer.
 - **Success Criteria**:
   - KeyViewer displays only when the unified toggle (`F7` by default) is ON.
   - Character detection is stable — text remains on screen as long as the hash was seen in the last 1.5 seconds.
@@ -158,7 +161,7 @@ The EMMM Overlay System is a **hybrid architecture** where EMMM handles the comp
 | Step  | Component             | Action                                                                                                       | Result                                        |
 | :---- | :-------------------- | :----------------------------------------------------------------------------------------------------------- | :-------------------------------------------- |
 | **1** | **EMMM Backend**      | **Scan & Map**: Scans enabled mods for character hashes and extracts `[Key*]` sections.                      | `HashMap<Hash, Keybinds>`                     |
-| **2** | **EMMM Generator**    | **Artifact Write**: Generates files into `Mods/.emmm_data/`.                                                 | `KeyViewer.ini`, `*.txt`                      |
+| **2** | **EMMM Generator**    | **Artifact Write**: Generates the entrypoint and one stable resource tree into `Mods/.emmm_data/`.            | `KeyViewer.ini`, `generations/keybinds/active/*.txt`, `generations/status/runtime_status.txt` |
 | **3** | **EMMM App**          | **Reload Sync**: Sends the `reload_fixes` key to 3DMigoto.                                                   | Game reloads all `.ini` files.                |
 | **4** | **3DMigoto Engine**   | **Hash Hit**: Game renders a character; `TextureOverride` triggers in `KeyViewer.ini`.                       | `$kv_has_active = 1`, `$kv_last_seen = time`. |
 | **5** | **3DMigoto Present**  | **Arbitration**: `[Present]` block checks the 1.5s threshold and `$kv_active` toggle.                        | Correct `CommandList` is selected.            |
@@ -233,7 +236,7 @@ if $kv_active == 1
 endif
 ```
 
-### 📄 `Mods/.emmm_data/keybinds/active/a1b2c3d4.txt` (Character Keybinds)
+### 📄 `Mods/.emmm_data/generations/keybinds/active/a1b2c3d4.txt` (Character Keybinds)
 
 ```text
 Arlecchino

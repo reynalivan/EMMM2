@@ -322,9 +322,9 @@
       "not_attempted": "Belum dicoba",
       "unavailable": "Tidak tersedia",
       "binding_unavailable": "Tidak tersedia",
-      "cleanup_enabled": "Otomatis saat game berhenti",
-      "cleanup_disabled": "Dinonaktifkan sampai executable game dikonfigurasi",
-      "cleanup_disabled_desc": "EMMM tidak akan menghapus generation KeyViewer lama karena status proses game tidak dapat diverifikasi.",
+      "cleanup_enabled": "Otomatis setelah refresh aman",
+      "cleanup_disabled": "Menunggu executable game dikonfigurasi",
+      "cleanup_disabled_desc": "EMMM menyimpan file pemulihan sementara sampai game dipastikan berhenti atau overlay baru selesai dimuat.",
       "publication": {
         "published": "Dipublikasikan",
         "unchanged": "Tidak berubah",

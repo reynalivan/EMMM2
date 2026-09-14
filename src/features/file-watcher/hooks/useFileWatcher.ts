@@ -34,7 +34,7 @@ import { joinModPath } from '../utils/pathUtils';
 const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
 const AUTO_OPEN_REPORT_MAX_GAMES = 32;
-const RUNTIME_WARNING_DEDUPE_MS = 3_000;
+const RUNTIME_WARNING_DEDUPE_MS = 30_000;
 const autoOpenedRenameReportByGame = new Map<string, string>();
 const lastRuntimeWarningByGame = new Map<string, { key: string; at: number }>();
 
@@ -55,6 +55,7 @@ function setBoundedMapEntry<K, V>(map: Map<K, V>, key: K, value: V, maxEntries: 
 function maybeShowRuntimeEffectsWarning(result: DiskReconcileResult) {
   const warning = result.warnings.find((entry) => entry.kind === 'RuntimeEffectsPending');
   if (!warning) {
+    lastRuntimeWarningByGame.delete(result.game_id);
     return;
   }
 

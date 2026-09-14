@@ -372,7 +372,7 @@ Sumber: [Hunting](https://leotorrez.github.io/modding/guides/hunting), [Textures
 - [`harvester.rs`](../src-tauri/src/services/keyviewer/harvester.rs) hanya memasukkan hash resource 8-hex dari `TextureOverride*` ke matcher. Shader hash 16-hex ditangani conflict scanner sebagai tipe berbeda.
 - [`matcher.rs`](../src-tauri/src/services/keyviewer/matcher.rs) mendeduplikasi evidence, memakai threshold konservatif, dan hanya menghasilkan artifact bila sentinel unik terhadap semua object result.
 - [`generator/ini.rs`](../src-tauri/src/services/keyviewer/generator/ini.rs) memakai text API resmi per package: `GIMIv8`, `SRMIv1`, `WWMIv1`, atau `ZZMIv1`. EFMI ditolak eksplisit sampai API resmi terverifikasi.
-- Seluruh resource path ditulis relatif terhadap `.emmm_data/KeyViewer.ini`: `status/...` dan `keybinds/active/...`.
+- Seluruh resource path ditulis relatif terhadap `.emmm_data/KeyViewer.ini` melalui satu direktori stabil: `generations/status/...` dan `generations/keybinds/active/...`. Tidak ada subfolder generasi versi yang ikut dibaca 3DMigoto.
 
 ### 6.4 Switch mod
 

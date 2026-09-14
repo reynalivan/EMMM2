@@ -128,7 +128,7 @@ function NodeVisual({
   expanded: boolean;
 }) {
   if (isModRoot(node) && node.path) {
-    return <ModThumbnail gameId={gameId} folderPath={node.path} sizeClassName="size-6" />;
+    return <ModThumbnail gameId={gameId} folderPath={node.path} sizeClassName="size-8" />;
   }
 
   return iconForNode(node, expanded);
@@ -158,20 +158,20 @@ function TreeLeaf({
     >
       <span className="font-mono text-[10px] text-base-content/18">└</span>
       <NodeVisual node={node} gameId={gameId} expanded={false} />
-      <span className="min-w-0 flex-1 truncate font-medium text-base-content/80">{node.name}</span>
-      <NodeTypeChip nodeType={node.node_type} />
-      <StatusChip node={node} />
-      <WarningIcon node={node} />
-      {hasActiveModDetail && (
-        <div className="pointer-events-none absolute inset-x-1 top-1 z-10 flex min-w-0 items-center gap-2 rounded-md border border-base-content/10 bg-base-100/92 px-2 py-1.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-base-content/80">{node.name}</span>
+        {hasActiveModDetail && (
           <span
-            className="min-w-0 truncate font-mono text-[10px] text-base-content/70"
+            className="block truncate font-mono text-[10px] text-base-content/55"
             title={node.path ?? undefined}
           >
             {node.path}
           </span>
-        </div>
-      )}
+        )}
+      </span>
+      <NodeTypeChip nodeType={node.node_type} />
+      <StatusChip node={node} />
+      <WarningIcon node={node} />
     </div>
   );
 }

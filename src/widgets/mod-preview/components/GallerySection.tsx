@@ -20,6 +20,7 @@ import {
   Loader2,
   Maximize2,
   Trash2,
+  X,
 } from 'lucide-react';
 import { getFileUrl } from '../../../shared/lib/utils';
 import {
@@ -278,6 +279,7 @@ const GalleryTrigger = forwardRef<
     canEdit: boolean;
     isMutating: boolean;
     onOpenActionMenu: () => void;
+    onOpenFullscreen: () => void;
   }
 >(
   (
@@ -293,6 +295,7 @@ const GalleryTrigger = forwardRef<
       canEdit,
       isMutating,
       onOpenActionMenu,
+      onOpenFullscreen,
     },
     ref,
   ) => {
@@ -318,40 +321,41 @@ const GalleryTrigger = forwardRef<
           </div>
         )}
 
-        {images.map((imagePath, index) => {
-          const shouldLoad = shouldLoadGalleryImage(index, boundedIndex, images.length);
-          const isActive = index === boundedIndex;
-          const isBroken = brokenPaths.has(imagePath);
+        {images
+          .map((imagePath, index) => ({ imagePath, index }))
+          .filter(({ index }) => shouldLoadGalleryImage(index, boundedIndex, images.length))
+          .map(({ imagePath, index }) => {
+            const isActive = index === boundedIndex;
+            const isBroken = brokenPaths.has(imagePath);
+            const imageUrl = imagePath ? getFileUrl(imagePath) : null;
 
-          return (
-            <div
-              key={imagePath}
-              className={`absolute inset-0 transition-opacity ${isActive ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-            >
-              {shouldLoad && !isBroken ? (
-                <img
-                  src={getFileUrl(imagePath)}
-                  alt={t('preview:gallery.image_alt')}
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                  onError={() => {
-                    setBrokenPaths((prev) => {
-                      const next = new Set(prev);
-                      next.add(imagePath);
-                      return next;
-                    });
-                  }}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-xs text-base-content/30 text-center px-4">
-                  {shouldLoad && isBroken
-                    ? t('preview:gallery.broken_image')
-                    : t('preview:gallery.image_placeholder')}
-                </div>
-              )}
-            </div>
-          );
-        })}
+            return (
+              <div
+                key={imagePath}
+                className={`absolute inset-0 transition-opacity ${isActive ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+              >
+                {!isBroken && imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt={t('preview:gallery.image_alt')}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    onError={() => {
+                      setBrokenPaths((prev) => {
+                        const next = new Set(prev);
+                        next.add(imagePath);
+                        return next;
+                      });
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-base-content/30 text-center px-4">
+                    {t('preview:gallery.broken_image')}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
         {images.length > 1 && (
           <div className="absolute left-2 right-2 top-1/2 flex -translate-y-1/2 justify-between">
@@ -387,7 +391,7 @@ const GalleryTrigger = forwardRef<
             title={t('preview:gallery.maximize_label')}
             onClick={(e) => {
               e.stopPropagation();
-              window.open(getFileUrl(activePath), '_blank', 'noopener,noreferrer');
+              onOpenFullscreen();
             }}
           >
             <Maximize2 size={14} />
@@ -399,6 +403,100 @@ const GalleryTrigger = forwardRef<
 );
 
 GalleryTrigger.displayName = 'GalleryTrigger';
+
+function galleryPageIndexes(current: number, total: number): Array<number | null> {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index);
+  if (current <= 3) return [0, 1, 2, 3, 4, null, total - 1];
+  if (current >= total - 4) return [0, null, total - 5, total - 4, total - 3, total - 2, total - 1];
+  return [0, null, current - 1, current, current + 1, null, total - 1];
+}
+
+function GalleryLightbox({
+  activePath,
+  imageCount,
+  onClose,
+  onPrev,
+  onNext,
+}: {
+  activePath: string;
+  imageCount: number;
+  onClose: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const { t } = useTranslation(['preview', 'common']);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        onPrev();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        onNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, onNext, onPrev]);
+
+  return createPortal(
+    <dialog
+      open
+      className="modal modal-open p-4"
+      aria-label={t('preview:gallery.fullscreen')}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      <div className="relative flex h-full w-full items-center justify-center">
+        <img
+          src={getFileUrl(activePath)}
+          alt={t('preview:gallery.image_alt')}
+          className="max-h-[calc(100vh-2rem)] max-w-full rounded-lg object-contain shadow-2xl"
+        />
+        <button
+          type="button"
+          className="btn btn-circle btn-sm absolute right-2 top-2"
+          onClick={onClose}
+          aria-label={t('common:actions.close')}
+        >
+          <X size={16} />
+        </button>
+        {imageCount > 1 && (
+          <div className="absolute inset-x-2 top-1/2 flex -translate-y-1/2 justify-between">
+            <button
+              type="button"
+              className="btn btn-circle"
+              onClick={onPrev}
+              aria-label={t('common:actions.prev')}
+            >
+              <ChevronLeft />
+            </button>
+            <button
+              type="button"
+              className="btn btn-circle"
+              onClick={onNext}
+              aria-label={t('common:actions.next')}
+            >
+              <ChevronRight />
+            </button>
+          </div>
+        )}
+      </div>
+      <form method="dialog" className="modal-backdrop">
+        <button type="button" onClick={onClose}>
+          {t('common:actions.close')}
+        </button>
+      </form>
+    </dialog>,
+    document.body,
+  );
+}
 
 export default function GallerySection({
   images,
@@ -421,6 +519,7 @@ export default function GallerySection({
   const [brokenPaths, setBrokenPaths] = useState<Set<string>>(new Set());
   const touchStartXRef = useRef<number | null>(null);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
 
   useEffect(() => {
     setBrokenPaths((previous) => (previous.size === 0 ? previous : new Set()));
@@ -430,7 +529,7 @@ export default function GallerySection({
     if (!hasImages) {
       return null;
     }
-    return images[boundedIndex] ?? null;
+    return images[boundedIndex] || null;
   }, [hasImages, images, boundedIndex]);
 
   return (
@@ -494,6 +593,7 @@ export default function GallerySection({
               canEdit={canEdit}
               isMutating={isMutating}
               onOpenActionMenu={() => setIsActionMenuOpen(true)}
+              onOpenFullscreen={() => setIsFullscreenOpen(true)}
             />
           </div>
         </ContextMenu>
@@ -513,24 +613,44 @@ export default function GallerySection({
 
       {images.length > 1 && (
         <div className="mt-2 flex items-center justify-center gap-1">
-          {images.map((imagePath, index) => (
-            <button
-              key={`${imagePath}-dot`}
-              type="button"
-              aria-label={t('preview:gallery.go_to_image', { index: index + 1 })}
-              className="group flex h-10 w-10 items-center justify-center rounded-full focus-visible:outline-none"
-              onClick={() => onSelectIndex?.(index)}
-            >
+          {galleryPageIndexes(boundedIndex, images.length).map((index, position) =>
+            index === null ? (
               <span
-                className={`h-2 w-2 rounded-full transition-colors ${
-                  index === boundedIndex
-                    ? 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
-                    : 'bg-base-content/30 group-hover:bg-base-content/50'
-                }`}
-              />
-            </button>
-          ))}
+                key={`ellipsis-${position}`}
+                className="w-3 text-center text-sm text-base-content/40"
+                aria-hidden="true"
+              >
+                …
+              </span>
+            ) : (
+              <button
+                key={`${images[index]}-dot`}
+                type="button"
+                aria-label={t('preview:gallery.go_to_image', { index: index + 1 })}
+                aria-current={index === boundedIndex ? 'true' : undefined}
+                className="group flex h-7 w-7 items-center justify-center rounded-full focus-visible:outline-none"
+                onClick={() => onSelectIndex?.(index)}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full transition-colors ${
+                    index === boundedIndex
+                      ? 'bg-primary shadow-[0_0_8px_var(--color-primary)]'
+                      : 'bg-base-content/30 group-hover:bg-base-content/50'
+                  }`}
+                />
+              </button>
+            ),
+          )}
         </div>
+      )}
+      {isFullscreenOpen && activePath && (
+        <GalleryLightbox
+          activePath={activePath}
+          imageCount={images.length}
+          onClose={() => setIsFullscreenOpen(false)}
+          onPrev={onPrev}
+          onNext={onNext}
+        />
       )}
     </div>
   );

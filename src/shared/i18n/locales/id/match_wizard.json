@@ -177,11 +177,11 @@
     "already_installed": "Sudah terpasang: semua file sumber memiliki isi yang sama.",
     "target_has_additional_files": "Target memiliki {{additional}} file tambahan. Tinjau sebelum import.",
     "same_name_different_content": "Target dengan nama sama berbeda ({{changed}} berubah, {{missing}} hilang). Tinjau sebelum import.",
-    "incomplete": "Target yang ada tidak dapat diverifikasi sepenuhnya. Tinjau sebelum import."
+    "incomplete": "Target yang ada tidak dapat diverifikasi sepenuhnya. Target tidak akan digabung; pilih tujuan lain atau simpan import ini terpisah."
   },
   "review_reasons": {
     "identity_needs_confirmation": "Identitas karakter memerlukan keputusan eksplisit.",
-    "identity_no_match": "Tidak ditemukan identitas karakter yang cukup andal.",
+    "identity_no_match": "Tidak ditemukan identitas karakter yang cukup andal. Pilih tujuan secara manual untuk melanjutkan.",
     "package_bundle": "Root paket mungkin saling bergantung dan tetap disatukan.",
     "incomplete_inspection": "Pemeriksaan paket belum lengkap; tinjau bukti sumber.",
     "utility_requires_destination": "Paket utilitas memerlukan tujuan eksplisit.",
@@ -189,7 +189,7 @@
     "foreign_game_package": "Paket ini tampaknya milik game lain.",
     "target_has_additional_files": "Target yang cocok memiliki file tambahan.",
     "target_name_conflict": "Target dengan nama sama memiliki konten berbeda.",
-    "target_comparison_incomplete": "Target yang ada tidak dapat dibandingkan dengan aman."
+    "target_comparison_incomplete": "Target yang ada tidak dapat dibandingkan dengan aman. Pilih tujuan lain atau simpan import ini terpisah."
   },
   "content_kind": {
     "skin": "Mod skin",

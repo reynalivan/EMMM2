@@ -59,14 +59,10 @@ pub async fn toggle_mod_safe(
         .clone();
     let started_at = std::time::Instant::now();
     let folder = validate_path(&config, &game_id, &folder_path)?;
-    let preflight_paths = [folder.to_string_lossy().to_string()];
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
-        pool.inner(),
         &game_id,
-        Some(&preflight_paths),
-    )
-    .await?;
+    )?;
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
         .await?;
@@ -386,14 +382,10 @@ pub async fn update_mod_info(
         ));
     }
     let path = validate_path(&config, &game_id, &folder_path)?;
-    let preflight_paths = [path.to_string_lossy().to_string()];
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
-        pool.inner(),
         &game_id,
-        Some(&preflight_paths),
-    )
-    .await?;
+    )?;
     let info_path = path.join("info.json");
     let changed_path = info_path.to_string_lossy().to_string();
     let lock = op_lock

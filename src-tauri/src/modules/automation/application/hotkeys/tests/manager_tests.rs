@@ -30,12 +30,12 @@ fn rejects_3dmigoto_negative_modifiers_for_os_registration() {
 }
 
 #[test]
-fn permits_a_negative_modifier_on_the_3dmigoto_only_overlay_binding() {
+fn rejects_negative_modifiers_for_the_globally_registered_overlay_binding() {
     let config = HotkeyConfig {
         toggle_overlay: "NO_CTRL+F7".to_string(),
         ..Default::default()
     };
-    assert!(validate_binding_configuration(&config).is_ok());
+    assert!(validate_binding_configuration(&config).is_err());
 }
 
 #[test]

@@ -124,6 +124,27 @@ describe('ImportBatchWizard', () => {
     expect(screen.getByRole('button', { name: /filters.no_match/ })).toBeInTheDocument();
   });
 
+  it('opens manual destination choice for a no-match item instead of blocking Proceed', async () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({ reviewGate: { reasons: [{ code: 'identity_no_match', diagnosticCode: null }] } }),
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'actions.proceed' }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('destination.search_placeholder')).toBeInTheDocument();
+    });
+  });
+
   it('edits the source mod name inline and requests rematching', async () => {
     const batchItem = item();
     const callbacks = handlers();

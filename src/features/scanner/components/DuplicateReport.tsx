@@ -210,18 +210,20 @@ interface DuplicateReportApplyButtonProps {
   selectionCount: number;
   isApplying: boolean;
   onApply: () => void;
+  className?: string;
 }
 
 export function DuplicateReportApplyButton({
   selectionCount,
   isApplying,
   onApply,
+  className,
 }: DuplicateReportApplyButtonProps) {
   const { t } = useTranslation(['scanner']);
 
   return (
     <button
-      className="btn btn-primary btn-sm gap-2 whitespace-nowrap"
+      className={`btn btn-primary btn-sm gap-2 whitespace-nowrap ${className ?? ''}`}
       onClick={onApply}
       disabled={selectionCount === 0 || isApplying}
     >

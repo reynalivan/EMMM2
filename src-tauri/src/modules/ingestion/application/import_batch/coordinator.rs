@@ -568,6 +568,8 @@ pub(crate) async fn inspect_existing_target(
         Ok(candidate) => candidate,
         Err(error) => {
             return Ok(Some(incomplete_target_comparison(
+                &parent,
+                &physical_name,
                 parent.join(&physical_name),
                 format!("Could not inspect existing target: {error}"),
             )));
@@ -578,6 +580,8 @@ pub(crate) async fn inspect_existing_target(
         None => {
             let Some(manifest) = import_batch::get_payload_manifest(db, &item.id).await? else {
                 return Ok(Some(incomplete_target_comparison(
+                    &parent,
+                    &physical_name,
                     candidate.unwrap_or_else(|| parent.join(&physical_name)),
                     "Source payload manifest is unavailable; analyze this item again".to_string(),
                 )));
@@ -621,6 +625,8 @@ pub(crate) async fn inspect_existing_target(
         Ok(None) => {}
         Err(error) => {
             return Ok(Some(incomplete_target_comparison(
+                &parent,
+                &physical_name,
                 candidate.unwrap_or_else(|| parent.join(&physical_name)),
                 format!("Could not verify installed payloads: {error}"),
             )));
@@ -647,6 +653,8 @@ pub(crate) async fn inspect_existing_target(
         Ok(manifest) => manifest,
         Err(error) => {
             return Ok(Some(incomplete_target_comparison(
+                &parent,
+                &physical_name,
                 candidate,
                 format!("Could not read existing target: {error}"),
             )));
@@ -684,7 +692,12 @@ pub(crate) async fn inspect_existing_target(
     }))
 }
 
-fn incomplete_target_comparison(target_path: PathBuf, reason: String) -> TargetComparison {
+fn incomplete_target_comparison(
+    parent: &Path,
+    physical_name: &str,
+    target_path: PathBuf,
+    reason: String,
+) -> TargetComparison {
     TargetComparison {
         outcome: TargetComparisonOutcome::Incomplete,
         target_path: target_path.to_string_lossy().into_owned(),
@@ -692,7 +705,9 @@ fn incomplete_target_comparison(target_path: PathBuf, reason: String) -> TargetC
         changed_files: 0,
         missing_files: 0,
         additional_files: 0,
-        suggested_separate_name: None,
+        // A separate import is safe only when the parent was successfully
+        // enumerated and we can prove the sibling name is unused.
+        suggested_separate_name: next_available_name(parent, physical_name).ok(),
         reason,
     }
 }

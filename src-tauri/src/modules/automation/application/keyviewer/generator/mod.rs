@@ -1,9 +1,9 @@
 //! File generation pipeline — keybind text, KeyViewer.ini, status banner, reload key discovery.
 //!
 //! Generates the files consumed by 3DMigoto at runtime:
-//! - `EMM2/keybinds/active/<sentinel_hash>.txt` — per-object keybind text
-//! - `Mods/EMM2_System/KeyViewer.ini` — 3DMigoto runtime overlay
-//! - `EMM2/status/runtime_status.txt` — in-game status banner
+//! - `generations/keybinds/active/<sentinel_hash>.txt` — per-object keybind text
+//! - `.emmm_data/KeyViewer.ini` — 3DMigoto runtime overlay
+//! - `generations/status/runtime_status.txt` — in-game status banner
 //!
 //! All writes are atomic (`.tmp` → rename).
 

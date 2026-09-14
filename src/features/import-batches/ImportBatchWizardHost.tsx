@@ -458,14 +458,15 @@ export function ImportBatchWizardHost() {
             }),
           )
         }
-        onChooseManualTarget={(item, objectId) =>
+        onChooseManualTarget={(item, objectId, decision) =>
           updateItem(item.id, () =>
             commands.setImportItemDecision({
               itemId: item.id,
               decision:
-                batch.targetMode === 'specific' && objectId === batch.targetObjectId
+                decision ??
+                (batch.targetMode === 'specific' && objectId === batch.targetObjectId
                   ? 'keep_specific_target'
-                  : 'reallocate',
+                  : 'reallocate'),
               destinationObjectId: objectId,
               destinationPath: null,
               canonicalEntryKey: null,

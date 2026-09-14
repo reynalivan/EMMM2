@@ -228,6 +228,42 @@ describe('DuplicateTable', () => {
   });
 
   describe('Selection tracking', () => {
+    it('selects an exact-match member when its card is clicked or keyboard activated', () => {
+      const onSelectionChange = vi.fn();
+      render(
+        <DuplicateTable
+          groups={mockGroups.slice(0, 1)}
+          selections={new Map()}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+
+      const card = screen.getByRole('button', { name: 'Keep B: Mod B - Duplicate' });
+      fireEvent.click(card);
+      fireEvent.keyDown(card, { key: 'Enter' });
+
+      expect(onSelectionChange).toHaveBeenNthCalledWith(1, 'group-1', {
+        type: 'Keep',
+        targetPath: '/path/mod-b',
+      });
+      expect(onSelectionChange).toHaveBeenNthCalledWith(2, 'group-1', {
+        type: 'Keep',
+        targetPath: '/path/mod-b',
+      });
+    });
+
+    it('does not expose inexact members as keep-card buttons', () => {
+      render(
+        <DuplicateTable
+          groups={mockGroups.slice(1)}
+          selections={new Map()}
+          onSelectionChange={vi.fn()}
+        />,
+      );
+
+      expect(screen.queryByRole('button', { name: 'Keep A: Mod C' })).not.toBeInTheDocument();
+    });
+
     it('calls onSelectionChange when a member is selected to be kept', () => {
       const onSelectionChange = vi.fn();
 

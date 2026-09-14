@@ -20,12 +20,17 @@ type Props = {
   item: ImportItem;
   objects: ObjectSummary[];
   busy: boolean;
+  openRequestToken?: number;
   onChooseDestination: (
     item: ImportItem,
     suggestion: DestinationSuggestion,
     decision: ImportDecision,
   ) => Promise<void>;
-  onChooseManualTarget: (item: ImportItem, objectId: string) => Promise<void>;
+  onChooseManualTarget: (
+    item: ImportItem,
+    objectId: string,
+    decision?: ImportDecision,
+  ) => Promise<void>;
 };
 
 type PopoverPosition = {
@@ -38,6 +43,7 @@ type PopoverPosition = {
 export function ImportBatchWizardDestinationPanel({
   batch,
   busy,
+  openRequestToken = 0,
   item,
   objects,
   onChooseDestination,
@@ -141,6 +147,10 @@ export function ImportBatchWizardDestinationPanel({
     };
   }, [open, updatePopoverPosition]);
 
+  useEffect(() => {
+    if (openRequestToken > 0) setOpen(true);
+  }, [openRequestToken]);
+
   const chooseSuggestion = async (suggestion: DestinationSuggestion) => {
     await onChooseDestination(item, suggestion, destinationDecision(batch, suggestion));
     setOpen(false);
@@ -183,7 +193,7 @@ export function ImportBatchWizardDestinationPanel({
         createPortal(
           <div
             ref={popoverRef}
-            className="fixed z-[var(--workspace-layer-overlay)]"
+            className="fixed z-[calc(var(--workspace-layer-modal)+1)]"
             style={popoverPosition}
           >
             <LiquidSurface

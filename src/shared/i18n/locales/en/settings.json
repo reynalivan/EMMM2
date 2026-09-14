@@ -322,9 +322,9 @@
       "not_attempted": "Not attempted",
       "unavailable": "Unavailable",
       "binding_unavailable": "Not available",
-      "cleanup_enabled": "Automatic when the game is stopped",
-      "cleanup_disabled": "Disabled until a game executable is configured",
-      "cleanup_disabled_desc": "EMMM will not remove old KeyViewer generations because it cannot verify that the game is stopped.",
+      "cleanup_enabled": "Automatic after a safe refresh",
+      "cleanup_disabled": "Waiting for a configured game executable",
+      "cleanup_disabled_desc": "EMMM keeps temporary recovery files until it can verify the game is stopped or the new overlay has reloaded.",
       "publication": {
         "published": "Published",
         "unchanged": "Unchanged",

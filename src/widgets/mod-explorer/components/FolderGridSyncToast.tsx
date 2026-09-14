@@ -14,7 +14,10 @@ export default function FolderGridSyncToast({ recoveryStatus }: FolderGridSyncTo
   const reconcileProgress = useAppStore((state) =>
     activeGameId ? (state.diskReconcileByGame[activeGameId]?.progress ?? null) : null,
   );
-  const isSyncing = recoveryStatus === 'syncing' || reconcileProgress !== null;
+  const visibleProgress =
+    reconcileProgress?.reason === 'InternalMutation' ? null : reconcileProgress;
+  const isBlockingRecovery = recoveryStatus === 'syncing';
+  const isSyncing = isBlockingRecovery || visibleProgress !== null;
   const [isMounted, setIsMounted] = useState(isSyncing);
   const [isVisible, setIsVisible] = useState(false);
 
@@ -56,26 +59,30 @@ export default function FolderGridSyncToast({ recoveryStatus }: FolderGridSyncTo
             aria-hidden="true"
           />
           <div className="min-w-0">
-            <p className="text-xs font-medium text-base-content">{t('banners.disk_syncing')}</p>
-            {reconcileProgress && reconcileProgress.total_units !== null && (
+            <p className="text-xs font-medium text-base-content">
+              {t(isBlockingRecovery ? 'banners.disk_syncing' : 'banners.disk_refreshing')}
+            </p>
+            {visibleProgress && visibleProgress.total_units !== null && (
               <div className="mt-1 flex items-center gap-2">
                 <progress
                   className="progress progress-info h-1.5 w-28"
-                  value={reconcileProgress.completed_units}
-                  max={reconcileProgress.total_units}
-                  aria-label={t('banners.disk_syncing')}
+                  value={visibleProgress.completed_units}
+                  max={visibleProgress.total_units}
+                  aria-label={t(
+                    isBlockingRecovery ? 'banners.disk_syncing' : 'banners.disk_refreshing',
+                  )}
                 />
                 <span className="shrink-0 text-[10px] tabular-nums text-base-content/65">
-                  {reconcileProgress.completed_units}/{reconcileProgress.total_units}
+                  {visibleProgress.completed_units}/{visibleProgress.total_units}
                 </span>
               </div>
             )}
-            {reconcileProgress?.current_root && (
+            {visibleProgress?.current_root && (
               <p
                 className="mt-0.5 truncate text-[10px] text-base-content/60"
-                title={reconcileProgress.current_root}
+                title={visibleProgress.current_root}
               >
-                {reconcileProgress.current_root}
+                {visibleProgress.current_root}
               </p>
             )}
           </div>

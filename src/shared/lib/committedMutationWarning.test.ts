@@ -49,4 +49,23 @@ describe('notifyCommittedMutationSyncWarning', () => {
       7000,
     );
   });
+
+  it('deduplicates the same warning briefly without suppressing later warnings', () => {
+    vi.useFakeTimers();
+    const result = {
+      sync_warning: {
+        kind: 'ReconcileFailed',
+        message: 'unique dedupe warning',
+      },
+    };
+
+    notifyCommittedMutationSyncWarning(result);
+    notifyCommittedMutationSyncWarning(result);
+    expect(warningToast).toHaveBeenCalledOnce();
+
+    vi.advanceTimersByTime(30_001);
+    notifyCommittedMutationSyncWarning(result);
+    expect(warningToast).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
 });

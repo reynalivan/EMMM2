@@ -459,6 +459,94 @@ pub async fn export_custom_theme(
     ))
 }
 
+fn custom_theme_template() -> CustomTheme {
+    CustomTheme {
+        id: "midnight-blue".to_string(),
+        label: "Midnight Blue".to_string(),
+        config: ThemeConfig {
+            colors: std::collections::HashMap::from([
+                ("base-100".to_string(), "#101827".to_string()),
+                ("base-200".to_string(), "#172033".to_string()),
+                ("base-300".to_string(), "#0b1020".to_string()),
+                ("base-content".to_string(), "#e2e8f0".to_string()),
+                ("primary".to_string(), "#60a5fa".to_string()),
+            ]),
+            glass: std::collections::HashMap::from([
+                ("bg".to_string(), "rgba(16, 24, 39, 0.72)".to_string()),
+                (
+                    "border".to_string(),
+                    "rgba(226, 232, 240, 0.10)".to_string(),
+                ),
+            ]),
+            liquid: LiquidThemeConfig {
+                nav: Some(LiquidRoleConfig {
+                    material: Some(LiquidMaterial::Regular),
+                    tint: Some("#dbeafe".to_string()),
+                    tint_opacity: Some(0.08),
+                    quality: Some(LiquidQuality::High),
+                    ..Default::default()
+                }),
+                control: Some(LiquidRoleConfig {
+                    material: Some(LiquidMaterial::Thin),
+                    tint: Some("#bfdbfe".to_string()),
+                    tint_opacity: Some(0.06),
+                    quality: Some(LiquidQuality::High),
+                    ..Default::default()
+                }),
+                indicator: Some(LiquidRoleConfig {
+                    material: Some(LiquidMaterial::Clear),
+                    tint: Some("#93c5fd".to_string()),
+                    tint_opacity: Some(0.05),
+                    quality: Some(LiquidQuality::High),
+                    ..Default::default()
+                }),
+                overlay: Some(LiquidRoleConfig {
+                    material: Some(LiquidMaterial::Thick),
+                    tint: Some("#dbeafe".to_string()),
+                    tint_opacity: Some(0.1),
+                    quality: Some(LiquidQuality::High),
+                    ..Default::default()
+                }),
+            },
+            background: ThemeBackground {
+                kind: ThemeBackgroundKind::Gradient,
+                value: "linear-gradient(135deg, #101827, #172554)".to_string(),
+                dim_opacity: 0.62,
+            },
+        },
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn export_custom_theme_template(
+    app_handle: AppHandle,
+) -> Result<Option<String>, AppError> {
+    let content = serialize_theme(&custom_theme_template())?;
+    let selected = app_handle
+        .dialog()
+        .file()
+        .add_filter("JSON Theme", &["json"])
+        .set_file_name("custom-theme-template.json")
+        .blocking_save_file();
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let path = selected.into_path().map_err(|_| {
+        validation_error("Selected export destination is not a local filesystem path")
+    })?;
+    atomic_write(&path, &content)?;
+    if let Err(error) = crate::platform::process::reveal_in_file_manager(&path) {
+        log::warn!("Theme template was saved but could not be revealed: {error}");
+    }
+    Ok(Some(
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("custom-theme-template.json")
+            .to_string(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +574,16 @@ mod tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn custom_theme_template_is_valid_and_serializable() {
+        let template = custom_theme_template();
+        validate_theme(&template).expect("template validation");
+        let serialized = serialize_theme(&template).expect("template serialization");
+        let round_trip: CustomTheme = serde_json::from_slice(&serialized).expect("template JSON");
+        assert_eq!(round_trip.id, "midnight-blue");
+        assert_eq!(round_trip.config.background.dim_opacity, 0.62);
     }
 
     fn valid_liquid_role() -> LiquidRoleConfig {

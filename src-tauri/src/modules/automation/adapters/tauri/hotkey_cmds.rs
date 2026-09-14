@@ -7,8 +7,10 @@ use crate::shared::errors::AppError;
 use tauri::State;
 
 /// Validate and commit runtime-control settings without persisting a partial
-/// shortcut while OS registration is still allowed to fail. F7 remains
-/// generated for 3DMigoto, but is never registered as an OS shortcut.
+/// shortcut while OS registration is still allowed to fail. Every configured
+/// action, including the KeyViewer toggle, is registered while enabled and is
+/// dispatched only when the shared game detector reports the active game in
+/// the foreground.
 #[specta::specta]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri supplies command dependencies as separate State parameters.

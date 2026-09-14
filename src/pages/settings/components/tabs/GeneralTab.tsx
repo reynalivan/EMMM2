@@ -28,47 +28,6 @@ import { useToastStore } from '@/shared/ui/toast';
 
 const SUPPORT_URL = 'https://ko-fi.com/reynalivan';
 
-const CUSTOM_THEME_TEMPLATE = {
-  id: 'midnight-blue',
-  label: 'Midnight Blue',
-  config: {
-    colors: {
-      'base-100': '#101827',
-      'base-200': '#172033',
-      'base-300': '#0b1020',
-      'base-content': '#e2e8f0',
-      primary: '#60a5fa',
-    },
-    glass: {
-      bg: 'rgba(16, 24, 39, 0.72)',
-      border: 'rgba(226, 232, 240, 0.10)',
-    },
-    liquid: {
-      nav: { material: 'regular', tint: '#dbeafe', tint_opacity: 0.08, quality: 'high' },
-      control: { material: 'thin', tint: '#bfdbfe', tint_opacity: 0.06, quality: 'high' },
-      indicator: { material: 'clear', tint: '#93c5fd', tint_opacity: 0.05, quality: 'high' },
-      overlay: { material: 'thick', tint: '#dbeafe', tint_opacity: 0.1, quality: 'high' },
-    },
-    background: {
-      kind: 'gradient',
-      value: 'linear-gradient(135deg, #101827, #172554)',
-      dim_opacity: 0.62,
-    },
-  },
-} as const;
-
-function downloadCustomThemeTemplate() {
-  const blob = new Blob([`${JSON.stringify(CUSTOM_THEME_TEMPLATE, null, 2)}\n`], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'custom-theme-template.json';
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
 export default function GeneralTab() {
   const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const setAutoCloseLauncher = useAppStore((state) => state.setAutoCloseLauncher);
@@ -79,6 +38,7 @@ export default function GeneralTab() {
   const [appVersion, setAppVersion] = useState('');
   const [activeTrustDocument, setActiveTrustDocument] = useState<TrustDocument | null>(null);
   const [isImportingTheme, setIsImportingTheme] = useState(false);
+  const [isExportingThemeTemplate, setIsExportingThemeTemplate] = useState(false);
   const [themeImportStatus, setThemeImportStatus] = useState<string | null>(null);
   const {
     update,
@@ -137,6 +97,20 @@ export default function GeneralTab() {
     }
   };
 
+  const handleExportThemeTemplate = async () => {
+    setIsExportingThemeTemplate(true);
+    try {
+      const fileName = await commands.exportCustomThemeTemplate();
+      if (fileName) {
+        addToast('success', t('general.appearance.export_success', { name: fileName }));
+      }
+    } catch (cause) {
+      addToast('error', t('general.appearance.export_failed', { error: formatAppError(cause) }));
+    } finally {
+      setIsExportingThemeTemplate(false);
+    }
+  };
+
   const progressPercent =
     progress && progress.total ? Math.round((progress.downloaded / progress.total) * 100) : null;
 
@@ -181,10 +155,13 @@ export default function GeneralTab() {
           <button
             type="button"
             className="btn btn-sm btn-ghost gap-2"
-            onClick={downloadCustomThemeTemplate}
+            disabled={isExportingThemeTemplate}
+            onClick={() => void handleExportThemeTemplate()}
           >
             <FileDown size={15} />
-            {t('general.appearance.download_template', 'Download template')}
+            {isExportingThemeTemplate
+              ? t('common:status.loading')
+              : t('general.appearance.download_template', 'Download template')}
           </button>
           <button
             type="button"

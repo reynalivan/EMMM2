@@ -184,9 +184,25 @@ pub enum ConfigStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, Default)]
 pub struct HashDbPayload(pub std::collections::HashMap<String, Vec<String>>);
 
-/// Strongly-typed payload for custom skins attached to the master DB
+/// One custom skin/outfit stored on an object.
+///
+/// Object rows use the same array shape as the MasterDB. Keeping this DTO in
+/// the domain layer lets object reads expose that persisted shape without
+/// depending on the matching application module.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct StoredCustomSkin {
+    pub name: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub thumbnail_skin_path: Option<String>,
+    #[serde(default)]
+    pub rarity: Option<String>,
+}
+
+/// Strongly-typed payload for custom skins attached to an object.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, Default)]
-pub struct CustomSkinsPayload(pub std::collections::HashMap<String, String>);
+pub struct CustomSkinsPayload(pub Vec<StoredCustomSkin>);
 
 #[cfg(test)]
 #[path = "models_test.rs"]

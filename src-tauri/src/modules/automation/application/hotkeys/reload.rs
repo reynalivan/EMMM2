@@ -22,7 +22,7 @@ pub fn trigger_reload_config(settings: &AppSettings) -> Result<String, AppError>
         ));
     }
     let binding = generator::discover_reload_key_for_game(active_game)?.reload_config_key;
-    trigger_reload_binding(settings, &binding)?;
+    trigger_binding_while_focused(settings, &binding)?;
     Ok(binding)
 }
 
@@ -33,7 +33,12 @@ pub fn configured_reload_config_binding(settings: &AppSettings) -> Result<String
     Ok(generator::discover_reload_key_for_game(active_game)?.reload_config_key)
 }
 
-fn trigger_reload_binding(settings: &AppSettings, binding: &str) -> Result<(), AppError> {
+/// Replays an already validated hotkey to the active game. The focus check is
+/// intentionally repeated immediately before input is synthesized.
+pub fn trigger_binding_while_focused(
+    settings: &AppSettings,
+    binding: &str,
+) -> Result<(), AppError> {
     if !focus::is_active_game_focused(settings) {
         return Err(AppError::Validation(
             "NeedsManualReload: active game is not focused".to_string(),

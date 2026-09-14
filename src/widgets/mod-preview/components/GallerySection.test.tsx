@@ -253,4 +253,26 @@ describe('GallerySection', () => {
       expect(screen.getByText('1 / 1')).toBeInTheDocument();
     });
   });
+
+  it('keeps gallery pagination and image elements bounded for large galleries', () => {
+    const images = Array.from({ length: 100 }, (_, index) => `E:/Mods/TestMod/image-${index}.png`);
+    render(<GallerySection {...defaultProps} images={images} currentImageIndex={50} />);
+
+    expect(screen.getAllByRole('button', { name: /Go to image/ })).toHaveLength(5);
+    expect(screen.getAllByRole('img', { name: 'Preview image' })).toHaveLength(3);
+  });
+
+  it('opens and closes the in-app fullscreen viewer with keyboard navigation', () => {
+    const onNext = vi.fn();
+    render(<GallerySection {...defaultProps} onNext={onNext} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open fullscreen preview' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(onNext).toHaveBeenCalledOnce();
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });

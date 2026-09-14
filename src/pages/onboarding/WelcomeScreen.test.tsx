@@ -208,6 +208,7 @@ describe('WelcomeScreen (TC-03)', () => {
     });
     (invoke as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({
         session_id: 'session-1',
         work_plans: [
@@ -253,8 +254,8 @@ describe('WelcomeScreen (TC-03)', () => {
           run_id: 'new-game-1',
           reason: 'OnboardingCompleted',
           phase: 'ScanningRoots',
-          completed_units: 4,
-          total_units: 10,
+          completed_units: 1,
+          total_units: 1,
           current_root: 'Alice',
           elapsed_ms: 1_000,
           eta_ms: 2_500,

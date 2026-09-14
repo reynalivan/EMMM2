@@ -322,9 +322,9 @@
       "not_attempted": "尚未尝试",
       "unavailable": "不可用",
       "binding_unavailable": "不可用",
-      "cleanup_enabled": "游戏停止后自动清理",
-      "cleanup_disabled": "配置游戏可执行文件前已禁用",
-      "cleanup_disabled_desc": "EMMM 无法确认游戏是否已停止，因此不会删除旧的 KeyViewer generation。",
+      "cleanup_enabled": "安全刷新后自动清理",
+      "cleanup_disabled": "等待配置游戏可执行文件",
+      "cleanup_disabled_desc": "确认游戏已停止或新悬浮层完成加载前，EMMM 会保留临时恢复文件。",
       "publication": {
         "published": "已发布",
         "unchanged": "未更改",

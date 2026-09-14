@@ -177,11 +177,11 @@
     "already_installed": "Already installed: every source file has the same content.",
     "target_has_additional_files": "The target contains {{additional}} additional file(s). Review it before importing.",
     "same_name_different_content": "A same-name target differs ({{changed}} changed, {{missing}} missing). Review it before importing.",
-    "incomplete": "The existing target could not be fully verified. Review it before importing."
+    "incomplete": "The existing target could not be fully verified. It will not be merged; choose another destination or keep this import separate."
   },
   "review_reasons": {
     "identity_needs_confirmation": "Character identity needs an explicit decision.",
-    "identity_no_match": "No reliable character identity was found.",
+    "identity_no_match": "No reliable character identity was found. Choose a destination manually to continue.",
     "package_bundle": "Package roots may depend on each other and are kept together.",
     "incomplete_inspection": "Package inspection is incomplete; review the source evidence.",
     "utility_requires_destination": "Utility packages need an explicit destination.",
@@ -189,7 +189,7 @@
     "foreign_game_package": "This package appears to belong to a different game.",
     "target_has_additional_files": "The matching target has additional files.",
     "target_name_conflict": "A same-name target has different content.",
-    "target_comparison_incomplete": "The existing target could not be compared safely."
+    "target_comparison_incomplete": "The existing target could not be compared safely. Choose another destination or keep this import separate."
   },
   "content_kind": {
     "skin": "Skin mod",
