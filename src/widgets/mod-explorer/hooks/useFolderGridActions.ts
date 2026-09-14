@@ -6,12 +6,7 @@ import { commands } from '../../../shared/api/tauri/bindings';
 import { useActiveGame } from '@/entities/game';
 import { toast } from '@/shared/ui/toast';
 import { useSharedModActions } from '@/features/mod-runtime';
-import {
-  closeWorkspaceDialog,
-  openWorkspaceEnableParentDialog,
-} from '@/features/workspace-runtime';
 import { useWorkspaceSwitchActions } from '@/features/workspace-runtime';
-import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import type { ObjectSummary } from '@/entities/game-object';
 import { applyRuntimeMutationResult } from '@/features/workspace-runtime';
@@ -19,9 +14,7 @@ import { applyRuntimeMutationResult } from '@/features/workspace-runtime';
 interface UseFolderGridActionsOptions {
   activeGame: ReturnType<typeof useActiveGame>['activeGame'];
   explorerSubPath: string | undefined;
-  ancestorDisabledBy: string | null;
   ancestorDisabledPath: string | null;
-  rawFolders: WorkspaceExplorerNode[];
   objects: ObjectSummary[];
   clearGridSelection: () => void;
   sourceAvailable: boolean;
@@ -35,9 +28,7 @@ interface CreateFolderTarget {
 export function useFolderGridActions({
   activeGame,
   explorerSubPath,
-  ancestorDisabledBy,
   ancestorDisabledPath,
-  rawFolders,
   objects,
   clearGridSelection,
   sourceAvailable,
@@ -50,28 +41,9 @@ export function useFolderGridActions({
     switchSurface: 'folder_grid',
   });
   const switchActions = useWorkspaceSwitchActions();
-  const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
   const activeGameId = activeGame?.id;
   const [createFolderTarget, setCreateFolderTarget] = useState<CreateFolderTarget | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-
-  const enableParentDialog = useMemo(() => {
-    if (dialogState.kind !== 'folderEnableParent') {
-      return {
-        open: false,
-        ancestorName: '',
-        willActivate: [] as WorkspaceExplorerNode[],
-        stayDisabled: [] as WorkspaceExplorerNode[],
-      };
-    }
-
-    return {
-      open: true,
-      ancestorName: dialogState.ancestorName,
-      willActivate: dialogState.willActivate,
-      stayDisabled: dialogState.stayDisabled,
-    };
-  }, [dialogState]);
 
   // `currentPath` is a display breadcrumb. `explorerSubPath` is the canonical
   // workspace path and remains correct when an object is nested under a group.
@@ -173,49 +145,22 @@ export function useFolderGridActions({
   );
 
   const openEnableParentDialog = useCallback(() => {
-    if (!ancestorDisabledBy || !ancestorDisabledPath) {
+    if (!ancestorDisabledPath) {
       return;
     }
-
-    const willActivate = rawFolders.filter((folder) => folder.is_enabled);
-    const stayDisabled = rawFolders.filter((folder) => !folder.is_enabled);
-    openWorkspaceEnableParentDialog({
-      ancestorName: ancestorDisabledBy,
-      ancestorPath: ancestorDisabledPath,
-      willActivate,
-      stayDisabled,
-    });
-  }, [ancestorDisabledBy, ancestorDisabledPath, rawFolders]);
-
-  const closeEnableParentDialog = useCallback(() => {
-    closeWorkspaceDialog('folderEnableParent');
-  }, []);
-
-  const handleEnableParent = useCallback(async () => {
-    if (dialogState.kind !== 'folderEnableParent') {
-      return;
-    }
-
-    await switchActions.setFolderPathEnabled(dialogState.ancestorPath, true);
-    closeWorkspaceDialog('folderEnableParent');
-  }, [dialogState, switchActions]);
+    void switchActions.setFolderPathEnabled(ancestorDisabledPath, true);
+  }, [ancestorDisabledPath, switchActions]);
 
   const handleToggleEnabledGuarded = useCallback(
     (folder: WorkspaceExplorerNode) => {
-      if (ancestorDisabledBy) {
-        openEnableParentDialog();
-        return;
-      }
-
       void actions.handleToggleEnabled(folder);
     },
-    [actions, ancestorDisabledBy, openEnableParentDialog],
+    [actions],
   );
 
   return {
     actions,
     switchActions,
-    enableParentDialog,
     handleRevealInExplorer,
     currentFolderPath,
     handleOpenCurrentFolderInExplorer,
@@ -226,8 +171,6 @@ export function useFolderGridActions({
     handleCreateFolder,
     handleToggleSelf,
     openEnableParentDialog,
-    closeEnableParentDialog,
-    handleEnableParent,
     handleToggleEnabledGuarded,
   };
 }

@@ -82,6 +82,73 @@ pub fn validate_paths(
         .collect()
 }
 
+/// Validates bulk enable/disable targets. A missing or inaccessible selected
+/// folder is reported per item so the remaining selection can complete, but
+/// containment violations reject the entire request before any filesystem
+/// mutation begins. The configured Mods root itself is never a toggle target.
+pub fn validate_mod_toggle_paths(
+    config: &ConfigService,
+    game_id: &str,
+    candidate_paths: &[String],
+) -> Result<(Vec<ValidatedPath>, Vec<(String, AppError)>), AppError> {
+    let canonical_root = canonical_mods_root(config, game_id)?;
+    let mut valid = Vec::with_capacity(candidate_paths.len());
+    let mut failures = Vec::new();
+
+    for candidate_path in candidate_paths {
+        let candidate = Path::new(candidate_path);
+        if candidate
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        {
+            return Err(AppError::Security(
+                "Security Violation: Bulk toggle paths must not contain '..'".to_string(),
+            ));
+        }
+        let absolute_candidate = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            canonical_root.join(candidate)
+        };
+        let canonical_candidate = match canonicalize_for_guard(&absolute_candidate) {
+            Ok(path) => path,
+            Err(_) => {
+                failures.push((
+                    candidate_path.clone(),
+                    AppError::Io("Mod folder is no longer available".to_string()),
+                ));
+                continue;
+            }
+        };
+
+        if !canonical_candidate.starts_with(&canonical_root) {
+            return Err(AppError::Security(
+                "Security Violation: Path escapes the configured mods directory".to_string(),
+            ));
+        }
+        if canonical_candidate == canonical_root {
+            return Err(AppError::Security(
+                "Security Violation: The configured Mods root cannot be toggled".to_string(),
+            ));
+        }
+        if !canonical_candidate.is_dir() {
+            failures.push((
+                candidate_path.clone(),
+                AppError::Validation("Bulk toggle targets must be folders".to_string()),
+            ));
+            continue;
+        }
+
+        valid.push(ValidatedPath {
+            canonical: canonical_candidate,
+            original: candidate_path.clone(),
+            owner_game_id: game_id.to_string(),
+        });
+    }
+
+    Ok((valid, failures))
+}
+
 /// Validates an exact configured mods root for commands that bind a long-lived
 /// scanner or watcher to a game. Child paths are valid mutation targets but
 /// must never become the source root for another game's projection.

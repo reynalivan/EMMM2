@@ -41,7 +41,7 @@ export interface DownloadConfirmationRequest {
   mime_type?: string | null;
   content_disposition?: string | null;
   bytes_total?: number | null;
-  risk_level?: 'warning' | null;
+  risk_level?: 'blocked' | 'warning' | null;
 }
 
 /** A native browser download is resolving its safe display information. */

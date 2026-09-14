@@ -1,8 +1,9 @@
 import { formatAppError } from '../../shared/lib/appError';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../shared/api/tauri/bindings';
 import { open } from '@tauri-apps/plugin-dialog';
+import { listen } from '@tauri-apps/api/event';
 import { Search, FolderOpen, ChevronRight, Loader2, AlertCircle, Globe } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { GameConfig } from '@/entities/game';
@@ -23,7 +24,11 @@ import {
   type IndexingWorkPlan,
   type IndexingProgress,
 } from './utils/indexingProgress';
-import type { DiskReconcilePhase } from '../../shared/api/tauri/bindings';
+import type {
+  DiskReconcilePhase,
+  OnboardingIndexingSnapshotProgress,
+  OnboardingIndexingWorkPlanUpdate,
+} from '../../shared/api/tauri/bindings';
 import { LiquidSurface } from '@/shared/ui/liquid';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
@@ -62,12 +67,85 @@ export default function WelcomeScreen({
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
   const [indexingWorkPlan, setIndexingWorkPlan] = useState<IndexingWorkPlan[] | null>(null);
+  const [snapshotProgress, setSnapshotProgress] =
+    useState<OnboardingIndexingSnapshotProgress | null>(null);
+  const indexingSessionRef = useRef<string | null>(null);
+  const indexingInFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
   const [shareDiagnostics, setShareDiagnostics] = useState(false);
   const prefersReduced = usePrefersReducedMotion();
   const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+
+    void listen<OnboardingIndexingWorkPlanUpdate>(
+      'onboarding_indexing:work_plan',
+      ({ payload }) => {
+        if (!mounted || payload.session_id !== indexingSessionRef.current) return;
+        setIndexingWorkPlan(
+          (current) =>
+            current?.map((plan) =>
+              plan.game_id === payload.work_plan.game_id ? payload.work_plan : plan,
+            ) ?? current,
+        );
+      },
+    ).then((stop) => {
+      if (mounted) unlisten = stop;
+      else stop();
+    });
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (diskProgress) setSnapshotProgress(null);
+  }, [diskProgress]);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+
+    void listen<OnboardingIndexingSnapshotProgress>(
+      'onboarding_indexing:snapshot_progress',
+      ({ payload }) => {
+        if (!mounted || !indexingInFlightRef.current) return;
+        if (indexingSessionRef.current && indexingSessionRef.current !== payload.session_id) return;
+        indexingSessionRef.current = payload.session_id;
+        setSnapshotProgress(payload);
+      },
+    ).then((stop) => {
+      if (mounted) unlisten = stop;
+      else stop();
+    });
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const sessionId = indexingSessionRef.current;
+      indexingInFlightRef.current = false;
+      indexingSessionRef.current = null;
+      if (sessionId) {
+        void commands.cancelOnboardingIndexing(sessionId).catch((cancelError) => {
+          console.warn(
+            '[onboarding] failed to cancel indexing session during unmount:',
+            cancelError,
+          );
+        });
+      }
+    };
+  }, []);
 
   // One shared entrance rhythm for every block on the welcome view.
   const fade = {
@@ -135,10 +213,13 @@ export default function WelcomeScreen({
   };
 
   const handleFinalize = async (games: GameConfig[]) => {
+    let sessionId: string | null = null;
     try {
       setError(null);
       setIsIndexing(true);
       setIndexingWorkPlan(null);
+      setSnapshotProgress(null);
+      indexingInFlightRef.current = true;
       const total = Math.max(1, games.length);
       const completedDurationsMs: number[] = [];
       setIndexingProgress({
@@ -155,8 +236,11 @@ export default function WelcomeScreen({
 
       // Save the games to DB — this is mandatory
       await commands.saveOnboardingGames(games);
-      const workPlan = await commands.planOnboardingIndexingWork(games.map((game) => game.id));
-      setIndexingWorkPlan(workPlan);
+      const session = await commands.beginOnboardingIndexing(games.map((game) => game.id));
+      sessionId = session.session_id;
+      indexingSessionRef.current = sessionId;
+      setIndexingWorkPlan(session.work_plans);
+      setSnapshotProgress(null);
 
       // Disk Reconcile only. Onboarding must not trigger Deep Match Scanner implicitly.
       for (const [index, game] of games.entries()) {
@@ -168,7 +252,7 @@ export default function WelcomeScreen({
         });
         const startedAt = performance.now();
         try {
-          await commands.reconcileDiskStateCmd(game.id, 'OnboardingCompleted', null, true);
+          await commands.reconcileOnboardingIndexingGame(sessionId, game.id);
         } catch (refreshErr) {
           console.warn(
             `[onboarding] reconcileDiskState failed for "${game.name}", Disk Reconcile will retry on next entry:`,
@@ -191,6 +275,18 @@ export default function WelcomeScreen({
       setIsIndexing(false);
       setIndexingProgress(null);
       setIndexingWorkPlan(null);
+    } finally {
+      indexingInFlightRef.current = false;
+      setSnapshotProgress(null);
+      const activeSessionId = sessionId ?? indexingSessionRef.current;
+      indexingSessionRef.current = null;
+      if (activeSessionId) {
+        try {
+          await commands.cancelOnboardingIndexing(activeSessionId);
+        } catch (cancelError) {
+          console.warn('[onboarding] failed to cancel indexing session:', cancelError);
+        }
+      }
     }
   };
 
@@ -388,7 +484,7 @@ export default function WelcomeScreen({
     return (
       <div className="min-h-screen bg-base-100 flex items-center justify-center">
         <div className="text-center space-y-6">
-          <Loader2 className="w-16 h-16 text-primary animate-spin mx-auto" />
+          <Loader2 className="w-16 h-16 text-primary animate-spin motion-reduce:animate-none mx-auto" />
           <div>
             <h2 className="text-2xl font-semibold">{t('onboarding:scanning.title')}</h2>
             <p className="text-base-content/60 mt-2">{t('onboarding:scanning.subtitle')}</p>
@@ -396,7 +492,10 @@ export default function WelcomeScreen({
           {/* Shimmer placeholder cards (EC-1.07) */}
           <div className="w-80 mx-auto space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 rounded-xl bg-base-200 animate-pulse" />
+              <div
+                key={i}
+                className="h-16 rounded-xl bg-base-200 animate-pulse motion-reduce:animate-none"
+              />
             ))}
           </div>
         </div>
@@ -412,7 +511,13 @@ export default function WelcomeScreen({
       currentGame: null,
       completedDurationsMs: [],
     };
-    const activeGameIndex = Math.min(progress.completed, Math.max(0, progress.total - 1));
+    const snapshotGameIndex = snapshotProgress
+      ? detectedGames.findIndex((game) => game.id === snapshotProgress.game_id)
+      : -1;
+    const activeGameIndex =
+      snapshotGameIndex >= 0
+        ? snapshotGameIndex
+        : Math.min(progress.completed, Math.max(0, progress.total - 1));
     const activeGame = detectedGames[activeGameIndex];
     const activeDiskProgress =
       diskProgress?.current.game_id === activeGame?.id ? diskProgress : null;
@@ -424,16 +529,26 @@ export default function WelcomeScreen({
           activeDiskProgress.completedRootsByGame,
         )
       : null;
+    // Snapshot creation precedes every game projection, so its per-game
+    // completion cannot be added to the sequential reconcile percentage
+    // without making the global bar move backwards. Keep the global bar at
+    // zero while reporting the active snapshot game and stage below.
+    const snapshotPercent = snapshotProgress ? 0 : null;
     const percent =
-      overallProgress?.percent ?? Math.round((progress.completed / progress.total) * 100);
-    const remaining = estimatedRemainingMs(progress);
+      snapshotPercent ??
+      overallProgress?.percent ??
+      Math.round((progress.completed / progress.total) * 100);
+    const remaining = snapshotProgress
+      ? null
+      : estimatedRemainingMs(progress, activeDiskProgress?.current.eta_ms);
     const gameNumber = (overallProgress?.gameIndex ?? activeGameIndex) + 1;
     const gameName = activeGame?.name ?? progress.currentGame ?? '';
     const step = overallProgress?.step ?? 1;
-    const activityKey = activityTranslationKey(
-      activeDiskProgress?.current.phase,
-      overallProgress?.folderName,
-    );
+    const activityKey = snapshotProgress
+      ? snapshotProgress.phase === 'Scanning'
+        ? 'scanning'
+        : 'discovering'
+      : activityTranslationKey(activeDiskProgress?.current.phase, overallProgress?.folderName);
 
     return (
       <div className="min-h-screen bg-base-100 flex items-center justify-center">
@@ -476,10 +591,10 @@ export default function WelcomeScreen({
               aria-valuenow={percent}
             >
               <div
-                className="absolute top-0 bottom-0 left-0 bg-primary transition-all duration-300 ease-out"
+                className="absolute bottom-0 left-0 top-0 bg-primary transition-[width] duration-150 ease-out motion-reduce:transition-none"
                 style={{ width: `${percent}%` }}
               >
-                <div className="absolute inset-0 bg-white/20 animate-pulse motion-reduce:animate-none" />
+                <div className="absolute inset-0 bg-white/10" />
               </div>
             </div>
 

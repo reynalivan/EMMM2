@@ -8,8 +8,7 @@ import { useAppStore } from '@/app/store';
 import { useToastStore } from '@/shared/ui/toast';
 import {
   useModInfo,
-  useModIniFiles,
-  useAllModIniDocuments,
+  useModIniDocuments,
   usePreviewImages,
   useSavePreviewImage,
   useRemovePreviewImage,
@@ -49,47 +48,19 @@ describe('usePreviewData hooks', () => {
     });
   });
 
-  it('fetches ini files list', async () => {
+  it('fetches all ini documents in one request', async () => {
     vi.mocked(invoke).mockResolvedValue([
-      { filename: 'config.ini', path: 'E:/Mods/ModA/config.ini' },
+      { filename: 'config.ini', document: { mode: 'Structured', raw_lines: [] } },
     ]);
 
-    const { result } = renderHook(() => useModIniFiles('E:/Mods/ModA'), {
+    const { result } = renderHook(() => useModIniDocuments('E:/Mods/ModA'), {
       wrapper: createWrapper,
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_mod_ini_files', {
+    expect(invoke).toHaveBeenCalledWith('read_mod_ini_documents', {
       gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
-    });
-  });
-
-  it('fetches all ini documents for the current folder', async () => {
-    vi.mocked(invoke).mockResolvedValue({ mode: 'Structured', raw_lines: [] });
-
-    const files = [
-      { filename: 'a.ini', path: 'E:/Mods/ModA/a.ini' },
-      { filename: 'b.ini', path: 'E:/Mods/ModA/b.ini' },
-    ];
-
-    const { result } = renderHook(() => useAllModIniDocuments('E:/Mods/ModA', files), {
-      wrapper: createWrapper,
-    });
-
-    await waitFor(() => {
-      expect(result.current.every((query) => query.isSuccess)).toBe(true);
-    });
-
-    expect(invoke).toHaveBeenCalledWith('read_mod_ini', {
-      gameId: 'game-1',
-      folderPath: 'E:/Mods/ModA',
-      fileName: 'a.ini',
-    });
-    expect(invoke).toHaveBeenCalledWith('read_mod_ini', {
-      gameId: 'game-1',
-      folderPath: 'E:/Mods/ModA',
-      fileName: 'b.ini',
     });
   });
 

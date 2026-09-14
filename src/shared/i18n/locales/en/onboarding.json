@@ -9,8 +9,8 @@
     "select_folder_title": "Select your XXMI Launcher folder",
     "duplicate_error": "This game folder is already added as \"{{name}}\".",
     "diagnostics": {
-      "title": "Help improve EMMM with anonymous diagnostics",
-      "description": "Optional daily aggregate reliability counts and one short diagnostic code for a new error. No paths, names, URLs, messages, or user identifiers are sent. You can change this later in Settings."
+      "title": "Help improve EMMM",
+      "description": "Share anonymous reliability totals and new error codes. No paths, names, URLs, messages, or identifiers."
     },
     "language": {
       "change": "Change language",

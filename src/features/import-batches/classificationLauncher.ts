@@ -7,6 +7,7 @@ export type ObjectClassificationLaunchRequest = {
   objectIds: string[];
   initialItems?: ObjectClassificationPreviewItem[];
   onComplete?: (result: ObjectClassificationLaunchResult) => void;
+  onIgnore?: (objectId: string) => Promise<void> | void;
 };
 
 type Listener = (request: ObjectClassificationLaunchRequest) => void;

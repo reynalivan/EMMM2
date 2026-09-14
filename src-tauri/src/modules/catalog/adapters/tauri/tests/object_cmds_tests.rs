@@ -45,6 +45,7 @@ async fn reconcile_test_disk(pool: &SqlitePool, game_id: &str, mods_path: &std::
             watcher_events: None,
             path_hints: &[],
             progress_reporter: None,
+            precomputed_discovery: None,
         },
     )
     .await

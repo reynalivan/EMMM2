@@ -1,5 +1,5 @@
-import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useObjectListVirtualizer } from './useObjectListVirtualizer';
 
@@ -20,11 +20,24 @@ const virtualizerState = vi.hoisted(() => ({
 vi.mock('@tanstack/react-virtual', () => ({ useVirtualizer: vi.fn(() => virtualizerState) }));
 
 describe('useObjectListVirtualizer', () => {
+  let animationFrameCallbacks: FrameRequestCallback[];
+
   beforeEach(() => {
     virtualizerState.measurementsCache.length = 0;
     virtualizerState.scrollToIndex.mockClear();
     vi.mocked(useVirtualizer).mockClear();
+    animationFrameCallbacks = [];
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        animationFrameCallbacks.push(callback);
+        return animationFrameCallbacks.length;
+      }),
+    );
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
   });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   const mockSchema = {
     categories: [
@@ -224,6 +237,21 @@ describe('useObjectListVirtualizer', () => {
     expect(options?.estimateSize(1)).toBe(92);
   });
 
+  it('keeps desktop and tablet object rows compact', () => {
+    renderHook(() =>
+      useObjectListVirtualizer({
+        objects: mockObjects,
+        schema: mockSchema as unknown as import('@/entities/game-object/model/object').GameSchema,
+        selectedObjectFolderPath: null,
+        isMobile: false,
+      }),
+    );
+
+    const calls = vi.mocked(useVirtualizer).mock.calls;
+    const options = calls[calls.length - 1]?.[0];
+    expect(options?.estimateSize(1)).toBe(62);
+  });
+
   it('keeps pinned objects at the top of each section', () => {
     const { result } = renderHook(() =>
       useObjectListVirtualizer({
@@ -283,5 +311,33 @@ describe('useObjectListVirtualizer', () => {
     });
 
     expect(result.current.stickyPosition).toBeNull();
+  });
+
+  it('coalesces multiple scroll events into one viewport update per frame', () => {
+    const { result } = renderHook(() =>
+      useObjectListVirtualizer({
+        objects: mockObjects,
+        schema: mockSchema as unknown as import('@/entities/game-object/model/object').GameSchema,
+        selectedObjectFolderPath: 'alpha',
+        isMobile: false,
+      }),
+    );
+    const scrollContainer = document.createElement('div');
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 200 });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 0, writable: true });
+
+    act(() => result.current.parentRef(scrollContainer));
+
+    act(() => {
+      scrollContainer.scrollTop = 100;
+      scrollContainer.dispatchEvent(new Event('scroll'));
+      scrollContainer.scrollTop = 200;
+      scrollContainer.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+    expect(animationFrameCallbacks).toHaveLength(1);
+
+    act(() => animationFrameCallbacks[0]?.(0));
   });
 });

@@ -79,6 +79,8 @@ async fn workspace_view_model_uses_flat_root_as_preview_target() {
             .map(|summary| summary.actual_name.clone()),
         Some(object_folder)
     );
+    assert!(view_model.preview.ini_summary.is_none());
+    assert!(view_model.preview.image_summary.is_none());
     assert_eq!(
         view_model.objects.first().map(|object| object.node_kind),
         Some(WorkspaceNodeKind::Object)
@@ -105,6 +107,7 @@ async fn workspace_view_model_collapses_nested_selected_path_under_flat_root() {
         &object_root.join("mod.ini"),
         "[TextureOverrideTest]\nfilename = Textures/example.dds\n",
     );
+    write_file(&object_root.join("Textures").join("example.dds"), "texture");
 
     let nested_selection = object_root.join("Textures").join("example.dds");
     let view_model = get_workspace_view_model(
@@ -242,5 +245,154 @@ async fn workspace_view_model_marks_disabled_ancestor_children_as_inactive_branc
             .first()
             .and_then(|warning| warning.args.get("container_name").cloned()),
         Some("Variants".to_string())
+    );
+}
+
+#[tokio::test]
+async fn split_preview_keeps_selection_unchanged_when_the_structure_context_is_stale() {
+    let (pool, _mods_root, mods_path, object_folder) =
+        setup_workspace_fixture("STALE_PREVIEW").await;
+    let object_root = std::path::Path::new(&mods_path).join(&object_folder);
+    fs::create_dir_all(&object_root).expect("object root");
+
+    let result = get_workspace_preview(
+        &pool,
+        WorkspacePreviewInput {
+            game_id: "game_workspace".to_string(),
+            explorer_sub_path: Some(format!("{object_folder}/Deleted")),
+            selected_mod_path: Some(object_root.join("Deleted").to_string_lossy().to_string()),
+        },
+    )
+    .await
+    .expect("preview result");
+
+    assert_eq!(
+        result.context_status,
+        WorkspacePreviewContextStatus::ContextStale
+    );
+    assert_eq!(
+        result.selection.selected_mod_path,
+        Some(object_root.join("Deleted").to_string_lossy().to_string())
+    );
+    assert_eq!(
+        result.selection.reconciliation_status,
+        WorkspaceSelectionReconciliationStatus::Unchanged
+    );
+}
+
+#[tokio::test]
+async fn split_preview_rejects_paths_outside_the_mods_root() {
+    let (pool, _mods_root, _mods_path, _object_folder) =
+        setup_workspace_fixture("ESCAPE_PREVIEW").await;
+    let outside = tempfile::tempdir().expect("outside dir");
+
+    let result = get_workspace_preview(
+        &pool,
+        WorkspacePreviewInput {
+            game_id: "game_workspace".to_string(),
+            explorer_sub_path: None,
+            selected_mod_path: Some(outside.path().to_string_lossy().to_string()),
+        },
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(crate::shared::errors::AppError::Security(_))
+    ));
+}
+
+#[tokio::test]
+async fn split_preview_keeps_an_empty_root_selection_empty() {
+    let (pool, _mods_root, _mods_path, _object_folder) =
+        setup_workspace_fixture("EMPTY_ROOT_PREVIEW").await;
+
+    let result = get_workspace_preview(
+        &pool,
+        WorkspacePreviewInput {
+            game_id: "game_workspace".to_string(),
+            explorer_sub_path: None,
+            selected_mod_path: None,
+        },
+    )
+    .await
+    .expect("preview result");
+
+    assert_eq!(result.context_status, WorkspacePreviewContextStatus::Ready);
+    assert_eq!(result.preview.selected_path, None);
+    assert_eq!(result.selection.selected_mod_path, None);
+    assert_eq!(
+        result.selection.reconciliation_status,
+        WorkspaceSelectionReconciliationStatus::Unchanged
+    );
+}
+
+#[tokio::test]
+async fn split_preview_clears_a_missing_target_inside_a_flat_mod() {
+    let (pool, _mods_root, mods_path, object_folder) =
+        setup_workspace_fixture("MISSING_FLAT_TARGET").await;
+    let object_root = std::path::Path::new(&mods_path).join(&object_folder);
+    fs::create_dir_all(&object_root).expect("object root");
+    write_file(&object_root.join("mod.ini"), "[TextureOverrideTest]\\n");
+    let missing_target = object_root.join("Missing Variant");
+
+    let result = get_workspace_preview(
+        &pool,
+        WorkspacePreviewInput {
+            game_id: "game_workspace".to_string(),
+            explorer_sub_path: Some(object_folder),
+            selected_mod_path: Some(missing_target.to_string_lossy().to_string()),
+        },
+    )
+    .await
+    .expect("preview result");
+
+    assert_eq!(result.context_status, WorkspacePreviewContextStatus::Ready);
+    assert_eq!(result.preview.selected_path, None);
+    assert_eq!(result.selection.selected_mod_path, None);
+    assert_eq!(
+        result.selection.reconciliation_status,
+        WorkspaceSelectionReconciliationStatus::Cleared
+    );
+    assert_eq!(
+        result.selection.reconciliation_reason,
+        Some(WorkspaceSelectionReconciliationReason::MissingModPath)
+    );
+}
+
+#[tokio::test]
+async fn split_preview_keeps_a_direct_container_child_under_a_mod_root() {
+    let (pool, _mods_root, mods_path, object_folder) =
+        setup_workspace_fixture("CONTAINER_CHILD_PREVIEW").await;
+    let object_root = std::path::Path::new(&mods_path).join(&object_folder);
+    let presets = object_root.join("Presets");
+    fs::create_dir_all(&presets).expect("presets folder");
+    write_file(&object_root.join("mod.ini"), "[TextureOverrideTest]\\n");
+
+    let result = get_workspace_preview(
+        &pool,
+        WorkspacePreviewInput {
+            game_id: "game_workspace".to_string(),
+            explorer_sub_path: Some(object_folder),
+            selected_mod_path: Some(presets.to_string_lossy().to_string()),
+        },
+    )
+    .await
+    .expect("preview result");
+
+    assert_eq!(
+        result.preview.selected_path,
+        Some(presets.to_string_lossy().to_string())
+    );
+    assert_eq!(
+        result
+            .preview
+            .selected_node
+            .as_ref()
+            .and_then(|node| match node {
+                WorkspaceNode::Explorer(explorer) => Some(explorer.node_type.as_str()),
+                WorkspaceNode::Object(_) => None,
+            }),
+        Some("ContainerFolder")
     );
 }

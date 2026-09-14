@@ -28,8 +28,32 @@ pub use pipeline::full_pipeline::{match_folder_full, score_forced_candidates};
 pub use pipeline::quick_pipeline::match_folder_quick;
 pub use state::master_db::MasterDb;
 
+pub use analysis::gamebanana::GameBananaResult;
+
 use crate::modules::workspace::application::scanner::core::walker::{FolderContent, ModCandidate};
 use analysis::content::PreparedTokenFilters;
+
+/// Parse a GameBanana item only from a canonical site URL.
+pub fn gamebanana_reference_from_url(
+    url: &str,
+) -> Option<analysis::gamebanana::GameBananaRef> {
+    analysis::gamebanana::gamebanana_reference_from_url(url)
+}
+
+/// Fetch optional public metadata for a verified GameBanana item.
+///
+/// Network and parse failures are represented by an empty result so callers can
+/// preserve their local matching flow.
+pub fn enrich_gamebanana_item(item_type: String, item_id: u64) -> GameBananaResult {
+    analysis::gamebanana::fetch_gamebanana_metadata_with_timeout(
+        &[analysis::gamebanana::GameBananaRef { item_type, item_id }],
+        &analysis::gamebanana::GameBananaConfig {
+            enabled: true,
+            game: None,
+        },
+        std::time::Duration::from_secs(2),
+    )
+}
 
 /// Phased matcher: Try Quick first, then fall back to FullScoring if NeedsReview or NoMatch.
 /// Preserves NeedsReview and NoMatch statuses without auto-apply.

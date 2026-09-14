@@ -62,9 +62,7 @@ export const IgnoredPairsModal: React.FC<IgnoredPairsModalProps> = ({ gameId, on
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
               <span className="loading loading-spinner loading-lg text-primary"></span>
-              <p className="text-sm text-base-content/60 animate-pulse">
-                {t('scanner:ignored_pairs.loading')}
-              </p>
+              <p className="text-sm text-base-content/60">{t('scanner:ignored_pairs.loading')}</p>
             </div>
           ) : !ignoredPairs || ignoredPairs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center bg-base-200/50 rounded-xl border border-dashed border-base-content/20">

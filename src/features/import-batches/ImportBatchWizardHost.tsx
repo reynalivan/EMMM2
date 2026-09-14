@@ -170,6 +170,10 @@ export function ImportBatchWizardHost() {
       }
       setPhase('checking_library');
       try {
+        // Catalog inspection is intentionally user-triggered from preflight.
+        // It runs independently of this readiness gate, so a large library
+        // never blocks the user from continuing the import review.
+        await commands.retryObjectIdentitySuggestions(next.gameId, null);
         const readiness = await commands.previewImportLibraryReadiness(next.id);
         if (readiness.reviewStarted || readiness.items.length === 0) {
           await showReview(next);
@@ -316,7 +320,7 @@ export function ImportBatchWizardHost() {
   if (phase === 'analyzing' || phase === 'checking_library' || phase === 'refreshing_matches') {
     return (
       <>
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/30">
+        <div className="fixed inset-0 z-[var(--workspace-layer-overlay)] grid place-items-center bg-black/30">
           <div className="text-center">
             <span className="loading loading-spinner loading-lg text-primary" />
             {phase !== 'analyzing' && (

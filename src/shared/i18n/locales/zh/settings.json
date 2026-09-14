@@ -73,24 +73,48 @@
       "engine_val": "Vite + React"
     },
     "catalog_assets": {
-      "title": "目录资源",
+      "title": "目录包",
       "not_installed": "尚未安装目录包。",
       "installed": "{{name}} {{version}} · {{entries}} 个目录条目",
       "invalid": "无法验证已安装的目录包。",
       "status_unavailable": "目录资源状态不可用。",
       "open_folder": "打开文件夹",
       "refresh": "刷新目录",
-      "updates_title": "已签名目录更新",
-      "updates_desc": "每周从公共发布渠道检查。",
-      "auto_install": "自动安装",
+      "github_title": "从 GitHub 安装",
+      "github_desc": "在替换活动目录前审核公开发布资源。",
+      "github_find": "在 GitHub 中查找",
+      "github_url_label": "GitHub 仓库或发布 URL",
+      "github_url_placeholder": "https://github.com/owner/catalog-pack/releases/latest",
+      "github_check": "检查目录包",
+      "github_note": "使用公开仓库、最新发布或发布标签。发布必须包含 catalog-pack.zip。",
+      "github_preview_failed": "无法检查此 GitHub 目录发布，已安装目录未更改。",
+      "local_title": "从 ZIP 安装",
+      "local_desc": "选择本地 catalog-pack.zip，在安装前审核。原始文件会保留在原位置。",
+      "local_choose": "选择 ZIP",
+      "local_preview_failed": "无法检查此本地目录 ZIP。已安装目录未更改。",
+      "install_failed": "无法安装已审核的目录。已安装目录未更改。",
+      "github_review_title": "审核目录包",
+      "review_source": "来源：{{source}}",
+      "review_release": "发行版本",
+      "github_repository": "仓库",
+      "github_version": "版本",
+      "github_publisher": "发布者",
+      "github_games": "支持的游戏",
+      "github_entries": "目录条目",
+      "github_replaces": "确认后安装此目录包将替换活动目录。",
+      "github_install": "安装目录包",
+      "reset_suggestions_title": "已忽略的身份建议",
+      "reset_suggestions_desc": "让当前游戏此前忽略的目录身份再次出现在审核列表中。",
+      "reset_suggestions_action": "重置已忽略项",
+      "updates_title": "目录更新",
+      "updates_desc": "手动检查并安装更新。",
       "check_update": "立即检查",
       "install_update": "安装 {{version}}",
       "update_available": "版本 {{version}} 已可安装。",
       "up_to_date": "目录已是最新。",
-      "update_idle": "安装前会验证更新。",
+      "update_idle": "安装前会检查更新。",
       "update_check_failed": "无法检查目录更新；已安装目录未更改。",
-      "update_install_failed": "无法安装已签名目录更新；已安装目录未更改。",
-      "auto_update_failed": "无法保存目录更新偏好：{{error}}"
+      "update_install_failed": "无法安装目录更新；已安装目录未更改。"
     },
     "diagnostics": {
       "title": "匿名诊断数据",
@@ -123,6 +147,12 @@
         "section_three": "外部内容",
         "body_three": "外部下载和工具在 EMMM 之外运行。进行更改前请检查文件并保留备份。EMMM 不认可或保证第三方内容。"
       }
+    },
+    "support": {
+      "title": "支持 EMMM",
+      "description": "如果 EMMM 帮助了您的模组工作流程，欢迎支持其开发。",
+      "action": "请喝杯咖啡",
+      "open_failed": "无法打开支持页面：{{error}}"
     }
   },
   "diagnostics": {
@@ -143,6 +173,10 @@
     "add": "添加游戏",
     "empty": "尚未配置游戏。",
     "active": "激活",
+    "source_change_progress": "正在迁移 EMMM 数据、索引模组并刷新收藏…",
+    "source_change_summary": "模组库已更新：新增 {{objectsAdded}} 个对象、移除 {{objectsRemoved}} 个、迁移 {{objectsMoved}} 个；新增 {{modsAdded}} 个模组、移除 {{modsRemoved}} 个、迁移 {{modsMoved}} 个；影响 {{collectionsAffected}} 个收藏。",
+    "source_change_artifacts_moved": "EMMM 运行时数据已迁移。",
+    "source_change_artifacts_unchanged": "没有需要迁移的 EMMM 运行时数据。",
     "actions": {
       "set_active": "设为激活",
       "scan_ready_to_move": "打开模组收件箱",
@@ -255,6 +289,7 @@
     "days": "天"
   },
   "hotkeys": {
+    "os_hotkeys_hint": "Safe Mode and preset bindings are registered by EMMM. The overlay binding below belongs only to 3DMigoto.",
     "title": "全局热键",
     "enabled": "已启用",
     "desc": "游戏窗口激活时可用的快捷键。",
@@ -262,6 +297,7 @@
     "cooldown_desc": "防止重复输入。",
     "conflicts_title": "检测到按键冲突",
     "labels": {
+      "safe_mode": "Safe Mode",
       "next_preset": "下一个预设",
       "prev_preset": "上一个预设",
       "toggle_overlay": "切换显示层",
@@ -273,11 +309,41 @@
     "viewer_desc": "显示检测到的游戏按键。使用 {{key}} 切换。",
     "infrastructure_title": "运行时文件",
     "infrastructure_desc": "在 .emmm_data/ 中自动管理。",
+    "runtime": {
+      "title": "KeyViewer 运行时",
+      "desc": "当前游戏会话的诊断信息。",
+      "last_sync": "上次同步",
+      "snapshot": "快照",
+      "reload_status": "重新加载",
+      "reload_binding": "重新加载绑定",
+      "generation_cleanup": "Generation 清理",
+      "loading": "正在加载…",
+      "not_synced": "本次会话尚未同步",
+      "not_attempted": "尚未尝试",
+      "unavailable": "不可用",
+      "binding_unavailable": "不可用",
+      "cleanup_enabled": "游戏停止后自动清理",
+      "cleanup_disabled": "配置游戏可执行文件前已禁用",
+      "cleanup_disabled_desc": "EMMM 无法确认游戏是否已停止，因此不会删除旧的 KeyViewer generation。",
+      "publication": {
+        "published": "已发布",
+        "unchanged": "未更改",
+        "skipped": "已被新请求取代",
+        "failed": "失败"
+      },
+      "reload": {
+        "not_required": "无需重新加载",
+        "sent": "已发送：{{binding}}",
+        "manual": "手动：{{binding}}"
+      }
+    },
     "reset": "全部重置为默认值",
     "reset_success": "热键设置已重置为默认值。",
     "save_failed": "保存热键设置失败：{{error}}",
     "viewer_save_failed": "保存按键查看器设置失败：{{error}}",
     "reset_tip": "重置为默认值",
+    "overlay_enabled": "Enable overlay",
+    "save": "Save controls",
     "reserved": {
       "package_toggle": "包切换",
       "frame_analysis": "3DMigoto 帧分析",

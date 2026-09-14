@@ -12,15 +12,15 @@ describe('frontend architecture boundaries', () => {
   });
 
   it('rejects same-layer cross-slice dependencies', () => {
-    expect(
-      evaluateBoundary(file('features/alpha/index.ts'), '@/features/beta'),
-    ).toMatchObject({ messageId: 'crossSlice' });
+    expect(evaluateBoundary(file('features/alpha/index.ts'), '@/features/beta')).toMatchObject({
+      messageId: 'crossSlice',
+    });
   });
 
   it('rejects relative same-layer cross-slice dependencies', () => {
-    expect(
-      evaluateBoundary(file('features/alpha/view.ts'), '../beta/internal'),
-    ).toMatchObject({ messageId: 'crossSlice' });
+    expect(evaluateBoundary(file('features/alpha/view.ts'), '../beta/internal')).toMatchObject({
+      messageId: 'crossSlice',
+    });
   });
 
   it('rejects deep imports across slices', () => {

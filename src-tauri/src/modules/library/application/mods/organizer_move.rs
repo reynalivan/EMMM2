@@ -112,6 +112,14 @@ pub async fn prepare_move_mods_to_object(
         let new_path = target_base_path.join(target_name);
         let old_rel = relative_mod_path(&current_path, base_path);
         let new_rel = relative_mod_path(&new_path, base_path);
+        let target_mod_id =
+            crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
+                pool,
+                &old_rel,
+                params.game_id,
+            )
+            .await?
+            .map(|(id, _, _)| id);
         primary_results.push(new_rel.clone());
 
         if current_path != new_path {
@@ -136,7 +144,7 @@ pub async fn prepare_move_mods_to_object(
                 pool,
                 params.target_object_id,
                 params.game_id,
-                &new_rel,
+                target_mod_id.as_deref(),
             )
             .await?;
             for (_, sibling_rel, _) in siblings {
@@ -449,6 +457,12 @@ async fn move_one_mod_to_object(
     let new_path = target_base_path.join(&new_mod_folder_name);
     let old_rel = relative_mod_path(&current_path, base_path);
     let new_rel = relative_mod_path(&new_path, base_path);
+    let target_mod_id =
+        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
+            pool, &old_rel, game_id,
+        )
+        .await?
+        .map(|(id, _, _)| id);
 
     if current_path != new_path {
         if new_path.exists() {
@@ -478,7 +492,7 @@ async fn move_one_mod_to_object(
             pool,
             game_id,
             target_object_id,
-            &new_rel,
+            target_mod_id.as_deref(),
             base_path,
             target_obj_path,
             &mut path_hints,

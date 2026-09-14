@@ -4,9 +4,9 @@ use super::types::{
     AnalysisResult, ImportBatch, ImportBatchStatus, ImportContentKind, ImportDecision,
     ImportItemStatus, ImportPackageShape, SetImportItemDecisionInput, StableCategory,
 };
-use crate::modules::catalog::application::match_engine::classification::classify_source;
+use crate::modules::catalog::application::match_engine::classification::classify_source_with_content;
 use crate::modules::catalog::application::match_engine::inspection::{
-    inspect_source, InspectionRequest,
+    inspect_source_with_content, InspectionRequest,
 };
 use crate::modules::ingestion::adapters::sqlite::import_batch;
 use crate::modules::library::application::mods::archive::StagingExtractOptions;
@@ -42,8 +42,7 @@ pub async fn analyze_import_batch_for_app_with_options(
         as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
     let schema = crate::modules::games::application::game::schema_loader::load_schema(
         &resource_dir,
@@ -164,7 +163,10 @@ pub(crate) async fn analyze_import_batch_with_options_and_index(
         let manifest_path = analysis_path.clone();
         let cancellation = options.cancel_token.clone();
         let payload_manifest = tokio::task::spawn_blocking(move || {
-            super::payload_manifest::build_payload_manifest(&manifest_path, cancellation.as_deref())
+            super::payload_manifest::build_validated_import_payload_manifest(
+                &manifest_path,
+                cancellation.as_deref(),
+            )
         })
         .await??;
         if let Some(representative_item_id) =
@@ -175,18 +177,29 @@ pub(crate) async fn analyze_import_batch_with_options_and_index(
             payload_representatives
                 .insert(payload_manifest.content_sha256.clone(), item.id.clone());
         }
-        let inspection = inspect_source(&InspectionRequest {
+        let inspected = inspect_source_with_content(&InspectionRequest {
             source_path: analysis_path.clone(),
             planned_name: Some(item.planned_name.clone()),
             match_extensions: match_extensions.to_vec(),
         })?;
-        let categories =
-            classify_source(&analysis_path, &item.planned_name, master_db, ini_filters);
+        let mut signal_cache =
+            crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache::new();
+        let categories = classify_source_with_content(
+            &analysis_path,
+            &item.planned_name,
+            master_db,
+            ini_filters,
+            &inspected.content,
+            &mut signal_cache,
+        );
         let (content_kind, package_shape) = classify_package_content(
             &analysis_path,
-            &inspection,
+            &inspected.inspection,
             categories.first().map(|suggestion| suggestion.category),
         );
+        let source_metadata =
+            super::gamebanana::enrich_source_metadata(db, &batch.game_id, item).await;
+        let source_evidence = super::gamebanana::source_metadata_evidence(&source_metadata);
         if super::is_cancelled(&options.cancel_token) {
             return Err(AppError::Cancelled);
         }
@@ -201,18 +214,26 @@ pub(crate) async fn analyze_import_batch_with_options_and_index(
         let mut analysis_item = item.clone();
         analysis_item.content_kind = content_kind;
         analysis_item.package_shape = package_shape;
-        let suggestions = super::coordinator::build_match_suggestions(
+        let mut suggestions = super::coordinator::build_match_suggestions_with_prepared_content(
             db,
             &analysis_item,
             &batch,
-            &inspection,
+            &inspected.inspection,
             category,
             &classification_metadata,
             content_kind,
             master_db,
             ini_filters,
+            &inspected.content,
+            &mut signal_cache,
         )
         .await?;
+        if let Some(evidence) = source_evidence {
+            for suggestion in &mut suggestions.canonical {
+                suggestion.evidence.push(evidence.clone());
+            }
+            suggestions.evidence.push(evidence);
+        }
         let base_review_gate =
             super::coordinator::review_gate_for(&analysis_item, Some(&suggestions.canonical), None);
         let target_comparison = if base_review_gate.is_empty()
@@ -248,11 +269,12 @@ pub(crate) async fn analyze_import_batch_with_options_and_index(
             target_comparison.as_ref(),
         );
         let analysis_result = AnalysisResult {
-            inspection,
+            inspection: inspected.inspection,
             category_suggestions: categories,
             selected_category: category,
             selected_sub_category: sub_category,
             classification_metadata,
+            source_metadata,
             payload_manifest,
             canonical_suggestions: suggestions.canonical,
             destination_suggestions: suggestions.destinations,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
 
@@ -14,6 +15,7 @@ use crate::platform::fs::operation_lock::OperationLock;
 
 const TEST_HISTORY_LIMIT: usize = 16;
 const GAME_ID: &str = "game-1";
+const BENCHMARK_SAMPLES: usize = 7;
 
 fn open_journal(path: &Path) -> Arc<OperationJournal> {
     Arc::new(OperationJournal::open(path, TEST_HISTORY_LIMIT).unwrap())
@@ -59,6 +61,53 @@ fn recovery_runner(
             staging_root.to_path_buf(),
         ),
     )
+}
+
+#[derive(Clone, Copy)]
+enum JournalReplaceCrashPoint {
+    BeforeCanonicalMovesToRecovery,
+    AfterCanonicalMovesToRecovery,
+    AfterTempMovesToCanonical,
+}
+
+fn journal_artifact_path(path: &Path, label: &str, sequence: u32) -> std::path::PathBuf {
+    path.with_file_name(format!(
+        "{}.{}.test.{sequence}",
+        path.file_name().unwrap().to_string_lossy(),
+        label
+    ))
+}
+
+fn arrange_atomic_replace_crash(
+    crash_point: JournalReplaceCrashPoint,
+    path: &Path,
+    planned_snapshot: &Path,
+    applying_snapshot: &Path,
+) {
+    let recovery = journal_artifact_path(path, "recover", 0);
+    let temporary = journal_artifact_path(path, "tmp", 0);
+    match crash_point {
+        JournalReplaceCrashPoint::BeforeCanonicalMovesToRecovery => {
+            std::fs::copy(planned_snapshot, path).unwrap();
+            std::fs::copy(applying_snapshot, temporary).unwrap();
+        }
+        JournalReplaceCrashPoint::AfterCanonicalMovesToRecovery => {
+            std::fs::remove_file(path).unwrap();
+            std::fs::copy(planned_snapshot, recovery).unwrap();
+            std::fs::copy(applying_snapshot, temporary).unwrap();
+        }
+        JournalReplaceCrashPoint::AfterTempMovesToCanonical => {
+            std::fs::copy(applying_snapshot, path).unwrap();
+            std::fs::copy(planned_snapshot, recovery).unwrap();
+        }
+    }
+}
+
+fn active_state_path(journal_path: &Path, operation_id: &str) -> std::path::PathBuf {
+    journal_path.parent().unwrap().join(format!(
+        "{}.active/{operation_id}.json",
+        journal_path.file_name().unwrap().to_string_lossy()
+    ))
 }
 
 #[tokio::test]
@@ -107,6 +156,221 @@ async fn journal_survives_reopen_with_explicit_commit() {
         DatabaseProjectionStatus::Committed
     );
     assert_eq!(entries[0].steps[0].status, StepStatus::Applied);
+}
+
+#[test]
+fn versioned_journal_recovers_all_atomic_replace_crash_points() {
+    for crash_point in [
+        JournalReplaceCrashPoint::BeforeCanonicalMovesToRecovery,
+        JournalReplaceCrashPoint::AfterCanonicalMovesToRecovery,
+        JournalReplaceCrashPoint::AfterTempMovesToCanonical,
+    ] {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("journal.json");
+        let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+        let id = journal
+            .plan_operation(rename_plan(
+                &temp.path().join("Mods/Old"),
+                &temp.path().join("Mods/New"),
+            ))
+            .unwrap();
+        let planned_snapshot = temp.path().join("planned.snapshot");
+        std::fs::copy(&path, &planned_snapshot).unwrap();
+        journal.fail(&id, "repair required").unwrap();
+        let failed_snapshot = temp.path().join("failed.snapshot");
+        std::fs::copy(&path, &failed_snapshot).unwrap();
+        drop(journal);
+
+        arrange_atomic_replace_crash(crash_point, &path, &planned_snapshot, &failed_snapshot);
+
+        let reopened = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+        let expected_status = match crash_point {
+            JournalReplaceCrashPoint::BeforeCanonicalMovesToRecovery => OperationStatus::Planned,
+            JournalReplaceCrashPoint::AfterCanonicalMovesToRecovery
+            | JournalReplaceCrashPoint::AfterTempMovesToCanonical => {
+                OperationStatus::FailedNeedsRepair
+            }
+        };
+        assert_eq!(reopened.entries()[0].status, expected_status);
+    }
+}
+
+#[test]
+fn active_progress_does_not_rewrite_the_immutable_plan_snapshot() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(rename_plan(
+            &temp.path().join("Mods/Old"),
+            &temp.path().join("Mods/New"),
+        ))
+        .unwrap();
+    let planned_snapshot = std::fs::read(&path).unwrap();
+    let progress_path = active_state_path(&path, &id);
+
+    journal.mark_applying(&id).unwrap();
+    journal.mark_step_applied(&id, 0).unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), planned_snapshot);
+    assert!(progress_path.exists());
+    drop(journal);
+
+    let reopened = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let recovered = reopened.entries();
+    assert_eq!(recovered[0].status, OperationStatus::Applied);
+    assert_eq!(recovered[0].steps[0].status, StepStatus::Applied);
+
+    reopened.mark_db_committed(&id).unwrap();
+    reopened.complete(&id).unwrap();
+
+    assert!(!progress_path.exists());
+    assert_eq!(reopened.entries()[0].status, OperationStatus::Completed);
+}
+
+#[test]
+fn active_progress_recovers_the_newest_valid_artifact() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(rename_plan(
+            &temp.path().join("Mods/Old"),
+            &temp.path().join("Mods/New"),
+        ))
+        .unwrap();
+    let progress_path = active_state_path(&path, &id);
+
+    journal.mark_applying(&id).unwrap();
+    let applying_state = temp.path().join("applying.progress");
+    std::fs::copy(&progress_path, &applying_state).unwrap();
+    journal.mark_step_applied(&id, 0).unwrap();
+    let applied_state = temp.path().join("applied.progress");
+    std::fs::copy(&progress_path, &applied_state).unwrap();
+    drop(journal);
+
+    std::fs::remove_file(&progress_path).unwrap();
+    let recovery = journal_artifact_path(&progress_path, "recover", 0);
+    let temporary = journal_artifact_path(&progress_path, "tmp", 0);
+    std::fs::copy(&applying_state, recovery).unwrap();
+    std::fs::copy(&applied_state, temporary).unwrap();
+
+    let reopened = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let recovered = reopened.entries();
+    assert_eq!(recovered[0].status, OperationStatus::Applied);
+    assert_eq!(recovered[0].steps[0].status, StepStatus::Applied);
+    let restored: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress_path).unwrap()).unwrap();
+    assert_eq!(restored["revision"].as_u64(), Some(3));
+}
+
+#[test]
+fn invalid_active_progress_artifact_requires_repair_without_deletion() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(rename_plan(
+            &temp.path().join("Mods/Old"),
+            &temp.path().join("Mods/New"),
+        ))
+        .unwrap();
+    let progress_path = active_state_path(&path, &id);
+    journal.mark_applying(&id).unwrap();
+    drop(journal);
+
+    std::fs::remove_file(&progress_path).unwrap();
+    let recovery = journal_artifact_path(&progress_path, "recover", 0);
+    std::fs::write(&recovery, b"not-json").unwrap();
+
+    let error = OperationJournal::open(&path, TEST_HISTORY_LIMIT)
+        .err()
+        .expect("invalid active progress must require repair");
+
+    assert!(error.to_string().contains("requires repair"));
+    assert!(!progress_path.exists());
+    assert!(recovery.exists());
+}
+
+#[test]
+fn ambiguous_unversioned_journal_artifacts_require_repair_without_deletion() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(rename_plan(
+            &temp.path().join("Mods/Old"),
+            &temp.path().join("Mods/New"),
+        ))
+        .unwrap();
+    let legacy_bytes = serde_json::to_vec(&journal.entries()).unwrap();
+    drop(journal);
+
+    std::fs::write(&path, &legacy_bytes).unwrap();
+    let recovery = journal_artifact_path(&path, "recover", 0);
+    std::fs::write(&recovery, legacy_bytes).unwrap();
+
+    let error = OperationJournal::open(&path, TEST_HISTORY_LIMIT)
+        .err()
+        .expect("ambiguous unversioned artifacts must require repair");
+
+    assert!(error.to_string().contains("requires repair"));
+    assert!(path.exists());
+    assert!(recovery.exists());
+    assert!(!id.is_empty());
+}
+
+#[test]
+fn unversioned_journal_migrates_to_a_versioned_snapshot() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(rename_plan(
+            &temp.path().join("Mods/Old"),
+            &temp.path().join("Mods/New"),
+        ))
+        .unwrap();
+    let legacy_bytes = serde_json::to_vec(&journal.entries()).unwrap();
+    drop(journal);
+    std::fs::write(&path, legacy_bytes).unwrap();
+
+    let reopened = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let snapshot: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+
+    assert_eq!(reopened.entries()[0].id, id);
+    assert_eq!(snapshot["format_version"].as_u64(), Some(1));
+    assert_eq!(snapshot["revision"].as_u64(), Some(1));
+    assert_eq!(snapshot["operation_ids"][0].as_str(), Some(id.as_str()));
+    assert!(snapshot["checksum"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
+}
+
+#[test]
+fn versioned_journal_rejects_checksum_tampering() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    journal
+        .plan_operation(rename_plan(
+            &temp.path().join("Mods/Old"),
+            &temp.path().join("Mods/New"),
+        ))
+        .unwrap();
+    drop(journal);
+
+    let mut snapshot: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    snapshot["checksum"] = serde_json::Value::String("invalid".to_string());
+    std::fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+
+    let error = OperationJournal::open(&path, TEST_HISTORY_LIMIT)
+        .err()
+        .expect("tampered checksum must not open");
+
+    assert!(error.to_string().contains("checksum"));
 }
 
 #[tokio::test]
@@ -549,4 +813,149 @@ async fn partial_rollback_failure_records_repair_details() {
         new_a.exists(),
         "failed step must remain available for repair"
     );
+}
+
+#[derive(Clone, Copy)]
+enum JournalBenchmarkScenario {
+    SuccessfulCommit,
+    PartialRollback,
+}
+
+impl JournalBenchmarkScenario {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SuccessfulCommit => "successful_commit",
+            Self::PartialRollback => "partial_rollback",
+        }
+    }
+
+    fn expected_writes(self, step_count: usize) -> u64 {
+        match self {
+            Self::SuccessfulCommit => step_count as u64 + 4,
+            Self::PartialRollback => step_count as u64 + 3,
+        }
+    }
+}
+
+struct JournalBenchmarkSample {
+    elapsed: Duration,
+    writes: u64,
+    serialized_bytes: u64,
+    final_file_bytes: u64,
+}
+
+#[test]
+#[ignore = "manual journal I/O baseline; performs synchronous temporary-file writes"]
+fn benchmark_bulk_journal_persistence_baseline() {
+    for history_limit in [1, 64, 256] {
+        for step_count in [500, 1_000] {
+            for scenario in [
+                JournalBenchmarkScenario::SuccessfulCommit,
+                JournalBenchmarkScenario::PartialRollback,
+            ] {
+                let _warmup = run_journal_benchmark_sample(history_limit, step_count, scenario);
+                let mut samples = (0..BENCHMARK_SAMPLES)
+                    .map(|_| run_journal_benchmark_sample(history_limit, step_count, scenario))
+                    .collect::<Vec<_>>();
+                samples.sort_by_key(|sample| sample.elapsed);
+
+                let median = samples[BENCHMARK_SAMPLES / 2].elapsed;
+                let p95 =
+                    samples[((BENCHMARK_SAMPLES * 95).div_ceil(100)).saturating_sub(1)].elapsed;
+                let median_bytes = samples[BENCHMARK_SAMPLES / 2].serialized_bytes;
+                let final_file_bytes = samples[BENCHMARK_SAMPLES / 2].final_file_bytes;
+                let expected_writes = scenario.expected_writes(step_count);
+
+                assert!(samples
+                    .iter()
+                    .all(|sample| sample.writes == expected_writes));
+                assert!(samples
+                    .iter()
+                    .all(|sample| sample.serialized_bytes > sample.final_file_bytes));
+                println!(
+                    "journal_benchmark scenario={} history_limit={} steps={} samples={} p50_ms={:.3} p95_ms={:.3} writes={} median_serialized_bytes={} median_final_file_bytes={}",
+                    scenario.label(),
+                    history_limit,
+                    step_count,
+                    BENCHMARK_SAMPLES,
+                    duration_ms(median),
+                    duration_ms(p95),
+                    expected_writes,
+                    median_bytes,
+                    final_file_bytes,
+                );
+            }
+        }
+    }
+}
+
+fn run_journal_benchmark_sample(
+    history_limit: usize,
+    step_count: usize,
+    scenario: JournalBenchmarkScenario,
+) -> JournalBenchmarkSample {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, history_limit).unwrap();
+    journal
+        .seed_terminal_history_for_benchmark(history_limit)
+        .unwrap();
+    journal.reset_persistence_metrics();
+
+    let started = Instant::now();
+    let id = journal
+        .plan_operation(benchmark_plan(temp.path(), step_count))
+        .unwrap();
+    journal.mark_applying(&id).unwrap();
+
+    match scenario {
+        JournalBenchmarkScenario::SuccessfulCommit => {
+            for sequence in 0..step_count as u32 {
+                journal.mark_step_applied(&id, sequence).unwrap();
+            }
+            journal.mark_db_committed(&id).unwrap();
+            journal.complete(&id).unwrap();
+        }
+        JournalBenchmarkScenario::PartialRollback => {
+            let applied_steps = step_count / 2;
+            for sequence in 0..applied_steps as u32 {
+                journal.mark_step_applied(&id, sequence).unwrap();
+            }
+            journal.begin_rollback(&id).unwrap();
+            for sequence in (0..applied_steps as u32).rev() {
+                journal.mark_step_rolled_back(&id, sequence).unwrap();
+            }
+        }
+    }
+
+    let elapsed = started.elapsed();
+    let metrics = journal.persistence_metrics();
+    let final_file_bytes = std::fs::metadata(&path).unwrap().len();
+    JournalBenchmarkSample {
+        elapsed,
+        writes: metrics.writes,
+        serialized_bytes: metrics.serialized_bytes,
+        final_file_bytes,
+    }
+}
+
+fn benchmark_plan(root: &Path, step_count: usize) -> OperationPlan {
+    let steps = (0..step_count)
+        .map(|index| {
+            PlannedStep::rename(
+                index as u32,
+                root.join(format!(
+                    "Mods/Enabled/Folder-{index:04}/file-{index:04}.ini"
+                )),
+                root.join(format!(
+                    "Mods/Disabled/Folder-{index:04}/file-{index:04}.ini"
+                )),
+            )
+        })
+        .collect();
+    OperationPlan::new("benchmark-bulk-mutation", GAME_ID, steps)
+}
+
+fn duration_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000.0
 }

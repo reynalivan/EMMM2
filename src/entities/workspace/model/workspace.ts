@@ -7,17 +7,25 @@ export type {
   WorkspaceImpact,
   WorkspaceIniSummary,
   WorkspaceModInfoSummary,
+  WorkspaceNavigationSelection,
   WorkspaceNode,
   WorkspaceNodeKind,
   WorkspaceObjectNode,
+  WorkspaceParentEnableImpact,
+  WorkspaceParentEnableParent,
+  WorkspaceParentEnableRequirement,
   WorkspacePathRewrite,
   WorkspacePreview,
+  WorkspacePreviewContextStatus,
+  WorkspacePreviewInput,
+  WorkspacePreviewRequestIdentity,
+  WorkspacePreviewResult,
+  WorkspacePreviewSelection,
   WorkspaceReason,
   WorkspaceReasonCode,
   WorkspaceRecoveryStatus,
   WorkspaceRefreshScope,
   WorkspaceRuntime,
-  WorkspaceSelection,
   WorkspaceSelectionReconciliationReason,
   WorkspaceSelectionReconciliationStatus,
   WorkspaceSourceState,
@@ -33,14 +41,26 @@ export type {
   WorkspaceSwitchTarget,
   WorkspaceSwitchTargetKind,
   WorkspaceTypeChip,
-  WorkspaceViewModel,
-  WorkspaceViewModelInput,
+  WorkspaceStructureInput,
+  WorkspaceStructureViewModel,
   WorkspaceWarning,
   WorkspaceWarningCode,
   WorkspaceWarningState,
 } from '@/shared/api/tauri/bindings.gen';
 
-import type { WorkspaceExplorerNode, WorkspaceNode } from '@/shared/api/tauri/bindings.gen';
+import type {
+  WorkspaceExplorerNode,
+  WorkspaceNavigationSelection,
+  WorkspaceNode,
+} from '@/shared/api/tauri/bindings.gen';
+
+/**
+ * The frontend combines the navigation selection from the structure read model
+ * with preview selection before dispatching a single runtime store event.
+ */
+export type WorkspaceSelection = WorkspaceNavigationSelection & {
+  selected_mod_path: string | null;
+};
 
 /**
  * Frontend-only shared shape of workspace nodes (Rust flattens these fields

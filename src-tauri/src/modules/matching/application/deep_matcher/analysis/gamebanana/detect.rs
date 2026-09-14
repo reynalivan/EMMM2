@@ -42,6 +42,31 @@ pub fn detect_gamebanana_ids(signals: &FolderSignals) -> Vec<GameBananaRef> {
     refs
 }
 
+/// Extract a single submission reference from a trusted browser page URL.
+pub fn gamebanana_reference_from_url(url: &str) -> Option<GameBananaRef> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    if host != "gamebanana.com" && host != "www.gamebanana.com" {
+        return None;
+    }
+
+    let mut segments = parsed.path().trim_matches('/').split('/');
+    let item_type = segments.next()?;
+    let item_id = segments.next()?.parse::<u64>().ok()?;
+    if segments.next().is_some() || !matches!(item_type, "mods" | "tools" | "scripts" | "skins") {
+        return None;
+    }
+
+    Some(GameBananaRef {
+        item_type: capitalize_type(item_type),
+        item_id,
+    })
+}
+
 fn capitalize_type(raw: &str) -> String {
     // GameBanana web URLs use plural (mods/skins), API uses singular (Mod/Skin)
     let base = if let Some(stripped) = raw.strip_suffix('s') {

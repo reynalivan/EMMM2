@@ -21,7 +21,8 @@
     "close": "Tutup",
     "edit": "Edit",
     "more_actions": "Aksi Lainnya",
-    "rename_mod": "Ubah nama mod"
+    "rename_mod": "Ubah nama mod",
+    "retry": "Coba lagi"
   },
   "metadata": {
     "title": "Metadata",
@@ -168,6 +169,11 @@
     }
   },
   "errors": {
-    "open_location_failed": "Gagal membuka lokasi file: {{error}}"
+    "open_location_failed": "Gagal membuka lokasi file: {{error}}",
+    "load_failed": "Pratinjau tidak dapat dimuat",
+    "load_failed_description": "Coba lagi setelah memastikan mod yang dipilih masih tersedia."
+  },
+  "loading": {
+    "selected_mod": "Memuat pratinjau mod yang dipilih"
   }
 }

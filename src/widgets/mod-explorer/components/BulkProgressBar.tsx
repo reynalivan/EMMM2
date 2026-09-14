@@ -9,7 +9,7 @@ export default function BulkProgressBar() {
   if (!active) return null;
 
   return (
-    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-100 w-full max-w-sm px-4 pointer-events-none">
+    <div className="pointer-events-none fixed left-1/2 top-[calc(var(--workspace-topbar-height)+0.75rem)] z-100 w-full max-w-sm -translate-x-1/2 px-4">
       <div className="alert flex flex-col items-stretch gap-2 rounded-lg border border-base-content/10 bg-base-100/95 p-3 backdrop-blur animate-in fade-in slide-in-from-top-2 duration-200">
         <div className="flex justify-between items-center text-xs font-semibold tracking-wide">
           <span className="truncate pr-2">{t(label, { count: total, defaultValue: label })}</span>

@@ -18,6 +18,7 @@
   "classification_select": "选择",
   "classification_select_row": "选择 {{name}}",
   "classification_select_high_confidence": "选择全部高置信度推荐",
+  "classification_ignore_suggestion": "忽略建议",
   "classification_manual": "手动分类",
   "classification_use_catalog": "使用标准目录",
   "classification_subcategory": "子类别",

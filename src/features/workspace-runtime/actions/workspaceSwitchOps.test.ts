@@ -272,4 +272,22 @@ describe('workspace switch ops', () => {
 
     expect(toastInfo).not.toHaveBeenCalled();
   });
+
+  it('invalidates the affected health report once across an enable rewrite', async () => {
+    const queryClient = new QueryClient();
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    const result = {
+      status: 'applied',
+      changed_folder_paths: ['E:/Mods/A/DISABLED Blue', 'E:/Mods/A/Blue'],
+      impact: { rewrites: [], refresh_scopes: [] },
+    } as unknown as WorkspaceSwitchResult;
+
+    await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', { gameId: 'game-1' });
+
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['mod-health', 'report', 'game-1', 'e:/mods/a/blue'],
+      refetchType: 'active',
+    });
+  });
 });

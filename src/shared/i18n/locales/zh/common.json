@@ -95,6 +95,14 @@
       "naming_conflict": "检测到命名冲突"
     }
   },
+  "parent_enable_dialog": {
+    "title": "启用所需文件夹",
+    "target_blocked": "{{name}} 需要先启用其已禁用的父文件夹才能生效。",
+    "parents_required": "需要启用的文件夹（{{count}}）",
+    "will_activate": "将变为启用状态（{{count}}）",
+    "stay_disabled": "仍将保持禁用状态（{{count}}）",
+    "confirm": "启用文件夹并继续"
+  },
   "fields": {
     "name": "名称",
     "category": "类别",
@@ -117,6 +125,7 @@
   },
   "reconcile": {
     "runtime_effects_pending": "磁盘更改已应用，但运行时刷新仍待处理。",
+    "manual_reload_required": "需要手动重新加载：请聚焦游戏，然后按 {{binding}}。",
     "cleanup_pending": "项目已移除，但隔离文件仍在等待移入回收站。"
   },
   "bulk_progress": {
@@ -124,6 +133,7 @@
     "disabling": "正在禁用模组...",
     "deleting": "正在将模组移至回收站...",
     "cancelled": "已取消",
+    "cancelled_summary": "已在处理 {{processed}} / {{total}} 个模组后取消",
     "done": "完成"
   }
 }

@@ -260,6 +260,95 @@ pub enum EntryKind {
     Taxonomy,
 }
 
+/// Identifies the 3DMigoto resource that a runtime target observes.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeResourceKind {
+    PositionVb,
+    DrawVb,
+    VertexBuffer,
+    IndexBuffer,
+    Texture,
+    Shader,
+}
+
+/// Immutable catalog provenance for a runtime target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct RuntimeTargetProvenance {
+    pub source_repo: String,
+    pub commit: String,
+    pub path: String,
+}
+
+/// A catalog-declared 3DMigoto target used by runtime features.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct RuntimeTarget {
+    pub variant: String,
+    #[serde(default)]
+    pub component: Option<String>,
+    pub resource_kind: RuntimeResourceKind,
+    pub hash: String,
+    #[serde(default)]
+    pub slot: Option<String>,
+    /// Optional draw discriminator for index-buffer targets. This remains
+    /// absent for resources whose hash alone identifies the runtime callback.
+    #[serde(default)]
+    pub match_first_index: Option<u32>,
+    pub provenance: RuntimeTargetProvenance,
+}
+
+impl RuntimeTarget {
+    /// Validates the catalog contract without changing the authored target.
+    pub fn validate(&self) -> Result<(), String> {
+        validate_required("variant", &self.variant)?;
+        validate_optional("component", self.component.as_deref())?;
+        validate_optional("slot", self.slot.as_deref())?;
+        validate_required("provenance.source_repo", &self.provenance.source_repo)?;
+        validate_required("provenance.commit", &self.provenance.commit)?;
+        validate_required("provenance.path", &self.provenance.path)?;
+
+        let expected_length = if self.resource_kind == RuntimeResourceKind::Shader {
+            16
+        } else {
+            8
+        };
+        if self.hash.len() != expected_length
+            || !self.hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            let kind = if self.resource_kind == RuntimeResourceKind::Shader {
+                "shader"
+            } else {
+                "resource"
+            };
+            return Err(format!(
+                "{kind} hash must contain exactly {expected_length} hexadecimal characters"
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn is_resource_target(&self) -> bool {
+        self.resource_kind != RuntimeResourceKind::Shader
+    }
+}
+
+fn validate_required(label: &str, value: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    Ok(())
+}
+
+fn validate_optional(label: &str, value: Option<&str>) -> Result<(), String> {
+    if let Some(value) = value {
+        validate_required(label, value)?;
+    }
+    Ok(())
+}
+
 /// A single DB entry from Master DB.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DbEntry {
@@ -281,4 +370,7 @@ pub struct DbEntry {
     /// Maps a skin/variant name to its list of hashes. Invalid hashes are ignored.
     #[serde(default)]
     pub hash_db: std::collections::HashMap<String, Vec<String>>,
+    /// Optional catalog-declared runtime targets. Legacy hash_db is not runtime eligibility.
+    #[serde(default)]
+    pub runtime_targets: Vec<RuntimeTarget>,
 }

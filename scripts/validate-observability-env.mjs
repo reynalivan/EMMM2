@@ -2,10 +2,11 @@ const requiredWhenEnabled = [
   'EMMM_GRAFANA_OTLP_METRICS_ENDPOINT',
   'EMMM_GRAFANA_OTLP_AUTHORIZATION',
   'VITE_GRAFANA_FARO_URL',
-  'VITE_GRAFANA_FARO_API_KEY',
 ];
 const observabilityEnvironmentNames = new Set([
   ...requiredWhenEnabled,
+  'VITE_GRAFANA_FARO_API_KEY',
+  'VITE_GRAFANA_FARO_TRACING_ENABLED',
   'VITE_APP_VERSION',
 ]);
 

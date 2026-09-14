@@ -240,7 +240,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
                     return (
                       <label
                         key={entry.name}
-                        className={`flex items-center gap-3 p-2 rounded-lg border transition-all cursor-pointer select-none ${
+                        className={`flex cursor-pointer select-none items-center gap-3 rounded-lg border p-2 transition-[background-color,border-color,opacity] duration-150 ${
                           isSelected
                             ? 'border-primary bg-primary/10 shadow-sm'
                             : 'border-base-300 bg-base-100 hover:border-base-content/20'
@@ -291,7 +291,7 @@ export default function AutoSetupModal({ open, onClose }: AutoSetupModalProps) {
               {isCreating && (
                 <div className="w-full bg-base-300 rounded-full h-2.5 overflow-hidden">
                   <div
-                    className="bg-primary h-2.5 rounded-full transition-all duration-300 ease-out"
+                    className="h-2.5 rounded-full bg-primary transition-[width] duration-150 ease-out"
                     style={{ width: `${(progress / Math.max(1, selectedNames.size)) * 100}%` }}
                   ></div>
                 </div>

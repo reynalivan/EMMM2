@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ModFolder } from '@/entities/game-object';
+import { workspaceKeys } from '@/features/workspace-runtime';
+import { publishQueryInvalidations } from '@/shared/lib/queryRefresh';
 import { useFolderNavigation } from './useFolderNavigation';
 import { useRangeSelection } from '../../../shared/lib/hooks/useRangeSelection';
 import { normalizeWorkspacePath } from '@/features/workspace-runtime';
@@ -9,6 +12,7 @@ const getFolderPath = (folder: ModFolder) => folder.path;
 interface UseFolderGridSelectionOptions {
   sortedFolders: ModFolder[];
   gridSelection: Set<string>;
+  selectedModPath?: string | null;
   setGridSelection: (selection: Set<string>) => void;
   currentPath: string[];
   isGridView: boolean;
@@ -25,6 +29,7 @@ interface UseFolderGridSelectionOptions {
 export function useFolderGridSelection({
   sortedFolders,
   gridSelection,
+  selectedModPath = null,
   setGridSelection,
   currentPath,
   isGridView,
@@ -37,6 +42,7 @@ export function useFolderGridSelection({
   handleDeleteRequest,
   handleRenameRequest,
 }: UseFolderGridSelectionOptions) {
+  const queryClient = useQueryClient();
   const { anchorId, setAnchorId, getRange } = useRangeSelection(sortedFolders, getFolderPath);
   const visiblePathKeys = useMemo(
     () => new Set(sortedFolders.map((folder) => normalizeWorkspacePath(folder.path))),
@@ -58,11 +64,17 @@ export function useFolderGridSelection({
 
   const handleActivateItem = useCallback(
     (path: string) => {
+      if (
+        selectedModPath &&
+        normalizeWorkspacePath(selectedModPath) === normalizeWorkspacePath(path)
+      ) {
+        void publishQueryInvalidations(queryClient, [workspaceKeys.previews], 'active');
+      }
       setGridSelection(new Set());
       selectMod(path, isMobile ? 'details' : undefined);
       setAnchorId(path);
     },
-    [isMobile, selectMod, setAnchorId, setGridSelection],
+    [isMobile, queryClient, selectMod, selectedModPath, setAnchorId, setGridSelection],
   );
 
   const handleToggleSelection = useCallback(

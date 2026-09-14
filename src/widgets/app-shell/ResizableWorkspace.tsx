@@ -101,17 +101,17 @@ export default function ResizableWorkspace({
     return (
       <div className="w-full h-full relative overflow-hidden bg-base-100">
         <div
-          className={`absolute inset-0 transition-transform duration-300 ${mobileActivePane === 'sidebar' ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`absolute inset-0 transition-transform duration-200 motion-reduce:transition-none ${mobileActivePane === 'sidebar' ? 'translate-x-0' : '-translate-x-full'}`}
         >
           {leftPanel}
         </div>
         <div
-          className={`absolute inset-0 transition-transform duration-300 ${mobileActivePane === 'grid' ? 'translate-x-0' : mobileActivePane === 'sidebar' ? 'translate-x-full' : '-translate-x-full'}`}
+          className={`absolute inset-0 transition-transform duration-200 motion-reduce:transition-none ${mobileActivePane === 'grid' ? 'translate-x-0' : mobileActivePane === 'sidebar' ? 'translate-x-full' : '-translate-x-full'}`}
         >
           {mainPanel}
         </div>
         <div
-          className={`absolute inset-0 transition-transform duration-300 ${mobileActivePane === 'details' ? 'translate-x-0' : 'translate-x-full'}`}
+          className={`absolute inset-0 transition-transform duration-200 motion-reduce:transition-none ${mobileActivePane === 'details' ? 'translate-x-0' : 'translate-x-full'}`}
         >
           {rightPanel}
         </div>
@@ -138,7 +138,7 @@ export default function ResizableWorkspace({
           className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/50 transition-colors z-10 hidden md:flex items-center justify-center group ${isResizing === 'left' ? 'bg-primary' : 'bg-transparent'}`}
           onMouseDown={() => handleMouseDown('left')}
         >
-          <div className="h-8 w-1 bg-base-content/10 rounded-full group-hover:h-full transition-all duration-300" />
+          <div className="h-8 w-1 rounded-full bg-base-content/10" />
         </div>
       </div>
 
@@ -154,7 +154,7 @@ export default function ResizableWorkspace({
       <div
         data-testid="workspace-right"
         style={{ width: isPreviewOpen ? widths.right : 0 }}
-        className={`h-full shrink-0 relative transition-[width] duration-300 ease-in-out ${!isPreviewOpen ? 'overflow-hidden border-none' : ''}`}
+        className={`h-full shrink-0 relative transition-[width] duration-200 ease-in-out motion-reduce:transition-none ${!isPreviewOpen ? 'overflow-hidden border-none' : ''}`}
       >
         {/* Resize Handle only if open */}
         {isPreviewOpen && (
@@ -163,7 +163,7 @@ export default function ResizableWorkspace({
             className={`absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-primary/50 transition-colors z-10 hidden md:flex items-center justify-center group -ml-0.5 ${isResizing === 'right' ? 'bg-primary' : 'bg-transparent'}`}
             onMouseDown={() => handleMouseDown('right')}
           >
-            <div className="h-8 w-1 bg-base-content/10 rounded-full group-hover:h-full transition-all duration-300" />
+            <div className="h-8 w-1 rounded-full bg-base-content/10" />
           </div>
         )}
         {rightPanel}

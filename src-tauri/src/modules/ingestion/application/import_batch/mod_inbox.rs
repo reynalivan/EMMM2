@@ -6,8 +6,8 @@ use super::types::{
 use crate::modules::ingestion::adapters::sqlite::import_batch;
 use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 pub async fn build_mod_inbox_snapshot(
@@ -68,28 +68,49 @@ pub async fn create_mod_inbox_batch(
             "Select at least one Mod Inbox entry".to_string(),
         ));
     }
-    let snapshot = build_mod_inbox_snapshot(db, game_id, root).await?;
-    if snapshot.root_state != ModInboxRootState::Ready {
-        return Err(AppError::Validation(
-            "Create the Mod Inbox folder before importing".to_string(),
-        ));
-    }
-    let requested = entry_keys.iter().collect::<std::collections::BTreeSet<_>>();
+    let requested = entry_keys.iter().collect::<BTreeSet<_>>();
     if requested.len() != entry_keys.len() {
         return Err(AppError::Validation(
             "Mod Inbox selection contains duplicate entries".to_string(),
         ));
     }
-    let entries = snapshot
-        .ready_entries
-        .into_iter()
-        .filter(|entry| requested.contains(&entry.entry_key))
-        .collect::<Vec<_>>();
-    if entries.len() != requested.len() {
+    if !root.exists() {
         return Err(AppError::Validation(
-            "One or more Mod Inbox entries are stale; refresh and try again".to_string(),
+            "Create the Mod Inbox folder before importing".to_string(),
         ));
     }
+    if !root.is_dir() {
+        return Err(AppError::Validation(format!(
+            "Mod Inbox path is not a directory: {}",
+            root.display()
+        )));
+    }
+
+    let canonical_root = root.canonicalize()?;
+    let requested_keys = entry_keys.to_vec();
+    let root_for_worker = canonical_root.clone();
+    let mut entries = tokio::task::spawn_blocking(move || {
+        discover_selected_entries(&root_for_worker, &requested_keys)
+    })
+    .await??;
+    let selected_paths = entries
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect::<Vec<_>>();
+    let active =
+        import_batch::list_active_mod_inbox_sources_for_paths(db, game_id, &selected_paths).await?;
+    let active_by_path = active
+        .into_iter()
+        .map(|source| (source.source_path, source.batch_id))
+        .collect::<BTreeMap<_, _>>();
+    for entry in &mut entries {
+        entry.pending_batch_id = active_by_path.get(&entry.path).cloned();
+    }
+    entries.sort_by(|left, right| {
+        left.name
+            .to_ascii_lowercase()
+            .cmp(&right.name.to_ascii_lowercase())
+    });
     if entries.iter().any(|entry| entry.pending_batch_id.is_some()) {
         return Err(AppError::Validation(
             "One or more Mod Inbox entries already belong to an active import batch".to_string(),
@@ -197,41 +218,109 @@ fn discover_entries(
         let path = entry.path();
         let canonical_path = path.canonicalize()?;
         validate_inbox_entry_containment(root, &canonical_path)?;
-        let kind = if canonical_path.is_dir() {
-            ModInboxEntryKind::Folder
-        } else if canonical_path.is_file()
-            && crate::modules::library::application::mods::archive::ArchiveFormat::detect(
-                &canonical_path,
-            )
-            .is_some()
-        {
-            ModInboxEntryKind::Archive
-        } else {
-            continue;
-        };
         let metadata = entry.metadata()?;
-        let modified_unix_ms = metadata
-            .modified()
-            .ok()
-            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-            .map(|value| value.as_millis().to_string())
-            .unwrap_or_else(|| "0".to_string());
-        let (layout, detected_root_count) = classify_layout(&canonical_path, kind);
-        let path_string = canonical_path.to_string_lossy().into_owned();
-        entries.push(ModInboxEntry {
-            entry_key: name.clone(),
-            name,
-            path: path_string.clone(),
-            kind,
-            archive_format: archive_format_label(&canonical_path),
-            size_bytes: (kind == ModInboxEntryKind::Archive).then_some(metadata.len()),
-            modified_unix_ms,
-            layout,
-            detected_root_count,
-            pending_batch_id: active_by_path.get(&path_string).cloned(),
-        });
+        if let Some(entry) =
+            build_inbox_entry(name.clone(), name, canonical_path, metadata, active_by_path)
+        {
+            entries.push(entry);
+        }
     }
     Ok(entries)
+}
+
+fn discover_selected_entries(
+    root: &Path,
+    entry_keys: &[String],
+) -> Result<Vec<ModInboxEntry>, AppError> {
+    let mut entries = Vec::with_capacity(entry_keys.len());
+    let mut canonical_paths = BTreeSet::new();
+    let no_active_entries = BTreeMap::new();
+    for entry_key in entry_keys {
+        let canonical_path = canonicalize_selected_entry(root, entry_key)?;
+        let path_string = canonical_path.to_string_lossy().into_owned();
+        if !canonical_paths.insert(path_string.clone()) {
+            return Err(AppError::Validation(
+                "Mod Inbox selection contains duplicate entries".to_string(),
+            ));
+        }
+        let metadata = canonical_path.metadata().map_err(|_| stale_entry_error())?;
+        let Some(entry) = build_inbox_entry(
+            entry_key.clone(),
+            entry_key.clone(),
+            canonical_path,
+            metadata,
+            &no_active_entries,
+        ) else {
+            return Err(stale_entry_error());
+        };
+        entries.push(entry);
+    }
+    Ok(entries)
+}
+
+fn canonicalize_selected_entry(root: &Path, entry_key: &str) -> Result<PathBuf, AppError> {
+    let mut components = Path::new(entry_key).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(AppError::Security(format!(
+            "Mod Inbox entry is not a direct child of the configured inbox: {entry_key}"
+        )));
+    }
+    if entry_key.starts_with('.') || entry_key.eq_ignore_ascii_case("Processed") {
+        return Err(stale_entry_error());
+    }
+    let canonical_path = root
+        .join(entry_key)
+        .canonicalize()
+        .map_err(|_| stale_entry_error())?;
+    validate_inbox_entry_containment(root, &canonical_path)?;
+    Ok(canonical_path)
+}
+
+fn stale_entry_error() -> AppError {
+    AppError::Validation(
+        "One or more Mod Inbox entries are stale; refresh and try again".to_string(),
+    )
+}
+
+fn build_inbox_entry(
+    entry_key: String,
+    name: String,
+    canonical_path: PathBuf,
+    metadata: std::fs::Metadata,
+    active_by_path: &BTreeMap<String, String>,
+) -> Option<ModInboxEntry> {
+    let kind = if canonical_path.is_dir() {
+        ModInboxEntryKind::Folder
+    } else if canonical_path.is_file()
+        && crate::modules::library::application::mods::archive::ArchiveFormat::detect(
+            &canonical_path,
+        )
+        .is_some()
+    {
+        ModInboxEntryKind::Archive
+    } else {
+        return None;
+    };
+    let modified_unix_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_millis().to_string())
+        .unwrap_or_else(|| "0".to_string());
+    let (layout, detected_root_count) = classify_layout(&canonical_path, kind);
+    let path = canonical_path.to_string_lossy().into_owned();
+    Some(ModInboxEntry {
+        entry_key,
+        name,
+        path: path.clone(),
+        kind,
+        archive_format: archive_format_label(&canonical_path),
+        size_bytes: (kind == ModInboxEntryKind::Archive).then_some(metadata.len()),
+        modified_unix_ms,
+        layout,
+        detected_root_count,
+        pending_batch_id: active_by_path.get(&path).cloned(),
+    })
 }
 
 fn validate_inbox_entry_containment(root: &Path, canonical_entry: &Path) -> Result<(), AppError> {
@@ -332,6 +421,14 @@ mod containment_tests {
 
         let error = validate_inbox_entry_containment(inbox, Path::new("C:/External/Ayaka Pack"))
             .unwrap_err();
+        assert!(matches!(error, AppError::Security(_)));
+    }
+
+    #[test]
+    fn rejects_selected_paths_that_are_not_direct_inbox_children() {
+        let inbox = tempfile::tempdir().unwrap();
+        let error = canonicalize_selected_entry(inbox.path(), "../outside").unwrap_err();
+
         assert!(matches!(error, AppError::Security(_)));
     }
 }

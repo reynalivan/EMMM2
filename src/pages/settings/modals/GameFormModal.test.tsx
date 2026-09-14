@@ -10,6 +10,22 @@ vi.mock('react-i18next', () => ({
 }));
 
 describe('GameFormModal', () => {
+  it('shows a migration status while a mods directory change is running', () => {
+    render(
+      <GameFormModal
+        isOpen
+        onClose={vi.fn()}
+        onSave={vi.fn().mockResolvedValue(true)}
+        existingModPaths={[]}
+        isSourceMigrationPending
+      />,
+    );
+
+    expect(screen.getByRole('status', { hidden: true })).toHaveTextContent(
+      'games.source_change_progress',
+    );
+  });
+
   it('closes only after the asynchronous save succeeds', async () => {
     let finishSave: (() => void) | undefined;
     const onSave = vi.fn(

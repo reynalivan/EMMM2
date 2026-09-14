@@ -12,6 +12,17 @@ struct InfoWriteBackup {
     previous: Option<Vec<u8>>,
 }
 
+#[derive(Clone, Copy)]
+enum BackupRetention {
+    Required,
+    Discard,
+}
+
+struct InfoWriteBatch {
+    result: BulkResult,
+    backups: Vec<InfoWriteBackup>,
+}
+
 fn restore_info_writes(backups: &[InfoWriteBackup]) -> Vec<String> {
     let mut warnings = Vec::new();
     for backup in backups {
@@ -28,10 +39,11 @@ fn restore_info_writes(backups: &[InfoWriteBackup]) -> Vec<String> {
     warnings
 }
 
-fn write_info_with_backups(
+fn write_info_batch(
     folder_paths: Vec<String>,
     update: &info_json::ModInfoUpdate,
-) -> (BulkResult, Vec<InfoWriteBackup>) {
+    backup_retention: BackupRetention,
+) -> InfoWriteBatch {
     let mut success = Vec::new();
     let mut failures = Vec::new();
     let mut backups = Vec::new();
@@ -48,13 +60,19 @@ fn write_info_with_backups(
                 continue;
             }
         };
-        match info_json::update_info_json(Path::new(&folder_path), update) {
+        match info_json::update_info_json_from_snapshot(
+            Path::new(&folder_path),
+            previous.as_deref(),
+            update,
+        ) {
             Ok(_) => {
                 success.push(folder_path.clone());
-                backups.push(InfoWriteBackup {
-                    folder_path,
-                    previous,
-                });
+                if matches!(backup_retention, BackupRetention::Required) {
+                    backups.push(InfoWriteBackup {
+                        folder_path,
+                        previous,
+                    });
+                }
             }
             Err(error) => failures.push(BulkActionError {
                 path: folder_path,
@@ -62,25 +80,43 @@ fn write_info_with_backups(
             }),
         }
     }
-    (BulkResult::new(success, failures), backups)
+    InfoWriteBatch {
+        result: BulkResult::new(success, failures),
+        backups,
+    }
+}
+
+async fn write_info_batch_in_worker(
+    folder_paths: Vec<String>,
+    update: info_json::ModInfoUpdate,
+    backup_retention: BackupRetention,
+) -> Result<InfoWriteBatch, AppError> {
+    tokio::task::spawn_blocking(move || write_info_batch(folder_paths, &update, backup_retention))
+        .await
+        .map_err(AppError::from)
+}
+
+async fn restore_info_writes_in_worker(
+    backups: Vec<InfoWriteBackup>,
+) -> Result<Vec<String>, AppError> {
+    tokio::task::spawn_blocking(move || restore_info_writes(&backups))
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn bulk_update_info(
     paths: &[crate::platform::fs::guard::ValidatedPath],
     update: info_json::ModInfoUpdate,
 ) -> Result<BulkResult, AppError> {
-    let mut success = Vec::new();
-    let mut failures = Vec::new();
-    for path in paths {
-        match info_json::update_info_json(path, &update) {
-            Ok(_) => success.push(path.original().to_string()),
-            Err(e) => failures.push(BulkActionError {
-                path: path.original().to_string(),
-                error: AppError::Metadata(e),
-            }),
-        }
-    }
-    Ok(BulkResult::new(success, failures))
+    let folder_paths = paths
+        .iter()
+        .map(|path| path.original().to_string())
+        .collect();
+    Ok(
+        write_info_batch_in_worker(folder_paths, update, BackupRetention::Discard)
+            .await?
+            .result,
+    )
 }
 
 #[derive(Debug)]
@@ -175,7 +211,10 @@ pub async fn bulk_set_safety(
         .iter()
         .map(|target| target.disk_path.clone())
         .collect::<Vec<_>>();
-    let (mut result, backups) = write_info_with_backups(disk_paths, &update);
+    let InfoWriteBatch {
+        mut result,
+        backups,
+    } = write_info_batch_in_worker(disk_paths, update, BackupRetention::Required).await?;
     result.failures.extend(resolved.failures);
 
     let successful = result.success.iter().collect::<HashSet<_>>();
@@ -193,7 +232,7 @@ pub async fn bulk_set_safety(
     )
     .await
     {
-        let warnings = restore_info_writes(&backups);
+        let warnings = restore_info_writes_in_worker(backups).await?;
         return Err(AppError::Io(format!(
             "Safety database update failed: {error}; file rollback: {}",
             if warnings.is_empty() {
@@ -217,14 +256,15 @@ pub async fn bulk_toggle_favorite(
         is_favorite: Some(favorite),
         ..Default::default()
     };
-    let (result, backups) = write_info_with_backups(folder_paths, &update);
+    let InfoWriteBatch { result, backups } =
+        write_info_batch_in_worker(folder_paths, update, BackupRetention::Required).await?;
     let relatives = relative_to_mods_root(pool, &game_id, &result.success).await?;
     if let Err(error) = crate::modules::library::adapters::sqlite::mods::batch_set_favorite(
         pool, &game_id, &relatives, favorite,
     )
     .await
     {
-        let warnings = restore_info_writes(&backups);
+        let warnings = restore_info_writes_in_worker(backups).await?;
         return Err(AppError::Io(format!(
             "Favorite database update failed: {error}; file rollback: {}",
             if warnings.is_empty() {
@@ -247,14 +287,15 @@ pub async fn bulk_pin(
         is_pinned: Some(pin),
         ..Default::default()
     };
-    let (result, backups) = write_info_with_backups(folder_paths, &update);
+    let InfoWriteBatch { result, backups } =
+        write_info_batch_in_worker(folder_paths, update, BackupRetention::Required).await?;
     let relatives = relative_to_mods_root(pool, &game_id, &result.success).await?;
     if let Err(error) = crate::modules::library::adapters::sqlite::mods::batch_set_pinned(
         pool, &game_id, &relatives, pin,
     )
     .await
     {
-        let warnings = restore_info_writes(&backups);
+        let warnings = restore_info_writes_in_worker(backups).await?;
         return Err(AppError::Io(format!(
             "Pin database update failed: {error}; file rollback: {}",
             if warnings.is_empty() {
@@ -299,7 +340,7 @@ fn partition_info_json_writes(
     folder_paths: Vec<String>,
     update: &info_json::ModInfoUpdate,
 ) -> BulkResult {
-    write_info_with_backups(folder_paths, update).0
+    write_info_batch(folder_paths, update, BackupRetention::Discard).result
 }
 
 #[cfg(test)]

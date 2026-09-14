@@ -21,7 +21,9 @@ export const runtimeQueryKeys = {
   trash: ['trash'] as const,
   settings: ['settings'] as const,
   browserDownloads: ['browser-downloads'] as const,
+  browserLibrary: ['browser-library'] as const,
   browserHomepage: ['browser_homepage'] as const,
+  catalogPack: ['catalog-pack'] as const,
   dedupAll: ['dedup'] as const,
   dedupReport: ['dedup', 'report'] as const,
 };

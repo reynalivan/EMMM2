@@ -21,15 +21,15 @@ use uuid::Uuid;
 use super::asset_pack::CatalogPack;
 use crate::shared::errors::ScannerError;
 
-const CATALOG_REPOSITORY: &str = "reynalivan/3dm-catalog-asset";
-const RELEASE_API: &str =
+pub(crate) const CATALOG_REPOSITORY: &str = "reynalivan/3dm-catalog-asset";
+pub(crate) const RELEASE_API: &str =
     "https://api.github.com/repos/reynalivan/3dm-catalog-asset/releases/latest";
 const ZIP_ASSET_NAME: &str = "catalog-pack.zip";
 const SIGNATURE_ASSET_NAME: &str = "catalog-pack.sig";
 const EXPECTED_PACK_ID: &str = "3dm-catalog-asset";
-const MAX_RELEASE_METADATA_BYTES: usize = 1_024 * 1_024;
-const MAX_SIGNATURE_BYTES: usize = 1_024;
-const MAX_ARCHIVE_BYTES: usize = 75 * 1024 * 1024;
+pub(crate) const MAX_RELEASE_METADATA_BYTES: usize = 1_024 * 1_024;
+pub(crate) const MAX_SIGNATURE_BYTES: usize = 1_024;
+pub(crate) const MAX_ARCHIVE_BYTES: usize = 75 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 10_000;
 const MAX_UNCOMPRESSED_BYTES: u64 = 150 * 1024 * 1024;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -48,7 +48,6 @@ pub struct CatalogUpdateCheck {
 pub struct CatalogUpdateInstallResult {
     pub version: String,
     pub entries: usize,
-    pub missing_assets: usize,
 }
 
 /// Serializes manual and background update operations. A second updater must
@@ -78,12 +77,6 @@ struct ReleaseAssets {
     notes: Option<String>,
     zip_asset_id: u64,
     signature_asset_id: u64,
-}
-
-pub fn update_due(last_successful_check_unix_seconds: Option<i64>, now_unix_seconds: i64) -> bool {
-    const UPDATE_INTERVAL_SECONDS: i64 = 7 * 24 * 60 * 60;
-    last_successful_check_unix_seconds
-        .is_none_or(|last| now_unix_seconds.saturating_sub(last) >= UPDATE_INTERVAL_SECONDS)
 }
 
 pub async fn check(app_data_dir: &Path) -> Result<CatalogUpdateCheck, ScannerError> {
@@ -139,7 +132,6 @@ pub async fn install(app_data_dir: &Path) -> Result<CatalogUpdateInstallResult, 
         Ok(CatalogUpdateInstallResult {
             version: version.to_string(),
             entries: status.entries,
-            missing_assets: status.missing_assets,
         })
     })();
     if result.is_err() && staging.exists() {
@@ -198,7 +190,7 @@ fn find_asset(assets: &[GithubAsset], expected_name: &str) -> Result<u64, Scanne
     }
 }
 
-fn update_client() -> Result<reqwest::Client, ScannerError> {
+pub(crate) fn update_client() -> Result<reqwest::Client, ScannerError> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(HTTP_TIMEOUT)
@@ -280,7 +272,10 @@ fn parse_version(value: &str) -> Result<Version, ScannerError> {
     })
 }
 
-fn verify_archive_signature(archive: &[u8], signature: &[u8]) -> Result<(), ScannerError> {
+pub(crate) fn verify_archive_signature(
+    archive: &[u8],
+    signature: &[u8],
+) -> Result<(), ScannerError> {
     verify_signature_with_public_key(archive, signature, CATALOG_UPDATE_PUBLIC_KEY_HEX)
 }
 
@@ -314,7 +309,7 @@ fn decode_hex<const N: usize>(value: &str, label: &str) -> Result<[u8; N], Scann
     Ok(bytes)
 }
 
-fn extract_archive(bytes: &[u8], destination: &Path) -> Result<(), ScannerError> {
+pub(crate) fn extract_archive(bytes: &[u8], destination: &Path) -> Result<(), ScannerError> {
     let mut archive =
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|error| ScannerError::Parse {
             what: "catalog release archive".to_string(),
@@ -382,7 +377,10 @@ fn extract_archive(bytes: &[u8], destination: &Path) -> Result<(), ScannerError>
 }
 
 fn is_allowed_directory(path: &Path) -> bool {
-    matches!(path.components().next(), Some(Component::Normal(name)) if name == "catalog" || name == "images")
+    let components = path.components().collect::<Vec<_>>();
+    matches!(components.as_slice(), [Component::Normal(root)] if *root == "catalog" || *root == "assets")
+        || matches!(components.as_slice(), [Component::Normal(root), Component::Normal(_)] if *root == "assets")
+        || matches!(components.as_slice(), [Component::Normal(root), Component::Normal(_), Component::Normal(category)] if *root == "assets" && matches!(category.to_str(), Some("characters" | "weapons")))
 }
 
 fn is_allowed_file(path: &Path) -> bool {
@@ -394,15 +392,24 @@ fn is_allowed_file(path: &Path) -> bool {
         [Component::Normal(root), Component::Normal(name)] if *root == "catalog" => {
             name.to_str().is_some_and(|name| name.ends_with(".json"))
         }
-        [Component::Normal(root), rest @ ..] if *root == "images" && !rest.is_empty() => path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| {
-                matches!(
-                    extension.to_ascii_lowercase().as_str(),
-                    "png" | "jpg" | "jpeg" | "webp"
-                )
-            }),
+        [
+            Component::Normal(root),
+            Component::Normal(_),
+            Component::Normal(category),
+            Component::Normal(name),
+        ] if *root == "assets"
+            && matches!(category.to_str(), Some("characters" | "weapons")) =>
+        {
+            name.to_str().is_some_and(|name| {
+                name.rsplit_once('.').is_some_and(|(stem, extension)| {
+                    !stem.is_empty()
+                        && matches!(
+                            extension.to_ascii_lowercase().as_str(),
+                            "png" | "jpg" | "webp" | "gif"
+                        )
+                })
+            })
+        }
         _ => false,
     }
 }
@@ -411,7 +418,7 @@ fn staging_root(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join(format!(".catalog-pack-staging-{}", Uuid::new_v4()))
 }
 
-fn replace_active_pack(app_data_dir: &Path, staging: &Path) -> Result<(), ScannerError> {
+pub(crate) fn replace_active_pack(app_data_dir: &Path, staging: &Path) -> Result<(), ScannerError> {
     let active = CatalogPack::root(app_data_dir);
     let backup = app_data_dir.join(format!(".catalog-pack-backup-{}", Uuid::new_v4()));
     let had_active_pack = active.exists();
@@ -434,22 +441,26 @@ fn replace_active_pack(app_data_dir: &Path, staging: &Path) -> Result<(), Scanne
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, is_allowed_file, update_due, verify_signature_with_public_key};
+    use super::{decode_hex, is_allowed_file, verify_signature_with_public_key};
     use ed25519_dalek::{Signer, SigningKey};
     use std::path::Path;
-
-    #[test]
-    fn update_is_due_when_never_checked_or_after_a_week() {
-        assert!(update_due(None, 1_000));
-        assert!(!update_due(Some(1_000), 1_000 + 6 * 24 * 60 * 60));
-        assert!(update_due(Some(1_000), 1_000 + 7 * 24 * 60 * 60));
-    }
 
     #[test]
     fn archive_file_allowlist_rejects_executables_and_nested_catalogs() {
         assert!(is_allowed_file(Path::new("manifest.json")));
         assert!(is_allowed_file(Path::new("catalog/gimi.json")));
-        assert!(is_allowed_file(Path::new("images/gimi/amber.webp")));
+        assert!(is_allowed_file(Path::new(
+            "assets/gimi/characters/amber.webp"
+        )));
+        assert!(!is_allowed_file(Path::new(
+            "assets/gimi/characters/amber.svg"
+        )));
+        assert!(!is_allowed_file(Path::new(
+            "assets/gimi/amber.webp"
+        )));
+        assert!(!is_allowed_file(Path::new(
+            "images/gimi/characters/amber.webp"
+        )));
         assert!(!is_allowed_file(Path::new("catalog/nested/gimi.json")));
         assert!(!is_allowed_file(Path::new("catalog/installer.exe")));
         assert!(!is_allowed_file(Path::new("script.js")));

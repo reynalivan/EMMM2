@@ -159,25 +159,37 @@ describe('ModInboxPage', () => {
       return unlisten;
     });
 
-    const { unmount } = render(<ModInboxPage />);
+    try {
+      const { unmount } = render(<ModInboxPage />);
 
-    await waitFor(() => {
-      expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledWith('game-1');
+      await waitFor(() => {
+        expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledWith('game-1');
+        expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
+      });
+      expect(listen).toHaveBeenCalledWith('mod-inbox://changed', expect.any(Function));
+
+      vi.useFakeTimers();
+      changeHandler?.();
+      changeHandler?.();
       expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
-    });
-    expect(listen).toHaveBeenCalledWith('mod-inbox://changed', expect.any(Function));
 
-    changeHandler?.();
-    await waitFor(() => expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(2);
 
-    unmount();
-    await waitFor(() => {
+      unmount();
+      await act(async () => {
+        await Promise.resolve();
+      });
       expect(unlisten).toHaveBeenCalledTimes(1);
       expect(modInboxCommands.stopModInboxWatcher).toHaveBeenCalledWith(
         'game-1',
         readySnapshot.rootPath,
       );
-    });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('replaces the watcher when the ready inbox root changes', async () => {
@@ -235,6 +247,113 @@ describe('ModInboxPage', () => {
         batchId: 'batch-1',
       });
     });
+  });
+
+  it('virtualizes large ready inbox lists instead of mounting every row', async () => {
+    const largeReadySnapshot = {
+      ...readySnapshot,
+      readyEntries: Array.from({ length: 81 }, (_, index) => ({
+        ...readySnapshot.readyEntries[0],
+        entryKey: `large-entry-${index}`,
+        name: `Large Entry ${index}`,
+        path: `C:/Downloads/Mods/Genshin/Large Entry ${index}`,
+      })),
+    } satisfies ModInboxSnapshot;
+    vi.mocked(modInboxCommands.getModInbox).mockResolvedValue(largeReadySnapshot);
+    const offsetHeight = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(1_000);
+    const offsetWidth = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(1_000);
+
+    try {
+      render(<ModInboxPage />);
+
+      expect(await screen.findByText('Large Entry 0')).toBeInTheDocument();
+      expect(screen.queryByText('Large Entry 80')).not.toBeInTheDocument();
+    } finally {
+      offsetHeight.mockRestore();
+      offsetWidth.mockRestore();
+    }
+  });
+
+  it('coalesces watcher refreshes that arrive while an Inbox scan is active', async () => {
+    let changeHandler: (() => void) | undefined;
+    let resolveInitialSnapshot!: (snapshot: ModInboxSnapshot) => void;
+    const initialRequest = new Promise<ModInboxSnapshot>((resolve) => {
+      resolveInitialSnapshot = resolve;
+    });
+    vi.mocked(modInboxCommands.getModInbox)
+      .mockReset()
+      .mockReturnValueOnce(initialRequest)
+      .mockResolvedValueOnce(readySnapshot);
+    vi.mocked(listen).mockImplementation(async (_event, handler) => {
+      changeHandler = () => handler({ payload: {} } as never);
+      return () => undefined;
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<ModInboxPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
+
+      changeHandler?.();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveInitialSnapshot(readySnapshot);
+        await initialRequest;
+      });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('coalesces watcher refreshes that arrive while an Inbox scan is active', async () => {
+    let changeHandler: (() => void) | undefined;
+    let resolveInitialSnapshot!: (snapshot: ModInboxSnapshot) => void;
+    const initialRequest = new Promise<ModInboxSnapshot>((resolve) => {
+      resolveInitialSnapshot = resolve;
+    });
+    vi.mocked(modInboxCommands.getModInbox)
+      .mockReset()
+      .mockReturnValueOnce(initialRequest)
+      .mockResolvedValueOnce(readySnapshot);
+    vi.mocked(listen).mockImplementation(async (_event, handler) => {
+      changeHandler = () => handler({ payload: {} } as never);
+      return () => undefined;
+    });
+
+    vi.useFakeTimers();
+    try {
+      render(<ModInboxPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
+
+      changeHandler?.();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveInitialSnapshot(readySnapshot);
+        await initialRequest;
+      });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('preserves ready deselection and drops entries that become pending after a watcher refresh', async () => {
@@ -439,6 +558,28 @@ describe('ModInboxPage', () => {
     );
   });
 
+  it('shows the first 20 processed destinations until the user expands the source', async () => {
+    const destinations = Array.from({ length: 21 }, (_, index) => ({
+      ...processedSnapshot.processedSources[0].destinations[0],
+      objectId: `object-${index}`,
+      objectName: `Destination ${index}`,
+      placedPath: `Characters/Target ${index}`,
+      plannedName: `Target ${index}`,
+    }));
+    vi.mocked(modInboxCommands.getModInbox).mockResolvedValue({
+      ...processedSnapshot,
+      processedSources: [{ ...processedSnapshot.processedSources[0], destinations }],
+    });
+    render(<ModInboxPage />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Processed' }));
+    expect(screen.getByText('Destination 19')).toBeInTheDocument();
+    expect(screen.queryByText('Destination 20')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 21 destinations' }));
+    expect(screen.getByText('Destination 20')).toBeInTheDocument();
+  });
+
   it('keeps history accessible when its destination object has been deleted', async () => {
     const unavailableDestinationSnapshot = {
       ...processedSnapshot,
@@ -465,5 +606,27 @@ describe('ModInboxPage', () => {
     expect(screen.getByText('Destination unavailable')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open destination in app' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Open destination in Explorer' })).toBeEnabled();
+  });
+
+  it('shows the first 20 processed destinations until the user expands the source', async () => {
+    const destinations = Array.from({ length: 21 }, (_, index) => ({
+      ...processedSnapshot.processedSources[0].destinations[0],
+      objectId: `object-${index}`,
+      objectName: `Destination ${index}`,
+      placedPath: `Characters/Target ${index}`,
+      plannedName: `Target ${index}`,
+    }));
+    vi.mocked(modInboxCommands.getModInbox).mockResolvedValue({
+      ...processedSnapshot,
+      processedSources: [{ ...processedSnapshot.processedSources[0], destinations }],
+    });
+    render(<ModInboxPage />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Processed' }));
+    expect(screen.getByText('Destination 19')).toBeInTheDocument();
+    expect(screen.queryByText('Destination 20')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 21 destinations' }));
+    expect(screen.getByText('Destination 20')).toBeInTheDocument();
   });
 });

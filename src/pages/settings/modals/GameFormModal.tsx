@@ -4,7 +4,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { open } from '@tauri-apps/plugin-dialog';
-import { X, FolderOpen } from 'lucide-react';
+import { X, FolderOpen, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { GameType, type GameConfig } from '@/entities/game';
@@ -55,6 +55,7 @@ interface GameFormModalProps {
   onSave: (game: GameConfig) => Promise<boolean>;
   initialData?: GameConfig | null;
   existingModPaths: string[];
+  isSourceMigrationPending?: boolean;
 }
 
 export default function GameFormModal({
@@ -63,6 +64,7 @@ export default function GameFormModal({
   onSave,
   initialData,
   existingModPaths,
+  isSourceMigrationPending = false,
 }: GameFormModalProps) {
   const { t } = useTranslation('settings');
   const schema = getGameSchema(t);
@@ -206,12 +208,19 @@ export default function GameFormModal({
           <h3 className="font-bold text-lg">
             {initialData ? t('games.form.title_edit') : t('games.form.title_add')}
           </h3>
-          <button onClick={onClose} className="btn btn-ghost btn-sm btn-square">
+          <button
+            onClick={onClose}
+            className="btn btn-ghost btn-sm btn-square"
+            disabled={isSubmitting}
+          >
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className={`p-6 space-y-4 ${isSourceMigrationPending ? 'pointer-events-none opacity-70' : ''}`}
+        >
           {/* Name & Type */}
           <div className="grid grid-cols-2 gap-4">
             <div className="form-control">
@@ -404,6 +413,12 @@ export default function GameFormModal({
           {submitError && (
             <div className="alert alert-error py-2 text-sm" role="alert">
               {submitError}
+            </div>
+          )}
+          {isSourceMigrationPending && (
+            <div className="alert alert-info py-2 text-sm" role="status">
+              <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+              <span>{t('games.source_change_progress')}</span>
             </div>
           )}
 

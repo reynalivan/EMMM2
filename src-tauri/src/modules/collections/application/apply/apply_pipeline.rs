@@ -40,12 +40,22 @@ pub struct ApplyContext {
     pub target_mods: Vec<CollectionMod>,
     pub target_objects: Vec<CollectionObject>,
     pub currently_enabled_path_keys: HashSet<String>,
+    /// Collection-owned paths that Safe Mode may physically mutate. This keeps
+    /// external/unmanaged mods outside the Safe Mode scope.
+    pub safe_mode_scope_path_keys: HashSet<String>,
     pub to_enable: Vec<String>,
     pub to_disable: Vec<String>,
     pub warnings: Vec<String>,
     pub final_state_name: Option<String>,
     pub skipped_missing_paths: Vec<String>,
     pub runtime_path_rewrites: Vec<WorkspacePathRewrite>,
+    /// Runtime filter derived from per-game Safe Mode. The collection snapshot
+    /// remains the requested state and is never rewritten by this filter.
+    pub safe_mode: bool,
+    /// F5 transitions only mutate members owned by the selected managed
+    /// collection, including when turning Safe Mode off. Ordinary preset
+    /// application retains its existing whole-runtime reconciliation behavior.
+    pub restrict_current_state_to_target_scope: bool,
     pub(crate) prepared_renames: Option<super::steps::batch_rename::PreparedCollectionRenames>,
     pub(crate) mutation_guard: Option<crate::modules::mutation::coordinator::MutationGuard>,
 
@@ -74,6 +84,10 @@ impl ApplyContext {
             mods_path: request.mods_path,
             suppressor: request.suppressor,
             ignore_missing: request.ignore_missing,
+            safe_mode: request
+                .settings
+                .safety
+                .runtime_safe_mode_for(request.game_id),
             settings: request.settings,
             finalize_active_collection: request.capture_last_changes,
             final_active_collection_id: request
@@ -86,6 +100,8 @@ impl ApplyContext {
             target_mods: Vec::new(),
             target_objects: Vec::new(),
             currently_enabled_path_keys: HashSet::new(),
+            safe_mode_scope_path_keys: HashSet::new(),
+            restrict_current_state_to_target_scope: false,
             to_enable: Vec::new(),
             to_disable: Vec::new(),
             warnings: Vec::new(),
@@ -283,6 +299,8 @@ async fn execute_inner(
         game_id: ctx.game_id.clone(),
         mods_path: ctx.mods_path.clone(),
         hotkeys: ctx.settings.hotkeys.clone(),
+        keyviewer_enabled: ctx.settings.keyviewer.enabled,
+        safe_mode: ctx.settings.safety.runtime_safe_mode_for(&ctx.game_id),
         status_fields: ctx.skipped_missing_paths.is_empty().then(|| {
             crate::modules::automation::application::keyviewer::generator::StatusFields {
                 preset_name: ctx.final_state_name.clone(),
@@ -290,8 +308,14 @@ async fn execute_inner(
             }
         }),
     };
-    if let Err(error) =
-        crate::modules::system::application::app::post_apply::run_post_apply_tasks(post_ctx).await
+    if let Err(error) = crate::modules::system::application::app::post_apply::request_overlay_sync_with_context(
+        post_ctx,
+        crate::modules::system::application::app::post_apply::OverlaySyncCause::CollectionApplied,
+    )
+    .await
+    .and_then(
+        crate::modules::system::application::app::post_apply::RuntimeSyncResult::ensure_success,
+    )
     {
         log::warn!("apply_pipeline[post_apply]: {error}");
         ctx.warnings

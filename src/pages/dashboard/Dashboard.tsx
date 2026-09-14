@@ -12,6 +12,7 @@ import { DashboardCharts } from './components/DashboardCharts';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { DashboardStats } from './components/DashboardStats';
 import { DashboardStorageBackfillStatus } from './components/DashboardStorageBackfillStatus';
+import { DashboardIdentitySuggestions } from './components/DashboardIdentitySuggestions';
 import {
   DashboardEmptyState,
   DashboardErrorState,
@@ -30,6 +31,7 @@ const EMPTY_STATS = {
 export default function Dashboard() {
   const { t } = useTranslation(['dashboard', 'common']);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
+  const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const { data, isLoading, isError, refresh } = useDashboardStats();
   const { status: storageSizeBackfillStatus, retry: retryStorageSizeBackfill } =
@@ -54,11 +56,15 @@ export default function Dashboard() {
   const categoryDistribution = data.category_distribution ?? [];
   const gameDistribution = data.game_distribution ?? [];
   const recentMods: DashboardPayload['recent_mods'] = data.recent_mods ?? [];
+  const dashboardContextKey = activeGameId ?? 'all-games';
 
   return (
     <div className="workspace-scroll-owner h-full overflow-y-auto bg-base-100/85">
-      <div className="max-w-7xl mx-auto space-y-6 p-6 pt-[calc(var(--workspace-topbar-height)+1.5rem)]">
-        <div className="flex items-center justify-between">
+      <div
+        key={dashboardContextKey}
+        className="dashboard-entrance max-w-7xl mx-auto space-y-6 p-6 pt-[calc(var(--workspace-topbar-height)+1.5rem)]"
+      >
+        <div className="dashboard-entrance__scope flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{t('header.title')}</h1>
             <p className="text-sm text-base-content/50">
@@ -69,39 +75,58 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <DashboardQuickActions activeGameId={activeGameId} setWorkspaceView={setWorkspaceView} />
-        <DashboardStorageBackfillStatus
-          status={storageSizeBackfillStatus}
-          onRetry={retryStorageSizeBackfill}
-        />
-        <DashboardStats stats={stats} />
+        <div className="dashboard-entrance__actions">
+          <DashboardQuickActions activeGameId={activeGameId} setWorkspaceView={setWorkspaceView} />
+        </div>
 
-        {duplicateWasteBytes > 0 && (
-          <div
-            role="alert"
-            className="alert alert-warning alert-soft alert-horizontal cursor-pointer hover:brightness-95 transition-all"
-            onClick={() => setWorkspaceView('storage-optimizer')}
-          >
-            <Copy size={20} />
-            <div>
-              <h3 className="font-bold">{t('waste.title')}</h3>
-              <p className="text-sm">
-                {t('waste.subtitle', { size: formatBytes(duplicateWasteBytes) })}
-              </p>
+        <div className="dashboard-entrance__content space-y-6">
+          <DashboardIdentitySuggestions
+            gameId={activeGameId}
+            onOpenSettings={() => {
+              setSettingsTab('catalog');
+              setWorkspaceView('settings');
+            }}
+          />
+          <DashboardStorageBackfillStatus
+            status={storageSizeBackfillStatus}
+            onRetry={retryStorageSizeBackfill}
+          />
+          <DashboardStats stats={stats} />
+
+          {duplicateWasteBytes > 0 && (
+            <div
+              role="button"
+              tabIndex={0}
+              className="workspace-interactive alert alert-warning alert-soft alert-horizontal cursor-pointer hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-warning focus-visible:outline-offset-2"
+              onClick={() => setWorkspaceView('storage-optimizer')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setWorkspaceView('storage-optimizer');
+                }
+              }}
+            >
+              <Copy size={20} />
+              <div>
+                <h3 className="font-bold">{t('waste.title')}</h3>
+                <p className="text-sm">
+                  {t('waste.subtitle', { size: formatBytes(duplicateWasteBytes) })}
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <DashboardCharts
-          categoryDistribution={categoryDistribution}
-          gameDistribution={gameDistribution}
-        />
-        <DashboardActivity
-          activeGame={activeGame}
-          keybindings={keybindings}
-          keybindingsLoading={keybindingsLoading}
-          recentMods={recentMods}
-        />
+          <DashboardCharts
+            categoryDistribution={categoryDistribution}
+            gameDistribution={gameDistribution}
+          />
+          <DashboardActivity
+            activeGame={activeGame}
+            keybindings={keybindings}
+            keybindingsLoading={keybindingsLoading}
+            recentMods={recentMods}
+          />
+        </div>
       </div>
     </div>
   );

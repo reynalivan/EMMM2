@@ -30,6 +30,14 @@ pub enum DiskReconcileStatus {
     NeedsRenameConfirmation,
 }
 
+/// The filesystem discovery coverage that produced a reconcile result.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub enum DiskReconcileScanScope {
+    Full,
+    Scoped,
+    None,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub enum DiskReconcilePhase {
     DiscoveringRoots,
@@ -171,6 +179,9 @@ pub enum CommittedMutationSyncWarningKind {
     ReconcileFailed,
     ReconcileBlocked,
     CleanupPending,
+    RuntimeSyncPending,
+    ManualReloadRequired,
+    WatcherUnavailable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -188,6 +199,37 @@ pub struct OnboardingIndexingWorkPlan {
     pub total_bytes: u64,
     pub work_units: u64,
     pub roots: Vec<IndexingRootWork>,
+}
+
+/// Opaque handle for a short-lived onboarding disk snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct OnboardingIndexingSession {
+    pub session_id: String,
+    pub work_plans: Vec<OnboardingIndexingWorkPlan>,
+}
+
+/// Replaces a game's onboarding work estimate after a scoped rescan.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct OnboardingIndexingWorkPlanUpdate {
+    pub session_id: String,
+    pub work_plan: OnboardingIndexingWorkPlan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub enum OnboardingIndexingSnapshotPhase {
+    Scanning,
+    Ready,
+}
+
+/// Progress for the pre-index snapshot phase. This is intentionally separate
+/// from projection progress because the DB reconcile has not begun yet.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct OnboardingIndexingSnapshotProgress {
+    pub session_id: String,
+    pub game_id: String,
+    pub phase: OnboardingIndexingSnapshotPhase,
+    pub completed_games: u64,
+    pub total_games: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -208,6 +250,7 @@ pub struct DiskReconcileResult {
     pub reconcile_revision: u64,
     pub reason: DiskReconcileReason,
     pub status: DiskReconcileStatus,
+    pub scan_scope: DiskReconcileScanScope,
     pub folder_conflicts: Vec<FolderNameConflictGroup>,
     pub rename_confirmations: Vec<RenameConfirmationGroup>,
     pub error_message: Option<String>,

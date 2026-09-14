@@ -31,12 +31,13 @@ export function useFolderGridBulk({
   openMoveDialog,
 }: FolderGridBulkOptions) {
   const { activeGame } = useActiveGame();
-  const bulkToggle = useBulkToggle();
-  const bulkDelete = useBulkDelete();
-  const bulkUpdateInfo = useBulkUpdateInfo();
-  const bulkSafety = useBulkSafety();
-  const bulkFavorite = useBulkFavorite();
-  const bulkPin = useBulkPin();
+  const activeGameId = activeGame?.id;
+  const { mutate: bulkToggle } = useBulkToggle();
+  const { mutate: bulkDelete } = useBulkDelete();
+  const { mutate: bulkUpdateInfo } = useBulkUpdateInfo();
+  const { mutate: bulkSafety } = useBulkSafety();
+  const { mutate: bulkFavorite } = useBulkFavorite();
+  const { mutate: bulkPin } = useBulkPin();
 
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
@@ -46,10 +47,10 @@ export function useFolderGridBulk({
   const handleBulkToggle = useCallback(
     (enable: boolean) => {
       const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGame?.id) return;
-      bulkToggle.mutate({ gameId: activeGame.id, paths, enable });
+      if (paths.length === 0 || !activeGameId) return;
+      bulkToggle({ gameId: activeGameId, paths, enable });
     },
-    [activeGame, bulkToggle, gridSelection],
+    [activeGameId, bulkToggle, gridSelection],
   );
 
   const handleBulkTagRequest = useCallback(() => {
@@ -60,10 +61,10 @@ export function useFolderGridBulk({
   const handleBulkTagSubmit = useCallback(
     (tags: string[]) => {
       const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGame?.id) return;
-      bulkUpdateInfo.mutate({ gameId: activeGame.id, paths, update: { tags_add: tags } });
+      if (paths.length === 0 || !activeGameId) return;
+      bulkUpdateInfo({ gameId: activeGameId, paths, update: { tags_add: tags } });
     },
-    [activeGame, bulkUpdateInfo, gridSelection],
+    [activeGameId, bulkUpdateInfo, gridSelection],
   );
 
   const handleBulkDeleteRequest = useCallback(() => {
@@ -72,9 +73,9 @@ export function useFolderGridBulk({
 
   const handleBulkDeleteConfirm = useCallback(() => {
     const paths = Array.from(gridSelection);
-    if (paths.length === 0 || !activeGame?.id) return;
-    bulkDelete.mutate(
-      { paths, gameId: activeGame.id },
+    if (paths.length === 0 || !activeGameId) return;
+    bulkDelete(
+      { paths, gameId: activeGameId },
       {
         onSuccess: () => {
           setBulkDeleteConfirm(false);
@@ -82,36 +83,36 @@ export function useFolderGridBulk({
         },
       },
     );
-  }, [activeGame, bulkDelete, clearGridSelection, gridSelection]);
+  }, [activeGameId, bulkDelete, clearGridSelection, gridSelection]);
 
   // Bulk Favorite/Unfavorite — uses proper mutation hook with targeted cache
   const handleBulkFavorite = useCallback(
     (favorite: boolean) => {
       const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGame?.id) return;
-      bulkFavorite.mutate({ gameId: activeGame.id, folderPaths: paths, favorite });
+      if (paths.length === 0 || !activeGameId) return;
+      bulkFavorite({ gameId: activeGameId, folderPaths: paths, favorite });
     },
-    [activeGame, bulkFavorite, gridSelection],
+    [activeGameId, bulkFavorite, gridSelection],
   );
 
   // Bulk Safe/Unsafe — uses existing bulk_update_info
   const handleBulkSafe = useCallback(
     (safe: boolean) => {
       const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGame?.id) return;
-      bulkSafety.mutate({ gameId: activeGame.id, paths, safe });
+      if (paths.length === 0 || !activeGameId) return;
+      bulkSafety({ gameId: activeGameId, paths, safe });
     },
-    [activeGame, bulkSafety, gridSelection],
+    [activeGameId, bulkSafety, gridSelection],
   );
 
   // Bulk Pin/Unpin — uses proper mutation hook with targeted cache
   const handleBulkPin = useCallback(
     (pin: boolean) => {
       const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGame?.id) return;
-      bulkPin.mutate({ gameId: activeGame.id, folderPaths: paths, pin });
+      if (paths.length === 0 || !activeGameId) return;
+      bulkPin({ gameId: activeGameId, folderPaths: paths, pin });
     },
-    [activeGame, bulkPin, gridSelection],
+    [activeGameId, bulkPin, gridSelection],
   );
 
   // Bulk Move to Object

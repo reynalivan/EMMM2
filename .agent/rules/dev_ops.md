@@ -6,7 +6,7 @@ description: DevOps: Quality & Performance - TDD workflows, performance budgets,
 - Fail Fast: No code without failing test or implementation_plan.md validation.
 - Rust: #[test] (Unit), #[tokio::test] (Async), #[sqlx::test] (DB).
 - FE: Vitest + RTL (Behavior-first). Mock `commands` from `bindings.ts`.
-- E2E: WDIO + Tauri WebDriver. test/specs/. npm run test:e2e.
+- E2E: WDIO + Tauri WebDriver. tests/e2e/specs/. npm run test:e2e.
 - Budgets: Startup <800ms. Scan <5s/GB. Interaction <100ms.
 - Virtualization: MANDATORY for list/grid > 50 entries.
 - Offload: Fuzzy search/hashing/CPU loops to Rust.

@@ -158,7 +158,7 @@ export function ImportBatchWizardDestinationPanel({
       <button
         ref={triggerRef}
         type="button"
-        className="flex h-11 w-full items-center gap-2 rounded-lg border border-base-300 bg-base-100 px-2 text-left hover:border-primary"
+        className="workspace-interactive flex h-11 w-full items-center gap-2 rounded-lg border border-base-300 bg-base-100 px-2 text-left hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
         disabled={busy || !['awaiting_destination', 'ready', 'skipped'].includes(item.status)}
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
@@ -218,7 +218,7 @@ export function ImportBatchWizardDestinationPanel({
                     <button
                       key={`${suggestion.kind}:${suggestion.objectId ?? suggestion.canonicalEntryKey}`}
                       type="button"
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200"
+                      className="workspace-interactive flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-1"
                       onClick={() => void chooseSuggestion(suggestion)}
                     >
                       <DestinationAvatar object={object} />
@@ -251,7 +251,7 @@ export function ImportBatchWizardDestinationPanel({
                     <button
                       key={object.id}
                       type="button"
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200"
+                      className="workspace-interactive flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-base-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-1"
                       onClick={() => void chooseObject(object.id)}
                     >
                       <DestinationAvatar object={object} />

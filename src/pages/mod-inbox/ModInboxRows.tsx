@@ -1,5 +1,5 @@
 import { Archive, Boxes, ExternalLink, FolderOpen, PackageOpen } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../../shared/lib/utils/formatters';
 import type {
@@ -9,6 +9,8 @@ import type {
   ProcessedModInboxSource,
 } from './types';
 import { parseModInboxTimestamp } from './time';
+
+const INITIAL_VISIBLE_DESTINATIONS = 20;
 
 export function ReadyEntryRow({
   entry,
@@ -82,6 +84,7 @@ export function ProcessedSourceRow({
   onOpenInExplorer: (destination: ProcessedModInboxDestination) => void;
 }) {
   const { t } = useTranslation('mod_inbox');
+  const [showAllDestinations, setShowAllDestinations] = useState(false);
   const sourceRetained = Boolean(source.processedPath) && !source.sourceDeletedAt;
   const sourceStatus = sourceRetained
     ? t('processed.source_retained')
@@ -121,42 +124,53 @@ export function ProcessedSourceRow({
         {source.destinations.length === 0 ? (
           <p className="py-2 text-sm text-base-content/45">{t('processed.no_destinations')}</p>
         ) : (
-          source.destinations.map((destination) => (
-            <div
-              key={`${destination.objectId}:${destination.placedPath}`}
-              className="flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-100/70 p-3"
-            >
-              <Boxes size={17} className="text-primary" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
-                  {destination.objectName ?? t('processed.destination_unavailable')}
-                </p>
-                <p className="truncate text-xs text-base-content/50">{destination.plannedName}</p>
+          source.destinations
+            .slice(0, showAllDestinations ? undefined : INITIAL_VISIBLE_DESTINATIONS)
+            .map((destination) => (
+              <div
+                key={`${destination.objectId}:${destination.placedPath}`}
+                className="flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-100/70 p-3"
+              >
+                <Boxes size={17} className="text-primary" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">
+                    {destination.objectName ?? t('processed.destination_unavailable')}
+                  </p>
+                  <p className="truncate text-xs text-base-content/50">{destination.plannedName}</p>
+                </div>
+                <span className="badge badge-outline badge-sm">{destination.status}</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs gap-1"
+                  aria-label={t('processed.open_in_app_label', {
+                    name: destination.objectName ?? t('processed.destination_label'),
+                  })}
+                  disabled={!destination.objectId}
+                  onClick={() => onOpenInApp(destination)}
+                >
+                  <PackageOpen size={14} /> {t('processed.open_in_app')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs gap-1"
+                  aria-label={t('processed.open_in_explorer_label', {
+                    name: destination.objectName ?? t('processed.destination_label'),
+                  })}
+                  onClick={() => onOpenInExplorer(destination)}
+                >
+                  <ExternalLink size={14} /> {t('processed.open_in_explorer')}
+                </button>
               </div>
-              <span className="badge badge-outline badge-sm">{destination.status}</span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs gap-1"
-                aria-label={t('processed.open_in_app_label', {
-                  name: destination.objectName ?? t('processed.destination_label'),
-                })}
-                disabled={!destination.objectId}
-                onClick={() => onOpenInApp(destination)}
-              >
-                <PackageOpen size={14} /> {t('processed.open_in_app')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs gap-1"
-                aria-label={t('processed.open_in_explorer_label', {
-                  name: destination.objectName ?? t('processed.destination_label'),
-                })}
-                onClick={() => onOpenInExplorer(destination)}
-              >
-                <ExternalLink size={14} /> {t('processed.open_in_explorer')}
-              </button>
-            </div>
-          ))
+            ))
+        )}
+        {!showAllDestinations && source.destinations.length > INITIAL_VISIBLE_DESTINATIONS && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowAllDestinations(true)}
+          >
+            {t('processed.show_all_destinations', { count: source.destinations.length })}
+          </button>
         )}
       </div>
     </article>

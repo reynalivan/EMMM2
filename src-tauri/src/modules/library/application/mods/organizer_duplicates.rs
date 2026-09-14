@@ -6,7 +6,7 @@ pub async fn disable_target_duplicates(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     target_object_id: &str,
-    new_rel: &str,
+    exclude_mod_id: Option<&str>,
     base_path: &Path,
     target_obj_path: &Path,
     path_hints: &mut Vec<super::organizer_move::OrganizerMovePathHint>,
@@ -17,7 +17,7 @@ pub async fn disable_target_duplicates(
         pool,
         target_object_id,
         game_id,
-        new_rel,
+        exclude_mod_id,
     )
     .await?;
     for (_id, sibling_rel, _name) in siblings {

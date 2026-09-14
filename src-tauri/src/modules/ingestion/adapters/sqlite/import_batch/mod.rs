@@ -387,6 +387,69 @@ pub async fn list_active_mod_inbox_sources(
         .collect()
 }
 
+/// SQLite permits a limited number of bind parameters per statement. Keep the
+/// game id plus selected source paths safely below the commonly configured 999.
+const ACTIVE_SOURCE_PATH_BATCH_SIZE: usize = 900;
+
+pub async fn list_active_mod_inbox_sources_for_paths(
+    db: &SqlitePool,
+    game_id: &str,
+    source_paths: &[String],
+) -> Result<Vec<ActiveModInboxSource>, sqlx::Error> {
+    let mut sources = Vec::new();
+    for path_chunk in source_paths.chunks(ACTIVE_SOURCE_PATH_BATCH_SIZE) {
+        let placeholders = std::iter::repeat("?")
+            .take(path_chunk.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT j.source_path, b.id AS batch_id
+             FROM import_jobs j
+             JOIN import_batches b ON b.id = j.batch_id
+             WHERE b.game_id = ? AND b.flow = 'ready_to_move'
+               AND b.status NOT IN ('done', 'failed', 'cancelled')
+               AND j.source_path IN ({placeholders})
+             GROUP BY j.source_path, b.id
+             ORDER BY b.updated_at DESC"
+        );
+        let mut query = sqlx::query(&sql).bind(game_id);
+        for path in path_chunk {
+            query = query.bind(path);
+        }
+        let rows = query.fetch_all(db).await?;
+        for row in rows {
+            sources.push(ActiveModInboxSource {
+                source_path: row.try_get("source_path")?,
+                batch_id: row.try_get("batch_id")?,
+            });
+        }
+    }
+    Ok(sources)
+}
+
+#[cfg(test)]
+mod active_source_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn selected_source_queries_are_chunked_below_the_sqlite_parameter_limit() {
+        let context = crate::test_utils::init_test_db().await;
+        let source_paths = (0..901)
+            .map(|index| format!("C:/Inbox/Mod {index}"))
+            .collect::<Vec<_>>();
+
+        let sources = list_active_mod_inbox_sources_for_paths(
+            &context.pool,
+            "game-without-sources",
+            &source_paths,
+        )
+        .await
+        .unwrap();
+
+        assert!(sources.is_empty());
+    }
+}
+
 #[cfg(test)]
 pub async fn mark_mod_inbox_source_processed(
     db: &SqlitePool,
@@ -686,8 +749,8 @@ pub(crate) async fn apply_analysis_result(
     let mut tx = db.begin().await?;
     let result = sqlx::query(
         "UPDATE import_jobs
-         SET source_inspection = ?, source_fingerprint = ?, category_suggestions_json = ?,
-             match_category = ?, match_sub_category = ?, classification_metadata = ?,
+             SET source_inspection = ?, source_fingerprint = ?, category_suggestions_json = ?,
+                 match_category = ?, match_sub_category = ?, classification_metadata = ?, source_metadata_json = ?,
              payload_manifest_json = ?, canonical_suggestions_json = ?,
              destination_suggestions_json = ?, evidence_json = ?, diagnostics_json = ?,
              review_gate_json = ?, target_comparison_json = ?, content_kind = ?, package_shape = ?,
@@ -706,6 +769,9 @@ pub(crate) async fn apply_analysis_result(
     .bind(analysis.selected_category.as_str())
     .bind(&analysis.selected_sub_category)
     .bind(metadata_json)
+    .bind(serde_json::to_string(&analysis.source_metadata).map_err(|error| {
+        decode_error(format!("could not encode source metadata: {error}"))
+    })?)
     .bind(manifest_json)
     .bind(canonical_json)
     .bind(destination_json)
@@ -1563,7 +1629,7 @@ pub async fn get_batch(
 
     let item_rows = sqlx::query(
         "SELECT id, batch_id, source_kind, source_path, archive_path, staging_path, planned_name,
-                status, match_category, match_sub_category, classification_metadata,
+                 status, match_category, match_sub_category, classification_metadata, source_metadata_json,
                 category_suggestions_json, canonical_suggestions_json, destination_suggestions_json,
                 match_entry_key, match_alias_name, destination_object_id, match_object_id,
                 destination_path, placed_path, match_confidence, confidence_tier, evidence_json,
@@ -1691,6 +1757,10 @@ fn map_item_row(row: sqlx::sqlite::SqliteRow) -> Result<ImportItem, sqlx::Error>
         classification_metadata: parse_json(
             row.try_get::<&str, _>("classification_metadata")?,
             "classification_metadata",
+        )?,
+        source_metadata: parse_json(
+            row.try_get::<&str, _>("source_metadata_json")?,
+            "source_metadata_json",
         )?,
         category_suggestions: parse_json::<Vec<CategorySuggestion>>(
             row.try_get::<&str, _>("category_suggestions_json")?,

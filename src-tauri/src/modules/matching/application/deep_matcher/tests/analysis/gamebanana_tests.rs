@@ -1,7 +1,7 @@
 use crate::modules::matching::application::deep_matcher::analysis::content::FolderSignals;
 use crate::modules::matching::application::deep_matcher::analysis::gamebanana::{
-    detect_gamebanana_ids, fetch_gamebanana_metadata, GameBananaConfig, GameBananaGame,
-    GameBananaRef,
+    GameBananaConfig, GameBananaGame, GameBananaRef, detect_gamebanana_ids,
+    fetch_gamebanana_metadata, gamebanana_reference_from_url,
 };
 
 #[test]
@@ -28,6 +28,33 @@ fn test_detect_gamebanana_ids_from_text() {
         item_type: "Skin".to_string(),
         item_id: 123456
     }));
+}
+
+#[test]
+fn test_gamebanana_reference_from_verified_page_url() {
+    let reference = gamebanana_reference_from_url(
+        "https://www.gamebanana.com/mods/528562?source=discover#download",
+    )
+    .expect("valid canonical GameBanana page");
+    assert_eq!(
+        reference,
+        GameBananaRef {
+            item_type: "Mod".to_string(),
+            item_id: 528562,
+        }
+    );
+    assert_eq!(
+        reference.canonical_page_url().as_deref(),
+        Some("https://gamebanana.com/mods/528562")
+    );
+    assert_eq!(
+        gamebanana_reference_from_url("https://notgamebanana.com/mods/528562"),
+        None
+    );
+    assert_eq!(
+        gamebanana_reference_from_url("https://gamebanana.com/mods/528562/extra"),
+        None
+    );
 }
 
 #[test]

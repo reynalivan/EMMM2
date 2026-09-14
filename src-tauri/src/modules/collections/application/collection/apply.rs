@@ -92,8 +92,13 @@ async fn wait_for_apply_execution_barrier(game_id: &str) {
 pub async fn apply_collection(
     request: ApplyCollectionRequest<'_>,
 ) -> Result<ApplyResult, CollectionError> {
-    apply_collection_with_finalization(request, ActiveCollectionFinalization::RequestDefault, None)
-        .await
+    apply_collection_with_finalization(
+        request,
+        ActiveCollectionFinalization::RequestDefault,
+        None,
+        false,
+    )
+    .await
 }
 
 pub async fn apply_collection_durable(
@@ -104,6 +109,22 @@ pub async fn apply_collection_durable(
         request,
         ActiveCollectionFinalization::RequestDefault,
         Some(coordinator),
+        false,
+    )
+    .await
+}
+
+/// Reapply a collection for a Safe Mode transition without touching enabled
+/// roots that are not owned by the selected managed collection.
+pub async fn apply_collection_durable_for_safe_mode(
+    request: ApplyCollectionRequest<'_>,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+) -> Result<ApplyResult, CollectionError> {
+    apply_collection_with_finalization(
+        request,
+        ActiveCollectionFinalization::RequestDefault,
+        Some(coordinator),
+        true,
     )
     .await
 }
@@ -119,6 +140,7 @@ pub async fn restore_collection_with_baseline(
         request,
         ActiveCollectionFinalization::Explicit(active_baseline_id),
         None,
+        false,
     )
     .await
 }
@@ -132,6 +154,7 @@ pub async fn restore_collection_with_baseline_durable(
         request,
         ActiveCollectionFinalization::Explicit(active_baseline_id),
         Some(coordinator),
+        false,
     )
     .await
 }
@@ -145,6 +168,7 @@ async fn apply_collection_with_finalization(
     request: ApplyCollectionRequest<'_>,
     finalization: ActiveCollectionFinalization,
     coordinator: Option<&crate::modules::mutation::coordinator::MutationCoordinator>,
+    restrict_current_state_to_target_scope: bool,
 ) -> Result<ApplyResult, CollectionError> {
     let pool = request.pool;
     let final_active_collection_id = match finalization {
@@ -188,6 +212,7 @@ async fn apply_collection_with_finalization(
     };
     ctx.finalize_active_collection = true;
     ctx.final_active_collection_id = final_active_collection_id;
+    ctx.restrict_current_state_to_target_scope = restrict_current_state_to_target_scope;
     #[cfg(test)]
     wait_for_apply_execution_barrier(&ctx.game_id).await;
     crate::modules::collections::application::apply::apply_pipeline::execute(

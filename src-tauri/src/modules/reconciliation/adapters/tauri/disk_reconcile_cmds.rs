@@ -1,6 +1,6 @@
 use crate::shared::errors::AppError;
 use std::path::{Component, Path};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
@@ -49,6 +49,7 @@ pub async fn inspect_game_mods_directory(
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
 pub async fn apply_game_mods_directory(
+    app: tauri::AppHandle,
     request: crate::modules::reconciliation::application::disk_reconcile::source_recovery::ApplyGameModsDirectoryRequest,
     pool: State<'_, sqlx::SqlitePool>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
@@ -60,6 +61,7 @@ pub async fn apply_game_mods_directory(
     operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
 ) -> Result<crate::modules::reconciliation::application::disk_reconcile::source_recovery::ApplyGameModsDirectoryResult, AppError>
 {
+    let game_id = request.game_id.clone();
     let _activation_guard = disk_reconcile_state.activation_guard().await;
     let game_lock = disk_reconcile_state.game_lock(&request.game_id);
     let game_guard = game_lock.lock().await;
@@ -68,7 +70,7 @@ pub async fn apply_game_mods_directory(
             crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
         )
         .await?;
-    let result = crate::modules::reconciliation::application::disk_reconcile::source_recovery::apply_game_mods_directory(
+    let mut result = crate::modules::reconciliation::application::disk_reconcile::source_recovery::apply_game_mods_directory(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
             config: config.inner(),
@@ -86,6 +88,63 @@ pub async fn apply_game_mods_directory(
     *crate::shared::sync::lock(&watcher.watcher) = None;
     drop(operation_guard);
     drop(game_guard);
+    if let Err(error) =
+        crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
+            app.clone(),
+            watcher.inner(),
+            pool.inner().clone(),
+            result.game.mod_path.to_string_lossy().into_owned(),
+            game_id,
+        )
+    {
+        let warning = format!("The mods watcher could not restart: {error}");
+        log::warn!("{warning}");
+        result.watcher_warning = Some(warning);
+    }
+    match crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
+        pool.inner(),
+        config.inner(),
+        &result.game.id,
+        crate::modules::system::application::app::post_apply::OverlaySyncCause::ModsRootChanged,
+    )
+    .await
+    {
+        Ok(sync) => {
+            if sync.requires_retry() {
+                disk_reconcile_state.inner().stage_runtime_effects(
+                    &result.game.id,
+                    crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
+                        collections_dirty: false,
+                        overlay_refresh: true,
+                    },
+                );
+            }
+            if let Some(message) = sync.diagnostic_message() {
+                let warning =
+                    format!("KeyViewer sync is pending after the Mods root change: {message}");
+                log::warn!("{warning}");
+                result.watcher_warning = Some(match result.watcher_warning.take() {
+                    Some(existing) => format!("{existing} {warning}"),
+                    None => warning,
+                });
+            }
+        }
+        Err(error) => {
+            disk_reconcile_state.inner().stage_runtime_effects(
+                &result.game.id,
+                crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
+                    collections_dirty: false,
+                    overlay_refresh: true,
+                },
+            );
+            let warning = format!("KeyViewer sync is pending after the Mods root change: {error}");
+            log::warn!("{warning}");
+            result.watcher_warning = Some(match result.watcher_warning.take() {
+                Some(existing) => format!("{existing} {warning}"),
+                None => warning,
+            });
+        }
+    }
     Ok(result)
 }
 
@@ -206,6 +265,132 @@ pub async fn plan_onboarding_indexing_work(
     })
     .await
     .map_err(|error| AppError::Internal(format!("Indexing work planning task failed: {error}")))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn begin_onboarding_indexing(
+    app: tauri::AppHandle,
+    game_ids: Vec<String>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
+    sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSession,
+    AppError,
+> {
+    let configured_games = config.get_settings().games;
+    let requested_games = game_ids
+        .iter()
+        .map(|game_id| {
+            configured_games
+                .iter()
+                .find(|game| game.id == *game_id)
+                .cloned()
+                .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' not found")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let progress_app = app.clone();
+    sessions
+        .begin_with_progress(requested_games, move |progress| {
+            if let Err(error) = progress_app.emit("onboarding_indexing:snapshot_progress", progress)
+            {
+                log::debug!("Could not emit onboarding snapshot progress: {error}");
+            }
+        })
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::too_many_arguments)]
+pub async fn reconcile_onboarding_indexing_game(
+    app: tauri::AppHandle,
+    session_id: String,
+    game_id: String,
+    pool: State<'_, sqlx::SqlitePool>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
+    watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
+    disk_reconcile_state: State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+    operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
+    sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    use crate::modules::reconciliation::application::disk_reconcile::onboarding_session::ConsumedOnboardingSnapshot;
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
+        DiskReconcileContext, DiskReconcileProgressReporter, DiskReconcileRequest,
+    };
+    use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
+
+    let snapshot_lease = match sessions.consume(&session_id, &game_id).await? {
+        ConsumedOnboardingSnapshot::Snapshot(lease) => {
+            if let Some(update) = lease.work_plan_update() {
+                app.emit("onboarding_indexing:work_plan", update)?;
+            }
+            Some(lease)
+        }
+        ConsumedOnboardingSnapshot::FullFallback => None,
+    };
+    let progress_reporter = std::sync::Arc::new(DiskReconcileProgressReporter::new(
+        app.clone(),
+        game_id.clone(),
+        DiskReconcileReason::OnboardingCompleted,
+    ));
+    let context = DiskReconcileContext {
+        pool: pool.inner(),
+        config: config.inner(),
+        state: disk_reconcile_state.inner(),
+        watcher_suppressor: watcher.suppressor.clone(),
+        operation_lock: operation_lock.inner().inner_lock(),
+        progress_reporter: Some(progress_reporter),
+    };
+    let mut request = DiskReconcileRequest::manual(
+        game_id.clone(),
+        DiskReconcileReason::OnboardingCompleted,
+        Vec::new(),
+        true,
+    );
+    if let Some(lease) = &snapshot_lease {
+        request = request.with_precomputed_discovery(lease.discovery());
+    }
+    let mut result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+        context.clone(),
+        request,
+    )
+    .await?;
+
+    // The watcher stayed alive until the transaction completed. A late event
+    // invalidates the preflight snapshot, so settle with the generic full path.
+    let changed_during_apply = match snapshot_lease.as_ref() {
+        Some(lease) => lease.observed_changes_during_apply().await,
+        None => false,
+    };
+    if changed_during_apply {
+        result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+            context,
+            DiskReconcileRequest::manual(
+                game_id,
+                DiskReconcileReason::OnboardingCompleted,
+                Vec::new(),
+                true,
+            ),
+        )
+        .await?;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn cancel_onboarding_indexing(
+    session_id: String,
+    sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+) -> Result<(), AppError> {
+    sessions.cancel(&session_id)
 }
 
 #[tauri::command]

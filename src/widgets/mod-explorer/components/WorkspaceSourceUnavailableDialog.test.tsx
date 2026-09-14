@@ -96,6 +96,8 @@ describe('WorkspaceSourceUnavailableDialog', () => {
       game: { ...fixtures.activeGame, mod_path: 'E:/GIMI/Mods' },
       inspection: {} as never,
       reconcile: {} as never,
+      emmm_data_moved: false,
+      watcher_warning: null,
     });
     vi.mocked(commands.getSettings).mockResolvedValue({
       revision: 2,

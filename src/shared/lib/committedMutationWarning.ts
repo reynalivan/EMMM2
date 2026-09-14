@@ -12,6 +12,11 @@ type CommittedMutationResult = {
   } | null;
 };
 
+function manualReloadToastMessage(message: string): string {
+  const binding = /press (.+?) to reload its configuration/i.exec(message)?.[1] ?? 'reload_config';
+  return i18next.t('common:reconcile.manual_reload_required', { binding });
+}
+
 /**
  * The disk mutation is already durable. Surface projection lag as a warning,
  * never as a failed action that encourages users to repeat rename/delete.
@@ -28,11 +33,15 @@ export function notifyCommittedMutationSyncWarning(
   }
 
   toast.warning(
-    i18next.t(
-      warning.kind === 'CleanupPending'
-        ? 'common:reconcile.cleanup_pending'
-        : 'common:reconcile.runtime_effects_pending',
-    ),
+    warning.kind === 'ManualReloadRequired'
+      ? manualReloadToastMessage(warning.message)
+      : warning.kind === 'WatcherUnavailable'
+        ? warning.message
+        : i18next.t(
+            warning.kind === 'CleanupPending'
+              ? 'common:reconcile.cleanup_pending'
+              : 'common:reconcile.runtime_effects_pending',
+          ),
     7000,
   );
 }

@@ -15,6 +15,8 @@ interface UseDownloadsOptions {
   /** BrowserPage is the sole toast owner; nested download views stay silent. */
   showFeedback?: boolean;
   onOpenDownloads?: () => void;
+  /** Exactly one mounted surface owns native event subscriptions for a game. */
+  subscribe?: boolean;
 }
 
 const progressByDownloadId = new Map<string, DownloadProgressEvent>();
@@ -56,7 +58,7 @@ function applyLatestProgress(download: BrowserDownloadItem): BrowserDownloadItem
 /** Fetches all browser downloads and subscribes to real-time Tauri events. */
 export function useDownloads(
   gameId: string | null,
-  { showFeedback = false, onOpenDownloads }: UseDownloadsOptions = {},
+  { showFeedback = false, onOpenDownloads, subscribe = true }: UseDownloadsOptions = {},
 ) {
   const queryClient = useQueryClient();
   const { t } = useTranslation(['browser']);
@@ -81,7 +83,7 @@ export function useDownloads(
   const retryDownload = retryMutation.mutate;
 
   useEffect(() => {
-    if (isDemoMode) {
+    if (isDemoMode || !subscribe) {
       return;
     }
 
@@ -196,7 +198,7 @@ export function useDownloads(
       unlistenStatus.then((fn) => fn());
       unlistenProgress.then((fn) => fn());
     };
-  }, [gameId, onOpenDownloads, queryClient, retryDownload, showFeedback, t]);
+  }, [gameId, onOpenDownloads, queryClient, retryDownload, showFeedback, subscribe, t]);
 
   // --- Mutations ---
 
@@ -252,6 +254,7 @@ export function useDownloads(
     openDownloadSource: openSourceMutation.mutate,
     retryDownload,
     refreshDownloads,
+    isLoading: query.isLoading,
     isRefreshing: query.isRefetching,
     activeCount: downloads.filter((download) => download.status === 'in_progress').length,
     queuedCount: downloads.filter((download) => download.status === 'requested').length,

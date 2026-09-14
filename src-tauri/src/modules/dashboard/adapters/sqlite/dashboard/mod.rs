@@ -2,7 +2,7 @@ use crate::modules::dashboard::domain::dashboard::{
     CategorySlice, DashboardStats, GameSlice, RecentMod,
 };
 use sqlx::{Row, SqlitePool};
-use std::path::Path;
+use std::path::{Path, MAIN_SEPARATOR_STR};
 
 // ── Response Structs ────────────────────────────────────────────────────────
 
@@ -137,11 +137,15 @@ pub async fn fetch_recent_mods(
         .map(|row| {
             let folder_path: String = row.try_get("folder_path")?;
             let mods_path: String = row.try_get("mods_path")?;
-            let resolved_folder_path = if Path::new(&folder_path).is_absolute() {
+            let stored_folder_path = Path::new(&folder_path);
+            let resolved_folder_path = if stored_folder_path.is_absolute()
+                || stored_folder_path.has_root()
+            {
                 folder_path
             } else {
+                let normalized_relative_path = folder_path.replace(['/', '\\'], MAIN_SEPARATOR_STR);
                 Path::new(&mods_path)
-                    .join(folder_path)
+                    .join(normalized_relative_path)
                     .to_string_lossy()
                     .to_string()
             };

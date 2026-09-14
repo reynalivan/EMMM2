@@ -9,8 +9,9 @@
 //! - `HotkeyState` (debounce/switch_lock) is protected by `Mutex`.
 
 use crate::shared::errors::AppError;
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -18,8 +19,7 @@ use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use crate::modules::settings::application::config::ConfigService;
 use crate::shared::sync::lock;
 
-use super::actions::{self, ActionResult, CycleDirection};
-use super::cycle_preset::execute_cycle_preset;
+use super::cycle_preset::{execute_cycle_preset, CycleDirection};
 use super::focus;
 use super::{get_key_string, HotkeyAction, HotkeyConfig, HotkeyState};
 
@@ -27,7 +27,7 @@ use super::{get_key_string, HotkeyAction, HotkeyConfig, HotkeyState};
 
 /// Parse and normalize a user-facing key string (e.g. "F5", "Shift+F6").
 pub fn parse_hotkey(key_str: &str) -> Result<String, AppError> {
-    let normalized = normalize_shortcut(key_str);
+    let normalized = super::validate_3dmigoto_binding(key_str)?;
     if normalized.is_empty() {
         return Err(AppError::Internal("Hotkey cannot be empty".to_string()));
     }
@@ -36,6 +36,15 @@ pub fn parse_hotkey(key_str: &str) -> Result<String, AppError> {
     // only when the string is all separators ("+", "++", …).
     if normalized.split('+').all(str::is_empty) {
         return Err(AppError::Internal(format!("Invalid hotkey '{key_str}'")));
+    }
+
+    if normalized
+        .split('+')
+        .any(|token| matches!(token, "no_ctrl" | "no_shift" | "no_alt"))
+    {
+        return Err(AppError::Validation(
+            "OS hotkeys cannot use NO_CTRL, NO_SHIFT, or NO_ALT modifiers".to_string(),
+        ));
     }
 
     Ok(normalized)
@@ -57,24 +66,27 @@ fn preset_cycle_direction(action: HotkeyAction) -> Option<CycleDirection> {
     }
 }
 
-/// Why an action produced no backend work, for the status line.
-fn noop_reason(action: HotkeyAction) -> &'static str {
-    match action {
-        HotkeyAction::ToggleOverlay => "Overlay toggle (handled by 3DMigoto)",
-        _ => "Variant cycle triggered",
-    }
-}
-
 // ─── Registration Map ────────────────────────────────────────────────────────
 
 type HotkeyMap = HashMap<String, HotkeyAction>;
 
 /// Build a map of (shortcut string, HotkeyAction) from the user config.
 fn build_registration(config: &HotkeyConfig) -> Result<Vec<(String, HotkeyAction)>, AppError> {
-    HotkeyAction::ALL
+    let mut configured = HashSet::new();
+    for action in HotkeyAction::ALL {
+        let shortcut = super::validate_3dmigoto_binding(get_key_string(config, action))?;
+        if !configured.insert(shortcut) {
+            return Err(AppError::Validation(
+                "Hotkey bindings must not use the same shortcut".to_string(),
+            ));
+        }
+    }
+
+    let entries: Vec<(String, HotkeyAction)> = HotkeyAction::OS_ACTIONS
         .into_iter()
         .map(|action| Ok((parse_hotkey(get_key_string(config, action))?, action)))
-        .collect()
+        .collect::<Result<_, AppError>>()?;
+    Ok(entries)
 }
 
 // ─── HotkeyManager ──────────────────────────────────────────────────────────
@@ -86,64 +98,66 @@ pub struct HotkeyManager {
     key_map: Mutex<HotkeyMap>,
     /// Debounce / switch-lock state.
     state: Mutex<HotkeyState>,
+    /// One-shot release signals for OS shortcuts that will later synthesize a
+    /// 3DMigoto reload chord. The signal is armed before the async work starts
+    /// so a quick key release cannot be lost.
+    release_waiters: Mutex<HashMap<String, Arc<tokio::sync::Notify>>>,
 }
 
 impl HotkeyManager {
     /// Create a new HotkeyManager.
-    pub fn new(config: &HotkeyConfig) -> Self {
+    pub fn new(_config: &HotkeyConfig) -> Self {
         Self {
             key_map: Mutex::new(HashMap::new()),
-            state: Mutex::new(HotkeyState::new(config.cooldown_ms)),
+            state: Mutex::new(HotkeyState::new()),
+            release_waiters: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Register all shortcuts from the config with Tauri global shortcut plugin.
-    fn register_all(&self, app: &tauri::AppHandle, config: &HotkeyConfig) -> Result<(), AppError> {
-        let global_shortcut = app.global_shortcut();
-        let entries = build_registration(config)?;
-        let mut key_map = HashMap::new();
-
-        global_shortcut.unregister_all()?;
-
-        for (shortcut, action) in &entries {
-            global_shortcut.register(shortcut.as_str())?;
-            key_map.insert(shortcut.clone(), *action);
-        }
-
-        *lock(&self.key_map) = key_map;
-
-        log::info!("Registered {} global shortcuts", entries.len());
-
-        Ok(())
-    }
-
-    /// Unregister all shortcuts from the plugin.
-    fn unregister_all(&self, app: &tauri::AppHandle) -> Result<(), AppError> {
-        let global_shortcut = app.global_shortcut();
-        global_shortcut.unregister_all()?;
-
-        lock(&self.key_map).clear();
-
-        log::info!("Unregistered all global shortcuts");
-
-        Ok(())
-    }
-
-    /// Update shortcuts after settings change.
-    /// Unregisters old shortcuts and registers new ones.
+    /// Update shortcuts after settings change, restoring the old registration
+    /// if the OS rejects any part of the replacement set.
     pub fn update_bindings(
         &self,
         app: &tauri::AppHandle,
         config: &HotkeyConfig,
     ) -> Result<(), AppError> {
-        self.unregister_all(app)?;
+        // F7 is written to generated INI but is never OS-registered, so it
+        // must be validated even when OS hotkeys are disabled.
+        validate_binding_configuration(config)?;
+        let entries = config
+            .enabled
+            .then(|| build_registration(config))
+            .transpose()?;
+        let previous: Vec<(String, HotkeyAction)> = lock(&self.key_map)
+            .iter()
+            .map(|(shortcut, action)| (shortcut.clone(), *action))
+            .collect();
+        let global_shortcut = app.global_shortcut();
+        global_shortcut.unregister_all()?;
 
-        if config.enabled {
-            self.register_all(app, config)?;
+        let registration = entries.as_deref().unwrap_or_default();
+        let mut registered = HashMap::new();
+        for (shortcut, action) in registration {
+            if let Err(error) = global_shortcut.register(shortcut.as_str()) {
+                let _ = global_shortcut.unregister_all();
+                let mut restored = HashMap::new();
+                for (old_shortcut, old_action) in &previous {
+                    if let Err(restore_error) = global_shortcut.register(old_shortcut.as_str()) {
+                        log::error!(
+                            "Could not restore global hotkey '{old_shortcut}' after failed update: {restore_error}"
+                        );
+                        continue;
+                    }
+                    restored.insert(old_shortcut.clone(), *old_action);
+                }
+                *lock(&self.key_map) = restored;
+                return Err(error.into());
+            }
+            registered.insert(shortcut.clone(), *action);
         }
+        *lock(&self.key_map) = registered;
 
-        // Update cooldown
-        lock(&self.state).update_cooldown(config.cooldown_ms);
+        log::info!("Registered {} global shortcuts", registration.len());
 
         Ok(())
     }
@@ -151,15 +165,6 @@ impl HotkeyManager {
     /// Check if the manager is currently enabled and listening.
     pub fn is_enabled(&self) -> bool {
         !lock(&self.key_map).is_empty()
-    }
-
-    #[cfg(test)]
-    pub fn set_enabled_for_test(&self, enabled: bool) {
-        let mut key_map = lock(&self.key_map);
-        key_map.clear();
-        if enabled {
-            key_map.insert("f6".to_string(), HotkeyAction::NextPreset);
-        }
     }
 
     /// Look up which action corresponds to a shortcut string.
@@ -177,6 +182,31 @@ impl HotkeyManager {
     /// Release the action lock after an action completes.
     pub fn release(&self) {
         lock(&self.state).release();
+    }
+
+    fn arm_shortcut_release(&self, shortcut: &str) -> Arc<tokio::sync::Notify> {
+        let waiter = Arc::new(tokio::sync::Notify::new());
+        lock(&self.release_waiters).insert(normalize_shortcut(shortcut), Arc::clone(&waiter));
+        waiter
+    }
+
+    /// Called by the global-shortcut handler for a release event.
+    pub fn on_shortcut_released(&self, shortcut: &str) {
+        if let Some(waiter) = lock(&self.release_waiters).remove(&normalize_shortcut(shortcut)) {
+            // `notify_one` keeps one permit if the task has not started
+            // awaiting yet, avoiding a race with a fast key release.
+            waiter.notify_one();
+        }
+    }
+
+    async fn wait_for_shortcut_release(waiter: Arc<tokio::sync::Notify>) -> Result<(), AppError> {
+        tokio::time::timeout(Duration::from_millis(1_000), waiter.notified())
+            .await
+            .map_err(|_| {
+                AppError::Validation(
+                    "NeedsManualReload: triggering shortcut was not released".to_string(),
+                )
+            })
     }
 
     /// Called by plugin event handler when a shortcut is pressed.
@@ -210,8 +240,13 @@ impl HotkeyManager {
             }
 
             let app_handle = app.clone();
+            let release_waiter = self.arm_shortcut_release(shortcut);
             tauri::async_runtime::spawn(async move {
-                match execute_cycle_preset(&app_handle, direction).await {
+                let result = match Self::wait_for_shortcut_release(release_waiter).await {
+                    Ok(()) => execute_cycle_preset(&app_handle, direction).await,
+                    Err(error) => Err(error),
+                };
+                match result {
                     Ok(summary) => log::info!("Hotkey {:?} → {}", action, summary),
                     Err(error) => {
                         crate::modules::system::application::telemetry::record_background_failure(
@@ -231,43 +266,53 @@ impl HotkeyManager {
             return;
         }
 
-        if let Some(result) = self.dispatch_action(action, None, &[]) {
-            log::info!("Hotkey {:?} → {}", action, result.summary);
-        }
-    }
-
-    /// Dispatch a hotkey action to the appropriate planner.
-    ///
-    /// Returns `Some(ActionResult)` if the action was handled, or `None` if ignored.
-    pub fn dispatch_action(
-        &self,
-        action: HotkeyAction,
-        current_preset: Option<&str>,
-        available_presets: &[String],
-    ) -> Option<ActionResult> {
-        if !self.is_enabled() {
-            return None;
-        }
-
-        if !self.try_acquire() {
-            log::debug!("Hotkey {:?} dropped (debounce/lock)", action);
-            return None;
-        }
-
-        let result = match preset_cycle_direction(action) {
-            Some(direction) => {
-                match actions::resolve_next_preset(available_presets, current_preset, direction) {
-                    Some(target) => actions::plan_cycle_preset(&target),
-                    None => actions::plan_noop(action, "No presets available"),
-                }
+        if action == HotkeyAction::ToggleSafeMode {
+            if !self.try_acquire() {
+                log::debug!("Hotkey {:?} dropped (debounce/lock)", action);
+                return;
             }
-            // Overlay toggle is handled directly by 3DMigoto INI, and variant
-            // cycling has no backend executor yet — both only report status.
-            None => actions::plan_noop(action, noop_reason(action)),
-        };
 
-        self.release();
+            let app_handle = app.clone();
+            let release_waiter = self.arm_shortcut_release(shortcut);
+            tauri::async_runtime::spawn(async move {
+                let result = match Self::wait_for_shortcut_release(release_waiter).await {
+                    Ok(()) => super::safe_mode::execute_toggle_safe_mode(&app_handle).await,
+                    Err(error) => Err(error),
+                };
+                match result {
+                    Ok(summary) => log::info!("Hotkey {:?} → {}", action, summary),
+                    Err(error) => {
+                        crate::modules::system::application::telemetry::record_background_failure(
+                            &app_handle,
+                            &error,
+                        )
+                        .await;
+                        log::error!("Safe Mode hotkey failed: {error}");
+                    }
+                }
 
-        Some(result)
+                if let Some(hotkey_manager) = app_handle.try_state::<HotkeyManager>() {
+                    hotkey_manager.inner().release();
+                }
+            });
+        }
     }
+}
+
+/// Validate every binding exposed in Settings. F7 is deliberately included:
+/// it is emitted into the 3DMigoto INI even though it is not OS-registered.
+pub(crate) fn validate_binding_configuration(config: &HotkeyConfig) -> Result<(), AppError> {
+    let mut configured = HashSet::new();
+    for action in HotkeyAction::ALL {
+        let shortcut = super::validate_3dmigoto_binding(get_key_string(config, action))?;
+        if !configured.insert(shortcut) {
+            return Err(AppError::Validation(
+                "Hotkey bindings must not use the same shortcut".to_string(),
+            ));
+        }
+    }
+    for action in HotkeyAction::OS_ACTIONS {
+        parse_hotkey(get_key_string(config, action))?;
+    }
+    Ok(())
 }

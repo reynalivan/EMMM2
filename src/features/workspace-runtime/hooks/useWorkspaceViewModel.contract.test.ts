@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  buildWorkspacePreviewInput,
+  buildWorkspaceStructureInput,
   buildWorkspaceViewModelFilter,
-  buildWorkspaceViewModelInput,
+  previewRequestIdentityMatches,
+  shouldApplyWorkspacePreviewSelection,
   workspaceKeys,
 } from './useWorkspaceViewModel';
 import {
@@ -12,7 +15,7 @@ import {
   shouldRunSelectionReconciliationEffect,
 } from '../utils/selectionReconciliation';
 
-describe('useWorkspaceViewModel contract', () => {
+describe('workspace structure and preview query contract', () => {
   beforeEach(() => {
     resetWorkspaceSelectionReconciliationGuardsForTest();
   });
@@ -36,7 +39,7 @@ describe('useWorkspaceViewModel contract', () => {
     });
   });
 
-  it('builds command input from filter and runtime selection', () => {
+  it('builds structure input without a selected mod path', () => {
     const filter = buildWorkspaceViewModelFilter({
       gameId: 'game-1',
       selectedObjectType: 'Character',
@@ -45,10 +48,9 @@ describe('useWorkspaceViewModel contract', () => {
       objectStatusFilter: 'enabled',
     });
 
-    const input = buildWorkspaceViewModelInput(filter, {
+    const input = buildWorkspaceStructureInput(filter, {
       selectedObjectFolderPath: 'Objects/Diluc',
       explorerSubPath: 'Objects/Diluc/Variants',
-      selectedModPath: 'Objects/Diluc/Variants/mod.ini',
     });
 
     expect(input).toEqual({
@@ -62,12 +64,11 @@ describe('useWorkspaceViewModel contract', () => {
       },
       selected_object_folder_path: 'Objects/Diluc',
       explorer_sub_path: 'Objects/Diluc/Variants',
-      selected_mod_path: 'Objects/Diluc/Variants/mod.ini',
     });
   });
 
-  it('uses workspace view-model query key that includes runtime location', () => {
-    const queryKey = workspaceKeys.viewModel(
+  it('keeps the structure key independent from preview selection', () => {
+    const structureKey = workspaceKeys.structure(
       {
         game_id: 'game-1',
         object_type: 'Character',
@@ -78,12 +79,22 @@ describe('useWorkspaceViewModel contract', () => {
       },
       'Objects/Diluc',
       'Objects/Diluc/Variants',
-      'Objects/Diluc/Variants/mod.ini',
+    );
+    const firstPreviewKey = workspaceKeys.preview(
+      'game-1',
+      'Objects/Diluc/Variants',
+      'E:/Mods/Objects/Diluc/Variants/A',
+    );
+    const secondPreviewKey = workspaceKeys.preview(
+      'game-1',
+      'Objects/Diluc/Variants',
+      'E:/Mods/Objects/Diluc/Variants/B',
     );
 
-    expect(queryKey).toEqual([
+    expect(structureKey).toEqual([
       'workspace',
       'mods',
+      'structure',
       {
         game_id: 'game-1',
         object_type: 'Character',
@@ -94,8 +105,127 @@ describe('useWorkspaceViewModel contract', () => {
       },
       'Objects/Diluc',
       'Objects/Diluc/Variants',
-      'Objects/Diluc/Variants/mod.ini',
     ]);
+    expect(firstPreviewKey).not.toEqual(secondPreviewKey);
+    expect(firstPreviewKey.slice(0, 2)).toEqual(workspaceKeys.all);
+    expect(secondPreviewKey.slice(0, 2)).toEqual(workspaceKeys.all);
+  });
+
+  it('builds preview input only from the selected preview context', () => {
+    expect(
+      buildWorkspacePreviewInput({
+        gameId: 'game-1',
+        explorerSubPath: 'Objects/Diluc/Variants',
+        selectedModPath: 'E:/Mods/Objects/Diluc/Variants/A',
+      }),
+    ).toEqual({
+      game_id: 'game-1',
+      explorer_sub_path: 'Objects/Diluc/Variants',
+      selected_mod_path: 'E:/Mods/Objects/Diluc/Variants/A',
+    });
+  });
+
+  it('accepts a preview response only for its current request identity', () => {
+    const request = {
+      gameId: 'game-1',
+      explorerSubPath: 'Objects/Diluc/Variants',
+      selectedModPath: 'E:/Mods/Objects/Diluc/Variants/A',
+    };
+
+    expect(
+      previewRequestIdentityMatches(request, {
+        game_id: 'game-1',
+        explorer_sub_path: 'Objects/Diluc/Variants',
+        selected_mod_path: 'e:/mods/objects/diluc/variants/a',
+      }),
+    ).toBe(true);
+    expect(
+      previewRequestIdentityMatches(request, {
+        game_id: 'game-1',
+        explorer_sub_path: 'Objects/Diluc/Variants',
+        selected_mod_path: 'E:/Mods/Objects/Diluc/Variants/B',
+      }),
+    ).toBe(false);
+
+    expect(
+      previewRequestIdentityMatches(
+        {
+          gameId: 'game-1',
+          explorerSubPath: undefined,
+          selectedModPath: 'E:/Mods/Standalone',
+        },
+        {
+          game_id: 'game-1',
+          explorer_sub_path: null,
+          selected_mod_path: 'E:/Mods/Standalone',
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects stale-context preview reconciliation before it can clear selection', () => {
+    const request = {
+      gameId: 'game-1',
+      explorerSubPath: 'Objects/Diluc/Variants',
+      selectedModPath: 'E:/Mods/Objects/Diluc/Variants/A',
+    };
+    const currentSelection = {
+      selectedObjectFolderPath: 'Objects/Diluc',
+      explorerSubPath: 'Objects/Diluc/Variants',
+      selectedModPath: 'E:/Mods/Objects/Diluc/Variants/A',
+    };
+
+    expect(
+      shouldApplyWorkspacePreviewSelection(
+        request,
+        currentSelection,
+        ['Objects', 'Diluc', 'Variants'],
+        {
+          game_id: 'game-1',
+          explorer_sub_path: 'Objects/Diluc/Variants',
+          selected_mod_path: 'E:/Mods/Objects/Diluc/Variants/A',
+        },
+        'context_stale',
+        {
+          selected_mod_path: null,
+          reconciliation_status: 'cleared',
+          reconciliation_reason: 'missing_mod_path',
+          affected_paths: ['E:/Mods/Objects/Diluc/Variants/A'],
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects an out-of-order preview response for a previous mod', () => {
+    const currentSelection = {
+      selectedObjectFolderPath: 'Objects/Diluc',
+      explorerSubPath: 'Objects/Diluc/Variants',
+      selectedModPath: 'E:/Mods/Objects/Diluc/Variants/B',
+    };
+
+    expect(
+      shouldApplyWorkspacePreviewSelection(
+        {
+          gameId: 'game-1',
+          explorerSubPath: 'Objects/Diluc/Variants',
+          selectedModPath: 'E:/Mods/Objects/Diluc/Variants/B',
+        },
+        currentSelection,
+        ['Objects', 'Diluc', 'Variants'],
+        {
+          game_id: 'game-1',
+          explorer_sub_path: 'Objects/Diluc/Variants',
+          selected_mod_path: 'E:/Mods/Objects/Diluc/Variants/A',
+        },
+        'ready',
+        {
+          selected_mod_path: null,
+          reconciliation_status: 'cleared',
+          reconciliation_reason: 'missing_mod_path',
+          affected_paths: ['E:/Mods/Objects/Diluc/Variants/A'],
+        },
+      ),
+    ).toBe(false);
   });
 
   it('maps selection reconciliation status, reason, and affected paths to runtime event', () => {

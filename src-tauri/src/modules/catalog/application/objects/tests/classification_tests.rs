@@ -313,6 +313,70 @@ async fn classification_batch_preflights_every_item_before_writing_any_item() {
 }
 
 #[tokio::test]
+async fn classification_batch_preview_keeps_requested_order_after_batched_lookup() {
+    use crate::modules::catalog::application::objects::classification_batch::{
+        preview_object_classification_batch, PreviewObjectClassificationBatchInput,
+    };
+    use crate::modules::matching::application::deep_matcher::analysis::content::IniTokenizationConfig;
+
+    let context = crate::test_utils::init_test_db().await;
+    let workspace = tempfile::tempdir().unwrap();
+    let mods_root = workspace.path().join("Mods");
+    for name in ["Ayaka", "Raiden"] {
+        let source = mods_root.join(name);
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("mod.ini"), format!("[{name}]")).unwrap();
+    }
+    crate::test_utils::insert_test_game(
+        &context.pool,
+        &crate::test_utils::TestGameFixture {
+            id: "g1",
+            name: "Game",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: mods_root.to_str().unwrap(),
+            mods_path: Some(mods_root.to_str().unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+    for (id, name) in [("o1", "Ayaka"), ("o2", "Raiden")] {
+        crate::test_utils::insert_test_object(
+            &context.pool,
+            &crate::test_utils::TestObjectFixture {
+                id,
+                game_id: "g1",
+                name,
+                folder_path: name,
+                object_type: "Character",
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let preview = preview_object_classification_batch(
+        &context.pool,
+        &PreviewObjectClassificationBatchInput {
+            game_id: "g1".to_string(),
+            object_ids: vec!["o2".to_string(), "o1".to_string(), "o2".to_string()],
+        },
+        &crate::modules::matching::application::deep_matcher::MasterDb::new(Vec::new()),
+        &IniTokenizationConfig::default().prepare(),
+        &["ini".to_string()],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        preview
+            .iter()
+            .map(|item| item.object_id.as_str())
+            .collect::<Vec<_>>(),
+        ["o2", "o1", "o2"]
+    );
+}
+
+#[tokio::test]
 async fn classification_batch_revalidates_canonical_identity_against_master_db() {
     use crate::modules::catalog::application::match_engine::inspection::{
         inspect_source, InspectionRequest,

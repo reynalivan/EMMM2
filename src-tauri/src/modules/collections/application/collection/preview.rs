@@ -18,14 +18,10 @@ pub async fn get_collection_preview(
     require_game_match(&collection, game_id)?;
 
     let projected_state = load_projected_collection_state(pool, &collection, mods_path).await?;
-    let runtime_snapshot =
-        crate::modules::collections::application::runtime::get_collection_runtime_state(
-            pool,
-            &collection.game_id,
-        )
-        .await
-        .map_err(CollectionError::RuntimeState)?;
-    let active_id = runtime_snapshot.active_collection_id.as_deref();
+    let runtime = collection::runtime::get(pool, &collection.game_id).await?;
+    let active_id = runtime
+        .as_ref()
+        .and_then(|state| state.active_collection_id.as_deref());
 
     let tree_nodes = projected_state::build_preview_tree_from_projected_state(&projected_state);
 

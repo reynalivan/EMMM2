@@ -5,7 +5,6 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::shared::errors::AppError;
 
 /// Finds the outermost disabled directory between `mods_root` and a terminal
@@ -39,6 +38,39 @@ pub(crate) fn activation_path_for_disabled_ancestor(
     target_path.to_path_buf()
 }
 
+/// Every disabled directory between the Mods root and a terminal target.
+/// The outer directory must be renamed first, so callers preserve this order
+/// when preparing a multi-parent activation transaction.
+pub(crate) fn disabled_ancestor_paths(target_path: &Path, mods_root: &Path) -> Vec<PathBuf> {
+    let Ok(relative_path) = target_path.strip_prefix(mods_root) else {
+        return Vec::new();
+    };
+
+    let components = relative_path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(name.to_os_string()),
+            Component::CurDir => None,
+            Component::ParentDir | Component::Prefix(_) | Component::RootDir => None,
+        })
+        .collect::<Vec<_>>();
+    if components.len() < 2 {
+        return Vec::new();
+    }
+
+    let mut candidate = mods_root.to_path_buf();
+    let mut disabled = Vec::new();
+    for component in components.iter().take(components.len() - 1) {
+        candidate.push(component);
+        if crate::modules::workspace::domain::normalizer::is_disabled_folder(
+            &component.to_string_lossy(),
+        ) {
+            disabled.push(candidate.clone());
+        }
+    }
+    disabled
+}
+
 /// Find all enabled mods in the same object as `folder_path` (i.e. duplicates/conflicts).
 pub async fn get_duplicates_for_mod_service(
     pool: &sqlx::SqlitePool,
@@ -49,26 +81,24 @@ pub async fn get_duplicates_for_mod_service(
         .await?
         .unwrap_or_default();
 
-    // Resolve the object_id for the given folder
-    let object_id =
-        crate::modules::library::adapters::sqlite::mods::get_object_id_by_folder_and_game(
-            pool,
-            folder_path,
-            game_id,
-        )
-        .await
-        .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
-
-    let object_id = match object_id {
-        Some(id) => id,
+    let target = crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
+        pool,
+        folder_path,
+        game_id,
+    )
+    .await
+    .map_err(|error| AppError::Io(format!("DB query failed: {error}")))?;
+    let (target_mod_id, object_id) = match target {
+        Some((mod_id, Some(object_id), _)) => (mod_id, object_id),
         None => return Ok(vec![]), // No object — no duplicates possible
+        Some((_, None, _)) => return Ok(vec![]),
     };
 
     let duplicates = crate::modules::library::adapters::sqlite::mods::get_enabled_duplicates(
         pool,
         &object_id,
         game_id,
-        folder_path,
+        Some(&target_mod_id),
     )
     .await
     .map_err(|e| AppError::Io(format!("DB duplicate query failed: {e}")))?;
@@ -110,23 +140,7 @@ pub async fn get_duplicates_for_mod_service(
         relevant_mod_ids.push(mod_id);
     }
 
-    // Include the target mod ID in the set to check for ignores
-    let target_mod_id_search: Result<Option<(String, Option<String>, i64)>, sqlx::Error> =
-        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
-            pool,
-            folder_path,
-            game_id,
-        )
-        .await;
-
-    let target_mod_id = match target_mod_id_search {
-        Ok(Some((id, _, _))) => id,
-        _ => String::new(),
-    };
-
-    if !target_mod_id.is_empty() {
-        relevant_mod_ids.push(target_mod_id);
-    }
+    relevant_mod_ids.push(target_mod_id);
 
     // Check if this specific combination is ignored
     let ignored = crate::modules::workspace::adapters::sqlite::conflict::is_conflict_ignored(
@@ -145,114 +159,9 @@ pub async fn get_duplicates_for_mod_service(
     Ok(result)
 }
 
-/// Enable a specific mod and disable all other enabled siblings for the same object.
-/// Wrapped here to decouple the command layer from direct database queries and orchestration logic.
-pub async fn enable_only_this_service(
-    pool: &sqlx::SqlitePool,
-    state: &crate::modules::workspace::application::scanner::watcher::WatcherState,
-    target_path: String,
-    game_id: &str,
-) -> Result<crate::modules::library::application::mods::bulk::BulkResult, AppError> {
-    use crate::modules::library::application::mods::bulk::{BulkActionError, BulkResult};
-    use crate::modules::library::application::mods::core_ops::toggle_mod_inner;
-    use std::path::Path;
-
-    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Game not found or has no mods path".to_string()))?;
-
-    let target_rel = Path::new(&target_path)
-        .strip_prefix(&mods_path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| target_path.clone());
-
-    let mut success = Vec::new();
-    let mut failures = Vec::new();
-    let mut path_rewrites = Vec::new();
-
-    let target_object_id =
-        crate::modules::library::adapters::sqlite::mods::get_object_id_by_folder_and_game(
-            pool,
-            &target_rel,
-            game_id,
-        )
-        .await
-        .map_err(|e| AppError::Io(format!("DB query failed: {e}")))?;
-
-    if let Some(object_id) = target_object_id {
-        let sibling_paths =
-            crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
-                pool,
-                &object_id,
-                game_id,
-                &target_rel,
-            )
-            .await
-            .map_err(|e| AppError::Io(format!("DB sibling query failed: {e}")))?;
-
-        for sibling_rel in sibling_paths {
-            let sibling_abs = Path::new(&mods_path)
-                .join(&sibling_rel)
-                .to_string_lossy()
-                .to_string();
-            match toggle_mod_inner(state, sibling_abs.clone(), false).await {
-                Ok(new_abs_path) => {
-                    let new_rel = Path::new(&new_abs_path)
-                        .strip_prefix(&mods_path)
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| new_abs_path.clone());
-
-                    success.push(new_abs_path);
-
-                    if sibling_rel != new_rel {
-                        path_rewrites.push(WorkspacePathRewrite {
-                            old_path: sibling_abs,
-                            new_path: Path::new(&mods_path)
-                                .join(&new_rel)
-                                .to_string_lossy()
-                                .to_string(),
-                        });
-                    }
-                }
-                Err(e) => failures.push(BulkActionError {
-                    path: sibling_abs,
-                    error: e,
-                }),
-            }
-        }
-    }
-
-    let activation_target =
-        activation_path_for_disabled_ancestor(Path::new(&target_path), Path::new(&mods_path));
-    let activation_target = activation_target.to_string_lossy().to_string();
-
-    match toggle_mod_inner(state, activation_target.clone(), true).await {
-        Ok(new_abs_path) => {
-            if activation_target != new_abs_path {
-                path_rewrites.push(WorkspacePathRewrite {
-                    old_path: activation_target,
-                    new_path: new_abs_path.clone(),
-                });
-            }
-            success.push(new_abs_path);
-        }
-        Err(e) => failures.push(BulkActionError {
-            path: target_path,
-            error: e,
-        }),
-    }
-
-    // Single-writer: the renames above changed disk only. The caller
-    // (`run_enable_only_this` in the workspace switch) reconciles the changed
-    // roots afterwards, which writes status/paths and runs side effects.
-    let mut result = BulkResult::new(success, failures);
-    result.path_rewrites = path_rewrites;
-    Ok(result)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::activation_path_for_disabled_ancestor;
+    use super::{activation_path_for_disabled_ancestor, disabled_ancestor_paths};
     use std::path::Path;
 
     #[test]
@@ -274,6 +183,20 @@ mod tests {
         assert_eq!(
             activation_path_for_disabled_ancestor(target, mods_root),
             target
+        );
+    }
+
+    #[test]
+    fn returns_all_nested_disabled_ancestors_in_activation_order() {
+        let mods_root = Path::new("E:/Mods");
+        let target = mods_root.join("DISABLED Group/DISABLED Alice/Blue");
+
+        assert_eq!(
+            disabled_ancestor_paths(&target, mods_root),
+            vec![
+                mods_root.join("DISABLED Group"),
+                mods_root.join("DISABLED Group/DISABLED Alice"),
+            ]
         );
     }
 }

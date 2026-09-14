@@ -1,260 +1,264 @@
-//! Hash matcher — scores active-mod hashes against MasterDb entries and selects sentinels.
+//! Catalog matching and geometry-first runtime sentinel selection.
 //!
-//! **Algorithm:**
-//! 1. For each `KvObjectEntry`: compute intersection `I = active_hashes ∩ known_hashes`
-//! 2. Score each entry: base per-hash + occurrence bonus + rarity bonus
-//! 3. Pick best match if `score ≥ threshold`; tiebreak: score desc → name asc
-//! 4. Select sentinel hashes owned by exactly one object
+//! Matching proves which catalog identity owns an enabled mod. Sentinel
+//! selection is deliberately independent: it only considers typed targets
+//! observed in that mod and uses resource-kind tiers, never hash rarity or a
+//! mod's `match_priority`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::path::PathBuf;
 
-// ─── Configuration ───────────────────────────────────────────────────────────
+use crate::modules::matching::application::deep_matcher::models::types::{
+    RuntimeResourceKind, RuntimeTarget, RuntimeTargetProvenance,
+};
 
-/// Configuration for the matching + sentinel pipeline.
-#[derive(Debug, Clone)]
-pub struct MatchConfig {
-    /// Minimum score to accept a match (below → no match).
-    pub score_threshold: f32,
-    /// Base score awarded per intersecting hash.
-    pub base_per_hash: f32,
-    /// Bonus multiplied by `ln(1 + occurrence_count)` for each hash.
-    pub occurrence_bonus_factor: f32,
-    /// Bonus for rare hashes (appear in ≤ `rarity_max_objects` entries).
-    pub rarity_bonus: f32,
-    /// Hashes appearing in this many entries or fewer are considered "rare".
-    pub rarity_max_objects: usize,
-    /// Number of sentinel hashes to select per matched object.
-    pub sentinel_count: usize,
-}
+/// Kept as a small compatibility contract for the post-apply call site.
+/// Runtime eligibility no longer has a score or a sentinel-count knob.
+#[derive(Debug, Clone, Default)]
+pub struct MatchConfig;
 
-impl Default for MatchConfig {
-    fn default() -> Self {
-        Self {
-            score_threshold: 20.0,
-            base_per_hash: 10.0,
-            occurrence_bonus_factor: 2.0,
-            rarity_bonus: 5.0,
-            rarity_max_objects: 2,
-            sentinel_count: 3,
-        }
-    }
-}
-
-// ─── Result Types ────────────────────────────────────────────────────────────
-
-/// A flattened view of one MasterDb entry for KeyViewer matching.
-///
-/// Built by the caller from `objects` rows; the matcher only reads it.
+/// A flattened catalog entry used only by KeyViewer.
 #[derive(Debug, Clone)]
 pub struct KvObjectEntry {
-    /// Display name (e.g. "Albedo").
     pub name: String,
-    /// Object type: "Character", "Weapon", "UI", "Other".
     pub object_type: String,
-    /// All hashes from `hash_db`, flattened across all skins. Deduplicated, lowercase.
+    /// Hashes are identity evidence. They are not directly emitted as observers.
     pub code_hashes: Vec<String>,
-    /// Skin/variant name → associated hashes (original structure from `hash_db`).
     pub skin_hashes: HashMap<String, Vec<String>>,
-    /// Search tags from the MasterDb entry.
+    pub runtime_targets: Vec<RuntimeTarget>,
     pub tags: Vec<String>,
-    /// Optional thumbnail path (relative to resources dir).
     pub thumbnail_path: Option<String>,
 }
 
-/// Result of matching active hashes against a single KvObjectEntry.
+/// Origin retained for preview/diagnostics without exposing filesystem paths
+/// in generated overlay text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeSentinelSource {
+    Catalog {
+        variant: String,
+        component: Option<String>,
+        provenance: RuntimeTargetProvenance,
+    },
+    Harvest {
+        section_name: String,
+        file_path: PathBuf,
+    },
+}
+
+/// Exact observer emitted into the generated 3DMigoto INI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSentinel {
+    pub hash: String,
+    pub resource_kind: RuntimeResourceKind,
+    pub callback_slot: String,
+    pub match_first_index: Option<u32>,
+    pub source: RuntimeSentinelSource,
+}
+
+impl RuntimeSentinel {
+    pub fn from_catalog(target: &RuntimeTarget) -> Option<Self> {
+        let callback_slot = target.slot.as_ref()?.trim().to_ascii_lowercase();
+        (!callback_slot.is_empty() && target.resource_kind != RuntimeResourceKind::Shader).then(
+            || Self {
+                hash: target.hash.to_ascii_lowercase(),
+                resource_kind: target.resource_kind,
+                callback_slot,
+                match_first_index: target.match_first_index,
+                source: RuntimeSentinelSource::Catalog {
+                    variant: target.variant.clone(),
+                    component: target.component.clone(),
+                    provenance: target.provenance.clone(),
+                },
+            },
+        )
+    }
+
+    pub fn stable_key(&self) -> (String, RuntimeResourceKind, String, Option<u32>) {
+        (
+            self.hash.clone(),
+            self.resource_kind,
+            self.callback_slot.clone(),
+            self.match_first_index,
+        )
+    }
+}
+
+/// Result of matching one catalog identity.
 #[derive(Debug, Clone)]
 pub struct MatchResult {
-    /// Name of the matched object (e.g. "Albedo").
     pub object_name: String,
-    /// Object type (e.g. "Character").
     pub object_type: String,
-    /// Aggregate match score.
+    /// Number of catalog targets found in enabled mods, retained for preview.
     pub score: f32,
-    /// Hashes in the intersection (active ∩ known).
     pub matched_hashes: Vec<String>,
-    /// Selected sentinel hashes for runtime detection.
-    pub sentinel_hashes: Vec<String>,
-    /// Confidence level based on score relative to threshold.
+    /// Every observer in the selected resource tier is OR-ed into one panel.
+    pub sentinels: Vec<RuntimeSentinel>,
     pub confidence: MatchConfidence,
 }
 
-/// Confidence levels for matching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchConfidence {
-    /// Score ≥ 4× threshold.
     Excellent,
-    /// Score ≥ 2× threshold.
     High,
-    /// Score ≥ threshold.
     Medium,
-    /// Score < threshold (used internally, never returned as a final match).
     Low,
 }
 
-// ─── Core Matching ───────────────────────────────────────────────────────────
-
-/// Build a reverse index: hash → set of object names that contain it.
+/// Selects all targets in the safest available resource tier.
 ///
-/// Borrows from `entries` — the index is a local that dies before its source,
-/// and cloning every (hash, name) pair costs two allocations per pair.
-fn build_hash_object_index(entries: &[KvObjectEntry]) -> HashMap<&str, HashSet<&str>> {
-    let mut index: HashMap<&str, HashSet<&str>> = HashMap::new();
-    for entry in entries {
-        for hash in &entry.code_hashes {
-            index
-                .entry(hash.as_str())
-                .or_default()
-                .insert(entry.name.as_str());
-        }
-    }
-    index
-}
-
-/// Score a single entry against the active hashes.
-///
-/// Returns `None` if the intersection is empty (no possible match).
-fn score_entry(
-    entry: &KvObjectEntry,
-    active_hashes: &HashSet<String>,
-    occurrence_counts: &HashMap<String, usize>,
-    hash_object_index: &HashMap<&str, HashSet<&str>>,
-    config: &MatchConfig,
-) -> Option<(f32, Vec<String>)> {
-    let mut intersection: Vec<String> = entry
-        .code_hashes
-        .iter()
-        .filter(|h| active_hashes.contains(h.as_str()))
-        .cloned()
+/// Index buffers are not safe without draw context. Texture is a final
+/// fallback, intended for face-only/texture-only mods once no geometry target
+/// from that mod is present.
+pub fn select_geometry_first_sentinels(
+    candidates: impl IntoIterator<Item = RuntimeSentinel>,
+) -> Vec<RuntimeSentinel> {
+    let mut candidates: Vec<_> = candidates
+        .into_iter()
+        .filter(|target| {
+            target.hash.len() == 8 && target.hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+        .filter(|target| {
+            target.resource_kind != RuntimeResourceKind::Shader
+                && !(target.resource_kind == RuntimeResourceKind::IndexBuffer
+                    && target.match_first_index.is_none())
+        })
         .collect();
-    intersection.sort_unstable();
-    intersection.dedup();
+    candidates.sort_by_key(|candidate| candidate.stable_key());
+    candidates.dedup_by(|left, right| left.stable_key() == right.stable_key());
 
-    if intersection.is_empty() {
-        return None;
-    }
-
-    let mut score: f32 = 0.0;
-
-    for hash in &intersection {
-        // Base score per hash
-        score += config.base_per_hash;
-
-        // Occurrence bonus: more occurrences → slight boost (log-scaled)
-        let occ = occurrence_counts.get(hash).copied().unwrap_or(1) as f32;
-        score += config.occurrence_bonus_factor * (1.0 + occ).ln();
-
-        // Rarity bonus: hash appears in few objects → strong signal
-        let objects_with_hash = hash_object_index
-            .get(hash.as_str())
-            .map(|s| s.len())
-            .unwrap_or(0);
-        if objects_with_hash <= config.rarity_max_objects {
-            score += config.rarity_bonus;
-        }
-    }
-
-    Some((score, intersection))
+    let Some(tier) = candidates.iter().map(resource_tier).min() else {
+        return Vec::new();
+    };
+    candidates
+        .into_iter()
+        .filter(|candidate| resource_tier(candidate) == tier)
+        .collect()
 }
 
-/// Match active mod hashes against all KvObjectEntries and return ranked results.
+fn resource_tier(target: &RuntimeSentinel) -> u8 {
+    match target.resource_kind {
+        RuntimeResourceKind::PositionVb => 0,
+        RuntimeResourceKind::DrawVb | RuntimeResourceKind::VertexBuffer => 1,
+        RuntimeResourceKind::IndexBuffer => 2,
+        RuntimeResourceKind::Texture => 3,
+        RuntimeResourceKind::Shader => 4,
+    }
+}
+
+fn catalog_target_owners(entries: &[KvObjectEntry]) -> HashMap<SentinelIdentity, BTreeSet<String>> {
+    let mut owners = HashMap::new();
+    for entry in entries {
+        for target in &entry.runtime_targets {
+            let Some(sentinel) = RuntimeSentinel::from_catalog(target) else {
+                continue;
+            };
+            owners
+                .entry(SentinelIdentity::from(&sentinel))
+                .or_insert_with(BTreeSet::new)
+                .insert(entry.name.clone());
+        }
+    }
+    owners
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct SentinelIdentity {
+    hash: String,
+    resource_kind: RuntimeResourceKind,
+    callback_slot: String,
+    match_first_index: Option<u32>,
+}
+
+impl From<&RuntimeSentinel> for SentinelIdentity {
+    fn from(target: &RuntimeSentinel) -> Self {
+        Self {
+            hash: target.hash.clone(),
+            resource_kind: target.resource_kind,
+            callback_slot: target.callback_slot.clone(),
+            match_first_index: target.match_first_index,
+        }
+    }
+}
+
+/// Match active resource hashes against catalog identities.
 ///
-/// # Arguments
-/// - `entries`: All `KvObjectEntry` from the resource pack (via `extract_kv_entries`)
-/// - `active_hashes`: Set of hashes harvested from currently-enabled mods
-/// - `occurrence_counts`: How many times each hash appears across all INI files
-/// - `config`: Matching configuration
-///
-/// # Returns
-/// Sorted list of `MatchResult` (best first), filtered by `score_threshold`.
+/// A character needs one observed target to establish ownership. A catalog
+/// target shared by multiple character entries is removed unless its full
+/// typed identity (including draw context) is unique, so one frame cannot
+/// create two contradictory panels.
 pub fn match_objects(
     entries: &[KvObjectEntry],
     active_hashes: &HashSet<String>,
-    occurrence_counts: &HashMap<String, usize>,
-    config: &MatchConfig,
+    _occurrence_counts: &HashMap<String, usize>,
+    _config: &MatchConfig,
 ) -> Vec<MatchResult> {
-    let hash_object_index = build_hash_object_index(entries);
+    let owners = catalog_target_owners(entries);
+    let mut results = Vec::new();
 
-    let mut results: Vec<MatchResult> = entries
-        .iter()
-        .filter_map(|entry| {
-            let (score, matched_hashes) = score_entry(
-                entry,
-                active_hashes,
-                occurrence_counts,
-                &hash_object_index,
-                config,
-            )?;
-
-            if score < config.score_threshold {
-                return None;
+    for entry in entries {
+        let mut by_variant: BTreeMap<String, Vec<RuntimeSentinel>> = BTreeMap::new();
+        let mut matched_hashes = BTreeSet::new();
+        for target in &entry.runtime_targets {
+            let hash = target.hash.to_ascii_lowercase();
+            if !active_hashes.contains(&hash) {
+                continue;
             }
-
-            let sentinel_hashes = select_sentinels(&matched_hashes, &hash_object_index, config);
-            if sentinel_hashes.is_empty() {
-                return None;
+            matched_hashes.insert(hash);
+            let Some(sentinel) = RuntimeSentinel::from_catalog(target) else {
+                continue;
+            };
+            if owners
+                .get(&SentinelIdentity::from(&sentinel))
+                .is_some_and(|names| names.len() > 1)
+            {
+                continue;
             }
+            by_variant
+                .entry(target.variant.clone())
+                .or_default()
+                .push(sentinel);
+        }
 
-            let confidence = if score >= config.score_threshold * 4.0 {
+        let Some((_, sentinels)) = by_variant
+            .into_iter()
+            .filter_map(|(variant, targets)| {
+                let selected = select_geometry_first_sentinels(targets);
+                (!selected.is_empty()).then_some((variant, selected))
+            })
+            .min_by(|(left_variant, left), (right_variant, right)| {
+                resource_tier(&left[0])
+                    .cmp(&resource_tier(&right[0]))
+                    .then_with(|| right.len().cmp(&left.len()))
+                    .then_with(|| left_variant.cmp(right_variant))
+            })
+        else {
+            continue;
+        };
+
+        let matched_hashes: Vec<_> = matched_hashes.into_iter().collect();
+        let score = matched_hashes.len() as f32;
+        results.push(MatchResult {
+            object_name: entry.name.clone(),
+            object_type: entry.object_type.clone(),
+            score,
+            matched_hashes,
+            sentinels,
+            confidence: if score >= 4.0 {
                 MatchConfidence::Excellent
-            } else if score >= config.score_threshold * 2.0 {
+            } else if score >= 2.0 {
                 MatchConfidence::High
             } else {
                 MatchConfidence::Medium
-            };
+            },
+        });
+    }
 
-            Some(MatchResult {
-                object_name: entry.name.clone(),
-                object_type: entry.object_type.clone(),
-                score,
-                matched_hashes,
-                sentinel_hashes,
-                confidence,
-            })
-        })
-        .collect();
-
-    // Sort: score desc → name asc (deterministic)
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
+    results.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.object_name.cmp(&b.object_name))
+            .then_with(|| left.object_name.cmp(&right.object_name))
     });
-
     results
-}
-
-// ─── Sentinel Selection ──────────────────────────────────────────────────────
-
-/// Select sentinel hashes from the matched intersection.
-///
-/// Only hashes owned by exactly one object are safe runtime sentinels.
-/// Returns up to `sentinel_count` hashes.
-fn select_sentinels(
-    matched_hashes: &[String],
-    hash_object_index: &HashMap<&str, HashSet<&str>>,
-    config: &MatchConfig,
-) -> Vec<String> {
-    // Score each hash by rarity (fewer objects = better sentinel)
-    let mut scored: Vec<(&String, usize)> = matched_hashes
-        .iter()
-        .map(|h| {
-            let count = hash_object_index
-                .get(h.as_str())
-                .map(|s| s.len())
-                .unwrap_or(1);
-            (h, count)
-        })
-        .collect();
-
-    scored.retain(|(_, count)| *count == 1);
-
-    // Sort by object count ascending (rarest first), then hash value for stability
-    scored.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)));
-
-    scored
-        .into_iter()
-        .take(config.sentinel_count)
-        .map(|(h, _)| h.clone())
-        .collect()
 }

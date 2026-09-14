@@ -18,6 +18,7 @@
   "classification_select": "Select",
   "classification_select_row": "Select {{name}}",
   "classification_select_high_confidence": "Select all high-confidence recommendations",
+  "classification_ignore_suggestion": "Ignore suggestion",
   "classification_manual": "Classify manually",
   "classification_use_catalog": "Use canonical catalog",
   "classification_subcategory": "Subcategory",

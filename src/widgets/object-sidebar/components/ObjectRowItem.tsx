@@ -124,7 +124,7 @@ function ObjectRowItemInner({
       role="button"
       tabIndex={0}
       className={cn(
-        'group relative flex items-center gap-3 w-full px-2 py-1.5 rounded-lg transition-all duration-200 border select-none outline-none focus-visible:ring-1 focus-visible:ring-primary/50',
+        'workspace-interactive group relative flex w-full select-none items-center gap-3 rounded-lg border px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-primary/50',
         obj.has_naming_conflict ? 'border-warning/50 ring-1 ring-warning/30' : 'border-transparent',
         isSelected
           ? 'bg-primary/10 border-primary/20 shadow-sm'
@@ -132,7 +132,7 @@ function ObjectRowItemInner({
             ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/40'
             : 'hover:bg-base-200/50 hover:border-base-300/30',
         isInactive && !isSelected && 'bg-base-200/25',
-        isMobile ? 'px-3 py-2.5' : 'px-2 py-1.5',
+        isMobile ? 'px-3 py-2.5' : 'px-2 py-1',
         className,
       )}
       onClick={onClick}
@@ -146,8 +146,8 @@ function ObjectRowItemInner({
       {/* Thumbnail or Checkbox (replaces thumbnail on hover/check) */}
       <div
         className={cn(
-          'relative shrink-0 overflow-hidden rounded-xl bg-base-300 flex items-center justify-center border border-base-content/5 transition-all',
-          isMobile ? 'w-16 h-16' : 'w-14 h-14',
+          'relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-base-content/5 bg-base-300 transition-[background-color,border-color] duration-150',
+          isMobile ? 'w-16 h-16' : 'h-13 w-13',
           isSelected && 'border-primary/20 bg-base-100',
           isBulkSelected && 'bg-primary/20 border-primary',
         )}
@@ -156,7 +156,9 @@ function ObjectRowItemInner({
         <div
           className={cn(
             'absolute inset-0 flex items-center justify-center transition-opacity duration-200',
-            isBulkSelected ? 'opacity-0' : 'opacity-100 group-hover:opacity-0',
+            isBulkSelected
+              ? 'opacity-0'
+              : 'opacity-100 group-hover:opacity-0 group-focus-within:opacity-0',
           )}
         >
           {thumbnailUrl && !imgError ? (
@@ -164,7 +166,7 @@ function ObjectRowItemInner({
               src={thumbnailUrl}
               alt={obj.name}
               className={cn(
-                'w-full h-full object-cover transition-transform duration-300 group-hover:scale-110',
+                'h-full w-full object-cover transition-opacity duration-150 group-hover:opacity-95 group-focus-within:opacity-95',
                 isDisabled && 'grayscale brightness-75 opacity-90',
               )}
               loading="lazy"
@@ -205,7 +207,9 @@ function ObjectRowItemInner({
           <div
             className={cn(
               'absolute inset-0 flex items-center justify-center transition-opacity duration-200',
-              isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+              isBulkSelected
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
             )}
           >
             <input
@@ -231,7 +235,9 @@ function ObjectRowItemInner({
           <span
             className={cn(
               'font-medium truncate text-sm transition-colors',
-              isSelected ? 'text-primary' : 'text-base-content/90 group-hover:text-base-content',
+              isSelected
+                ? 'text-primary'
+                : 'text-base-content/90 group-hover:text-base-content group-focus-within:text-base-content',
               isDisabled && 'line-through text-base-content/40',
               isInactive && !isDisabled && 'text-base-content/55',
             )}
@@ -275,7 +281,7 @@ function ObjectRowItemInner({
           <div
             className={cn(
               'flex items-center gap-1.5 transition-opacity duration-200',
-              isDisabled && 'group-hover:opacity-0',
+              isDisabled && 'group-hover:opacity-0 group-focus-within:opacity-0',
               isInactive && !isDisabled && 'text-base-content/30',
             )}
           >

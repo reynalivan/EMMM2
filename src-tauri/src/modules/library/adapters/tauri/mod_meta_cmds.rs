@@ -1,5 +1,8 @@
 use crate::modules::library::application::mods::{info_json, metadata};
 use crate::modules::mutation::coordinator::MutationCoordinator;
+use crate::modules::reconciliation::application::disk_reconcile::emit::{
+    require_applied_reconcile, settle_committed_reconcile,
+};
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::guard::validate_path;
@@ -297,8 +300,9 @@ pub async fn apply_randomized_loadout(
         &mutation_lease,
     )
     .await
+    .and_then(require_applied_reconcile)
     {
-        Ok(reconcile) if reconcile.status.applied() => {
+        Ok(reconcile) => {
             mutation_lease.mark_db_committed()?;
             mutation_lease.commit()?;
             let history_warning = crate::modules::library::adapters::sqlite::mods::record_randomizer_history(
@@ -309,18 +313,11 @@ pub async fn apply_randomized_loadout(
             Ok(metadata::ApplyRandomizedLoadoutResult {
                 impact: result.impact,
                 backup,
-                sync_warning: None,
+                sync_warning: settle_committed_reconcile(Ok(reconcile)).sync_warning,
                 history_warning,
             })
         }
-        outcome => {
-            let error = match outcome {
-                Ok(reconcile) => AppError::Io(format!(
-                    "Randomized loadout reconcile requires attention: {:?}",
-                    reconcile.status
-                )),
-                Err(error) => error,
-            };
+        Err(error) => {
             mutation_lease.begin_rollback()?;
             if let Err(rollback_error) = prepared.rollback(&watcher) {
                 let combined = format!("{error}; randomized loadout rollback failed: {rollback_error}");
@@ -330,13 +327,19 @@ pub async fn apply_randomized_loadout(
             for (sequence, _, _) in prepared.journal_steps() {
                 mutation_lease.mark_step_rolled_back(sequence)?;
             }
-            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+            if let Err(rollback_reconcile_error) = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
                 &app,
                 pool.inner(),
                 &input.game_id,
                 &mutation_lease,
             )
-            .await?;
+            .await.and_then(require_applied_reconcile) {
+                let combined = format!(
+                    "{error}; randomized loadout rollback projection failed: {rollback_reconcile_error}"
+                );
+                mutation_lease.fail(combined.clone())?;
+                return Err(AppError::Io(combined));
+            }
             mutation_lease.finish_rollback()?;
             Err(error)
         }
@@ -496,6 +499,7 @@ pub async fn set_mod_category(
             game_id: &game_id,
             collections_dirty: false,
             overlay_refresh: true,
+            overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
         },
     )
     .await;
@@ -554,6 +558,7 @@ pub async fn set_object_mods_category(
             game_id: &game_id,
             collections_dirty: true,
             overlay_refresh: true,
+            overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
         },
     )
     .await;

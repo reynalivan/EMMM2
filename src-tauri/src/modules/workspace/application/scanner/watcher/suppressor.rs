@@ -152,7 +152,8 @@ impl WatcherSuppressor {
 
     fn release_scoped(&self, ids: &[u64]) {
         let mut scoped = lock(&self.scoped);
-        scoped.retain(|entry| !ids.contains(&entry.id));
+        // IDs are allocated monotonically and appended in registration order.
+        scoped.retain(|entry| ids.binary_search(&entry.id).is_err());
     }
 
     fn increment(&self) {
@@ -195,5 +196,27 @@ pub struct PathSuppressionGuard {
 impl Drop for PathSuppressionGuard {
     fn drop(&mut self) {
         self.suppressor.release_scoped(&self.ids);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn releasing_one_guard_keeps_overlapping_and_duplicate_registrations_live() {
+        let suppressor = Arc::new(WatcherSuppressor::new(false));
+        let first =
+            suppressor.suppress_paths([Path::new("C:/Mods/Alice"), Path::new("C:/Mods/Bob")]);
+        let second = suppressor
+            .suppress_paths([Path::new("C:/Mods/Alice/Blue"), Path::new("C:/Mods/Alice")]);
+
+        drop(first);
+        assert!(suppressor.is_path_suppressed(Path::new("C:/Mods/Alice/Blue/preview.png")));
+        assert!(!suppressor.is_path_suppressed(Path::new("C:/Mods/Bob/mod.ini")));
+
+        drop(second);
+        assert!(!suppressor.is_path_suppressed(Path::new("C:/Mods/Alice/Blue/preview.png")));
     }
 }

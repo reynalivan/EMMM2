@@ -4,10 +4,11 @@ use crate::modules::ingestion::application::import_batch::types::{
 use crate::modules::matching::application::deep_matcher::analysis::ai_rerank::AiRerankConfig;
 use crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters;
 use crate::modules::matching::application::deep_matcher::models::result_summary::score_to_percentage;
+use crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache;
 use crate::modules::matching::application::deep_matcher::StagedMatchResult;
-use crate::modules::matching::application::deep_matcher::{match_folder_phased, MasterDb};
+use crate::modules::matching::application::deep_matcher::{match_folder_phased_cached, MasterDb};
 use crate::modules::workspace::application::scanner::core::walker::{
-    scan_folder_content, ModCandidate,
+    scan_folder_content, FolderContent, ModCandidate,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -55,6 +56,29 @@ pub fn classify_source(
     master_db: &MasterDb,
     ini_filters: &PreparedTokenFilters,
 ) -> Vec<CategorySuggestion> {
+    let content = scan_folder_content(source_path, 3);
+    let mut signal_cache = SignalCache::new();
+    classify_source_with_content(
+        source_path,
+        planned_name,
+        master_db,
+        ini_filters,
+        &content,
+        &mut signal_cache,
+    )
+}
+
+/// Classify a source using the caller's fresh directory snapshot and signal
+/// cache. Import analysis uses this with canonical matching so the same INI
+/// signals are read and tokenized at most once per matching mode.
+pub fn classify_source_with_content(
+    source_path: &Path,
+    planned_name: &str,
+    master_db: &MasterDb,
+    ini_filters: &PreparedTokenFilters,
+    content: &FolderContent,
+    signal_cache: &mut SignalCache,
+) -> Vec<CategorySuggestion> {
     let candidate = ModCandidate {
         path: source_path.to_path_buf(),
         raw_name: planned_name.to_string(),
@@ -66,13 +90,13 @@ pub fn classify_source(
             planned_name,
         ),
     };
-    let content = scan_folder_content(source_path, 3);
-    let result = match_folder_phased(
+    let result = match_folder_phased_cached(
         &candidate,
         master_db,
-        &content,
+        content,
         ini_filters,
         &AiRerankConfig::default(),
+        signal_cache,
     );
     category_suggestions(&result)
 }

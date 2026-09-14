@@ -7,8 +7,13 @@ import type {
   WorkspaceExplorerNode,
   WorkspaceNode,
   WorkspaceObjectNode,
+  WorkspaceSwitchInput,
 } from '@/entities/workspace';
-import { dispatchWorkspaceRuntimeEvent } from '../state/workspaceStoreBridge';
+import type { ModFolder } from '@/entities/game-object';
+import {
+  dispatchWorkspaceRuntimeEvent,
+  getWorkspaceRuntimeState,
+} from '../state/workspaceStoreBridge';
 import {
   applyWorkspaceSwitchEffects,
   buildNodePendingKey,
@@ -20,6 +25,16 @@ import {
 } from './workspaceSwitchOps';
 
 export type { WorkspaceSwitchSurface } from './workspaceSwitchOps';
+
+function dialogFolder(
+  path: string,
+  name?: string,
+  id: string | null = null,
+): Pick<ModFolder, 'id' | 'path' | 'name'> {
+  const segments = path.replace(/\\/g, '/').split('/').filter(Boolean);
+  const fallbackName = segments[segments.length - 1] ?? path;
+  return { id, path, name: name ?? fallbackName };
+}
 
 export function useWorkspaceSwitchActions() {
   const { t } = useTranslation(['common', 'objects']);
@@ -42,11 +57,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      if (desiredEnabled && node.switch_state === 'blocked_by_ancestor') {
-        return null;
-      }
-
-      const result = await executeWorkspaceSwitch({
+      const input: WorkspaceSwitchInput = {
         game_id: activeGame.id,
         target: {
           kind: 'mod_path',
@@ -54,9 +65,24 @@ export function useWorkspaceSwitchActions() {
         },
         desired_enabled: desiredEnabled,
         resolution: 'normal',
+        enable_disabled_ancestors: false,
         origin_surface: surface,
-      });
+      };
+      const result = await executeWorkspaceSwitch(input);
       if (!result) {
+        return null;
+      }
+
+      if (result.status === 'requires_parent_enable' && result.parent_enable_requirement) {
+        dispatchWorkspaceRuntimeEvent({
+          type: 'DIALOG_OPENED',
+          dialog: {
+            kind: 'folderEnableParent',
+            folder: dialogFolder(node.path, node.name, node.id),
+            requirement: result.parent_enable_requirement,
+            resumeInput: input,
+          },
+        });
         return null;
       }
 
@@ -65,8 +91,9 @@ export function useWorkspaceSwitchActions() {
           type: 'DIALOG_OPENED',
           dialog: {
             kind: 'modDuplicateWarning',
-            folder: node,
+            folder: dialogFolder(node.path, node.name, node.id),
             duplicates: result.duplicates,
+            enableDisabledAncestors: false,
           },
         });
         return null;
@@ -77,7 +104,10 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', options);
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+        ...options,
+        gameId: activeGame.id,
+      });
 
       return nextPath;
     },
@@ -105,6 +135,7 @@ export function useWorkspaceSwitchActions() {
         },
         desired_enabled: desiredEnabled,
         resolution: 'normal',
+        enable_disabled_ancestors: false,
         origin_surface: surface,
       });
 
@@ -113,7 +144,10 @@ export function useWorkspaceSwitchActions() {
       }
 
       const nextPath = result.primary_path;
-      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', options);
+      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
+        ...options,
+        gameId: activeGame.id,
+      });
       // A no-op switch changed nothing on disk — don't announce a change.
       if (result.status !== 'noop') {
         toast.success(
@@ -169,7 +203,7 @@ export function useWorkspaceSwitchActions() {
       markPending(pendingKey, true);
 
       try {
-        const result = await executeWorkspaceSwitch({
+        const input: WorkspaceSwitchInput = {
           game_id: activeGame.id,
           target: {
             kind: 'mod_path',
@@ -177,14 +211,48 @@ export function useWorkspaceSwitchActions() {
           },
           desired_enabled: desiredEnabled,
           resolution: 'normal',
+          enable_disabled_ancestors: false,
           origin_surface: 'folder_grid',
-        });
-        const nextPath = result?.primary_path;
-        if (!result || !nextPath) {
+        };
+        const result = await executeWorkspaceSwitch(input);
+        if (!result) {
           return null;
         }
 
-        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
+        const folder = dialogFolder(path);
+        if (result.status === 'requires_parent_enable' && result.parent_enable_requirement) {
+          dispatchWorkspaceRuntimeEvent({
+            type: 'DIALOG_OPENED',
+            dialog: {
+              kind: 'folderEnableParent',
+              folder,
+              requirement: result.parent_enable_requirement,
+              resumeInput: input,
+            },
+          });
+          return null;
+        }
+        if (result.status === 'requires_duplicate_resolution') {
+          dispatchWorkspaceRuntimeEvent({
+            type: 'DIALOG_OPENED',
+            dialog: {
+              kind: 'modDuplicateWarning',
+              folder,
+              duplicates: result.duplicates,
+              enableDisabledAncestors: false,
+            },
+          });
+          return null;
+        }
+
+        const nextPath = result?.primary_path;
+        if (!nextPath) {
+          return null;
+        }
+
+        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+          gameId: activeGame.id,
+        });
 
         return nextPath;
       } finally {
@@ -195,7 +263,10 @@ export function useWorkspaceSwitchActions() {
   );
 
   const resolveDuplicateForceEnable = useCallback(
-    async (folder: Pick<WorkspaceExplorerNode, 'path'> | null) => {
+    async (
+      folder: Pick<WorkspaceExplorerNode, 'path'> | null,
+      enableDisabledAncestors: boolean = false,
+    ) => {
       if (!folder || !activeGame?.id) {
         return null;
       }
@@ -208,13 +279,16 @@ export function useWorkspaceSwitchActions() {
         },
         desired_enabled: true,
         resolution: 'force_enable',
+        enable_disabled_ancestors: enableDisabledAncestors,
         origin_surface: 'folder_grid',
       });
       if (!result?.primary_path) {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+        gameId: activeGame.id,
+      });
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
@@ -222,7 +296,10 @@ export function useWorkspaceSwitchActions() {
   );
 
   const resolveDuplicateEnableOnly = useCallback(
-    async (folder: Pick<WorkspaceExplorerNode, 'path'> | null) => {
+    async (
+      folder: Pick<WorkspaceExplorerNode, 'path'> | null,
+      enableDisabledAncestors: boolean = false,
+    ) => {
       if (!folder || !activeGame?.id) {
         return null;
       }
@@ -235,18 +312,58 @@ export function useWorkspaceSwitchActions() {
         },
         desired_enabled: true,
         resolution: 'enable_only_this',
+        enable_disabled_ancestors: enableDisabledAncestors,
         origin_surface: 'folder_grid',
       });
       if (!result) {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch');
+      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+        gameId: activeGame.id,
+      });
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
     [activeGame, queryClient],
   );
+
+  const resolveParentEnable = useCallback(async () => {
+    const dialogState = getWorkspaceRuntimeState().dialogState;
+    if (dialogState.kind !== 'folderEnableParent') {
+      return null;
+    }
+
+    const result = await executeWorkspaceSwitch({
+      ...dialogState.resumeInput,
+      enable_disabled_ancestors: true,
+    });
+    if (!result) {
+      return null;
+    }
+
+    if (result.status === 'requires_duplicate_resolution') {
+      dispatchWorkspaceRuntimeEvent({
+        type: 'DIALOG_OPENED',
+        dialog: {
+          kind: 'modDuplicateWarning',
+          folder: dialogState.folder,
+          duplicates: result.duplicates,
+          enableDisabledAncestors: true,
+        },
+      });
+      return null;
+    }
+    if (!result.primary_path || !activeGame?.id) {
+      return null;
+    }
+
+    await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+      gameId: activeGame.id,
+    });
+    dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'folderEnableParent' });
+    return result.primary_path;
+  }, [activeGame, queryClient]);
 
   const isPending = useMemo(() => Object.keys(pendingKeys).length > 0, [pendingKeys]);
 
@@ -267,6 +384,7 @@ export function useWorkspaceSwitchActions() {
     toggleNode,
     setNodeEnabled,
     setFolderPathEnabled,
+    resolveParentEnable,
     resolveDuplicateForceEnable,
     resolveDuplicateEnableOnly,
   };

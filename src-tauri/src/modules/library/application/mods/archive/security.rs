@@ -103,6 +103,16 @@ pub(super) fn validate_entry_path(
     entry_name: &str,
     kind: EntryKind,
 ) -> Result<PathBuf, AppError> {
+    if kind == EntryKind::File {
+        if let Some(extension) =
+            crate::shared::payload_security::blocked_mod_payload_extension(Path::new(entry_name))
+        {
+            return Err(AppError::Security(format!(
+                "Mod archives cannot contain executable or script files (.{}): {entry_name}",
+                extension
+            )));
+        }
+    }
     if entry_name.is_empty()
         || entry_name.contains('\0')
         || entry_name.starts_with('/')

@@ -58,6 +58,7 @@
     "read_only_until_resolved": "This folder cannot be opened or changed until the naming conflict is resolved.",
     "resolve_selected": "Resolve selected conflict",
     "open_folder": "Open folder",
+    "open_folder_failed": "Could not open folder: {{error}}",
     "folder_info": "Folder Info",
     "created": "Created",
     "modified": "Modified",

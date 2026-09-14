@@ -46,8 +46,7 @@ vi.mock('@/shared/ui/toast', () => ({
 }));
 
 vi.mock('./usePreviewData', () => ({
-  useModIniFiles: vi.fn(),
-  useAllModIniDocuments: vi.fn(),
+  useModIniDocuments: vi.fn(),
   usePreviewImages: vi.fn(),
   useRemovePreviewImage: vi.fn(),
   useSavePreviewImage: vi.fn(),
@@ -57,9 +56,12 @@ vi.mock('./usePreviewData', () => ({
   useSelectedModPath: vi.fn(() => null),
 }));
 
-vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => ({
-  useWorkspaceViewModel: vi.fn(() => ({
+vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => {
+  const useWorkspaceViewModel = vi.fn(() => ({
     data: {
+      runtime: {
+        source_state: { status: 'available', message: null },
+      },
       preview: {
         selected_path: null,
         selected_node: null,
@@ -75,8 +77,59 @@ vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => ({
         },
       },
     },
-  })),
-}));
+  }));
+
+  return {
+    useWorkspaceViewModel,
+    useWorkspaceStructure: () => {
+      const result = useWorkspaceViewModel();
+      return {
+        ...result,
+        isPlaceholderData: false,
+        data: result.data
+          ? {
+              ...result.data,
+            }
+          : result.data,
+      };
+    },
+    useWorkspacePreview: () => {
+      const result = useWorkspaceViewModel();
+      const preview = result.data?.preview;
+      return {
+        data: preview
+          ? {
+              request_identity: {
+                game_id: 'GIMI',
+                explorer_sub_path: 'root',
+                selected_mod_path: preview.selected_path,
+              },
+              context_status: 'ready',
+              preview,
+              selection: {
+                selected_mod_path: preview.selected_path,
+                reconciliation_status: 'unchanged',
+                reconciliation_reason: null,
+                affected_paths: [],
+              },
+            }
+          : undefined,
+        isPending: false,
+        isError: false,
+        error: null,
+        refetch: vi.fn(),
+      };
+    },
+    useWorkspaceSelectionInput: () => {
+      const result = useWorkspaceViewModel();
+      return {
+        selectedObjectFolderPath: null,
+        explorerSubPath: 'root',
+        selectedModPath: result.data?.preview?.selected_path ?? null,
+      };
+    },
+  };
+});
 
 function createMockQuery(data: any = null, isSuccess = false) {
   return {
@@ -97,9 +150,8 @@ function createMockMutation() {
 }
 
 function setupDefaultMocks() {
-  const useModIniFilesMock = usePreviewDataModule.useModIniFiles as any;
+  const useModIniDocumentsMock = usePreviewDataModule.useModIniDocuments as any;
   const usePreviewImagesMock = usePreviewDataModule.usePreviewImages as any;
-  const useAllModIniDocumentsMock = usePreviewDataModule.useAllModIniDocuments as any;
   const useUpdateModInfoDetailsMock = usePreviewDataModule.useUpdateModInfoDetails as any;
   const useSavePreviewImageMock = usePreviewDataModule.useSavePreviewImage as any;
   const useRemovePreviewImageMock = usePreviewDataModule.useRemovePreviewImage as any;
@@ -107,9 +159,8 @@ function setupDefaultMocks() {
   const useWriteModIniMock = usePreviewDataModule.useWriteModIni as any;
   const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
 
-  useModIniFilesMock.mockReturnValue(createMockQuery(null));
+  useModIniDocumentsMock.mockReturnValue(createMockQuery(null));
   usePreviewImagesMock.mockReturnValue(createMockQuery(null));
-  useAllModIniDocumentsMock.mockReturnValue([]);
   useUpdateModInfoDetailsMock.mockReturnValue(createMockMutation());
   useSavePreviewImageMock.mockReturnValue(createMockMutation());
   useRemovePreviewImageMock.mockReturnValue(createMockMutation());
@@ -275,9 +326,8 @@ describe('usePreviewPanelState', () => {
 
     expect(result.current.activePath).toBe(selectedPath);
     expect(result.current.folderNameConflict).toEqual(group);
-    expect(usePreviewDataModule.useModIniFiles).toHaveBeenCalledWith(null);
+    expect(usePreviewDataModule.useModIniDocuments).toHaveBeenCalledWith(null);
     expect(usePreviewDataModule.usePreviewImages).toHaveBeenCalledWith(null);
-    expect(usePreviewDataModule.useAllModIniDocuments).toHaveBeenCalledWith(null, []);
   });
 
   // Covers: TC-6.1-01 (Title and description sync from workspace preview summary)
@@ -502,42 +552,51 @@ describe('usePreviewPanelState', () => {
   });
 
   it('opens every keybind file by default so bindings are immediately readable', async () => {
-    const useModIniFilesMock = usePreviewDataModule.useModIniFiles as any;
-    const useAllModIniDocumentsMock = usePreviewDataModule.useAllModIniDocuments as any;
+    const useModIniDocumentsMock = usePreviewDataModule.useModIniDocuments as any;
     const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
-    useModIniFilesMock.mockReturnValue(
-      createMockQuery([{ filename: 'alpha.ini' }, { filename: 'beta.ini' }], true),
-    );
-    useAllModIniDocumentsMock.mockReturnValue([
-      {
-        data: {
-          source_hash: 'alpha-source',
-          mode: 'Structured',
-          raw_lines: ['[KeyAlpha]', 'key = a'],
-          variables: [],
-          key_bindings: [
-            {
-              section_name: 'KeyAlpha',
-              key: 'a',
-              back: null,
-              key_line_idx: 1,
-              back_line_idx: null,
+    useModIniDocumentsMock.mockReturnValue(
+      createMockQuery(
+        [
+          {
+            filename: 'alpha.ini',
+            document: {
+              source_hash: 'alpha-source',
+              mode: 'Structured',
+              raw_lines: ['[KeyAlpha]', 'key = a'],
+              variables: [],
+              key_bindings: [
+                {
+                  section_name: 'KeyAlpha',
+                  key: 'a',
+                  back: null,
+                  key_line_idx: 1,
+                  back_line_idx: null,
+                },
+              ],
             },
-          ],
-        },
-      },
-      {
-        data: {
-          source_hash: 'beta-source',
-          mode: 'Structured',
-          raw_lines: ['[KeyBeta]', 'key = b'],
-          variables: [],
-          key_bindings: [
-            { section_name: 'KeyBeta', key: 'b', back: null, key_line_idx: 1, back_line_idx: null },
-          ],
-        },
-      },
-    ]);
+          },
+          {
+            filename: 'beta.ini',
+            document: {
+              source_hash: 'beta-source',
+              mode: 'Structured',
+              raw_lines: ['[KeyBeta]', 'key = b'],
+              variables: [],
+              key_bindings: [
+                {
+                  section_name: 'KeyBeta',
+                  key: 'b',
+                  back: null,
+                  key_line_idx: 1,
+                  back_line_idx: null,
+                },
+              ],
+            },
+          },
+        ],
+        true,
+      ),
+    );
     useWorkspaceViewModelMock.mockReturnValue({
       data: {
         preview: {

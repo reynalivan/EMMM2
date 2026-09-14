@@ -38,8 +38,11 @@ export default function ActiveModContextDialog({
       <div className="modal-box w-full max-w-lg border border-warning/20 shadow-2xl relative overflow-hidden">
         {isProcessing && (
           <div className="absolute inset-0 bg-base-100/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
-            <Loader2 size={32} className="animate-spin text-primary mb-4" />
-            <p className="font-medium animate-pulse">{t('context.switching')}</p>
+            <Loader2
+              size={32}
+              className="mb-4 animate-spin text-primary motion-reduce:animate-none"
+            />
+            <p className="font-medium">{t('context.switching')}</p>
           </div>
         )}
 

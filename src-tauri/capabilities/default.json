@@ -2,7 +2,7 @@
   "identifier": "default",
   "description": "Default capability for the application",
   "windows": ["main"],
-  "webviews": ["main", "browser-tab-*"],
+  "webviews": ["main"],
   "permissions": [
     "core:default",
     "core:webview:default",

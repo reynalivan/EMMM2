@@ -1,150 +1,90 @@
 # EMMM Mod Manager
 
-**_Premium Mod Orchestrator for the 3DMigoto Ecosystem_**
+EMMM is a desktop mod manager for 3DMigoto-based games. It keeps the filesystem as the source of truth while providing a fast workspace for organizing, previewing, importing, and launching game-specific mod libraries.
 
-> Zero-Compromise. Native Performance. Data Safety. Premium Aesthetics.
+The project currently targets Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Wuthering Waves, and Arknights: Endfield through their XXMI-compatible workflows. EMMM is an independent third-party tool and is not affiliated with any game developer, publisher, or platform.
 
-![Tauri](https://img.shields.io/badge/Tauri-v2-orange?style=flat-square&logo=tauri)
-![Rust](https://img.shields.io/badge/Rust-Backend-black?style=flat-square&logo=rust)
-![React](https://img.shields.io/badge/React-v19-blue?style=flat-square&logo=react)
-![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite)
+## What it does
 
-**EMMM** is a high-performance, intelligent mod manager for XXMI-compatible 3DMigoto workflows, including GIMI, SRMI, WWMI, ZZMI, and EFMI. EMMM is an independent third-party tool and is not affiliated with any game developer, publisher, or platform.
+- Organizes mods by game, object, and folder, with grid and list views that remain usable for large libraries.
+- Reads the enabled state from the folder name on disk. A `DISABLED ` prefix disables a mod; SQLite indexes metadata and hierarchy for search and filtering.
+- Imports archives and folders, detects common nested layouts, and keeps Mod Inbox, Downloads, Collections, and the browser scoped to the selected game.
+- Provides previews, metadata editing, INI inspection, bulk actions, safe-mode controls, and a trash-based removal flow.
+- Saves and applies collections, scans for duplicate files, and offers a guided matching and classification workflow for unstructured folders.
+- Watches the library for external changes and reconciles the local index with the filesystem.
 
----
+## Architecture
 
-## 🛑 1. Core Axioms (Absolute Truths)
+EMMM is a Tauri v2 application with a React and TypeScript frontend and a Rust backend. The frontend uses TanStack Query for server state, Zustand for local application state, and TanStack Virtual for large collections. The Rust side owns filesystem operations, archive processing, hashing, database access, and Tauri commands.
 
-EMMM is built on five non-negotiable architectural principles documented in `AGENT.md`:
+The core safety model is intentionally simple:
 
-1.  **Filesystem is Truth:** Folder prefix `DISABLED ` is the ONLY source of truth. SQLite is a high-speed index cache.
-2.  **Atomic Operations:** Bulk actions (Toggles, Collections) are transactional. Heavy I/O is guarded by a global `OperationLock`.
-3.  **Soft Deletion:** Never hard delete user data. Removals move to `./app_data/trash/` with collision detection.
-4.  **Scale First:** Virtualization is MANDATORY for all grids/lists > 50 items to maintain 60fps.
-5.  **Rust Compute:** Heavy logic (Scanning, Hashing, INI Parsing) is offloaded to Rust `tauri::command` to keep the UI thread free.
+1. The filesystem determines whether a mod is enabled.
+2. SQLite is an index and metadata store, not a competing source of truth.
+3. File mutations use recoverable workflows and reconciliation when an operation fails or the library changes outside EMMM.
+4. Removed content goes through the trash flow rather than an immediate hard delete.
 
----
+## Repository layout
 
-## ✨ 2. Comprehensive Capabilities
+```text
+src/             React application
+src-tauri/       Rust services, database, and Tauri shell
+tests/           Unit and browser end-to-end tests
+docs/            Requirements, test cases, architecture notes, and history
+scripts/         Development and release helpers
+```
 
-### 🔍 Intelligence & Management
+## Prerequisites
 
-- **Deep Matcher Engine**: A multi-layered pipeline (Name -> Content -> AI -> Fuzzy) that automatically identifies unorganized mods against a global `schema.json`.
-- **Byte-Level Deduplication**: Uses BLAKE3 hashing to identify bit-identical mods across your entire library, reclaiming disk space instantly.
-- **Archive Native Support**: Deep-scan and import directly from `.zip`, `.7z`, and `.rar` (including password-protected) without manual extraction.
-- **Conflict Reporting**: Intelligent detection of overlapping mod files with a guided resolution modal.
+- Node.js 22 through 24
+- Corepack, which provides the pinned pnpm 10.24.0 release
+- Rust stable and Cargo
+- Windows is required for the native desktop workflow
 
-### 🌐 Discovery & Integration
+## Setup
 
-- **GameBanana Discover Hub**: Integrated semantic search for the GameBanana ecosystem with smart-import capabilities and version tracking.
-- **Integrated Download Manager**: Handles concurrent mod downloads with pause/resume support and auto-categorization upon completion.
-- **Automated Update Engine**: "Zero Cost" updates via GitHub Releases for both the core application and the MasterDB schema.
+Run the setup script from PowerShell to validate the required runtimes, install locked frontend dependencies, and fetch Cargo crates.
 
-### ⚡ Performance & Discovery
+```powershell
+.\setup.ps1
+```
 
-- **60fps Virtual Explorer**: Effortlessly browse 10,000+ mods using `@tanstack/react-virtual` with zero input lag or UI stutters.
-- **Real-Time Watcher**: Integrated `notify` v7 service detects external Explorer changes and updates the UI instantly via optimistic sync.
-- **Advanced Navigation**: Schema-driven Sidebar for filtering by Game, Category (Character, Weapon, UI), Element, and Rarity.
-- **One-Click Play**: Game-specific launch bar with admin-elevation support for 3DMigoto loaders.
+Start the desktop application:
 
-### 🎨 Visuals & Editing
+```powershell
+pnpm tauri dev
+```
 
-- **Lossless INI Parser**: A custom line-based parser that handles 3DMigoto’s non-standard syntax (duplicate sections, naked globals) for safe editing.
-- **Rich Preview Gallery**: Auto-detects screenshots, previews, and GIF thumbnails within mod folders for a premium visual experience.
-- **Metadata Enrichment**: Enhance mod records with JSON tags, author info, and dynamic keybinding extracted from `d3dx.ini`.
+`pnpm tauri dev` prepares an isolated development catalog pack. By default it expects a sibling checkout at `../3dm-catalog-asset`; set `EMMM_DEV_CATALOG_SOURCE` to use another local catalog source. The command stops if the pack or its manifest is invalid so the development profile cannot silently run with incomplete catalog data.
 
-### 🛡️ Privacy & Reliability
+## Common commands
 
-- **Safe Mode PIN Gate**: Total isolation for sensitive content (NSFW/Privacy). Frontend/Backend filters enforced via Argon2-secured PIN verification.
-- **Collections & Snapshots**: Create virtual loadouts. Snapshot your entire mod list state and restore it instantly with transactional safety.
-- **Loadout Randomizer**: Experiment with your collection by generating random mod combinations within specific categories.
-- **In-Game Key Viewer**: Quick reference for active mod hotkeys and 3DMigoto mappings without leaving the game.
+| Command                                             | Purpose                                               |
+| --------------------------------------------------- | ----------------------------------------------------- |
+| `pnpm dev`                                          | Start the frontend-only Vite server.                  |
+| `pnpm tauri dev`                                    | Start the desktop application with the native bridge. |
+| `pnpm build`                                        | Type-check and build the frontend.                    |
+| `pnpm tauri build`                                  | Create the desktop application bundle.                |
+| `pnpm test --run`                                   | Run the Vitest suite once.                            |
+| `pnpm test:e2e`                                     | Run WebdriverIO browser end-to-end tests.             |
+| `pnpm lint`                                         | Run ESLint.                                           |
+| `pnpm lint:arch`                                    | Check frontend architecture boundaries.               |
+| `pnpm format`                                       | Format supported files with Prettier.                 |
+| `cargo test --manifest-path src-tauri/Cargo.toml`   | Run Rust tests.                                       |
+| `cargo clippy --manifest-path src-tauri/Cargo.toml` | Run Rust static analysis.                             |
 
-### 📊 Dashboard & Analytics
+## Configuration
 
-- **Global Overview**: Real-time stats on total mod counts, disk usage, and duplicate waste.
-- **Visual Analytics**: Interactive `Recharts` distribution charts (Pie: Categories, Bar: Per-Game distribution).
-- **Activity Hub**: "Recently Added" feed and "Quick Play" resume shortcuts.
+Copy `.env.example` to `.env` only when you need local GameBanana or observability integration. Keep `.env` local. It can contain credentials and is not part of the repository.
 
----
+## Documentation
 
-## 🎨 3. Design Philosophy
+- [Project introduction](docs/intro.md)
+- [Requirements](docs/requirements)
+- [Test cases](docs/test-cases)
+- [Architecture and migration notes](docs/relocation.md)
+- [Contribution and agent guidance](AGENT.md)
 
-EMMM is a **Premium Orchestrator**. We prioritize visual excellence and tactile feedback:
+## Status
 
-- **Glassmorphism UI**: Modern, translucent interfaces with smooth layout transitions (Framer Motion).
-- **Responsive & Alive**: Hover-aware interactive elements and micro-animations for enhanced engagement.
-- **Zero Placeholder Policy**: Demonstrations use high-fidelity generated assets or real mod previews.
-- **Micro-Interactions**: Subtle, non-intrusive feedback for all file-system and state mutations.
-
----
-
-## 🏗️ 3. Tech Stack & Architecture
-
-### Backend (Core Logic - Rust)
-
-- **Runtime:** [Tauri v2](https://v2.tauri.app/) for native OS integration and security.
-- **Async Runtime:** [Tokio](https://tokio.rs/) for high-concurrency I/O.
-- **Database:** SQLite via [SQLx](https://github.com/launchbadge/sqlx) with compile-time query verification.
-- **File Monitoring:** [Notify v7](https://github.com/notify-rs/notify) for real-time filesystem synchronization.
-- **Security:** Integrity-checked execution and OS Keychain integration via `keyring`.
-
-### Frontend (UI/UX - React)
-
-- **Framework:** [React v19](https://react.dev/) + [TypeScript v5](https://www.typescriptlang.org/).
-- **Styling:** [Tailwind CSS v4](https://tailwindcss.com/) + [daisyUI 5](https://daisyui.com/) (Design System).
-- **Virtualization:** [@tanstack/react-virtual](https://tanstack.com/virtual) for 10k+ row rendering.
-- **State Management:** [Zustand](https://github.com/pmndrs/zustand) (Global) & [TanStack Query](https://tanstack.com/query) (Server Cache).
-- **Motion:** [Framer Motion](https://www.framer.com/motion/) for premium micro-animations.
-
-### Orchestration & Tooling
-
-- **Agentic Dev:** Unified `.agent`, `.opencode`, and `.github` layers for advanced AI-pair programming.
-- **Quality:** Strict TDD workflow with [Vitest](https://vitest.dev/) and Rust unit/integration tests.
-
----
-
-## 🛡️ 5. Security & Safety
-
-- **Safe Mode isolation**: NSF-aware partitioning of files and database records.
-- **OS Keychain Integration**: Encrypted storage for API keys (e.g., GameBanana, OpenAI) via native system `keyring`.
-- **Argon2 Hashing**: High-entropy PIN security for administrative gates.
-- **SHA1 Mod Identification**: Robust, collision-resistant mod tracking based on deep folder hashing.
-
----
-
-## 🚀 4. Development Workflow
-
-### Prerequisites
-
-- **Node.js** 22–24 and Corepack (which supplies the pinned **pnpm** 10.24.0)
-- **Rust** (Stable) & **Cargo**
-- **Administrator Privileges**: Required for PowerShell run-as-admin game launching and symbolic link operations.
-
-### Installation
-
-1. `.\setup.ps1` — Validate Node/Rust, install the locked frontend dependencies, and fetch Cargo crates.
-2. `corepack pnpm tauri dev` — Start the application in development mode with HMR.
-
-### Development catalog pack
-
-`pnpm tauri dev` requires a sibling checkout at `../3dm-catalog-asset` and installs its `manifest.json`, `catalog/`, and `images/` into the isolated development profile before starting. The development profile is `%APPDATA%\\com.reynalivan.emmm.dev\\asset-pack`, so it never changes the release profile or bundle. Set `EMMM_DEV_CATALOG_SOURCE` to use a different local checkout. A missing source, invalid manifest, or catalog checksum blocks the development launch.
-
-### Essential Commands
-
-| Command              | Layer   | Description                         |
-| :------------------- | :------ | :---------------------------------- |
-| `pnpm tauri dev`     | Full    | Start dev server with native bridge |
-| `pnpm tauri build`   | Full    | Build production-ready binaries     |
-| `pnpm test`          | FE      | Run unit tests via Vitest           |
-| `pnpm test:ui`       | FE      | Interactive test runner with UI     |
-| `pnpm test:coverage` | FE      | Generate test coverage report       |
-| `pnpm lint`          | FE      | Check code style via ESLint         |
-| `pnpm format`        | FE/Tool | Auto-format with Prettier           |
-| `cargo test`         | BE      | Run Rust unit and integration tests |
-| `cargo clippy`       | BE      | Run Rust static analysis (Linter)   |
-| `cargo fmt`          | BE      | Format Rust source code             |
-
----
-
-> Built with ❤️ for the 3DMigoto Community. Sync standards maintained by Antigravity Agent.
+This repository is under active development. Check the requirements and test cases before relying on a workflow that is important to your mod library.

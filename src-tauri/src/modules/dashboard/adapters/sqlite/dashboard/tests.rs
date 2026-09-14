@@ -1,5 +1,6 @@
 use crate::modules::dashboard::adapters::sqlite::dashboard;
 use sqlx::SqlitePool;
+use std::path::Path;
 use std::str::FromStr;
 
 /// Create a fully-schemed in-memory pool for dashboard tests.
@@ -408,5 +409,11 @@ async fn test_recent_mods_resolve_relative_folder_paths() {
 
     let recents = dashboard::fetch_recent_mods(&pool, 5).await.unwrap();
 
-    assert_eq!(recents[0].folder_path, "/dummy/mods/g1/Character/Mod1");
+    assert_eq!(
+        recents[0].folder_path,
+        Path::new("/dummy/mods/g1")
+            .join("Character")
+            .join("Mod1")
+            .to_string_lossy()
+    );
 }

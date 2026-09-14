@@ -60,9 +60,79 @@ pub fn sha256_file(path: &Path, cancel_token: Option<&AtomicBool>) -> Result<Str
     sha256_reader(BufReader::new(file), cancel_token)
 }
 
+pub fn validate_import_payload_tree(
+    root: &Path,
+    cancel_token: Option<&AtomicBool>,
+) -> Result<(), AppError> {
+    let root = root.canonicalize().map_err(|error| {
+        AppError::Validation(format!(
+            "import payload: selected folder '{}' is unavailable: {error}",
+            root.display()
+        ))
+    })?;
+    if !root.is_dir() {
+        return Err(AppError::Validation(format!(
+            "import payload: selected path is not a folder: {}",
+            root.display()
+        )));
+    }
+
+    for entry in WalkDir::new(&root).follow_links(false).sort_by_file_name() {
+        check_cancelled(cancel_token)?;
+        let entry = entry.map_err(|error| {
+            AppError::Io(format!(
+                "import payload: could not read '{}': {error}",
+                root.display()
+            ))
+        })?;
+        if entry.path() == root || entry.file_type().is_dir() {
+            continue;
+        }
+        if entry.file_type().is_symlink() {
+            return Err(AppError::Security(format!(
+                "import payload: symbolic link is not allowed: {}",
+                entry.path().display()
+            )));
+        }
+        if !entry.file_type().is_file() {
+            return Err(AppError::Validation(format!(
+                "import payload: unsupported filesystem entry: {}",
+                entry.path().display()
+            )));
+        }
+        let relative = entry.path().strip_prefix(&root).map_err(|error| {
+            AppError::Security(format!(
+                "import payload: entry escaped its root '{}': {error}",
+                entry.path().display()
+            ))
+        })?;
+        let relative_path = normalized_relative_path(relative)?;
+        validate_import_payload_file(&relative_path)?;
+    }
+    Ok(())
+}
+
 pub fn build_payload_manifest(
     root: &Path,
     cancel_token: Option<&AtomicBool>,
+) -> Result<PayloadManifest, AppError> {
+    build_payload_manifest_inner(root, cancel_token, false)
+}
+
+/// Builds the source manifest used by import analysis while enforcing the same
+/// payload restrictions applied before staging. Keeping those checks in this
+/// traversal avoids a separate metadata walk before every full-content hash.
+pub fn build_validated_import_payload_manifest(
+    root: &Path,
+    cancel_token: Option<&AtomicBool>,
+) -> Result<PayloadManifest, AppError> {
+    build_payload_manifest_inner(root, cancel_token, true)
+}
+
+fn build_payload_manifest_inner(
+    root: &Path,
+    cancel_token: Option<&AtomicBool>,
+    validate_import_payload: bool,
 ) -> Result<PayloadManifest, AppError> {
     let root = root.canonicalize().map_err(|error| {
         AppError::Validation(format!(
@@ -112,6 +182,9 @@ pub fn build_payload_manifest(
             ))
         })?;
         let relative_path = normalized_relative_path(relative)?;
+        if validate_import_payload {
+            validate_import_payload_file(&relative_path)?;
+        }
         let size_bytes = entry
             .metadata()
             .map_err(|error| {
@@ -142,6 +215,18 @@ pub fn build_payload_manifest(
         content_sha256,
         files,
     })
+}
+
+fn validate_import_payload_file(relative_path: &str) -> Result<(), AppError> {
+    if let Some(extension) =
+        crate::shared::payload_security::blocked_mod_payload_extension(Path::new(relative_path))
+    {
+        return Err(AppError::Security(format!(
+            "Mod folders cannot contain executable or script files (.{}): {}",
+            extension, relative_path
+        )));
+    }
+    Ok(())
 }
 
 pub fn payload_manifest_metadata(
@@ -331,7 +416,11 @@ fn check_cancelled(cancel_token: Option<&AtomicBool>) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_payload_manifest, compare_payload_manifests, ManifestComparisonKind};
+    use super::{
+        build_payload_manifest, build_validated_import_payload_manifest, compare_payload_manifests,
+        validate_import_payload_tree, ManifestComparisonKind,
+    };
+    use crate::shared::errors::AppError;
 
     #[test]
     fn manifests_include_every_file_and_explain_target_extras() {
@@ -348,9 +437,12 @@ mod tests {
         std::fs::write(target.join("author-notes.txt"), b"keep me").unwrap();
 
         let source_manifest = build_payload_manifest(&source, None).unwrap();
+        let validated_source_manifest = build_validated_import_payload_manifest(&source, None)
+            .expect("validated import manifest");
         let target_manifest = build_payload_manifest(&target, None).unwrap();
         assert_eq!(source_manifest.file_count, 2);
         assert_eq!(source_manifest.files[1].relative_path, "nested/preview.png");
+        assert_eq!(validated_source_manifest, source_manifest);
         let comparison = compare_payload_manifests(&source_manifest, &target_manifest);
         assert_eq!(
             comparison.kind,
@@ -358,5 +450,22 @@ mod tests {
         );
         assert_eq!(comparison.same_files, 2);
         assert_eq!(comparison.additional_files, 1);
+    }
+
+    #[test]
+    fn import_payload_validation_rejects_executable_files() {
+        let workspace = tempfile::tempdir().unwrap();
+        let source = workspace.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("merged.ini"), b"[TextureOverride]\nhash = aa").unwrap();
+        std::fs::write(source.join("loader.dll"), b"binary").unwrap();
+
+        let error = validate_import_payload_tree(&source, None).unwrap_err();
+
+        assert!(matches!(error, AppError::Security(message) if message.contains("loader.dll")));
+
+        let error = build_validated_import_payload_manifest(&source, None).unwrap_err();
+
+        assert!(matches!(error, AppError::Security(message) if message.contains("loader.dll")));
     }
 }

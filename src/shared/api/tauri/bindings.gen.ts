@@ -89,9 +89,17 @@ async getActiveKeybindings(gameId: string) : Promise<Result<ActiveKeyBinding[], 
     else return { status: "error", error: e  as any };
 }
 },
-async getWorkspaceViewModel(input: WorkspaceViewModelInput) : Promise<Result<WorkspaceViewModel, AppError>> {
+async getWorkspaceStructure(input: WorkspaceStructureInput) : Promise<Result<WorkspaceStructureViewModel, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_workspace_view_model", { input }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_workspace_structure", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getWorkspacePreview(input: WorkspacePreviewInput) : Promise<Result<WorkspacePreviewResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_workspace_preview", { input }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -302,9 +310,88 @@ async installCatalogUpdate() : Promise<Result<CatalogUpdateInstallResult, AppErr
     else return { status: "error", error: e  as any };
 }
 },
-async setCatalogAutoInstall(enabled: boolean) : Promise<Result<AppSettings, AppError>> {
+/**
+ * Stage and inspect a public GitHub release asset. The returned token is the
+ * reviewed archive identity; activation requires a separate confirmation.
+ */
+async previewCatalogGithubImport(sourceUrl: string) : Promise<Result<CatalogImportPreview, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_catalog_auto_install", { enabled }) };
+    return { status: "ok", data: await TAURI_INVOKE("preview_catalog_github_import", { sourceUrl }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Show the native picker and stage a local catalog ZIP for the same review
+ * and activation flow used by GitHub releases. Selecting a file never moves
+ * or deletes it.
+ */
+async previewCatalogLocalImport() : Promise<Result<CatalogImportPreview | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_catalog_local_import") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Atomically activate the exact reviewed catalog archive, no matter which
+ * manual source produced its staging token.
+ */
+async installCatalogImport(stagingToken: string) : Promise<Result<CatalogPackRefreshResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("install_catalog_import", { stagingToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Read the latest cached identity-suggestion state for one game. This command
+ * never starts disk inspection; an explicit user action owns that lifecycle.
+ */
+async getObjectIdentitySuggestionStatus(gameId: string) : Promise<Result<ObjectIdentitySuggestionStatus, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_object_identity_suggestion_status", { gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Page review candidates without sending the whole result set to Dashboard.
+ */
+async listObjectIdentitySuggestions(gameId: string, offset: number, limit: number) : Promise<Result<ObjectIdentitySuggestionPage, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_object_identity_suggestions", { gameId, offset, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Start a user-requested local catalog inspection for a game or object root.
+ */
+async retryObjectIdentitySuggestions(gameId: string, changedRoots: string[] | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retry_object_identity_suggestions", { gameId, changedRoots }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async dismissObjectIdentitySuggestion(gameId: string, objectId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_object_identity_suggestion", { gameId, objectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resetObjectIdentitySuggestionDismissals(gameId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_object_identity_suggestion_dismissals", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -409,6 +496,20 @@ async createModFolder(parentPath: string, folderName: string, gameId: string) : 
 async getFolderConflictDetails(gameId: string, paths: string[]) : Promise<Result<FolderConflictSummary[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_folder_conflict_details", { gameId, paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens a current folder-name-conflict candidate for inspection.
+ *
+ * This is read-only, but cannot use the ordinary Explorer command because
+ * that command intentionally rejects unresolved conflict paths.
+ */
+async openFolderConflictCandidate(gameId: string, groupId: string, path: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_folder_conflict_candidate", { gameId, groupId, path }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -664,6 +765,14 @@ async listModIniFiles(gameId: string, folderPath: string) : Promise<Result<IniFi
 async readModIni(gameId: string, folderPath: string, fileName: string) : Promise<Result<IniDocument, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_mod_ini", { gameId, folderPath, fileName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async readModIniDocuments(gameId: string, folderPath: string) : Promise<Result<IniDocumentEntry[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_mod_ini_documents", { gameId, folderPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -944,6 +1053,14 @@ async previewRelocationBatch(input: PreviewRelocationBatchInput) : Promise<Resul
 async getSettings() : Promise<Result<AppSettings, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_settings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getKeyviewerRuntimeDiagnostics(gameId: string) : Promise<Result<KeyViewerRuntimeDiagnostics, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_keyviewer_runtime_diagnostics", { gameId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1303,6 +1420,30 @@ async planOnboardingIndexingWork(gameIds: string[]) : Promise<Result<OnboardingI
     else return { status: "error", error: e  as any };
 }
 },
+async beginOnboardingIndexing(gameIds: string[]) : Promise<Result<OnboardingIndexingSession, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("begin_onboarding_indexing", { gameIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async reconcileOnboardingIndexingGame(sessionId: string, gameId: string) : Promise<Result<DiskReconcileResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_onboarding_indexing_game", { sessionId, gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelOnboardingIndexing(sessionId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_onboarding_indexing", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async inspectGameModsDirectory(gameId: string, candidatePath: string) : Promise<Result<GameModsDirectoryInspection, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("inspect_game_mods_directory", { gameId, candidatePath }) };
@@ -1431,12 +1572,13 @@ async installAppUpdate(onProgress: TAURI_CHANNEL<AppUpdateProgress>) : Promise<R
 }
 },
 /**
- * Update hotkey config and re-register OS hotkeys.
- * This saves settings to DB AND tells the HotkeyManager to re-register.
+ * Validate and commit runtime-control settings without persisting a partial
+ * shortcut while OS registration is still allowed to fail. F7 remains
+ * generated for 3DMigoto, but is never registered as an OS shortcut.
  */
-async updateHotkeyConfig() : Promise<Result<null, AppError>> {
+async saveHotkeyConfiguration(expectedRevision: number, hotkeys: HotkeyConfig, keyviewer: KeyViewerConfig) : Promise<Result<SaveSettingsResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_hotkey_config") };
+    return { status: "ok", data: await TAURI_INVOKE("save_hotkey_configuration", { expectedRevision, hotkeys, keyviewer }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1612,6 +1754,14 @@ async browserAddBookmark(url: string, title: string | null, favicon: string | nu
 async browserDeleteBookmark(id: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("browser_delete_bookmark", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async browserUpdateBookmark(id: string, url: string, title: string) : Promise<Result<BrowserBookmark, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_update_bookmark", { id, url, title }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1862,11 +2012,11 @@ export type AppSettings = {
 /**
  * Optimistic-concurrency token for whole-settings IPC saves.
  */
-revision?: number; theme: string; language: string; games: GameConfig[]; active_game_id: string | null; safety: SafetyConfig; ai: AiConfig; auto_close_launcher: boolean; hotkeys?: HotkeyConfig; keyviewer?: KeyViewerConfig; external_tools?: ExternalToolsConfig; catalog_updates?: CatalogUpdateConfig; diagnostics?: DiagnosticsSettings }
+revision?: number; theme: string; language: string; games: GameConfig[]; active_game_id: string | null; safety: SafetyConfig; ai: AiConfig; auto_close_launcher: boolean; hotkeys?: HotkeyConfig; keyviewer?: KeyViewerConfig; external_tools?: ExternalToolsConfig; diagnostics?: DiagnosticsSettings }
 export type AppUpdateInfo = { version: string; currentVersion: string; body: string | null }
 export type AppUpdateProgress = { event: "Started"; data: { contentLength: number | null } } | { event: "Progress"; data: { chunkLength: number } } | { event: "Finished" }
 export type ApplyGameModsDirectoryRequest = { game_id: string; candidate_path: string; expected_fingerprint: string; confirm_empty: boolean; different_confirmation_game_name: string | null }
-export type ApplyGameModsDirectoryResult = { game: GameConfig; inspection: GameModsDirectoryInspection; reconcile: DiskReconcileResult }
+export type ApplyGameModsDirectoryResult = { game: GameConfig; inspection: GameModsDirectoryInspection; reconcile: DiskReconcileResult; emmm_data_moved: boolean; watcher_warning: string | null }
 export type ApplyObjectClassificationBatchInput = { gameId: string; items: ApplyObjectClassificationItem[]; disableAfterApply?: boolean }
 export type ApplyObjectClassificationBatchResult = { applied: number; childModsUpdated: number; aliasesChanged: boolean; disabledObjects: number; disableWarning: string | null }
 export type ApplyObjectClassificationItem = { objectId: string; decision: ObjectClassificationDecision; fingerprint: SourceFingerprint }
@@ -1896,18 +2046,15 @@ export type BrowserHistoryEntry = { url: string; hostname: string; title: string
 export type BrowserPrivacySummary = { bookmarks: number; history_entries: number; saved_permissions: number }
 export type BrowserSessionTab = { position: number; url: string; title: string; active: boolean }
 export type BulkActionError = { path: string; error: AppError }
-export type BulkResult = { success: string[]; failures: BulkActionError[]; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
+export type BulkResult = { success: string[]; failures: BulkActionError[]; cancelled: boolean; processed_count: number; unprocessed_count: number; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
 export type CanonicalClassificationCatalogEntry = { entryKey: string; name: string; category: StableCategory; metadata: JsonValue; thumbnailPath: string | null; aliases: string[] }
 export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; matchStatus?: ImportMatchStatus; evidence: MatchEvidence[] }
-export type CatalogPackRefreshResult = { state: string; entries: number; thumbnails_applied: number; missing_assets: number; skipped_invalid_files: number }
-export type CatalogPackStatus = { state: string; pack_id: string | null; version: string | null; message: string | null; entries: number; missing_assets: number }
+export type CatalogImportPreview = { stagingToken: string; sourceKind: string; sourceLabel: string; sourceUrl: string | null; releaseTag: string | null; review: CatalogPackReview; replacesActivePack: boolean }
+export type CatalogPackRefreshResult = { state: string; entries: number }
+export type CatalogPackReview = { packId: string; version: string; publisher: string; source: string; supportedGames: string[]; entries: number; hasKeyviewerTargets: boolean }
+export type CatalogPackStatus = { state: string; pack_id: string | null; version: string | null; message: string | null; entries: number }
 export type CatalogUpdateCheck = { state: string; current_version: string | null; available_version: string | null; release_notes: string | null }
-/**
- * Preferences for the signed, public catalog release channel. This contains
- * no GitHub account data or credentials.
- */
-export type CatalogUpdateConfig = { auto_check?: boolean; auto_install?: boolean; last_successful_check_unix_seconds?: number | null }
-export type CatalogUpdateInstallResult = { version: string; entries: number; missing_assets: number }
+export type CatalogUpdateInstallResult = { version: string; entries: number }
 export type CategoryCount = { object_type: string; count: number }
 export type CategoryDef = { name: string;
 /**
@@ -1963,7 +2110,7 @@ export type CommittedMutationSyncWarning = { kind: CommittedMutationSyncWarningK
  * could not finish. Commands return this as data so callers refresh the
  * successful disk effect without retrying the mutation itself.
  */
-export type CommittedMutationSyncWarningKind = "ReconcileFailed" | "ReconcileBlocked" | "CleanupPending"
+export type CommittedMutationSyncWarningKind = "ReconcileFailed" | "ReconcileBlocked" | "CleanupPending" | "RuntimeSyncPending" | "ManualReloadRequired" | "WatcherUnavailable"
 export type ConfidenceTier = "high" | "medium" | "low" | "no_match"
 /**
  * Startup config status returned to frontend
@@ -2059,7 +2206,11 @@ entry_kind?: EntryKind; custom_skins?: CustomSkin[]; thumbnail_path?: string | n
  * Optional hashes for this entry (default: empty dictionary).
  * Maps a skin/variant name to its list of hashes. Invalid hashes are ignored.
  */
-hash_db?: Partial<{ [key in string]: string[] }> }
+hash_db?: Partial<{ [key in string]: string[] }>;
+/**
+ * Optional catalog-declared runtime targets. Legacy hash_db is not runtime eligibility.
+ */
+runtime_targets?: RuntimeTarget[] }
 export type DeleteModResult = { collection_impact: CollectionReferenceImpact; sync_warning: CommittedMutationSyncWarning | null }
 export type DeleteProcessedModInboxSourcesInput = { gameId: string; sourceIds: string[] }
 export type DestinationKind = "specific_target" | "existing_object" | "create_canonical"
@@ -2079,7 +2230,11 @@ export type DiskReconcileResult = { game_id: string;
 /**
  * Monotonic per-game revision assigned after this disk observation finishes.
  */
-reconcile_revision: number; reason: DiskReconcileReason; status: DiskReconcileStatus; folder_conflicts: FolderNameConflictGroup[]; rename_confirmations: RenameConfirmationGroup[]; error_message: string | null; changed_roots: string[]; objects_changed: boolean; folders_changed: boolean; collections_changed: boolean; runtime_file_changed: boolean; thumbnail_roots: string[]; cleared_selection_paths: string[]; path_updates: DiskReconcilePathUpdate[]; collection_reference_impact: CollectionReferenceImpact; change_summary: DiskReconcileChangeSummary; pending_runtime_effects: PendingRuntimeEffects; warnings: DiskReconcileWarning[] }
+reconcile_revision: number; reason: DiskReconcileReason; status: DiskReconcileStatus; scan_scope: DiskReconcileScanScope; folder_conflicts: FolderNameConflictGroup[]; rename_confirmations: RenameConfirmationGroup[]; error_message: string | null; changed_roots: string[]; objects_changed: boolean; folders_changed: boolean; collections_changed: boolean; runtime_file_changed: boolean; thumbnail_roots: string[]; cleared_selection_paths: string[]; path_updates: DiskReconcilePathUpdate[]; collection_reference_impact: CollectionReferenceImpact; change_summary: DiskReconcileChangeSummary; pending_runtime_effects: PendingRuntimeEffects; warnings: DiskReconcileWarning[] }
+/**
+ * The filesystem discovery coverage that produced a reconcile result.
+ */
+export type DiskReconcileScanScope = "Full" | "Scoped" | "None"
 export type DiskReconcileStatus = "Applied" | "AppliedWithFolderConflicts" | "SourceUnavailable" | "NeedsRenameConfirmation"
 export type DiskReconcileWarning = { kind: DiskReconcileWarningKind; message: string }
 export type DiskReconcileWarningKind = "RuntimeEffectsPending"
@@ -2227,13 +2382,9 @@ export type HotkeyConfig = {
  */
 enabled: boolean;
 /**
- * Cooldown between successive hotkey triggers (milliseconds).
- */
-cooldown_ms: number;
-/**
  * Key binding strings (e.g. "F6", "Shift+F6").
  */
-next_preset: string; prev_preset: string; toggle_overlay: string; next_variant: string; prev_variant: string }
+safe_mode?: string; next_preset?: string; prev_preset?: string; toggle_overlay?: string }
 export type IgnoredConflict = { id: string; game_id: string; object_id: string; object_name: string | null; mod_ids: string; mod_names?: string[]; created_at: string }
 export type ImportBatch = { id: string; gameId: string; flow: ImportFlow; targetMode: TargetMode; targetObjectId: string | null; targetSubpath: string | null; status: ImportBatchStatus; sourceArchivePath: string | null; items: ImportItem[]; createdAt: string; updatedAt: string }
 export type ImportBatchReport = { batchId: string; moved: number; reallocated: number; createdCanonicalFolders: number; skipped: number; collisions: number; metadataPending: number; failed: number }
@@ -2243,7 +2394,7 @@ export type ImportDecision = "pending" | "confirm" | "keep_specific_target" | "r
 export type ImportDiagnostic = { code: string; stage: ImportDiagnosticStage; memberPath: string | null; recovery: string }
 export type ImportDiagnosticStage = "staging" | "root_discovery" | "inspection" | "deduplication" | "target_comparison"
 export type ImportFlow = "auto_import" | "specific_import" | "browser" | "ready_to_move"
-export type ImportItem = { id: string; batchId: string; sourceKind: ImportSourceKind; sourcePath: string; stagingPath: string | null; plannedName: string; status: ImportItemStatus; matchCategory: StableCategory | null; subCategory: string | null; classificationMetadata: JsonValue; categorySuggestions: CategorySuggestion[]; canonicalSuggestions: CanonicalSuggestion[]; destinationSuggestions: DestinationSuggestion[]; selectedEntryKey: string | null; selectedAliasName: string | null; destinationObjectId: string | null; destinationPath: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; identityMatchStatus: ImportMatchStatus; evidence: MatchEvidence[]; decision: ImportDecision; fingerprint: SourceFingerprint | null; archiveSha256: string | null; payloadManifest: PayloadManifestSummary | null; duplicateOfItemId: string | null; targetComparison: TargetComparison | null; analysisRevision: number; analysisAckRevision: number | null; reviewGate: ReviewGate; diagnostics: ImportDiagnostic[]; contentKind: ImportContentKind; packageShape: ImportPackageShape; result: string | null; error: string | null }
+export type ImportItem = { id: string; batchId: string; sourceKind: ImportSourceKind; sourcePath: string; stagingPath: string | null; plannedName: string; status: ImportItemStatus; matchCategory: StableCategory | null; subCategory: string | null; classificationMetadata: JsonValue; sourceMetadata: JsonValue; categorySuggestions: CategorySuggestion[]; canonicalSuggestions: CanonicalSuggestion[]; destinationSuggestions: DestinationSuggestion[]; selectedEntryKey: string | null; selectedAliasName: string | null; destinationObjectId: string | null; destinationPath: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; identityMatchStatus: ImportMatchStatus; evidence: MatchEvidence[]; decision: ImportDecision; fingerprint: SourceFingerprint | null; archiveSha256: string | null; payloadManifest: PayloadManifestSummary | null; duplicateOfItemId: string | null; targetComparison: TargetComparison | null; analysisRevision: number; analysisAckRevision: number | null; reviewGate: ReviewGate; diagnostics: ImportDiagnostic[]; contentKind: ImportContentKind; packageShape: ImportPackageShape; result: string | null; error: string | null }
 export type ImportItemStatus = "discovered" | "staged" | "awaiting_category" | "awaiting_destination" | "ready" | "committing" | "reconciling" | "finalizing_metadata" | "done" | "skipped" | "partial" | "metadata_pending" | "failed" | "cancelled"
 export type ImportLibraryReadiness = { batchId: string; items: ObjectClassificationPreviewItem[]; highCount: number; mediumCount: number; reviewStarted: boolean }
 /**
@@ -2260,13 +2411,22 @@ export type ImportSourcePreviewEntry = { relativePath: string; kind: ImportSourc
 export type ImportSourcePreviewEntryKind = "file" | "folder"
 export type IndexingRootWork = { root_name: string; file_count: number; total_bytes: number; work_units: number }
 export type IniDocument = { file_path: string; raw_lines: string[]; variables: IniVariable[]; key_bindings: KeyBinding[]; had_bom: boolean; encoding: IniEncoding; newline_style: NewlineStyle; line_terminators: LineTerminator[]; source_hash: string; mode: IniReadMode }
+export type IniDocumentEntry = { filename: string; document: IniDocument }
 export type IniEncoding = "Utf8" | "ShiftJis" | "Gbk" | "Utf16Le" | "LossyUtf8"
 export type IniFileEntry = { filename: string; path: string }
 export type IniLineUpdate = { line_idx: number; content: string }
 export type IniReadMode = "Structured" | "RawFallback"
 export type IniVariable = { qualifier: string | null; name: string; value: string; line_idx: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
-export type KeyBinding = { section_name: string; key: string | null; back: string | null; key_line_idx: number; back_line_idx: number }
+export type KeyBinding = { section_name: string; key: string | null; back: string | null;
+/**
+ * Original 3DMigoto binding semantic, such as `toggle` or `hold`.
+ */
+binding_type: string | null;
+/**
+ * Unevaluated in-game condition retained for preview and diagnostics.
+ */
+condition: string | null; key_line_idx: number; back_line_idx: number }
 /**
  * KeyViewer-specific configuration — persisted in AppSettings.
  */
@@ -2275,6 +2435,7 @@ export type KeyViewerConfig = {
  * Whether KeyViewer generation is enabled.
  */
 enabled: boolean }
+export type KeyViewerRuntimeDiagnostics = { last_sync_unix_ms: number | null; publication: RuntimeSyncPublicationStatus | null; reload: RuntimeReloadStatus | null; reload_binding: string | null; cleanup_automatic_disabled: boolean }
 export type LastChangesSnapshot = { source: LastChangesSource; collection_id: string | null; base_collection_id: string | null; can_restore: boolean }
 export type LastChangesSource = "live" | "draft"
 /**
@@ -2333,7 +2494,14 @@ export type ObjectClassificationPreviewItem = { objectId: string; objectName: st
  * out at twenty sites.
  */
 export type ObjectFilter = { game_id: string; search_query: string | null; object_type: string | null; meta_filters: Partial<{ [key in string]: string[] }> | null; sort_by: string | null; status_filter: number | null }
+export type ObjectIdentitySuggestionItem = { objectId: string; objectName: string; entryKey: string; entryName: string; confidencePercentage: number; evidence: MatchEvidence[]; thumbnailPath: string | null }
+export type ObjectIdentitySuggestionPage = { items: ObjectIdentitySuggestionItem[]; total: number; nextOffset: number | null }
+export type ObjectIdentitySuggestionStatus = { state: string; catalogId: string | null; catalogVersion: string | null; suggestedCount: number; checkedCount: number; totalCount: number; failedCount: number; hasKeyviewerTargets: boolean; message: string | null }
 export type ObjectSummary = { id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; randomizer_mode: RandomizerMode | null; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }
+/**
+ * Opaque handle for a short-lived onboarding disk snapshot.
+ */
+export type OnboardingIndexingSession = { session_id: string; work_plans: OnboardingIndexingWorkPlan[] }
 export type OnboardingIndexingWorkPlan = { game_id: string; file_count: number; total_bytes: number; work_units: number; roots: IndexingRootWork[] }
 /**
  * A compact, list-safe summary of a full payload manifest. The detailed file
@@ -2395,13 +2563,37 @@ export type ReviewReason = { code: ReviewReasonCode; diagnosticCode: string | nu
  */
 export type ReviewReasonCode = "identity_needs_confirmation" | "identity_no_match" | "package_bundle" | "incomplete_inspection" | "utility_requires_destination" | "patch_requires_review" | "foreign_game_package" | "target_has_additional_files" | "target_name_conflict" | "target_comparison_incomplete"
 export type RuntimeCounts = { active_mod_count: number; object_count: number; enabled_object_count: number }
+export type RuntimeReloadStatus = "not_required" | "sent" | "manual"
+/**
+ * Identifies the 3DMigoto resource that a runtime target observes.
+ */
+export type RuntimeResourceKind = "position_vb" | "draw_vb" | "vertex_buffer" | "index_buffer" | "texture" | "shader"
 export type RuntimeSafetySummary = { is_safe: boolean; is_safety_classified: boolean }
 /**
  * Errors while deriving or applying the current collection runtime.
  */
 export type RuntimeStateError = { NoModsPath: { game_id: string } } | { GameNotFound: { game_id: string } } | { Db: string } | { Collection: CollectionError }
 export type RuntimeStatus = "clean" | "modified" | "unsaved"
-export type SafetyConfig = { keywords: string[] }
+export type RuntimeSyncPublicationStatus = "published" | "unchanged" | "skipped" | "failed"
+/**
+ * A catalog-declared 3DMigoto target used by runtime features.
+ */
+export type RuntimeTarget = { variant: string; component?: string | null; resource_kind: RuntimeResourceKind; hash: string; slot?: string | null;
+/**
+ * Optional draw discriminator for index-buffer targets. This remains
+ * absent for resources whose hash alone identifies the runtime callback.
+ */
+match_first_index?: number | null; provenance: RuntimeTargetProvenance }
+/**
+ * Immutable catalog provenance for a runtime target.
+ */
+export type RuntimeTargetProvenance = { source_repo: string; commit: string; path: string }
+export type SafetyConfig = { keywords: string[];
+/**
+ * Per-game Safe Mode state. Classification remains unchanged; this only
+ * controls whether runtime apply paths may activate non-safe managed mods.
+ */
+runtime_safe_mode_by_game?: Partial<{ [key in string]: boolean }> }
 export type SaveSettingsResult = { settings: AppSettings; sync_warning: CommittedMutationSyncWarning | null }
 /**
  * Errors from scanning the mods tree: walking folders, matching against the
@@ -2444,34 +2636,52 @@ export type WorkspaceImpact = { rewrites: WorkspacePathRewrite[]; changed_object
 export type WorkspaceIniSummary = { file_count: number; file_names: string[] }
 export type WorkspaceModInfoSummary = { actual_name: string; author: string; version: string; description: string; is_safe: boolean; is_favorite: boolean; has_info_json: boolean }
 export type WorkspaceMoveTarget = { object_id: string; object_name: string; object_folder_path: string; target_subpath: string | null; display_path: string; depth: number }
+export type WorkspaceNavigationSelection = { selected_object_folder_path: string | null; explorer_sub_path: string | null; current_path: string[]; reconciliation_status: WorkspaceSelectionReconciliationStatus; reconciliation_reason: WorkspaceSelectionReconciliationReason | null; affected_paths: string[] }
 export type WorkspaceNode = WorkspaceExplorerNode | WorkspaceObjectNode
 export type WorkspaceNodeKind = "object" | "container" | "terminal_mod" | "inactive_branch"
 export type WorkspaceObjectNode = ({ id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; randomizer_mode: RandomizerMode | null; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }) & { is_registered: boolean; node_kind: WorkspaceNodeKind; display_mode: WorkspaceDisplayMode; type_chip: WorkspaceTypeChip | null; display_name: string; is_effectively_active: boolean; inactive_reason: WorkspaceReason | null; warning_state: WorkspaceWarningState; primary_warning: WorkspaceWarning | null; switch_state: WorkspaceSwitchState; switch_reason: WorkspaceReason | null; switch_policy_key: WorkspaceSwitchPolicyKey; capabilities: WorkspaceCapabilities }
+export type WorkspaceParentEnableImpact = { path: string; name: string }
+export type WorkspaceParentEnableParent = { path: string; name: string }
+/**
+ * A disabled ancestor blocks a folder even when the folder itself has no
+ * disabled prefix. This payload is derived after disk preflight so the UI
+ * can explain the exact prerequisite without guessing from visible nodes.
+ */
+export type WorkspaceParentEnableRequirement = { requested_target: WorkspaceParentEnableImpact; parents: WorkspaceParentEnableParent[]; will_activate: WorkspaceParentEnableImpact[]; stay_disabled: WorkspaceParentEnableImpact[] }
 export type WorkspacePathRewrite = { old_path: string; new_path: string }
 export type WorkspacePreview = { selected_path: string | null; selected_node: WorkspaceNode | null; is_flat_mod_root: boolean; display_title: string | null; display_subtitle: string | null; mod_info_summary: WorkspaceModInfoSummary | null; ini_summary: WorkspaceIniSummary | null; image_summary: WorkspaceImageSummary | null; warning_summary: WorkspaceWarningSummary }
+export type WorkspacePreviewContextStatus = "ready" | "context_stale"
+export type WorkspacePreviewInput = { game_id: string; explorer_sub_path: string | null; selected_mod_path: string | null }
+export type WorkspacePreviewRequestIdentity = { game_id: string; explorer_sub_path: string | null; selected_mod_path: string | null }
+export type WorkspacePreviewResult = { request_identity: WorkspacePreviewRequestIdentity; context_status: WorkspacePreviewContextStatus; preview: WorkspacePreview; selection: WorkspacePreviewSelection }
+export type WorkspacePreviewSelection = { selected_mod_path: string | null; reconciliation_status: WorkspaceSelectionReconciliationStatus; reconciliation_reason: WorkspaceSelectionReconciliationReason | null; affected_paths: string[] }
 export type WorkspaceReason = { code: WorkspaceReasonCode; args: Partial<{ [key in string]: string }> }
 export type WorkspaceReasonCode = "disabled_by_container" | "object_folder_disabled"
 export type WorkspaceRecoveryStatus = "ready" | "syncing" | "failed"
 export type WorkspaceRefreshScope = "workspaceChanged" | "objectRowsChanged" | "folderStructureChanged" | "previewChanged" | "conflictsChanged" | "runtimeStateChanged" | "collectionsChanged" | "dashboardChanged" | "activeKeybindingsChanged"
 export type WorkspaceRuntime = { game_id: string; source_state: WorkspaceSourceState; recovery_status: WorkspaceRecoveryStatus }
-export type WorkspaceSelection = { selected_object_folder_path: string | null; explorer_sub_path: string | null; selected_mod_path: string | null; current_path: string[]; reconciliation_status: WorkspaceSelectionReconciliationStatus; reconciliation_reason: WorkspaceSelectionReconciliationReason | null; affected_paths: string[] }
 export type WorkspaceSelectionReconciliationReason = "missing_object_root" | "missing_explorer_path" | "missing_mod_path" | "source_unavailable"
 export type WorkspaceSelectionReconciliationStatus = "unchanged" | "fallback" | "cleared"
 export type WorkspaceSourceState = { status: WorkspaceSourceStatus; message: string | null }
 export type WorkspaceSourceStatus = "available" | "unavailable"
+export type WorkspaceStructureInput = { filter: ObjectFilter; selected_object_folder_path: string | null; explorer_sub_path: string | null }
+export type WorkspaceStructureViewModel = { objects: WorkspaceObjectNode[]; explorer: WorkspaceExplorer; selection: WorkspaceNavigationSelection; runtime: WorkspaceRuntime }
 export type WorkspaceSwitchDuplicate = { mod_id: string; object_id: string; folder_path: string; actual_name: string; is_variant: boolean; parent_path: string }
-export type WorkspaceSwitchInput = { game_id: string; target: WorkspaceSwitchTarget; desired_enabled: boolean; resolution: WorkspaceSwitchResolution; origin_surface: WorkspaceSwitchOriginSurface }
+export type WorkspaceSwitchInput = { game_id: string; target: WorkspaceSwitchTarget; desired_enabled: boolean; resolution: WorkspaceSwitchResolution;
+/**
+ * Parent activation is independent from duplicate conflict policy. A
+ * boolean avoids a combinatorial set of resolution enum variants.
+ */
+enable_disabled_ancestors?: boolean; origin_surface: WorkspaceSwitchOriginSurface }
 export type WorkspaceSwitchOriginSurface = "folder_grid" | "preview" | "object_list" | "collections"
 export type WorkspaceSwitchPolicyKey = "mod" | "object" | "blocked"
-export type WorkspaceSwitchResolution = "normal" | "force_enable" | "enable_only_this" | "enable_parent_then_continue"
-export type WorkspaceSwitchResult = { status: WorkspaceSwitchStatus; primary_path: string | null; changed_folder_paths: string[]; changed_object_ids: string[]; duplicates: WorkspaceSwitchDuplicate[]; impact: WorkspaceImpact; sync_warning: CommittedMutationSyncWarning | null }
+export type WorkspaceSwitchResolution = "normal" | "force_enable" | "enable_only_this"
+export type WorkspaceSwitchResult = { status: WorkspaceSwitchStatus; primary_path: string | null; changed_folder_paths: string[]; changed_object_ids: string[]; duplicates: WorkspaceSwitchDuplicate[]; parent_enable_requirement: WorkspaceParentEnableRequirement | null; impact: WorkspaceImpact; sync_warning: CommittedMutationSyncWarning | null }
 export type WorkspaceSwitchState = "enabled" | "disabled" | "effectively_disabled" | "blocked_by_ancestor"
-export type WorkspaceSwitchStatus = "applied" | "requires_duplicate_resolution" | "noop"
+export type WorkspaceSwitchStatus = "applied" | "requires_duplicate_resolution" | "requires_parent_enable" | "noop"
 export type WorkspaceSwitchTarget = { kind: WorkspaceSwitchTargetKind; value: string }
 export type WorkspaceSwitchTargetKind = "mod_path" | "object_id"
 export type WorkspaceTypeChip = "mod_pack" | "variant" | "flat_mod"
-export type WorkspaceViewModel = { objects: WorkspaceObjectNode[]; explorer: WorkspaceExplorer; preview: WorkspacePreview; selection: WorkspaceSelection; runtime: WorkspaceRuntime }
-export type WorkspaceViewModelInput = { filter: ObjectFilter; selected_object_folder_path: string | null; explorer_sub_path: string | null; selected_mod_path: string | null }
 export type WorkspaceWarning = { code: WorkspaceWarningCode; args: Partial<{ [key in string]: string }>; state: WorkspaceWarningState }
 export type WorkspaceWarningCode = "folder_warning" | "inactive_reason" | "naming_conflict"
 export type WorkspaceWarningState = "none" | "warning"

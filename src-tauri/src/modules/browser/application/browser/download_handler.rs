@@ -163,14 +163,8 @@ fn emit_download_information_failure(
     );
 }
 
-fn risky_download(filename: &str) -> bool {
-    const RISKY_EXTENSIONS: &[&str] = &[
-        "bat", "cmd", "com", "dll", "exe", "jse", "js", "msi", "msix", "msixbundle", "ps1",
-        "scr", "vbs",
-    ];
-    filename
-        .rsplit_once('.')
-        .is_some_and(|(_, extension)| RISKY_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()))
+fn blocked_download(filename: &str) -> bool {
+    crate::shared::payload_security::blocked_mod_payload_extension(Path::new(filename)).is_some()
 }
 
 fn download_registry() -> &'static Mutex<DownloadRegistry> {
@@ -388,7 +382,7 @@ pub async fn request_download_confirmation(
             "filename": filename,
             "source_url": source_url,
             "destination_path": destination_path,
-            "risk_level": risky_download(&filename).then_some("warning"),
+            "risk_level": blocked_download(&filename).then_some("blocked"),
         }),
     ) {
         lock(pending_downloads()).remove(&request_id);
@@ -420,6 +414,12 @@ pub async fn confirm_download(
         return Ok(());
     }
     let request = take_pending_download(request_id)?;
+    if blocked_download(&request.filename) {
+        return Err(BrowserError::Download(format!(
+            "Executable and script downloads are blocked: {}",
+            request.filename
+        )));
+    }
     validate_http_url(&request.source_url)?;
 
     std::fs::create_dir_all(&request.downloads_root)?;
@@ -730,7 +730,15 @@ pub fn attach_native_download_handler(
 ) -> Result<(), BrowserError> {
     #[cfg(target_os = "windows")]
     {
-        return native_windows::attach(webview, app, db, label, downloads_root, session_id, game_id);
+        return native_windows::attach(
+            webview,
+            app,
+            db,
+            label,
+            downloads_root,
+            session_id,
+            game_id,
+        );
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -787,9 +795,11 @@ pub fn pause_native_download(app: &AppHandle, download_id: &str) -> Result<(), B
     #[cfg(target_os = "windows")]
     {
         return native_windows::control(app, download_id, native_windows::DownloadControl::Pause)
-            .and_then(|found| found.then_some(()).ok_or_else(|| {
-                BrowserError::Download("This download cannot be paused".to_string())
-            }));
+            .and_then(|found| {
+                found.then_some(()).ok_or_else(|| {
+                    BrowserError::Download("This download cannot be paused".to_string())
+                })
+            });
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -805,9 +815,11 @@ pub fn resume_native_download(app: &AppHandle, download_id: &str) -> Result<(), 
     #[cfg(target_os = "windows")]
     {
         return native_windows::control(app, download_id, native_windows::DownloadControl::Resume)
-            .and_then(|found| found.then_some(()).ok_or_else(|| {
-                BrowserError::Download("This download cannot be resumed".to_string())
-            }));
+            .and_then(|found| {
+                found.then_some(()).ok_or_else(|| {
+                    BrowserError::Download("This download cannot be resumed".to_string())
+                })
+            });
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -824,11 +836,13 @@ mod native_windows {
     use std::collections::{HashMap, HashSet};
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex, OnceLock};
+    use std::time::{Duration, Instant};
 
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2DownloadOperation, ICoreWebView2DownloadStartingEventArgs, ICoreWebView2Deferral,
-        ICoreWebView2_4, COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED,
+        ICoreWebView2Deferral, ICoreWebView2DownloadOperation,
+        ICoreWebView2DownloadStartingEventArgs, ICoreWebView2_4,
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED,
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_PAUSED, COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED,
         COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS,
     };
@@ -836,13 +850,16 @@ mod native_windows {
         BytesReceivedChangedEventHandler, DownloadStartingEventHandler,
         EstimatedEndTimeChangedEventHandler, StateChangedEventHandler,
     };
-    use windows::core::{HSTRING, Interface, BOOL, PWSTR};
+    use windows::core::{Interface, BOOL, HSTRING, PWSTR};
     use windows::Win32::System::Com::CoTaskMemFree;
 
     use super::{
-        compute_download_path_with, download_service, lock, risky_download,
-        BrowserError, SqlitePool, Uuid,
+        blocked_download, compute_download_path_with, download_service, lock, BrowserError,
+        SqlitePool, Uuid,
     };
+    use crate::modules::browser::domain::browser::BrowserGameBananaProvenance;
+
+    const NATIVE_PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(100);
 
     /// WebView2 COM objects are only dereferenced inside `with_webview`, which
     /// marshals the work to their owning UI thread. The wrapper permits storing
@@ -862,6 +879,7 @@ mod native_windows {
         game_id: String,
         session_id: Option<String>,
         source_url: String,
+        provenance: Option<BrowserGameBananaProvenance>,
         filename: String,
         destination: PathBuf,
         args: NativeCom<ICoreWebView2DownloadStartingEventArgs>,
@@ -923,14 +941,35 @@ mod native_windows {
                 let game_id = game_id.clone();
                 let session_id = session_id.clone();
                 let handler = DownloadStartingEventHandler::create(Box::new(move |_, args| {
-                    let Some(args) = args else { return Ok(()); };
+                    let Some(args) = args else {
+                        return Ok(());
+                    };
                     let operation = args.DownloadOperation()?;
                     let source_url = read_uri(|value| operation.Uri(value)).unwrap_or_default();
                     if source_url.is_empty() {
                         let _ = args.SetCancel(true);
                         return Ok(());
                     }
-                    let filename = filename_for(&operation, &source_url).unwrap_or_else(|| "download".to_string());
+                    let filename = filename_for(&operation, &source_url)
+                        .unwrap_or_else(|| "download".to_string());
+                    let provenance = app_for_event
+                        .get_webview(&label)
+                        .and_then(|webview| webview.url().ok())
+                        .map(|url| url.to_string())
+                        .and_then(|origin_page_url| {
+                            crate::modules::matching::api::gamebanana_reference_from_url(
+                                &origin_page_url,
+                            )
+                            .and_then(|reference| {
+                                reference.canonical_page_url().map(|origin_page_url| {
+                                    BrowserGameBananaProvenance {
+                                        origin_page_url,
+                                        item_type: reference.item_type,
+                                        item_id: reference.item_id,
+                                    }
+                                })
+                            })
+                        });
                     let request_id = Uuid::new_v4().to_string();
                     let destination = {
                         let mut downloads = lock(registry());
@@ -938,7 +977,10 @@ mod native_windows {
                             &root,
                             session_id.as_deref(),
                             &filename,
-                            |candidate| !candidate.exists() && !downloads.reserved_destinations.contains(candidate),
+                            |candidate| {
+                                !candidate.exists()
+                                    && !downloads.reserved_destinations.contains(candidate)
+                            },
                         );
                         downloads.reserved_destinations.insert(destination.clone());
                         destination
@@ -948,7 +990,8 @@ mod native_windows {
                     // confirmation dialog waits on this deferral.
                     args.SetHandled(true)?;
                     let mime_type = read_uri(|value| operation.MimeType(value)).ok();
-                    let content_disposition = read_uri(|value| operation.ContentDisposition(value)).ok();
+                    let content_disposition =
+                        read_uri(|value| operation.ContentDisposition(value)).ok();
                     let bytes_total = total_bytes(&operation);
                     lock(registry()).pending.insert(
                         request_id.clone(),
@@ -957,6 +1000,7 @@ mod native_windows {
                             game_id: game_id.clone(),
                             session_id: session_id.clone(),
                             source_url: source_url.clone(),
+                            provenance,
                             filename: filename.clone(),
                             destination: destination.clone(),
                             args: NativeCom(args),
@@ -978,7 +1022,7 @@ mod native_windows {
                             "mime_type": mime_type,
                             "content_disposition": content_disposition,
                             "bytes_total": bytes_total,
-                            "risk_level": risky_download(&filename).then_some("warning"),
+                            "risk_level": blocked_download(&filename).then_some("blocked"),
                         }),
                     );
                     let _ = db;
@@ -999,15 +1043,26 @@ mod native_windows {
         request_id: &str,
     ) -> Result<bool, BrowserError> {
         let pending = lock(registry()).pending.remove(request_id);
-        let Some(pending) = pending else { return Ok(false); };
-        if let Err(error) = std::fs::create_dir_all(
-            pending.destination.parent().ok_or_else(|| BrowserError::Download("Download destination has no parent directory".into()))?,
-        ) {
+        let Some(pending) = pending else {
+            return Ok(false);
+        };
+        if blocked_download(&pending.filename) {
+            finish_pending(&pending, true);
+            return Err(BrowserError::Download(format!(
+                "Executable and script downloads are blocked: {}",
+                pending.filename
+            )));
+        }
+        if let Err(error) =
+            std::fs::create_dir_all(pending.destination.parent().ok_or_else(|| {
+                BrowserError::Download("Download destination has no parent directory".into())
+            })?)
+        {
             finish_pending(&pending, true);
             return Err(error.into());
         }
         let path = pending.destination.to_string_lossy().to_string();
-        if let Err(error) = download_service::create_download_with_id(
+        if let Err(error) = download_service::create_download_with_id_and_provenance(
             &db,
             request_id,
             &pending.game_id,
@@ -1017,17 +1072,30 @@ mod native_windows {
             &path,
             0,
             Some(&pending.label),
+            pending.provenance.as_ref(),
         )
-        .await {
+        .await
+        {
             finish_pending(&pending, true);
             return Err(error);
         }
         let operation = pending.operation.clone();
+        let has_gamebanana_provenance = pending.provenance.is_some();
         lock(registry()).active.insert(
             request_id.to_string(),
-            ActiveNativeDownload { label: pending.label.clone(), operation },
+            ActiveNativeDownload {
+                label: pending.label.clone(),
+                operation,
+            },
         );
-        attach_operation_events(&pending.operation.0, app.clone(), db.clone(), request_id.to_string(), path.clone());
+        attach_operation_events(
+            &pending.operation.0,
+            app.clone(),
+            db.clone(),
+            request_id.to_string(),
+            path.clone(),
+            has_gamebanana_provenance,
+        );
         let label = pending.label.clone();
         let request_id_owned = request_id.to_string();
         let destination = pending.destination.clone();
@@ -1037,7 +1105,9 @@ mod native_windows {
         let completion_error_for_webview = completion_error.clone();
         let completed = app
             .get_webview(&label)
-            .ok_or_else(|| BrowserError::WebviewNotFound { label: label.clone() })?
+            .ok_or_else(|| BrowserError::WebviewNotFound {
+                label: label.clone(),
+            })?
             .with_webview(move |_| unsafe {
                 let result = (|| -> windows::core::Result<()> {
                     let target = HSTRING::from(destination.to_string_lossy().as_ref());
@@ -1061,18 +1131,33 @@ mod native_windows {
                 "WebView2 could not start the download: {error}"
             )));
         }
-        download_service::update_native_status(&db, request_id, "in_progress", Some(0), total_bytes(&pending.operation.0), None, None, true).await?;
-        let _ = app.emit("browser:download-status", serde_json::json!({
-            "id": request_id,
-            "status": "in_progress",
-            "can_resume": true,
-        }));
+        download_service::update_native_status(
+            &db,
+            request_id,
+            "in_progress",
+            Some(0),
+            total_bytes(&pending.operation.0),
+            None,
+            None,
+            true,
+        )
+        .await?;
+        let _ = app.emit(
+            "browser:download-status",
+            serde_json::json!({
+                "id": request_id,
+                "status": "in_progress",
+                "can_resume": true,
+            }),
+        );
         Ok(true)
     }
 
     pub(super) fn reject(request_id: &str) -> Result<bool, BrowserError> {
         let pending = lock(registry()).pending.remove(request_id);
-        let Some(pending) = pending else { return Ok(false); };
+        let Some(pending) = pending else {
+            return Ok(false);
+        };
         finish_pending(&pending, true);
         Ok(true)
     }
@@ -1082,14 +1167,19 @@ mod native_windows {
         download_id: &str,
         control: DownloadControl,
     ) -> Result<bool, BrowserError> {
-        let active = lock(registry()).active.get(download_id).map(|download| {
-            (download.label.clone(), download.operation.clone())
-        });
-        let Some((label, operation)) = active else { return Ok(false); };
+        let active = lock(registry())
+            .active
+            .get(download_id)
+            .map(|download| (download.label.clone(), download.operation.clone()));
+        let Some((label, operation)) = active else {
+            return Ok(false);
+        };
         let control_error = Arc::new(Mutex::new(None));
         let control_error_for_webview = control_error.clone();
         app.get_webview(&label)
-            .ok_or_else(|| BrowserError::WebviewNotFound { label: label.clone() })?
+            .ok_or_else(|| BrowserError::WebviewNotFound {
+                label: label.clone(),
+            })?
             .with_webview(move |_| unsafe {
                 let result = match control {
                     DownloadControl::Cancel => operation.get().Cancel(),
@@ -1116,7 +1206,9 @@ mod native_windows {
             }
             let _ = pending.deferral.0.Complete();
         }
-        lock(registry()).reserved_destinations.remove(&pending.destination);
+        lock(registry())
+            .reserved_destinations
+            .remove(&pending.destination);
     }
 
     fn attach_operation_events(
@@ -1125,33 +1217,37 @@ mod native_windows {
         db: SqlitePool,
         download_id: String,
         destination: String,
+        has_gamebanana_provenance: bool,
     ) {
         unsafe {
+            let last_progress_emission = Arc::new(Mutex::new(None));
             let progress_app = app.clone();
             let progress_id = download_id.clone();
-            let progress = BytesReceivedChangedEventHandler::create(Box::new(move |operation, _| {
-                let Some(operation) = operation else { return Ok(()); };
-                let _ = progress_app.emit("browser:download-progress", serde_json::json!({
-                    "id": progress_id,
-                    "bytes_received": bytes_received(&operation),
-                    "bytes_total": total_bytes(&operation),
-                    "eta": read_uri(|value| operation.EstimatedEndTime(value)).ok(),
+            let progress_emission = last_progress_emission.clone();
+            let progress =
+                BytesReceivedChangedEventHandler::create(Box::new(move |operation, _| {
+                    let Some(operation) = operation else {
+                        return Ok(());
+                    };
+                    emit_native_progress(
+                        &progress_app,
+                        &progress_id,
+                        &operation,
+                        &progress_emission,
+                    );
+                    Ok(())
                 }));
-                Ok(())
-            }));
             let mut progress_token = 0;
             let _ = operation.add_BytesReceivedChanged(&progress, &mut progress_token);
 
             let eta_app = app.clone();
             let eta_id = download_id.clone();
+            let eta_emission = last_progress_emission.clone();
             let eta = EstimatedEndTimeChangedEventHandler::create(Box::new(move |operation, _| {
-                let Some(operation) = operation else { return Ok(()); };
-                let _ = eta_app.emit("browser:download-progress", serde_json::json!({
-                    "id": eta_id,
-                    "bytes_received": bytes_received(&operation),
-                    "bytes_total": total_bytes(&operation),
-                    "eta": read_uri(|value| operation.EstimatedEndTime(value)).ok(),
-                }));
+                let Some(operation) = operation else {
+                    return Ok(());
+                };
+                emit_native_progress(&eta_app, &eta_id, &operation, &eta_emission);
                 Ok(())
             }));
             let mut eta_token = 0;
@@ -1160,8 +1256,11 @@ mod native_windows {
             let state_app = app.clone();
             let state_id = download_id.clone();
             let state_destination = destination.clone();
+            let state_has_gamebanana_provenance = has_gamebanana_provenance;
             let state = StateChangedEventHandler::create(Box::new(move |operation, _| {
-                let Some(operation) = operation else { return Ok(()); };
+                let Some(operation) = operation else {
+                    return Ok(());
+                };
                 let mut native_state = Default::default();
                 operation.State(&mut native_state)?;
                 if native_state == COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS {
@@ -1174,6 +1273,8 @@ mod native_windows {
                 let db = db.clone();
                 let id = state_id.clone();
                 let destination = state_destination.clone();
+                let should_store_content_hash =
+                    state_has_gamebanana_provenance && status == "finished";
                 tauri::async_runtime::spawn(async move {
                     let _ = download_service::update_native_status(
                         &db,
@@ -1186,13 +1287,36 @@ mod native_windows {
                         can_resume,
                     )
                     .await;
-                    let _ = app.emit("browser:download-status", serde_json::json!({
-                        "id": id,
-                        "status": status,
-                        "error_msg": error,
-                        "file_path": (status == "finished").then_some(destination),
-                        "can_resume": can_resume,
-                    }));
+                    if should_store_content_hash {
+                        let hash_path = destination.clone();
+                        let content_hash = tokio::task::spawn_blocking(move || {
+                            download_service::gamebanana_source_signature(std::path::Path::new(
+                                &hash_path,
+                            ))
+                            .map(|(_, content_hash)| content_hash)
+                        })
+                        .await
+                        .ok()
+                        .flatten();
+                        if let Some(content_hash) = content_hash {
+                            let _ = download_service::store_gamebanana_content_hash(
+                                &db,
+                                &id,
+                                &content_hash,
+                            )
+                            .await;
+                        }
+                    }
+                    let _ = app.emit(
+                        "browser:download-status",
+                        serde_json::json!({
+                            "id": id,
+                            "status": status,
+                            "error_msg": error,
+                            "file_path": (status == "finished").then_some(destination),
+                            "can_resume": can_resume,
+                        }),
+                    );
                     if status != "paused" && !can_resume {
                         lock(registry()).active.remove(&id);
                     }
@@ -1202,6 +1326,37 @@ mod native_windows {
             let mut state_token = 0;
             let _ = operation.add_StateChanged(&state, &mut state_token);
         }
+    }
+
+    fn emit_native_progress(
+        app: &AppHandle,
+        download_id: &str,
+        operation: &ICoreWebView2DownloadOperation,
+        last_emission: &Mutex<Option<Instant>>,
+    ) {
+        if !claim_progress_emission(last_emission, Instant::now()) {
+            return;
+        }
+        let _ = app.emit(
+            "browser:download-progress",
+            serde_json::json!({
+                "id": download_id,
+                "bytes_received": bytes_received(operation),
+                "bytes_total": total_bytes(operation),
+                "eta": read_uri(|value| unsafe { operation.EstimatedEndTime(value) }).ok(),
+            }),
+        );
+    }
+
+    fn claim_progress_emission(last_emission: &Mutex<Option<Instant>>, now: Instant) -> bool {
+        let mut last_emission = lock(last_emission);
+        if last_emission
+            .is_some_and(|last| now.duration_since(last) < NATIVE_PROGRESS_EMIT_INTERVAL)
+        {
+            return false;
+        }
+        *last_emission = Some(now);
+        true
     }
 
     fn native_outcome(
@@ -1220,18 +1375,39 @@ mod native_windows {
         if reason == COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED {
             return ("canceled", false, None);
         }
-        ("failed", can_resume, Some(format!("WebView2 download interrupted ({})", reason.0)))
+        (
+            "failed",
+            can_resume,
+            Some(format!("WebView2 download interrupted ({})", reason.0)),
+        )
     }
 
-    fn filename_for(operation: &ICoreWebView2DownloadOperation, source_url: &str) -> Option<String> {
+    fn filename_for(
+        operation: &ICoreWebView2DownloadOperation,
+        source_url: &str,
+    ) -> Option<String> {
         let disposition = read_uri(|value| unsafe { operation.ContentDisposition(value) }).ok()?;
         disposition
             .split(';')
-            .find_map(|part| part.trim().strip_prefix("filename=").or_else(|| part.trim().strip_prefix("filename*=")))
-            .map(|value| value.trim_matches('"').rsplit('/').next().unwrap_or(value).to_string())
+            .find_map(|part| {
+                part.trim()
+                    .strip_prefix("filename=")
+                    .or_else(|| part.trim().strip_prefix("filename*="))
+            })
+            .map(|value| {
+                value
+                    .trim_matches('"')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(value)
+                    .to_string()
+            })
             .filter(|value| !value.trim().is_empty())
             .or_else(|| {
-                reqwest::Url::parse(source_url).ok()?.path_segments()?.next_back()
+                reqwest::Url::parse(source_url)
+                    .ok()?
+                    .path_segments()?
+                    .next_back()
                     .filter(|value| !value.trim().is_empty())
                     .map(str::to_owned)
             })
@@ -1264,6 +1440,27 @@ mod native_windows {
             unsafe { CoTaskMemFree(Some(value.0.cast())) };
         }
         Ok(result?)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn progress_emission_is_limited_to_ten_updates_per_second() {
+            let emissions = Mutex::new(None);
+            let start = Instant::now();
+
+            assert!(claim_progress_emission(&emissions, start));
+            assert!(!claim_progress_emission(
+                &emissions,
+                start + NATIVE_PROGRESS_EMIT_INTERVAL - Duration::from_millis(1),
+            ));
+            assert!(claim_progress_emission(
+                &emissions,
+                start + NATIVE_PROGRESS_EMIT_INTERVAL,
+            ));
+        }
     }
 }
 
@@ -1401,10 +1598,10 @@ mod tests {
     }
 
     #[test]
-    fn executable_and_script_extensions_require_a_warning() {
-        assert!(risky_download("mod-installer.exe"));
-        assert!(risky_download("setup.PS1"));
-        assert!(!risky_download("mod-pack.zip"));
-        assert!(!risky_download("readme"));
+    fn executable_and_script_extensions_are_blocked() {
+        assert!(blocked_download("mod-installer.exe"));
+        assert!(blocked_download("setup.PS1"));
+        assert!(!blocked_download("mod-pack.zip"));
+        assert!(!blocked_download("readme"));
     }
 }

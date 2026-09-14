@@ -95,6 +95,14 @@
       "naming_conflict": "Naming conflict detected"
     }
   },
+  "parent_enable_dialog": {
+    "title": "Enable required folders",
+    "target_blocked": "{{name}} cannot become active until its disabled parent folders are enabled.",
+    "parents_required": "Folders to enable ({{count}})",
+    "will_activate": "Will become active ({{count}})",
+    "stay_disabled": "Will remain disabled ({{count}})",
+    "confirm": "Enable folders and continue"
+  },
   "fields": {
     "name": "Name",
     "category": "Category",
@@ -117,6 +125,7 @@
   },
   "reconcile": {
     "runtime_effects_pending": "Disk changes were applied, but runtime refresh is still pending.",
+    "manual_reload_required": "Manual reload required: focus the game, then press {{binding}}.",
     "cleanup_pending": "The item was removed, but moving its quarantined files to the Recycle Bin is still pending."
   },
   "bulk_progress": {
@@ -124,6 +133,7 @@
     "disabling": "Disabling mods...",
     "deleting": "Moving mods to trash...",
     "cancelled": "Cancelled",
+    "cancelled_summary": "Cancelled after {{processed}} of {{total}} mods",
     "done": "Done"
   }
 }

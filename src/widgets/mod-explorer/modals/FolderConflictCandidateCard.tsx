@@ -1,4 +1,4 @@
-import { Pencil, Trash2, Image as ImageIcon, Info, FolderOpen, File } from 'lucide-react';
+import { Pencil, Trash2, Image as ImageIcon, Info, FolderOpen, File, Loader2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import {
   useCallback,
@@ -31,6 +31,7 @@ interface Props {
   onActionChange: (action: FolderConflictCandidateAction) => void;
   onChange: (value: string) => void;
   onBlur: () => void;
+  onOpenFolder: () => Promise<void>;
 }
 
 interface FolderConflictDetailPanelProps {
@@ -145,6 +146,7 @@ export default function FolderConflictCandidateCard({
   onActionChange,
   onChange,
   onBlur,
+  onOpenFolder,
 }: Props) {
   const { t } = useTranslation('folder_grid');
   const detailPanelId = useId();
@@ -153,6 +155,7 @@ export default function FolderConflictCandidateCard({
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [infoPortalTarget, setInfoPortalTarget] = useState<HTMLElement | null>(null);
   const [infoPosition, setInfoPosition] = useState({ top: 16, left: 16 });
+  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
 
   const updateInfoPosition = useCallback(() => {
     const trigger = infoTriggerRef.current;
@@ -260,6 +263,24 @@ export default function FolderConflictCandidateCard({
                   {t('conflict_manager.keep_badge')}
                 </span>
               )}
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs btn-square ml-auto shrink-0"
+                aria-label={t('conflict_manager.open_folder')}
+                title={t('conflict_manager.open_folder')}
+                disabled={disabled || isOpeningFolder}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsOpeningFolder(true);
+                  void onOpenFolder().finally(() => setIsOpeningFolder(false));
+                }}
+              >
+                {isOpeningFolder ? (
+                  <Loader2 size={14} className="animate-spin motion-reduce:animate-none" />
+                ) : (
+                  <FolderOpen size={14} />
+                )}
+              </button>
             </div>
 
             {detail ? (

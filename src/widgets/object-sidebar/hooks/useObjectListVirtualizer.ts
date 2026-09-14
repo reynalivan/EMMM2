@@ -3,7 +3,7 @@
  * data-shaping logic extracted from useObjectListLogic to keep it cohesive.
  */
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { GameSchema, CategoryDef } from '@/entities/game-object';
 import type { WorkspaceObjectNode } from '@/entities/workspace';
@@ -141,7 +141,7 @@ export function useObjectListVirtualizer({
 
   // Virtualizer — updated row heights for polish
   const totalItems = flatObjectItems.length;
-  const rowHeight = isMobile ? 92 : 70;
+  const rowHeight = isMobile ? 92 : 62;
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
@@ -159,6 +159,7 @@ export function useObjectListVirtualizer({
   // Sticky header logic
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
+  const viewportAnimationFrame = useRef<number | null>(null);
 
   useEffect(() => {
     if (!scrollElement) return;
@@ -167,15 +168,29 @@ export function useObjectListVirtualizer({
       setScrollTop(scrollElement.scrollTop);
       setContainerHeight(scrollElement.clientHeight);
     };
+    const scheduleViewportUpdate = () => {
+      if (viewportAnimationFrame.current !== null) {
+        return;
+      }
+
+      viewportAnimationFrame.current = requestAnimationFrame(() => {
+        viewportAnimationFrame.current = null;
+        updateViewport();
+      });
+    };
     updateViewport();
 
-    scrollElement.addEventListener('scroll', updateViewport, { passive: true });
-    const ro = new ResizeObserver(updateViewport);
+    scrollElement.addEventListener('scroll', scheduleViewportUpdate, { passive: true });
+    const ro = new ResizeObserver(scheduleViewportUpdate);
     ro.observe(scrollElement);
 
     return () => {
-      scrollElement.removeEventListener('scroll', updateViewport);
+      scrollElement.removeEventListener('scroll', scheduleViewportUpdate);
       ro.disconnect();
+      if (viewportAnimationFrame.current !== null) {
+        cancelAnimationFrame(viewportAnimationFrame.current);
+        viewportAnimationFrame.current = null;
+      }
     };
   }, [scrollElement]);
 

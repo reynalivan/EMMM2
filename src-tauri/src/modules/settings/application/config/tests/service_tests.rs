@@ -33,36 +33,6 @@ async fn missing_external_tools_setting_defaults_to_no_mod_viewer_executable() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn catalog_auto_install_is_opt_in_and_persists_without_credentials() {
-    let pool = crate::test_utils::init_test_db().await.pool;
-    let service = ConfigService::new_for_test(pool.clone());
-
-    let defaults = service.get_settings().catalog_updates;
-    assert!(defaults.auto_check);
-    assert!(!defaults.auto_install);
-    assert_eq!(defaults.last_successful_check_unix_seconds, None);
-
-    let saved = service
-        .set_catalog_auto_install(true)
-        .expect("catalog preference should save");
-    assert!(saved.catalog_updates.auto_check);
-    assert!(saved.catalog_updates.auto_install);
-
-    service
-        .record_catalog_update_check(1_700_000_000)
-        .expect("catalog check timestamp should save");
-    let reloaded = ConfigService::new_for_test(pool);
-    assert!(reloaded.get_settings().catalog_updates.auto_install);
-    assert_eq!(
-        reloaded
-            .get_settings()
-            .catalog_updates
-            .last_successful_check_unix_seconds,
-        Some(1_700_000_000)
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mod_viewer_executable_set_replace_clear_and_reload() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let service = ConfigService::new_for_test(pool.clone());
@@ -213,6 +183,27 @@ async fn stale_same_active_snapshot_cannot_restore_previous_mods_path() {
         service.get_settings().games[0].mod_path,
         PathBuf::from("C:/Mods/New")
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn whole_settings_save_cannot_change_runtime_safe_mode() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let service = ConfigService::new_for_test(pool);
+    let mut initial = service.get_settings();
+    initial.games.push(game("C:/Mods/A"));
+    service.save_settings(initial).unwrap();
+    service.set_runtime_safe_mode("game-a", true).unwrap();
+
+    let mut ui_snapshot = service.get_settings();
+    ui_snapshot
+        .safety
+        .set_runtime_safe_mode("game-a".to_string(), false);
+    service.save_settings(ui_snapshot).unwrap();
+
+    assert!(service
+        .get_settings()
+        .safety
+        .runtime_safe_mode_for("game-a"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

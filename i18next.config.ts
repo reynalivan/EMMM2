@@ -9,7 +9,7 @@ export default defineConfig({
       'src/testing/**',
       'src/locales/**',
       'src-tauri/**',
-      'test/**',
+      'tests/**',
       'dist/**',
       'node_modules/**',
     ],

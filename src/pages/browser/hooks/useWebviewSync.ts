@@ -40,6 +40,7 @@ export function useWebviewSync(
 
         for (const tab of tabs) {
           if (!isMounted) break;
+          if (tab.isNewTab) continue;
           try {
             const webview = await Webview.getByLabel(tab.id);
             if (webview) {
@@ -97,13 +98,15 @@ export function useWebviewSync(
       window.removeEventListener('resize', handleWinResize);
 
       // We do not await this, just fire and forget hides on unmount
-      tabs.forEach((t) => {
-        Webview.getByLabel(t.id)
-          .then((w) => {
-            if (w) w.hide().catch(() => {});
-          })
-          .catch(() => {});
-      });
+      tabs
+        .filter((tab) => !tab.isNewTab)
+        .forEach((t) => {
+          Webview.getByLabel(t.id)
+            .then((w) => {
+              if (w) w.hide().catch(() => {});
+            })
+            .catch(() => {});
+        });
     };
   }, [containerRef, tabs, activeTabId, overlayOpen]);
 }

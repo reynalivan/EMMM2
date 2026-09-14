@@ -10,8 +10,9 @@ export interface SharedModDialogState {
   activeContextDialog: { open: boolean; folder: ModFolder | null; isProcessing: boolean };
   duplicateWarning: {
     open: boolean;
-    folder: ModFolder | null;
+    folder: Pick<ModFolder, 'id' | 'path' | 'name'> | null;
     duplicates: DuplicateInfo[];
+    enableDisabledAncestors: boolean;
   };
 }
 
@@ -20,7 +21,7 @@ const INITIAL_DIALOG_STATE: SharedModDialogState = {
   renameDialog: { open: false, folder: null },
   deleteConfirm: { open: false, folder: null },
   activeContextDialog: { open: false, folder: null, isProcessing: false },
-  duplicateWarning: { open: false, folder: null, duplicates: [] },
+  duplicateWarning: { open: false, folder: null, duplicates: [], enableDisabledAncestors: false },
 };
 
 const DIALOG_FIELD = {

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { commands } from '@/shared/api/tauri/bindings.gen';
 import type { StorageSizeBackfillStatus } from '@/shared/api/tauri/bindings.gen';
 import { formatAppError } from '@/shared/lib/appError';
@@ -7,6 +7,7 @@ import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 import { isDemoMode } from '@/shared/lib/appMode';
 
 const POLL_INTERVAL_MS = 1_000;
+const storageSizeBackfillKey = ['storage-size-backfill'] as const;
 
 export type { StorageSizeBackfillStatus } from '@/shared/api/tauri/bindings.gen';
 
@@ -16,7 +17,7 @@ function failedStatus(error: unknown): StorageSizeBackfillStatus {
     total_games: 0,
     completed_games: 0,
     current_game_id: null,
-    errors: [error instanceof Error ? error.message : String(error)],
+    errors: [formatAppError(error)],
   };
 }
 
@@ -31,69 +32,66 @@ async function startStorageSizeBackfill(): Promise<StorageSizeBackfillStatus> {
 
 export function useStorageSizeBackfill() {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<StorageSizeBackfillStatus | null>(null);
-  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  const [startStatus, setStartStatus] = useState<StorageSizeBackfillStatus | null>(null);
+  const [startError, setStartError] = useState<unknown>(null);
+  const runningSinceMount = useRef(false);
+  const startMutation = useMutation({
+    mutationFn: startStorageSizeBackfill,
+    networkMode: 'always',
+    onMutate: () => {
+      setStartStatus(null);
+      setStartError(null);
+    },
+    onSuccess: (status) => {
+      setStartStatus(status);
+      queryClient.setQueryData(storageSizeBackfillKey, status);
+    },
+    onError: (error) => {
+      setStartError(error);
+      queryClient.setQueryData(storageSizeBackfillKey, failedStatus(error));
+    },
+  });
+  const { mutate: startBackfill, reset: resetStartBackfill } = startMutation;
+  const statusQuery = useQuery<StorageSizeBackfillStatus>({
+    queryKey: storageSizeBackfillKey,
+    queryFn: () => commands.getStorageSizeBackfillStatus(),
+    networkMode: 'always',
+    enabled: !isDemoMode && startMutation.isSuccess,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.error || query.state.data?.state !== 'Running' ? false : POLL_INTERVAL_MS,
+  });
+  const status = statusQuery.error
+    ? failedStatus(statusQuery.error)
+    : (statusQuery.data ?? startStatus ?? (startError ? failedStatus(startError) : null));
 
   useEffect(() => {
     if (isDemoMode) {
       return;
     }
+    startBackfill();
+  }, [attempt, startBackfill]);
 
-    let isMounted = true;
-    let pollTimer: number | undefined;
-    let jobWasRunning = false;
-
-    const clearPolling = () => {
-      if (pollTimer !== undefined) {
-        window.clearTimeout(pollTimer);
-        pollTimer = undefined;
-      }
-    };
-
-    const handleFailure = (error: unknown) => {
-      if (!isMounted) return;
-      clearPolling();
-      setStatus(failedStatus(error));
-    };
-
-    const poll = () => {
-      void commands.getStorageSizeBackfillStatus().then(handleStatus).catch(handleFailure);
-    };
-
-    const schedulePoll = () => {
-      clearPolling();
-      pollTimer = window.setTimeout(poll, POLL_INTERVAL_MS);
-    };
-
-    const handleStatus = (nextStatus: StorageSizeBackfillStatus) => {
-      if (!isMounted) return;
-
-      setStatus(nextStatus);
-      if (nextStatus.state === 'Running') {
-        jobWasRunning = true;
-        schedulePoll();
-        return;
-      }
-
-      clearPolling();
-      if (nextStatus.state === 'Completed' && jobWasRunning) {
-        jobWasRunning = false;
-        void publishQueryScopes(queryClient, ['dashboard']);
-      }
-    };
-
-    void startStorageSizeBackfill().then(handleStatus).catch(handleFailure);
-
-    return () => {
-      isMounted = false;
-      clearPolling();
-    };
-  }, [queryClient, retryAttempt]);
+  useEffect(() => {
+    if (status?.state === 'Running') {
+      runningSinceMount.current = true;
+      return;
+    }
+    if (status?.state === 'Completed' && runningSinceMount.current) {
+      runningSinceMount.current = false;
+      void publishQueryScopes(queryClient, ['dashboard']);
+    }
+  }, [queryClient, status?.state]);
 
   const retry = useCallback(() => {
-    setStatus(null);
-    setRetryAttempt((attempt) => attempt + 1);
-  }, []);
+    queryClient.removeQueries({ queryKey: storageSizeBackfillKey });
+    resetStartBackfill();
+    setStartStatus(null);
+    setStartError(null);
+    setAttempt((current) => current + 1);
+  }, [queryClient, resetStartBackfill]);
 
   return { status, retry };
 }

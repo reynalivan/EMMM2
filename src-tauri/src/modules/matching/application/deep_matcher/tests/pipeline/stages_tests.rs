@@ -21,6 +21,7 @@ fn sample_indexes() -> MatcherIndexes {
                 "Default".to_string(),
                 vec!["aaaaaaaa".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Jean".to_string(),
@@ -34,6 +35,7 @@ fn sample_indexes() -> MatcherIndexes {
                 "Default".to_string(),
                 vec!["aaaaaaaa".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Albedo".to_string(),
@@ -52,6 +54,7 @@ fn sample_indexes() -> MatcherIndexes {
                 "Default".to_string(),
                 vec!["bbbbbbbb".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Diluc".to_string(),
@@ -62,6 +65,7 @@ fn sample_indexes() -> MatcherIndexes {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
     ];
 

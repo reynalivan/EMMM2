@@ -20,11 +20,29 @@ import {
 } from './ModInboxChrome';
 import { EmptyState, ProcessedSourceRow, ReadyEntryRow } from './ModInboxRows';
 import { openProcessedDestinationInApp } from './navigation';
-import type { ModInboxSnapshot, ProcessedModInboxDestination } from './types';
+import type {
+  ModInboxEntry,
+  ModInboxSnapshot,
+  ProcessedModInboxDestination,
+  ProcessedModInboxSource,
+} from './types';
 import {
   WorkspacePageContent,
   WorkspacePageFrame,
 } from '@/shared/ui/components/layout/WorkspacePageFrame';
+import VirtualList from '@/shared/ui/components/ui/VirtualList';
+import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
+
+const WATCHER_REFRESH_DEBOUNCE_MS = 600;
+const VIRTUAL_LIST_THRESHOLD = 80;
+
+interface InboxRefreshSlot {
+  pending: boolean;
+  promise: Promise<void>;
+}
+
+const getReadyEntryKey = (entry: ModInboxEntry) => entry.entryKey;
+const getProcessedSourceKey = (source: ProcessedModInboxSource) => source.sourceId;
 
 export default function ModInboxPage() {
   const { t } = useTranslation('mod_inbox');
@@ -33,11 +51,15 @@ export default function ModInboxPage() {
   const [activeTab, setActiveTab] = useState<'ready' | 'processed'>('ready');
   const [readySelection, setReadySelection] = useState<Set<string>>(() => new Set());
   const [processedSelection, setProcessedSelection] = useState<Set<string>>(() => new Set());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const refreshSequence = useRef(0);
+  const refreshSlots = useRef(new Map<string, InboxRefreshSlot>());
+  const watcherRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readyScrollOffset = useRef(0);
+  const processedScrollOffset = useRef(0);
   const readySelectionScope = useRef<string | null>(null);
   const watcherTransition = useRef(Promise.resolve());
   const watcherErrorPrefix = t('watcher_failed', { error: '' });
@@ -64,48 +86,84 @@ export default function ModInboxPage() {
   const refresh = useCallback(async () => {
     if (!activeGameId) {
       refreshSequence.current += 1;
+      refreshSlots.current.clear();
       setSnapshot(null);
+      setLoading(false);
+      setError(null);
       return;
     }
 
     const requestedGameId = activeGameId;
-    const requestSequence = ++refreshSequence.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await modInboxCommands.getModInbox(requestedGameId);
-      if (requestSequence !== refreshSequence.current) {
-        return;
-      }
-      setSnapshot(next);
-      syncReadySelection(next);
-    } catch (cause) {
-      if (requestSequence !== refreshSequence.current) {
-        return;
-      }
-      setError(formatAppError(cause));
-    } finally {
-      if (requestSequence === refreshSequence.current) {
-        setLoading(false);
-      }
+    const existingSlot = refreshSlots.current.get(requestedGameId);
+    if (existingSlot) {
+      existingSlot.pending = true;
+      return existingSlot.promise;
     }
+
+    const slot: InboxRefreshSlot = {
+      pending: false,
+      promise: Promise.resolve(),
+    };
+    refreshSlots.current.set(requestedGameId, slot);
+
+    const run = async () => {
+      do {
+        slot.pending = false;
+        const requestSequence = ++refreshSequence.current;
+        setLoading(true);
+        setError(null);
+        try {
+          const next = await modInboxCommands.getModInbox(requestedGameId);
+          if (requestSequence !== refreshSequence.current) continue;
+          setSnapshot(next);
+          syncReadySelection(next);
+        } catch (cause) {
+          if (requestSequence !== refreshSequence.current) continue;
+          setError(formatAppError(cause));
+        } finally {
+          if (requestSequence === refreshSequence.current) setLoading(false);
+        }
+      } while (slot.pending);
+    };
+
+    slot.promise = run().finally(() => {
+      if (refreshSlots.current.get(requestedGameId) === slot) {
+        refreshSlots.current.delete(requestedGameId);
+      }
+    });
+    return slot.promise;
   }, [activeGameId, syncReadySelection]);
+
+  const scheduleWatcherRefresh = useCallback(() => {
+    if (watcherRefreshTimer.current !== null) {
+      clearTimeout(watcherRefreshTimer.current);
+    }
+    watcherRefreshTimer.current = setTimeout(() => {
+      watcherRefreshTimer.current = null;
+      void refresh();
+    }, WATCHER_REFRESH_DEBOUNCE_MS);
+  }, [refresh]);
 
   useEffect(() => {
     if (!activeGameId) return;
-
     void refresh();
+    if (isDemoMode) return;
 
-    if (isDemoMode) {
-      return;
-    }
-
-    const unlistenPromise = listen('mod-inbox://changed', () => void refresh());
+    const unlistenPromise = listen('mod-inbox://changed', scheduleWatcherRefresh);
     return () => {
       refreshSequence.current += 1;
+      if (watcherRefreshTimer.current !== null) {
+        clearTimeout(watcherRefreshTimer.current);
+        watcherRefreshTimer.current = null;
+      }
       void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [activeGameId, refresh]);
+  }, [activeGameId, refresh, scheduleWatcherRefresh]);
+
+  useEffect(() => {
+    readyScrollOffset.current = 0;
+    processedScrollOffset.current = 0;
+  }, [activeGameId]);
 
   const inboxWatcherRoot =
     snapshot?.gameId === activeGameId && snapshot.rootState === 'ready' ? snapshot.rootPath : null;
@@ -144,6 +202,20 @@ export default function ModInboxPage() {
       ) ?? [],
     [snapshot?.processedSources],
   );
+  const readyUsesVirtualList = (snapshot?.readyEntries.length ?? 0) > VIRTUAL_LIST_THRESHOLD;
+  const processedUsesVirtualList =
+    (snapshot?.processedSources.length ?? 0) > VIRTUAL_LIST_THRESHOLD;
+  const activeTabUsesVirtualList =
+    (activeTab === 'ready' && readyUsesVirtualList) ||
+    (activeTab === 'processed' && processedUsesVirtualList);
+  const saveReadyScrollOffset = useCallback((offset: number) => {
+    readyScrollOffset.current = offset;
+  }, []);
+  const saveProcessedScrollOffset = useCallback((offset: number) => {
+    processedScrollOffset.current = offset;
+  }, []);
+  const getReadyScrollOffset = useCallback(() => readyScrollOffset.current, []);
+  const getProcessedScrollOffset = useCallback(() => processedScrollOffset.current, []);
 
   const allReadySelected =
     selectableReadyEntries.length > 0 &&
@@ -165,9 +237,9 @@ export default function ModInboxPage() {
     if (!activeGameId) return;
     setBusyAction('create-folder');
     try {
-      const next = await modInboxCommands.createModInboxFolder(activeGameId);
-      setSnapshot(next);
-      syncReadySelection(next);
+      const nextSnapshot = await modInboxCommands.createModInboxFolder(activeGameId);
+      setSnapshot(nextSnapshot);
+      syncReadySelection(nextSnapshot);
     } catch (cause) {
       toast.error(t('errors.create_folder', { error: formatAppError(cause) }));
     } finally {
@@ -331,9 +403,9 @@ export default function ModInboxPage() {
           </div>
         </WorkspacePageContent>
       ) : !snapshot && loading ? (
-        <div className="grid flex-1 place-items-center">
-          <span className="loading loading-spinner loading-lg text-primary" />
-        </div>
+        <WorkspacePageContent>
+          <WorkspacePanelSkeleton variant="inbox" />
+        </WorkspacePageContent>
       ) : snapshot?.rootState === 'missing' ? (
         <MissingInboxState
           rootPath={snapshot.rootPath}
@@ -343,36 +415,69 @@ export default function ModInboxPage() {
         />
       ) : snapshot ? (
         <>
-          <WorkspacePageContent>
+          <WorkspacePageContent
+            className={
+              activeTabUsesVirtualList ? 'flex h-full min-h-0 flex-col overflow-hidden' : undefined
+            }
+          >
             {activeTab === 'ready' ? (
-              <section className="mx-auto max-w-6xl space-y-3">
+              <section className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col">
                 {snapshot.readyEntries.length === 0 ? (
                   <EmptyState
                     icon={<PackageOpen size={34} />}
                     title={t('ready.empty_title')}
                     description={t('ready.empty_description')}
                   />
+                ) : readyUsesVirtualList ? (
+                  <VirtualList
+                    items={snapshot.readyEntries}
+                    getItemKey={getReadyEntryKey}
+                    estimateSize={() => 104}
+                    ariaLabel={t('tabs.ready')}
+                    initialOffset={getReadyScrollOffset}
+                    onScrollOffsetChange={saveReadyScrollOffset}
+                    className="pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20"
+                    renderItem={(entry) => (
+                      <div className="pb-3">
+                        <ReadyEntryRow
+                          entry={entry}
+                          selected={readySelection.has(entry.entryKey)}
+                          onToggle={() => toggleSelection(entry.entryKey, setReadySelection)}
+                          onResume={() => {
+                            if (entry.pendingBatchId) {
+                              openImportBatchWizard({
+                                kind: 'existing',
+                                batchId: entry.pendingBatchId,
+                              });
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                  />
                 ) : (
-                  snapshot.readyEntries.map((entry) => (
-                    <ReadyEntryRow
-                      key={entry.entryKey}
-                      entry={entry}
-                      selected={readySelection.has(entry.entryKey)}
-                      onToggle={() => toggleSelection(entry.entryKey, setReadySelection)}
-                      onResume={() => {
-                        if (entry.pendingBatchId) {
-                          openImportBatchWizard({
-                            kind: 'existing',
-                            batchId: entry.pendingBatchId,
-                          });
-                        }
-                      }}
-                    />
-                  ))
+                  <div className="space-y-3">
+                    {snapshot.readyEntries.map((entry) => (
+                      <ReadyEntryRow
+                        key={entry.entryKey}
+                        entry={entry}
+                        selected={readySelection.has(entry.entryKey)}
+                        onToggle={() => toggleSelection(entry.entryKey, setReadySelection)}
+                        onResume={() => {
+                          if (entry.pendingBatchId) {
+                            openImportBatchWizard({
+                              kind: 'existing',
+                              batchId: entry.pendingBatchId,
+                            });
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
                 )}
               </section>
             ) : (
-              <section className="mx-auto max-w-6xl space-y-3">
+              <section className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col">
                 {processedSelection.size > 0 && (
                   <div className="flex min-h-10 justify-end">
                     <button
@@ -392,19 +497,44 @@ export default function ModInboxPage() {
                     title={t('processed.empty_title')}
                     description={t('processed.empty_description')}
                   />
+                ) : processedUsesVirtualList ? (
+                  <VirtualList
+                    items={snapshot.processedSources}
+                    getItemKey={getProcessedSourceKey}
+                    estimateSize={() => 190}
+                    ariaLabel={t('tabs.processed')}
+                    initialOffset={getProcessedScrollOffset}
+                    onScrollOffsetChange={saveProcessedScrollOffset}
+                    className="pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20"
+                    renderItem={(source) => (
+                      <div className="pb-3">
+                        <ProcessedSourceRow
+                          source={source}
+                          selected={processedSelection.has(source.sourceId)}
+                          onToggle={() => toggleSelection(source.sourceId, setProcessedSelection)}
+                          onOpenInApp={(destination) => void openDestinationInApp(destination)}
+                          onOpenInExplorer={(destination) =>
+                            void commands.openInExplorer(activeGameId, destination.placedPath)
+                          }
+                        />
+                      </div>
+                    )}
+                  />
                 ) : (
-                  snapshot.processedSources.map((source) => (
-                    <ProcessedSourceRow
-                      key={source.sourceId}
-                      source={source}
-                      selected={processedSelection.has(source.sourceId)}
-                      onToggle={() => toggleSelection(source.sourceId, setProcessedSelection)}
-                      onOpenInApp={(destination) => void openDestinationInApp(destination)}
-                      onOpenInExplorer={(destination) =>
-                        void commands.openInExplorer(activeGameId, destination.placedPath)
-                      }
-                    />
-                  ))
+                  <div className="space-y-3">
+                    {snapshot.processedSources.map((source) => (
+                      <ProcessedSourceRow
+                        key={source.sourceId}
+                        source={source}
+                        selected={processedSelection.has(source.sourceId)}
+                        onToggle={() => toggleSelection(source.sourceId, setProcessedSelection)}
+                        onOpenInApp={(destination) => void openDestinationInApp(destination)}
+                        onOpenInExplorer={(destination) =>
+                          void commands.openInExplorer(activeGameId, destination.placedPath)
+                        }
+                      />
+                    ))}
+                  </div>
                 )}
               </section>
             )}

@@ -98,6 +98,42 @@ fn test_read_ini_document_parses_keybinding_section() {
 }
 
 #[test]
+fn test_read_ini_document_parses_uppercase_key_and_back_directives() {
+    let tmp = TempDir::new().unwrap();
+    let ini_path = tmp.path().join("config.ini");
+    fs::write(
+        &ini_path,
+        "[KeyChangeDress]\nKEY = CTRL+[\nBACK = NO_CTRL+ALT+]\n",
+    )
+    .unwrap();
+
+    let doc = read_ini_document(&ini_path).unwrap();
+
+    assert_eq!(doc.key_bindings.len(), 1);
+    assert_eq!(doc.key_bindings[0].key.as_deref(), Some("CTRL+["));
+    assert_eq!(doc.key_bindings[0].back.as_deref(), Some("NO_CTRL+ALT+]"));
+}
+
+#[test]
+fn test_read_ini_document_retains_key_type_and_condition() {
+    let tmp = TempDir::new().unwrap();
+    let ini_path = tmp.path().join("config.ini");
+    fs::write(
+        &ini_path,
+        "[KeyChangeDress]\nkey = n\nTYPE = toggle\ncondition = $active == 1\n",
+    )
+    .unwrap();
+
+    let doc = read_ini_document(&ini_path).unwrap();
+
+    assert_eq!(doc.key_bindings[0].binding_type.as_deref(), Some("toggle"));
+    assert_eq!(
+        doc.key_bindings[0].condition.as_deref(),
+        Some("$active == 1")
+    );
+}
+
+#[test]
 fn test_read_ini_document_keeps_repeated_bindings_and_section_identity() {
     let tmp = TempDir::new().unwrap();
     let ini_path = tmp.path().join("keys.ini");

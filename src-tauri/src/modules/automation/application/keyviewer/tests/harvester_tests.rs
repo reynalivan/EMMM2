@@ -5,8 +5,10 @@ use std::io::Write;
 use tempfile::TempDir;
 
 use crate::modules::automation::application::keyviewer::harvester::{
-    harvest_hashes_from_ini, harvest_hashes_from_mod,
+    harvest_hashes_from_ini, harvest_hashes_from_mod, harvest_mod, harvest_targets_from_ini,
+    HarvestCapabilities,
 };
+use crate::modules::matching::application::deep_matcher::models::types::RuntimeResourceKind;
 
 /// Helper to create a temp INI file with given content.
 fn write_ini(dir: &TempDir, name: &str, content: &str) -> std::path::PathBuf {
@@ -237,4 +239,132 @@ hash = aabbccdd
 
     let result = harvest_hashes_from_ini(&path).unwrap();
     assert_eq!(result.len(), 2);
+}
+
+#[test]
+fn harvests_slot_and_draw_context_instead_of_only_the_raw_hash() {
+    let dir = TempDir::new().unwrap();
+    let path = write_ini(
+        &dir,
+        "geometry.ini",
+        r#"
+[TextureOverrideArlecchinoPosition]
+hash = 6895f405
+vb0 = ResourceArlecchinoPosition
+
+[TextureOverrideArlecchinoBody]
+hash = e811d2a1
+ib = ResourceArlecchinoIB
+match_first_index = 40179
+
+[TextureOverrideArlecchinoFaceDiffuse]
+hash = a44625da
+ps-t0 = ResourceArlecchinoFaceDiffuse
+"#,
+    );
+
+    let targets = harvest_targets_from_ini(
+        &path,
+        &HarvestCapabilities::from_callback_slots(["vb0", "ib", "ps-t0"]),
+    )
+    .unwrap();
+
+    assert_eq!(targets.len(), 3);
+    assert_eq!(targets[0].resource_kind, RuntimeResourceKind::PositionVb);
+    assert_eq!(targets[0].callback_slot, "vb0");
+    assert_eq!(targets[1].resource_kind, RuntimeResourceKind::IndexBuffer);
+    assert_eq!(targets[1].match_first_index, Some(40179));
+    assert_eq!(targets[2].resource_kind, RuntimeResourceKind::Texture);
+    assert_eq!(targets[2].callback_slot, "ps-t0");
+}
+
+#[test]
+fn accepts_position_section_as_a_vb0_fallback_only_when_the_profile_supports_it() {
+    let dir = TempDir::new().unwrap();
+    let path = write_ini(
+        &dir,
+        "legacy.ini",
+        r#"
+[TextureOverrideArlecchinoPosition]
+hash = 6895f405
+"#,
+    );
+
+    let supported =
+        harvest_targets_from_ini(&path, &HarvestCapabilities::from_callback_slots(["vb0"]))
+            .unwrap();
+    assert_eq!(supported.len(), 1);
+    assert_eq!(supported[0].resource_kind, RuntimeResourceKind::PositionVb);
+    assert_eq!(supported[0].callback_slot, "vb0");
+
+    let unsupported = harvest_targets_from_ini(&path, &HarvestCapabilities::default()).unwrap();
+    assert!(unsupported.is_empty());
+}
+
+#[test]
+fn ignores_resource_hashes_without_a_slot_or_supported_position_fallback() {
+    let dir = TempDir::new().unwrap();
+    let path = write_ini(
+        &dir,
+        "malformed.ini",
+        r#"
+[TextureOverrideAccessory]
+hash = aabbccdd
+vbzero = ResourceBroken
+ps-t = ResourceAlsoBroken
+"#,
+    );
+
+    let targets =
+        harvest_targets_from_ini(&path, &HarvestCapabilities::from_callback_slots(["vb0"]))
+            .unwrap();
+    assert!(targets.is_empty());
+}
+
+#[test]
+fn records_every_effective_ini_in_the_generation_fingerprint() {
+    let dir = TempDir::new().unwrap();
+    write_ini(
+        &dir,
+        "position.ini",
+        "[TextureOverrideArlecchinoPosition]\nhash = 6895f405\nvb0 = ResourcePosition\n",
+    );
+    write_ini(&dir, "keys.ini", "[KeyArlecchino]\nkey = CTRL+[\n");
+
+    let harvest = harvest_mod(
+        dir.path(),
+        &HarvestCapabilities::from_callback_slots(["vb0"]),
+    )
+    .expect("mod harvest should succeed");
+
+    assert_eq!(harvest.ini_fingerprints.len(), 2);
+    assert!(harvest
+        .ini_fingerprints
+        .iter()
+        .all(|value| value.len() == 64));
+}
+
+#[test]
+fn cached_harvest_reparses_an_ini_after_its_file_snapshot_changes() {
+    let dir = TempDir::new().unwrap();
+    let path = write_ini(
+        &dir,
+        "position.ini",
+        "[TextureOverrideArlecchinoPosition]\nhash = 6895f405\nvb0 = ResourcePosition\n",
+    );
+    let capabilities = HarvestCapabilities::from_callback_slots(["vb0"]);
+
+    let first = harvest_mod(dir.path(), &capabilities).unwrap();
+    assert_eq!(first.targets[0].hash, "6895f405");
+
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::fs::write(
+        &path,
+        "[TextureOverrideArlecchinoPosition]\nhash = a1b2c3d4\nvb0 = ResourcePosition\n",
+    )
+    .unwrap();
+
+    let second = harvest_mod(dir.path(), &capabilities).unwrap();
+    assert_eq!(second.targets[0].hash, "a1b2c3d4");
+    assert_ne!(first.ini_fingerprints, second.ini_fingerprints);
 }

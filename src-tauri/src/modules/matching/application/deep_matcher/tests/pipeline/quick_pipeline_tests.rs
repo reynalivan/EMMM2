@@ -43,6 +43,7 @@ fn quick_test_db() -> MasterDb {
                 "Default".to_string(),
                 vec!["d94c8962".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Ayaka".to_string(),
@@ -53,6 +54,7 @@ fn quick_test_db() -> MasterDb {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
     ])
 }
@@ -108,6 +110,7 @@ fn test_quick_direct_name_support_only_does_not_auto_match() {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_quick(
@@ -144,6 +147,7 @@ fn test_quick_pipeline_has_no_fuzzy_fallback_for_near_name_only() {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_quick(

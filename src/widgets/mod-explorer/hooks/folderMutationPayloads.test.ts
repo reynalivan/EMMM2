@@ -8,8 +8,12 @@ describe('resolveTogglePathRewrites', () => {
     expect(resolveTogglePathRewrites(['ignored'], reported, true)).toBe(reported);
   });
 
+  it('keeps an empty backend result as no rewrite', () => {
+    expect(resolveTogglePathRewrites(['C:/Mods/Ayaka'], [], true)).toEqual([]);
+  });
+
   it('reconstructs enable rewrites from the disabled source name', () => {
-    expect(resolveTogglePathRewrites(['C:/Mods/Ayaka'], [], true)).toEqual([
+    expect(resolveTogglePathRewrites(['C:/Mods/Ayaka'], null, true)).toEqual([
       { old_path: 'C:/Mods/DISABLED Ayaka', new_path: 'C:/Mods/Ayaka' },
     ]);
   });

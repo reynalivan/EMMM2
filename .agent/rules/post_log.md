@@ -9,7 +9,7 @@ After EVERY completed implementation session:
 
 ### Create File
 
-- Location: `.docs/history/`
+- Location: `docs/history/`
 - Filename:
   - `yyyymmddxxxx-[short-title-summary].md`
   - `xxxx` = incremental/unique

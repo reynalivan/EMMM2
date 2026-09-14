@@ -62,7 +62,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
   const handleDuplicateForceEnable = useCallback(
     (ignoreFuture: boolean = false) => {
       void (async () => {
-        const { folder, duplicates } = state.duplicateWarning;
+        const { folder, duplicates, enableDisabledAncestors } = state.duplicateWarning;
 
         if (ignoreFuture && activeGame?.id && folder && duplicates.length > 0) {
           // Backend matches the ignore against the exact sorted set of
@@ -84,15 +84,22 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
           }
         }
 
-        await switchActions.resolveDuplicateForceEnable(folder);
+        await switchActions.resolveDuplicateForceEnable(folder, enableDisabledAncestors);
       })();
     },
     [state.duplicateWarning, activeGame, switchActions, t],
   );
 
   const handleDuplicateEnableOnly = useCallback(() => {
-    void switchActions.resolveDuplicateEnableOnly(state.duplicateWarning.folder);
-  }, [state.duplicateWarning.folder, switchActions]);
+    void switchActions.resolveDuplicateEnableOnly(
+      state.duplicateWarning.folder,
+      state.duplicateWarning.enableDisabledAncestors,
+    );
+  }, [
+    state.duplicateWarning.enableDisabledAncestors,
+    state.duplicateWarning.folder,
+    switchActions,
+  ]);
 
   const handleEnableOnlyThis = useCallback(
     (folder: ModFolder) => {

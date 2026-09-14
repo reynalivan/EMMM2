@@ -153,16 +153,16 @@ export const AdvancedKeybindModal: React.FC<AdvancedKeybindModalProps> = ({
             onClick={() => setIsListening(true)}
             className={`
               relative w-full h-32 rounded-xl flex items-center justify-center outline-none cursor-pointer
-              transition-all duration-200 border-2
+              border-2 transition-[background-color,border-color,box-shadow] duration-150 motion-reduce:transition-none
               ${
                 isListening
-                  ? 'bg-base-100 border-primary shadow-[0_0_15px_-3px_var(--color-primary)] ring-4 ring-primary/20'
+                  ? 'border-primary bg-base-100 ring-2 ring-primary/20'
                   : 'bg-base-100/50 border-base-content/20 hover:border-primary/50'
               }
             `}
           >
             {isListening ? (
-              <div className="flex flex-col items-center gap-2 text-primary animate-pulse">
+              <div className="flex flex-col items-center gap-2 text-primary">
                 <Keyboard size={32} />
                 <span className="font-bold tracking-wide">
                   {t('preview:ini_editor.press_key_combo')}

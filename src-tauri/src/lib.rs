@@ -22,7 +22,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::system::adapters::tauri::app_cmds::record_native_error_metric,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_dashboard_stats,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_active_keybindings,
-            crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_view_model,
+            crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_structure,
+            crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_preview,
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_switch,
             crate::modules::system::adapters::tauri::app_cmds::get_logs,
             crate::modules::system::adapters::tauri::app_cmds::open_log_folder,
@@ -42,7 +43,14 @@ macro_rules! emmm_collect_commands {
             crate::modules::catalog::adapters::tauri::master_db_cmds::refresh_catalog_pack,
             crate::modules::catalog::adapters::tauri::master_db_cmds::check_catalog_update,
             crate::modules::catalog::adapters::tauri::master_db_cmds::install_catalog_update,
-            crate::modules::catalog::adapters::tauri::master_db_cmds::set_catalog_auto_install,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::preview_catalog_github_import,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::preview_catalog_local_import,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::install_catalog_import,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::get_object_identity_suggestion_status,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::list_object_identity_suggestions,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::retry_object_identity_suggestions,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::dismiss_object_identity_suggestion,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::reset_object_identity_suggestion_dismissals,
             crate::modules::catalog::adapters::tauri::master_db_cmds::search_master_db,
             crate::modules::catalog::adapters::tauri::master_db_cmds::pin_object,
             crate::modules::workspace::adapters::tauri::scanner_conflict_cmds::detect_conflicts_cmd,
@@ -53,6 +61,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::library::adapters::tauri::mod_core_cmds::reveal_object_in_explorer,
             crate::modules::library::adapters::tauri::mod_core_cmds::create_mod_folder,
             crate::modules::library::adapters::tauri::conflict_cmds::get_folder_conflict_details,
+            crate::modules::library::adapters::tauri::conflict_cmds::open_folder_conflict_candidate,
             crate::modules::library::adapters::tauri::conflict_cmds::resolve_folder_name_conflict,
             crate::modules::library::adapters::tauri::conflict_cmds::trash_folder_conflict_candidate,
             crate::modules::library::adapters::tauri::conflict_cmds::ignore_object_conflict,
@@ -84,6 +93,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::library::adapters::tauri::trash_cmds::open_recycle_bin,
             crate::modules::library::adapters::tauri::preview_cmds::list_mod_ini_files,
             crate::modules::library::adapters::tauri::preview_cmds::read_mod_ini,
+            crate::modules::library::adapters::tauri::preview_cmds::read_mod_ini_documents,
             crate::modules::library::adapters::tauri::preview_cmds::write_mod_ini,
             crate::modules::library::adapters::tauri::preview_cmds::list_mod_preview_images,
             crate::modules::library::adapters::tauri::preview_cmds::save_mod_preview_image,
@@ -119,6 +129,7 @@ macro_rules! emmm_collect_commands {
             modules::ingestion::adapters::tauri::tauri::apply_object_classification_batch,
             modules::ingestion::adapters::tauri::tauri::preview_relocation_batch,
             crate::modules::settings::adapters::tauri::settings_cmds::get_settings,
+            crate::modules::settings::adapters::tauri::settings_cmds::get_keyviewer_runtime_diagnostics,
             crate::modules::settings::adapters::tauri::settings_cmds::save_settings,
             crate::modules::settings::adapters::tauri::settings_cmds::set_ai_api_key,
             crate::modules::settings::adapters::tauri::settings_cmds::delete_ai_api_key,
@@ -162,6 +173,9 @@ macro_rules! emmm_collect_commands {
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::apply_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::reconcile_disk_state_cmd,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::plan_onboarding_indexing_work,
+            crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::begin_onboarding_indexing,
+            crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::reconcile_onboarding_indexing_game,
+            crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::cancel_onboarding_indexing,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::inspect_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::resolve_rename_confirmations,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_storage_size_backfill_status,
@@ -176,7 +190,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::duplicates::adapters::tauri::tauri::remove_ignored_pair,
             crate::modules::updates::adapters::tauri::update_cmds::check_app_update,
             crate::modules::updates::adapters::tauri::update_cmds::install_app_update,
-            crate::modules::automation::adapters::tauri::hotkey_cmds::update_hotkey_config,
+            crate::modules::automation::adapters::tauri::hotkey_cmds::save_hotkey_configuration,
             crate::modules::automation::adapters::tauri::hotkey_cmds::get_reload_key,
             modules::browser::adapters::tauri::tauri::browser_open_tab,
             modules::browser::adapters::tauri::tauri::browser_navigate,
@@ -193,6 +207,7 @@ macro_rules! emmm_collect_commands {
             modules::browser::adapters::tauri::tauri::browser_list_bookmarks,
             modules::browser::adapters::tauri::tauri::browser_add_bookmark,
             modules::browser::adapters::tauri::tauri::browser_delete_bookmark,
+            modules::browser::adapters::tauri::tauri::browser_update_bookmark,
             modules::browser::adapters::tauri::tauri::browser_list_history,
             modules::browser::adapters::tauri::tauri::browser_clear_history,
             modules::browser::adapters::tauri::tauri::browser_get_session_tabs,
@@ -235,15 +250,17 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     use tauri_plugin_global_shortcut::ShortcutState;
-                    if event.state != ShortcutState::Pressed {
-                        return;
-                    }
                     if let Some(hotkey_manager) =
                         app.try_state::<crate::modules::automation::application::hotkeys::manager::HotkeyManager>()
                     {
-                        hotkey_manager
-                            .inner()
-                            .on_shortcut_pressed(app, &shortcut.to_string());
+                        match event.state {
+                            ShortcutState::Pressed => hotkey_manager
+                                .inner()
+                                .on_shortcut_pressed(app, &shortcut.to_string()),
+                            ShortcutState::Released => hotkey_manager
+                                .inner()
+                                .on_shortcut_released(&shortcut.to_string()),
+                        }
                     }
                 })
                 .build(),
@@ -267,9 +284,12 @@ pub fn run() {
         .manage(crate::modules::ingestion::application::import_batch::extraction_state::ImportExtractionState::default())
         .manage(crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState::new())
         .manage(crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new())
+        .manage(crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore::new())
         .manage(crate::modules::dashboard::application::storage_backfill::StorageSizeBackfillState::default())
         .manage(crate::modules::browser::application::browser::browser_service::BrowserAdblockState::default())
         .manage(crate::modules::workspace::application::scanner::master_db::CatalogUpdateState::default())
+        .manage(crate::modules::workspace::application::scanner::master_db::CatalogImportState::default())
+        .manage(crate::modules::catalog::application::objects::identity_suggestions::IdentitySuggestionState::default())
         .manage(crate::modules::mutation::coordinator::MutationCoordinator::unconfigured())
         .setup(move |app| {
             let app_handle = app.handle();
@@ -409,10 +429,6 @@ pub fn run() {
                 }
             });
 
-            crate::modules::catalog::adapters::tauri::master_db_cmds::schedule_catalog_auto_update(
-                app_handle.clone(),
-            );
-
             let config_ref: tauri::State<'_, crate::modules::settings::application::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
             app.manage(crate::modules::system::application::app::bootstrap::init_hotkey_manager(
@@ -453,6 +469,11 @@ mod specta_tests {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let command_source = std::fs::read_to_string(manifest_dir.join("src/lib.rs"))
             .expect("read command registry");
+        let command_registry = command_source
+            .split_once("macro_rules! emmm_collect_commands {")
+            .and_then(|(_, source)| source.split_once("\n}\n\n#[cfg_attr(mobile"))
+            .map(|(registry, _)| registry)
+            .expect("command registry macro should be present");
         let permission_source =
             std::fs::read_to_string(manifest_dir.join("permissions/app-commands.toml"))
                 .expect("read app command permission");
@@ -463,7 +484,7 @@ mod specta_tests {
             regex::Regex::new(r#"\"([A-Za-z0-9_]+)\""#).expect("valid allowlist regex");
 
         let registered = command_pattern
-            .captures_iter(&command_source)
+            .captures_iter(command_registry)
             .map(|capture| capture[1].to_string())
             .collect::<std::collections::BTreeSet<_>>();
         let allowed = allowed_pattern

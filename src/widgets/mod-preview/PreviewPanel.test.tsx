@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '../../tests/testing/test-utils';
 import { invoke } from '@tauri-apps/api/core';
 import PreviewPanel from './PreviewPanel';
 import * as usePreviewPanelStateModule from './hooks/usePreviewPanelState';
+import * as useModHealthModule from './hooks/useModHealth';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -15,6 +16,15 @@ vi.mock('@/shared/ui/liquid', () => ({
 
 vi.mock('./hooks/usePreviewPanelState', () => ({
   usePreviewPanelState: vi.fn(),
+}));
+
+vi.mock('./hooks/useModHealth', () => ({
+  useModHealth: vi.fn(() => ({
+    data: undefined,
+    isFetching: false,
+    isError: false,
+    refetch: vi.fn(),
+  })),
 }));
 
 const sharedModActionsState = {
@@ -93,6 +103,7 @@ vi.mock('@/shared/ui/toast', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockUsePreviewPanelState = usePreviewPanelStateModule.usePreviewPanelState as any;
+const mockUseModHealth = vi.mocked(useModHealthModule.useModHealth);
 
 function createDefaultHookState() {
   const selectedFolder = {
@@ -145,11 +156,14 @@ function createDefaultHookState() {
   };
 
   return {
-    activePath: 'E:/Mods/TestMod',
+    activePath: 'E:/Mods/TestMod' as string | null,
     folderNameConflict: null as
       import('../../shared/api/tauri/bindings').FolderNameConflictGroup | null,
     selectedFolder,
     sourceUnavailableMessage: null as string | null,
+    isPreviewLoading: false,
+    previewError: null as unknown | null,
+    retryPreview: vi.fn(async () => undefined),
     previewSummary: {
       selected_path: 'E:/Mods/TestMod',
       selected_node: selectedFolder,
@@ -265,8 +279,35 @@ describe('PreviewPanel', () => {
     const panel = container.querySelector('.workspace-scroll-owner');
 
     expect(panel).toHaveClass('w-full', 'max-w-none');
-    expect(panel).not.toHaveClass('pt-[var(--workspace-topbar-height)]');
+    expect(panel).toHaveClass('pt-[var(--workspace-topbar-height)]');
     expect(panel).not.toHaveClass('mx-auto', 'max-w-140');
+  });
+
+  it('shows only a loading state while a newly selected preview is pending', () => {
+    const state = createDefaultHookState();
+    state.activePath = null;
+    state.isPreviewLoading = true;
+    mockUsePreviewPanelState.mockReturnValue(state);
+
+    render(<PreviewPanel />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading selected mod preview');
+    expect(screen.queryByDisplayValue('Test Mod')).not.toBeInTheDocument();
+    expect(screen.queryByText('Preview Images')).not.toBeInTheDocument();
+  });
+
+  it('offers retry without stale preview actions after a preview read failure', () => {
+    const state = createDefaultHookState();
+    state.activePath = null;
+    state.previewError = new Error('Disk read failed');
+    mockUsePreviewPanelState.mockReturnValue(state);
+
+    render(<PreviewPanel />);
+
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    retry.click();
+    expect(state.retryPreview).toHaveBeenCalledTimes(1);
+    expect(screen.queryByDisplayValue('Test Mod')).not.toBeInTheDocument();
   });
 
   it('keeps rename editing on the folder card instead of opening a preview dialog', () => {
@@ -329,8 +370,7 @@ describe('PreviewPanel', () => {
   // Covers: NC-6.1-01 (Error handling - no mod selected)
   it('should show warning when trying to open folder without active path', async () => {
     const state = createDefaultHookState();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    state.activePath = null as any;
+    state.activePath = null;
     mockUsePreviewPanelState.mockReturnValue(state);
 
     render(<PreviewPanel />);
@@ -432,5 +472,21 @@ describe('PreviewPanel', () => {
         expect(sharedModActionsState.handleToggleEnabled).toHaveBeenCalled();
       }
     });
+  });
+
+  it('skips Mod Health for a disabled mod', async () => {
+    const state = createDefaultHookState();
+    state.selectedFolder = {
+      ...state.selectedFolder,
+      is_enabled: false,
+      is_effectively_active: false,
+      switch_state: 'disabled',
+    };
+    mockUsePreviewPanelState.mockReturnValue(state);
+
+    render(<PreviewPanel />);
+
+    expect(mockUseModHealth).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByRole('heading', { name: 'Mod Health' })).not.toBeInTheDocument();
   });
 });

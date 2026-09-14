@@ -100,16 +100,15 @@ pub fn apply_direct_name_support_stage(
     tag_cap: f32,
 ) {
     for (entry_id, state) in states.iter_mut() {
-        let entry = &db.entries[*entry_id];
-        let name_hits: Vec<String> = normalizer::preprocess_text(&entry.name)
-            .into_iter()
-            .filter(|token| folder_tokens.contains(token))
-            .collect();
-        let tag_hits: Vec<String> = entry
-            .aliases
+        let name_hits: Vec<String> = db.direct_name_tokens[*entry_id]
             .iter()
-            .flat_map(|tag| normalizer::preprocess_text(tag).into_iter())
-            .filter(|token| folder_tokens.contains(token))
+            .filter(|token| folder_tokens.contains(*token))
+            .cloned()
+            .collect();
+        let tag_hits: Vec<String> = db.direct_alias_tokens[*entry_id]
+            .iter()
+            .filter(|token| folder_tokens.contains(*token))
+            .cloned()
             .collect();
 
         crate::modules::matching::application::deep_matcher::analysis::scoring::apply_direct_name_support_contribution(

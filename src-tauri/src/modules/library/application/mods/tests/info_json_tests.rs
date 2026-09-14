@@ -86,6 +86,33 @@ fn test_update_info_json_merge() {
     assert_eq!(result.author, "Unknown");
 }
 
+#[test]
+fn update_from_snapshot_skips_a_noop_and_preserves_exact_existing_bytes() {
+    let tmp = TempDir::new().unwrap();
+    let mod_dir = tmp.path().join("NoOpMod");
+    fs::create_dir(&mod_dir).unwrap();
+    let original = br#"{"actual_name":"NoOp","is_favorite":false,"custom_field":"keep"}"#;
+    let info_path = mod_dir.join("info.json");
+    fs::write(&info_path, original).unwrap();
+
+    let result = update_info_json_from_snapshot(
+        &mod_dir,
+        Some(original),
+        &ModInfoUpdate {
+            is_favorite: Some(false),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert!(!result.is_favorite);
+    assert_eq!(
+        fs::read(&info_path).unwrap(),
+        original,
+        "a semantic no-op must leave the existing disk bytes untouched"
+    );
+}
+
 // Covers: EC-4.06 (Orphaned info.json — empty folder)
 #[test]
 fn test_read_info_json_with_empty_object() {
@@ -132,6 +159,35 @@ fn test_update_creates_if_missing() {
     assert_eq!(result.author, "New Author");
     assert_eq!(result.actual_name, "NewMod");
     assert!(mod_dir.join("info.json").exists());
+}
+
+#[test]
+fn update_from_snapshot_creates_one_final_metadata_document() {
+    let tmp = TempDir::new().unwrap();
+    let mod_dir = tmp.path().join("NewMod");
+    fs::create_dir(&mod_dir).unwrap();
+
+    let result = update_info_json_from_snapshot(
+        &mod_dir,
+        None,
+        &ModInfoUpdate {
+            tags_add: Some(vec!["outfit".to_string()]),
+            is_favorite: Some(true),
+            is_pinned: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(result.actual_name, "NewMod");
+    assert_eq!(result.tags, vec!["outfit"]);
+    assert!(result.is_favorite);
+    assert!(result.is_pinned);
+    assert_eq!(
+        read_info_json(&mod_dir).unwrap(),
+        Some(result),
+        "the only on-disk metadata document is the final update"
+    );
 }
 
 #[test]

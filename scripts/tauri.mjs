@@ -1,7 +1,17 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { access, mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +45,7 @@ const observabilityEnvironmentNames = new Set([
   'EMMM_GRAFANA_OTLP_AUTHORIZATION',
   'VITE_GRAFANA_FARO_URL',
   'VITE_GRAFANA_FARO_API_KEY',
+  'VITE_GRAFANA_FARO_TRACING_ENABLED',
   'VITE_APP_VERSION',
 ]);
 
@@ -249,11 +260,7 @@ function run(command, args, options = {}) {
 
 async function writePreparationStamp(fingerprint) {
   const temporaryStamp = `${stampPath}.${process.pid}.tmp`;
-  await writeFile(
-    temporaryStamp,
-    `${JSON.stringify({ fingerprint, triplet }, null, 2)}\n`,
-    'utf8',
-  );
+  await writeFile(temporaryStamp, `${JSON.stringify({ fingerprint, triplet }, null, 2)}\n`, 'utf8');
   await rm(stampPath, { force: true });
   await rename(temporaryStamp, stampPath);
 }
@@ -275,11 +282,7 @@ async function refreshCargoNativeCache(fingerprint) {
   const temporaryStamp = `${cargoCacheStampPath}.${process.pid}.tmp`;
   await writeFile(
     temporaryStamp,
-    `${JSON.stringify(
-      { fingerprint, triplet, vcpkgRoot: resolve(localVcpkgRoot) },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify({ fingerprint, triplet, vcpkgRoot: resolve(localVcpkgRoot) }, null, 2)}\n`,
     'utf8',
   );
   await rm(cargoCacheStampPath, { force: true });
@@ -291,10 +294,7 @@ async function prepareWindowsDependencies() {
 
   await mkdir(localVcpkgRoot, { recursive: true });
   const fingerprint = await dependencyFingerprint();
-  if (
-    (await dependenciesAreReady(fingerprint)) &&
-    (await cargoNativeCacheIsReady(fingerprint))
-  ) {
+  if ((await dependenciesAreReady(fingerprint)) && (await cargoNativeCacheIsReady(fingerprint))) {
     return;
   }
 
@@ -326,9 +326,7 @@ async function prepareWindowsDependencies() {
 
       const missing = await missingArtifacts();
       if (missing.length > 0) {
-        throw new Error(
-          `vcpkg completed without required static libraries: ${missing.join(', ')}`,
-        );
+        throw new Error(`vcpkg completed without required static libraries: ${missing.join(', ')}`);
       }
 
       await writePreparationStamp(fingerprint);
@@ -348,7 +346,8 @@ async function runTauri(args) {
     throw new Error('Tauri CLI is not installed. Run pnpm install first.');
   }
 
-  const tauriArgs = args[0] === 'dev' ? [...args, '--config', 'src-tauri/tauri.dev.conf.json'] : args;
+  const tauriArgs =
+    args[0] === 'dev' ? [...args, '--config', 'src-tauri/tauri.dev.conf.json'] : args;
 
   await run(process.execPath, [tauriCli, ...tauriArgs], {
     env: {

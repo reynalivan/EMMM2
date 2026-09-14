@@ -58,6 +58,15 @@ export default function FolderConflictManager() {
   const draftStatesByGroupRef = useRef<Record<string, FolderConflictDraftState>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  const openConflictCandidate = async (groupId: string, path: string) => {
+    if (!activeGameId) return;
+    try {
+      await commands.openFolderConflictCandidate(activeGameId, groupId, path);
+    } catch (error) {
+      toast.error(t('conflict_manager.open_folder_failed', { error: formatAppError(error) }));
+    }
+  };
+
   const isDialogOpen = dialogState.kind === 'folderConflicts';
   const selected = groups.find((group) => group.group_id === selectedId) ?? groups[0] ?? null;
   const {
@@ -449,6 +458,7 @@ export default function FolderConflictManager() {
                         setDrafts((current) => ({ ...current, [candidate.path]: value }))
                       }
                       onBlur={validateRenameDrafts}
+                      onOpenFolder={() => openConflictCandidate(selected.group_id, candidate.path)}
                     />
                   ))}
                 </div>

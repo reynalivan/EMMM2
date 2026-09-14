@@ -450,7 +450,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
                 return (
                   <div
                     key={proposal.mod_id}
-                    className={`flex items-center gap-4 p-3 rounded-xl border transition-all cursor-pointer ${
+                    className={`flex cursor-pointer items-center gap-4 rounded-xl border p-3 transition-[background-color,border-color,opacity] duration-150 ${
                       isSelected
                         ? 'bg-primary/10 border-primary/30'
                         : 'bg-base-100 border-base-300 opacity-60 hover:opacity-100'

@@ -49,6 +49,7 @@
     "destination_unavailable": "Destination unavailable",
     "destination_label": "destination",
     "no_destinations": "No destination was recorded for this source.",
+    "show_all_destinations": "Show all {{count}} destinations",
     "open_in_app": "Open in App",
     "open_in_explorer": "Open in Explorer",
     "open_in_app_label": "Open {{name}} in app",

@@ -5,15 +5,15 @@ import type { WorkspacePathRewrite } from '@/entities/workspace';
 
 /**
  * Path rewrites for a bulk toggle. The backend reports them when it can; older
- * results carry none, so they are reconstructed from the resulting paths and the
- * toggle direction.
+ * results omit the field, so only those use the legacy reconstruction. An empty
+ * reported list means no folders were renamed.
  */
 export function resolveTogglePathRewrites(
   successPaths: string[],
   reported: WorkspacePathRewrite[] | null | undefined,
   enable: boolean,
 ): WorkspacePathRewrite[] {
-  if (reported && reported.length > 0) {
+  if (reported != null) {
     return reported;
   }
 

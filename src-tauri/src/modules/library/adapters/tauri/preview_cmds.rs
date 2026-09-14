@@ -1,8 +1,9 @@
 use crate::modules::library::application::ini::document::IniDocument;
 use crate::modules::library::application::mods::preview_ops::{
     clear_mod_preview_images_inner, ensure_image_size, list_mod_ini_files_inner,
-    list_mod_preview_images_inner, read_mod_ini_inner, remove_mod_preview_image_inner,
-    resolve_image_path, save_mod_preview_image_inner, write_mod_ini_locked_inner,
+    list_mod_preview_images_inner, read_mod_ini_documents_inner, read_mod_ini_inner,
+    remove_mod_preview_image_inner, resolve_image_path, save_mod_preview_image_inner,
+    write_mod_ini_locked_inner,
 };
 use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::settings::application::config::ConfigService;
@@ -11,6 +12,7 @@ use crate::platform::fs::guard::validate_path;
 use crate::shared::errors::AppError;
 use tauri::State;
 
+pub use crate::modules::library::application::mods::preview_ops::IniDocumentEntry;
 pub use crate::modules::library::application::mods::preview_ops::{IniFileEntry, IniLineUpdate};
 
 #[specta::specta]
@@ -34,6 +36,17 @@ pub async fn read_mod_ini(
 ) -> Result<IniDocument, AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
     read_mod_ini_inner(&mod_root, &file_name)
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn read_mod_ini_documents(
+    config: State<'_, ConfigService>,
+    game_id: String,
+    folder_path: String,
+) -> Result<Vec<IniDocumentEntry>, AppError> {
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    tokio::task::spawn_blocking(move || read_mod_ini_documents_inner(&mod_root)).await?
 }
 
 #[specta::specta]

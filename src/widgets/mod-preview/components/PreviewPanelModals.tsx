@@ -11,7 +11,11 @@ interface PreviewPanelModalsProps {
   handleDeleteConfirm: () => void;
 
   // Duplicate Warning
-  duplicateWarning: { open: boolean; folder: ModFolder | null; duplicates: DuplicateInfo[] };
+  duplicateWarning: {
+    open: boolean;
+    folder: Pick<ModFolder, 'id' | 'path' | 'name'> | null;
+    duplicates: DuplicateInfo[];
+  };
   handleDuplicateForceEnable: (ignoreFuture: boolean) => void;
   handleDuplicateEnableOnly: () => void;
   handleDuplicateCancel: () => void;

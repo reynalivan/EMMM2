@@ -97,9 +97,9 @@ pub async fn refresh_catalog_pack(
     refresh_catalog_pack_service(&app, pool.inner()).await
 }
 
-/// Rebuild catalog-derived thumbnail mappings after a validated pack change.
-/// Kept outside the IPC wrapper so the signed updater and manual refresh use
-/// exactly the same ownership-preserving rule.
+/// Refresh catalog state from a manually managed pack.
+/// Catalog-owned thumbnail references are cleared only for this explicit
+/// refresh path; importing a reviewed pack never changes object metadata.
 pub(crate) async fn refresh_catalog_pack_service(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
@@ -107,80 +107,37 @@ pub(crate) async fn refresh_catalog_pack_service(
     crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult,
     AppError,
 > {
-    use sqlx::Row;
-    use std::collections::HashMap;
+    sqlx::query(
+        "UPDATE objects
+         SET thumbnail_path = NULL, thumbnail_source = NULL
+         WHERE thumbnail_source = 'asset_pack'",
+    )
+    .execute(pool)
+    .await?;
+    activate_catalog_pack_service(app).await
+}
+
+/// Expose a newly activated pack to the matcher without reconciling the game
+/// library or replacing any object metadata or thumbnails.
+pub(crate) async fn activate_catalog_pack_service(
+    app: &tauri::AppHandle,
+) -> Result<
+    crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult,
+    AppError,
+> {
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
-    let asset_pack_root =
-        crate::modules::workspace::application::scanner::master_db::asset_pack::CatalogPack::root(
-            &app_data_dir,
-        );
     let pack =
         crate::modules::workspace::application::scanner::master_db::asset_pack::CatalogPack::load(
             &app_data_dir,
         )?;
     let status = pack.status()?;
-    let mut thumbnails = HashMap::new();
-    for game_type in 0..=4 {
-        for entry in pack.entries_for(game_type)? {
-            if let Some(path) = entry.thumbnail_path {
-                thumbnails.insert(
-                    (game_type, crate::modules::workspace::application::scanner::sync::helpers::canonical_entry_key(&entry.name)),
-                    path,
-                );
-            }
-        }
-    }
-    let rows = sqlx::query(
-        "SELECT o.id, o.matched_entry_key, o.thumbnail_path, o.thumbnail_source, g.game_type
-         FROM objects o JOIN games g ON g.id = o.game_id
-         WHERE o.matched_entry_key IS NOT NULL",
-    )
-    .fetch_all(pool)
-    .await?;
-    let mut thumbnails_applied = 0;
-    for row in rows {
-        let id: String = row.try_get("id")?;
-        let key: String = row.try_get("matched_entry_key")?;
-        let game_type: i32 = row.try_get("game_type")?;
-        let current: Option<String> = row.try_get("thumbnail_path")?;
-        let source: Option<String> = row.try_get("thumbnail_source")?;
-        if source.as_deref() == Some("user") {
-            continue;
-        }
-        let current_is_pack_asset = current
-            .as_deref()
-            .is_some_and(|path| std::path::Path::new(path).starts_with(&asset_pack_root));
-        let replacement = thumbnails.get(&(game_type, key));
-        if replacement.is_none()
-            && source.as_deref() != Some("asset_pack")
-            && !current_is_pack_asset
-        {
-            continue;
-        }
-        let next = replacement.cloned();
-        if current == next {
-            continue;
-        }
-        sqlx::query("UPDATE objects SET thumbnail_path = ?, thumbnail_source = ? WHERE id = ?")
-            .bind(&next)
-            .bind(next.as_ref().map(|_| "asset_pack"))
-            .bind(&id)
-            .execute(pool)
-            .await?;
-        if next.is_some() {
-            thumbnails_applied += 1;
-        }
-    }
     crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(app)
         .await;
     Ok(
         crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult {
             state: status.state,
             entries: status.entries,
-            thumbnails_applied,
-            missing_assets: status.missing_assets,
-            skipped_invalid_files: 0,
         },
     )
 }
@@ -195,7 +152,6 @@ pub async fn check_catalog_update(
         '_,
         crate::modules::workspace::application::scanner::master_db::CatalogUpdateState,
     >,
-    config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<crate::modules::workspace::application::scanner::master_db::CatalogUpdateCheck, AppError>
 {
     use tauri::Manager;
@@ -205,7 +161,6 @@ pub async fn check_catalog_update(
         &app_data_dir,
     )
     .await?;
-    config.record_catalog_update_check(chrono::Utc::now().timestamp())?;
     Ok(update)
 }
 
@@ -215,12 +170,10 @@ pub async fn check_catalog_update(
 #[specta::specta]
 pub async fn install_catalog_update(
     app: tauri::AppHandle,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
     update_state: tauri::State<
         '_,
         crate::modules::workspace::application::scanner::master_db::CatalogUpdateState,
     >,
-    config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
 ) -> Result<
     crate::modules::workspace::application::scanner::master_db::CatalogUpdateInstallResult,
     AppError,
@@ -233,108 +186,210 @@ pub async fn install_catalog_update(
             &app_data_dir,
         )
         .await?;
-    refresh_catalog_pack_service(&app, pool.inner()).await?;
-    config.record_catalog_update_check(chrono::Utc::now().timestamp())?;
+    activate_catalog_pack_service(&app).await?;
     Ok(installed)
+}
+
+/// Stage and inspect a public GitHub release asset. The returned token is the
+/// reviewed archive identity; activation requires a separate confirmation.
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_catalog_github_import(
+    app: tauri::AppHandle,
+    import_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogImportState,
+    >,
+    update_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogUpdateState,
+    >,
+    source_url: String,
+) -> Result<
+    crate::modules::workspace::application::scanner::master_db::CatalogImportPreview,
+    AppError,
+> {
+    use tauri::Manager;
+    let _operation = update_state.0.lock().await;
+    let app_data_dir = app.path().app_data_dir()?;
+    crate::modules::workspace::application::scanner::master_db::catalog_import::preview_github(
+        import_state.inner(),
+        &app_data_dir,
+        &source_url,
+    )
+    .await
+    .map_err(Into::into)
+}
+
+/// Show the native picker and stage a local catalog ZIP for the same review
+/// and activation flow used by GitHub releases. Selecting a file never moves
+/// or deletes it.
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_catalog_local_import(
+    app: tauri::AppHandle,
+    import_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogImportState,
+    >,
+    update_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogUpdateState,
+    >,
+) -> Result<
+    Option<crate::modules::workspace::application::scanner::master_db::CatalogImportPreview>,
+    AppError,
+> {
+    use tauri_plugin_dialog::DialogExt;
+    let selected = app
+        .dialog()
+        .file()
+        .add_filter("Catalog Pack", &["zip"])
+        .blocking_pick_file();
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let path = selected.into_path().map_err(|_| {
+        AppError::Validation("Selected catalog ZIP is not available as a local file".to_string())
+    })?;
+    use tauri::Manager;
+    let _operation = update_state.0.lock().await;
+    let app_data_dir = app.path().app_data_dir()?;
+    crate::modules::workspace::application::scanner::master_db::catalog_import::preview_local_archive(
+        import_state.inner(),
+        &app_data_dir,
+        &path,
+    )
+    .await
+    .map(Some)
+    .map_err(Into::into)
+}
+
+/// Atomically activate the exact reviewed catalog archive, no matter which
+/// manual source produced its staging token.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_catalog_import(
+    app: tauri::AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    import_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogImportState,
+    >,
+    update_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogUpdateState,
+    >,
+    staging_token: String,
+) -> Result<
+    crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult,
+    AppError,
+> {
+    use tauri::Manager;
+    let _operation = update_state.0.lock().await;
+    let app_data_dir = app.path().app_data_dir()?;
+    let provenance =
+        crate::modules::workspace::application::scanner::master_db::catalog_import::install(
+            import_state.inner(),
+            &app_data_dir,
+            &staging_token,
+        )
+        .await?;
+    crate::modules::workspace::application::scanner::master_db::catalog_import::record_provenance(
+        pool.inner(),
+        &provenance,
+    )
+    .await?;
+    activate_catalog_pack_service(&app).await
+}
+
+/// Read the latest cached identity-suggestion state for one game. This command
+/// never starts disk inspection; an explicit user action owns that lifecycle.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_object_identity_suggestion_status(
+    app: tauri::AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+) -> Result<
+    crate::modules::catalog::application::objects::identity_suggestions::ObjectIdentitySuggestionStatus,
+    AppError,
+>{
+    crate::modules::catalog::application::objects::identity_suggestions::status(
+        &app,
+        pool.inner(),
+        &game_id,
+    )
+    .await
+}
+
+/// Page review candidates without sending the whole result set to Dashboard.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_object_identity_suggestions(
+    app: tauri::AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+    offset: u32,
+    limit: u32,
+) -> Result<
+    crate::modules::catalog::application::objects::identity_suggestions::ObjectIdentitySuggestionPage,
+    AppError,
+>{
+    crate::modules::catalog::application::objects::identity_suggestions::list(
+        &app,
+        pool.inner(),
+        &game_id,
+        offset,
+        limit,
+    )
+    .await
+}
+
+/// Start a user-requested local catalog inspection for a game or object root.
+#[tauri::command]
+#[specta::specta]
+pub async fn retry_object_identity_suggestions(
+    app: tauri::AppHandle,
+    game_id: String,
+    changed_roots: Option<Vec<String>>,
+) -> Result<(), AppError> {
+    crate::modules::catalog::application::objects::identity_suggestions::schedule(
+        app,
+        game_id,
+        changed_roots,
+    )
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn set_catalog_auto_install(
-    enabled: bool,
-    config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
-) -> Result<crate::modules::settings::application::config::AppSettings, AppError> {
-    config.set_catalog_auto_install(enabled)
+pub async fn dismiss_object_identity_suggestion(
+    app: tauri::AppHandle,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+    object_id: String,
+) -> Result<(), AppError> {
+    crate::modules::catalog::application::objects::identity_suggestions::dismiss(
+        &app,
+        pool.inner(),
+        &game_id,
+        &object_id,
+    )
+    .await
 }
 
-/// Start the weekly background check after application state has finished
-/// initializing. Failures are logged only; browsing the local catalog never
-/// depends on release-channel availability.
-pub(crate) fn schedule_catalog_auto_update(app: tauri::AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        use tauri::Manager;
-        let config = app.state::<crate::modules::settings::application::config::ConfigService>();
-        let preferences = config.get_settings().catalog_updates;
-        let now = chrono::Utc::now().timestamp();
-        if !preferences.auto_check
-            || !crate::modules::workspace::application::scanner::master_db::catalog_update::update_due(
-                preferences.last_successful_check_unix_seconds,
-                now,
-            )
-        {
-            return;
-        }
-
-        let update_state = app.state::<
-            crate::modules::workspace::application::scanner::master_db::CatalogUpdateState,
-        >();
-        let _operation = update_state.0.lock().await;
-        let app_data_dir = match app.path().app_data_dir() {
-            Ok(path) => path,
-            Err(error) => {
-                let telemetry_error = AppError::Internal(error.to_string());
-                crate::modules::system::application::telemetry::record_background_failure(
-                    &app,
-                    &telemetry_error,
-                )
-                .await;
-                log::warn!("Catalog update check skipped: app-data path unavailable: {error}");
-                return;
-            }
-        };
-        let update =
-            match crate::modules::workspace::application::scanner::master_db::catalog_update::check(
-                &app_data_dir,
-            )
-            .await
-            {
-                Ok(update) => update,
-                Err(error) => {
-                    crate::modules::system::application::telemetry::record_background_failure(
-                        &app,
-                        &AppError::Scanner(error.clone()),
-                    )
-                    .await;
-                    log::warn!("Catalog update check failed: {error}");
-                    return;
-                }
-            };
-        if let Err(error) = config.record_catalog_update_check(now) {
-            crate::modules::system::application::telemetry::record_background_failure(&app, &error)
-                .await;
-            log::warn!("Catalog update was checked but its timestamp could not be saved: {error}");
-        }
-        if !preferences.auto_install || update.state != "update_available" {
-            return;
-        }
-        match crate::modules::workspace::application::scanner::master_db::catalog_update::install(
-            &app_data_dir,
-        )
-        .await
-        {
-            Ok(_) => {
-                let pool = app.state::<sqlx::SqlitePool>();
-                if let Err(error) = refresh_catalog_pack_service(&app, pool.inner()).await {
-                    crate::modules::system::application::telemetry::record_background_failure(
-                        &app, &error,
-                    )
-                    .await;
-                    log::warn!(
-                        "Catalog update installed but local mappings could not refresh: {error}"
-                    );
-                }
-            }
-            Err(error) => {
-                let telemetry_error = AppError::Scanner(error.clone());
-                crate::modules::system::application::telemetry::record_background_failure(
-                    &app,
-                    &telemetry_error,
-                )
-                .await;
-                log::warn!("Catalog auto-install failed: {error}");
-            }
-        }
-    });
+#[tauri::command]
+#[specta::specta]
+pub async fn reset_object_identity_suggestion_dismissals(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+) -> Result<(), AppError> {
+    crate::modules::catalog::application::objects::identity_suggestions::reset_dismissals(
+        pool.inner(),
+        &game_id,
+    )
+    .await
 }
 
 /// Pin or unpin an object in the database.
@@ -362,12 +417,9 @@ pub async fn search_master_db(
     Vec<crate::modules::workspace::application::scanner::master_db::SearchResultEntry>,
     AppError,
 > {
-    let Some(db) =
+    let db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-    else {
-        return Ok(Vec::new());
-    };
+            .await?;
 
     let resource_dir = resource_dir(&app)?;
 

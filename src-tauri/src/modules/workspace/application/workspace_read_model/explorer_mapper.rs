@@ -13,6 +13,7 @@ fn build_folder_capabilities(
     folder: &ModFolder,
     node_kind: WorkspaceNodeKind,
     display_mode: WorkspaceDisplayMode,
+    ancestor_disabled: bool,
 ) -> WorkspaceCapabilities {
     let is_internal_assets = display_mode == WorkspaceDisplayMode::InternalAssets;
     let is_terminal_node = node_kind == WorkspaceNodeKind::TerminalMod;
@@ -25,7 +26,7 @@ fn build_folder_capabilities(
         can_move,
         can_toggle_safe: is_terminal_node,
         can_sync: is_terminal_node,
-        can_enable_only_this: is_terminal_node && !folder.is_enabled,
+        can_enable_only_this: is_terminal_node && !folder.is_enabled && !ancestor_disabled,
         can_pin: can_move,
         can_edit_metadata: false,
         can_reveal_in_explorer: !is_internal_assets,
@@ -77,7 +78,8 @@ pub(crate) fn map_workspace_node(
     let switch_reason = inactive_reason.clone();
     let switch_state = map_folder_switch_state(&folder, ancestor_disabled);
     let switch_policy_key = map_folder_switch_policy_key(ancestor_disabled);
-    let capabilities = build_folder_capabilities(&folder, node_kind, display_mode);
+    let capabilities =
+        build_folder_capabilities(&folder, node_kind, display_mode, ancestor_disabled);
 
     WorkspaceExplorerNode {
         node_type,

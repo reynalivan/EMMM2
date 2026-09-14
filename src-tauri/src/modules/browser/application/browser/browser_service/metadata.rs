@@ -90,6 +90,55 @@ pub async fn delete_bookmark(db: &SqlitePool, id: &str) -> Result<(), BrowserErr
     Ok(())
 }
 
+pub async fn update_bookmark(
+    db: &SqlitePool,
+    id: &str,
+    url: &str,
+    title: &str,
+) -> Result<BrowserBookmark, BrowserError> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err(BrowserError::InvalidSetting(
+            "bookmark id must not be empty".to_string(),
+        ));
+    }
+
+    let url = canonical_http_url(url)?;
+    let duplicate_id = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM browser_bookmarks WHERE url = ? AND id != ?",
+    )
+    .bind(&url)
+    .bind(id)
+    .fetch_optional(db)
+    .await?;
+    if duplicate_id.is_some() {
+        return Err(BrowserError::InvalidSetting(
+            "another bookmark already uses this URL".to_string(),
+        ));
+    }
+
+    let update = sqlx::query(
+        "UPDATE browser_bookmarks SET url = ?, title = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(&url)
+    .bind(title.trim())
+    .bind(Utc::now().timestamp())
+    .bind(id)
+    .execute(db)
+    .await?;
+    if update.rows_affected() == 0 {
+        return Err(BrowserError::InvalidSetting("bookmark no longer exists".to_string()));
+    }
+
+    sqlx::query_as::<_, BrowserBookmark>(
+        "SELECT id, url, title, favicon, created_at, updated_at FROM browser_bookmarks WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(Into::into)
+}
+
 pub async fn record_history(
     db: &SqlitePool,
     url: &str,
@@ -197,7 +246,10 @@ pub async fn save_session_tabs(
     Ok(())
 }
 
-pub async fn get_session_tabs(db: &SqlitePool, game_id: &str) -> Result<Vec<BrowserSessionTab>, BrowserError> {
+pub async fn get_session_tabs(
+    db: &SqlitePool,
+    game_id: &str,
+) -> Result<Vec<BrowserSessionTab>, BrowserError> {
     #[derive(sqlx::FromRow)]
     struct Row {
         position: i64,
@@ -285,6 +337,35 @@ mod tests {
         clear_history(&db).await.unwrap();
         assert!(list_history(&db, 10).await.unwrap().is_empty());
         assert_eq!(list_bookmarks(&db).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn bookmark_edits_keep_the_existing_bookmark_identity() {
+        let db = init_test_db().await.pool;
+        let bookmark = add_bookmark(&db, "https://example.com/mod", Some("Example"), None)
+            .await
+            .unwrap();
+
+        let updated = update_bookmark(
+            &db,
+            &bookmark.id,
+            "https://example.com/renamed-mod",
+            "Renamed example",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(updated.id, bookmark.id);
+        assert_eq!(updated.url, "https://example.com/renamed-mod");
+        assert_eq!(updated.title, "Renamed example");
+
+        let duplicate = add_bookmark(&db, "https://example.com/other", Some("Other"), None)
+            .await
+            .unwrap();
+        assert!(matches!(
+            update_bookmark(&db, &updated.id, &duplicate.url, "Duplicate").await,
+            Err(BrowserError::InvalidSetting(_))
+        ));
     }
 
     #[tokio::test]

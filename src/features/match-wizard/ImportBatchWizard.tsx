@@ -109,8 +109,6 @@ export function ImportBatchWizard({
   onRetry,
   onSkip,
 }: Props) {
-  // TanStack Virtual exposes imperative functions; React Compiler must not memoize this component.
-  'use no memo';
   const { t } = useTranslation(['match_wizard', 'common']);
   const [filter, setFilter] = useState<ConfidenceFilter>('all');
   const [search, setSearch] = useState('');
@@ -152,6 +150,8 @@ export function ImportBatchWizard({
   }, [batch.items, filter, normalizedSearch, sort]);
 
   const visibleIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
+  // TanStack Virtual exposes imperative methods that React Compiler cannot safely memoize.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: visibleItems.length,
     getScrollElement: () => listRef.current,

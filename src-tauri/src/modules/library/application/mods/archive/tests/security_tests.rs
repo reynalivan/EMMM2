@@ -110,6 +110,26 @@ fn staging_accepts_explicit_zip_directory_entries() {
 }
 
 #[test]
+fn staging_rejects_executable_archive_entries() {
+    let dir = TempDir::new().unwrap();
+    let archive = create_zip(
+        dir.path(),
+        "unsafe.zip",
+        zip::CompressionMethod::Stored,
+        &[
+            ("Mod/config.ini", b"[TextureOverride]\n"),
+            ("Mod/loader.dll", b"binary"),
+        ],
+    );
+    let staging = dir.path().join("staging");
+
+    let error = extract_archive_to_staging(&archive, &staging).unwrap_err();
+
+    assert_security(error);
+    assert!(!staging.exists());
+}
+
+#[test]
 fn archive_entry_types_reject_links_and_special_files() {
     assert!(super::security::validate_entry_type(0o100644, 1).is_ok());
     assert!(super::security::validate_entry_type(0o040755, 1).is_ok());

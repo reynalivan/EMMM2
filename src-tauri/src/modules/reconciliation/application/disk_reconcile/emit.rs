@@ -25,6 +25,17 @@ pub struct CommittedReconcileSettlement {
     pub sync_warning: Option<CommittedMutationSyncWarning>,
 }
 
+pub(crate) fn require_applied_reconcile(
+    result: DiskReconcileResult,
+) -> Result<DiskReconcileResult, AppError> {
+    if !result.status.applied() {
+        return Err(AppError::Io(result.error_message.unwrap_or_else(|| {
+            format!("Disk projection requires attention: {:?}", result.status)
+        })));
+    }
+    Ok(result)
+}
+
 /// Convert terminal convergence into data after the filesystem mutation has
 /// committed. Returning an `Err` here would invite callers to retry an
 /// irreversible rename/delete that already succeeded.
@@ -32,10 +43,22 @@ pub fn settle_committed_reconcile(
     outcome: Result<DiskReconcileResult, AppError>,
 ) -> CommittedReconcileSettlement {
     match outcome {
-        Ok(result) if result.status.applied() => CommittedReconcileSettlement {
-            reconcile: Some(result),
-            sync_warning: None,
-        },
+        Ok(result) if result.status.applied() => {
+            let sync_warning = result
+                .warnings
+                .iter()
+                .find(|warning| {
+                    warning.kind == super::types::DiskReconcileWarningKind::RuntimeEffectsPending
+                })
+                .map(|warning| CommittedMutationSyncWarning {
+                    kind: CommittedMutationSyncWarningKind::RuntimeSyncPending,
+                    message: warning.message.clone(),
+                });
+            CommittedReconcileSettlement {
+                reconcile: Some(result),
+                sync_warning,
+            }
+        }
         Ok(result) => {
             let message = result.error_message.clone().unwrap_or_else(|| {
                 format!(
@@ -600,6 +623,70 @@ pub async fn mutation_preflight_report_for_paths(
 mod committed_mutation_tests {
     use super::*;
     use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
+
+    fn result_with_status(status: DiskReconcileStatus) -> DiskReconcileResult {
+        DiskReconcileResult {
+            game_id: "game".into(),
+            reconcile_revision: 1,
+            reason: DiskReconcileReason::InternalMutation,
+            status,
+            scan_scope: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileScanScope::Full,
+            folder_conflicts: vec![],
+            rename_confirmations: vec![],
+            error_message: None,
+            changed_roots: vec![],
+            objects_changed: false,
+            folders_changed: false,
+            collections_changed: false,
+            runtime_file_changed: false,
+            thumbnail_roots: vec![],
+            cleared_selection_paths: vec![],
+            path_updates: vec![],
+            collection_reference_impact: Default::default(),
+            change_summary: Default::default(),
+            pending_runtime_effects: Default::default(),
+            warnings: vec![],
+        }
+    }
+
+    #[test]
+    fn journal_completion_requires_an_applied_projection() {
+        for status in [
+            DiskReconcileStatus::Applied,
+            DiskReconcileStatus::AppliedWithFolderConflicts,
+        ] {
+            assert!(require_applied_reconcile(result_with_status(status)).is_ok());
+        }
+        for status in [
+            DiskReconcileStatus::SourceUnavailable,
+            DiskReconcileStatus::NeedsRenameConfirmation,
+        ] {
+            let mut result = result_with_status(status);
+            result.error_message = Some("injected blocked projection".into());
+            let error = require_applied_reconcile(result).unwrap_err();
+            assert!(error.to_string().contains("injected blocked projection"));
+        }
+    }
+
+    #[test]
+    fn applied_projection_preserves_pending_runtime_warning() {
+        let mut result = result_with_status(DiskReconcileStatus::AppliedWithFolderConflicts);
+        result.pending_runtime_effects.overlay_refresh = true;
+        result.warnings.push(crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarning {
+            kind: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarningKind::RuntimeEffectsPending,
+            message: "Overlay refresh is pending".into(),
+        });
+        let settlement = settle_committed_reconcile(Ok(result));
+        assert!(settlement.reconcile.unwrap().status.applied());
+        let warning = settlement
+            .sync_warning
+            .expect("do not silently drop runtime warnings");
+        assert_eq!(
+            warning.kind,
+            CommittedMutationSyncWarningKind::RuntimeSyncPending
+        );
+        assert_eq!(warning.message, "Overlay refresh is pending");
+    }
 
     #[test]
     fn committed_reconcile_failure_becomes_retryable_warning_instead_of_command_error() {

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import ListStateView from '../../../shared/ui/components/ui/ListStateView';
+import WorkspacePanelSkeleton from '../../../shared/ui/components/ui/WorkspacePanelSkeleton';
 import FolderGridEmpty from './FolderGridEmpty';
 
 interface FolderGridStateViewsProps {
@@ -35,6 +36,7 @@ export default function FolderGridStateViews({
       isError={isError}
       error={error}
       errorFallback={t('status.load_error')}
+      loadingContent={<WorkspacePanelSkeleton variant="grid" />}
     >
       {visibleCount > 0 ? null : isFlatModRoot ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-base-content/40">

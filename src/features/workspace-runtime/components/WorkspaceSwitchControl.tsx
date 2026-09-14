@@ -36,7 +36,7 @@ export function WorkspaceSwitchControl({
     <input
       type="checkbox"
       aria-label={ariaLabel}
-      className={`toggle border-base-content/10 bg-base-300 checked:border-primary checked:bg-primary transition-all duration-200 ${
+      className={`toggle workspace-interactive border-base-content/10 bg-base-300 checked:border-primary checked:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ${
         size === 'xs' ? 'toggle-xs' : 'toggle-sm'
       }`}
       checked={policy.checked}

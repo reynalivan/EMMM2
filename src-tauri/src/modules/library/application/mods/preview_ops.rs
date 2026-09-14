@@ -7,6 +7,7 @@ use crate::modules::library::application::ini::write as ini_write;
 use crate::modules::library::application::mods::preview_image;
 use crate::modules::workspace::application::scanner::core::thumbnail;
 use crate::shared::errors::{AppError, MetadataError};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 
@@ -167,6 +168,25 @@ pub fn list_mod_ini_files_inner(mod_root: &Path) -> Result<Vec<IniFileEntry>, Ap
             path: path.to_string_lossy().to_string(),
         })
         .collect())
+}
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct IniDocumentEntry {
+    pub filename: String,
+    pub document: IniDocument,
+}
+
+pub fn read_mod_ini_documents_inner(mod_root: &Path) -> Result<Vec<IniDocumentEntry>, AppError> {
+    list_mod_ini_files_inner(mod_root)?
+        .into_par_iter()
+        .map(|file| {
+            let document = read_mod_ini_inner(mod_root, &file.filename)?;
+            Ok(IniDocumentEntry {
+                filename: file.filename,
+                document,
+            })
+        })
+        .collect()
 }
 
 pub fn read_mod_ini_inner(mod_root: &Path, file_name: &str) -> Result<IniDocument, AppError> {

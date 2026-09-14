@@ -675,6 +675,7 @@ pub struct ImportItem {
     pub match_category: Option<StableCategory>,
     pub sub_category: Option<String>,
     pub classification_metadata: serde_json::Value,
+    pub source_metadata: serde_json::Value,
     pub category_suggestions: Vec<CategorySuggestion>,
     pub canonical_suggestions: Vec<CanonicalSuggestion>,
     pub destination_suggestions: Vec<DestinationSuggestion>,
@@ -711,6 +712,7 @@ pub(crate) struct AnalysisResult {
     pub selected_category: StableCategory,
     pub selected_sub_category: Option<String>,
     pub classification_metadata: serde_json::Value,
+    pub source_metadata: serde_json::Value,
     pub payload_manifest:
         crate::modules::ingestion::application::import_batch::payload_manifest::PayloadManifest,
     pub canonical_suggestions: Vec<CanonicalSuggestion>,

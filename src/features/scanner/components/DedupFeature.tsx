@@ -1,10 +1,16 @@
+import type { Ref } from 'react';
 import { useTranslation } from 'react-i18next';
-import DuplicateReport from './DuplicateReport';
+import DuplicateReport, {
+  type DuplicateReportActionState,
+  type DuplicateReportHandle,
+} from './DuplicateReport';
 import type { DedupScanProgress } from '../utils/dedupProgress';
 
 export interface DedupFeatureProps extends DedupScanProgress {
   activeFilter?: 'all' | 'high' | 'medium' | 'low';
   gameId: string;
+  reportRef?: Ref<DuplicateReportHandle>;
+  onReportActionStateChange?: (state: DuplicateReportActionState) => void;
 }
 
 // ponytail: presentational only. The scan state lives in the page that owns the
@@ -17,6 +23,8 @@ export default function DedupFeature({
   currentFolder,
   error,
   gameId,
+  reportRef,
+  onReportActionStateChange,
 }: DedupFeatureProps) {
   const { t } = useTranslation();
 
@@ -33,10 +41,10 @@ export default function DedupFeature({
         <div className="workspace-surface p-5">
           <div className="flex justify-between text-sm mb-3">
             <span className="font-bold text-primary flex items-center gap-2">
-              <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75 motion-reduce:animate-none"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
-              </span>
+              <span
+                className="inline-flex h-2.5 w-2.5 rounded-full bg-primary"
+                aria-hidden="true"
+              />
               {t('scanner:dedup.analyzing')}
             </span>
             <span className="font-mono text-base-content/60 font-medium">
@@ -57,7 +65,15 @@ export default function DedupFeature({
       )}
 
       {/* Duplicate Report Component renders below */}
-      {!isScanning && <DuplicateReport activeFilter={activeFilter} gameId={gameId} />}
+      {!isScanning && (
+        <DuplicateReport
+          ref={reportRef}
+          activeFilter={activeFilter}
+          gameId={gameId}
+          showApplyAction={!reportRef}
+          onActionStateChange={onReportActionStateChange}
+        />
+      )}
     </div>
   );
 }

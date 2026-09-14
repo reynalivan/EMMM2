@@ -36,6 +36,7 @@ fn test_case_1_ayaka_ini_substring() {
         thumbnail_path: None,
         metadata: None,
         hash_db: Default::default(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -73,6 +74,7 @@ fn test_case_2_prefix_numbers_ayaka() {
         thumbnail_path: None,
         metadata: None,
         hash_db: Default::default(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -107,6 +109,7 @@ fn test_case_3_folder_rescue_exact() {
         thumbnail_path: None,
         metadata: None,
         hash_db: Default::default(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -141,6 +144,7 @@ fn test_case_4_different_character_ini() {
             thumbnail_path: None,
             metadata: None,
             hash_db: Default::default(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Raiden Shogun".to_string(),
@@ -151,6 +155,7 @@ fn test_case_4_different_character_ini() {
             thumbnail_path: None,
             metadata: None,
             hash_db: Default::default(),
+            runtime_targets: vec![],
         },
     ]);
 
@@ -187,6 +192,7 @@ fn test_case_5_folder_rescue_last_resort() {
         thumbnail_path: None,
         metadata: None,
         hash_db: Default::default(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -225,6 +231,7 @@ fn test_case_6_short_term_rejection() {
         thumbnail_path: None,
         metadata: None,
         hash_db: Default::default(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -258,6 +265,7 @@ fn test_case_7_skipword_stripping() {
         thumbnail_path: None,
         metadata: None,
         hash_db: Default::default(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -293,6 +301,7 @@ fn test_case_8_cross_word_boundary() {
         thumbnail_path: None,
         metadata: None,
         hash_db: Default::default(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(

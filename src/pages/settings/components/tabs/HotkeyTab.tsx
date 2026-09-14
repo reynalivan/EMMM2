@@ -1,54 +1,69 @@
 import { formatAppError } from '../../../../shared/lib/appError';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { commands } from '../../../../shared/api/tauri/bindings';
 import type { HotkeyConfig, KeyViewerConfig } from '@/entities/settings';
 import { useSettings } from '@/entities/settings';
+import { commands } from '@/shared/api/tauri/bindings';
 import { useToastStore } from '@/shared/ui/toast';
 import { detectConflicts, type ReservedBinding } from '../../utils/hotkeyConflicts';
-import { SettingsSection } from '../SettingsLayout';
+import { SettingsRow, SettingsSection } from '../SettingsLayout';
 
-/** Default hotkey config values — unified overlay toggle F7. */
 const DEFAULT_HOTKEYS: HotkeyConfig = {
   enabled: true,
-  cooldown_ms: 500,
+  safe_mode: 'F5',
   next_preset: 'Ctrl+F6',
   prev_preset: 'Shift+F6',
   toggle_overlay: 'F7',
-  next_variant: 'Ctrl+F8',
-  prev_variant: 'Shift+F8',
 };
 
-const DEFAULT_KEYVIEWER: KeyViewerConfig = {
-  enabled: true,
+const DEFAULT_KEYVIEWER: KeyViewerConfig = { enabled: true };
+
+type ResolvedHotkeyConfig = Omit<
+  HotkeyConfig,
+  'safe_mode' | 'next_preset' | 'prev_preset' | 'toggle_overlay'
+> & {
+  safe_mode: string;
+  next_preset: string;
+  prev_preset: string;
+  toggle_overlay: string;
 };
+
+function normalizeHotkeys(config?: HotkeyConfig): ResolvedHotkeyConfig {
+  return { ...DEFAULT_HOTKEYS, ...config } as ResolvedHotkeyConfig;
+}
 
 interface KeyBindingRowProps {
   label: string;
   value: string;
   defaultValue: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }
 
-function KeyBindingRow({ label, value, defaultValue, onChange }: KeyBindingRowProps) {
+function KeyBindingRow({ label, value, defaultValue, disabled, onChange }: KeyBindingRowProps) {
   const { t } = useTranslation(['settings', 'common']);
   return (
     <div className="flex items-center justify-between gap-4 border-b border-base-300/70 py-2.5 last:border-0">
-      <span className="text-sm font-medium">{label}</span>
+      <label className="text-sm font-medium">{label}</label>
       <div className="flex items-center gap-2">
         <input
+          aria-label={label}
           type="text"
           className="input input-bordered input-sm w-32 text-center font-mono"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           placeholder={defaultValue}
+          disabled={disabled}
         />
         {value !== defaultValue && (
           <button
+            type="button"
             className="btn btn-ghost btn-xs text-base-content/60 hover:text-primary"
             onClick={() => onChange(defaultValue)}
             title={t('settings:hotkeys.reset_tip')}
+            disabled={disabled}
           >
             ↺
           </button>
@@ -58,81 +73,87 @@ function KeyBindingRow({ label, value, defaultValue, onChange }: KeyBindingRowPr
   );
 }
 
+function formatRuntimeSyncTime(value: number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(new Date(value));
+}
+
 export default function HotkeyTab() {
   const { t } = useTranslation(['settings', 'common']);
-  const { settings, saveSettingsAsync } = useSettings();
+  const { settings, saveHotkeyConfiguration } = useSettings();
   const { addToast } = useToastStore();
   const [isSaving, setIsSaving] = useState(false);
-  const [reloadKey, setReloadKey] = useState<string | null>(null);
+  const [draftHotkeys, setDraftHotkeys] = useState<ResolvedHotkeyConfig>(
+    normalizeHotkeys(DEFAULT_HOTKEYS),
+  );
+  const [draftKeyviewer, setDraftKeyviewer] = useState<KeyViewerConfig>(DEFAULT_KEYVIEWER);
+  const activeGameId = settings?.active_game_id ?? null;
+  const runtimeDiagnosticsQuery = useQuery({
+    queryKey: ['keyviewerRuntimeDiagnostics', activeGameId, settings?.revision],
+    queryFn: () => commands.getKeyviewerRuntimeDiagnostics(activeGameId!),
+    enabled: activeGameId !== null,
+  });
 
   useEffect(() => {
-    let current = true;
-    commands
-      .getReloadKey()
-      .then((key) => current && setReloadKey(key))
-      .catch(() => current && setReloadKey(null));
-    return () => {
-      current = false;
-    };
-  }, [settings?.active_game_id]);
+    if (!settings) return;
+    setDraftHotkeys(normalizeHotkeys(settings.hotkeys));
+    setDraftKeyviewer({ ...DEFAULT_KEYVIEWER, ...settings.keyviewer });
+  }, [settings]);
 
   if (!settings) return null;
 
-  const hotkeys: HotkeyConfig = (settings.hotkeys ?? DEFAULT_HOTKEYS) as HotkeyConfig;
-  const keyviewer: KeyViewerConfig = (settings.keyviewer ?? DEFAULT_KEYVIEWER) as KeyViewerConfig;
+  const runtime = runtimeDiagnosticsQuery.data;
+  const publication = runtime?.publication
+    ? t(`settings:hotkeys.runtime.publication.${runtime.publication}`)
+    : runtimeDiagnosticsQuery.isError
+      ? t('settings:hotkeys.runtime.unavailable')
+      : runtimeDiagnosticsQuery.isLoading
+        ? t('settings:hotkeys.runtime.loading')
+        : t('settings:hotkeys.runtime.not_synced');
+  const reload = runtime?.reload
+    ? t(`settings:hotkeys.runtime.reload.${runtime.reload}`, {
+        binding: runtime.reload_binding ?? t('settings:hotkeys.runtime.binding_unavailable'),
+      })
+    : runtimeDiagnosticsQuery.isError
+      ? t('settings:hotkeys.runtime.unavailable')
+      : runtimeDiagnosticsQuery.isLoading
+        ? t('settings:hotkeys.runtime.loading')
+        : t('settings:hotkeys.runtime.not_attempted');
+
   const reserved: ReservedBinding[] = [
     { label: t('settings:hotkeys.reserved.package_toggle'), key: 'F6' },
     { label: t('settings:hotkeys.reserved.frame_analysis'), key: 'F8' },
-    ...(reloadKey ? [{ label: t('settings:hotkeys.reserved.reload_fixes'), key: reloadKey }] : []),
   ];
-  const conflicts = detectConflicts(hotkeys, reserved, t);
+  const conflicts = detectConflicts(draftHotkeys, reserved, t);
+  const isDirty =
+    JSON.stringify(draftHotkeys) !== JSON.stringify(normalizeHotkeys(settings.hotkeys)) ||
+    JSON.stringify(draftKeyviewer) !==
+      JSON.stringify({ ...DEFAULT_KEYVIEWER, ...settings.keyviewer });
 
-  const persistHotkeys = async (patch: Partial<HotkeyConfig>) => {
-    if (!settings) return;
+  const updateHotkey = (patch: Partial<ResolvedHotkeyConfig>) => {
+    setDraftHotkeys((current) => ({ ...current, ...patch }));
+  };
+
+  const save = async () => {
+    if (conflicts.length > 0) return;
     setIsSaving(true);
     try {
-      await saveSettingsAsync({
-        ...settings,
-        hotkeys: { ...hotkeys, ...patch },
-      });
-      await commands.updateHotkeyConfig();
-    } catch (err) {
-      addToast('error', t('settings:hotkeys.save_failed', { error: formatAppError(err) }));
+      await saveHotkeyConfiguration(settings.revision ?? 0, draftHotkeys, draftKeyviewer);
+      await runtimeDiagnosticsQuery.refetch();
+      addToast('success', t('settings:hotkeys.save_success'));
+    } catch (error) {
+      addToast('error', t('settings:hotkeys.save_failed', { error: formatAppError(error) }));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const persistKeyViewer = async (patch: Partial<KeyViewerConfig>) => {
-    if (!settings) return;
-    setIsSaving(true);
-    try {
-      await saveSettingsAsync({
-        ...settings,
-        keyviewer: { ...keyviewer, ...patch },
-      });
-    } catch (err) {
-      addToast('error', t('settings:hotkeys.viewer_save_failed', { error: formatAppError(err) }));
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleResetAll = () => {
-    void (async () => {
-      if (!settings) return;
-      try {
-        await saveSettingsAsync({
-          ...settings,
-          hotkeys: { ...DEFAULT_HOTKEYS },
-          keyviewer: { ...DEFAULT_KEYVIEWER },
-        });
-        await commands.updateHotkeyConfig();
-        addToast('success', t('settings:hotkeys.reset_success'));
-      } catch (err) {
-        addToast('error', t('settings:hotkeys.save_failed', { error: formatAppError(err) }));
-      }
-    })();
+  const reset = () => {
+    setDraftHotkeys(normalizeHotkeys(DEFAULT_HOTKEYS));
+    setDraftKeyviewer(DEFAULT_KEYVIEWER);
   };
 
   return (
@@ -148,126 +169,172 @@ export default function HotkeyTab() {
               <input
                 type="checkbox"
                 className="toggle toggle-primary toggle-sm"
-                checked={hotkeys.enabled}
-                onChange={() => persistHotkeys({ enabled: !hotkeys.enabled })}
+                checked={draftHotkeys.enabled}
+                onChange={() => updateHotkey({ enabled: !draftHotkeys.enabled })}
                 disabled={isSaving}
               />
             </label>
           </div>
         }
       >
-        {hotkeys.enabled && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3 border-b border-base-300/70 py-2">
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold">{t('settings:hotkeys.cooldown')}</span>
-                <span className="text-xs text-base-content/60">
-                  {t('settings:hotkeys.cooldown_desc')}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  className="input input-bordered input-sm w-24 text-center font-mono"
-                  value={hotkeys.cooldown_ms}
-                  min={100}
-                  max={5000}
-                  step={100}
-                  onChange={(e) => persistHotkeys({ cooldown_ms: parseInt(e.target.value) || 500 })}
-                  disabled={isSaving}
-                />
-                <span className="w-6 text-xs font-medium text-base-content/60">
-                  {t('common:units.ms')}
-                </span>
+        <div className="space-y-3">
+          <p className="text-xs text-base-content/60">{t('settings:hotkeys.os_hotkeys_hint')}</p>
+          {conflicts.length > 0 && (
+            <div
+              className="alert alert-warning text-sm py-2 px-3 border-none bg-warning/10 text-warning-content"
+              role="alert"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <div>
+                <p className="font-bold">{t('settings:hotkeys.conflicts_title')}</p>
+                {conflicts.map((conflict) => (
+                  <p key={conflict} className="opacity-80">
+                    {conflict}
+                  </p>
+                ))}
               </div>
             </div>
-
-            {conflicts.length > 0 && (
-              <div className="alert alert-warning text-sm py-2 px-3 border-none bg-warning/10 text-warning-content">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <div>
-                  <p className="font-bold">{t('settings:hotkeys.conflicts_title')}</p>
-                  {conflicts.map((c, i) => (
-                    <p key={i} className="opacity-80">
-                      {c}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <KeyBindingRow
-                label={t('settings:hotkeys.labels.next_preset')}
-                value={hotkeys.next_preset}
-                defaultValue={DEFAULT_HOTKEYS.next_preset}
-                onChange={(v) => persistHotkeys({ next_preset: v })}
-              />
-              <KeyBindingRow
-                label={t('settings:hotkeys.labels.prev_preset')}
-                value={hotkeys.prev_preset}
-                defaultValue={DEFAULT_HOTKEYS.prev_preset}
-                onChange={(v) => persistHotkeys({ prev_preset: v })}
-              />
-              <KeyBindingRow
-                label={t('settings:hotkeys.labels.toggle_overlay')}
-                value={hotkeys.toggle_overlay}
-                defaultValue={DEFAULT_HOTKEYS.toggle_overlay}
-                onChange={(v) => persistHotkeys({ toggle_overlay: v })}
-              />
-              <KeyBindingRow
-                label={t('settings:hotkeys.labels.next_variant')}
-                value={hotkeys.next_variant}
-                defaultValue={DEFAULT_HOTKEYS.next_variant}
-                onChange={(v) => persistHotkeys({ next_variant: v })}
-              />
-              <KeyBindingRow
-                label={t('settings:hotkeys.labels.prev_variant')}
-                value={hotkeys.prev_variant}
-                defaultValue={DEFAULT_HOTKEYS.prev_variant}
-                onChange={(v) => persistHotkeys({ prev_variant: v })}
-              />
-            </div>
+          )}
+          <div>
+            <KeyBindingRow
+              label={t('settings:hotkeys.labels.safe_mode')}
+              value={draftHotkeys.safe_mode}
+              defaultValue={DEFAULT_HOTKEYS.safe_mode ?? 'F5'}
+              disabled={isSaving || !draftHotkeys.enabled}
+              onChange={(value) => updateHotkey({ safe_mode: value })}
+            />
+            <KeyBindingRow
+              label={t('settings:hotkeys.labels.prev_preset')}
+              value={draftHotkeys.prev_preset}
+              defaultValue={DEFAULT_HOTKEYS.prev_preset ?? 'Shift+F6'}
+              disabled={isSaving || !draftHotkeys.enabled}
+              onChange={(value) => updateHotkey({ prev_preset: value })}
+            />
+            <KeyBindingRow
+              label={t('settings:hotkeys.labels.next_preset')}
+              value={draftHotkeys.next_preset}
+              defaultValue={DEFAULT_HOTKEYS.next_preset ?? 'Ctrl+F6'}
+              disabled={isSaving || !draftHotkeys.enabled}
+              onChange={(value) => updateHotkey({ next_preset: value })}
+            />
           </div>
-        )}
+        </div>
       </SettingsSection>
 
       <SettingsSection
         id="keyviewer-settings-heading"
         title={t('settings:hotkeys.viewer_title')}
-        description={t('settings:hotkeys.viewer_desc', { key: hotkeys.toggle_overlay })}
+        description={t('settings:hotkeys.viewer_desc', { key: draftHotkeys.toggle_overlay })}
         action={
           <div className="form-control">
             <label className="label cursor-pointer gap-3">
-              <span className="label-text font-medium">{t('settings:hotkeys.auto_reload')}</span>
+              <span className="label-text font-medium">
+                {t('settings:hotkeys.overlay_enabled')}
+              </span>
               <input
                 type="checkbox"
                 className="toggle toggle-secondary toggle-sm"
-                checked={keyviewer.enabled}
-                onChange={() => persistKeyViewer({ enabled: !keyviewer.enabled })}
+                checked={draftKeyviewer.enabled}
+                onChange={() =>
+                  setDraftKeyviewer((current) => ({ ...current, enabled: !current.enabled }))
+                }
                 disabled={isSaving}
               />
             </label>
           </div>
         }
       >
+        <KeyBindingRow
+          label={t('settings:hotkeys.labels.toggle_overlay')}
+          value={draftHotkeys.toggle_overlay}
+          defaultValue={DEFAULT_HOTKEYS.toggle_overlay ?? 'F7'}
+          disabled={isSaving || !draftKeyviewer.enabled}
+          onChange={(value) => updateHotkey({ toggle_overlay: value })}
+        />
         <div className="border-l-2 border-info/40 pl-3 text-xs text-base-content/60">
-          <div className="flex flex-col gap-1">
-            <p className="font-medium text-base-content">
-              {t('settings:hotkeys.infrastructure_title')}
-            </p>
-            <p className="opacity-80">{t('settings:hotkeys.infrastructure_desc')}</p>
-          </div>
+          <p className="font-medium text-base-content">
+            {t('settings:hotkeys.infrastructure_title')}
+          </p>
+          <p className="opacity-80">{t('settings:hotkeys.infrastructure_desc')}</p>
         </div>
       </SettingsSection>
 
-      <div className="flex justify-end pt-6">
+      {activeGameId && (
+        <SettingsSection
+          id="keyviewer-runtime-heading"
+          title={t('settings:hotkeys.runtime.title')}
+          description={t('settings:hotkeys.runtime.desc')}
+        >
+          <div aria-live="polite">
+            <SettingsRow
+              label={t('settings:hotkeys.runtime.last_sync')}
+              control={
+                <span className="text-sm text-base-content/70">
+                  {runtimeDiagnosticsQuery.isLoading
+                    ? t('settings:hotkeys.runtime.loading')
+                    : (formatRuntimeSyncTime(runtime?.last_sync_unix_ms) ??
+                      t('settings:hotkeys.runtime.not_synced'))}
+                </span>
+              }
+            />
+            <SettingsRow
+              label={t('settings:hotkeys.runtime.snapshot')}
+              control={<span className="text-sm text-base-content/70">{publication}</span>}
+            />
+            <SettingsRow
+              label={t('settings:hotkeys.runtime.reload_status')}
+              control={<span className="text-sm text-base-content/70">{reload}</span>}
+            />
+            <SettingsRow
+              label={t('settings:hotkeys.runtime.reload_binding')}
+              control={
+                <span className="font-mono text-sm text-base-content/70">
+                  {runtimeDiagnosticsQuery.isLoading
+                    ? t('settings:hotkeys.runtime.loading')
+                    : (runtime?.reload_binding ??
+                      t('settings:hotkeys.runtime.binding_unavailable'))}
+                </span>
+              }
+            />
+            <SettingsRow
+              label={t('settings:hotkeys.runtime.generation_cleanup')}
+              description={
+                runtime?.cleanup_automatic_disabled
+                  ? t('settings:hotkeys.runtime.cleanup_disabled_desc')
+                  : undefined
+              }
+              control={
+                <span className="text-sm text-base-content/70">
+                  {runtimeDiagnosticsQuery.isLoading
+                    ? t('settings:hotkeys.runtime.loading')
+                    : runtime?.cleanup_automatic_disabled
+                      ? t('settings:hotkeys.runtime.cleanup_disabled')
+                      : runtimeDiagnosticsQuery.isError
+                        ? t('settings:hotkeys.runtime.unavailable')
+                        : t('settings:hotkeys.runtime.cleanup_enabled')}
+                </span>
+              }
+            />
+          </div>
+        </SettingsSection>
+      )}
+
+      <div className="flex justify-end gap-3 pt-6">
         <button
           className="btn btn-ghost btn-sm text-base-content/60 hover:text-error"
-          onClick={handleResetAll}
-          disabled={isSaving}
+          type="button"
+          onClick={reset}
+          disabled={isSaving || !isDirty}
         >
           {t('settings:hotkeys.reset')}
+        </button>
+        <button
+          className="btn btn-primary btn-sm"
+          type="button"
+          onClick={() => void save()}
+          disabled={isSaving || !isDirty || conflicts.length > 0}
+        >
+          {t('settings:hotkeys.save')}
         </button>
       </div>
     </div>

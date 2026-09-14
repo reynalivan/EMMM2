@@ -76,7 +76,7 @@ async fn resolves_stale_disabled_cache_path_to_enabled_disk_sibling() {
     .unwrap();
 
     let stale_path = mods_path.join("Alice").join("DISABLED Blue Dress");
-    let (resolved_path, changed_object_ids) = resolve_mod_target_path(
+    let resolved = resolve_mod_target_path(
         &pool,
         "g_switch_resolve_enabled",
         &stale_path.to_string_lossy(),
@@ -85,9 +85,9 @@ async fn resolves_stale_disabled_cache_path_to_enabled_disk_sibling() {
     .await
     .unwrap();
 
-    assert_eq!(resolved_path, enabled_path.to_string_lossy());
+    assert_eq!(resolved.path, enabled_path.to_string_lossy());
     assert_eq!(
-        changed_object_ids,
+        resolved.changed_object_ids,
         vec!["o_switch_resolve_enabled".to_string()]
     );
 }
@@ -142,7 +142,7 @@ async fn resolves_stale_enabled_cache_path_to_disabled_disk_sibling() {
     .unwrap();
 
     let stale_path = mods_path.join("Alice").join("Blue Dress");
-    let (resolved_path, changed_object_ids) = resolve_mod_target_path(
+    let resolved = resolve_mod_target_path(
         &pool,
         "g_switch_resolve_disabled",
         &stale_path.to_string_lossy(),
@@ -151,9 +151,9 @@ async fn resolves_stale_enabled_cache_path_to_disabled_disk_sibling() {
     .await
     .unwrap();
 
-    assert_eq!(resolved_path, disabled_path.to_string_lossy());
+    assert_eq!(resolved.path, disabled_path.to_string_lossy());
     assert_eq!(
-        changed_object_ids,
+        resolved.changed_object_ids,
         vec!["o_switch_resolve_disabled".to_string()]
     );
 }

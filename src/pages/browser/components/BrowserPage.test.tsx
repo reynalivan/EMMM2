@@ -32,4 +32,36 @@ describe('DownloadConfirmationDialog', () => {
     expect(onReject).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('does not offer a download action for blocked executable files', async () => {
+    const onConfirm = vi.fn();
+    const onReject = vi.fn();
+
+    render(
+      <DownloadConfirmationDialog
+        request={{
+          id: 'request-2',
+          filename: 'mod-installer.exe',
+          source_url: 'https://example.com/mod-installer.exe',
+          destination_path: 'C:/Downloads/mod-installer.exe',
+          risk_level: 'blocked',
+        }}
+        isSubmitting={false}
+        onConfirm={onConfirm}
+        onReject={onReject}
+      />,
+    );
+
+    expect(
+      screen.getByText('Executable and script downloads are blocked to protect your mod library.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+
+    const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(cancelButton).toHaveFocus());
+    fireEvent.click(cancelButton);
+
+    expect(onReject).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });

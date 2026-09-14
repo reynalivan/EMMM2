@@ -117,6 +117,18 @@ impl WatcherState {
     pub fn is_current_session(&self, session: &WatcherSession) -> bool {
         crate::shared::sync::lock(&self.current_session).as_ref() == Some(session)
     }
+
+    /// Executes a synchronous publication while proving that its watcher
+    /// session is still active. The session mutex makes the check and publish
+    /// one critical section, so replacement cannot slip between them.
+    pub(crate) fn with_current_session<T>(
+        &self,
+        session: &WatcherSession,
+        publish: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let current = crate::shared::sync::lock(&self.current_session);
+        (current.as_ref() == Some(session)).then(publish)
+    }
 }
 
 impl Default for WatcherState {
@@ -128,17 +140,39 @@ impl Default for WatcherState {
 // ── Event classification ──────────────────────────────────────────────
 
 /// A rename side that survives filtering and suppression.
-fn keep_side(path: &Path, watcher_path: &Path, suppressor: &WatcherSuppressor) -> bool {
-    should_keep_event_path(path, watcher_path) && !suppressor.is_path_suppressed(path)
+fn is_runtime_config_path(path: &Path, runtime_config_path: Option<&Path>) -> bool {
+    runtime_config_path.is_some_and(|expected| {
+        path.to_string_lossy()
+            .eq_ignore_ascii_case(&expected.to_string_lossy())
+    })
 }
 
-fn keep_structural_side(path: &Path, watcher_path: &Path, suppressor: &WatcherSuppressor) -> bool {
-    should_keep_structural_event_path(path, watcher_path) && !suppressor.is_path_suppressed(path)
+fn keep_side(
+    path: &Path,
+    watcher_path: &Path,
+    runtime_config_path: Option<&Path>,
+    suppressor: &WatcherSuppressor,
+) -> bool {
+    (should_keep_event_path(path, watcher_path)
+        || is_runtime_config_path(path, runtime_config_path))
+        && !suppressor.is_path_suppressed(path)
 }
 
-fn classify_event(
+fn keep_structural_side(
+    path: &Path,
+    watcher_path: &Path,
+    runtime_config_path: Option<&Path>,
+    suppressor: &WatcherSuppressor,
+) -> bool {
+    (should_keep_structural_event_path(path, watcher_path)
+        || is_runtime_config_path(path, runtime_config_path))
+        && !suppressor.is_path_suppressed(path)
+}
+
+fn classify_event_with_runtime_config(
     event: &Event,
     watcher_path: &Path,
+    runtime_config_path: Option<&Path>,
     suppressor: &WatcherSuppressor,
     session: &WatcherSession,
     send: &impl Fn(ModWatchEvent),
@@ -170,8 +204,8 @@ fn classify_event(
             let from = &event.paths[0];
             let to = &event.paths[1];
             match (
-                keep_structural_side(from, watcher_path, suppressor),
-                keep_structural_side(to, watcher_path, suppressor),
+                keep_structural_side(from, watcher_path, runtime_config_path, suppressor),
+                keep_structural_side(to, watcher_path, runtime_config_path, suppressor),
             ) {
                 (true, true) => send(ModWatchEvent::Renamed {
                     from: path_str(from),
@@ -186,14 +220,14 @@ fn classify_event(
         // Unstitched halves (the counterpart never arrived in the window).
         EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
             for p in &event.paths {
-                if keep_structural_side(p, watcher_path, suppressor) {
+                if keep_structural_side(p, watcher_path, runtime_config_path, suppressor) {
                     send(ModWatchEvent::Removed(path_str(p)));
                 }
             }
         }
         EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
             for p in &event.paths {
-                if keep_structural_side(p, watcher_path, suppressor) {
+                if keep_structural_side(p, watcher_path, runtime_config_path, suppressor) {
                     send(ModWatchEvent::Created(path_str(p)));
                 }
             }
@@ -202,21 +236,21 @@ fn classify_event(
 
         EventKind::Create(_) => {
             for p in &event.paths {
-                if keep_side(p, watcher_path, suppressor) {
+                if keep_side(p, watcher_path, runtime_config_path, suppressor) {
                     send(ModWatchEvent::Created(path_str(p)));
                 }
             }
         }
         EventKind::Modify(_) => {
             for p in &event.paths {
-                if keep_side(p, watcher_path, suppressor) {
+                if keep_side(p, watcher_path, runtime_config_path, suppressor) {
                     send(ModWatchEvent::Modified(path_str(p)));
                 }
             }
         }
         EventKind::Remove(_) => {
             for p in &event.paths {
-                if keep_structural_side(p, watcher_path, suppressor) {
+                if keep_structural_side(p, watcher_path, runtime_config_path, suppressor) {
                     send(ModWatchEvent::Removed(path_str(p)));
                 }
             }
@@ -227,6 +261,17 @@ fn classify_event(
     }
 }
 
+#[cfg(test)]
+fn classify_event(
+    event: &Event,
+    watcher_path: &Path,
+    suppressor: &WatcherSuppressor,
+    session: &WatcherSession,
+    send: &impl Fn(ModWatchEvent),
+) {
+    classify_event_with_runtime_config(event, watcher_path, None, suppressor, session, send);
+}
+
 // ── Watcher Factory ───────────────────────────────────────────────────
 
 /// Create a debounced file watcher on a mod directory with suppression
@@ -235,6 +280,18 @@ fn classify_event(
 /// # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 pub fn watch_mod_directory(
     path: &Path,
+    is_suppressed: Arc<WatcherSuppressor>,
+    session: WatcherSession,
+) -> Result<(ModWatcher, WatchEventReceiver), ScannerError> {
+    watch_mod_directory_with_runtime_config(path, None, is_suppressed, session)
+}
+
+/// Watch the effective Mods root recursively plus the importer configuration
+/// file non-recursively. Only the exact config file passes classification, so
+/// an importer root does not turn into a second asset watcher.
+pub fn watch_mod_directory_with_runtime_config(
+    path: &Path,
+    runtime_config_path: Option<&Path>,
     is_suppressed: Arc<WatcherSuppressor>,
     session: WatcherSession,
 ) -> Result<(ModWatcher, WatchEventReceiver), ScannerError> {
@@ -249,6 +306,8 @@ pub fn watch_mod_directory(
     let overflowed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let callback_overflowed = overflowed.clone();
     let watcher_path = path.to_path_buf();
+    let runtime_config_path = runtime_config_path.map(Path::to_path_buf);
+    let callback_runtime_config_path = runtime_config_path.clone();
 
     let mut debouncer = notify_debouncer_full::new_debouncer(
         DEBOUNCE_TIMEOUT,
@@ -262,9 +321,10 @@ pub fn watch_mod_directory(
             match result {
                 Ok(events) => {
                     for debounced in &events {
-                        classify_event(
+                        classify_event_with_runtime_config(
                             &debounced.event,
                             &watcher_path,
+                            callback_runtime_config_path.as_deref(),
                             &is_suppressed,
                             &session,
                             &send,
@@ -281,6 +341,19 @@ pub fn watch_mod_directory(
     )?;
 
     debouncer.watch(path, RecursiveMode::Recursive)?;
+    if let Some(runtime_config_path) = runtime_config_path {
+        if !runtime_config_path.starts_with(path) {
+            let parent = runtime_config_path.parent().ok_or_else(|| {
+                ScannerError::Validation(format!(
+                    "Runtime config has no parent directory: {}",
+                    runtime_config_path.display()
+                ))
+            })?;
+            if parent.is_dir() {
+                debouncer.watch(parent, RecursiveMode::NonRecursive)?;
+            }
+        }
+    }
 
     Ok((
         debouncer,

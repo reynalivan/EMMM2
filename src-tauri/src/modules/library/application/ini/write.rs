@@ -150,6 +150,9 @@ pub fn save_ini_with_updates(
     }
     let text = render_lines(&lines, &document.line_terminators)?;
     let output = encode_ini_text(&text, document.encoding, document.had_bom)?;
+    if output == current_bytes {
+        return Ok(());
+    }
 
     let temp_path = unique_sibling(&document.file_path, "tmp")?;
     write_synced(&temp_path, &output)?;

@@ -33,6 +33,7 @@ describe('FolderGridToolbar', () => {
         setExplorerSearch={vi.fn()}
         canCreateFolder
         onCreateFolder={vi.fn()}
+        isRefreshing
       />,
     );
 
@@ -66,6 +67,7 @@ describe('FolderGridToolbar', () => {
         setExplorerSearch={vi.fn()}
         canCreateFolder
         onCreateFolder={vi.fn()}
+        isRefreshing
       />,
     );
 
@@ -86,6 +88,7 @@ describe('FolderGridToolbar', () => {
     expect(screen.getByTestId('mod-grid-search-icon')).toHaveClass('z-10');
     expect(screen.getByTestId('add-folder')).toHaveClass('btn-square');
     expect(screen.getByTestId('folder-sort')).toHaveAttribute('aria-haspopup', 'listbox');
+    expect(screen.getByRole('status', { name: 'Loading...' })).toBeInTheDocument();
     expect(
       screen.getByTestId('folder-grid-toolbar-controls').closest('.folder-grid-action-bar'),
     ).toBeTruthy();

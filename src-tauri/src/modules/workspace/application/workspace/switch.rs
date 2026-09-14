@@ -9,11 +9,16 @@ use std::sync::atomic::AtomicBool;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::modules::workspace::domain::workspace::{
-    WorkspaceImpact, WorkspacePathRewrite, WorkspaceRefreshScope, WorkspaceSwitchDuplicate,
-    WorkspaceSwitchInput, WorkspaceSwitchResolution, WorkspaceSwitchResult, WorkspaceSwitchStatus,
-    WorkspaceSwitchTargetKind,
+    WorkspaceImpact, WorkspaceParentEnableImpact, WorkspaceParentEnableParent,
+    WorkspaceParentEnableRequirement, WorkspacePathRewrite, WorkspaceRefreshScope,
+    WorkspaceSwitchDuplicate, WorkspaceSwitchInput, WorkspaceSwitchResolution,
+    WorkspaceSwitchResult, WorkspaceSwitchStatus, WorkspaceSwitchTargetKind,
 };
 use crate::shared::errors::AppError;
+
+#[cfg(test)]
+#[path = "tests/prepared_switch_tests.rs"]
+mod prepared_switch_tests;
 
 fn map_duplicates(
     duplicates: Vec<crate::modules::library::domain::mods::DuplicateModInfo>,
@@ -34,8 +39,10 @@ fn map_duplicates(
 #[derive(Debug, Clone)]
 pub struct PreparedModSwitch {
     target_path: String,
+    final_target_path: String,
     changed_object_ids: Vec<String>,
     batches: Vec<crate::modules::library::application::mods::bulk::PreparedBulkToggle>,
+    logical_rewrites: Vec<WorkspacePathRewrite>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +50,12 @@ pub enum PreparedWorkspaceSwitch {
     Immediate(WorkspaceSwitchResult),
     Object(crate::modules::library::application::mods::object_switch::PreparedObjectSwitch),
     Mod(PreparedModSwitch),
+}
+
+struct ResolvedModTarget {
+    path: String,
+    mod_id: Option<String>,
+    changed_object_ids: Vec<String>,
 }
 
 /// Distinguishes a failed mutation whose compensation completed from a failed
@@ -122,6 +135,7 @@ impl PreparedWorkspaceSwitch {
                     changed_folder_paths: changed_folder_paths.clone(),
                     changed_object_ids: vec![outcome.object_id.clone()],
                     duplicates: Vec::new(),
+                    parent_enable_requirement: None,
                     impact: build_switch_impact(
                         Some(&outcome.original_path),
                         Some(&outcome.next_path),
@@ -172,11 +186,8 @@ impl PreparedWorkspaceSwitch {
                     executions.push((batch, execution.applied_sequences));
                 }
 
-                let primary_path = rewrites
-                    .iter()
-                    .find(|rewrite| rewrite.old_path == prepared.target_path)
-                    .map(|rewrite| rewrite.new_path.clone())
-                    .or_else(|| Some(prepared.target_path.clone()));
+                rewrites.extend(prepared.logical_rewrites.iter().cloned());
+                let primary_path = Some(prepared.final_target_path.clone());
                 let mut seen = HashSet::new();
                 let changed_folder_paths = rewrites
                     .iter()
@@ -202,6 +213,7 @@ impl PreparedWorkspaceSwitch {
                     changed_folder_paths,
                     changed_object_ids: prepared.changed_object_ids.clone(),
                     duplicates: Vec::new(),
+                    parent_enable_requirement: None,
                     impact,
                     sync_warning: None,
                 })
@@ -244,7 +256,7 @@ pub async fn prepare_switch(
         ));
     }
 
-    let (target_path, changed_object_ids) = resolve_mod_target_path(
+    let resolved_target = resolve_mod_target_path(
         pool,
         &input.game_id,
         &input.target.value,
@@ -252,48 +264,89 @@ pub async fn prepare_switch(
     )
     .await?;
     let validated_target =
-        crate::platform::fs::guard::validate_path(config, &input.game_id, &target_path)?;
-    let mut disable_paths = Vec::new();
-    if input.desired_enabled {
-        let mods_root = config
-            .mods_root_for(&input.game_id)
-            .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
-        let target_rel = Path::new(validated_target.original())
-            .strip_prefix(&mods_root)
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| validated_target.original().to_string());
-        let duplicates = crate::modules::workspace::application::scanner::conflict::get_duplicates_for_mod_service(
+        crate::platform::fs::guard::validate_path(config, &input.game_id, &resolved_target.path)?;
+    let configured_mods_root = config
+        .mods_root_for(&input.game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let mods_root = crate::platform::fs::guard::validate_mods_root(
+        config,
+        &input.game_id,
+        &configured_mods_root.to_string_lossy(),
+    )?;
+    let disabled_parents = if input.desired_enabled {
+        crate::modules::workspace::application::scanner::conflict::disabled_ancestor_paths(
+            validated_target.as_ref(),
+            &mods_root,
+        )
+    } else {
+        Vec::new()
+    };
+    if !disabled_parents.is_empty() && !input.enable_disabled_ancestors {
+        let requirement = build_parent_enable_requirement(
             pool,
-            &target_rel,
             &input.game_id,
+            &mods_root,
+            validated_target.as_ref(),
+            &disabled_parents,
         )
         .await?;
-        if !duplicates.is_empty()
-            && matches!(
-                input.resolution,
-                WorkspaceSwitchResolution::Normal
-                    | WorkspaceSwitchResolution::EnableParentThenContinue
-            )
-        {
-            return Ok(PreparedWorkspaceSwitch::Immediate(WorkspaceSwitchResult {
-                status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
-                primary_path: None,
-                changed_folder_paths: Vec::new(),
-                changed_object_ids: changed_object_ids.clone(),
-                duplicates: map_duplicates(duplicates),
-                impact: build_switch_impact(None, None, &[], &changed_object_ids),
-                sync_warning: None,
-            }));
-        }
-        if matches!(
-            input.resolution,
-            WorkspaceSwitchResolution::ForceEnable | WorkspaceSwitchResolution::EnableOnlyThis
-        ) {
-            disable_paths.extend(
-                duplicates
-                    .into_iter()
-                    .map(|duplicate| mods_root.join(duplicate.folder_path)),
-            );
+        return Ok(PreparedWorkspaceSwitch::Immediate(WorkspaceSwitchResult {
+            status: WorkspaceSwitchStatus::RequiresParentEnable,
+            primary_path: None,
+            changed_folder_paths: Vec::new(),
+            changed_object_ids: resolved_target.changed_object_ids.clone(),
+            duplicates: Vec::new(),
+            parent_enable_requirement: Some(requirement),
+            impact: build_switch_impact(None, None, &[], &resolved_target.changed_object_ids),
+            sync_warning: None,
+        }));
+    }
+    let mut disable_paths = Vec::new();
+    if input.desired_enabled && input.resolution != WorkspaceSwitchResolution::ForceEnable {
+        let target_rel =
+            crate::shared::path_key::relative_to_root(validated_target.original(), &mods_root);
+        if matches!(input.resolution, WorkspaceSwitchResolution::EnableOnlyThis) {
+            for object_id in &resolved_target.changed_object_ids {
+                let siblings = if input.enable_disabled_ancestors {
+                    crate::modules::library::adapters::sqlite::mods::get_object_mod_paths(
+                        pool,
+                        &input.game_id,
+                        object_id,
+                        resolved_target.mod_id.as_deref(),
+                    )
+                    .await?
+                } else {
+                    crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
+                        pool,
+                        object_id,
+                        &input.game_id,
+                        resolved_target.mod_id.as_deref(),
+                    )
+                    .await?
+                };
+                disable_paths.extend(siblings.into_iter().map(|path| mods_root.join(path)));
+            }
+        } else {
+            let duplicates = crate::modules::workspace::application::scanner::conflict::get_duplicates_for_mod_service(
+                pool, &target_rel, &input.game_id,
+            ).await?;
+            if !duplicates.is_empty() {
+                return Ok(PreparedWorkspaceSwitch::Immediate(WorkspaceSwitchResult {
+                    status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
+                    primary_path: None,
+                    changed_folder_paths: Vec::new(),
+                    changed_object_ids: resolved_target.changed_object_ids.clone(),
+                    duplicates: map_duplicates(duplicates),
+                    parent_enable_requirement: None,
+                    impact: build_switch_impact(
+                        None,
+                        None,
+                        &[],
+                        &resolved_target.changed_object_ids,
+                    ),
+                    sync_warning: None,
+                }));
+            }
         }
     }
 
@@ -307,17 +360,211 @@ pub async fn prepare_switch(
         next_sequence = batch.resequence(next_sequence);
         batches.push(batch);
     }
-    let mut target_batch = crate::modules::library::application::mods::bulk::prepare_bulk_toggle(
-        &[validated_target.to_path_buf()],
-        input.desired_enabled,
-    );
+    let (parent_batches, mut target_batch, final_target_path, logical_rewrites) =
+        prepare_target_activation_batches(
+            validated_target.as_ref(),
+            input.desired_enabled,
+            &disabled_parents,
+        )?;
+    for mut batch in parent_batches {
+        next_sequence = batch.resequence(next_sequence);
+        batches.push(batch);
+    }
     target_batch.resequence(next_sequence);
     batches.push(target_batch);
     Ok(PreparedWorkspaceSwitch::Mod(PreparedModSwitch {
-        target_path,
-        changed_object_ids,
+        target_path: validated_target.to_string_lossy().into_owned(),
+        final_target_path: final_target_path.to_string_lossy().into_owned(),
+        changed_object_ids: resolved_target.changed_object_ids,
         batches,
+        logical_rewrites,
     }))
+}
+
+fn rebase_path(mut path: PathBuf, rewrites: &[(PathBuf, PathBuf)]) -> PathBuf {
+    for (old_path, new_path) in rewrites {
+        if let Ok(suffix) = path.strip_prefix(old_path) {
+            path = new_path.join(suffix);
+        }
+    }
+    path
+}
+
+fn has_disabled_component(path: &Path) -> bool {
+    path.components().any(|component| {
+        matches!(component, std::path::Component::Normal(name) if crate::modules::workspace::domain::normalizer::is_disabled_folder(&name.to_string_lossy()))
+    })
+}
+
+fn display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| {
+            crate::modules::workspace::domain::normalizer::normalize_display_name(
+                &name.to_string_lossy(),
+            )
+            .into_owned()
+        })
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
+fn proposed_parent_activation_rewrites(
+    target_path: &Path,
+    disabled_parents: &[PathBuf],
+) -> Vec<(PathBuf, PathBuf)> {
+    let mut rewrites = Vec::with_capacity(disabled_parents.len() + 1);
+    for parent_path in disabled_parents {
+        let current_path = rebase_path(parent_path.clone(), &rewrites);
+        let next_path = current_path.with_file_name(
+            current_path
+                .file_name()
+                .map(|name| {
+                    crate::modules::library::application::mods::core_ops::standardize_prefix(
+                        &name.to_string_lossy(),
+                        true,
+                    )
+                })
+                .unwrap_or_default(),
+        );
+        rewrites.push((current_path, next_path));
+    }
+
+    let current_target = rebase_path(target_path.to_path_buf(), &rewrites);
+    let next_target = current_target.with_file_name(
+        current_target
+            .file_name()
+            .map(|name| {
+                crate::modules::library::application::mods::core_ops::standardize_prefix(
+                    &name.to_string_lossy(),
+                    true,
+                )
+            })
+            .unwrap_or_default(),
+    );
+    if current_target != next_target {
+        rewrites.push((current_target, next_target));
+    }
+    rewrites
+}
+
+async fn build_parent_enable_requirement(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    mods_root: &Path,
+    target_path: &Path,
+    disabled_parents: &[PathBuf],
+) -> Result<WorkspaceParentEnableRequirement, AppError> {
+    let rewrites = proposed_parent_activation_rewrites(target_path, disabled_parents);
+    let Some(outer_parent) = disabled_parents.first() else {
+        return Err(AppError::Internal(
+            "Parent-enable requirement must contain a disabled parent".to_string(),
+        ));
+    };
+    let root_string = mods_root.to_string_lossy();
+    let parent_key = crate::shared::path_key::folder_path_key(
+        &outer_parent.to_string_lossy(),
+        Some(&root_string),
+    );
+    let subtree = crate::modules::library::adapters::sqlite::mods::get_mods_for_folder_subtree(
+        pool,
+        game_id,
+        &parent_key,
+    )
+    .await
+    .map_err(|error| AppError::Db(format!("Could not load parent-enable impact: {error}")))?;
+
+    let mut will_activate = Vec::new();
+    let mut stay_disabled = Vec::new();
+    for entry in subtree {
+        let current_path = mods_root.join(&entry.folder_path);
+        let next_path = rebase_path(current_path.clone(), &rewrites);
+        if current_path == next_path {
+            continue;
+        }
+        let impact = WorkspaceParentEnableImpact {
+            path: next_path.to_string_lossy().into_owned(),
+            name: entry.actual_name,
+        };
+        if has_disabled_component(&next_path) {
+            stay_disabled.push(impact);
+        } else {
+            will_activate.push(impact);
+        }
+    }
+
+    Ok(WorkspaceParentEnableRequirement {
+        requested_target: WorkspaceParentEnableImpact {
+            path: target_path.to_string_lossy().into_owned(),
+            name: display_name(target_path),
+        },
+        parents: disabled_parents
+            .iter()
+            .map(|path| WorkspaceParentEnableParent {
+                path: path.to_string_lossy().into_owned(),
+                name: display_name(path),
+            })
+            .collect(),
+        will_activate,
+        stay_disabled,
+    })
+}
+
+fn prepare_target_activation_batches(
+    target_path: &Path,
+    desired_enabled: bool,
+    disabled_parents: &[PathBuf],
+) -> Result<
+    (
+        Vec<crate::modules::library::application::mods::bulk::PreparedBulkToggle>,
+        crate::modules::library::application::mods::bulk::PreparedBulkToggle,
+        PathBuf,
+        Vec<WorkspacePathRewrite>,
+    ),
+    AppError,
+> {
+    let mut parent_batches = Vec::with_capacity(disabled_parents.len());
+    let mut parent_rewrites = Vec::with_capacity(disabled_parents.len());
+    for parent_path in disabled_parents {
+        let mut parent_batch =
+            crate::modules::library::application::mods::bulk::prepare_bulk_toggle(
+                std::slice::from_ref(parent_path),
+                true,
+            );
+        parent_batch.rebase_paths(&parent_rewrites);
+        let Some((old_path, new_path)) = parent_batch.single_planned_step()? else {
+            return Err(AppError::Internal(format!(
+                "Disabled parent unexpectedly had no activation step: {}",
+                parent_path.display()
+            )));
+        };
+        parent_rewrites.push((old_path, new_path));
+        parent_batches.push(parent_batch);
+    }
+
+    let target_path_buf = target_path.to_path_buf();
+    let mut target_batch = crate::modules::library::application::mods::bulk::prepare_bulk_toggle(
+        std::slice::from_ref(&target_path_buf),
+        desired_enabled,
+    );
+    target_batch.rebase_paths(&parent_rewrites);
+    let final_target_path = target_batch
+        .single_planned_step()?
+        .map(|(_, new_path)| new_path)
+        .unwrap_or_else(|| rebase_path(target_path.to_path_buf(), &parent_rewrites));
+    let logical_rewrites = if target_path != final_target_path {
+        vec![WorkspacePathRewrite {
+            old_path: target_path.to_string_lossy().into_owned(),
+            new_path: final_target_path.to_string_lossy().into_owned(),
+        }]
+    } else {
+        Vec::new()
+    };
+
+    Ok((
+        parent_batches,
+        target_batch,
+        final_target_path,
+        logical_rewrites,
+    ))
 }
 
 /// Prepares one all-or-nothing randomizer loadout. Every selected target is
@@ -349,22 +596,17 @@ pub async fn prepare_randomized_loadout_switch(
     let mut primary_target = None;
 
     for target_value in target_values {
-        let (target_path, object_ids) =
-            resolve_mod_target_path(pool, game_id, target_value, true).await?;
+        let resolved_target = resolve_mod_target_path(pool, game_id, target_value, true).await?;
         let validated_target =
-            crate::platform::fs::guard::validate_path(config, game_id, &target_path)?;
-        let target_rel = Path::new(validated_target.original())
-            .strip_prefix(&mods_root)
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| validated_target.original().to_string());
-        for object_id in object_ids {
+            crate::platform::fs::guard::validate_path(config, game_id, &resolved_target.path)?;
+        for object_id in resolved_target.changed_object_ids {
             if exclusive_object_ids.contains(&object_id) {
                 let sibling_paths =
                     crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
                         pool,
                         &object_id,
                         game_id,
-                        &target_rel,
+                        resolved_target.mod_id.as_deref(),
                     )
                     .await?;
                 for sibling_path in sibling_paths {
@@ -383,7 +625,7 @@ pub async fn prepare_randomized_loadout_switch(
                         pool,
                         game_id,
                         &object_id,
-                        &target_rel,
+                        resolved_target.mod_id.as_deref(),
                     )
                     .await?;
                 for sibling_path in all_sibling_paths {
@@ -418,7 +660,7 @@ pub async fn prepare_randomized_loadout_switch(
         if seen_enable.insert(activation_key) {
             enable_paths.push(activation_path);
         }
-        primary_target.get_or_insert(target_path);
+        primary_target.get_or_insert(resolved_target.path);
     }
 
     let mut batches = Vec::new();
@@ -436,10 +678,13 @@ pub async fn prepare_randomized_loadout_switch(
     enable_batch.resequence(next_sequence);
     batches.push(enable_batch);
 
+    let primary_target = primary_target.expect("non-empty target values produce a target");
     Ok(PreparedWorkspaceSwitch::Mod(PreparedModSwitch {
-        target_path: primary_target.expect("non-empty target values produce a target"),
+        final_target_path: primary_target.clone(),
+        target_path: primary_target,
         changed_object_ids,
         batches,
+        logical_rewrites: Vec::new(),
     }))
 }
 
@@ -448,7 +693,7 @@ async fn resolve_mod_target_path(
     game_id: &str,
     target_value: &str,
     desired_enabled: bool,
-) -> Result<(String, Vec<String>), AppError> {
+) -> Result<ResolvedModTarget, AppError> {
     let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
@@ -472,8 +717,9 @@ async fn resolve_mod_target_path(
         .map(|value| value.to_string_lossy().to_string())
         .unwrap_or_else(|| target_value.to_string());
 
+    let mut mod_id = None;
     let mut changed_object_ids = Vec::new();
-    if let Some((_, Some(object_id), _)) =
+    if let Some((id, Some(object_id), _)) =
         crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
             pool,
             &relative_path,
@@ -481,53 +727,14 @@ async fn resolve_mod_target_path(
         )
         .await?
     {
+        mod_id = Some(id);
         changed_object_ids.push(object_id);
     }
 
-    Ok((
-        resolved_target.to_string_lossy().to_string(),
+    Ok(ResolvedModTarget {
+        path: resolved_target.to_string_lossy().to_string(),
+        mod_id,
         changed_object_ids,
-    ))
-}
-
-async fn run_enable_only_this(
-    pool: &sqlx::SqlitePool,
-    watcher_state: &WatcherState,
-    _op_guard: &crate::platform::fs::operation_lock::OpGuard,
-    target_path: String,
-    game_id: &str,
-    changed_object_ids: Vec<String>,
-) -> Result<WorkspaceSwitchResult, AppError> {
-    let result =
-        crate::modules::workspace::application::scanner::conflict::enable_only_this_service(
-            pool,
-            watcher_state,
-            target_path,
-            game_id,
-        )
-        .await?;
-    let changed_folder_paths = result.success;
-    let primary_path = changed_folder_paths.last().cloned();
-    let rewrites = result.path_rewrites.clone();
-
-    let mut impact = build_switch_impact(
-        None,
-        primary_path.as_deref(),
-        &changed_folder_paths,
-        &changed_object_ids,
-    );
-    if !rewrites.is_empty() {
-        impact.rewrites = rewrites;
-    }
-
-    Ok(WorkspaceSwitchResult {
-        status: WorkspaceSwitchStatus::Applied,
-        primary_path: primary_path.clone(),
-        changed_folder_paths: changed_folder_paths.clone(),
-        changed_object_ids: changed_object_ids.clone(),
-        duplicates: Vec::new(),
-        impact,
-        sync_warning: None,
     })
 }
 
@@ -568,139 +775,6 @@ fn build_switch_impact(
         refresh_scopes: default_switch_refresh_scopes(),
         warnings: Vec::new(),
     }
-}
-
-pub async fn execute_switch(
-    input: WorkspaceSwitchInput,
-    config: &ConfigService,
-    pool: &sqlx::SqlitePool,
-    watcher_state: &WatcherState,
-    op_guard: &crate::platform::fs::operation_lock::OpGuard,
-) -> Result<WorkspaceSwitchResult, AppError> {
-    // Workspace Switch owns explicit enable/disable actions.
-    // Object targets must use object-switch semantics, never the mod-toggle service.
-    if matches!(input.target.kind, WorkspaceSwitchTargetKind::ObjectId) {
-        let outcome =
-            crate::modules::library::application::mods::object_switch::toggle_object_root_service(
-                pool,
-                watcher_state,
-                op_guard,
-                &input.game_id,
-                &input.target.value,
-                input.desired_enabled,
-            )
-            .await?;
-
-        let status = if outcome.next_path == outcome.original_path {
-            WorkspaceSwitchStatus::Noop
-        } else {
-            WorkspaceSwitchStatus::Applied
-        };
-        let next_path = outcome.next_path.clone();
-        let original_path = outcome.original_path.clone();
-        let object_id = outcome.object_id.clone();
-
-        let changed_folder_paths = if original_path == next_path {
-            vec![next_path.clone()]
-        } else {
-            vec![original_path.clone(), next_path.clone()]
-        };
-
-        return Ok(WorkspaceSwitchResult {
-            status,
-            primary_path: Some(next_path.clone()),
-            changed_folder_paths: changed_folder_paths.clone(),
-            changed_object_ids: vec![object_id.clone()],
-            duplicates: Vec::new(),
-            impact: build_switch_impact(
-                Some(&original_path),
-                Some(&next_path),
-                &changed_folder_paths,
-                std::slice::from_ref(&object_id),
-            ),
-            sync_warning: None,
-        });
-    }
-
-    let (target_path, changed_object_ids) = resolve_mod_target_path(
-        pool,
-        &input.game_id,
-        &input.target.value,
-        input.desired_enabled,
-    )
-    .await?;
-
-    if matches!(input.resolution, WorkspaceSwitchResolution::EnableOnlyThis) {
-        let result = run_enable_only_this(
-            pool,
-            watcher_state,
-            op_guard,
-            target_path,
-            &input.game_id,
-            changed_object_ids,
-        )
-        .await?;
-        return Ok(result);
-    }
-
-    // Derivation site: `target_path` was resolved from the client's target
-    // value plus the DB, so containment is proven here rather than passed in.
-    let validated_target =
-        crate::platform::fs::guard::validate_path(config, &input.game_id, &target_path)?;
-    let result = crate::modules::library::application::mods::core_ops::toggle_mod_inner_service_with_duplicate_policy(
-        pool,
-        watcher_state,
-        op_guard,
-        &validated_target,
-        input.desired_enabled,
-        &input.game_id,
-        matches!(input.resolution, WorkspaceSwitchResolution::ForceEnable),
-    )
-    .await;
-
-    let outcome = match result {
-        Ok(outcome) => outcome,
-        Err(AppError::DuplicateConflict(duplicates)) => {
-            return Ok(WorkspaceSwitchResult {
-                status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
-                primary_path: None,
-                changed_folder_paths: Vec::new(),
-                changed_object_ids: changed_object_ids.clone(),
-                duplicates: map_duplicates(duplicates),
-                impact: build_switch_impact(None, None, &[], &changed_object_ids),
-                sync_warning: None,
-            });
-        }
-        Err(error) => return Err(error),
-    };
-    let next_path = outcome.new_absolute_path;
-
-    let status = if next_path == target_path {
-        WorkspaceSwitchStatus::Noop
-    } else {
-        WorkspaceSwitchStatus::Applied
-    };
-
-    // Unconditional: the reconcile IS the DB write for this mutation (single
-    // writer), and on a no-op it heals any drift the toggle found. Implicit
-    // swap can disable variants under OTHER object roots, so their paths are
-    // part of the scope too.
-    let mut reconcile_paths = vec![target_path.clone(), next_path.clone()];
-    reconcile_paths.extend(outcome.swapped_paths);
-    Ok(WorkspaceSwitchResult {
-        status,
-        primary_path: Some(next_path.clone()),
-        changed_folder_paths: reconcile_paths.clone(),
-        changed_object_ids: changed_object_ids.clone(),
-        duplicates: Vec::new(),
-        impact: build_switch_impact(
-            Some(&input.target.value),
-            Some(&next_path),
-            &reconcile_paths,
-            &changed_object_ids,
-        ),
-        sync_warning: None,
-    })
 }
 
 #[cfg(test)]

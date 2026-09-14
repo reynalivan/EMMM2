@@ -55,6 +55,28 @@ describe('TopBar app menu', () => {
     expect(mockSetWorkspaceView).toHaveBeenCalledWith('mod-inbox');
   });
 
+  it('includes Discover and Downloads in the dashboard action order', () => {
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByTitle('App Menu'));
+
+    const itemIds = screen
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('data-testid'))
+      .filter((id): id is string => id !== null && id.startsWith('nav-'));
+
+    expect(itemIds).toEqual([
+      'nav-dashboard',
+      'nav-mods',
+      'nav-mod-inbox',
+      'nav-storage-optimizer',
+      'nav-collections',
+      'nav-settings',
+      'nav-browser',
+      'nav-downloads',
+    ]);
+  });
+
   it('keeps the back action inside the app menu', () => {
     workspaceView = 'mods';
     render(<TopBar />);

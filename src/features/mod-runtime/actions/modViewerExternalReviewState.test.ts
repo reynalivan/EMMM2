@@ -46,6 +46,7 @@ function watcherResult(changedRoots: string[]): DiskReconcileResult {
     reconcile_revision: 1,
     reason: 'WatcherBatch',
     status: 'Applied',
+    scan_scope: 'Scoped',
     folder_conflicts: [],
     rename_confirmations: [],
     error_message: null,

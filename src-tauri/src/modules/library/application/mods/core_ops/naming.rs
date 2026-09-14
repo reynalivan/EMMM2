@@ -80,32 +80,73 @@ pub(crate) fn find_existing_sibling_case_insensitive(
     find_sibling_identity_collision(parent, target_name, Some(source_path))
 }
 
+struct SiblingNameEntry {
+    path: PathBuf,
+    name: String,
+    normalized_directory_name: Option<String>,
+}
+
+/// A request-scoped snapshot of one parent directory's sibling names. It is
+/// intentionally not cached beyond the bulk planning pass: the rename itself
+/// remains the final filesystem authority.
+pub struct SiblingNameIndex {
+    entries: Vec<SiblingNameEntry>,
+}
+
+impl SiblingNameIndex {
+    pub fn read(parent: &Path) -> Option<Self> {
+        let entries = std::fs::read_dir(parent)
+            .ok()?
+            .flatten()
+            .map(|entry| {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                let normalized_directory_name = path.is_dir().then(|| {
+                    crate::modules::workspace::domain::normalizer::normalize_display_name(&name)
+                        .to_string()
+                });
+                SiblingNameEntry {
+                    path,
+                    name,
+                    normalized_directory_name,
+                }
+            })
+            .collect();
+        Some(Self { entries })
+    }
+
+    pub fn find_collision(&self, target_name: &str, source_path: &Path) -> Option<PathBuf> {
+        self.find_collision_excluding(target_name, Some(source_path))
+    }
+
+    fn find_collision_excluding(
+        &self,
+        target_name: &str,
+        source_path: Option<&Path>,
+    ) -> Option<PathBuf> {
+        let target_identity =
+            crate::modules::workspace::domain::normalizer::normalize_display_name(target_name);
+        self.entries.iter().find_map(|entry| {
+            if source_path.is_some_and(|source_path| entry.path == source_path) {
+                return None;
+            }
+            let exact_collision = entry.name.eq_ignore_ascii_case(target_name);
+            let identity_collision = entry
+                .normalized_directory_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case(&target_identity));
+            (exact_collision || identity_collision).then(|| entry.path.clone())
+        })
+    }
+}
+
 pub(crate) fn find_sibling_identity_collision(
     parent: &Path,
     target_name: &str,
     source_path: Option<&Path>,
 ) -> Option<PathBuf> {
-    let target_identity =
-        crate::modules::workspace::domain::normalizer::normalize_display_name(target_name);
-    let entries = std::fs::read_dir(parent).ok()?;
-    for entry in entries.flatten() {
-        let entry_path = entry.path();
-        if source_path.is_some_and(|source_path| entry_path == source_path) {
-            continue;
-        }
-
-        let entry_name = entry.file_name();
-        let entry_name = entry_name.to_string_lossy();
-        let exact_collision = entry_name.eq_ignore_ascii_case(target_name);
-        let identity_collision = entry_path.is_dir()
-            && crate::modules::workspace::domain::normalizer::normalize_display_name(&entry_name)
-                .eq_ignore_ascii_case(&target_identity);
-        if exact_collision || identity_collision {
-            return Some(entry_path);
-        }
-    }
-
-    None
+    let index = SiblingNameIndex::read(parent)?;
+    index.find_collision_excluding(target_name, source_path)
 }
 
 pub(crate) fn rename_conflict_error(

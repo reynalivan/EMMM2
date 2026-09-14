@@ -17,7 +17,7 @@ export default function ObjectListConflictBanner({
   }
 
   return (
-    <div className="mx-2 mt-1 mb-0.5 flex items-center gap-1.5 bg-warning/10 border border-warning/20 rounded-md px-2 py-1">
+    <div className="mx-2 mt-1 mb-0.5 flex shrink-0 items-center gap-1.5 rounded-md border border-warning/20 bg-warning/10 px-2 py-1">
       <AlertTriangle size={12} className="text-warning shrink-0" />
       <span className="text-[10px] text-warning flex-1 truncate">
         {t('item.naming_conflict', { count: conflictObjects.length })}

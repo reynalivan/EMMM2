@@ -32,7 +32,9 @@ export function buildWorkspaceSwitchPolicy(
   const label = reasonLabel ?? t(checked ? 'common:status.enabled' : 'common:status.disabled');
 
   return {
-    canToggle: node.capabilities.can_toggle && !blocked,
+    // A blocked child is a real action request, not a disabled control. The
+    // switch opens the parent-enable requirement dialog before any mutation.
+    canToggle: node.capabilities.can_toggle,
     checked,
     blocked,
     label,

@@ -12,6 +12,7 @@ function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileRes
     reconcile_revision: 1,
     reason: 'WatcherBatch',
     status: 'Applied',
+    scan_scope: 'Scoped',
     error_message: null,
     changed_roots: [],
     objects_changed: false,

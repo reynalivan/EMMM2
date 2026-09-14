@@ -11,7 +11,10 @@
     "filter_status": "Status: {{status}}",
     "filter_meta": "{{label}}: {{value}}",
     "click_to_clear": "click to clear",
-    "click_to_remove": "click to remove"
+    "click_to_remove": "click to remove",
+    "catalog_check": "Check this object against the catalog",
+    "catalog_check_started": "Checking this object against the active catalog.",
+    "catalog_check_failed": "Could not start the catalog check."
   },
   "filter": {
     "sort_label": "Sort",

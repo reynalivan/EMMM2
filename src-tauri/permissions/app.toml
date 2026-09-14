@@ -15,6 +15,7 @@ commands.allow = [
     "browser_list_bookmarks",
     "browser_add_bookmark",
     "browser_delete_bookmark",
+    "browser_update_bookmark",
     "browser_list_history",
     "browser_clear_history",
     "browser_get_session_tabs",

@@ -6,43 +6,36 @@ use crate::modules::library::application::ini::document::decode_ini_bytes;
 use crate::modules::settings::application::config::GameConfig;
 use crate::shared::errors::AppError;
 
-// ─── d3dx.ini Reload Key Discovery ──────────────────────────────────────────
-
-/// Key 3DMigoto binds `reload_fixes` to out of the box.
-pub const DEFAULT_RELOAD_KEY: &str = "F10";
-
-/// The discovered reload key configuration from d3dx.ini.
+/// Keyboard binding for the 3DMigoto configuration reload operation.
 #[derive(Debug, Clone)]
 pub struct ReloadKeyConfig {
-    /// The key that triggers `reload_fixes` (e.g. "F10", "F5").
-    pub reload_fixes_key: String,
-    /// Whether this was auto-discovered or is the fallback default.
-    pub is_fallback: bool,
-}
-
-impl Default for ReloadKeyConfig {
-    fn default() -> Self {
-        Self {
-            reload_fixes_key: DEFAULT_RELOAD_KEY.to_string(),
-            is_fallback: true,
-        }
-    }
+    pub reload_config_key: String,
 }
 
 /// Resolve the package config from the configured Mods directory. XXMI
 /// installs the package away from the game executable.
 pub fn resolve_d3dx_ini_path(game: &GameConfig) -> Option<PathBuf> {
-    game.mod_path.parent().map(|parent| parent.join("d3dx.ini"))
+    let instance_config = game.instance_path.join("d3dx.ini");
+    if instance_config.is_file() {
+        return Some(instance_config);
+    }
+    game.mod_path
+        .parent()
+        .map(|parent| parent.join("d3dx.ini"))
+        .filter(|path| path.is_file())
 }
 
-/// Discover the reload key from a d3dx.ini file.
-///
-/// Upstream defines this as `reload_fixes = ...` in `[Hunting]`. Missing files
-/// or assignments use the loader default; malformed bindings fail explicitly.
+/// Discover `reload_config` from the `[Hunting]` section. KeyViewer changes
+/// INI resources, so shader-fix reload is neither necessary nor sufficient.
 pub fn discover_reload_key(d3dx_ini_path: &Path) -> Result<ReloadKeyConfig, AppError> {
     let bytes = match fs::read(d3dx_ini_path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(ReloadKeyConfig::default()),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(AppError::Validation(format!(
+                "NeedsManualReload: 3DMigoto config was not found at {}",
+                d3dx_ini_path.display()
+            )));
+        }
         Err(error) => return Err(error.into()),
     };
     let (content, _had_bom, clean) = decode_ini_bytes(&bytes);
@@ -54,10 +47,10 @@ pub fn discover_reload_key(d3dx_ini_path: &Path) -> Result<ReloadKeyConfig, AppE
     }
 
     let mut in_hunting_section = false;
+    let mut reload_config_key = None;
 
     for line in content.lines() {
         let trimmed = line.trim();
-
         if trimmed.starts_with('[') {
             in_hunting_section = trimmed
                 .find(']')
@@ -65,33 +58,37 @@ pub fn discover_reload_key(d3dx_ini_path: &Path) -> Result<ReloadKeyConfig, AppE
                 .unwrap_or(false);
             continue;
         }
-
         if !in_hunting_section {
             continue;
         }
-
         let Some((key_part, value_part)) = trimmed.split_once('=') else {
             continue;
         };
-        if key_part.trim().eq_ignore_ascii_case("reload_fixes") {
-            let value = value_part
-                .split([';', '#'])
-                .next()
-                .unwrap_or_default()
-                .trim();
-            return Ok(ReloadKeyConfig {
-                reload_fixes_key: normalize_reload_binding(value)?,
-                is_fallback: false,
-            });
+        let value = value_part
+            .split([';', '#'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if key_part.trim().eq_ignore_ascii_case("reload_config") {
+            reload_config_key = Some(normalize_reload_binding(value)?);
         }
     }
 
-    Ok(ReloadKeyConfig::default())
+    Ok(ReloadKeyConfig {
+        reload_config_key: reload_config_key.ok_or_else(|| {
+            AppError::Validation(format!(
+                "NeedsManualReload: [Hunting] reload_config is not bound in {}",
+                d3dx_ini_path.display()
+            ))
+        })?,
+    })
 }
 
 pub fn discover_reload_key_for_game(game: &GameConfig) -> Result<ReloadKeyConfig, AppError> {
     let Some(path) = resolve_d3dx_ini_path(game) else {
-        return Ok(ReloadKeyConfig::default());
+        return Err(AppError::Validation(
+            "NeedsManualReload: could not locate the active 3DMigoto d3dx.ini".to_string(),
+        ));
     };
     discover_reload_key(&path)
 }

@@ -25,12 +25,24 @@ pub fn fetch_gamebanana_metadata(
     refs: &[GameBananaRef],
     config: &GameBananaConfig,
 ) -> GameBananaResult {
+    fetch_gamebanana_metadata_with_timeout(refs, config, Duration::from_secs(API_TIMEOUT_SECS))
+}
+
+/// Same as [`fetch_gamebanana_metadata`], with a caller-provided HTTP timeout.
+///
+/// Import enrichment uses a short timeout so remote metadata never holds up
+/// local import analysis. Existing deep-matcher callers retain the default.
+pub fn fetch_gamebanana_metadata_with_timeout(
+    refs: &[GameBananaRef],
+    config: &GameBananaConfig,
+    timeout: Duration,
+) -> GameBananaResult {
     if refs.is_empty() {
         return GameBananaResult::default();
     }
 
     let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(API_TIMEOUT_SECS))
+        .timeout(timeout)
         .build()
     {
         Ok(c) => c,

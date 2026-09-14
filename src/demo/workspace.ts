@@ -3,10 +3,11 @@ import type {
   WorkspaceCapabilities,
   WorkspaceExplorer,
   WorkspaceExplorerNode,
+  WorkspaceNavigationSelection,
   WorkspaceObjectNode,
   WorkspacePreview,
-  WorkspaceSelection,
-  WorkspaceViewModel,
+  WorkspacePreviewResult,
+  WorkspaceStructureViewModel,
 } from '@/shared/api/tauri/bindings.gen';
 
 const capabilities: WorkspaceCapabilities = {
@@ -639,14 +640,12 @@ function buildPreview(selectedModPath: string | null): WorkspacePreview {
   };
 }
 
-export function buildDemoWorkspaceViewModel(input: unknown): WorkspaceViewModel {
+export function buildDemoWorkspaceStructure(input: unknown): WorkspaceStructureViewModel {
   const selectedObjectPath = getStringField(input, 'selected_object_folder_path');
-  const selectedModPath = getStringField(input, 'selected_mod_path');
   const explorerSubPath = getStringField(input, 'explorer_sub_path');
-  const selection: WorkspaceSelection = {
+  const selection: WorkspaceNavigationSelection = {
     selected_object_folder_path: selectedObjectPath,
     explorer_sub_path: explorerSubPath,
-    selected_mod_path: selectedModPath,
     current_path: selectedObjectPath ? selectedObjectPath.split('/') : [],
     reconciliation_status: 'unchanged',
     reconciliation_reason: null,
@@ -656,12 +655,35 @@ export function buildDemoWorkspaceViewModel(input: unknown): WorkspaceViewModel 
   return {
     objects: objectNodes,
     explorer: buildExplorer(selectedObjectPath),
-    preview: buildPreview(selectedModPath),
     selection,
     runtime: {
       game_id: 'demo-zenless',
       source_state: { status: 'available', message: null },
       recovery_status: 'ready',
+    },
+  };
+}
+
+export function buildDemoWorkspacePreview(input: unknown): WorkspacePreviewResult {
+  const gameId = getStringField(input, 'game_id') ?? '';
+  const explorerSubPath = getStringField(input, 'explorer_sub_path');
+  const selectedModPath = getStringField(input, 'selected_mod_path');
+  const preview = buildPreview(selectedModPath);
+  const targetMissing = Boolean(selectedModPath && !preview.selected_path);
+
+  return {
+    request_identity: {
+      game_id: gameId,
+      explorer_sub_path: explorerSubPath,
+      selected_mod_path: selectedModPath,
+    },
+    context_status: 'ready',
+    preview,
+    selection: {
+      selected_mod_path: targetMissing ? null : preview.selected_path,
+      reconciliation_status: targetMissing ? 'cleared' : 'unchanged',
+      reconciliation_reason: targetMissing ? 'missing_mod_path' : null,
+      affected_paths: targetMissing && selectedModPath ? [selectedModPath] : [],
     },
   };
 }

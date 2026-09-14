@@ -25,6 +25,17 @@ pub fn load_master_db_entries(
     }
 }
 
+/// Loads catalog-backed KeyViewer targets for one game.
+///
+/// Legacy catalog entries without declared runtime targets remain available to
+/// matching through `load_master_db_entries`, but are never runtime candidates.
+pub fn load_catalog_keyviewer_entries(
+    app_data_dir: &Path,
+    game_type: i32,
+) -> Result<Vec<CatalogKeyviewerEntry>, ScannerError> {
+    CatalogPack::load(app_data_dir).and_then(|pack| pack.keyviewer_entries_for(game_type))
+}
+
 pub fn ini_filters(resource_dir: Option<&Path>, game_type: i32) -> PreparedTokenFilters {
     let Some(resource_dir) = resource_dir else {
         return IniTokenizationConfig::default().prepare();
@@ -194,9 +205,11 @@ pub fn search_master_db_service(
 mod cache;
 pub use cache::{get_cached, MasterDbCache};
 pub(crate) mod asset_pack;
-pub use asset_pack::{CatalogPackRefreshResult, CatalogPackStatus};
+pub use asset_pack::{CatalogKeyviewerEntry, CatalogPackRefreshResult, CatalogPackStatus};
 pub(crate) mod catalog_update;
 pub use catalog_update::{CatalogUpdateCheck, CatalogUpdateInstallResult, CatalogUpdateState};
+pub(crate) mod catalog_import;
+pub use catalog_import::{CatalogImportPreview, CatalogImportState};
 
 #[cfg(test)]
 #[path = "tests.rs"]

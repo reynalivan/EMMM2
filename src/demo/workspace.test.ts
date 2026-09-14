@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildDemoWorkspaceViewModel } from './workspace';
+import { buildDemoWorkspacePreview, buildDemoWorkspaceStructure } from './workspace';
 
 describe('demo workspace data', () => {
-  it('provides the existing workspace screens with object, explorer, and preview data', () => {
-    const workspace = buildDemoWorkspaceViewModel({
+  it('provides split structure and preview data', () => {
+    const workspace = buildDemoWorkspaceStructure({
       selected_object_folder_path: 'Characters/Nekomata',
+      explorer_sub_path: null,
+    });
+    const preview = buildDemoWorkspacePreview({
+      game_id: 'demo-zenless',
       explorer_sub_path: null,
       selected_mod_path: 'Characters/Nekomata/Streetwear',
     });
@@ -29,7 +33,7 @@ describe('demo workspace data', () => {
       'Variants',
     ]);
     expect(workspace.explorer.children.filter((folder) => !folder.is_safe)).toHaveLength(2);
-    expect(workspace.preview.display_title).toBe('Streetwear');
+    expect(preview.preview.display_title).toBe('Streetwear');
     expect(workspace.runtime.source_state.status).toBe('available');
   });
 });

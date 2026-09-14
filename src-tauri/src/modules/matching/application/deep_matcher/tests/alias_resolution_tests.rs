@@ -23,6 +23,7 @@ fn build_test_db() -> MasterDb {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Hu Tao".to_string(),
@@ -38,6 +39,7 @@ fn build_test_db() -> MasterDb {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Traveler (Anemo)".to_string(),
@@ -61,6 +63,7 @@ fn build_test_db() -> MasterDb {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Traveler (Geo)".to_string(),
@@ -84,6 +87,7 @@ fn build_test_db() -> MasterDb {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
     ])
 }

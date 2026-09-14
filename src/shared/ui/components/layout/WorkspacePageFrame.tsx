@@ -45,7 +45,7 @@ export function WorkspacePageFrame({
       )}
     >
       {context && (
-        <div className="shrink-0 lg:absolute lg:inset-x-0 lg:top-0 lg:z-10">{context}</div>
+        <div className="shrink-0 lg:absolute lg:inset-x-0 lg:top-0 lg:z-20">{context}</div>
       )}
       {children}
     </div>

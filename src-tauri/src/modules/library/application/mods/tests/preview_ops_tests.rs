@@ -1,7 +1,25 @@
 use super::*;
 use crate::platform::fs::operation_lock::OperationLock;
 use std::fs;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
+
+fn write_ini_benchmark_fixture(mod_dir: &std::path::Path, file_count: usize) {
+    for index in 0..file_count {
+        let variant_dir = mod_dir.join(format!("variant_{:03}", index % 25));
+        fs::create_dir_all(&variant_dir).unwrap();
+        fs::write(
+            variant_dir.join(format!("mod_{index:04}.ini")),
+            "[Constants]\n$swapvar = 0\n[KeyToggle]\nkey = F1\n",
+        )
+        .unwrap();
+    }
+}
+
+fn median_duration(mut samples: Vec<Duration>) -> Duration {
+    samples.sort_unstable();
+    samples[samples.len() / 2]
+}
 
 // Covers: Task5 command bridge smoke
 #[test]
@@ -131,6 +149,26 @@ fn details_command_reads_and_writes_nested_ini() {
 }
 
 #[test]
+fn details_command_reads_all_ini_documents_with_relative_filenames() {
+    let tmp = TempDir::new().unwrap();
+    let mod_dir = tmp.path().join("ModA");
+    fs::create_dir_all(mod_dir.join("variants/red")).unwrap();
+    fs::write(mod_dir.join("config.ini"), "[Constants]\n$value = 0\n").unwrap();
+    fs::write(
+        mod_dir.join("variants/red/config.ini"),
+        "[KeyToggle]\nkey = F1\n",
+    )
+    .unwrap();
+
+    let documents = read_mod_ini_documents_inner(&mod_dir).unwrap();
+
+    assert_eq!(documents.len(), 2);
+    assert_eq!(documents[0].filename, "config.ini");
+    assert_eq!(documents[1].filename, "variants/red/config.ini");
+    assert_eq!(documents[1].document.key_bindings.len(), 1);
+}
+
+#[test]
 fn details_command_remove_and_clear_preview_images() {
     let tmp = TempDir::new().unwrap();
     let mod_dir = tmp.path().join("ModA");
@@ -187,4 +225,45 @@ fn details_command_list_preview_images_scan_depth() {
         !has_d4_image,
         "Found image at nesting depth 4, which should be ignored"
     );
+}
+
+/// Manual baseline for preview detail loading. Run with:
+/// `cargo test --lib preview_ini_discovery_and_parse_benchmark -- --ignored --nocapture`.
+#[test]
+#[ignore = "manual performance baseline"]
+fn preview_ini_discovery_and_parse_benchmark() {
+    for file_count in [100, 500] {
+        let tmp = TempDir::new().unwrap();
+        let mod_dir = tmp.path().join("ModA");
+        fs::create_dir(&mod_dir).unwrap();
+        write_ini_benchmark_fixture(&mod_dir, file_count);
+
+        let mut discovery_samples = Vec::with_capacity(5);
+        let mut parse_samples = Vec::with_capacity(5);
+        let mut batch_samples = Vec::with_capacity(5);
+        for _ in 0..5 {
+            let discovery_start = Instant::now();
+            let files = list_mod_ini_files_inner(&mod_dir).unwrap();
+            discovery_samples.push(discovery_start.elapsed());
+            assert_eq!(files.len(), file_count);
+
+            let parse_start = Instant::now();
+            for file in &files {
+                read_mod_ini_inner(&mod_dir, &file.filename).unwrap();
+            }
+            parse_samples.push(parse_start.elapsed());
+
+            let batch_start = Instant::now();
+            let documents = read_mod_ini_documents_inner(&mod_dir).unwrap();
+            batch_samples.push(batch_start.elapsed());
+            assert_eq!(documents.len(), file_count);
+        }
+
+        println!(
+            "{file_count} INI files: discovery median {:?}, serial parse median {:?}, batch median {:?}",
+            median_duration(discovery_samples),
+            median_duration(parse_samples),
+            median_duration(batch_samples),
+        );
+    }
 }

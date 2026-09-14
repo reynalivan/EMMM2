@@ -46,6 +46,7 @@
     "destination_unavailable": "Tujuan tidak tersedia",
     "destination_label": "tujuan",
     "no_destinations": "Tidak ada tujuan yang tercatat untuk sumber ini.",
+    "show_all_destinations": "Tampilkan semua {{count}} tujuan",
     "open_in_app": "Buka di Aplikasi",
     "open_in_explorer": "Buka di Explorer",
     "open_in_app_label": "Buka {{name}} di aplikasi",

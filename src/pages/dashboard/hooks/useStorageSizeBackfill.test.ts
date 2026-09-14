@@ -71,13 +71,15 @@ describe('useStorageSizeBackfill', () => {
       await Promise.resolve();
     });
     expect(commands.startStorageSizeBackfill).toHaveBeenCalledTimes(1);
+    const getStatus = vi.mocked(commands.getStorageSizeBackfillStatus);
+    const statusCallsBeforeUnmount = getStatus.mock.calls.length;
     unmount();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
 
-    expect(commands.getStorageSizeBackfillStatus).not.toHaveBeenCalled();
+    expect(commands.getStorageSizeBackfillStatus).toHaveBeenCalledTimes(statusCallsBeforeUnmount);
   });
 
   it('restarts the backfill after a failed start', async () => {
@@ -98,11 +100,18 @@ describe('useStorageSizeBackfill', () => {
 
     await act(async () => {
       await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(result.current.status).toMatchObject({ state: 'Failed', errors: ['Scan failed'] });
 
-    await act(async () => {
+    act(() => {
       result.current.retry();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
       await Promise.resolve();
     });
 

@@ -94,6 +94,72 @@ fn detects_same_stage_shaderfixes_replacements() {
     assert_eq!(conflicts[0].evidence[0].shader_stage.as_deref(), Some("ps"));
 }
 
+#[test]
+fn unindexed_evidence_overlaps_indexed_evidence_from_every_other_mod() {
+    let dir = TempDir::new().unwrap();
+    let mod_a = dir.path().join("ModA");
+    let mod_b = dir.path().join("ModB");
+    let mod_c = dir.path().join("ModC");
+    for mod_root in [&mod_a, &mod_b, &mod_c] {
+        fs::create_dir(mod_root).unwrap();
+    }
+
+    let ini_a = create_ini(
+        &mod_a,
+        "a.ini",
+        "[TextureOverrideBody]\nhash = abcdef12\nmatch_first_index = 0\n",
+    );
+    let ini_b = create_ini(
+        &mod_b,
+        "b.ini",
+        "[TextureOverrideBody]\nhash = abcdef12\nmatch_first_index = 1\n",
+    );
+    let ini_c = create_ini(&mod_c, "c.ini", "[TextureOverrideBody]\nhash = abcdef12\n");
+
+    let conflicts = detect_conflicts(&[(mod_a, ini_a), (mod_b, ini_b), (mod_c, ini_c)]);
+
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].mod_paths.len(), 3);
+    assert_eq!(conflicts[0].evidence.len(), 3);
+}
+
+#[test]
+fn combined_runtime_scan_detects_ini_and_shader_conflicts_once_per_root() {
+    let dir = TempDir::new().unwrap();
+    let mod_a = dir.path().join("ModA");
+    let mod_b = dir.path().join("ModB");
+    for mod_root in [&mod_a, &mod_b] {
+        fs::create_dir_all(mod_root.join("ShaderFixes")).unwrap();
+        fs::create_dir_all(mod_root.join("DISABLED ignored")).unwrap();
+        create_ini(
+            mod_root,
+            "config.ini",
+            "[TextureOverrideBody]\nhash = abcdef12\n",
+        );
+        create_ini(
+            &mod_root.join("DISABLED ignored"),
+            "ignored.ini",
+            "[TextureOverrideBody]\nhash = deadbeef\n",
+        );
+        fs::write(
+            mod_root.join("ShaderFixes/0123456789abcdef-ps_replace.txt"),
+            "shader",
+        )
+        .unwrap();
+    }
+
+    let conflicts = detect_runtime_conflicts(&[mod_a, mod_b]);
+
+    assert_eq!(conflicts.len(), 2);
+    assert!(conflicts.iter().any(|conflict| {
+        conflict.kind == ConflictKind::ResourceHash && conflict.hash == "abcdef12"
+    }));
+    assert!(conflicts.iter().any(|conflict| {
+        conflict.kind == ConflictKind::ShaderReplacement && conflict.hash == "0123456789abcdef"
+    }));
+    assert!(conflicts.iter().all(|conflict| conflict.hash != "deadbeef"));
+}
+
 // No conflict when same hash is in same mod
 #[test]
 fn test_no_conflict_same_mod() {

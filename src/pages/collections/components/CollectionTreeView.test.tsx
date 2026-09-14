@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '../../../tests/testing/test-utils';
+import { fireEvent, render, screen } from '../../../tests/testing/test-utils';
 import { CollectionTreeView } from './CollectionTreeView';
 import type { PreviewTreeNode } from '@/entities/collection';
 
@@ -194,5 +194,107 @@ describe('CollectionTreeView', () => {
     render(<CollectionTreeView nodes={createTree()} gameId="game-1" />);
 
     expect(screen.getByText('AINOZ/Loose Skin.ini')).toBeInTheDocument();
+  });
+
+  it('defers large object details until the object is expanded', () => {
+    const firstChild = createTree()[0]!.children[0]!;
+    const largeTree: PreviewTreeNode[] = [
+      {
+        ...createTree()[0]!,
+        id: 'large-object',
+        name: 'Large Object',
+        mod_count: 80,
+        children: Array.from({ length: 80 }, (_, index) => ({
+          ...firstChild,
+          id: `large-child-${index}`,
+          name: `Large Child ${index}`,
+          path: `Large Object/Large Child ${index}`,
+          kind: 'mod' as const,
+          node_type: 'FlatModRoot',
+          collapse_children: false,
+          children: [],
+        })),
+      },
+    ];
+
+    render(<CollectionTreeView nodes={largeTree} />);
+
+    const objectToggle = screen.getByRole('button', { name: /Large Object/ });
+    expect(objectToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Large Child 0')).not.toBeInTheDocument();
+
+    fireEvent.click(objectToggle);
+
+    expect(objectToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Large Child 0')).toBeInTheDocument();
+  });
+
+  it('defers large nested folder details after its object is expanded', () => {
+    const firstChild = createTree()[0]!.children[0]!;
+    const largeFolder: PreviewTreeNode = {
+      ...firstChild,
+      id: 'large-folder',
+      name: 'Large Folder',
+      path: 'Large Object/Large Folder',
+      node_type: 'ContainerFolder',
+      children: Array.from({ length: 80 }, (_, index) => ({
+        ...firstChild,
+        id: `large-folder-child-${index}`,
+        name: `Nested Child ${index}`,
+        path: `Large Object/Large Folder/Nested Child ${index}`,
+        kind: 'mod' as const,
+        node_type: 'FlatModRoot',
+        collapse_children: false,
+        children: [],
+      })),
+    };
+    const largeTree: PreviewTreeNode[] = [
+      {
+        ...createTree()[0]!,
+        id: 'large-object',
+        name: 'Large Object',
+        mod_count: 1,
+        children: [largeFolder],
+      },
+    ];
+
+    render(<CollectionTreeView nodes={largeTree} />);
+
+    const folderToggle = screen.getByRole('button', { name: /Large Folder/ });
+    expect(folderToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Nested Child 0')).not.toBeInTheDocument();
+
+    fireEvent.click(folderToggle);
+
+    expect(folderToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Nested Child 0')).toBeInTheDocument();
+  });
+
+  it('does not mount every row or thumbnail for a 10,000-node tree', () => {
+    const firstChild = createTree()[0]!.children[0]!;
+    const largeTree: PreviewTreeNode[] = [
+      {
+        ...createTree()[0]!,
+        id: 'very-large-object',
+        name: 'Very Large Object',
+        mod_count: 10_000,
+        children: Array.from({ length: 10_000 }, (_, index) => ({
+          ...firstChild,
+          id: `very-large-child-${index}`,
+          name: `Very Large Child ${index}`,
+          path: `Very Large Object/Very Large Child ${index}`,
+          kind: 'mod' as const,
+          node_type: 'FlatModRoot',
+          collapse_children: false,
+          children: [],
+        })),
+      },
+    ];
+
+    render(<CollectionTreeView nodes={largeTree} gameId="game-1" />);
+
+    expect(screen.getByRole('button', { name: /Very Large Object/ })).toBeInTheDocument();
+    expect(screen.queryByText('Very Large Child 9999')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('[role="tree"] button')).toHaveLength(1);
   });
 });

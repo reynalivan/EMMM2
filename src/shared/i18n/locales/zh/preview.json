@@ -21,7 +21,8 @@
     "close": "关闭",
     "edit": "编辑",
     "more_actions": "更多操作",
-    "rename_mod": "重命名模组"
+    "rename_mod": "重命名模组",
+    "retry": "重试"
   },
   "metadata": {
     "title": "元数据",
@@ -168,6 +169,11 @@
     }
   },
   "errors": {
-    "open_location_failed": "打开文件位置失败：{{error}}"
+    "open_location_failed": "打开文件位置失败：{{error}}",
+    "load_failed": "无法加载预览",
+    "load_failed_description": "确认所选模组仍可用后重试。"
+  },
+  "loading": {
+    "selected_mod": "正在加载所选模组预览"
   }
 }

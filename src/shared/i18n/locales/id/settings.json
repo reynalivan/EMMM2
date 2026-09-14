@@ -73,24 +73,48 @@
       "engine_val": "Vite + React"
     },
     "catalog_assets": {
-      "title": "Aset katalog",
+      "title": "Pack katalog",
       "not_installed": "Pack katalog belum terpasang.",
       "installed": "{{name}} {{version}} · {{entries}} entri katalog",
       "invalid": "Pack katalog yang terpasang tidak dapat divalidasi.",
       "status_unavailable": "Status aset katalog tidak tersedia.",
       "open_folder": "Buka folder",
       "refresh": "Refresh katalog",
-      "updates_title": "Pembaruan katalog bertanda tangan",
-      "updates_desc": "Diperiksa tiap minggu dari channel rilis publik.",
-      "auto_install": "Instal otomatis",
+      "github_title": "Instal dari GitHub",
+      "github_desc": "Review aset rilis publik sebelum mengganti katalog aktif.",
+      "github_find": "Cari di GitHub",
+      "github_url_label": "URL repository atau rilis GitHub",
+      "github_url_placeholder": "https://github.com/owner/catalog-pack/releases/latest",
+      "github_check": "Periksa pack",
+      "github_note": "Gunakan repository publik, rilis terbaru, atau tag rilis. Rilis harus berisi catalog-pack.zip.",
+      "github_preview_failed": "Rilis katalog GitHub ini tidak dapat diperiksa. Katalog terpasang tidak berubah.",
+      "local_title": "Pasang dari ZIP",
+      "local_desc": "Pilih catalog-pack.zip lokal untuk direview sebelum dipasang. File asal tetap berada di lokasinya.",
+      "local_choose": "Pilih ZIP",
+      "local_preview_failed": "Tidak dapat memeriksa ZIP katalog lokal ini. Katalog terpasang tidak berubah.",
+      "install_failed": "Katalog yang telah direview tidak dapat dipasang. Katalog terpasang tidak berubah.",
+      "github_review_title": "Review Catalog Pack",
+      "review_source": "Sumber: {{source}}",
+      "review_release": "Rilis",
+      "github_repository": "Repository",
+      "github_version": "Versi",
+      "github_publisher": "Penerbit",
+      "github_games": "Game didukung",
+      "github_entries": "Entri katalog",
+      "github_replaces": "Memasang pack ini akan mengganti katalog aktif setelah konfirmasi.",
+      "github_install": "Instal pack",
+      "reset_suggestions_title": "Saran identitas yang diabaikan",
+      "reset_suggestions_desc": "Tampilkan kembali identitas katalog game aktif yang sebelumnya diabaikan untuk direview.",
+      "reset_suggestions_action": "Reset yang diabaikan",
+      "updates_title": "Pembaruan katalog",
+      "updates_desc": "Periksa dan pasang pembaruan secara manual.",
       "check_update": "Periksa sekarang",
       "install_update": "Instal {{version}}",
       "update_available": "Versi {{version}} siap diinstal.",
       "up_to_date": "Katalog sudah mutakhir.",
-      "update_idle": "Pembaruan diverifikasi sebelum dipasang.",
+      "update_idle": "Pembaruan diperiksa sebelum dipasang.",
       "update_check_failed": "Tidak dapat memeriksa pembaruan katalog. Katalog terpasang tidak berubah.",
-      "update_install_failed": "Tidak dapat memasang pembaruan katalog bertanda tangan. Katalog terpasang tidak berubah.",
-      "auto_update_failed": "Tidak dapat menyimpan preferensi pembaruan katalog: {{error}}"
+      "update_install_failed": "Tidak dapat memasang pembaruan katalog. Katalog terpasang tidak berubah."
     },
     "diagnostics": {
       "title": "Diagnostik anonim",
@@ -123,6 +147,12 @@
         "section_three": "Konten eksternal",
         "body_three": "Unduhan dan tool eksternal berjalan di luar EMMM. Periksa file dan simpan backup sebelum melakukan perubahan. EMMM tidak mendukung atau menjamin konten pihak ketiga."
       }
+    },
+    "support": {
+      "title": "Dukung EMMM",
+      "description": "Jika EMMM membantu alur mod Anda, dukung pengembangannya.",
+      "action": "Traktir kopi",
+      "open_failed": "Tidak dapat membuka halaman dukungan: {{error}}"
     }
   },
   "diagnostics": {
@@ -143,6 +173,10 @@
     "add": "Tambah Game",
     "empty": "Belum ada game.",
     "active": "AKTIF",
+    "source_change_progress": "Memindahkan data EMMM, mengindeks mod, dan memperbarui koleksi…",
+    "source_change_summary": "Library diperbarui: {{objectsAdded}} objek ditambah, {{objectsRemoved}} dihapus, {{objectsMoved}} dipindah; {{modsAdded}} mod ditambah, {{modsRemoved}} dihapus, {{modsMoved}} dipindah; {{collectionsAffected}} koleksi terdampak.",
+    "source_change_artifacts_moved": "Data runtime EMMM dipindahkan.",
+    "source_change_artifacts_unchanged": "Tidak ada data runtime EMMM yang perlu dipindahkan.",
     "actions": {
       "set_active": "Jadikan Aktif",
       "scan_ready_to_move": "Buka Mod Inbox",
@@ -255,6 +289,7 @@
     "days": "hari"
   },
   "hotkeys": {
+    "os_hotkeys_hint": "Binding Safe Mode dan preset didaftarkan oleh EMMM. Binding overlay di bawah hanya milik 3DMigoto.",
     "title": "Hotkey Global",
     "enabled": "Diaktifkan",
     "desc": "Pintasan yang aktif saat jendela game digunakan.",
@@ -262,6 +297,7 @@
     "cooldown_desc": "Mencegah input ganda.",
     "conflicts_title": "Konflik Kunci Terdeteksi",
     "labels": {
+      "safe_mode": "Safe Mode",
       "next_preset": "Preset berikutnya",
       "prev_preset": "Preset sebelumnya",
       "toggle_overlay": "Tampilkan overlay",
@@ -273,11 +309,41 @@
     "viewer_desc": "Tampilkan keybind yang terdeteksi. Buka dengan {{key}}.",
     "infrastructure_title": "File runtime",
     "infrastructure_desc": "Dikelola otomatis di .emmm_data/.",
+    "runtime": {
+      "title": "Runtime KeyViewer",
+      "desc": "Diagnosis sesi saat ini untuk game aktif.",
+      "last_sync": "Sinkronisasi terakhir",
+      "snapshot": "Snapshot",
+      "reload_status": "Muat ulang",
+      "reload_binding": "Binding muat ulang",
+      "generation_cleanup": "Pembersihan generation",
+      "loading": "Memuat…",
+      "not_synced": "Belum disinkronkan pada sesi ini",
+      "not_attempted": "Belum dicoba",
+      "unavailable": "Tidak tersedia",
+      "binding_unavailable": "Tidak tersedia",
+      "cleanup_enabled": "Otomatis saat game berhenti",
+      "cleanup_disabled": "Dinonaktifkan sampai executable game dikonfigurasi",
+      "cleanup_disabled_desc": "EMMM tidak akan menghapus generation KeyViewer lama karena status proses game tidak dapat diverifikasi.",
+      "publication": {
+        "published": "Dipublikasikan",
+        "unchanged": "Tidak berubah",
+        "skipped": "Digantikan request baru",
+        "failed": "Gagal"
+      },
+      "reload": {
+        "not_required": "Tidak diperlukan",
+        "sent": "Terkirim: {{binding}}",
+        "manual": "Manual: {{binding}}"
+      }
+    },
     "reset": "Atur Ulang Semua ke Default",
     "reset_success": "Pengaturan hotkey diatur ulang ke default.",
     "save_failed": "Gagal menyimpan pengaturan hotkey: {{error}}",
     "viewer_save_failed": "Gagal menyimpan pengaturan KeyViewer: {{error}}",
     "reset_tip": "Atur ulang ke default",
+    "overlay_enabled": "Aktifkan overlay",
+    "save": "Simpan kontrol",
     "reserved": {
       "package_toggle": "toggle paket",
       "frame_analysis": "analisis frame 3DMigoto",

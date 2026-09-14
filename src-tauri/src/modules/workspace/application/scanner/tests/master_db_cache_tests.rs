@@ -34,6 +34,7 @@ fn entry(name: &str, aliases: Vec<&str>) -> DbEntry {
         thumbnail_path: None,
         metadata: None,
         hash_db: HashMap::new(),
+        runtime_targets: vec![],
     }
 }
 

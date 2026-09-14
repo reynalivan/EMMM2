@@ -45,6 +45,8 @@ interface ListStateViewProps {
   error: unknown;
   /** Shown when the error carries no usable message. */
   errorFallback: string;
+  /** Optional geometry-aware placeholder for a first load. */
+  loadingContent?: ReactNode;
   /** Rendered when neither loading nor error (typically the empty-state branch). */
   children?: ReactNode;
 }
@@ -58,12 +60,17 @@ export default function ListStateView({
   isError,
   error,
   errorFallback,
+  loadingContent,
   children,
 }: ListStateViewProps) {
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center" data-testid="loading-spinner">
-        <Loader2 size={24} className="animate-spin text-primary/50" />
+      <div
+        className="flex flex-1 items-center justify-center"
+        data-testid="loading-spinner"
+        aria-busy="true"
+      >
+        {loadingContent ?? <Loader2 size={24} className="animate-spin text-primary/50" />}
       </div>
     );
   }

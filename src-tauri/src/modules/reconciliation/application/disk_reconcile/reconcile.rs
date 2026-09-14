@@ -26,8 +26,8 @@ use crate::modules::reconciliation::application::disk_reconcile::rename_healer::
     apply_watcher_rename_hints, WatcherRenameHintsApplyRequest,
 };
 use crate::modules::reconciliation::application::disk_reconcile::types::{
-    DiskReconcileChangeSummary, DiskReconcilePathUpdate, DiskReconcileReason, DiskReconcileStatus,
-    FolderNameConflictGroup,
+    DiskReconcileChangeSummary, DiskReconcilePathUpdate, DiskReconcileReason,
+    DiskReconcileScanScope, DiskReconcileStatus, FolderNameConflictGroup,
 };
 use crate::modules::workspace::application::scanner::watcher::ModWatchEvent;
 use crate::modules::workspace::domain::normalizer::normalize_display_name;
@@ -35,6 +35,7 @@ use crate::modules::workspace::domain::normalizer::normalize_display_name;
 #[derive(Debug, Clone)]
 pub struct ReconcileOutcome {
     pub status: DiskReconcileStatus,
+    pub scan_scope: DiskReconcileScanScope,
     pub error_message: Option<String>,
     pub folder_conflicts: Vec<FolderNameConflictGroup>,
     pub rename_confirmations: Vec<
@@ -63,6 +64,11 @@ pub struct ReconcileDiskProjectionRequest<'a> {
     pub path_hints: &'a [DiskReconcilePathHint],
     pub progress_reporter:
         Option<Arc<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter>>,
+    /// A complete discovery captured by the onboarding session watcher.
+    /// Generic reconciliation always leaves this unset and scans disk itself.
+    pub precomputed_discovery: Option<
+        crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskScopedDiscovery,
+    >,
 }
 
 fn should_run_scoped_disk_reconcile(
@@ -117,6 +123,7 @@ fn source_unavailable(
 ) -> ReconcileOutcome {
     ReconcileOutcome {
         status: DiskReconcileStatus::SourceUnavailable,
+        scan_scope: DiskReconcileScanScope::None,
         error_message: Some(error_message),
         folder_conflicts: Vec::new(),
         rename_confirmations: Vec::new(),
@@ -238,6 +245,7 @@ pub async fn reconcile_disk_projection(
         watcher_events,
         path_hints,
         progress_reporter,
+        precomputed_discovery,
     } = request;
 
     let mut changed_roots = collect_changed_roots(mods_path, changed_paths);
@@ -271,7 +279,8 @@ pub async fn reconcile_disk_projection(
         ));
     }
 
-    let thumbnail_only_watcher_batch = matches!(reason, DiskReconcileReason::WatcherBatch)
+    let thumbnail_only_watcher_batch = !force_full
+        && matches!(reason, DiskReconcileReason::WatcherBatch)
         && !changed_paths.is_empty()
         && changed_paths.iter().all(|path| {
             crate::modules::reconciliation::application::disk_reconcile::path_classifier::is_thumbnail_path(Path::new(path))
@@ -279,6 +288,7 @@ pub async fn reconcile_disk_projection(
     if thumbnail_only_watcher_batch {
         return Ok(ReconcileOutcome {
             status: DiskReconcileStatus::Applied,
+            scan_scope: DiskReconcileScanScope::None,
             error_message: None,
             folder_conflicts: Vec::new(),
             rename_confirmations: Vec::new(),
@@ -312,69 +322,79 @@ pub async fn reconcile_disk_projection(
     let mut change_summary = ChangeSummaryBuilder::default();
     let mut folder_conflicts = Vec::new();
     let mut rename_confirmations = Vec::new();
+    let mut scan_scope = DiskReconcileScanScope::None;
 
     if runtime_file_changed {
         record_runtime_modifications(mods_path, changed_paths, &mut change_summary);
     }
 
     if should_reconcile {
-        let requested_scoped = !force_full
-            && !mods_root_event
-            && should_run_scoped_disk_reconcile(reason, &changed_roots);
-        // Discovery reads the global directory-name census, then strictly
-        // classifies only changed roots unless that census proves a cross-root
-        // identity ambiguity. All filesystem work remains on the blocking pool.
-        let snapshot_path = mods_path.to_path_buf();
-        let snapshot_roots = changed_roots.clone();
-        let snapshot_progress = progress_reporter.clone();
-        let known_mod_keys =
-            crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_game(
-                pool, game_id,
-            )
-            .await?
-            .into_iter()
-            .collect();
-        let size_scan = if matches!(reason, DiskReconcileReason::StorageSizeBackfill) {
-            DiskSizeScan::full()
+        let discovery = if let Some(discovery) = precomputed_discovery {
+            discovery
         } else {
-            DiskSizeScan::incremental(mods_path, known_mod_keys, changed_paths)
-        };
-        let snapshot = tokio::task::spawn_blocking(move || {
-            let on_progress = |progress: DiskSnapshotProgress| {
-                if let Some(reporter) = &snapshot_progress {
-                    reporter.emit(
-                        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePhase::ScanningRoots,
-                        progress.completed_roots as u64,
-                        Some(progress.total_roots as u64),
-                        progress.current_root,
-                    );
-                }
+            let requested_scoped = !force_full
+                && !mods_root_event
+                && should_run_scoped_disk_reconcile(reason, &changed_roots);
+            // Discovery reads the global directory-name census, then strictly
+            // classifies only changed roots unless that census proves a cross-root
+            // identity ambiguity. All filesystem work remains on the blocking pool.
+            let snapshot_path = mods_path.to_path_buf();
+            let snapshot_roots = changed_roots.clone();
+            let snapshot_progress = progress_reporter.clone();
+            let known_mod_keys =
+                crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_game(
+                    pool, game_id,
+                )
+                .await?
+                .into_iter()
+                .collect();
+            let size_scan = if matches!(reason, DiskReconcileReason::StorageSizeBackfill) {
+                DiskSizeScan::full()
+            } else {
+                DiskSizeScan::incremental(mods_path, known_mod_keys, changed_paths)
             };
-            collect_scoped_disk_discovery_with_progress(
-                &snapshot_path,
-                &snapshot_roots,
-                requested_scoped,
-                Some(&size_scan),
-                Some(&on_progress),
-            )
-        })
-        .await?;
-        let discovery = match snapshot {
-            Ok(value) => value,
-            Err(DiskProjectionError::SourceUnavailable(message)) => {
-                return Ok(source_unavailable(
-                    message,
-                    changed_roots,
-                    thumbnail_roots,
-                    runtime_file_changed,
-                    change_summary.build(),
-                ));
+            let snapshot = tokio::task::spawn_blocking(move || {
+                let on_progress = |progress: DiskSnapshotProgress| {
+                    if let Some(reporter) = &snapshot_progress {
+                        reporter.emit(
+                            crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePhase::ScanningRoots,
+                            progress.completed_roots as u64,
+                            Some(progress.total_roots as u64),
+                            progress.current_root,
+                        );
+                    }
+                };
+                collect_scoped_disk_discovery_with_progress(
+                    &snapshot_path,
+                    &snapshot_roots,
+                    requested_scoped,
+                    Some(&size_scan),
+                    Some(&on_progress),
+                )
+            })
+            .await?;
+            match snapshot {
+                Ok(value) => value,
+                Err(DiskProjectionError::SourceUnavailable(message)) => {
+                    return Ok(source_unavailable(
+                        message,
+                        changed_roots,
+                        thumbnail_roots,
+                        runtime_file_changed,
+                        change_summary.build(),
+                    ));
+                }
+                Err(error) => return Err(AppError::Internal(error.into_message())),
             }
-            Err(error) => return Err(AppError::Internal(error.into_message())),
         };
         let scoped = discovery.scoped;
+        scan_scope = if scoped {
+            DiskReconcileScanScope::Scoped
+        } else {
+            DiskReconcileScanScope::Full
+        };
         let census = discovery.census;
-        let projection = discovery.projection;
+        let mut projection = discovery.projection;
         if force_full {
             crate::platform::images::thumbnail_cache::ThumbnailCache::clear_memory();
             thumbnail_roots = projection
@@ -420,23 +440,13 @@ pub async fn reconcile_disk_projection(
         // every candidate preserves a prior row through the protected-key prune
         // guards, while an identity with no prior row remains absent from the
         // runtime projection and collection signature until it is resolved.
-        let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskProjection {
-            objects: projection
-                .objects
-                .iter()
-                .filter(|entry| !protected_object_keys.contains(&entry.folder_path_key))
-                .cloned()
-                .collect(),
-            mods: projection
-                .mods
-                .iter()
-                .filter(|entry| {
-                    !protected_object_keys.contains(&entry.object_folder_path_key)
-                        && !protected_mod_keys.contains(&entry.folder_path_key)
-                })
-                .cloned()
-                .collect(),
-        };
+        projection
+            .objects
+            .retain(|entry| !protected_object_keys.contains(&entry.folder_path_key));
+        projection.mods.retain(|entry| {
+            !protected_object_keys.contains(&entry.object_folder_path_key)
+                && !protected_mod_keys.contains(&entry.folder_path_key)
+        });
         let rename_detection = detect_rename_confirmations(
             pool,
             game_id,
@@ -451,21 +461,13 @@ pub async fn reconcile_disk_projection(
         // Rename ambiguity protects only the candidate keys returned by the
         // scoped detector. The same writer transaction still converges every
         // unrelated object and mod in this snapshot.
-        let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskProjection {
-            objects: projection
-                .objects
-                .into_iter()
-                .filter(|entry| !protected_object_keys.contains(&entry.folder_path_key))
-                .collect(),
-            mods: projection
-                .mods
-                .into_iter()
-                .filter(|entry| {
-                    !protected_object_keys.contains(&entry.object_folder_path_key)
-                        && !protected_mod_keys.contains(&entry.folder_path_key)
-                })
-                .collect(),
-        };
+        projection
+            .objects
+            .retain(|entry| !protected_object_keys.contains(&entry.folder_path_key));
+        projection.mods.retain(|entry| {
+            !protected_object_keys.contains(&entry.object_folder_path_key)
+                && !protected_mod_keys.contains(&entry.folder_path_key)
+        });
         // Keep the write input coherent with the full preflight snapshot.
         // Pruning remains scoped below, but identity transitions (including
         // cross-root swaps) must be able to see every physical folder.
@@ -545,6 +547,7 @@ pub async fn reconcile_disk_projection(
         } else {
             DiskReconcileStatus::AppliedWithFolderConflicts
         },
+        scan_scope,
         error_message: None,
         folder_conflicts,
         rename_confirmations,

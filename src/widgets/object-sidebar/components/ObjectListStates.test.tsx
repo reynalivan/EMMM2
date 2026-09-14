@@ -19,7 +19,10 @@ describe('ObjectListStates', () => {
 
   it('renders loading state', () => {
     render(<ObjectListStates {...defaultProps} isLoading={true} />);
-    expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
+    const loadingState = screen.getByTestId('loading-spinner');
+
+    expect(loadingState).toHaveAttribute('aria-busy', 'true');
+    expect(loadingState.querySelectorAll('.skeleton')).not.toHaveLength(0);
   });
 
   it('renders error state', () => {

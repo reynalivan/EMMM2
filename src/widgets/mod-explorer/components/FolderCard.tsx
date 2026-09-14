@@ -1,6 +1,5 @@
 import { stripTypedDisabledPrefix } from '../../../shared/lib/disabledPrefix';
 import { useState, memo, useCallback } from 'react';
-import { AlertTriangle } from 'lucide-react';
 import { ContextMenu } from '../../../shared/ui/components/ui/ContextMenu';
 import type { ModFolder } from '@/entities/game-object';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
@@ -42,8 +41,6 @@ interface FolderCardProps {
   hasFolderNameConflict?: boolean;
   /** True when an ancestor folder in the current path has DISABLED prefix */
   isLockedByParent?: boolean;
-  /** Called when user tries to toggle while locked — opens Enable Parent dialog */
-  onRequestEnableParent?: () => void;
   isSwitchPending?: boolean;
   /** A switch for this folder is in flight (spinner), as opposed to merely disabled. */
   isSwitchBusy?: boolean;
@@ -80,7 +77,6 @@ function FolderCardInner({
   hasConflict = false,
   hasFolderNameConflict = false,
   isLockedByParent = false,
-  onRequestEnableParent,
   isSwitchPending = false,
   isSwitchBusy = false,
   mutationsDisabled = false,
@@ -127,14 +123,9 @@ function FolderCardInner({
         return;
       }
 
-      if (isLockedByParent) {
-        onRequestEnableParent?.();
-        return;
-      }
-
       onToggleEnabled?.(folder);
     },
-    [folder, isLockedByParent, mutationsDisabled, onRequestEnableParent, onToggleEnabled],
+    [folder, mutationsDisabled, onToggleEnabled],
   );
 
   // Sync rename value when folder changes or rename starts
@@ -198,7 +189,7 @@ function FolderCardInner({
         onDoubleClick={handleDoubleClick}
         className={`
           group relative flex flex-col rounded-lg overflow-hidden cursor-pointer
-          border transition-[background-color,border-color,transform] duration-150 w-full
+          border transition-[background-color,border-color,transform] duration-150 motion-reduce:transition-none w-full
           ${!folder.is_effectively_active || isLockedByParent ? 'opacity-[0.75] grayscale-[0.8]' : ''}
           ${
             isActive
@@ -292,12 +283,6 @@ function FolderCardInner({
                   policy={switchPolicy}
                   className="text-[10px] font-semibold text-base-content/60 leading-none"
                 />
-                {isLockedByParent && switchPolicy.checked && (
-                  <span className="text-[8px] text-warning font-bold animate-pulse mt-0.5 italic flex items-center gap-0.5">
-                    <AlertTriangle size={8} />
-                    {t('card.inherited_lock_warning')}
-                  </span>
-                )}
               </div>
             </label>
             {folder.can_navigate && (

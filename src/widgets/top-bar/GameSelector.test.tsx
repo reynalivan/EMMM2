@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 import GameSelector from './GameSelector';
@@ -77,5 +77,22 @@ describe('GameSelector', () => {
     fireEvent.click(starRailBtn);
 
     expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi');
+  });
+
+  it('shows loading while the selected game is indexing', async () => {
+    let finishSwitch: () => void = () => undefined;
+    mockSwitchGame.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishSwitch = resolve;
+      }),
+    );
+
+    render(<GameSelector />);
+    fireEvent.click(screen.getByText('Star Rail'));
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+
+    finishSwitch();
+    await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
   });
 });

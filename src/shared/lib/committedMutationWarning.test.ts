@@ -34,4 +34,19 @@ describe('notifyCommittedMutationSyncWarning', () => {
 
     expect(warningToast).not.toHaveBeenCalled();
   });
+
+  it('names the required manual reload action', () => {
+    notifyCommittedMutationSyncWarning({
+      sync_warning: {
+        kind: 'ManualReloadRequired',
+        message:
+          'Manual reload required: focus the active game and press F10 to reload its configuration.',
+      },
+    });
+
+    expect(warningToast).toHaveBeenCalledWith(
+      'Manual reload required: focus the game, then press F10.',
+      7000,
+    );
+  });
 });

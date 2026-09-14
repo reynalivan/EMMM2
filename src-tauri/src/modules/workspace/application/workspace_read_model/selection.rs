@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::modules::workspace::domain::workspace::{
     WorkspaceSelectionReconciliationReason, WorkspaceSelectionReconciliationStatus,
-    WorkspaceViewModelInput,
+    WorkspaceStructureInput,
 };
 use crate::shared::path_key::{canonical_name_key, strip_path_prefix_preserve_display};
 
@@ -10,13 +10,12 @@ use crate::shared::path_key::{canonical_name_key, strip_path_prefix_preserve_dis
 pub struct ResolvedWorkspaceSelection {
     pub selected_object_folder_path: Option<String>,
     pub explorer_sub_path: Option<String>,
-    pub selected_mod_path: Option<String>,
     pub reconciliation_status: WorkspaceSelectionReconciliationStatus,
     pub reconciliation_reason: Option<WorkspaceSelectionReconciliationReason>,
     pub affected_paths: Vec<String>,
 }
 
-fn resolve_requested_explorer_sub_path(input: &WorkspaceViewModelInput) -> Option<String> {
+fn resolve_requested_explorer_sub_path(input: &WorkspaceStructureInput) -> Option<String> {
     if let Some(sub_path) = input.explorer_sub_path.as_deref() {
         let trimmed = sub_path.trim();
         if !trimmed.is_empty() {
@@ -54,7 +53,7 @@ pub fn push_affected_path(paths: &mut Vec<String>, path: &str) {
 /// One `metadata` call answers exists-and-is-a-directory together, and the
 /// fallback scans the parent once against both candidate names — this runs per
 /// object on every view-model fetch, and the parent is the mods root.
-fn resolve_existing_dir(path: &Path) -> Option<std::path::PathBuf> {
+pub fn resolve_existing_dir(path: &Path) -> Option<std::path::PathBuf> {
     if std::fs::metadata(path).is_ok_and(|meta| meta.is_dir()) {
         return Some(path.to_path_buf());
     }
@@ -97,23 +96,13 @@ pub fn existing_relative_sub_path(mods_path: &str, sub_path: &str) -> Option<Str
     strip_path_prefix_preserve_display(&resolved.to_string_lossy(), mods_path, None)
 }
 
-fn existing_absolute_path(path: &str) -> Option<String> {
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let resolved = resolve_existing_dir(Path::new(trimmed))?;
-    Some(resolved.to_string_lossy().to_string())
-}
-
 fn paths_match(left: &str, right: &str) -> bool {
     left.replace('\\', "/") == right.replace('\\', "/")
 }
 
 pub fn resolve_workspace_selection(
     mods_path: &str,
-    input: &WorkspaceViewModelInput,
+    input: &WorkspaceStructureInput,
 ) -> ResolvedWorkspaceSelection {
     let mut reconciliation_status = WorkspaceSelectionReconciliationStatus::Unchanged;
     let mut reconciliation_reason = None;
@@ -129,7 +118,6 @@ pub fn resolve_workspace_selection(
             return ResolvedWorkspaceSelection {
                 selected_object_folder_path: None,
                 explorer_sub_path: None,
-                selected_mod_path: None,
                 reconciliation_status: WorkspaceSelectionReconciliationStatus::Cleared,
                 reconciliation_reason: Some(
                     WorkspaceSelectionReconciliationReason::MissingObjectRoot,
@@ -166,36 +154,9 @@ pub fn resolve_workspace_selection(
         }
     }
 
-    let requested_mod_path = trimmed_input_path(&input.selected_mod_path);
-    let selected_mod_path = requested_mod_path
-        .as_deref()
-        .and_then(existing_absolute_path);
-
-    if let Some(requested_path) = requested_mod_path.as_deref() {
-        if selected_mod_path.is_none() {
-            push_affected_path(&mut affected_paths, requested_path);
-            if reconciliation_status == WorkspaceSelectionReconciliationStatus::Unchanged {
-                reconciliation_status = WorkspaceSelectionReconciliationStatus::Cleared;
-                reconciliation_reason =
-                    Some(WorkspaceSelectionReconciliationReason::MissingModPath);
-            }
-        } else if selected_mod_path
-            .as_deref()
-            .is_some_and(|selected_path| !paths_match(selected_path, requested_path))
-        {
-            push_affected_path(&mut affected_paths, requested_path);
-            if reconciliation_status == WorkspaceSelectionReconciliationStatus::Unchanged {
-                reconciliation_status = WorkspaceSelectionReconciliationStatus::Fallback;
-                reconciliation_reason =
-                    Some(WorkspaceSelectionReconciliationReason::MissingModPath);
-            }
-        }
-    }
-
     ResolvedWorkspaceSelection {
         selected_object_folder_path,
         explorer_sub_path,
-        selected_mod_path,
         reconciliation_status,
         reconciliation_reason,
         affected_paths,
@@ -203,7 +164,7 @@ pub fn resolve_workspace_selection(
 }
 
 pub fn resolve_unavailable_workspace_selection(
-    input: &WorkspaceViewModelInput,
+    input: &WorkspaceStructureInput,
 ) -> ResolvedWorkspaceSelection {
     let mut affected_paths = Vec::new();
     if let Some(path) = trimmed_input_path(&input.selected_object_folder_path) {
@@ -212,10 +173,6 @@ pub fn resolve_unavailable_workspace_selection(
     if let Some(path) = trimmed_input_path(&input.explorer_sub_path) {
         push_affected_path(&mut affected_paths, &path);
     }
-    if let Some(path) = trimmed_input_path(&input.selected_mod_path) {
-        push_affected_path(&mut affected_paths, &path);
-    }
-
     let reconciliation_status = if affected_paths.is_empty() {
         WorkspaceSelectionReconciliationStatus::Unchanged
     } else {
@@ -230,7 +187,6 @@ pub fn resolve_unavailable_workspace_selection(
     ResolvedWorkspaceSelection {
         selected_object_folder_path: None,
         explorer_sub_path: None,
-        selected_mod_path: None,
         reconciliation_status,
         reconciliation_reason,
         affected_paths,

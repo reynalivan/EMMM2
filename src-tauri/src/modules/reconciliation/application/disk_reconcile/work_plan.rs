@@ -9,8 +9,23 @@ use crate::modules::reconciliation::application::disk_reconcile::types::{
 use crate::modules::settings::application::config::GameConfig;
 use crate::shared::errors::AppError;
 
-const FILE_METADATA_WORK_BYTES: u64 = 64 * 1024;
-const MINIMUM_ROOT_WORK_UNITS: u64 = 1;
+pub(crate) const FILE_METADATA_WORK_BYTES: u64 = 64 * 1024;
+pub(crate) const MINIMUM_ROOT_WORK_UNITS: u64 = 1;
+
+pub(crate) fn indexing_root_work(
+    root_name: String,
+    file_count: u64,
+    total_bytes: u64,
+) -> IndexingRootWork {
+    IndexingRootWork {
+        root_name,
+        file_count,
+        total_bytes,
+        work_units: total_bytes
+            .saturating_add(file_count.saturating_mul(FILE_METADATA_WORK_BYTES))
+            .max(MINIMUM_ROOT_WORK_UNITS),
+    }
+}
 
 pub fn plan_onboarding_indexing_work(
     games: &[GameConfig],
@@ -95,16 +110,7 @@ fn measure_root_work(root_name: String, root_path: PathBuf) -> Result<IndexingRo
         file_count = file_count.saturating_add(1);
         total_bytes = total_bytes.saturating_add(metadata.len());
     }
-    let work_units = total_bytes
-        .saturating_add(file_count.saturating_mul(FILE_METADATA_WORK_BYTES))
-        .max(MINIMUM_ROOT_WORK_UNITS);
-
-    Ok(IndexingRootWork {
-        root_name,
-        file_count,
-        total_bytes,
-        work_units,
-    })
+    Ok(indexing_root_work(root_name, file_count, total_bytes))
 }
 
 #[cfg(test)]

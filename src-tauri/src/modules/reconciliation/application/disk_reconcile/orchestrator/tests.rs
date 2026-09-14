@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::modules::reconciliation::application::disk_reconcile::types::{
-    DiskReconcileReason, DiskReconcileStatus,
+    DiskReconcileReason, DiskReconcileScanScope, DiskReconcileStatus,
 };
 use crate::modules::workspace::application::scanner::watcher::{
     ModWatchEvent, WatcherState, WatcherSuppressor,
@@ -17,6 +17,7 @@ fn applied_result(
         reconcile_revision: 0,
         reason: DiskReconcileReason::StartupBoot,
         status: DiskReconcileStatus::Applied,
+        scan_scope: DiskReconcileScanScope::Full,
         folder_conflicts: Vec::new(),
         rename_confirmations: Vec::new(),
         error_message: None,
@@ -57,6 +58,19 @@ fn recorded_results_receive_monotonic_per_game_revisions() {
 
     assert_eq!(first.reconcile_revision, 1);
     assert_eq!(second.reconcile_revision, 2);
+}
+
+#[test]
+fn completed_watcher_result_is_superseded_when_its_session_was_replaced() {
+    let watcher = WatcherState::new();
+    let root = std::path::Path::new("C:/Mods");
+    let original_session = watcher.begin_session(root);
+    watcher.begin_session(root);
+
+    assert!(matches!(
+        watcher_outcome_for_current_session(&watcher, &original_session, applied_result("game-1")),
+        WatcherReconcileOutcome::Superseded
+    ));
 }
 
 use crate::modules::games::domain::models::{GameType, ItemStatus};
@@ -149,6 +163,55 @@ async fn reconcile_disk_state_reports_source_unavailable_for_missing_mods_path()
     assert!(!result.objects_changed);
     assert!(!result.folders_changed);
     assert!(!result.collections_changed);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn watcher_batch_with_128_events_in_one_root_uses_scoped_discovery() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    let mod_path = mods_path.join("Alice").join("Blue");
+    std::fs::create_dir_all(&mod_path).expect("mod directory");
+    std::fs::write(mod_path.join("mod.ini"), "[TextureOverride]\nhash = abc\n").expect("mod ini");
+    seed_game_row(&ctx.pool, "game-1", &mods_path).await;
+
+    let changed_paths = (0..128)
+        .map(|index| {
+            mod_path
+                .join(format!("asset-{index}.buf"))
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect::<Vec<_>>();
+    let watcher_events = changed_paths
+        .iter()
+        .cloned()
+        .map(ModWatchEvent::Modified)
+        .collect::<Vec<_>>();
+    let config = ConfigService::new_for_test(ctx.pool.clone());
+    let state = DiskReconcileState::new();
+    let operation_lock = OperationLock::new();
+
+    let result = reconcile_disk_state(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: Arc::new(WatcherSuppressor::new(false)),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::watcher_batch(
+            "game-1".to_string(),
+            &mods_path,
+            changed_paths,
+            &watcher_events,
+        ),
+    )
+    .await
+    .expect("watcher batch should reconcile");
+
+    assert_eq!(result.scan_scope, DiskReconcileScanScope::Scoped);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -264,6 +327,7 @@ async fn failed_request_does_not_leak_scope_or_path_hints_into_the_next_request(
         },
         DiskReconcileRequest::watcher_batch(
             "game-1".to_string(),
+            &mods_path,
             vec![bob.to_string_lossy().to_string()],
             &[ModWatchEvent::Created(bob.to_string_lossy().to_string())],
         ),
@@ -343,6 +407,7 @@ async fn serialized_public_requests_keep_their_own_watcher_events_and_path_hints
 
     let mut alice_request = DiskReconcileRequest::watcher_batch(
         "game-1".to_string(),
+        &mods_path,
         vec![
             alice_old.to_string_lossy().to_string(),
             alice.to_string_lossy().to_string(),
@@ -359,6 +424,7 @@ async fn serialized_public_requests_keep_their_own_watcher_events_and_path_hints
     }];
     let mut bob_request = DiskReconcileRequest::watcher_batch(
         "game-1".to_string(),
+        &mods_path,
         vec![
             bob_old.to_string_lossy().to_string(),
             bob.to_string_lossy().to_string(),
@@ -420,7 +486,7 @@ async fn serialized_public_requests_keep_their_own_watcher_events_and_path_hints
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn dropped_blanket_events_upgrade_the_next_scoped_request_to_full_reconcile() {
+async fn dropped_blanket_events_upgrade_a_thumbnail_batch_to_full_reconcile() {
     let ctx = init_test_db().await;
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_path = temp.path().join("Mods");
@@ -457,9 +523,18 @@ async fn dropped_blanket_events_upgrade_the_next_scoped_request_to_full_reconcil
         },
         DiskReconcileRequest::watcher_batch(
             "game-1".to_string(),
-            vec![mods_path.join("Alice").to_string_lossy().to_string()],
+            &mods_path,
+            vec![mods_path
+                .join("Alice")
+                .join("preview.png")
+                .to_string_lossy()
+                .to_string()],
             &[ModWatchEvent::Modified(
-                mods_path.join("Alice").to_string_lossy().to_string(),
+                mods_path
+                    .join("Alice")
+                    .join("preview.png")
+                    .to_string_lossy()
+                    .to_string(),
             )],
         )
         .for_watcher_session(watcher_session),
@@ -473,8 +548,163 @@ async fn dropped_blanket_events_upgrade_the_next_scoped_request_to_full_reconcil
             .await
             .expect("stale count");
     assert_eq!(result.status, DiskReconcileStatus::Applied);
+    assert_eq!(result.scan_scope, DiskReconcileScanScope::Full);
     assert_eq!(stale_count, 0);
     assert!(!suppressor.has_unrepaired_drops());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn source_unavailable_watcher_reconcile_keeps_repair_pending() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let missing_mods_path = temp.path().join("Missing Mods");
+    seed_game_row(&ctx.pool, "game-1", &missing_mods_path).await;
+    let config = ConfigService::new_for_test(ctx.pool.clone());
+    let state = DiskReconcileState::new();
+    let operation_lock = OperationLock::new();
+    let watcher = WatcherState::new();
+    let watcher_session = watcher.begin_session(&missing_mods_path);
+    let suppressor = watcher.suppressor.clone();
+    suppressor.mark_blanket_event_dropped(&watcher_session);
+
+    let result = reconcile_disk_state(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::watcher_batch(
+            "game-1".to_string(),
+            &missing_mods_path,
+            vec![missing_mods_path
+                .join("preview.png")
+                .to_string_lossy()
+                .to_string()],
+            &[ModWatchEvent::Modified(
+                missing_mods_path
+                    .join("preview.png")
+                    .to_string_lossy()
+                    .to_string(),
+            )],
+        )
+        .for_watcher_session(watcher_session),
+    )
+    .await
+    .expect("source unavailable is a result");
+
+    assert_eq!(result.status, DiskReconcileStatus::SourceUnavailable);
+    assert_eq!(result.scan_scope, DiskReconcileScanScope::None);
+    assert!(suppressor.has_unrepaired_drops());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn watcher_reconcile_superseded_while_waiting_for_game_lock_skips_the_scan() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_path).expect("mods root");
+    seed_game_row(&ctx.pool, "game-1", &mods_path).await;
+    let config = ConfigService::new_for_test(ctx.pool.clone());
+    let state = DiskReconcileState::new();
+    let operation_lock = OperationLock::new();
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&mods_path);
+    let game_lock = state.lock_for_game("game-1");
+    let game_guard = game_lock.lock().await;
+
+    let reconcile = reconcile_disk_state_for_watcher(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::WatcherBatch,
+            Vec::new(),
+            true,
+        ),
+        &watcher,
+        session,
+    );
+    tokio::pin!(reconcile);
+
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut reconcile)
+            .await
+            .is_err(),
+        "watcher reconcile should wait for the game lock"
+    );
+    watcher.begin_session(&mods_path);
+    drop(game_guard);
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(2), &mut reconcile)
+        .await
+        .expect("watcher reconcile should finish after the game lock releases")
+        .expect("superseded watcher request is not an error");
+    assert!(matches!(outcome, WatcherReconcileOutcome::Superseded));
+    assert!(state
+        .recent_applied_result("game-1", std::time::Duration::from_secs(1))
+        .is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn watcher_reconcile_superseded_while_waiting_for_operation_lock_skips_the_scan() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_path).expect("mods root");
+    seed_game_row(&ctx.pool, "game-1", &mods_path).await;
+    let config = ConfigService::new_for_test(ctx.pool.clone());
+    let state = DiskReconcileState::new();
+    let operation_lock = OperationLock::new();
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&mods_path);
+    let operation_guard = operation_lock.acquire().await.expect("operation lock");
+
+    let reconcile = reconcile_disk_state_for_watcher(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::WatcherBatch,
+            Vec::new(),
+            true,
+        ),
+        &watcher,
+        session,
+    );
+    tokio::pin!(reconcile);
+
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut reconcile)
+            .await
+            .is_err(),
+        "watcher reconcile should wait for the operation lock after it acquires the game lock"
+    );
+    watcher.begin_session(&mods_path);
+    drop(operation_guard);
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(2), &mut reconcile)
+        .await
+        .expect("watcher reconcile should finish after the operation lock releases")
+        .expect("superseded watcher request is not an error");
+    assert!(matches!(outcome, WatcherReconcileOutcome::Superseded));
+    assert!(state
+        .recent_applied_result("game-1", std::time::Duration::from_secs(1))
+        .is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

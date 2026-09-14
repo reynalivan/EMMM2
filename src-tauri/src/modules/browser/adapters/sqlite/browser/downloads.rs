@@ -1,6 +1,6 @@
 //! `browser_downloads` persistence.
 
-use crate::modules::browser::domain::browser::BrowserDownloadDto;
+use crate::modules::browser::domain::browser::{BrowserDownloadDto, BrowserGameBananaProvenance};
 use sqlx::{Row, SqlitePool};
 
 /// Terminal download metadata retained for an explicit retry request.
@@ -61,6 +61,9 @@ pub struct NewDownloadRow<'a> {
     pub queue_order: i64,
     pub started_at: &'a str,
     pub tab_label: Option<&'a str>,
+    pub origin_page_url: Option<&'a str>,
+    pub gamebanana_item_type: Option<&'a str>,
+    pub gamebanana_item_id: Option<u64>,
 }
 
 pub async fn insert_download(
@@ -69,8 +72,9 @@ pub async fn insert_download(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"INSERT INTO browser_downloads
-           (id, game_id, session_id, filename, file_path, source_url, status, bytes_received, can_resume, queue_order, started_at, tab_label)
-           VALUES (?, ?, ?, ?, ?, ?, 'requested', 0, 0, ?, ?, ?)"#,
+           (id, game_id, session_id, filename, file_path, source_url, status, bytes_received, can_resume, queue_order, started_at, tab_label,
+            origin_page_url, gamebanana_item_type, gamebanana_item_id)
+           VALUES (?, ?, ?, ?, ?, ?, 'requested', 0, 0, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(download.id)
     .bind(download.game_id)
@@ -81,6 +85,74 @@ pub async fn insert_download(
     .bind(download.queue_order)
     .bind(download.started_at)
     .bind(download.tab_label)
+    .bind(download.origin_page_url)
+    .bind(download.gamebanana_item_type)
+    .bind(download.gamebanana_item_id.map(|value| value as i64))
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Return provenance only for a finished Discover source whose current size and
+/// content hash still match the completed browser download.
+pub async fn find_gamebanana_provenance_for_source_path(
+    db: &SqlitePool,
+    game_id: &str,
+    source_path: &str,
+    source_size_bytes: i64,
+    source_sha256: &str,
+) -> Result<Option<BrowserGameBananaProvenance>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT origin_page_url, gamebanana_item_type, gamebanana_item_id
+           FROM browser_downloads
+          WHERE game_id = ?
+            AND file_path = ? COLLATE NOCASE
+            AND origin_page_url IS NOT NULL
+            AND gamebanana_item_type IS NOT NULL
+            AND gamebanana_item_id IS NOT NULL
+            AND status = 'finished'
+            AND bytes_received = ?
+            AND gamebanana_content_sha256 = ?
+          ORDER BY started_at DESC, queue_order DESC
+          LIMIT 1",
+    )
+    .bind(game_id)
+    .bind(source_path)
+    .bind(source_size_bytes)
+    .bind(source_sha256)
+    .fetch_optional(db)
+    .await?;
+
+    row.map(|row| {
+        let item_id = row.try_get::<i64, _>("gamebanana_item_id")?;
+        Ok(BrowserGameBananaProvenance {
+            origin_page_url: row.try_get("origin_page_url")?,
+            item_type: row.try_get("gamebanana_item_type")?,
+            item_id: u64::try_from(item_id).map_err(|_| {
+                sqlx::Error::Decode("negative GameBanana item id in browser download".into())
+            })?,
+        })
+    })
+    .transpose()
+}
+
+/// Save the completed content hash only for a verified GameBanana download.
+pub async fn store_gamebanana_content_hash(
+    db: &SqlitePool,
+    download_id: &str,
+    content_sha256: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE browser_downloads
+            SET gamebanana_content_sha256 = ?
+          WHERE id = ?
+            AND status = 'finished'
+            AND origin_page_url IS NOT NULL
+            AND gamebanana_item_type IS NOT NULL
+            AND gamebanana_item_id IS NOT NULL",
+    )
+    .bind(content_sha256)
+    .bind(download_id)
     .execute(db)
     .await?;
     Ok(())
@@ -132,7 +204,7 @@ pub async fn fail_interrupted_downloads(db: &SqlitePool) -> Result<u64, sqlx::Er
                 error_msg = COALESCE(error_msg, 'Interrupted by app restart'),
                 can_resume = 0,
                 finished_at = COALESCE(finished_at, datetime('now'))
-          WHERE status IN ('requested', 'in_progress', 'paused')"
+          WHERE status IN ('requested', 'in_progress', 'paused')",
     )
     .execute(db)
     .await?;
@@ -236,4 +308,104 @@ pub async fn get_retryable_download(
         source_url: row.get("source_url"),
         tab_label: row.get("tab_label"),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        NewDownloadRow, find_gamebanana_provenance_for_source_path, insert_download,
+        store_gamebanana_content_hash, update_status,
+    };
+
+    #[tokio::test]
+    async fn provenance_requires_a_finished_download_with_matching_signature() {
+        let context = crate::test_utils::init_test_db().await;
+        let source_path = "C:/Games/Genshin/Mods/.mod-inbox/ayaka.zip";
+        insert_download(
+            &context.pool,
+            NewDownloadRow {
+                id: "gamebanana-download",
+                game_id: "gimi",
+                session_id: None,
+                filename: "ayaka.zip",
+                source_url: "https://cdn.gamebanana.com/ayaka.zip",
+                file_path: source_path,
+                queue_order: 1,
+                started_at: "2026-09-14T00:00:00",
+                tab_label: None,
+                origin_page_url: Some("https://gamebanana.com/mods/528562"),
+                gamebanana_item_type: Some("Mod"),
+                gamebanana_item_id: Some(528562),
+            },
+        )
+        .await
+        .expect("insert browser download");
+
+        assert!(
+            find_gamebanana_provenance_for_source_path(
+                &context.pool,
+                "gimi",
+                source_path,
+                2048,
+                "download-sha",
+            )
+            .await
+            .expect("look up requested download")
+            .is_none()
+        );
+
+        update_status(
+            &context.pool,
+            "gamebanana-download",
+            "finished",
+            Some(2048),
+            Some(2048),
+            None,
+            Some(source_path),
+            Some("2026-09-14T00:00:01".to_string()),
+        )
+        .await
+        .expect("finish browser download");
+        store_gamebanana_content_hash(&context.pool, "gamebanana-download", "download-sha")
+            .await
+            .expect("store browser download hash");
+
+        assert!(
+            find_gamebanana_provenance_for_source_path(
+                &context.pool,
+                "gimi",
+                source_path,
+                1024,
+                "download-sha",
+            )
+            .await
+            .expect("look up mismatched file")
+            .is_none()
+        );
+        assert!(
+            find_gamebanana_provenance_for_source_path(
+                &context.pool,
+                "gimi",
+                source_path,
+                2048,
+                "wrong-sha",
+            )
+            .await
+            .expect("look up mismatched content")
+            .is_none()
+        );
+        assert_eq!(
+            find_gamebanana_provenance_for_source_path(
+                &context.pool,
+                "gimi",
+                source_path,
+                2048,
+                "download-sha",
+            )
+            .await
+            .expect("look up finished download")
+            .map(|provenance| provenance.item_id),
+            Some(528562)
+        );
+    }
 }

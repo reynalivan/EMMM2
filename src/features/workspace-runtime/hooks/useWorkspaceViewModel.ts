@@ -1,11 +1,18 @@
 import { useShallow } from 'zustand/react/shallow';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { useActiveGame } from '@/entities/game';
 import { useAppStore } from '@/app/store';
 import { ItemStatus, type ObjectFilter } from '@/entities/game-object';
-import type { WorkspaceViewModel } from '@/entities/workspace';
+import type {
+  WorkspacePreviewContextStatus,
+  WorkspacePreviewRequestIdentity,
+  WorkspacePreviewResult,
+  WorkspacePreviewSelection,
+  WorkspaceSelection,
+  WorkspaceStructureViewModel,
+} from '@/entities/workspace';
 import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntimeSelector,
@@ -16,6 +23,7 @@ import {
   shouldRunSelectionReconciliationEffect,
   type WorkspaceViewModelSelectionInput,
 } from '../utils/selectionReconciliation';
+import { normalizeWorkspacePath } from '../utils/pathRewrite';
 
 export interface WorkspaceViewModelFilterInput {
   gameId: string | null;
@@ -25,27 +33,44 @@ export interface WorkspaceViewModelFilterInput {
   objectStatusFilter: 'all' | 'enabled' | 'disabled' | null;
 }
 
-interface UseWorkspaceViewModelOptions {
+interface UseWorkspaceStructureOptions {
   filterOverrides?: Partial<WorkspaceViewModelFilterInput>;
   selectionOverrides?: Partial<WorkspaceViewModelSelectionInput>;
   enabled?: boolean;
 }
 
+interface UseWorkspacePreviewOptions {
+  enabled?: boolean;
+}
+
+interface WorkspaceStructureSelectionInput {
+  selectedObjectFolderPath: string | null;
+  explorerSubPath: string | undefined;
+}
+
+export interface WorkspacePreviewRequestInput {
+  gameId: string | null;
+  explorerSubPath: string | undefined;
+  selectedModPath: string | null;
+}
+
 export const workspaceKeys = {
   all: ['workspace', 'mods'] as const,
-  viewModel: (
+  structures: ['workspace', 'mods', 'structure'] as const,
+  previews: ['workspace', 'mods', 'preview'] as const,
+  structure: (
     filter: ObjectFilter,
     selectedObjectFolderPath: string | null,
     explorerSubPath: string | undefined,
-    selectedModPath: string | null,
   ) =>
     [
-      ...workspaceKeys.all,
+      ...workspaceKeys.structures,
       filter,
       selectedObjectFolderPath,
       explorerSubPath ?? null,
-      selectedModPath,
     ] as const,
+  preview: (gameId: string, explorerSubPath: string | undefined, selectedModPath: string) =>
+    [...workspaceKeys.previews, gameId, explorerSubPath ?? null, selectedModPath] as const,
 };
 
 export function buildWorkspaceViewModelFilter(input: WorkspaceViewModelFilterInput): ObjectFilter {
@@ -64,15 +89,22 @@ export function buildWorkspaceViewModelFilter(input: WorkspaceViewModelFilterInp
   };
 }
 
-export function buildWorkspaceViewModelInput(
+export function buildWorkspaceStructureInput(
   filter: ObjectFilter,
-  selection: WorkspaceViewModelSelectionInput,
+  selection: WorkspaceStructureSelectionInput,
 ) {
   return {
     filter,
     selected_object_folder_path: selection.selectedObjectFolderPath,
     explorer_sub_path: selection.explorerSubPath ?? null,
-    selected_mod_path: selection.selectedModPath,
+  };
+}
+
+export function buildWorkspacePreviewInput(input: WorkspacePreviewRequestInput) {
+  return {
+    game_id: input.gameId ?? '',
+    explorer_sub_path: input.explorerSubPath ?? null,
+    selected_mod_path: input.selectedModPath,
   };
 }
 
@@ -93,7 +125,7 @@ export function useWorkspaceSelectionInput(): WorkspaceViewModelSelectionInput {
   );
 }
 
-export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
+function useWorkspaceFilterInput(options?: UseWorkspaceStructureOptions) {
   const { activeGame } = useActiveGame();
   // Shared by ObjectList and FolderGrid — a bare useAppStore() here re-runs
   // both panes' filter build on any write to any slice.
@@ -105,31 +137,115 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
       objectStatusFilter: state.objectStatusFilter,
     })),
   );
-  const currentSelection = useWorkspaceSelectionInput();
-  const selection = useMemo(
-    () => ({ ...currentSelection, ...options?.selectionOverrides }),
-    [currentSelection, options?.selectionOverrides],
-  );
-  const filterInput = {
+
+  return {
     gameId: options?.filterOverrides?.gameId ?? activeGame?.id ?? null,
     selectedObjectType: options?.filterOverrides?.selectedObjectType ?? selectedObjectType,
     objectMetaFilters: options?.filterOverrides?.objectMetaFilters ?? objectMetaFilters,
     objectSortBy: options?.filterOverrides?.objectSortBy ?? objectSortBy,
     objectStatusFilter: options?.filterOverrides?.objectStatusFilter ?? objectStatusFilter,
   };
+}
 
+function structureSelectionForRuntimeEvent(
+  currentSelection: WorkspaceViewModelSelectionInput,
+  structure: WorkspaceStructureViewModel,
+): WorkspaceSelection {
+  if (structure.runtime.source_state.status === 'unavailable') {
+    return { ...structure.selection, selected_mod_path: null };
+  }
+
+  return {
+    ...structure.selection,
+    selected_mod_path: currentSelection.selectedModPath,
+  };
+}
+
+function normalizedPathEquals(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  if (left == null || right == null) {
+    return left == null && right == null;
+  }
+
+  return normalizeWorkspacePath(left).toLowerCase() === normalizeWorkspacePath(right).toLowerCase();
+}
+
+export function previewRequestIdentityMatches(
+  request: WorkspacePreviewRequestInput,
+  identity: WorkspacePreviewRequestIdentity,
+): boolean {
+  return (
+    request.gameId === identity.game_id &&
+    normalizedPathEquals(request.explorerSubPath, identity.explorer_sub_path) &&
+    normalizedPathEquals(request.selectedModPath, identity.selected_mod_path)
+  );
+}
+
+function buildPreviewSelectionForRuntimeEvent(
+  currentSelection: WorkspaceViewModelSelectionInput,
+  previewSelection: WorkspacePreviewSelection,
+  currentPath: string[],
+): WorkspaceSelection {
+  return {
+    selected_object_folder_path: currentSelection.selectedObjectFolderPath,
+    explorer_sub_path: currentSelection.explorerSubPath ?? null,
+    selected_mod_path: previewSelection.selected_mod_path,
+    current_path: currentPath,
+    reconciliation_status: previewSelection.reconciliation_status,
+    reconciliation_reason: previewSelection.reconciliation_reason,
+    affected_paths: previewSelection.affected_paths,
+  };
+}
+
+export function shouldApplyWorkspacePreviewSelection(
+  request: WorkspacePreviewRequestInput,
+  currentSelection: WorkspaceViewModelSelectionInput,
+  currentPath: string[],
+  identity: WorkspacePreviewRequestIdentity,
+  contextStatus: WorkspacePreviewContextStatus,
+  previewSelection: WorkspacePreviewSelection,
+  nowMs?: number,
+): boolean {
+  if (contextStatus !== 'ready' || !previewRequestIdentityMatches(request, identity)) {
+    return false;
+  }
+
+  return shouldApplySelectionReconciledEvent(
+    currentSelection,
+    buildPreviewSelectionForRuntimeEvent(currentSelection, previewSelection, currentPath),
+    nowMs,
+  );
+}
+
+export function useWorkspaceStructure(options?: UseWorkspaceStructureOptions) {
+  const currentSelection = useWorkspaceSelectionInput();
+  const selection = useMemo<WorkspaceStructureSelectionInput>(
+    () => ({
+      selectedObjectFolderPath:
+        options?.selectionOverrides?.selectedObjectFolderPath ??
+        currentSelection.selectedObjectFolderPath,
+      explorerSubPath:
+        options?.selectionOverrides?.explorerSubPath ?? currentSelection.explorerSubPath,
+    }),
+    [
+      currentSelection.explorerSubPath,
+      currentSelection.selectedObjectFolderPath,
+      options?.selectionOverrides?.explorerSubPath,
+      options?.selectionOverrides?.selectedObjectFolderPath,
+    ],
+  );
+  const filterInput = useWorkspaceFilterInput(options);
   const filter = buildWorkspaceViewModelFilter(filterInput);
 
-  const query = useQuery<WorkspaceViewModel>({
-    // ObjectList and FolderGrid must read the same workspace snapshot.
-    // Focus/navigation changes only reshape the query key; they must not trigger Disk Reconcile.
-    queryKey: workspaceKeys.viewModel(
+  const query = useQuery<WorkspaceStructureViewModel>({
+    queryKey: workspaceKeys.structure(
       filter,
       selection.selectedObjectFolderPath,
       selection.explorerSubPath,
-      selection.selectedModPath,
     ),
-    queryFn: () => commands.getWorkspaceViewModel(buildWorkspaceViewModelInput(filter, selection)),
+    queryFn: () => commands.getWorkspaceStructure(buildWorkspaceStructureInput(filter, selection)),
     enabled: !!filterInput.gameId && (options?.enabled ?? true),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -141,9 +257,9 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
       return;
     }
 
-    const reconciledSelection = query.data.selection;
+    const reconciledSelection = structureSelectionForRuntimeEvent(currentSelection, query.data);
     const nowMs = Date.now();
-    if (!shouldApplySelectionReconciledEvent(selection, reconciledSelection, nowMs)) {
+    if (!shouldApplySelectionReconciledEvent(currentSelection, reconciledSelection, nowMs)) {
       return;
     }
 
@@ -158,12 +274,97 @@ export function useWorkspaceViewModel(options?: UseWorkspaceViewModelOptions) {
 
     dispatchWorkspaceRuntimeEvent(buildSelectionReconciledEvent(reconciledSelection));
   }, [
+    currentSelection,
     filterInput.gameId,
     options?.selectionOverrides,
     query.data,
     query.isPlaceholderData,
-    selection,
   ]);
 
   return query;
 }
+
+export function useWorkspacePreview(options?: UseWorkspacePreviewOptions) {
+  const { activeGame } = useActiveGame();
+  const currentSelection = useWorkspaceSelectionInput();
+  const currentPath = useWorkspaceRuntimeSelector((state) => state.currentPath);
+  const queryClient = useQueryClient();
+  const request = useMemo<WorkspacePreviewRequestInput>(
+    () => ({
+      gameId: activeGame?.id ?? null,
+      explorerSubPath: currentSelection.explorerSubPath,
+      selectedModPath: currentSelection.selectedModPath,
+    }),
+    [activeGame?.id, currentSelection.explorerSubPath, currentSelection.selectedModPath],
+  );
+  const enabled = Boolean(request.gameId && request.selectedModPath && (options?.enabled ?? true));
+
+  const query = useQuery<WorkspacePreviewResult>({
+    queryKey: workspaceKeys.preview(
+      request.gameId ?? '',
+      request.explorerSubPath,
+      request.selectedModPath ?? '',
+    ),
+    queryFn: () => commands.getWorkspacePreview(buildWorkspacePreviewInput(request)),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!query.data || query.data.context_status !== 'context_stale') {
+      return;
+    }
+
+    void queryClient.invalidateQueries({
+      queryKey: workspaceKeys.structures,
+      refetchType: 'active',
+    });
+  }, [query.data, queryClient]);
+
+  useEffect(() => {
+    if (!query.data) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    if (
+      !shouldApplyWorkspacePreviewSelection(
+        request,
+        currentSelection,
+        currentPath,
+        query.data.request_identity,
+        query.data.context_status,
+        query.data.selection,
+        nowMs,
+      )
+    ) {
+      return;
+    }
+
+    const reconciledSelection = buildPreviewSelectionForRuntimeEvent(
+      currentSelection,
+      query.data.selection,
+      currentPath,
+    );
+    if (
+      !shouldRunSelectionReconciliationEffect({
+        gameId: request.gameId,
+        selection: reconciledSelection,
+      })
+    ) {
+      return;
+    }
+
+    dispatchWorkspaceRuntimeEvent(buildSelectionReconciledEvent(reconciledSelection));
+  }, [currentPath, currentSelection, query.data, request]);
+
+  return query;
+}
+
+/**
+ * Transitional frontend alias for structure consumers. It no longer calls the
+ * legacy workspace command and deliberately excludes selectedModPath from its key.
+ */
+export const useWorkspaceViewModel = useWorkspaceStructure;

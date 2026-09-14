@@ -20,6 +20,7 @@ fn test_db() -> MasterDb {
                 "Default".to_string(),
                 vec!["d94c8962".to_string(), "deadbeef".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Ayaka".to_string(),
@@ -30,6 +31,7 @@ fn test_db() -> MasterDb {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Nahida".to_string(),
@@ -43,6 +45,7 @@ fn test_db() -> MasterDb {
                 "Default".to_string(),
                 vec!["aaaa1111".to_string()],
             )]),
+            runtime_targets: vec![],
         },
     ])
 }

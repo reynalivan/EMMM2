@@ -30,6 +30,7 @@ function batch(
         matchCategory: null,
         subCategory: null,
         classificationMetadata: {},
+        sourceMetadata: {},
         categorySuggestions: [],
         canonicalSuggestions: [],
         destinationSuggestions: [],

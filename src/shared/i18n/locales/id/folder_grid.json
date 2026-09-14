@@ -58,6 +58,7 @@
     "read_only_until_resolved": "Folder ini tidak dapat dibuka atau diubah sampai konflik penamaan diselesaikan.",
     "resolve_selected": "Selesaikan konflik terpilih",
     "open_folder": "Buka folder",
+    "open_folder_failed": "Gagal membuka folder: {{error}}",
     "folder_info": "Info Folder",
     "created": "Dibuat",
     "modified": "Diubah",

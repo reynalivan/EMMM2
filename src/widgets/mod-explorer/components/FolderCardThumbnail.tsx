@@ -57,7 +57,7 @@ export default function FolderCardThumbnail({
           src={thumbnailSrc}
           alt=""
           decoding="async"
-          className={`h-full w-full object-cover transition-opacity duration-150
+          className={`h-full w-full object-cover transition-opacity duration-150 motion-reduce:transition-none
             ${isSelected ? 'opacity-100' : 'opacity-90 group-hover:opacity-100'}
             ${imgLoaded ? (isSelected ? 'opacity-100' : 'opacity-85 group-hover:opacity-100') : 'opacity-0'}
             ${isHiddenByMask ? 'blur-xl' : ''}
@@ -123,7 +123,6 @@ export default function FolderCardThumbnail({
           className="absolute bottom-1.5 right-1.5 p-1 bg-error/90 text-error-content rounded-full z-10 shadow-sm"
           title={t('card.misplaced_title')}
         >
-          <div className="w-2 h-2 rounded-full bg-current animate-ping absolute inset-0 opacity-75" />
           <span className="text-[10px] font-bold px-1">!</span>
         </div>
       )}

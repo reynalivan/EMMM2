@@ -105,26 +105,43 @@ fn target_folder_name(old_path: &Path, base_name: &str) -> String {
     }
 }
 
-fn existing_sibling(parent: &Path, name: &str) -> Option<PathBuf> {
-    fs::read_dir(parent).ok()?.flatten().find_map(|entry| {
-        entry
-            .file_name()
-            .to_string_lossy()
-            .eq_ignore_ascii_case(name)
-            .then(|| entry.path())
+type SiblingIndex = BTreeMap<String, PathBuf>;
+
+fn sibling_index(parent: &Path) -> Option<SiblingIndex> {
+    fs::read_dir(parent).ok().map(|entries| {
+        entries
+            .flatten()
+            .map(|entry| {
+                (
+                    entry.file_name().to_string_lossy().to_ascii_lowercase(),
+                    entry.path(),
+                )
+            })
+            .collect()
     })
 }
 
+#[cfg(test)]
 fn reject_occupied_destination(old_path: &Path, target_path: &Path) -> Result<(), AppError> {
     let parent = target_path
         .parent()
         .ok_or_else(|| AppError::Io("Conflict folder has no parent".to_string()))?;
+    reject_occupied_destination_from_index(old_path, target_path, sibling_index(parent).as_ref())
+}
+
+fn reject_occupied_destination_from_index(
+    old_path: &Path,
+    target_path: &Path,
+    siblings: Option<&SiblingIndex>,
+) -> Result<(), AppError> {
     let target_name = target_path
         .file_name()
         .unwrap_or_default()
         .to_string_lossy();
-    if let Some(existing) = existing_sibling(parent, &target_name) {
-        if path_key(&existing) != path_key(old_path) {
+    if let Some(existing) =
+        siblings.and_then(|siblings| siblings.get(&target_name.to_ascii_lowercase()))
+    {
+        if path_key(existing) != path_key(old_path) {
             return Err(AppError::Io(format!(
                 "Conflict rename destination is not free: {}",
                 existing.display()
@@ -258,6 +275,7 @@ pub fn plan_folder_conflict_renames(
 
     let mut targets = BTreeSet::new();
     let mut planned = Vec::new();
+    let mut sibling_indexes = BTreeMap::<PathBuf, Option<SiblingIndex>>::new();
     for (old_path, base_name) in &requested {
         let parent = old_path
             .parent()
@@ -283,7 +301,10 @@ pub fn plan_folder_conflict_renames(
         if path_key(old_path) == path_key(&target_path) {
             continue;
         }
-        reject_occupied_destination(old_path, &target_path)?;
+        let siblings = sibling_indexes
+            .entry(parent.to_path_buf())
+            .or_insert_with(|| sibling_index(parent));
+        reject_occupied_destination_from_index(old_path, &target_path, siblings.as_ref())?;
         planned.push((old_path.clone(), target_path));
     }
 

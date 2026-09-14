@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::types::{Mod, ReconcileModRow};
+use super::types::{Mod, ModSubtreeEntry, ReconcileModRow};
 use crate::modules::system::domain::mod_path::ModFolderPath;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
@@ -54,6 +54,66 @@ pub async fn get_safety_by_folder_path_key(
             )
         })
         .collect())
+}
+
+/// Returns classifications for one folder and its descendants. The LIKE value
+/// escapes user-controlled path characters so `%` and `_` remain literal path
+/// bytes rather than widening the requested subtree.
+pub async fn get_safety_for_folder_subtree(
+    pool: &SqlitePool,
+    game_id: &str,
+    folder_path_key: &str,
+) -> Result<HashMap<String, SafetyClassification>, sqlx::Error> {
+    let escaped_key = folder_path_key
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let descendants = format!("{escaped_key}/%");
+    let rows: Vec<(String, bool, String)> = sqlx::query_as(
+        "SELECT folder_path_key, COALESCE(is_safe, 1), COALESCE(safety_source, 'unknown') FROM mods WHERE game_id = ? AND (folder_path_key = ? OR folder_path_key LIKE ? ESCAPE '\\')",
+    )
+    .bind(game_id)
+    .bind(folder_path_key)
+    .bind(descendants)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(key, is_safe, source)| {
+            (
+                key,
+                SafetyClassification {
+                    is_safe,
+                    is_classified: source != crate::shared::safety_constants::SAFETY_SOURCE_UNKNOWN,
+                },
+            )
+        })
+        .collect())
+}
+
+/// Indexed terminal mods beneath one folder. Disk reconcile runs before a
+/// workspace switch, so these rows are a fresh projection of the filesystem
+/// used only to describe a pending parent-enable operation.
+pub async fn get_mods_for_folder_subtree(
+    pool: &SqlitePool,
+    game_id: &str,
+    folder_path_key: &str,
+) -> Result<Vec<ModSubtreeEntry>, sqlx::Error> {
+    let escaped_key = folder_path_key
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let descendants = format!("{escaped_key}/%");
+    sqlx::query_as::<_, ModSubtreeEntry>(
+        "SELECT actual_name, folder_path FROM mods
+         WHERE game_id = ? AND (folder_path_key = ? OR folder_path_key LIKE ? ESCAPE '\\')
+         ORDER BY folder_path_key",
+    )
+    .bind(game_id)
+    .bind(folder_path_key)
+    .bind(descendants)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn get_mods_by_object_id(
@@ -197,16 +257,17 @@ pub async fn get_enabled_siblings_paths(
     pool: &SqlitePool,
     object_id: &str,
     game_id: &str,
-    exclude_folder: &str,
+    exclude_mod_id: Option<&str>,
 ) -> Result<Vec<String>, sqlx::Error> {
     let rows: Vec<String> = sqlx::query_scalar(
         "SELECT folder_path FROM mods
          WHERE object_id = ? AND game_id = ? AND status = 1
-         AND folder_path != ?",
+         AND (? IS NULL OR id != ?)",
     )
     .bind(object_id)
     .bind(game_id)
-    .bind(exclude_folder)
+    .bind(exclude_mod_id)
+    .bind(exclude_mod_id)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -222,16 +283,17 @@ pub async fn get_object_mod_paths(
     pool: &SqlitePool,
     game_id: &str,
     object_id: &str,
-    exclude_folder: &str,
+    exclude_mod_id: Option<&str>,
 ) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT folder_path FROM mods
-         WHERE object_id = ? AND game_id = ? AND folder_path != ?
+         WHERE object_id = ? AND game_id = ? AND (? IS NULL OR id != ?)
          ORDER BY folder_path_key",
     )
     .bind(object_id)
     .bind(game_id)
-    .bind(exclude_folder)
+    .bind(exclude_mod_id)
+    .bind(exclude_mod_id)
     .fetch_all(pool)
     .await
 }
@@ -325,16 +387,17 @@ pub async fn get_enabled_duplicates(
     pool: &SqlitePool,
     object_id: &str,
     game_id: &str,
-    exclude_folder: &str,
+    exclude_mod_id: Option<&str>,
 ) -> Result<Vec<(String, ModFolderPath, String)>, sqlx::Error> {
     let rows = sqlx::query_as::<_, (String, String, String)>(
         "SELECT id, folder_path, actual_name FROM mods
          WHERE object_id = ? AND game_id = ? AND status = 1
-         AND folder_path != ?",
+         AND (? IS NULL OR id != ?)",
     )
     .bind(object_id)
     .bind(game_id)
-    .bind(exclude_folder)
+    .bind(exclude_mod_id)
+    .bind(exclude_mod_id)
     .fetch_all(pool)
     .await?;
     Ok(rows

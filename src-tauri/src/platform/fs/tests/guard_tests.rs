@@ -1,4 +1,6 @@
-use super::{validate_dir_in_configured_roots, validate_mods_root, validate_path};
+use super::{
+    validate_dir_in_configured_roots, validate_mod_toggle_paths, validate_mods_root, validate_path,
+};
 use crate::modules::settings::application::config::{ConfigService, GameConfig};
 use std::fs;
 use tempfile::TempDir;
@@ -224,6 +226,34 @@ async fn exact_mods_root_guard_rejects_a_child_directory() {
 
     assert!(matches!(
         error,
+        crate::shared::errors::AppError::Security(_)
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn bulk_toggle_keeps_missing_items_local_but_rejects_the_mods_root() {
+    let tmp = TempDir::new().unwrap();
+    let mods_root = tmp.path().join("Mods");
+    let enabled = mods_root.join("Enabled");
+    fs::create_dir_all(&enabled).unwrap();
+    let config = config_with_game(&mods_root).await;
+
+    let requested = vec!["Enabled".to_string(), "Missing".to_string()];
+    let (valid, failures) = validate_mod_toggle_paths(&config, "game-1", &requested)
+        .expect("a stale item must not invalidate an otherwise safe batch");
+    assert_eq!(valid.len(), 1);
+    assert_eq!(valid[0].original(), "Enabled");
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].0, "Missing");
+
+    let root_error = validate_mod_toggle_paths(
+        &config,
+        "game-1",
+        &[mods_root.to_string_lossy().into_owned()],
+    )
+    .expect_err("the configured root must never be toggled");
+    assert!(matches!(
+        root_error,
         crate::shared::errors::AppError::Security(_)
     ));
 }

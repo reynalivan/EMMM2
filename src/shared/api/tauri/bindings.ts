@@ -11,7 +11,7 @@
  */
 
 import { commands as gen } from './bindings.gen';
-import type { DiskReconcileReason, Result } from './bindings.gen';
+import type { DiskReconcileReason, OnboardingIndexingWorkPlan, Result } from './bindings.gen';
 import { resolveDemoCommand } from '@/demo/commands';
 
 // Re-export the generated types that callers historically imported from this
@@ -53,6 +53,7 @@ export type {
   ImportItemStatus,
   ImportSourceKind,
   KeyBinding,
+  KeyViewerRuntimeDiagnostics,
   LiquidAppearance,
   LiquidMaterial,
   LiquidQuality,
@@ -64,6 +65,8 @@ export type {
   ModInboxLayout,
   ModInboxRootState,
   ModInboxSnapshot,
+  OnboardingIndexingSession,
+  OnboardingIndexingWorkPlan,
   PipelineTask,
   ProcessedModInboxDestination,
   ProcessedModInboxSource,
@@ -77,6 +80,8 @@ export type {
   RandomizerSafetyFilter,
   RandomizerLoadoutMode,
   RandomizerScope,
+  RuntimeReloadStatus,
+  RuntimeSyncPublicationStatus,
   RenameConfirmationGroup,
   RenameConfirmationKind,
   RenameConfirmationReason,
@@ -108,6 +113,19 @@ export type DiskReconcileProgress = {
   current_root: string | null;
   elapsed_ms: number;
   eta_ms: number | null;
+};
+
+export type OnboardingIndexingWorkPlanUpdate = {
+  session_id: string;
+  work_plan: OnboardingIndexingWorkPlan;
+};
+
+export type OnboardingIndexingSnapshotProgress = {
+  session_id: string;
+  game_id: string;
+  phase: 'Scanning' | 'Ready';
+  completed_games: number;
+  total_games: number;
 };
 
 type OkOf<T> = Extract<T, { status: 'ok' }>;

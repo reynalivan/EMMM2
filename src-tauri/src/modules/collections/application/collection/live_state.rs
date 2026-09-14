@@ -20,6 +20,16 @@ fn is_object_enabled(path_key: Option<&str>) -> bool {
         .any(is_disabled_folder)
 }
 
+/// `mods.status` records a terminal folder's own prefix. A row can therefore
+/// retain status=enabled while an ancestor is disabled; only the stored path
+/// describes whether it participates in the live runtime.
+pub(crate) fn is_mod_effectively_active(mod_path: &str) -> bool {
+    !mod_path
+        .split(['/', '\\'])
+        .filter(|segment| !segment.is_empty())
+        .any(is_disabled_folder)
+}
+
 pub(crate) async fn load_live_runtime_state(
     pool: &SqlitePool,
     game_id: &str,
@@ -33,6 +43,10 @@ pub(crate) async fn load_live_runtime_state(
             ..object
         })
         .collect();
+    let current_objects_by_id: HashMap<&str, &CollectionObject> = current_objects
+        .iter()
+        .map(|object| (object.object_id.as_str(), object))
+        .collect();
     let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id).await?;
 
     let mut current_mods = Vec::with_capacity(current_mod_rows.len());
@@ -44,9 +58,7 @@ pub(crate) async fn load_live_runtime_state(
         let display_name = row.display_name;
         let is_safe = row.is_safe;
         let safety_source = row.safety_source;
-        let preview_object = current_objects
-            .iter()
-            .find(|object| object.object_id == object_id);
+        let preview_object = current_objects_by_id.get(object_id.as_str()).copied();
         let preview_seed = CollectionMod {
             kind: crate::modules::collections::domain::collection::MemberKind::Mod,
             collection_id: String::new(),
@@ -113,11 +125,11 @@ pub(crate) async fn live_runtime_is_safe(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<bool, CollectionError> {
-    let unsafe_count =
-        crate::modules::library::adapters::sqlite::mods::count_active_unsafe_mods(pool, game_id)
-            .await?;
-
-    Ok(unsafe_count == 0)
+    let active_mods = collection::get_live_active_mod_rows(pool, game_id).await?;
+    Ok(active_mods
+        .iter()
+        .filter(|member| is_mod_effectively_active(&member.mod_path))
+        .all(|member| member.is_safe))
 }
 
 pub(crate) async fn load_game_mods_path(
@@ -144,7 +156,11 @@ pub(crate) async fn load_live_runtime_summary_tx(
 ) -> Result<LiveRuntimeSummary, CollectionError> {
     let objects = collection::get_live_objects_tx(conn, game_id).await?;
     let active_mods = collection::get_live_active_mod_rows_tx(conn, game_id).await?;
-    let is_safety_classified = active_mods.iter().all(|member| {
+    let effectively_active_mods = active_mods
+        .iter()
+        .filter(|member| is_mod_effectively_active(&member.mod_path))
+        .collect::<Vec<_>>();
+    let is_safety_classified = effectively_active_mods.iter().all(|member| {
         member
             .safety_source
             .as_deref()
@@ -152,13 +168,13 @@ pub(crate) async fn load_live_runtime_summary_tx(
     });
 
     Ok(LiveRuntimeSummary {
-        active_mod_count: active_mods.len(),
+        active_mod_count: effectively_active_mods.len(),
         object_count: objects.len(),
         enabled_object_count: objects
             .iter()
             .filter(|object| is_object_enabled(object.path_key.as_deref()))
             .count(),
-        is_safe: active_mods.iter().all(|member| member.is_safe),
+        is_safe: effectively_active_mods.iter().all(|member| member.is_safe),
         is_safety_classified,
     })
 }

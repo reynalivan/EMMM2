@@ -11,6 +11,50 @@ use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::
 };
 use crate::shared::errors::AppError;
 
+const GENERATED_EMMM_DATA_DIRECTORY: &str = ".emmm_data";
+
+fn move_generated_emmm_data_directory(
+    from_mods_path: &Path,
+    to_mods_path: &Path,
+) -> Result<bool, AppError> {
+    let source = from_mods_path.join(GENERATED_EMMM_DATA_DIRECTORY);
+    if !source.is_dir() {
+        return Ok(false);
+    }
+
+    let destination = to_mods_path.join(GENERATED_EMMM_DATA_DIRECTORY);
+    if destination.exists() {
+        return Err(AppError::Validation(format!(
+            "Cannot move generated EMMM data because '{}' already exists",
+            destination.display()
+        )));
+    }
+
+    crate::platform::fs::file_utils::rename_cross_drive_fallback(&source, &destination)
+        .map_err(|error| AppError::Io(format!("Could not move generated EMMM data: {error}")))?;
+    Ok(true)
+}
+
+fn restore_generated_emmm_data_directory(
+    moved: bool,
+    applied_mods_path: &Path,
+    previous_mods_path: &Path,
+) -> Result<(), AppError> {
+    if !moved {
+        return Ok(());
+    }
+    if !applied_mods_path
+        .join(GENERATED_EMMM_DATA_DIRECTORY)
+        .is_dir()
+    {
+        return Err(AppError::Io(
+            "Generated EMMM data disappeared before it could be restored".to_string(),
+        ));
+    }
+    move_generated_emmm_data_directory(applied_mods_path, previous_mods_path)?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub enum GameModsDirectoryClassification {
     Matching,
@@ -55,6 +99,8 @@ pub struct ApplyGameModsDirectoryResult {
     pub inspection: GameModsDirectoryInspection,
     pub reconcile:
         crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    pub emmm_data_moved: bool,
+    pub watcher_warning: Option<String>,
 }
 
 fn identity_set<'a>(values: impl Iterator<Item = Option<&'a str>>) -> HashSet<&'a str> {
@@ -291,7 +337,9 @@ pub async fn apply_game_mods_directory(
     }
 
     let candidate_path = PathBuf::from(&inspection.candidate_path);
-    let (previous_mod_path, applied_game) = context.config.update_settings(|settings| {
+    let previous_mod_path = current_game.mod_path.clone();
+    let emmm_data_moved = move_generated_emmm_data_directory(&previous_mod_path, &candidate_path)?;
+    let (previous_mod_path, applied_game) = match context.config.update_settings(|settings| {
         let game = settings
             .games
             .iter_mut()
@@ -301,7 +349,22 @@ pub async fn apply_game_mods_directory(
             })?;
         let previous_mod_path = std::mem::replace(&mut game.mod_path, candidate_path.clone());
         Ok((previous_mod_path, game.clone()))
-    })?;
+    }) {
+        Ok(result) => result,
+        Err(error) => {
+            restore_generated_emmm_data_directory(
+                emmm_data_moved,
+                &candidate_path,
+                &previous_mod_path,
+            )
+            .map_err(|restore| {
+                AppError::Internal(format!(
+                    "Could not save the new mods directory ({error}) and could not restore generated EMMM data: {restore}"
+                ))
+            })?;
+            return Err(error);
+        }
+    };
     let reconcile_result =
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_locks(
             context.clone(),
@@ -310,7 +373,8 @@ pub async fn apply_game_mods_directory(
                 crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
                 Vec::new(),
                 true,
-            ),
+            )
+            .defer_overlay_sync(),
             game_guard,
             operation_guard,
         )
@@ -324,15 +388,31 @@ pub async fn apply_game_mods_directory(
             result
         }
         Ok(result) => {
+            let error = AppError::Io(result.error_message.unwrap_or_else(|| {
+                "The selected mods directory became unavailable during reconcile".to_string()
+            }));
             rollback_game_mods_directory(
                 context.config,
                 &request.game_id,
                 &candidate_path,
                 &previous_mod_path,
-            )?;
-            return Err(AppError::Io(result.error_message.unwrap_or_else(|| {
-                "The selected mods directory became unavailable during reconcile".to_string()
-            })));
+            )
+            .map_err(|rollback| {
+                AppError::Internal(format!(
+                    "Applying the mods directory failed ({error}) and restoring the previous directory also failed: {rollback}"
+                ))
+            })?;
+            restore_generated_emmm_data_directory(
+                emmm_data_moved,
+                &candidate_path,
+                &previous_mod_path,
+            )
+            .map_err(|restore| {
+                AppError::Internal(format!(
+                    "Applying the mods directory failed ({error}); the previous directory was restored, but generated EMMM data could not be restored: {restore}"
+                ))
+            })?;
+            return Err(error);
         }
         Err(error) => {
             rollback_game_mods_directory(
@@ -346,6 +426,16 @@ pub async fn apply_game_mods_directory(
                     "Applying the mods directory failed ({error}) and restoring the previous directory also failed: {rollback}"
                 ))
             })?;
+            restore_generated_emmm_data_directory(
+                emmm_data_moved,
+                &candidate_path,
+                &previous_mod_path,
+            )
+            .map_err(|restore| {
+                AppError::Internal(format!(
+                    "Applying the mods directory failed ({error}); the previous directory was restored, but generated EMMM data could not be restored: {restore}"
+                ))
+            })?;
             return Err(error);
         }
     };
@@ -354,6 +444,8 @@ pub async fn apply_game_mods_directory(
         game: applied_game,
         inspection,
         reconcile,
+        emmm_data_moved,
+        watcher_warning: None,
     })
 }
 
@@ -730,10 +822,101 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn apply_restores_emmm_data_when_saving_the_new_directory_fails() {
+        let source_context = crate::test_utils::init_test_db().await;
+        let config_context = crate::test_utils::init_test_db().await;
+        let old_root = tempfile::tempdir().expect("old root should be created");
+        let candidate = tempfile::tempdir().expect("candidate should be created");
+        let old_artifact = old_root.path().join(".emmm_data").join("status");
+        std::fs::create_dir_all(&old_artifact).expect("runtime data directory should be created");
+        std::fs::write(old_artifact.join("preset.ini"), "active=1")
+            .expect("runtime artifact should be written");
+        let terminal = candidate.path().join("Alice").join("Blue Dress");
+        std::fs::create_dir_all(&terminal).expect("terminal folder should be created");
+        std::fs::write(
+            terminal.join("mod.ini"),
+            "[TextureOverrideAlice]\nhash=abc\n",
+        )
+        .expect("ini should be written");
+        crate::test_utils::insert_test_game(
+            &config_context.pool,
+            &crate::test_utils::TestGameFixture {
+                id: "game-1",
+                name: "Game",
+                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                path: old_root.path().to_string_lossy().as_ref(),
+                mods_path: Some(old_root.path().to_string_lossy().as_ref()),
+            },
+        )
+        .await
+        .expect("game should be inserted");
+        let config = crate::modules::settings::application::config::ConfigService::new_for_test(
+            config_context.pool.clone(),
+        );
+        let inspection =
+            inspect_game_mods_directory(&source_context.pool, "game-1", candidate.path())
+                .await
+                .expect("candidate should inspect");
+        config_context.pool.close().await;
+
+        let state = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new();
+        let operation_lock = crate::platform::fs::operation_lock::OperationLock::new();
+        let game_lock = state.game_lock("game-1");
+        let game_guard = game_lock.lock().await;
+        let operation_guard = operation_lock.acquire().await.expect("operation lock");
+        let result = apply_game_mods_directory(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
+                pool: &source_context.pool,
+                config: &config,
+                state: &state,
+                watcher_suppressor: std::sync::Arc::new(
+                    crate::modules::workspace::application::scanner::watcher::WatcherSuppressor::new(false),
+                ),
+                operation_lock: &operation_lock,
+                progress_reporter: None,
+            },
+            ApplyGameModsDirectoryRequest {
+                game_id: "game-1".to_string(),
+                candidate_path: candidate.path().to_string_lossy().to_string(),
+                expected_fingerprint: inspection.fingerprint,
+                confirm_empty: false,
+                different_confirmation_game_name: None,
+            },
+            &game_guard,
+            &operation_guard,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "closed config database must reject the update"
+        );
+        assert_eq!(
+            config.mods_root_for("game-1"),
+            Some(old_root.path().to_path_buf()),
+            "the in-memory config must remain at the old source"
+        );
+        assert_eq!(
+            std::fs::read_to_string(old_artifact.join("preset.ini"))
+                .expect("runtime artifact should be restored"),
+            "active=1"
+        );
+        assert!(
+            !candidate.path().join(".emmm_data").exists(),
+            "the candidate root must not retain artifacts when config persistence fails"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn apply_new_library_updates_config_and_reconciles_database_from_disk() {
         let context = crate::test_utils::init_test_db().await;
         let old_root = tempfile::tempdir().expect("old root should be created");
         let candidate = tempfile::tempdir().expect("candidate should be created");
+        let old_runtime_status = old_root.path().join(".emmm_data").join("status");
+        std::fs::create_dir_all(&old_runtime_status)
+            .expect("old runtime status directory should be created");
+        std::fs::write(old_runtime_status.join("preset.ini"), "active=1")
+            .expect("old runtime status artifact should be written");
         let terminal = candidate.path().join("Alice").join("Blue Dress");
         std::fs::create_dir_all(&terminal).expect("terminal folder should be created");
         std::fs::write(
@@ -803,10 +986,25 @@ mod tests {
             .await
             .expect("mod count should load");
         assert_eq!(mod_count, 1);
+        assert!(
+            !old_root.path().join(".emmm_data").exists(),
+            "old generated EMMM data should be moved"
+        );
+        assert_eq!(
+            std::fs::read_to_string(
+                candidate
+                    .path()
+                    .join(".emmm_data")
+                    .join("status")
+                    .join("preset.ini"),
+            )
+            .expect("moved runtime status artifact should be readable"),
+            "active=1"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn post_commit_runtime_effect_failure_does_not_restore_the_previous_source() {
+    async fn apply_defers_overlay_sync_until_the_watcher_is_restarted() {
         let context = crate::test_utils::init_test_db().await;
         let old_root = tempfile::tempdir().expect("old root should be created");
         let candidate = tempfile::tempdir().expect("candidate should be created");
@@ -817,11 +1015,6 @@ mod tests {
             "[TextureOverrideAlice]\nhash=abc\n",
         )
         .expect("ini should be written");
-        // Projection ignores this internal path, but the post-commit KeyViewer
-        // refresh must create children beneath it. Making it a file injects a
-        // deterministic runtime-effect failure after the DB transaction.
-        std::fs::write(candidate.path().join(".emmm_data"), "not a directory")
-            .expect("runtime-effect blocker should be written");
         crate::test_utils::insert_test_game(
             &context.pool,
             &crate::test_utils::TestGameFixture {
@@ -893,15 +1086,11 @@ mod tests {
             ),
             "projection committed (objects={object_count}, mods={mod_count}) but source recovery rolled the config back after runtime effects failed: {apply_result:?}"
         );
-        let reconcile = apply_result
-            .expect("post-commit runtime-effect failure should remain an applied result")
-            .reconcile;
+        let reconcile = apply_result.expect("source change should apply").reconcile;
         assert!(reconcile.status.applied());
-        assert!(reconcile.pending_runtime_effects.collections_dirty);
-        assert!(reconcile.pending_runtime_effects.overlay_refresh);
-        assert!(reconcile.warnings.iter().any(|warning| {
-            warning.kind
-                == crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarningKind::RuntimeEffectsPending
-        }));
+        assert!(
+            !reconcile.pending_runtime_effects.overlay_refresh,
+            "the Tauri command restarts the watcher before requesting the overlay sync"
+        );
     }
 }

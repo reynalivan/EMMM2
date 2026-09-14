@@ -9,6 +9,14 @@ pub struct Mod {
     pub status: ItemStatus,
 }
 
+/// A terminal mod inside a folder subtree, used to describe the exact impact
+/// of enabling one or more disabled ancestor folders.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ModSubtreeEntry {
+    pub actual_name: String,
+    pub folder_path: String,
+}
+
 /// An object-owned mod row used by the randomizer. The row deliberately
 /// carries its owning game and Object metadata so callers can validate a
 /// proposal again immediately before mutating the workspace.

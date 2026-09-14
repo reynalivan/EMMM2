@@ -11,6 +11,7 @@ export * from './actions/workspaceActionPolicy';
 export * from './actions/workspaceSwitchPolicy';
 export * from './components/WorkspaceSwitchControl';
 export * from './components/WorkspaceSwitchLabel';
+export * from './components/WorkspaceParentEnableDialogHost';
 export * from './hooks/useWorkspaceViewModel';
 export * from './optimistic/applyOptimisticEffects';
 export * from './optimistic/descriptor';

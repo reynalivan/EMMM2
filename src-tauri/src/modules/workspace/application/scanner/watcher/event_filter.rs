@@ -28,9 +28,7 @@ pub(crate) fn should_keep_event_path(path: &Path, watcher_path: &Path) -> bool {
     let relative = path
         .strip_prefix(watcher_path)
         .expect("structural containment was checked above");
-    let components = relative.components().collect::<Vec<_>>();
-
-    if components.len() <= 2 {
+    if relative.components().nth(2).is_none() {
         return true;
     }
 
@@ -53,9 +51,8 @@ pub(crate) fn should_keep_structural_event_path(path: &Path, watcher_path: &Path
         return false;
     };
 
-    let components = relative.components().collect::<Vec<_>>();
-    if components
-        .iter()
+    if relative
+        .components()
         .any(|component| component.as_os_str().to_string_lossy().starts_with('.'))
     {
         return false;

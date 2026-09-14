@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -37,6 +37,7 @@ pub struct DiskSizeScan {
     scan_all: bool,
     known_mod_keys: HashSet<String>,
     changed_path_keys: Vec<String>,
+    precomputed_sizes: Option<HashMap<String, i64>>,
 }
 
 impl DiskSizeScan {
@@ -59,6 +60,8 @@ impl DiskSizeScan {
             .map(|relative| {
                 crate::shared::path_key::folder_path_key(&relative.to_string_lossy(), None)
             })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .collect();
         Self {
             scan_all: changed_paths
@@ -66,6 +69,15 @@ impl DiskSizeScan {
                 .any(|value| Path::new(value) == mods_path),
             known_mod_keys,
             changed_path_keys,
+            precomputed_sizes: None,
+        }
+    }
+
+    pub fn precomputed(directory_sizes: HashMap<String, i64>) -> Self {
+        Self {
+            scan_all: true,
+            precomputed_sizes: Some(directory_sizes),
+            ..Self::default()
         }
     }
 
@@ -76,6 +88,15 @@ impl DiskSizeScan {
                 .changed_path_keys
                 .iter()
                 .any(|changed_key| path_key_is_ancestor_or_descendant(mod_key, changed_key))
+    }
+
+    fn size_for(&self, mod_key: &str, path: &Path) -> DiskProjectionResult<Option<i64>> {
+        if let Some(sizes) = &self.precomputed_sizes {
+            return Ok(Some(*sizes.get(mod_key).unwrap_or(&0)));
+        }
+        self.should_measure(mod_key)
+            .then(|| collect_directory_size_bytes(path))
+            .transpose()
     }
 }
 
@@ -148,6 +169,14 @@ pub struct DiskScopedDiscovery {
     pub projection: DiskProjection,
     pub scoped: bool,
     pub scan_counts: DiskDiscoveryScanCounts,
+}
+
+/// A complete onboarding discovery and work plan derived from one metadata
+/// walk. `directory_sizes` feeds terminal mod sizes during strict discovery.
+#[derive(Debug, Clone)]
+pub struct OnboardingDiskDiscovery {
+    pub discovery: DiskScopedDiscovery,
+    pub work_plan: crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingWorkPlan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,9 +366,9 @@ fn collect_terminal_mods(
                 })?;
             let folder_path_key = crate::shared::path_key::folder_path_key(&folder_path, None);
             let size_bytes = size_scan
-                .filter(|scan| scan.should_measure(&folder_path_key))
-                .map(|_| collect_directory_size_bytes(path))
-                .transpose()?;
+                .map(|scan| scan.size_for(&folder_path_key, path))
+                .transpose()?
+                .flatten();
             mods.push(DiskModEntry {
                 folder_path: folder_path.clone(),
                 folder_path_key,
@@ -565,6 +594,246 @@ pub fn collect_scoped_disk_discovery_with_progress(
     })
 }
 
+/// Build the onboarding work plan and the terminal-mod size index with one
+/// metadata walk. Strict classification still reads folders and INI files, but
+/// it never performs a second recursive metadata walk for size accounting.
+pub fn collect_onboarding_disk_discovery(
+    game_id: String,
+    mods_path: &Path,
+) -> DiskProjectionResult<OnboardingDiskDiscovery> {
+    let (roots, directory_sizes) = collect_onboarding_metadata(mods_path)?;
+    let file_count = roots.iter().map(|root| root.file_count).sum();
+    let total_bytes = roots.iter().map(|root| root.total_bytes).sum();
+    let work_units = roots.iter().map(|root| root.work_units).sum();
+    let work_plan = crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingWorkPlan {
+        game_id,
+        file_count,
+        total_bytes,
+        work_units,
+        roots,
+    };
+    let size_scan = DiskSizeScan::precomputed(directory_sizes);
+    let discovery =
+        collect_scoped_disk_discovery_with_progress(mods_path, &[], false, Some(&size_scan), None)?;
+    Ok(OnboardingDiskDiscovery {
+        discovery,
+        work_plan,
+    })
+}
+
+/// Rebuild only the changed onboarding roots. The global directory census is
+/// still collected by scoped discovery to retain conflict correctness.
+pub fn collect_scoped_onboarding_disk_discovery(
+    game_id: String,
+    mods_path: &Path,
+    changed_roots: &[String],
+) -> DiskProjectionResult<OnboardingDiskDiscovery> {
+    let (roots, directory_sizes) = collect_onboarding_metadata_for_roots(mods_path, changed_roots)?;
+    let file_count = roots.iter().map(|root| root.file_count).sum();
+    let total_bytes = roots.iter().map(|root| root.total_bytes).sum();
+    let work_units = roots.iter().map(|root| root.work_units).sum();
+    let work_plan = crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingWorkPlan {
+        game_id,
+        file_count,
+        total_bytes,
+        work_units,
+        roots,
+    };
+    let size_scan = DiskSizeScan::precomputed(directory_sizes);
+    let discovery = collect_scoped_disk_discovery_with_progress(
+        mods_path,
+        changed_roots,
+        true,
+        Some(&size_scan),
+        None,
+    )?;
+    Ok(OnboardingDiskDiscovery {
+        discovery,
+        work_plan,
+    })
+}
+
+fn collect_onboarding_metadata_for_roots(
+    mods_path: &Path,
+    root_names: &[String],
+) -> DiskProjectionResult<(
+    Vec<crate::modules::reconciliation::application::disk_reconcile::types::IndexingRootWork>,
+    HashMap<String, i64>,
+)> {
+    let mut roots = BTreeMap::<String, (u64, u64)>::new();
+    let mut directory_sizes = HashMap::<String, u64>::new();
+    for root_name in root_names.iter().collect::<BTreeSet<_>>() {
+        let root_path = mods_path.join(root_name);
+        if !root_path.is_dir() {
+            continue;
+        }
+        roots.entry((*root_name).to_string()).or_default();
+        for entry in WalkDir::new(&root_path).follow_links(false) {
+            let entry = entry.map_err(|error| {
+                DiskProjectionError::Failed(format!(
+                    "Failed to read file metadata while planning '{}': {error}",
+                    root_path.display()
+                ))
+            })?;
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let metadata = entry.metadata().map_err(|error| {
+                DiskProjectionError::Failed(format!(
+                    "Failed to read file metadata for '{}': {error}",
+                    entry.path().display()
+                ))
+            })?;
+            let root = roots.entry((*root_name).to_string()).or_default();
+            root.0 = root.0.saturating_add(1);
+            root.1 = root.1.saturating_add(metadata.len());
+            let mut directory = entry.path().parent();
+            while let Some(path) = directory {
+                if !path.starts_with(&root_path) {
+                    break;
+                }
+                let relative_directory = path.strip_prefix(mods_path).map_err(|error| {
+                    DiskProjectionError::Failed(format!(
+                        "Failed to compute directory size key for '{}': {error}",
+                        path.display()
+                    ))
+                })?;
+                let key = crate::shared::path_key::folder_path_key(
+                    &relative_directory.to_string_lossy(),
+                    None,
+                );
+                let total = directory_sizes.entry(key).or_default();
+                *total = total.checked_add(metadata.len()).ok_or_else(|| {
+                    DiskProjectionError::Failed(format!(
+                        "Storage size overflow while sizing '{}'",
+                        root_path.display()
+                    ))
+                })?;
+                directory = path.parent();
+            }
+        }
+    }
+    let roots = roots.into_iter().map(|(name, (files, bytes))| {
+        crate::modules::reconciliation::application::disk_reconcile::work_plan::indexing_root_work(name, files, bytes)
+    }).collect();
+    let directory_sizes = directory_sizes
+        .into_iter()
+        .map(|(key, bytes)| {
+            i64::try_from(bytes).map(|bytes| (key, bytes)).map_err(|_| {
+                DiskProjectionError::Failed(format!(
+                    "Storage size exceeds supported range for '{}'",
+                    mods_path.display()
+                ))
+            })
+        })
+        .collect::<DiskProjectionResult<HashMap<_, _>>>()?;
+    Ok((roots, directory_sizes))
+}
+
+fn collect_onboarding_metadata(
+    mods_path: &Path,
+) -> DiskProjectionResult<(
+    Vec<crate::modules::reconciliation::application::disk_reconcile::types::IndexingRootWork>,
+    HashMap<String, i64>,
+)> {
+    if !mods_path.is_dir() {
+        return Err(DiskProjectionError::SourceUnavailable(format!(
+            "Disk Reconcile mods path is unavailable: {}",
+            mods_path.display()
+        )));
+    }
+
+    let mut roots = BTreeMap::<String, (u64, u64)>::new();
+    let mut directory_sizes = HashMap::<String, u64>::new();
+    for root in list_runtime_dirs(mods_path)? {
+        roots.entry(runtime_dir_name(&root)).or_default();
+    }
+    for entry in WalkDir::new(mods_path).follow_links(false) {
+        let entry = entry.map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to read file metadata while planning '{}': {error}",
+                mods_path.display()
+            ))
+        })?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to read file metadata for '{}': {error}",
+                entry.path().display()
+            ))
+        })?;
+        let relative = entry.path().strip_prefix(mods_path).map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to compute relative file path for '{}': {error}",
+                entry.path().display()
+            ))
+        })?;
+        let root_name = if relative.components().count() == 1 {
+            ".".to_string()
+        } else {
+            relative
+                .components()
+                .next()
+                .map(|component| component.as_os_str().to_string_lossy().to_string())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| ".".to_string())
+        };
+        let root = roots.entry(root_name).or_default();
+        root.0 = root.0.saturating_add(1);
+        root.1 = root.1.saturating_add(metadata.len());
+
+        let mut directory = entry.path().parent();
+        while let Some(path) = directory {
+            if !path.starts_with(mods_path) {
+                break;
+            }
+            let relative_directory = path.strip_prefix(mods_path).map_err(|error| {
+                DiskProjectionError::Failed(format!(
+                    "Failed to compute directory size key for '{}': {error}",
+                    path.display()
+                ))
+            })?;
+            let key = crate::shared::path_key::folder_path_key(
+                &relative_directory.to_string_lossy(),
+                None,
+            );
+            let total = directory_sizes.entry(key).or_default();
+            *total = total.checked_add(metadata.len()).ok_or_else(|| {
+                DiskProjectionError::Failed(format!(
+                    "Storage size overflow while sizing '{}'",
+                    mods_path.display()
+                ))
+            })?;
+            directory = path.parent();
+        }
+    }
+
+    let roots = roots
+        .into_iter()
+        .map(|(root_name, (file_count, total_bytes))| {
+            crate::modules::reconciliation::application::disk_reconcile::work_plan::indexing_root_work(
+                root_name,
+                file_count,
+                total_bytes,
+            )
+        })
+        .collect();
+    let directory_sizes = directory_sizes
+        .into_iter()
+        .map(|(key, bytes)| {
+            i64::try_from(bytes).map(|bytes| (key, bytes)).map_err(|_| {
+                DiskProjectionError::Failed(format!(
+                    "Storage size exceeds supported range for '{}'",
+                    mods_path.display()
+                ))
+            })
+        })
+        .collect::<DiskProjectionResult<HashMap<_, _>>>()?;
+    Ok((roots, directory_sizes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,6 +868,66 @@ mod tests {
                 .join("Blue Dress")
                 .to_string_lossy()
                 .to_string()
+        );
+    }
+
+    #[test]
+    fn onboarding_discovery_reuses_one_metadata_walk_for_plan_and_mod_sizes() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        let terminal = temp.path().join("Alice").join("Blue Dress");
+        std::fs::create_dir_all(&terminal).expect("terminal folder should be created");
+        std::fs::write(temp.path().join("d3dx.ini"), b"abc")
+            .expect("direct root file should be written");
+        let ini_bytes = b"[TextureOverrideTest]\nhash = abc\n";
+        std::fs::write(terminal.join("mod.ini"), ini_bytes).expect("mod ini should be written");
+        std::fs::write(terminal.join("mesh.buf"), b"mesh").expect("mod asset should be written");
+
+        let onboarding = collect_onboarding_disk_discovery("game".to_string(), temp.path())
+            .expect("onboarding discovery should succeed");
+
+        assert_eq!(onboarding.work_plan.file_count, 3);
+        assert_eq!(
+            onboarding.work_plan.total_bytes,
+            3 + ini_bytes.len() as u64 + 4
+        );
+        assert!(onboarding
+            .work_plan
+            .roots
+            .iter()
+            .any(|root| root.root_name == "." && root.file_count == 1));
+        assert_eq!(
+            onboarding.discovery.projection.mods[0].size_bytes,
+            Some((ini_bytes.len() + 4) as i64)
+        );
+    }
+
+    #[test]
+    fn scoped_onboarding_discovery_measures_only_changed_roots() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        for root in ["Alice", "Bob"] {
+            let terminal = temp.path().join(root).join("Blue Dress");
+            std::fs::create_dir_all(&terminal).expect("terminal folder should be created");
+            std::fs::write(
+                terminal.join("mod.ini"),
+                "[TextureOverrideTest]\nhash = abc\n",
+            )
+            .expect("mod ini should be written");
+        }
+
+        let onboarding = collect_scoped_onboarding_disk_discovery(
+            "game".to_string(),
+            temp.path(),
+            &["Bob".to_string()],
+        )
+        .expect("scoped onboarding discovery should succeed");
+
+        assert!(onboarding.discovery.scoped);
+        assert_eq!(onboarding.work_plan.roots.len(), 1);
+        assert_eq!(onboarding.work_plan.roots[0].root_name, "Bob");
+        assert_eq!(onboarding.discovery.projection.objects.len(), 1);
+        assert_eq!(
+            onboarding.discovery.projection.objects[0].folder_path,
+            "Bob"
         );
     }
 
@@ -668,6 +997,20 @@ mod tests {
             .expect("red mod");
         assert_eq!(blue.size_bytes, None);
         assert_eq!(red.size_bytes, Some(40));
+    }
+
+    #[test]
+    fn storage_scan_deduplicates_normalized_changed_paths() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        let changed_path = temp.path().join("Alice").join("Blue").join("mod.ini");
+        let changed_path = changed_path.to_string_lossy().into_owned();
+        let size_scan = DiskSizeScan::incremental(
+            temp.path(),
+            HashSet::new(),
+            &[changed_path.clone(), changed_path],
+        );
+
+        assert_eq!(size_scan.changed_path_keys.len(), 1);
     }
 
     #[test]

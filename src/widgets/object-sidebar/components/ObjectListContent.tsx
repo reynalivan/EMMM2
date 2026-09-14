@@ -252,7 +252,7 @@ function StickyRow({
         </ContextMenu>
         {/* Direction indicator */}
         <div className="absolute right-3 top-1/2 -translate-y-1/2">
-          <DirectionIcon size={14} className="text-primary/60 animate-bounce" />
+          <DirectionIcon size={14} className="text-primary/60" />
         </div>
       </div>
     </div>

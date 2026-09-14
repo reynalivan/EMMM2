@@ -12,7 +12,11 @@ import type {
 } from '@/shared/api/tauri/bindings.gen';
 import { demoDashboardGateway } from './dashboard';
 import { demoGameSettings, getDemoSettings, setDemoSettings } from './game';
-import { buildDemoWorkspaceViewModel, demoGameSchema } from './workspace';
+import {
+  buildDemoWorkspacePreview,
+  buildDemoWorkspaceStructure,
+  demoGameSchema,
+} from './workspace';
 
 export interface DemoCommandResult {
   handled: boolean;
@@ -629,8 +633,10 @@ export function resolveDemoCommand(name: string, _args: unknown[]): DemoCommandR
       return handled(demoDashboardGateway.getActiveKeybindings(String(_args[0] ?? '')));
     case 'getGameSchema':
       return handled(demoGameSchema);
-    case 'getWorkspaceViewModel':
-      return handled(buildDemoWorkspaceViewModel(_args[0]));
+    case 'getWorkspaceStructure':
+      return handled(buildDemoWorkspaceStructure(_args[0]));
+    case 'getWorkspacePreview':
+      return handled(buildDemoWorkspacePreview(_args[0]));
     case 'listModIniFiles':
     case 'listModPreviewImages':
       return handled([]);

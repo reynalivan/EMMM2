@@ -4,13 +4,13 @@ use crate::shared::errors::ScannerError;
 use rayon::prelude::*;
 
 use sqlx::SqlitePool;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::grouping::{build_groups, ScoredPair};
-use super::hashing::{hash_snapshot, hash_snapshot_full};
+use super::hashing::{hash_snapshot, hash_snapshot_full, HashProfile};
 use super::signals::aggregate_signals;
 use super::snapshot::{collect_snapshot, ModSnapshot};
 use crate::shared::path_key::canonical_path_key_for_path;
@@ -31,8 +31,29 @@ pub struct DedupScanOutcome {
     pub total_folders: usize,
 }
 
+#[derive(Default)]
+struct ExactClusterCompression {
+    cluster_by_index: Vec<Option<usize>>,
+    spanning_pairs: Vec<(usize, usize)>,
+    initial_profiles: HashMap<usize, HashProfile>,
+    full_profiles: HashMap<usize, HashProfile>,
+}
+
 pub async fn scan_duplicates(
     mods_root: &Path,
+    game_id: &str,
+    db: &SqlitePool,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<DedupScanOutcome, ScannerError> {
+    let candidates = walker::scan_mod_folders(mods_root)?;
+    scan_duplicates_for_candidates(mods_root, candidates, game_id, db, cancel_flag).await
+}
+
+/// Scan a candidate snapshot that was already enumerated for progress reporting.
+/// File contents and metadata are still read from disk by the snapshot phase.
+pub async fn scan_duplicates_for_candidates(
+    mods_root: &Path,
+    candidates: Vec<ModCandidate>,
     game_id: &str,
     db: &SqlitePool,
     cancel_flag: Arc<AtomicBool>,
@@ -46,7 +67,6 @@ pub async fn scan_duplicates(
     .await?;
     drop(conn);
 
-    let candidates = walker::scan_mod_folders(mods_root)?;
     let total_folders = candidates.len();
 
     if is_cancelled(&cancel_flag) {
@@ -97,7 +117,15 @@ fn run_pipeline_blocking(
         return cancelled(total_folders);
     }
 
-    let candidate_pairs = phase1_candidate_filtering(&snapshots);
+    let exact_compression =
+        build_exact_cluster_compression(&snapshots, &path_to_mod_id, &whitelist_pairs);
+    let mut candidate_pairs = phase1_candidate_filtering_without_exact_cliques(
+        &snapshots,
+        &exact_compression.cluster_by_index,
+    );
+    candidate_pairs.extend(exact_compression.spanning_pairs.iter().copied());
+    candidate_pairs.sort_unstable();
+    candidate_pairs.dedup();
     let candidate_pairs = apply_whitelist_filter(
         candidate_pairs,
         &snapshots,
@@ -109,10 +137,18 @@ fn run_pipeline_blocking(
     }
 
     let pair_indices: HashSet<usize> = candidate_pairs.iter().flat_map(|(a, b)| [*a, *b]).collect();
-    let hash_profiles: HashMap<usize, _> = pair_indices
-        .par_iter()
-        .map(|index| (*index, hash_snapshot(&snapshots[*index])))
+    let mut hash_profiles = exact_compression.initial_profiles;
+    let missing_initial_indices: Vec<usize> = pair_indices
+        .iter()
+        .copied()
+        .filter(|index| !hash_profiles.contains_key(index))
         .collect();
+    hash_profiles.extend(
+        missing_initial_indices
+            .par_iter()
+            .map(|index| (*index, hash_snapshot(&snapshots[*index])))
+            .collect::<HashMap<_, _>>(),
+    );
 
     if is_cancelled(&cancel_flag) {
         return cancelled(total_folders);
@@ -137,10 +173,18 @@ fn run_pipeline_blocking(
         .filter(|(_, _, score, _, _)| *score == 100)
         .flat_map(|(left, right, _, _, _)| [*left, *right])
         .collect();
-    let full_hash_profiles: HashMap<usize, _> = full_hash_indices
-        .par_iter()
-        .map(|index| (*index, hash_snapshot_full(&snapshots[*index])))
+    let mut full_hash_profiles = exact_compression.full_profiles;
+    let missing_full_indices: Vec<usize> = full_hash_indices
+        .iter()
+        .copied()
+        .filter(|index| !full_hash_profiles.contains_key(index))
         .collect();
+    full_hash_profiles.extend(
+        missing_full_indices
+            .par_iter()
+            .map(|index| (*index, hash_snapshot_full(&snapshots[*index])))
+            .collect::<HashMap<_, _>>(),
+    );
     let scored_pairs: Vec<ScoredPair> = preliminary_pairs
         .into_iter()
         .filter_map(|pair| {
@@ -165,6 +209,216 @@ fn run_pipeline_blocking(
         groups: build_groups(&snapshots, &scored_pairs, &path_to_mod_id),
         total_folders,
     }
+}
+
+/// Compress a complete graph of content-identical candidates into a spanning
+/// forest. Exact duplicates are rendered as groups, not one result per pair,
+/// so retaining every clique edge only increases CPU and memory use.
+fn build_exact_cluster_compression(
+    snapshots: &[ModSnapshot],
+    path_to_mod_id: &HashMap<String, (String, bool)>,
+    whitelist_pairs: &HashSet<(String, String)>,
+) -> ExactClusterCompression {
+    let mut compression = ExactClusterCompression {
+        cluster_by_index: vec![None; snapshots.len()],
+        ..Default::default()
+    };
+    let mod_ids: Vec<Option<&str>> = snapshots
+        .iter()
+        .map(|snapshot| {
+            path_to_mod_id
+                .get(&canonical_path_key_for_path(&snapshot.candidate.path))
+                .map(|(mod_id, _)| mod_id.as_str())
+        })
+        .collect();
+    let mut next_cluster_id = 0;
+
+    for layout_group in structurally_equivalent_groups(snapshots) {
+        let initial_profiles: Vec<(usize, HashProfile)> = layout_group
+            .par_iter()
+            .map(|index| (*index, hash_snapshot(&snapshots[*index])))
+            .collect();
+        let initial_match_groups = matching_profile_groups(&initial_profiles);
+        compression.initial_profiles.extend(initial_profiles);
+
+        for initial_match_group in initial_match_groups {
+            let full_profiles: Vec<(usize, HashProfile)> = initial_match_group
+                .par_iter()
+                .map(|index| (*index, hash_snapshot_full(&snapshots[*index])))
+                .collect();
+            let exact_groups = matching_profile_groups(&full_profiles);
+            compression.full_profiles.extend(full_profiles);
+
+            for exact_group in exact_groups {
+                for (members, edges) in
+                    exact_components_after_whitelist(&exact_group, &mod_ids, whitelist_pairs)
+                {
+                    for index in members {
+                        compression.cluster_by_index[index] = Some(next_cluster_id);
+                    }
+                    compression.spanning_pairs.extend(edges);
+                    next_cluster_id += 1;
+                }
+            }
+        }
+    }
+
+    compression
+}
+
+fn structurally_equivalent_groups(snapshots: &[ModSnapshot]) -> Vec<Vec<usize>> {
+    let mut groups_by_fingerprint: HashMap<String, Vec<Vec<usize>>> = HashMap::new();
+
+    for (index, snapshot) in snapshots.iter().enumerate() {
+        if snapshot.files.is_empty() {
+            continue;
+        }
+        let groups = groups_by_fingerprint
+            .entry(layout_fingerprint(snapshot))
+            .or_default();
+        if let Some(group) = groups.iter_mut().find(|members| {
+            members
+                .first()
+                .is_some_and(|first| same_file_layout(&snapshots[*first], snapshot))
+        }) {
+            group.push(index);
+        } else {
+            groups.push(vec![index]);
+        }
+    }
+
+    groups_by_fingerprint
+        .into_values()
+        .flatten()
+        .filter(|members| members.len() > 1)
+        .collect()
+}
+
+fn layout_fingerprint(snapshot: &ModSnapshot) -> String {
+    let mut files: Vec<_> = snapshot.files.iter().collect();
+    files.sort_unstable_by(|left, right| left.rel_path.cmp(&right.rel_path));
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&(files.len() as u64).to_le_bytes());
+    for file in files {
+        hasher.update(&(file.rel_path.len() as u64).to_le_bytes());
+        hasher.update(file.rel_path.as_bytes());
+        hasher.update(&file.size_bytes.to_le_bytes());
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+fn same_file_layout(left: &ModSnapshot, right: &ModSnapshot) -> bool {
+    if left.files.len() != right.files.len() {
+        return false;
+    }
+
+    let mut left_files: Vec<_> = left.files.iter().collect();
+    let mut right_files: Vec<_> = right.files.iter().collect();
+    left_files.sort_unstable_by(|first, second| first.rel_path.cmp(&second.rel_path));
+    right_files.sort_unstable_by(|first, second| first.rel_path.cmp(&second.rel_path));
+    left_files.iter().zip(right_files).all(|(first, second)| {
+        first.rel_path == second.rel_path && first.size_bytes == second.size_bytes
+    })
+}
+
+fn matching_profile_groups(profiles: &[(usize, HashProfile)]) -> Vec<Vec<usize>> {
+    let profiles_by_index: HashMap<usize, &HashProfile> = profiles
+        .iter()
+        .map(|(index, profile)| (*index, profile))
+        .collect();
+    let mut groups_by_fingerprint: HashMap<String, Vec<Vec<usize>>> = HashMap::new();
+
+    for (index, profile) in profiles {
+        if profile.file_hashes.is_empty() {
+            continue;
+        }
+        let groups = groups_by_fingerprint
+            .entry(profile_fingerprint(profile))
+            .or_default();
+        if let Some(group) = groups.iter_mut().find(|members| {
+            members.first().is_some_and(|first| {
+                profiles_by_index
+                    .get(first)
+                    .is_some_and(|other| other.file_hashes == profile.file_hashes)
+            })
+        }) {
+            group.push(*index);
+        } else {
+            groups.push(vec![*index]);
+        }
+    }
+
+    groups_by_fingerprint
+        .into_values()
+        .flatten()
+        .filter(|members| members.len() > 1)
+        .collect()
+}
+
+fn profile_fingerprint(profile: &HashProfile) -> String {
+    let mut hasher = blake3::Hasher::new();
+    for (path, hash) in &profile.file_hashes {
+        hasher.update(&(path.len() as u64).to_le_bytes());
+        hasher.update(path.as_bytes());
+        hasher.update(&(hash.len() as u64).to_le_bytes());
+        hasher.update(hash.as_bytes());
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+fn exact_components_after_whitelist(
+    members: &[usize],
+    mod_ids: &[Option<&str>],
+    whitelist_pairs: &HashSet<(String, String)>,
+) -> Vec<(Vec<usize>, Vec<(usize, usize)>)> {
+    if whitelist_pairs.is_empty() {
+        return vec![(
+            members.to_vec(),
+            members.windows(2).map(|pair| (pair[0], pair[1])).collect(),
+        )];
+    }
+
+    let mut unvisited: BTreeSet<usize> = members.iter().copied().collect();
+    let mut components = Vec::new();
+    while let Some(seed) = unvisited.first().copied() {
+        unvisited.remove(&seed);
+        let mut queue = VecDeque::from([seed]);
+        let mut component_members = vec![seed];
+        let mut component_edges = Vec::new();
+
+        while let Some(current) = queue.pop_front() {
+            let connected: Vec<usize> = unvisited
+                .iter()
+                .copied()
+                .filter(|candidate| {
+                    !pair_is_whitelisted(current, *candidate, mod_ids, whitelist_pairs)
+                })
+                .collect();
+            for candidate in connected {
+                unvisited.remove(&candidate);
+                component_members.push(candidate);
+                component_edges.push((current.min(candidate), current.max(candidate)));
+                queue.push_back(candidate);
+            }
+        }
+
+        components.push((component_members, component_edges));
+    }
+
+    components
+}
+
+fn pair_is_whitelisted(
+    left: usize,
+    right: usize,
+    mod_ids: &[Option<&str>],
+    whitelist_pairs: &HashSet<(String, String)>,
+) -> bool {
+    let (Some(left_id), Some(right_id)) = (mod_ids[left], mod_ids[right]) else {
+        return false;
+    };
+    whitelist_pairs.contains(&canonical_pair(left_id, right_id))
 }
 
 fn apply_whitelist_filter(
@@ -229,7 +483,16 @@ fn canonical_pair(left: &str, right: &str) -> (String, String) {
 /// window every later snapshot is out of range and the run ends. The size
 /// ratio is not monotonic along that order, so it stays a test inside the
 /// window rather than a second bound.
+#[cfg(test)]
+#[cfg(test)]
 fn phase1_candidate_filtering(snapshots: &[ModSnapshot]) -> Vec<(usize, usize)> {
+    phase1_candidate_filtering_without_exact_cliques(snapshots, &[])
+}
+
+fn phase1_candidate_filtering_without_exact_cliques(
+    snapshots: &[ModSnapshot],
+    exact_cluster_by_index: &[Option<usize>],
+) -> Vec<(usize, usize)> {
     use super::signals::weights as w;
 
     // A folder with no files can never pair; dropping it here keeps it out of
@@ -246,6 +509,16 @@ fn phase1_candidate_filtering(snapshots: &[ModSnapshot]) -> Vec<(usize, usize)> 
             // Ascending order: once the window closes it stays closed.
             if snapshots[right].files.len() - left_count > w::CANDIDATE_FILE_COUNT_WINDOW {
                 break;
+            }
+            if exact_cluster_by_index
+                .get(left)
+                .copied()
+                .flatten()
+                .is_some_and(|cluster| {
+                    exact_cluster_by_index.get(right).copied().flatten() == Some(cluster)
+                })
+            {
+                continue;
             }
             let ratio = super::size_ratio(
                 snapshots[left].total_size_bytes,

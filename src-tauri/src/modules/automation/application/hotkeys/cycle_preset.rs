@@ -4,15 +4,47 @@
 //! internals — it is Tauri-state plumbing plus collection orchestration.
 
 use crate::shared::errors::AppError;
-use std::path::Path;
 
 use tauri::Manager;
 
-use crate::modules::automation::application::keyviewer::generator::StatusFields;
 use crate::modules::settings::application::config::ConfigService;
 
-use super::actions::{self, CycleDirection};
-use super::HotkeyConfig;
+use crate::shared::path_key::canonical_name_key;
+
+/// Direction for cycling through presets. Kept with the only executor that
+/// consumes it; there is no separate action-planning layer anymore.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CycleDirection {
+    Next,
+    Previous,
+}
+
+/// Select the next preset in a stable alphabetical order with wrap-around.
+/// A missing current preset starts from the first one.
+pub fn resolve_next_preset(
+    preset_names: &[String],
+    current_preset_name: Option<&str>,
+    direction: CycleDirection,
+) -> Option<String> {
+    let mut sorted = preset_names.to_vec();
+    sorted.sort_by_cached_key(|name| canonical_name_key(name));
+    if sorted.is_empty() {
+        return None;
+    }
+
+    let current_index = current_preset_name.and_then(|name| {
+        let target = canonical_name_key(name);
+        sorted
+            .iter()
+            .position(|preset| canonical_name_key(preset) == target)
+    });
+    let next_index = match (current_index, direction) {
+        (Some(index), CycleDirection::Next) => (index + 1) % sorted.len(),
+        (Some(index), CycleDirection::Previous) => index.checked_sub(1).unwrap_or(sorted.len() - 1),
+        (None, _) => 0,
+    };
+    Some(sorted[next_index].clone())
+}
 
 /// Fetch a managed state value, naming it in the error so a missing
 /// registration is diagnosable from the log line alone.
@@ -51,12 +83,15 @@ pub(super) async fn execute_cycle_preset(
     .await?;
 
     if collections.is_empty() {
-        let status = StatusFields {
-            preset_name: Some("No presets configured".to_string()),
-            ..Default::default()
-        };
-        write_runtime_status(pool_state.inner(), game_id, &status, &settings.hotkeys).await?;
-        return Ok("No presets available".to_string());
+        let sync = crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
+            pool_state.inner(),
+            &config_state,
+            game_id,
+            crate::modules::system::application::app::post_apply::OverlaySyncCause::CollectionApplied,
+        )
+        .await?
+        .ensure_success()?;
+        return Ok(format!("No presets available (overlay: {:?})", sync.reload));
     }
 
     let preset_names: Vec<String> = collections
@@ -74,7 +109,7 @@ pub(super) async fn execute_cycle_preset(
             .find(|c| c.id == id)
             .map(|c| c.name.as_str())
     });
-    let target_name = actions::resolve_next_preset(&preset_names, current_name, direction)
+    let target_name = resolve_next_preset(&preset_names, current_name, direction)
         .ok_or_else(|| AppError::Internal("No presets available".to_string()))?;
 
     let target = collections
@@ -104,19 +139,21 @@ pub(super) async fn execute_cycle_preset(
         .acquire_mutation_lease(game_id, op_lock.inner_lock())
         .await?;
 
-    let apply_result = crate::modules::collections::application::collection::apply_collection(
-        crate::modules::collections::application::collection::ApplyCollectionRequest {
-            pool: pool_state.inner(),
-            game_id,
-            collection_id: &target.id,
-            capture_last_changes: true,
-            mods_path: game.mod_path.clone(),
-            suppressor: watcher_state.suppressor.clone(),
-            ignore_missing: true,
-            settings: settings.clone(),
-        },
-    )
-    .await?;
+    let apply_result =
+        crate::modules::collections::application::collection::apply_collection_durable(
+            crate::modules::collections::application::collection::ApplyCollectionRequest {
+                pool: pool_state.inner(),
+                game_id,
+                collection_id: &target.id,
+                capture_last_changes: true,
+                mods_path: game.mod_path.clone(),
+                suppressor: watcher_state.suppressor.clone(),
+                ignore_missing: true,
+                settings: settings.clone(),
+            },
+            op_lock.inner(),
+        )
+        .await?;
 
     drop(mutation_lease);
     crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
@@ -126,42 +163,8 @@ pub(super) async fn execute_cycle_preset(
     )
     .await?;
 
-    let planner = actions::plan_cycle_preset(&target.name);
-
-    write_runtime_status(
-        pool_state.inner(),
-        game_id,
-        &planner.status,
-        &settings.hotkeys,
-    )
-    .await?;
-
-    let reload_key = super::reload::trigger_reload_fixes(&settings)?;
-
     Ok(format!(
-        "{} (changed components: {}, reload: {})",
-        planner.summary, apply_result.mods_enabled, reload_key
+        "Preset: {} (changed components: {}; overlay sync requested by the collection apply)",
+        target.name, apply_result.mods_enabled
     ))
-}
-
-async fn write_runtime_status(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    status: &StatusFields,
-    hotkey_config: &HotkeyConfig,
-) -> Result<(), AppError> {
-    let Some(mods_path) =
-        crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id).await?
-    else {
-        return Ok(());
-    };
-
-    let status_dir = Path::new(&mods_path).join(".emmm_data").join("status");
-    crate::modules::automation::application::keyviewer::generator::write_status_file(
-        &status_dir,
-        status,
-        hotkey_config,
-    )?;
-
-    Ok(())
 }

@@ -1,128 +1,46 @@
-//! Integration tests for HotkeyManager — key parsing, registration maps, and dispatch logic.
-//! NOTE: These tests do NOT test plugin registration (requires app runtime).
+//! Unit tests for parsing and registration boundaries. Plugin registration is
+//! intentionally covered by the Tauri integration layer, not this module.
 
-use crate::modules::automation::application::hotkeys::manager::{parse_hotkey, HotkeyManager};
-use crate::modules::automation::application::hotkeys::{HotkeyAction, HotkeyConfig};
-
-// ─── Key String Parsing ──────────────────────────────────────────────────────
+use crate::modules::automation::application::hotkeys::manager::{
+    parse_hotkey, validate_binding_configuration, HotkeyManager,
+};
+use crate::modules::automation::application::hotkeys::HotkeyConfig;
 
 #[test]
-fn parse_single_key() {
-    let hk = parse_hotkey("F5").expect("F5 should parse");
-    assert_eq!(hk, "f5");
+fn parses_single_key() {
+    assert_eq!(parse_hotkey("F5").unwrap(), "f5");
 }
 
 #[test]
-fn parse_modifier_key() {
-    let hk = parse_hotkey("Shift+F6").expect("Shift+F6 should parse");
-    assert_eq!(hk, "shift+f6");
+fn parses_modifier_key_case_insensitively() {
+    assert_eq!(parse_hotkey("Shift+F6").unwrap(), "shift+f6");
+    assert_eq!(parse_hotkey("SHIFT+f6").unwrap(), "shift+f6");
 }
 
 #[test]
-fn parse_case_insensitive() {
-    let a = parse_hotkey("shift+F6").expect("lowercase shift");
-    let b = parse_hotkey("SHIFT+F6").expect("uppercase SHIFT");
-    assert_eq!(a, b);
-}
-
-#[test]
-fn parse_invalid_returns_error() {
-    let result = parse_hotkey("");
-    assert!(result.is_err());
-}
-
-#[test]
-fn parse_every_default_binding() {
-    let config = HotkeyConfig::default();
-    let keys = [
-        &config.next_preset,
-        &config.prev_preset,
-        &config.next_variant,
-        &config.prev_variant,
-        &config.toggle_overlay,
-    ];
-    for key in keys {
-        parse_hotkey(key).unwrap_or_else(|e| panic!("Failed to parse default key '{key}': {e}"));
+fn rejects_invalid_or_injectable_os_hotkeys() {
+    for invalid in ["", "F7\n[Constants]", "F7;run = Evil", "F7=1", "Ctrl+F6++"] {
+        assert!(parse_hotkey(invalid).is_err(), "must reject '{invalid}'");
     }
 }
 
-// ─── Dispatch Logic ──────────────────────────────────────────────────────────
-
 #[test]
-fn dispatch_unknown_id_returns_none() {
-    let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config);
-
-    let result = manager.lookup_action("f5");
-    assert!(result.is_none());
+fn rejects_3dmigoto_negative_modifiers_for_os_registration() {
+    assert!(parse_hotkey("NO_CTRL+F5").is_err());
 }
 
 #[test]
-fn dispatch_when_disabled_returns_none() {
+fn permits_a_negative_modifier_on_the_3dmigoto_only_overlay_binding() {
     let config = HotkeyConfig {
-        enabled: false,
+        toggle_overlay: "NO_CTRL+F7".to_string(),
         ..Default::default()
     };
-    let manager = HotkeyManager::new(&config);
-
-    // Any action should return None when disabled.
-    let result = manager.dispatch_action(HotkeyAction::NextPreset, None, &[]);
-    assert!(result.is_none());
+    assert!(validate_binding_configuration(&config).is_ok());
 }
 
 #[test]
-fn lookup_action_returns_none_without_runtime_registration() {
-    let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config);
-
-    // Shortcuts are populated only after runtime plugin registration.
+fn manager_has_no_actions_until_tauri_registers_shortcuts() {
+    let manager = HotkeyManager::new(&HotkeyConfig::default());
     assert_eq!(manager.lookup_action("f5"), None);
     assert_eq!(manager.lookup_action("shift+f6"), None);
-}
-
-#[test]
-fn dispatch_preset_cycle_with_presets() {
-    let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config);
-
-    manager.set_enabled_for_test(true);
-
-    let presets = vec!["Alpha".to_string(), "Beta".to_string(), "Gamma".to_string()];
-
-    let result = manager.dispatch_action(HotkeyAction::NextPreset, Some("Alpha"), &presets);
-
-    assert!(result.is_some());
-}
-
-#[test]
-fn dispatch_preset_cycle_no_presets_returns_noop() {
-    let config = HotkeyConfig::default();
-    let manager = HotkeyManager::new(&config);
-
-    manager.set_enabled_for_test(true);
-
-    let result = manager.dispatch_action(HotkeyAction::NextPreset, None, &[]);
-
-    assert!(result.is_some());
-    let res = result.unwrap();
-    assert!(res.summary.contains("noop") || res.summary.contains("No presets"));
-}
-
-#[test]
-fn try_acquire_and_release_cycle() {
-    let config = HotkeyConfig {
-        cooldown_ms: 0, // No cooldown for testing
-        ..Default::default()
-    };
-    let manager = HotkeyManager::new(&config);
-
-    // First acquire should succeed
-    assert!(manager.try_acquire());
-    // Second should fail (locked)
-    assert!(!manager.try_acquire());
-    // Release
-    manager.release();
-    // Third should succeed again
-    assert!(manager.try_acquire());
-    manager.release();
 }

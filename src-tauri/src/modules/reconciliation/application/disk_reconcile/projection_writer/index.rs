@@ -39,6 +39,7 @@ pub(super) struct DbIndex {
     objects_by_filesystem_identity: HashMap<String, Option<usize>>,
     pub(super) mods: Vec<DbModRow>,
     mods_by_key: HashMap<String, usize>,
+    mods_by_id: HashMap<String, usize>,
     mods_by_path_lower: HashMap<String, usize>,
     mods_by_runtime_key: HashMap<String, usize>,
     mods_by_filesystem_identity: HashMap<String, Option<usize>>,
@@ -71,11 +72,13 @@ impl DbIndex {
         }
 
         let mut mods_by_key = HashMap::with_capacity(mods.len());
+        let mut mods_by_id = HashMap::with_capacity(mods.len());
         let mut mods_by_path_lower = HashMap::with_capacity(mods.len());
         let mut mods_by_runtime_key = HashMap::with_capacity(mods.len());
         let mut mods_by_filesystem_identity = HashMap::with_capacity(mods.len());
         for (position, row) in mods.iter().enumerate() {
             mods_by_key.insert(row.folder_path_key.clone(), position);
+            mods_by_id.insert(row.id.clone(), position);
             mods_by_path_lower.insert(row.folder_path.to_ascii_lowercase(), position);
             mods_by_runtime_key
                 .entry(runtime_logical_path_key(&row.folder_path))
@@ -96,6 +99,7 @@ impl DbIndex {
             objects_by_filesystem_identity,
             mods,
             mods_by_key,
+            mods_by_id,
             mods_by_path_lower,
             mods_by_runtime_key,
             mods_by_filesystem_identity,
@@ -138,7 +142,9 @@ impl DbIndex {
     }
 
     pub(super) fn mod_by_id(&self, id: &str) -> Option<&DbModRow> {
-        self.mods.iter().find(|row| row.id == id)
+        self.mods_by_id
+            .get(id)
+            .map(|&position| &self.mods[position])
     }
 
     pub(super) fn mod_by_path_lower(&self, folder_path_lower: &str) -> Option<&DbModRow> {

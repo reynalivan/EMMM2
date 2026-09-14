@@ -30,12 +30,15 @@ import {
   openWorkspaceFileInUseDialog,
 } from '../state/workspaceDialogs';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
+import { modHealthKeys } from '@/entities/mod';
+import { identityPathKey } from '@/shared/lib/pathKey';
 
 export type WorkspaceSwitchSurface = 'folder_grid' | 'preview' | 'object_list' | 'collections';
 
 export type WorkspaceSwitchFallbackClass = 'folderSwitch' | 'objectSwitch';
 export interface WorkspaceSwitchEffectsOptions {
   publish?: boolean;
+  gameId?: string;
 }
 
 export interface WorkspaceRenameConflictPayload {
@@ -164,6 +167,26 @@ export async function applyWorkspaceSwitchEffects(
     queryClient,
     buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
   );
+
+  if (options.gameId) {
+    const seen = new Set<string>();
+    const affectedPaths = result.changed_folder_paths.filter((path) => {
+      const key = identityPathKey(path) ?? path;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+    await Promise.all(
+      affectedPaths.map((path) =>
+        queryClient.invalidateQueries({
+          queryKey: modHealthKeys.report(options.gameId!, path),
+          refetchType: 'active',
+        }),
+      ),
+    );
+  }
 
   if (options.publish !== false) {
     await publishRuntimeDescriptor(

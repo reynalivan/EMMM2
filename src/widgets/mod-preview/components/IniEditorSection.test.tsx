@@ -99,6 +99,15 @@ describe('IniEditorSection', () => {
     expect(screen.queryByText('Revert')).not.toBeInTheDocument();
   });
 
+  it('keeps sticky editor actions below the measured preview header', () => {
+    render(<IniEditorSection {...defaultProps} editorDirty />);
+
+    expect(screen.getByText('INI Editor').parentElement).toHaveClass(
+      'sticky',
+      'top-[calc(var(--workspace-topbar-height)+var(--preview-header-height))]',
+    );
+  });
+
   it('opens an INI through the validated Rust command', async () => {
     render(<IniEditorSection {...defaultProps} />);
 

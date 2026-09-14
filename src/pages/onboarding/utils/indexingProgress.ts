@@ -121,13 +121,28 @@ function humanizeFolderName(path: string | null): string | null {
   return segment.replace(/^#+/, '') || segment;
 }
 
-export function estimatedRemainingMs(progress: IndexingProgress): number | null {
-  if (progress.completedDurationsMs.length === 0 || progress.completed >= progress.total) {
+export function estimatedRemainingMs(
+  progress: IndexingProgress,
+  activeScanRemainingMs: number | null | undefined = null,
+): number | null {
+  if (progress.completed >= progress.total) {
     return null;
   }
-  const average =
-    progress.completedDurationsMs.reduce((total, duration) => total + duration, 0) /
-    progress.completedDurationsMs.length;
+
+  const average = progress.completedDurationsMs.length
+    ? progress.completedDurationsMs.reduce((total, duration) => total + duration, 0) /
+      progress.completedDurationsMs.length
+    : null;
+
+  if (activeScanRemainingMs !== null && activeScanRemainingMs !== undefined) {
+    const laterGames = Math.max(0, progress.total - progress.completed - 1);
+    return Math.round(activeScanRemainingMs + (average ?? 0) * laterGames);
+  }
+
+  if (average === null) {
+    return null;
+  }
+
   return Math.round(average * (progress.total - progress.completed));
 }
 

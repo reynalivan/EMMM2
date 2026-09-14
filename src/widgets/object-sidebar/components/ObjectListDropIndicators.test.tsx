@@ -8,7 +8,7 @@ vi.mock('@/shared/ui/liquid', () => ({
 }));
 
 describe('ObjectListDropIndicators', () => {
-  it('floats the object count above the list without reserving footer space', () => {
+  it('keeps the object count in layout so it cannot cover the final row', () => {
     render(
       <ObjectListDropIndicators
         isDragging={false}
@@ -24,10 +24,7 @@ describe('ObjectListDropIndicators', () => {
     );
 
     expect(screen.getByText('6 objects')).toBeInTheDocument();
-    expect(screen.getByTestId('object-list-count-overlay')).toHaveClass(
-      'absolute',
-      'bottom-0',
-      'pointer-events-none',
-    );
+    expect(screen.getByTestId('object-list-count-overlay')).toHaveClass('relative', 'shrink-0');
+    expect(screen.getByTestId('object-list-count-overlay')).not.toHaveClass('absolute');
   });
 });

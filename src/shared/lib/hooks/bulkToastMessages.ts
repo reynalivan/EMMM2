@@ -103,3 +103,15 @@ export function formatBulkFailureMessage(
     reason,
   });
 }
+
+/** Terminal feedback for a cooperative cancellation, including the exact tail. */
+export function formatBulkCancelledMessage(result: {
+  processed_count: number;
+  unprocessed_count: number;
+}): string {
+  const total = result.processed_count + result.unprocessed_count;
+  return i18n.t('common:bulk_progress.cancelled_summary', {
+    processed: result.processed_count,
+    total,
+  });
+}

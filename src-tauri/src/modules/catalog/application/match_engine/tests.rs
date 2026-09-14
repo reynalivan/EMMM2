@@ -2,11 +2,12 @@ use super::destination::{
     resolve_all_destination_candidates, resolve_destination_candidates, DestinationContext,
     ExistingDestination,
 };
-use super::inspection::{inspect_source, InspectionRequest};
+use super::inspection::{inspect_source, inspect_source_with_content, InspectionRequest};
 use super::types::CanonicalIdentity;
 use crate::modules::ingestion::application::import_batch::types::{
     DestinationKind, StableCategory,
 };
+use crate::modules::workspace::application::scanner::core::walker::scan_folder_content;
 
 #[test]
 fn inspection_strips_disabled_and_limits_content_to_three_levels() {
@@ -47,6 +48,44 @@ fn inspection_strips_disabled_and_limits_content_to_three_levels() {
         .iter()
         .any(|path| path.ends_with("ignored.ini")));
     assert_eq!(inspected.fingerprint.file_count, 2);
+}
+
+#[test]
+fn inspection_snapshot_preserves_matcher_content_from_the_same_disk_walk() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("Raiden");
+    std::fs::create_dir_all(source.join("data/inner")).unwrap();
+    std::fs::write(source.join("mod.ini"), "[TextureOverrideRaiden]").unwrap();
+    std::fs::write(source.join("data/mesh.buf"), [1_u8; 4]).unwrap();
+    std::fs::write(source.join("data/inner/readme.txt"), "notes").unwrap();
+
+    let request = InspectionRequest {
+        source_path: source.clone(),
+        planned_name: Some("Raiden".to_string()),
+        match_extensions: vec!["ini".to_string()],
+    };
+    let snapshot = inspect_source_with_content(&request).unwrap();
+    let legacy_content = scan_folder_content(&source, 3);
+
+    let snapshot_files = snapshot
+        .content
+        .files
+        .iter()
+        .map(|file| (&file.path, &file.name, &file.extension))
+        .collect::<Vec<_>>();
+    let legacy_files = legacy_content
+        .files
+        .iter()
+        .map(|file| (&file.path, &file.name, &file.extension))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        snapshot.content.subfolder_names,
+        legacy_content.subfolder_names
+    );
+    assert_eq!(snapshot_files, legacy_files);
+    assert_eq!(snapshot.content.ini_files, legacy_content.ini_files);
+    assert_eq!(snapshot.inspection.fingerprint.file_count, 3);
 }
 
 #[test]

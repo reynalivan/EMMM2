@@ -103,7 +103,12 @@ async fn bulk_pin_mirrors_the_flag_to_database_and_info_json() {
 #[tokio::test]
 async fn favorite_file_is_rolled_back_when_database_update_fails() {
     let (pool, _temp, mod_path) = seeded_mod().await;
-    info_json::create_default_info_json(Path::new(&mod_path)).unwrap();
+    let original = br#"{
+  "actual_name": "Blue",
+  "author": "Original Author",
+  "metadata": { "source": "fixture" }
+}"#;
+    std::fs::write(Path::new(&mod_path).join("info.json"), original).unwrap();
     sqlx::query(
         "CREATE TRIGGER fail_favorite BEFORE UPDATE OF is_favorite ON mods BEGIN SELECT RAISE(ABORT, 'injected favorite failure'); END",
     )
@@ -114,11 +119,10 @@ async fn favorite_file_is_rolled_back_when_database_update_fails() {
     let result = bulk_toggle_favorite(&pool, "g1".to_string(), vec![mod_path.clone()], true).await;
 
     assert!(result.is_err());
-    assert!(
-        !info_json::read_info_json(Path::new(&mod_path))
-            .unwrap()
-            .unwrap()
-            .is_favorite
+    assert_eq!(
+        std::fs::read(Path::new(&mod_path).join("info.json")).unwrap(),
+        original,
+        "database rollback restores the original bytes, not a reserialized approximation"
     );
 }
 

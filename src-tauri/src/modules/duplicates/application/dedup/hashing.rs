@@ -53,7 +53,9 @@ fn hash_snapshot_with_identity_mode(
             .insert(file.rel_path.clone(), identity_hash.clone());
 
         if is_texture {
-            let sample_hash = if file.size_bytes > PARTIAL_HASH_THRESHOLD_BYTES {
+            let sample_hash = if use_sample {
+                identity_hash.clone()
+            } else if file.size_bytes > PARTIAL_HASH_THRESHOLD_BYTES {
                 partial_blake3_hash(&file.abs_path).unwrap_or_else(|_| identity_hash.clone())
             } else {
                 identity_hash.clone()

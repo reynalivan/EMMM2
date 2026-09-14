@@ -413,12 +413,52 @@ pub(crate) async fn build_match_suggestions(
     master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
     ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
 ) -> Result<MatchSuggestions, AppError> {
-    let mut canonical = crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects_for_category(
+    let source_path = Path::new(&inspection.source_path);
+    let content =
+        crate::modules::workspace::application::scanner::core::walker::scan_folder_content(
+            source_path,
+            3,
+        );
+    let mut signal_cache =
+        crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache::new(
+        );
+    build_match_suggestions_with_prepared_content(
+        db,
+        item,
+        batch,
+        inspection,
+        category,
+        classification_metadata,
+        content_kind,
+        master_db,
+        ini_filters,
+        &content,
+        &mut signal_cache,
+    )
+    .await
+}
+
+pub(crate) async fn build_match_suggestions_with_prepared_content(
+    db: &SqlitePool,
+    item: &ImportItem,
+    batch: &ImportBatch,
+    inspection: &crate::modules::catalog::application::match_engine::types::SourceInspection,
+    category: StableCategory,
+    classification_metadata: &serde_json::Value,
+    content_kind: super::types::ImportContentKind,
+    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+    ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
+    content: &crate::modules::workspace::application::scanner::core::walker::FolderContent,
+    signal_cache: &mut crate::modules::matching::application::deep_matcher::state::signal_cache::SignalCache,
+) -> Result<MatchSuggestions, AppError> {
+    let mut canonical = crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects_for_category_with_prepared_content(
         Path::new(&inspection.source_path),
         &item.planned_name,
         category,
         master_db,
         ini_filters,
+        content,
+        signal_cache,
     );
     rerank_with_metadata(&mut canonical, classification_metadata, master_db);
     let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)

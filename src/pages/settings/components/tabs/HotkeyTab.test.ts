@@ -1,37 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TFunction } from 'i18next';
 import { createElement } from 'react';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { HotkeyConfig } from '@/entities/settings';
+import type { KeyViewerRuntimeDiagnostics } from '@/shared/api/tauri/bindings';
 import { detectConflicts } from '../../utils/hotkeyConflicts';
 import { render, screen } from '../../../../tests/testing/test-utils';
 import HotkeyTab from './HotkeyTab';
 
 const mockSaveSettingsAsync = vi.fn();
 const mockGetReloadKey = vi.fn();
+let activeGameId: string | null = null;
+
+const inactiveSettings = {
+  active_game_id: null,
+  hotkeys: {
+    enabled: true,
+    safe_mode: 'F5',
+    next_preset: 'Ctrl+F6',
+    prev_preset: 'Shift+F6',
+    toggle_overlay: 'F7',
+  },
+  keyviewer: { enabled: true },
+};
+
+const activeSettings = { ...inactiveSettings, active_game_id: 'gimi' };
 
 vi.mock('@/entities/settings', () => ({
   useSettings: () => ({
-    settings: {
-      active_game_id: null,
-      hotkeys: {
-        enabled: true,
-        cooldown_ms: 500,
-        next_preset: 'Ctrl+F6',
-        prev_preset: 'Shift+F6',
-        toggle_overlay: 'F7',
-        next_variant: 'Ctrl+F8',
-        prev_variant: 'Shift+F8',
-      },
-      keyviewer: { enabled: true },
-    },
-    saveSettingsAsync: mockSaveSettingsAsync,
+    settings: activeGameId === 'gimi' ? activeSettings : inactiveSettings,
+    saveHotkeyConfiguration: mockSaveSettingsAsync,
   }),
 }));
 
 vi.mock('../../../../shared/api/tauri/bindings', () => ({
   commands: {
     getReloadKey: (...args: unknown[]) => mockGetReloadKey(...args),
-    updateHotkeyConfig: vi.fn(),
+    saveHotkeyConfiguration: vi.fn(),
   },
 }));
 
@@ -44,16 +49,15 @@ const translate = ((key: string, values?: Record<string, unknown>) =>
 
 const defaults: HotkeyConfig = {
   enabled: true,
-  cooldown_ms: 500,
+  safe_mode: 'F5',
   next_preset: 'Ctrl+F6',
   prev_preset: 'Shift+F6',
   toggle_overlay: 'F7',
-  next_variant: 'Ctrl+F8',
-  prev_variant: 'Shift+F8',
 };
 
 describe('hotkey conflict detection', () => {
   beforeEach(() => {
+    activeGameId = null;
     mockGetReloadKey.mockResolvedValue(null);
   });
 
@@ -87,5 +91,44 @@ describe('hotkey conflict detection', () => {
 
     const infrastructureTitle = screen.getByText('Runtime files');
     expect(infrastructureTitle.closest('.alert')).toBeNull();
+  });
+
+  it('shows only the four supported controls', () => {
+    render(createElement(HotkeyTab));
+
+    expect(screen.getByLabelText('Safe Mode')).toBeInTheDocument();
+    expect(screen.getByLabelText('Next preset')).toBeInTheDocument();
+    expect(screen.getByLabelText('Previous preset')).toBeInTheDocument();
+    expect(screen.getByLabelText('Toggle overlay')).toBeInTheDocument();
+    expect(screen.queryByText(/next_variant/)).toBeNull();
+    expect(screen.queryByText(/prev_variant/)).toBeNull();
+  });
+
+  it('shows concise KeyViewer diagnostics and disables cleanup without a game executable', () => {
+    activeGameId = 'gimi';
+    vi.mocked(useQuery).mockReturnValue({
+      data: {
+        last_sync_unix_ms: Date.UTC(2026, 8, 14, 8, 30),
+        publication: 'published',
+        reload: 'manual',
+        reload_binding: 'Ctrl+F10',
+        cleanup_automatic_disabled: true,
+      } satisfies KeyViewerRuntimeDiagnostics,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as UseQueryResult<KeyViewerRuntimeDiagnostics>);
+
+    render(createElement(HotkeyTab));
+
+    expect(screen.getByText('KeyViewer runtime')).toBeInTheDocument();
+    expect(screen.getByText('Published')).toBeInTheDocument();
+    expect(screen.getByText('Manual: Ctrl+F10')).toBeInTheDocument();
+    expect(screen.getByText('Disabled until a game executable is configured')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'EMMM will not remove old KeyViewer generations because it cannot verify that the game is stopped.',
+      ),
+    ).toBeInTheDocument();
   });
 });

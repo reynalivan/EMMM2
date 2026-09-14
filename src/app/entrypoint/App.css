@@ -278,6 +278,115 @@ body {
   scroll-margin-top: var(--workspace-topbar-height);
 }
 
+@keyframes workspace-context-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Dashboard reveals by the user's scan order after the page or game context
+   changes. Cards do not animate individually, so a refresh stays quiet. */
+@keyframes dashboard-section-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.3rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes workspace-overlay-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes workspace-transient-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes workspace-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateX(0.35rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes workspace-toast-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(0.35rem);
+  }
+}
+
+.workspace-context-enter {
+  animation: workspace-context-enter var(--workspace-duration-short) var(--workspace-ease-out);
+}
+
+.dashboard-entrance__scope,
+.dashboard-entrance__actions,
+.dashboard-entrance__content {
+  animation: dashboard-section-enter var(--workspace-duration-short) var(--workspace-ease-out) both;
+}
+
+.dashboard-entrance__actions {
+  animation-delay: 32ms;
+}
+
+.dashboard-entrance__content {
+  animation-delay: 64ms;
+}
+
+.workspace-transient-enter {
+  animation: workspace-transient-enter var(--workspace-duration-short) var(--workspace-ease-out);
+}
+
+.workspace-toast-enter {
+  animation: workspace-toast-enter var(--workspace-duration-short) var(--workspace-ease-out);
+}
+
+.workspace-toast-exit {
+  animation: workspace-toast-exit var(--workspace-duration-short) ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-context-enter,
+  .dashboard-entrance__scope,
+  .dashboard-entrance__actions,
+  .dashboard-entrance__content {
+    animation: none;
+  }
+}
+
 .liquid-surface--control,
 .liquid-surface--indicator,
 .liquid-surface--overlay {
@@ -317,20 +426,51 @@ dialog.modal {
   background: transparent;
 }
 
+/* Modal dialogs do not all use showModal(), so the dialog host itself owns a
+   full-screen scrim as a fallback. This keeps every dialog above workspace
+   chrome while preserving the native backdrop for top-layer dialogs. */
+dialog.modal[open] {
+  background-color: color-mix(in srgb, var(--color-neutral) 76%, transparent) !important;
+  backdrop-filter: blur(5px) saturate(0.92);
+  -webkit-backdrop-filter: blur(5px) saturate(0.92);
+}
+
 dialog.modal::backdrop,
 .modal.modal-open > .modal-backdrop,
 .modal[open] > .modal-backdrop {
-  background-color: color-mix(in srgb, var(--color-neutral) 68%, transparent);
-  backdrop-filter: blur(3px) saturate(0.94);
-  -webkit-backdrop-filter: blur(3px) saturate(0.94);
+  background-color: color-mix(in srgb, var(--color-neutral) 76%, transparent);
+  backdrop-filter: blur(5px) saturate(0.92);
+  -webkit-backdrop-filter: blur(5px) saturate(0.92);
 }
 
 .modal > .modal-box {
-  background-color: color-mix(in srgb, var(--color-base-100) 64%, transparent) !important;
-  backdrop-filter: blur(26px) saturate(1.08);
-  -webkit-backdrop-filter: blur(26px) saturate(1.08);
-  border-color: color-mix(in srgb, var(--color-base-content) 12%, transparent) !important;
-  box-shadow: 0 20px 48px color-mix(in srgb, var(--color-base-300) 56%, transparent);
+  background-color: color-mix(in srgb, var(--color-base-100) 86%, transparent) !important;
+  backdrop-filter: blur(22px) saturate(1.04);
+  -webkit-backdrop-filter: blur(22px) saturate(1.04);
+  border-color: color-mix(in srgb, var(--color-base-content) 16%, transparent) !important;
+  box-shadow: 0 20px 48px color-mix(in srgb, var(--color-base-300) 68%, transparent);
+  animation: workspace-overlay-enter var(--workspace-duration-short) var(--workspace-ease-out);
+}
+
+.liquid-surface--overlay,
+.app-menu-overlay {
+  animation: workspace-overlay-enter var(--workspace-duration-short) var(--workspace-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse,
+  .animate-ping,
+  .animate-bounce,
+  .workspace-overlay-enter,
+  .workspace-transient-enter,
+  .workspace-toast-enter,
+  .workspace-toast-exit,
+  .liquid-surface--overlay,
+  .app-menu-overlay,
+  .modal > .modal-box {
+    animation: none !important;
+  }
 }
 
 /* The object list has dense text directly behind its anchored menu. Give that
@@ -353,6 +493,11 @@ dialog.modal::backdrop,
 .folder-grid-container {
   --folder-grid-chrome-height: calc(var(--workspace-topbar-height) + 3.5rem);
   --folder-grid-content-gap: 0.75rem;
+  --folder-grid-bottom-inset: 5rem;
+}
+
+.preview-panel {
+  --preview-header-height: 4rem;
 }
 
 /* The grid content intentionally scrolls under the shell and its action bar.
@@ -391,7 +536,14 @@ dialog.modal::backdrop,
   transition:
     background-color var(--workspace-duration-short) var(--workspace-ease-out),
     border-color var(--workspace-duration-short) var(--workspace-ease-out),
+    color var(--workspace-duration-short) var(--workspace-ease-out),
+    opacity var(--workspace-duration-short) var(--workspace-ease-out),
     transform var(--workspace-duration-short) var(--workspace-ease-out);
+}
+
+.workspace-interactive:active,
+.btn:not(:disabled):active {
+  transform: translateY(1px);
 }
 
 /* Bulk selection remains available in constrained panes: keep selection context
@@ -491,7 +643,7 @@ dialog.modal::backdrop,
 }
 
 @media (hover: hover) {
-  .workspace-interactive:hover {
+  .workspace-interactive:hover:not(:active) {
     transform: translateY(-1px);
   }
 }
@@ -502,6 +654,11 @@ dialog.modal::backdrop,
   }
 
   .workspace-interactive:hover {
+    transform: none;
+  }
+
+  .workspace-interactive:active,
+  .btn:not(:disabled):active {
     transform: none;
   }
 }
@@ -574,6 +731,16 @@ html {
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   background-color: color-mix(in srgb, var(--color-base-content) 40%, transparent);
+}
+
+/* Browser tabs may scroll sideways when many pages are open. Keep that affordance
+   without reserving a vertical scrollbar track inside the compact chrome. */
+.browser-tab-strip {
+  scrollbar-width: none;
+}
+
+.browser-tab-strip::-webkit-scrollbar {
+  display: none;
 }
 
 /* Entrance animations.

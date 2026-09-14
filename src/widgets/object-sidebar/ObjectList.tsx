@@ -15,8 +15,12 @@ import { useObjectListBulkToolbarProps } from './hooks/useObjectListBulkToolbarP
 import { useObjectListKeyboard } from './hooks/useObjectListKeyboard';
 import ObjectListPrimaryModals from './modals/ObjectListPrimaryModals';
 import ObjectListStates from './components/ObjectListStates';
+import { commands } from '@/shared/api/tauri/bindings';
+import { toast } from '@/shared/ui/toast';
+import { useTranslation } from 'react-i18next';
 
 export default function ObjectList() {
+  const { t } = useTranslation('objects');
   const { state, filters, nav, virtualizer, modals, handlers, bulkSelect } = useObjectListLogic();
 
   const {
@@ -92,6 +96,23 @@ export default function ObjectList() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [autoSetupOpen, setAutoSetupOpen] = useState(false);
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
+  const [isCatalogChecking, setIsCatalogChecking] = useState(false);
+  const selectedObject = useMemo(
+    () => objects.find((object) => object.folder_path === selectedObjectFolderPath) ?? null,
+    [objects, selectedObjectFolderPath],
+  );
+  const checkSelectedObjectCatalog = async () => {
+    if (!activeGameId || !selectedObject) return;
+    setIsCatalogChecking(true);
+    try {
+      await commands.retryObjectIdentitySuggestions(activeGameId, [selectedObject.folder_path]);
+      toast.info(t('toolbar.catalog_check_started'));
+    } catch {
+      toast.error(t('toolbar.catalog_check_failed'));
+    } finally {
+      setIsCatalogChecking(false);
+    }
+  };
 
   const toolbarRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -206,6 +227,8 @@ export default function ObjectList() {
           isSyncing={isSyncing}
           onSync={handleSync}
           onCreateNew={() => setCreateModalOpen(true)}
+          onCheckCatalog={selectedObject ? () => void checkSelectedObjectCatalog() : undefined}
+          isCatalogChecking={isCatalogChecking}
           showFilterPanel={showFilterPanel}
           categoryFilters={categoryFilters}
           activeFilters={activeFilters}

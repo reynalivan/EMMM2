@@ -1,4 +1,4 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '@/entities/game-object';
 import { detailsKeys } from '@/entities/mod';
@@ -6,11 +6,6 @@ import { commands, sparse } from '../../../shared/api/tauri/bindings';
 import { useAppStore } from '@/app/store';
 import { publishQueryInvalidations, publishQueryScopes } from '@/shared/lib/queryRefresh';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
-
-export interface IniFileEntry {
-  filename: string;
-  path: string;
-}
 
 export type IniReadMode = 'Structured' | 'RawFallback';
 
@@ -104,30 +99,15 @@ export function useModInfo(folderPath?: string | null) {
   });
 }
 
-export function useModIniFiles(folderPath?: string | null) {
+export function useModIniDocuments(folderPath?: string | null) {
   const normalizedPath = normalizeFolderPath(folderPath);
   const gameId = useActiveGameId();
 
   return useQuery({
-    queryKey: detailsKeys.iniFiles(normalizedPath ?? ''),
-    queryFn: () => commands.listModIniFiles(gameId, normalizedPath ?? ''),
+    queryKey: detailsKeys.iniDocuments(normalizedPath ?? ''),
+    queryFn: () => commands.readModIniDocuments(gameId, normalizedPath ?? ''),
     enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
-  });
-}
-
-export function useAllModIniDocuments(folderPath?: string | null, files?: IniFileEntry[]) {
-  const normalizedPath = normalizeFolderPath(folderPath);
-  const safeFiles = files ?? [];
-  const gameId = useActiveGameId();
-
-  return useQueries({
-    queries: safeFiles.map((file) => ({
-      queryKey: detailsKeys.iniDocument(normalizedPath ?? '', file.filename),
-      queryFn: () => commands.readModIni(gameId, normalizedPath ?? '', file.filename),
-      enabled: !!normalizedPath && !!gameId,
-      staleTime: 10_000,
-    })),
   });
 }
 
@@ -157,11 +137,7 @@ export function useWriteModIni() {
         input.lineUpdates,
       ),
     onSuccess: (result, input) => {
-      invalidate([
-        detailsKeys.iniDocument(input.folderPath, input.fileName),
-        detailsKeys.iniFiles(input.folderPath),
-        ['conflicts', gameId],
-      ]);
+      invalidate([detailsKeys.iniDocuments(input.folderPath), ['conflicts', gameId]]);
       publishIniRuntimeRefresh(queryClient);
       notifyCommittedMutationSyncWarning(result);
     },

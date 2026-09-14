@@ -137,12 +137,11 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
           : {}),
       });
       startupInitialized = true;
-
       if (activeGameId) {
         await Promise.all([
           queryClient.prefetchQuery({
-            queryKey: collectionRuntimeKeys.state(activeGameId),
-            queryFn: () => commands.getCollectionRuntimeState(activeGameId),
+            queryKey: collectionRuntimeKeys.descriptor(activeGameId),
+            queryFn: () => commands.getCollectionRuntimeDescriptor(activeGameId),
           }),
           queryClient.prefetchQuery({
             queryKey: collectionKeys.list(activeGameId),
@@ -188,8 +187,8 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       if (id) {
         await Promise.all([
           queryClient.prefetchQuery({
-            queryKey: collectionRuntimeKeys.state(id),
-            queryFn: () => commands.getCollectionRuntimeState(id as string),
+            queryKey: collectionRuntimeKeys.descriptor(id),
+            queryFn: () => commands.getCollectionRuntimeDescriptor(id as string),
           }),
           queryClient.prefetchQuery({
             queryKey: collectionKeys.list(id),

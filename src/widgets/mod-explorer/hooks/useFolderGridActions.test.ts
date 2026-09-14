@@ -23,9 +23,6 @@ vi.mock('@/features/mod-runtime', () => ({
 
 vi.mock('@/features/workspace-runtime', () => ({
   applyRuntimeMutationResult,
-  closeWorkspaceDialog: vi.fn(),
-  openWorkspaceEnableParentDialog: vi.fn(),
-  useWorkspaceRuntimeSelector: () => ({ kind: 'none' }),
   useWorkspaceSwitchActions: () => ({
     isPending: false,
     isNodePending: false,
@@ -58,9 +55,7 @@ describe('useFolderGridActions create folder', () => {
         launch_args: null,
       },
       explorerSubPath: 'Objects/Diluc',
-      ancestorDisabledBy: null,
       ancestorDisabledPath: null,
-      rawFolders: [],
       objects: [],
       clearGridSelection,
       sourceAvailable: true,

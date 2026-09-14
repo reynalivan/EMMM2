@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Gamepad2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GAME_OPTIONS, useActiveGame, type GameConfig } from '@/entities/game';
@@ -12,6 +13,7 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
   const { t } = useTranslation('layout');
   const { activeGame, games = [], isLoading } = useActiveGame();
   const { switchGame } = useGameSwitch();
+  const [isSwitching, setIsSwitching] = useState(false);
 
   // Derive display info from active game
   const activeLabel = activeGame?.name ?? t('game_selector.select_game');
@@ -21,7 +23,7 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
       .split(' ')
       .map((w: string) => w[0])
       .join('') ?? '-';
-  if (isLoading) {
+  if (isLoading || isSwitching) {
     if (compact) {
       return (
         <button
@@ -48,6 +50,17 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
       </div>
     );
   }
+
+  const handleSwitchGame = async (gameId: string) => {
+    if (isSwitching || gameId === activeGame?.id) return;
+
+    setIsSwitching(true);
+    try {
+      await switchGame(gameId);
+    } finally {
+      setIsSwitching(false);
+    }
+  };
 
   if (games.length === 0) {
     if (compact) {
@@ -120,7 +133,8 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
             return (
               <li key={game.id}>
                 <button
-                  onClick={() => switchGame(game.id)}
+                  onClick={() => void handleSwitchGame(game.id)}
+                  disabled={isSwitching}
                   className={`hover:bg-base-content/10 ${
                     isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
                   }`}

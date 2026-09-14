@@ -1,4 +1,12 @@
-import { Search, ChevronLeft, ArrowUpDown, FolderPlus, LayoutGrid, List } from 'lucide-react';
+import {
+  Search,
+  ChevronLeft,
+  ArrowUpDown,
+  FolderPlus,
+  LayoutGrid,
+  List,
+  LoaderCircle,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SortField, SortOrder } from '@/entities/mod';
@@ -48,6 +56,7 @@ export interface FolderGridToolbarProps {
   setExplorerSearch: (query: string) => void;
   canCreateFolder: boolean;
   onCreateFolder: () => void;
+  isRefreshing?: boolean;
 }
 
 export default function FolderGridToolbar({
@@ -68,6 +77,7 @@ export default function FolderGridToolbar({
   setExplorerSearch,
   canCreateFolder,
   onCreateFolder,
+  isRefreshing = false,
 }: FolderGridToolbarProps) {
   const { t } = useTranslation(['grid']);
   const [isSearchActive, setIsSearchActive] = useState(false);
@@ -136,6 +146,15 @@ export default function FolderGridToolbar({
             onGoHome={handleGoHome}
             isRootHidden
           />
+          {isRefreshing && (
+            <span className="flex shrink-0" role="status" aria-label={t('status.loading')}>
+              <LoaderCircle
+                size={14}
+                className="animate-spin text-base-content/45 motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            </span>
+          )}
         </div>
 
         <div

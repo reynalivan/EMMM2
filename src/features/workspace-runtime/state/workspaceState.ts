@@ -1,8 +1,13 @@
 import type { ModFolder } from '@/entities/game-object';
 import type { DuplicateInfo } from '@/entities/workspace';
-import type { WorkspaceExplorerNode, WorkspaceObjectNode } from '@/entities/workspace';
+import type {
+  WorkspaceObjectNode,
+  WorkspaceParentEnableRequirement,
+  WorkspaceSwitchInput,
+} from '@/entities/workspace';
 
 export type WorkspaceMobilePane = 'sidebar' | 'grid' | 'details';
+export type WorkspaceDuplicateTarget = Pick<ModFolder, 'id' | 'path' | 'name'>;
 
 export interface WorkspaceFileInUseDialogData {
   path: string;
@@ -21,13 +26,17 @@ export type WorkspaceDialogState =
   | { kind: 'modRename'; folder: ModFolder }
   | { kind: 'modDelete'; folder: ModFolder }
   | { kind: 'modActiveContext'; folder: ModFolder; isProcessing: boolean }
-  | { kind: 'modDuplicateWarning'; folder: ModFolder; duplicates: DuplicateInfo[] }
+  | {
+      kind: 'modDuplicateWarning';
+      folder: WorkspaceDuplicateTarget;
+      duplicates: DuplicateInfo[];
+      enableDisabledAncestors: boolean;
+    }
   | {
       kind: 'folderEnableParent';
-      ancestorName: string;
-      ancestorPath: string;
-      willActivate: WorkspaceExplorerNode[];
-      stayDisabled: WorkspaceExplorerNode[];
+      folder: WorkspaceDuplicateTarget;
+      requirement: WorkspaceParentEnableRequirement;
+      resumeInput: WorkspaceSwitchInput;
     }
   | { kind: 'objectEdit'; object: WorkspaceObjectNode }
   | { kind: 'objectDelete'; id: string; name: string }

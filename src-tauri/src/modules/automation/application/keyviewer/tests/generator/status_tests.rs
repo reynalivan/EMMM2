@@ -1,69 +1,47 @@
 use super::*;
 
-// ─── Status Banner ───────────────────────────────────────────────────────────
-
 #[test]
-fn status_text_includes_preset_without_obsolete_safety_banner() {
+fn status_text_uses_the_runtime_safe_state_and_configured_bindings() {
     let fields = StatusFields {
-        preset_name: Some("Default".to_string()),
-        conflict_count: Some(0),
+        safe_mode: true,
+        preset_name: Some("Maid Pack".to_string()),
         ..Default::default()
     };
     let text = generate_status_text(
         &fields,
         &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
     );
-    assert!(text.contains("Preset: Default"));
-    assert!(!text.contains("Safe:"));
+
+    assert_eq!(
+        text,
+        "Safe: On [F5] | Preset: Maid Pack [SHIFT+F6] [CTRL+F6]"
+    );
 }
 
 #[test]
-fn status_text_with_folder() {
-    let fields = StatusFields {
-        preset_name: Some("Main".to_string()),
-        folder_name: Some("Cape".to_string()),
-        scope_name: Some("Albedo".to_string()),
-        conflict_count: Some(0),
-    };
+fn status_text_is_still_informative_without_an_active_preset() {
     let text = generate_status_text(
-        &fields,
+        &StatusFields::default(),
         &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
     );
-    assert!(text.contains("Folder: Cape"));
-    assert!(text.contains("Scope: Albedo"));
-    assert!(!text.contains("Safe:"));
-}
 
-#[test]
-fn status_text_within_limits() {
-    let fields = StatusFields {
-        preset_name: Some("Very Long Preset Name That Could Be Anything".to_string()),
-        folder_name: Some("SomeFolderName".to_string()),
-        scope_name: Some("SomeScope".to_string()),
-        conflict_count: Some(0),
-    };
-    let text = generate_status_text(
-        &fields,
-        &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
-    );
-    assert!(text.lines().count() <= 10);
-    assert!(text.len() <= 4096);
+    assert_eq!(text, "Safe: Off [F5] | Preset: None [SHIFT+F6] [CTRL+F6]");
+    assert!(!text.contains("Runtime ready"));
 }
 
 #[test]
 fn write_status_file_atomic() {
     let dir = TempDir::new().unwrap();
-    let fields = StatusFields {
-        preset_name: Some("Test".to_string()),
-        conflict_count: Some(0),
-        ..Default::default()
-    };
     let path = write_status_file(
         dir.path(),
-        &fields,
+        &StatusFields {
+            preset_name: Some("Test".to_string()),
+            ..Default::default()
+        },
         &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
     )
     .unwrap();
+
     assert!(path.exists());
     let content = std::fs::read_to_string(&path).unwrap();
     assert!(content.contains("Preset: Test"));

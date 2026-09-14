@@ -6,7 +6,8 @@
 //! - Deep signal collector with budgets (stubs for Task 8+)
 
 use crate::shared::errors::ScannerError;
-use std::fs;
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 mod signal_collector;
 mod tokenizer;
@@ -113,10 +114,14 @@ pub(crate) fn decode_ini_content_with_cap(
     path: &Path,
     max_bytes: Option<usize>,
 ) -> Result<String, ScannerError> {
-    let mut bytes = fs::read(path)?;
-    if let Some(cap) = max_bytes {
-        bytes.truncate(cap);
-    }
+    let bytes = match max_bytes {
+        Some(cap) => {
+            let mut bytes = Vec::with_capacity(cap);
+            File::open(path)?.take(cap as u64).read_to_end(&mut bytes)?;
+            bytes
+        }
+        None => std::fs::read(path)?,
+    };
 
     Ok(decode_ini_bytes(&bytes))
 }

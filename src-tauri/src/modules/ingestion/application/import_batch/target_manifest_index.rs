@@ -331,6 +331,12 @@ fn snapshot_target(root: &Path) -> Result<(TargetSnapshot, PayloadManifestMetada
 mod tests {
     use super::TargetManifestIndexState;
     use crate::modules::ingestion::application::import_batch::payload_manifest::build_payload_manifest;
+    use std::time::{Duration, Instant};
+
+    fn median_duration(mut samples: Vec<Duration>) -> Duration {
+        samples.sort_unstable();
+        samples[samples.len() / 2]
+    }
 
     #[test]
     fn refreshes_only_changed_target_manifest_entries() {
@@ -359,5 +365,107 @@ mod tests {
             .find_existing_payload_match("batch", "gimi", &mods_root, &source_manifest)
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn drops_cached_targets_from_the_previous_mods_root() {
+        let workspace = tempfile::tempdir().unwrap();
+        let previous_root = workspace.path().join("Previous/character");
+        let replacement_root = workspace.path().join("Replacement/character");
+        let previous_target = previous_root.join("Ayaka");
+        let replacement_target = replacement_root.join("Yae");
+        let source = workspace.path().join("source");
+        std::fs::create_dir_all(&previous_target).unwrap();
+        std::fs::create_dir_all(&replacement_target).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            previous_target.join("merged.ini"),
+            "[TextureOverride]\nhash = aa",
+        )
+        .unwrap();
+        std::fs::write(
+            replacement_target.join("merged.ini"),
+            "[TextureOverride]\nhash = bb",
+        )
+        .unwrap();
+        std::fs::write(source.join("merged.ini"), "[TextureOverride]\nhash = aa").unwrap();
+
+        let index = TargetManifestIndexState::new();
+        let source_manifest = build_payload_manifest(&source, None).unwrap();
+        assert!(index
+            .find_existing_payload_match("batch", "gimi", &previous_root, &source_manifest)
+            .unwrap()
+            .is_some());
+        assert!(index
+            .find_existing_payload_match("batch", "gimi", &replacement_root, &source_manifest)
+            .unwrap()
+            .is_none());
+
+        let entries = crate::shared::sync::lock(&index.entries);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries.keys().next().unwrap().mods_root_key,
+            crate::shared::path_key::canonical_path_key_for_path(&replacement_root)
+        );
+    }
+
+    #[test]
+    #[ignore = "manual P2 import target metadata baseline"]
+    fn benchmark_same_name_collision_reobserves_target_root() {
+        const TARGET_ROOTS: usize = 500;
+        const SAMPLE_COUNT: usize = 5;
+
+        let workspace = tempfile::tempdir().expect("temporary workspace should be created");
+        let mods_root = workspace.path().join("Mods/character");
+        let source = workspace.path().join("source");
+        std::fs::create_dir_all(&source).expect("source directory should be created");
+        std::fs::write(
+            source.join("merged.ini"),
+            "[TextureOverride]\nhash = source",
+        )
+        .expect("source file should be written");
+
+        let target_path = mods_root.join("Target 000");
+        for index in 0..TARGET_ROOTS {
+            let target = mods_root.join(format!("Target {index:03}"));
+            std::fs::create_dir_all(&target).expect("target directory should be created");
+            std::fs::write(
+                target.join("merged.ini"),
+                "[TextureOverride]\nhash = target",
+            )
+            .expect("target INI should be written");
+            std::fs::write(target.join("body.dds"), b"target body")
+                .expect("target asset should be written");
+        }
+
+        let index = TargetManifestIndexState::new();
+        let source_manifest = build_payload_manifest(&source, None).expect("source manifest");
+        index
+            .manifest_for_path("batch", "game", &mods_root, &target_path)
+            .expect("target manifest cache should be warmed");
+
+        let mut global_observation_samples = Vec::with_capacity(SAMPLE_COUNT);
+        let mut same_name_lookup_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for _ in 0..SAMPLE_COUNT {
+            let started = Instant::now();
+            assert!(index
+                .find_existing_payload_match("batch", "game", &mods_root, &source_manifest)
+                .expect("global identical-payload check should succeed")
+                .is_none());
+            global_observation_samples.push(started.elapsed());
+
+            let started = Instant::now();
+            index
+                .manifest_for_path("batch", "game", &mods_root, &target_path)
+                .expect("same-name target manifest should remain available");
+            same_name_lookup_samples.push(started.elapsed());
+        }
+
+        eprintln!(
+            "p2_import_target_collision_500: identical-payload observation p50={:?}; repeated same-name observation p50={:?}; redundant target snapshots per collision={TARGET_ROOTS}; redundant file metadata stats per collision={}",
+            median_duration(global_observation_samples),
+            median_duration(same_name_lookup_samples),
+            TARGET_ROOTS * 2,
+        );
     }
 }

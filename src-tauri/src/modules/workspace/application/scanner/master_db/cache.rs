@@ -25,14 +25,13 @@ impl MasterDbCache {
 
 /// The parsed MasterDB for a game type, loading it on first use.
 ///
-/// Returns `None` when the game has no bundled database. This used to be a
-/// `db_json: String` parameter: the frontend fetched the whole database, held
-/// it, and posted it back on every scan command, which then re-parsed it. The
-/// backend has the file — there was never a reason for it to cross IPC.
+/// When the optional catalog pack is not installed, returns an empty database.
+/// Import and classification can then continue with source inspection and
+/// manual choices instead of failing before the review screen opens.
 pub async fn get_cached(
     app: &tauri::AppHandle,
     game_type: i32,
-) -> Result<Option<Arc<deep_matcher::MasterDb>>, ScannerError> {
+) -> Result<Arc<deep_matcher::MasterDb>, ScannerError> {
     use tauri::Manager;
 
     let canonical =
@@ -40,19 +39,13 @@ pub async fn get_cached(
     let cache = app.state::<MasterDbCache>();
 
     if let Some(hit) = cache.0.read().await.get(&canonical).cloned() {
-        return Ok(Some(hit));
+        return Ok(hit);
     }
 
     let app_data_dir = app.path().app_data_dir().map_err(|error| {
         ScannerError::Io(format!("failed to resolve app data directory: {error}"))
     })?;
-    let entries = match super::asset_pack::CatalogPack::load(&app_data_dir)
-        .and_then(|pack| pack.entries_for(game_type))
-    {
-        Ok(entries) => entries,
-        Err(error) if error.to_string().contains("not installed") => return Ok(None),
-        Err(error) => return Err(error),
-    };
+    let entries = super::load_master_db_entries(&app_data_dir, game_type)?;
     let mut db = deep_matcher::MasterDb::new(entries);
     attach_user_aliases(
         &mut db,
@@ -61,7 +54,7 @@ pub async fn get_cached(
 
     let parsed = Arc::new(db);
     cache.0.write().await.insert(canonical, Arc::clone(&parsed));
-    Ok(Some(parsed))
+    Ok(parsed)
 }
 
 /// Aliases the user typed on their own objects, grouped by matched entry key.

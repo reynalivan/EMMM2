@@ -205,6 +205,7 @@ async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_
             watcher_events: None,
             path_hints: &reconcile_hints,
             progress_reporter: None,
+            precomputed_discovery: None,
         },
     )
     .await

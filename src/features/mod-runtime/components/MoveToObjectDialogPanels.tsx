@@ -87,7 +87,7 @@ export default function MoveToObjectDialogPanels({
                 key={object.id}
                 type="button"
                 aria-pressed={isSelected}
-                className={`flex items-center justify-between gap-3 rounded-md px-3 py-3 text-left text-sm transition-colors ${
+                className={`workspace-interactive flex items-center justify-between gap-3 rounded-md px-3 py-3 text-left text-sm ${
                   isSelected ? 'bg-primary font-semibold text-primary-content' : 'hover:bg-base-200'
                 }`}
                 onClick={() => onSelectObject(object.id)}
@@ -168,7 +168,7 @@ export default function MoveToObjectDialogPanels({
                   key={target.target_subpath ?? '__root__'}
                   type="button"
                   aria-pressed={isSelected}
-                  className={`flex items-center gap-2 rounded-md py-3 pr-3 text-left text-sm transition-colors ${
+                  className={`workspace-interactive flex items-center gap-2 rounded-md py-3 pr-3 text-left text-sm ${
                     isSelected
                       ? 'bg-primary font-semibold text-primary-content'
                       : 'hover:bg-base-200'

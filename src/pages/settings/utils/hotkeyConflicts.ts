@@ -13,11 +13,10 @@ export function detectConflicts(
   t: TFunction,
 ): string[] {
   const bindings: [string, string][] = [
-    [t('settings:hotkeys.labels.next_preset'), config.next_preset],
-    [t('settings:hotkeys.labels.prev_preset'), config.prev_preset],
-    [t('settings:hotkeys.labels.toggle_overlay'), config.toggle_overlay],
-    [t('settings:hotkeys.labels.next_variant'), config.next_variant],
-    [t('settings:hotkeys.labels.prev_variant'), config.prev_variant],
+    [t('settings:hotkeys.labels.safe_mode'), config.safe_mode ?? ''],
+    [t('settings:hotkeys.labels.next_preset'), config.next_preset ?? ''],
+    [t('settings:hotkeys.labels.prev_preset'), config.prev_preset ?? ''],
+    [t('settings:hotkeys.labels.toggle_overlay'), config.toggle_overlay ?? ''],
   ];
 
   const conflicts: string[] = [];

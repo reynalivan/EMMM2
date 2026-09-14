@@ -1,8 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogTab from './CatalogTab';
-
-const mockSetCatalogAutoInstall = vi.fn();
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue({
@@ -11,29 +9,16 @@ vi.mock('@tauri-apps/api/core', () => ({
     version: null,
     message: null,
     entries: 0,
-    missing_assets: 0,
-  }),
-}));
-
-vi.mock('@/entities/settings', () => ({
-  useSettings: () => ({
-    settings: { catalog_updates: { auto_install: false } },
-    setCatalogAutoInstall: {
-      mutate: mockSetCatalogAutoInstall,
-      isPending: false,
-    },
   }),
 }));
 
 describe('CatalogTab', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('keeps automatic catalog installation opt-in', () => {
+  it('offers local ZIP review without an automatic-install preference', () => {
     render(<CatalogTab />);
 
-    const toggle = screen.getByRole('checkbox', { name: /Auto-install/i });
-    expect(toggle).not.toBeChecked();
-    fireEvent.click(toggle);
-    expect(mockSetCatalogAutoInstall).toHaveBeenCalledWith(true);
+    expect(screen.getByRole('button', { name: /Choose ZIP/i })).toBeEnabled();
+    expect(screen.queryByRole('checkbox', { name: /Auto-install/i })).not.toBeInTheDocument();
   });
 });

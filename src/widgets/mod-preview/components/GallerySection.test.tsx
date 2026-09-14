@@ -48,7 +48,7 @@ describe('GallerySection', () => {
     render(<GallerySection {...defaultProps} images={[]} onPaste={onPaste} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add preview image' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Paste image from clipboard' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Paste image from clipboard' }));
 
     expect(onPaste).toHaveBeenCalledOnce();
   });
@@ -58,9 +58,10 @@ describe('GallerySection', () => {
 
     fireEvent.click(screen.getByTitle('Preview image actions'));
 
-    expect(screen.getByRole('button', { name: 'Import preview image' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Delete current preview image' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Delete all preview images' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Import preview image' })).toBeEnabled();
+    expect(screen.getByRole('menuitem', { name: 'Delete current preview image' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Delete all preview images' })).toBeDisabled();
+    expect(screen.getByTestId('gallery-action-menu')).toHaveClass('fixed');
   });
 
   it('pastes an image directly from the gallery context menu', async () => {

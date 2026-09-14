@@ -6,13 +6,13 @@
   "plugins": {
     "updater": {
       "endpoints": ["https://github.com/reynalivan/EMMM/releases/latest/download/latest.json"],
-      "pubkey": "REPLACE_WITH_ED25519_PUBLIC_KEY"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3ODI2Mjg1MUMzREJCNTUKUldSVnV6MGNoV0tDbDZqOSt1WGRCMFNXdFV1bmhyRTVOZDVzV0FIVHBLc3BVT2wwZExmbHFYN1oK"
     }
   },
   "build": {
     "beforeDevCommand": "pnpm dev:tauri",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "corepack pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -28,7 +28,19 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "connect-src": "'self' ipc: http://ipc.localhost https:",
+        "img-src": "'self' asset: http://asset.localhost blob: data: http: https:",
+        "font-src": "'self' asset: http://asset.localhost data:",
+        "media-src": "'self' asset: http://asset.localhost blob:",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'self'",
+        "frame-ancestors": "'none'"
+      },
       "assetProtocol": {
         "enable": true,
         "scope": ["**"]
@@ -38,6 +50,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

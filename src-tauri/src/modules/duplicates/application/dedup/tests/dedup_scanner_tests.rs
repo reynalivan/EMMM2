@@ -1,8 +1,14 @@
-use super::{scan_duplicates, DedupScanStatus};
-use std::collections::HashSet;
+use super::super::snapshot::collect_snapshot;
+use super::{
+    build_exact_cluster_compression, phase1_candidate_filtering_without_exact_cliques,
+    run_pipeline_blocking, scan_duplicates, scan_duplicates_for_candidates, DedupScanStatus,
+};
+use crate::modules::workspace::application::scanner::core::walker::ModCandidate;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 const VALID_MOD_INI: &str = "[TextureOverrideBody]\nhash = 12345678\n";
@@ -136,6 +142,84 @@ async fn test_tc_9_1_01_exact_hash_duplicate_has_100_confidence() {
 
     assert_eq!(exact_group.confidence_score, 100);
     assert!(exact_group.match_reason.contains("Exact hash match"));
+}
+
+#[test]
+fn exact_clone_cluster_uses_a_linear_spanning_forest() {
+    const EXACT_MODS: usize = 128;
+
+    let temp = TempDir::new().unwrap();
+    let mut candidates = Vec::with_capacity(EXACT_MODS);
+    for index in 0..EXACT_MODS {
+        let folder = temp.path().join(format!("Exact {index:03}"));
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
+        fs::write(folder.join("body.dds"), b"identical-content").unwrap();
+        candidates.push(ModCandidate {
+            path: folder,
+            raw_name: format!("Exact {index:03}"),
+            display_name: format!("Exact {index:03}"),
+            is_disabled: false,
+        });
+    }
+
+    let snapshots = candidates
+        .iter()
+        .map(collect_snapshot)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let compression = build_exact_cluster_compression(&snapshots, &HashMap::new(), &HashSet::new());
+
+    assert_eq!(compression.spanning_pairs.len(), EXACT_MODS - 1);
+    assert!(phase1_candidate_filtering_without_exact_cliques(
+        &snapshots,
+        &compression.cluster_by_index,
+    )
+    .is_empty());
+}
+
+#[tokio::test]
+async fn scans_preenumerated_candidates_without_changing_the_result_shape() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Albedo_A");
+    let second = mods_root.join("Albedo_B");
+
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    fs::write(first.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(second.join("mod.ini"), VALID_MOD_INI).unwrap();
+    fs::write(first.join("texture.dds"), b"same-content").unwrap();
+    fs::write(second.join("texture.dds"), b"same-content").unwrap();
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Albedo_A", &first),
+            Registered::safe("mod-b", "Albedo_B", &second),
+        ],
+    )
+    .await;
+
+    let candidates =
+        crate::modules::workspace::application::scanner::core::walker::scan_mod_folders(mods_root)
+            .unwrap();
+    let outcome = scan_duplicates_for_candidates(
+        mods_root,
+        candidates,
+        game_id,
+        &pool,
+        Arc::new(AtomicBool::new(false)),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert_eq!(outcome.total_folders, 2);
+    assert!(!outcome.groups.is_empty());
 }
 
 // Covers: EC-9.02 (False Positive Guard)
@@ -897,6 +981,104 @@ async fn matching_texture_samples_do_not_claim_full_hash_identity() {
             .iter()
             .all(|group| group.confidence_score < 100),
         "a 1KB head/tail sample match is not full-content identity"
+    );
+}
+
+fn median_duration(mut samples: Vec<Duration>) -> Duration {
+    samples.sort_unstable();
+    samples[samples.len() / 2]
+}
+
+fn pipeline_for_benchmark(candidates: Vec<ModCandidate>) -> super::DedupScanOutcome {
+    let total_folders = candidates.len();
+    run_pipeline_blocking(
+        candidates,
+        Arc::new(AtomicBool::new(false)),
+        total_folders,
+        HashMap::new(),
+        HashSet::new(),
+    )
+}
+
+#[test]
+#[ignore = "manual P2 duplicate scan I/O baseline"]
+fn benchmark_p2_duplicate_read_paths() {
+    const FILTERED_MODS: usize = 20;
+    const FILTERED_INI_BYTES: usize = 64 * 1024;
+    const EXACT_MODS: usize = 8;
+    const EXACT_ASSET_BYTES: usize = 1024 * 1024;
+    const SAMPLE_COUNT: usize = 5;
+
+    let filtered_workspace = TempDir::new().expect("temporary workspace should be created");
+    let mut filtered_candidates = Vec::with_capacity(FILTERED_MODS);
+    let ini_payload = vec![b';'; FILTERED_INI_BYTES];
+    for index in 0..FILTERED_MODS {
+        let folder = filtered_workspace
+            .path()
+            .join(format!("Filtered {index:02}"));
+        fs::create_dir_all(&folder).expect("fixture directory should be created");
+        fs::write(folder.join("mod.ini"), &ini_payload).expect("fixture INI should be written");
+        for asset_index in 0..(index * 5) {
+            fs::write(folder.join(format!("asset-{asset_index:03}.bin")), [])
+                .expect("fixture asset should be written");
+        }
+        filtered_candidates.push(ModCandidate {
+            path: folder,
+            raw_name: format!("Filtered {index:02}"),
+            display_name: format!("Filtered {index:02}"),
+            is_disabled: false,
+        });
+    }
+    let mut filtered_samples = Vec::with_capacity(SAMPLE_COUNT);
+    for _ in 0..SAMPLE_COUNT {
+        let started = Instant::now();
+        let outcome = pipeline_for_benchmark(filtered_candidates.clone());
+        filtered_samples.push(started.elapsed());
+        assert!(
+            outcome.groups.is_empty(),
+            "fixture must reject every pair cheaply"
+        );
+    }
+
+    let exact_workspace = TempDir::new().expect("temporary workspace should be created");
+    let mut exact_candidates = Vec::with_capacity(EXACT_MODS);
+    let asset_payload = vec![b'a'; EXACT_ASSET_BYTES];
+    for index in 0..EXACT_MODS {
+        let folder = exact_workspace.path().join(format!("Exact {index:02}"));
+        fs::create_dir_all(&folder).expect("fixture directory should be created");
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).expect("fixture INI should be written");
+        fs::write(folder.join("body.dds"), &asset_payload)
+            .expect("fixture asset should be written");
+        exact_candidates.push(ModCandidate {
+            path: folder,
+            raw_name: format!("Exact {index:02}"),
+            display_name: format!("Exact {index:02}"),
+            is_disabled: false,
+        });
+    }
+    let mut exact_samples = Vec::with_capacity(SAMPLE_COUNT);
+    for _ in 0..SAMPLE_COUNT {
+        let started = Instant::now();
+        let outcome = pipeline_for_benchmark(exact_candidates.clone());
+        exact_samples.push(started.elapsed());
+        assert!(
+            outcome
+                .groups
+                .iter()
+                .any(|group| group.confidence_score == 100),
+            "identical fixtures must reach the full-hash verification path"
+        );
+    }
+
+    let avoided_ini_bytes = FILTERED_MODS * FILTERED_INI_BYTES;
+    let rehashed_bytes = EXACT_MODS * (VALID_MOD_INI.len() + EXACT_ASSET_BYTES);
+    eprintln!(
+        "p2_duplicate_filter_first: p50={:?}; non-candidate INI bytes currently read per scan={avoided_ini_bytes}",
+        median_duration(filtered_samples),
+    );
+    eprintln!(
+        "p2_duplicate_full_hash_upgrade: p50={:?}; bytes currently re-read after an already-full initial hash={rehashed_bytes}",
+        median_duration(exact_samples),
     );
 }
 

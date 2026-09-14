@@ -92,6 +92,32 @@ impl ModInfo {
     }
 }
 
+fn default_info_for_folder(mod_path: &Path) -> Result<ModInfo, MetadataError> {
+    if !mod_path.is_dir() {
+        return Err(MetadataError::NotFound(format!(
+            "Mod folder does not exist: {}",
+            mod_path.display()
+        )));
+    }
+
+    let folder_name = mod_path
+        .file_name()
+        .ok_or_else(|| MetadataError::Validation("Invalid folder path".to_string()))?
+        .to_string_lossy();
+    let clean_name =
+        crate::modules::workspace::domain::normalizer::normalize_display_name(&folder_name);
+
+    Ok(ModInfo::from_folder_name(&clean_name))
+}
+
+fn write_info_json(mod_path: &Path, info: &ModInfo) -> Result<(), MetadataError> {
+    let json = serde_json::to_string_pretty(info)
+        .map_err(|error| MetadataError::Validation(format!("Failed to serialize: {error}")))?;
+    let info_path = mod_path.join("info.json");
+    crate::platform::fs::atomic_file::atomic_write(&info_path, json.as_bytes())
+        .map_err(|error| MetadataError::Io(error.to_string()))
+}
+
 /// Read and parse info.json from a mod folder.
 ///
 /// Returns `None` if the file doesn't exist.
@@ -114,36 +140,16 @@ pub fn read_info_json(mod_path: &Path) -> Result<Option<ModInfo>, MetadataError>
 /// Uses the folder's name as `actual_name`.
 /// Does NOT overwrite if the file already exists.
 pub fn create_default_info_json(mod_path: &Path) -> Result<ModInfo, MetadataError> {
-    if !mod_path.is_dir() {
-        return Err(MetadataError::NotFound(format!(
-            "Mod folder does not exist: {}",
-            mod_path.display()
-        )));
-    }
     let info_path = mod_path.join("info.json");
     if info_path.exists() {
         return read_info_json(mod_path)?
             .ok_or_else(|| MetadataError::Validation("info.json exists but is empty".to_string()));
     }
 
-    let folder_name = mod_path
-        .file_name()
-        .ok_or_else(|| MetadataError::Validation("Invalid folder path".to_string()))?
-        .to_string_lossy();
+    let info = default_info_for_folder(mod_path)?;
+    write_info_json(mod_path, &info)?;
 
-    // Canonical stripper: also handles the legacy `disabled_`/`Disabled-` forms
-    // that a literal prefix match would leave in the generated name.
-    let clean_name =
-        crate::modules::workspace::domain::normalizer::normalize_display_name(&folder_name);
-
-    let info = ModInfo::from_folder_name(&clean_name);
-
-    let json = serde_json::to_string_pretty(&info)
-        .map_err(|e| MetadataError::Validation(format!("Failed to serialize info.json: {e}")))?;
-    crate::platform::fs::atomic_file::atomic_write(&info_path, json.as_bytes())
-        .map_err(|error| MetadataError::Io(error.to_string()))?;
-
-    log::info!("Created default info.json for '{}'", clean_name);
+    log::info!("Created default info.json for '{}'", info.actual_name);
     Ok(info)
 }
 
@@ -166,16 +172,7 @@ pub struct ModInfoUpdate {
     pub metadata: Option<std::collections::HashMap<String, String>>,
 }
 
-/// Update specific fields in an existing info.json (merge, not overwrite).
-///
-/// If info.json doesn't exist, creates a default first, then applies the update.
-pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModInfo, MetadataError> {
-    let mut info = match read_info_json(mod_path)? {
-        Some(existing) => existing,
-        None => create_default_info_json(mod_path)?,
-    };
-
-    // Apply partial updates
+fn apply_update(info: &mut ModInfo, update: &ModInfoUpdate) {
     if let Some(ref name) = update.actual_name {
         info.actual_name = name.clone();
     }
@@ -194,21 +191,21 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
         info.tags = tags.clone();
     }
     if let Some(ref add) = update.tags_add {
-        for t in add {
-            if !info.tags.contains(t) {
-                info.tags.push(t.clone());
+        for tag in add {
+            if !info.tags.contains(tag) {
+                info.tags.push(tag.clone());
             }
         }
     }
     if let Some(ref remove) = update.tags_remove {
-        info.tags.retain(|t| !remove.contains(t));
+        info.tags.retain(|tag| !remove.contains(tag));
     }
 
     if let Some(safe) = update.is_safe {
         info.is_safe = safe;
     }
-    if let Some(fav) = update.is_favorite {
-        info.is_favorite = fav;
+    if let Some(favorite) = update.is_favorite {
+        info.is_favorite = favorite;
     }
     if let Some(pinned) = update.is_pinned {
         info.is_pinned = pinned;
@@ -218,31 +215,60 @@ pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModIn
     }
 
     if let Some(ref add) = update.preset_name_add {
-        for p in add {
-            if !info.preset_name.contains(p) {
-                info.preset_name.push(p.clone());
+        for preset_name in add {
+            if !info.preset_name.contains(preset_name) {
+                info.preset_name.push(preset_name.clone());
             }
         }
     }
     if let Some(ref remove) = update.preset_name_remove {
-        info.preset_name.retain(|p| !remove.contains(p));
+        info.preset_name
+            .retain(|preset_name| !remove.contains(preset_name));
     }
 
-    if let Some(ref meta) = update.metadata {
-        // Merge metadata (overwrite existing keys, keep others)
-        for (k, v) in meta {
-            info.metadata.insert(k.clone(), v.clone());
+    if let Some(ref metadata) = update.metadata {
+        for (key, value) in metadata {
+            info.metadata.insert(key.clone(), value.clone());
         }
     }
+}
 
-    // Write back
-    let info_path = mod_path.join("info.json");
-    let json = serde_json::to_string_pretty(&info)
-        .map_err(|e| MetadataError::Validation(format!("Failed to serialize: {e}")))?;
-    crate::platform::fs::atomic_file::atomic_write(&info_path, json.as_bytes())
-        .map_err(|error| MetadataError::Io(error.to_string()))?;
+/// Update from bytes already read by the caller. This lets a bulk operation
+/// retain the exact pre-write bytes for rollback without reading the file again.
+/// Missing files get one final write containing the default plus the update.
+pub fn update_info_json_from_snapshot(
+    mod_path: &Path,
+    previous: Option<&[u8]>,
+    update: &ModInfoUpdate,
+) -> Result<ModInfo, MetadataError> {
+    let mut info = match previous {
+        Some(bytes) => serde_json::from_slice(bytes).map_err(|error| {
+            MetadataError::Validation(format!("Failed to parse info.json: {error}"))
+        })?,
+        None => default_info_for_folder(mod_path)?,
+    };
+    let original_info = info.clone();
 
+    apply_update(&mut info, update);
+    if previous.is_some() && info == original_info {
+        return Ok(info);
+    }
+
+    write_info_json(mod_path, &info)?;
     Ok(info)
+}
+
+/// Update specific fields in an existing info.json (merge, not overwrite).
+/// Missing files receive a default plus the requested update in one atomic write.
+pub fn update_info_json(mod_path: &Path, update: &ModInfoUpdate) -> Result<ModInfo, MetadataError> {
+    let info_path = mod_path.join("info.json");
+    let previous = match fs::read(&info_path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(MetadataError::Io(error.to_string())),
+    };
+
+    update_info_json_from_snapshot(mod_path, previous.as_deref(), update)
 }
 
 #[cfg(test)]

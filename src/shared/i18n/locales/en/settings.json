@@ -73,24 +73,48 @@
       "engine_val": "Vite + React"
     },
     "catalog_assets": {
-      "title": "Catalog assets",
+      "title": "Catalog pack",
       "not_installed": "No catalog pack installed.",
       "installed": "{{name}} {{version}} · {{entries}} catalog entries",
       "invalid": "The installed catalog pack could not be validated.",
       "status_unavailable": "Catalog asset status is unavailable.",
       "open_folder": "Open folder",
       "refresh": "Refresh catalog",
-      "updates_title": "Signed catalog updates",
-      "updates_desc": "Checked weekly from the public release channel.",
-      "auto_install": "Auto-install",
+      "github_title": "Install from GitHub",
+      "github_desc": "Review a public release asset before it replaces the active catalog.",
+      "github_find": "Find on GitHub",
+      "github_url_label": "GitHub repository or release URL",
+      "github_url_placeholder": "https://github.com/owner/catalog-pack/releases/latest",
+      "github_check": "Check pack",
+      "github_note": "Use a public repository, latest release, or a release tag. The release must include catalog-pack.zip.",
+      "github_preview_failed": "Could not check this GitHub catalog release. Your installed catalog is unchanged.",
+      "local_title": "Install from ZIP",
+      "local_desc": "Choose a local catalog-pack.zip to review before installation. The original file stays where it is.",
+      "local_choose": "Choose ZIP",
+      "local_preview_failed": "Could not check this local catalog ZIP. Your installed catalog is unchanged.",
+      "install_failed": "Could not install the reviewed catalog. Your installed catalog is unchanged.",
+      "github_review_title": "Review catalog pack",
+      "review_source": "Source: {{source}}",
+      "review_release": "Release",
+      "github_repository": "Repository",
+      "github_version": "Version",
+      "github_publisher": "Publisher",
+      "github_games": "Supported games",
+      "github_entries": "Catalog entries",
+      "github_replaces": "Installing this pack replaces the active catalog after confirmation.",
+      "github_install": "Install pack",
+      "reset_suggestions_title": "Ignored identity suggestions",
+      "reset_suggestions_desc": "Let the active game's previously ignored catalog identities appear for review again.",
+      "reset_suggestions_action": "Reset ignored",
+      "updates_title": "Catalog updates",
+      "updates_desc": "Check and install updates manually.",
       "check_update": "Check now",
       "install_update": "Install {{version}}",
       "update_available": "Version {{version}} is ready to install.",
       "up_to_date": "Catalog is up to date.",
-      "update_idle": "Updates are verified before installation.",
+      "update_idle": "Updates are checked before installation.",
       "update_check_failed": "Could not check for catalog updates. Your installed catalog is unchanged.",
-      "update_install_failed": "Could not install the signed catalog update. Your installed catalog is unchanged.",
-      "auto_update_failed": "Could not save catalog update preference: {{error}}"
+      "update_install_failed": "Could not install the catalog update. Your installed catalog is unchanged."
     },
     "diagnostics": {
       "title": "Anonymous diagnostics",
@@ -123,6 +147,12 @@
         "section_three": "External content",
         "body_three": "External downloads and tools operate outside EMMM. Review files and keep backups before making changes. EMMM does not endorse or guarantee third-party content."
       }
+    },
+    "support": {
+      "title": "Support EMMM",
+      "description": "If EMMM helps your mod workflow, you can support its development.",
+      "action": "Buy me a coffee",
+      "open_failed": "Could not open the support page: {{error}}"
     }
   },
   "diagnostics": {
@@ -143,6 +173,10 @@
     "add": "Add Game",
     "empty": "No games configured.",
     "active": "ACTIVE",
+    "source_change_progress": "Moving EMMM data, indexing mods, and refreshing collections…",
+    "source_change_summary": "Library updated: {{objectsAdded}} objects added, {{objectsRemoved}} removed, {{objectsMoved}} moved; {{modsAdded}} mods added, {{modsRemoved}} removed, {{modsMoved}} moved; {{collectionsAffected}} collections affected.",
+    "source_change_artifacts_moved": "EMMM runtime data moved.",
+    "source_change_artifacts_unchanged": "No EMMM runtime data needed moving.",
     "actions": {
       "set_active": "Set as Active",
       "scan_ready_to_move": "Open Mod Inbox",
@@ -255,6 +289,7 @@
     "days": "days"
   },
   "hotkeys": {
+    "os_hotkeys_hint": "Safe Mode and preset bindings are registered by EMMM. The overlay binding below belongs only to 3DMigoto.",
     "title": "Global hotkeys",
     "enabled": "Enabled",
     "desc": "Shortcuts available while the game window is active.",
@@ -262,6 +297,7 @@
     "cooldown_desc": "Prevents duplicate input.",
     "conflicts_title": "Key Conflicts Detected",
     "labels": {
+      "safe_mode": "Safe Mode",
       "next_preset": "Next preset",
       "prev_preset": "Previous preset",
       "toggle_overlay": "Toggle overlay",
@@ -273,11 +309,41 @@
     "viewer_desc": "Shows detected in-game keybinds. Toggle with {{key}}.",
     "infrastructure_title": "Runtime files",
     "infrastructure_desc": "Managed automatically in .emmm_data/.",
+    "runtime": {
+      "title": "KeyViewer runtime",
+      "desc": "Current session diagnostics for the active game.",
+      "last_sync": "Last sync",
+      "snapshot": "Snapshot",
+      "reload_status": "Reload",
+      "reload_binding": "Reload binding",
+      "generation_cleanup": "Generation cleanup",
+      "loading": "Loading…",
+      "not_synced": "Not synced this session",
+      "not_attempted": "Not attempted",
+      "unavailable": "Unavailable",
+      "binding_unavailable": "Not available",
+      "cleanup_enabled": "Automatic when the game is stopped",
+      "cleanup_disabled": "Disabled until a game executable is configured",
+      "cleanup_disabled_desc": "EMMM will not remove old KeyViewer generations because it cannot verify that the game is stopped.",
+      "publication": {
+        "published": "Published",
+        "unchanged": "Unchanged",
+        "skipped": "Superseded",
+        "failed": "Failed"
+      },
+      "reload": {
+        "not_required": "Not required",
+        "sent": "Sent: {{binding}}",
+        "manual": "Manual: {{binding}}"
+      }
+    },
     "reset": "Reset All to Defaults",
     "reset_success": "Hotkey settings reset to defaults.",
     "save_failed": "Failed to save hotkey settings: {{error}}",
     "viewer_save_failed": "Failed to save KeyViewer settings: {{error}}",
     "reset_tip": "Reset to default",
+    "overlay_enabled": "Enable overlay",
+    "save": "Save controls",
     "reserved": {
       "package_toggle": "package toggle",
       "frame_analysis": "3DMigoto frame analysis",

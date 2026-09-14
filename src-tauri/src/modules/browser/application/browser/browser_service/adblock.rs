@@ -10,6 +10,7 @@ use std::sync::{Arc, RwLock};
 use adblock::lists::{ParseOptions, RuleTypes};
 use adblock::request::Request;
 use adblock::{Engine, FilterSet};
+use base64::{Engine as _, engine::general_purpose};
 use futures_util::StreamExt;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager};
@@ -30,10 +31,48 @@ const SETTING_EASYLIST_FILE: &str = "adblock_easylist_file";
 const SETTING_EASYPRIVACY_ETAG: &str = "adblock_easyprivacy_etag";
 const SETTING_EASYPRIVACY_MODIFIED: &str = "adblock_easyprivacy_last_modified";
 const SETTING_EASYPRIVACY_FILE: &str = "adblock_easyprivacy_file";
+const MAX_BASE64_SELECTION_CHARS: usize = 1_000_000;
+const MAX_BASE64_DECODED_BYTES: usize = 750_000;
 
 const BUNDLED_EASYLIST: &str = include_str!("../../../../../../resources/adblock/easylist.txt");
 const BUNDLED_EASYPRIVACY: &str =
     include_str!("../../../../../../resources/adblock/easyprivacy.txt");
+
+fn decode_base64_text(selection: &str) -> Option<String> {
+    let mut normalized = String::with_capacity(selection.len().min(MAX_BASE64_SELECTION_CHARS));
+    for character in selection.chars() {
+        if character.is_ascii_whitespace() {
+            continue;
+        }
+        if normalized.len().saturating_add(character.len_utf8()) > MAX_BASE64_SELECTION_CHARS {
+            return None;
+        }
+        normalized.push(character);
+    }
+
+    if normalized.len() < 4 {
+        return None;
+    }
+
+    for engine in [
+        &general_purpose::STANDARD,
+        &general_purpose::STANDARD_NO_PAD,
+        &general_purpose::URL_SAFE,
+        &general_purpose::URL_SAFE_NO_PAD,
+    ] {
+        let Ok(decoded) = engine.decode(&normalized) else {
+            continue;
+        };
+        if decoded.len() > MAX_BASE64_DECODED_BYTES {
+            return None;
+        }
+        if let Ok(text) = String::from_utf8(decoded) {
+            return Some(text);
+        }
+    }
+
+    None
+}
 
 /// Process-wide state shared by every Discover child webview.
 pub struct BrowserAdblockState {
@@ -491,27 +530,29 @@ pub async fn clear_cache(app: &AppHandle, label: &str) -> Result<(), BrowserErro
 mod native_windows {
     use std::sync::{Arc, Mutex};
 
-    use tauri::{AppHandle, Emitter, Manager};
+    use tauri::{AppHandle, Emitter, Manager, Url};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2Profile2, ICoreWebView2_13, ICoreWebView2_15,
         COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_DOM_STORAGE, COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES,
-        COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE, COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
+        COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE, COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
+        COREWEBVIEW2_CONTEXT_MENU_TARGET_KIND_IMAGE, COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
         COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST, ICoreWebView2_11, ICoreWebView2_13,
+        ICoreWebView2_15, ICoreWebView2Environment9, ICoreWebView2Profile2,
     };
     use webview2_com::{
-        ClearBrowsingDataCompletedHandler, FaviconChangedEventHandler, GetFaviconCompletedHandler,
+        ClearBrowsingDataCompletedHandler, ContextMenuRequestedEventHandler,
+        CustomItemSelectedEventHandler, FaviconChangedEventHandler, GetFaviconCompletedHandler,
         NavigationCompletedEventHandler, PermissionRequestedEventHandler,
         WebResourceRequestedEventHandler,
     };
-    use windows::core::{w, Interface, BOOL, PWSTR};
     use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::core::{BOOL, Interface, PWSTR, w};
 
-    use super::{BrowserAdblockState, BrowserError};
+    use super::{BrowserAdblockState, BrowserError, decode_base64_text};
 
     pub(super) fn attach(
         webview: &tauri::Webview,
@@ -521,8 +562,12 @@ mod native_windows {
         let app_for_requests = app.clone();
         let app_for_favicon = app.clone();
         let app_for_navigation = app.clone();
+        let app_for_image_preview = app.clone();
+        let app_for_base64_decode = app.clone();
         let label_for_favicon = label.to_string();
         let label_for_navigation = label.to_string();
+        let label_for_image_preview = label.to_string();
+        let label_for_base64_decode = label.to_string();
         webview
             .with_webview(move |native| unsafe {
                 let core = native
@@ -620,6 +665,155 @@ mod native_windows {
                     core.add_NavigationCompleted(&navigation_handler, &mut navigation_token)
                 {
                     log::warn!("Could not attach Discover navigation completion handler: {error}");
+                }
+
+                if let (Ok(context_menu_core), Ok(context_menu_environment)) = (
+                    core.cast::<ICoreWebView2_11>(),
+                    native.environment().cast::<ICoreWebView2Environment9>(),
+                ) {
+                    let context_menu_handler =
+                        ContextMenuRequestedEventHandler::create(Box::new(move |_, args| {
+                            let Some(args) = args else {
+                                return Ok(());
+                            };
+                            let Ok(target) = args.ContextMenuTarget() else {
+                                return Ok(());
+                            };
+                            let mut target_kind = Default::default();
+                            if target.Kind(&mut target_kind).is_err() {
+                                return Ok(());
+                            }
+                            if target_kind != COREWEBVIEW2_CONTEXT_MENU_TARGET_KIND_IMAGE {
+                                let mut has_selection = BOOL(0);
+                                if target.HasSelection(&mut has_selection).is_err()
+                                    || !has_selection.as_bool()
+                                {
+                                    return Ok(());
+                                }
+                                let Ok(selection_text) =
+                                    read_uri(|value| target.SelectionText(value))
+                                else {
+                                    return Ok(());
+                                };
+                                let Some(decoded_text) = decode_base64_text(&selection_text) else {
+                                    return Ok(());
+                                };
+                                let Ok(menu_items) = args.MenuItems() else {
+                                    return Ok(());
+                                };
+                                let Ok(decode_item) = context_menu_environment
+                                    .CreateContextMenuItem(
+                                        w!("Decode Base64 text"),
+                                        None::<&windows::Win32::System::Com::IStream>,
+                                        COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
+                                    )
+                                else {
+                                    return Ok(());
+                                };
+                                let event_app = app_for_base64_decode.clone();
+                                let event_label = label_for_base64_decode.clone();
+                                let item_handler = CustomItemSelectedEventHandler::create(
+                                    Box::new(move |_, _| {
+                                        let _ = event_app.emit(
+                                            "browser:base64-decoded",
+                                            serde_json::json!({
+                                                "label": event_label,
+                                                "text": decoded_text,
+                                            }),
+                                        );
+                                        Ok(())
+                                    }),
+                                );
+                                let mut item_token = 0;
+                                if let Err(error) = decode_item
+                                    .add_CustomItemSelected(&item_handler, &mut item_token)
+                                {
+                                    log::debug!(
+                                        "Could not attach Discover Base64 decode action: {error}"
+                                    );
+                                    return Ok(());
+                                }
+                                let mut item_count = 0;
+                                if menu_items.Count(&mut item_count).is_ok() {
+                                    if let Err(error) =
+                                        menu_items.InsertValueAtIndex(item_count, &decode_item)
+                                    {
+                                        log::debug!(
+                                            "Could not add Discover Base64 decode action: {error}"
+                                        );
+                                    }
+                                }
+                                return Ok(());
+                            }
+                            let mut has_source_uri = BOOL(0);
+                            if target.HasSourceUri(&mut has_source_uri).is_err()
+                                || !has_source_uri.as_bool()
+                            {
+                                return Ok(());
+                            }
+                            let Ok(image_url) = read_uri(|value| target.SourceUri(value)) else {
+                                return Ok(());
+                            };
+                            let Ok(parsed_url) = Url::parse(&image_url) else {
+                                return Ok(());
+                            };
+                            if !matches!(parsed_url.scheme(), "http" | "https") {
+                                return Ok(());
+                            }
+                            let Ok(menu_items) = args.MenuItems() else {
+                                return Ok(());
+                            };
+                            let Ok(preview_item) = context_menu_environment.CreateContextMenuItem(
+                                w!("Open image preview"),
+                                None::<&windows::Win32::System::Com::IStream>,
+                                COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
+                            ) else {
+                                return Ok(());
+                            };
+                            let event_app = app_for_image_preview.clone();
+                            let event_label = label_for_image_preview.clone();
+                            let item_handler =
+                                CustomItemSelectedEventHandler::create(Box::new(move |_, _| {
+                                    let _ = event_app.emit(
+                                        "browser:preview-image",
+                                        serde_json::json!({
+                                            "label": event_label,
+                                            "url": image_url,
+                                        }),
+                                    );
+                                    Ok(())
+                                }));
+                            let mut item_token = 0;
+                            if let Err(error) =
+                                preview_item.add_CustomItemSelected(&item_handler, &mut item_token)
+                            {
+                                log::debug!(
+                                    "Could not attach Discover image preview action: {error}"
+                                );
+                                return Ok(());
+                            }
+                            let mut item_count = 0;
+                            if menu_items.Count(&mut item_count).is_ok() {
+                                if let Err(error) =
+                                    menu_items.InsertValueAtIndex(item_count, &preview_item)
+                                {
+                                    log::debug!(
+                                        "Could not add Discover image preview action: {error}"
+                                    );
+                                }
+                            }
+                            Ok(())
+                        }));
+                    let mut context_menu_token = 0;
+                    if let Err(error) = context_menu_core
+                        .add_ContextMenuRequested(&context_menu_handler, &mut context_menu_token)
+                    {
+                        log::debug!(
+                            "Could not attach Discover image preview context menu: {error}"
+                        );
+                    }
+                } else {
+                    log::debug!("Discover image-preview context menu is unavailable");
                 }
 
                 let Ok(favicon_core) = core.cast::<ICoreWebView2_15>() else {
@@ -827,14 +1021,14 @@ mod tests {
     #[test]
     fn source_validation_requires_the_fixed_https_host() {
         assert!(validate_filter_source(&reqwest::Url::parse(EASYLIST_URL).unwrap()).is_ok());
-        assert!(validate_filter_source(
-            &reqwest::Url::parse("http://easylist.to/list.txt").unwrap()
-        )
-        .is_err());
-        assert!(validate_filter_source(
-            &reqwest::Url::parse("https://example.com/list.txt").unwrap()
-        )
-        .is_err());
+        assert!(
+            validate_filter_source(&reqwest::Url::parse("http://easylist.to/list.txt").unwrap())
+                .is_err()
+        );
+        assert!(
+            validate_filter_source(&reqwest::Url::parse("https://example.com/list.txt").unwrap())
+                .is_err()
+        );
     }
 
     #[test]
@@ -866,5 +1060,23 @@ mod tests {
         let now = chrono::Utc::now().timestamp();
         assert!(now.saturating_sub(now - UPDATE_INTERVAL_SECONDS) >= UPDATE_INTERVAL_SECONDS);
         assert!(now.saturating_sub(now - UPDATE_INTERVAL_SECONDS + 1) < UPDATE_INTERVAL_SECONDS);
+    }
+
+    #[test]
+    fn decodes_valid_text_base64_selections() {
+        assert_eq!(
+            decode_base64_text("SGVsbG8gd29ybGQ="),
+            Some("Hello world".to_string())
+        );
+        assert_eq!(
+            decode_base64_text("SGVsbG8td29ybGQ"),
+            Some("Hello-world".to_string())
+        );
+    }
+
+    #[test]
+    fn ignores_invalid_or_binary_base64_selections() {
+        assert_eq!(decode_base64_text("not base64"), None);
+        assert_eq!(decode_base64_text("AP8="), None);
     }
 }

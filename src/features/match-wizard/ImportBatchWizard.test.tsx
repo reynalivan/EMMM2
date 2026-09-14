@@ -44,6 +44,7 @@ function item(overrides: Partial<ImportItem> = {}): ImportItem {
     matchCategory: 'Other',
     subCategory: null,
     classificationMetadata: {},
+    sourceMetadata: {},
     categorySuggestions: [],
     canonicalSuggestions: [],
     destinationSuggestions: [],

@@ -27,7 +27,7 @@ pub fn is_runtime_relevant_file(path: &Path) -> bool {
         return false;
     };
 
-    if file_name.eq_ignore_ascii_case("info.json") {
+    if file_name.eq_ignore_ascii_case("d3dx.ini") {
         return true;
     }
 
@@ -74,12 +74,13 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn info_json_is_runtime_relevant() {
-        assert!(is_runtime_relevant_file(Path::new(
-            "E:/Mods/Alice/Blue/info.json"
-        )));
+    fn only_effective_ini_files_are_runtime_relevant() {
+        assert!(is_runtime_relevant_file(Path::new("E:/Importer/d3dx.ini")));
         assert!(is_runtime_relevant_file(Path::new(
             "E:/Mods/Alice/Blue/mod.ini"
+        )));
+        assert!(!is_runtime_relevant_file(Path::new(
+            "E:/Mods/Alice/Blue/info.json"
         )));
         assert!(!is_runtime_relevant_file(Path::new(
             "E:/Mods/Alice/Blue/notes.txt"

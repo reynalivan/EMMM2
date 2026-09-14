@@ -66,7 +66,6 @@ export default function FolderGridContent({
     handleToggleSafeRequest,
     handleSyncWithDb,
     ancestorDisabledBy,
-    openEnableParentDialog,
     isSwitchPending,
     isFolderSwitchPending,
     currentFolderPath,
@@ -99,13 +98,18 @@ export default function FolderGridContent({
     >
       <div
         ref={parentRef}
+        aria-busy={isPlaceholderData || undefined}
         className={cn(
-          'folder-grid-scroll relative z-0 -mt-[var(--folder-grid-chrome-height)] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-[calc(var(--folder-grid-chrome-height)+var(--folder-grid-content-gap))] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 transition-opacity duration-150 hover:scrollbar-thumb-base-content/40',
+          'folder-grid-scroll relative z-0 -mt-[var(--folder-grid-chrome-height)] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-[var(--folder-grid-bottom-inset)] pt-[calc(var(--folder-grid-chrome-height)+var(--folder-grid-content-gap))] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20 transition-opacity duration-150 hover:scrollbar-thumb-base-content/40 motion-reduce:transition-none',
           isPlaceholderData ? 'opacity-70 pointer-events-none select-none' : 'opacity-100',
           !isLoading && !isError && visibleFolders.length > 0 ? 'block' : 'hidden',
         )}
       >
-        <div className="relative w-full" style={{ height: `${totalSize}px` }}>
+        <div
+          key={currentFolderPath ?? 'workspace-root'}
+          className="workspace-context-enter relative w-full"
+          style={{ height: `${totalSize}px` }}
+        >
           {virtualItems.map((virtualRow) => {
             if (isGridView) {
               const fromIndex = virtualRow.index * columnCount;
@@ -160,7 +164,6 @@ export default function FolderGridContent({
                           hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                           hasFolderNameConflict={protectedByConflict}
                           isLockedByParent={!!ancestorDisabledBy}
-                          onRequestEnableParent={openEnableParentDialog}
                           isSwitchPending={
                             folderMutationsDisabled ||
                             isSwitchPending ||

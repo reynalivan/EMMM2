@@ -21,7 +21,6 @@ pub enum WorkspaceSwitchResolution {
     Normal,
     ForceEnable,
     EnableOnlyThis,
-    EnableParentThenContinue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -38,7 +37,31 @@ pub enum WorkspaceSwitchOriginSurface {
 pub enum WorkspaceSwitchStatus {
     Applied,
     RequiresDuplicateResolution,
+    RequiresParentEnable,
     Noop,
+}
+
+/// A disabled ancestor blocks a folder even when the folder itself has no
+/// disabled prefix. This payload is derived after disk preflight so the UI
+/// can explain the exact prerequisite without guessing from visible nodes.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct WorkspaceParentEnableRequirement {
+    pub requested_target: WorkspaceParentEnableImpact,
+    pub parents: Vec<WorkspaceParentEnableParent>,
+    pub will_activate: Vec<WorkspaceParentEnableImpact>,
+    pub stay_disabled: Vec<WorkspaceParentEnableImpact>,
+}
+
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct WorkspaceParentEnableParent {
+    pub path: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct WorkspaceParentEnableImpact {
+    pub path: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, specta::Type)]
@@ -57,6 +80,10 @@ pub struct WorkspaceSwitchInput {
     pub target: WorkspaceSwitchTarget,
     pub desired_enabled: bool,
     pub resolution: WorkspaceSwitchResolution,
+    /// Parent activation is independent from duplicate conflict policy. A
+    /// boolean avoids a combinatorial set of resolution enum variants.
+    #[serde(default)]
+    pub enable_disabled_ancestors: bool,
     pub origin_surface: WorkspaceSwitchOriginSurface,
 }
 
@@ -67,6 +94,7 @@ pub struct WorkspaceSwitchResult {
     pub changed_folder_paths: Vec<String>,
     pub changed_object_ids: Vec<String>,
     pub duplicates: Vec<WorkspaceSwitchDuplicate>,
+    pub parent_enable_requirement: Option<WorkspaceParentEnableRequirement>,
     pub impact: WorkspaceImpact,
     pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
 }

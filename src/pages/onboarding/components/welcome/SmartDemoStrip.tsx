@@ -28,15 +28,12 @@ export default function SmartDemoStrip({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // If paused, clear the timer and wait. (This freezes the loop, not the current scene's
-    // internal entry animation — the sub-components manage that themselves.)
-    if (isPausedFromParent) {
+    if (isPausedFromParent || prefersReduced) {
       if (timerRef.current) clearTimeout(timerRef.current);
       return;
     }
 
-    // Reduced motion still loops, just without the internal heavy motion.
-    const duration = prefersReduced ? 2500 : SCENES[currentSceneIdx].duration;
+    const duration = SCENES[currentSceneIdx].duration;
 
     timerRef.current = setTimeout(() => {
       setCurrentSceneIdx((prev) => (prev + 1) % SCENES.length);
@@ -92,22 +89,27 @@ export default function SmartDemoStrip({
               key={idx}
               aria-label={t('demo.aria_go_to_scene', { count: idx + 1 })}
               onClick={() => setCurrentSceneIdx(idx)}
-              className={`h-1.5 overflow-hidden rounded-full transition-all duration-300 ${
-                idx === currentSceneIdx
-                  ? 'w-6 bg-primary/25'
-                  : 'w-2 bg-base-content/20 hover:bg-base-content/40'
-              }`}
+              className="workspace-interactive grid h-8 w-8 place-items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
             >
-              {idx === currentSceneIdx && (
-                <span
-                  key={currentSceneIdx}
-                  className="demo-progress-fill block h-full w-full rounded-full bg-primary"
-                  style={{
-                    animationDuration: `${scene.duration + 350}ms`,
-                    animationPlayState: isPausedFromParent ? 'paused' : 'running',
-                  }}
-                />
-              )}
+              <span
+                className={`block h-1.5 overflow-hidden rounded-full transition-[width,background-color] duration-150 ${
+                  idx === currentSceneIdx
+                    ? 'w-6 bg-primary/25'
+                    : 'w-2 bg-base-content/20 hover:bg-base-content/40'
+                }`}
+              >
+                {idx === currentSceneIdx && (
+                  <span
+                    key={currentSceneIdx}
+                    className="demo-progress-fill block h-full w-full rounded-full bg-primary"
+                    style={{
+                      animationDuration: `${scene.duration + 350}ms`,
+                      animationPlayState:
+                        isPausedFromParent || prefersReduced ? 'paused' : 'running',
+                    }}
+                  />
+                )}
+              </span>
             </button>
           ))}
         </div>

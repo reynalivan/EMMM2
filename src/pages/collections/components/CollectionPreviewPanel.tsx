@@ -5,13 +5,15 @@
  * Replaces CollectionWorkspace for the preview use case.
  */
 
-import { Layers, Loader2, Package } from 'lucide-react';
+import { Layers, Package } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCollectionPreview } from '../hooks/useCollections';
 import { CollectionTreeView } from './CollectionTreeView';
 import { getCollectionDisplayName, useRuntimeLabels } from '../../../shared/lib/runtimeLabels';
 import type { CollectionRuntimeSnapshot } from '@/entities/collection';
 import type { CollectionWorkspaceSource } from '../types';
+import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
 
 interface CollectionPreviewPanelProps {
   source: CollectionWorkspaceSource | null;
@@ -30,6 +32,7 @@ export function CollectionPreviewPanel({
     gameId,
   );
   const runtimeLabels = useRuntimeLabels();
+  const [treeScrollElement, setTreeScrollElement] = useState<HTMLDivElement | null>(null);
 
   // No collection selected
   if (!source) {
@@ -49,9 +52,11 @@ export function CollectionPreviewPanel({
   // Loading
   if (source.kind === 'stored_collection' && previewQuery.isLoading) {
     return (
-      <div className="flex flex-col h-full items-center justify-center min-h-125">
-        <Loader2 size={32} className="animate-spin text-primary opacity-50 mb-4" />
-        <p className="text-base-content/50">{t('common:status.loading')}</p>
+      <div className="flex h-full min-h-125 flex-col" aria-busy="true" role="status">
+        <WorkspacePanelSkeleton variant="preview" />
+        <p className="px-6 pb-6 text-center text-sm text-base-content/50">
+          {t('common:status.loading')}
+        </p>
       </div>
     );
   }
@@ -73,7 +78,7 @@ export function CollectionPreviewPanel({
     });
 
     return (
-      <div className="flex flex-col h-full w-full relative">
+      <div className="relative flex h-full min-h-0 w-full flex-col">
         <div className="z-10 flex h-14 shrink-0 items-center justify-between border-b border-base-content/5 bg-base-300 px-4">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="flex flex-col min-w-0">
@@ -92,13 +97,18 @@ export function CollectionPreviewPanel({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-base-100/50">
+        <div
+          ref={setTreeScrollElement}
+          className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-base-100/50"
+        >
           <div className="max-w-3xl mx-auto">
             <CollectionTreeView
               nodes={runtimeSnapshot.current_tree_nodes}
               gameId={gameId}
               colorClass="text-primary"
               emptyMessage={t('collections:preview.empty')}
+              scrollElement={treeScrollElement}
+              treeIdentity={`runtime:${gameId ?? ''}`}
             />
           </div>
         </div>
@@ -117,7 +127,7 @@ export function CollectionPreviewPanel({
   }
 
   return (
-    <div className="flex flex-col h-full w-full relative">
+    <div className="relative flex h-full min-h-0 w-full flex-col">
       {/* Header */}
       <div className="z-10 flex h-14 shrink-0 items-center justify-between border-b border-base-content/5 bg-base-300 px-4">
         <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -140,13 +150,18 @@ export function CollectionPreviewPanel({
       </div>
 
       {/* Tree view */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-base-100/50">
+      <div
+        ref={setTreeScrollElement}
+        className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-base-100/50"
+      >
         <div className="max-w-3xl mx-auto">
           <CollectionTreeView
             nodes={preview.tree_nodes}
             gameId={gameId}
             colorClass="text-primary"
             emptyMessage={t('collections:preview.empty')}
+            scrollElement={treeScrollElement}
+            treeIdentity={`collection:${source.collectionId}`}
           />
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect } from 'vitest';
-import { useBrowserStore } from './useBrowserStore';
+import { createNewBrowserTab, useBrowserStore } from './useBrowserStore';
 
 describe('useBrowserStore', () => {
   beforeEach(() => {
@@ -7,6 +7,7 @@ describe('useBrowserStore', () => {
       gameId: null,
       tabs: [],
       activeTabId: null,
+      recentlyClosedTabs: [],
       isDownloadPanelOpen: false,
       isDownloadConfirmationOpen: false,
     });
@@ -38,5 +39,53 @@ describe('useBrowserStore', () => {
       tabs: [],
       activeTabId: null,
     });
+  });
+
+  it('replaces a local New Tab with its native webview tab', () => {
+    const store = useBrowserStore.getState();
+    const newTab = createNewBrowserTab();
+    store.addTab(newTab);
+
+    store.replaceTab(newTab.id, {
+      id: 'browser-tab-1',
+      url: 'https://example.test',
+      title: 'Example',
+    });
+
+    expect(useBrowserStore.getState()).toMatchObject({
+      activeTabId: 'browser-tab-1',
+      tabs: [{ id: 'browser-tab-1', url: 'https://example.test' }],
+    });
+  });
+
+  it('keeps one local New Tab when the final tab closes', () => {
+    const store = useBrowserStore.getState();
+    store.addTab({ id: 'browser-tab-1', url: 'https://example.test', title: 'Example' });
+
+    store.removeTab('browser-tab-1');
+
+    const state = useBrowserStore.getState();
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0]).toMatchObject({ isNewTab: true, url: '' });
+    expect(state.activeTabId).toBe(state.tabs[0]?.id);
+  });
+
+  it('keeps a bounded, game-scoped history of closed web tabs', () => {
+    const store = useBrowserStore.getState();
+    const closedTab = {
+      id: 'browser-tab-1',
+      url: 'https://example.test',
+      title: 'Example',
+      isLoading: true,
+    };
+
+    store.recordClosedTab(closedTab);
+
+    expect(useBrowserStore.getState().recentlyClosedTabs).toEqual([
+      { ...closedTab, isLoading: false },
+    ]);
+
+    store.setGameContext('game-2');
+    expect(useBrowserStore.getState().recentlyClosedTabs).toEqual([]);
   });
 });

@@ -119,6 +119,19 @@ fn test_decode_empty_ini() {
 }
 
 #[test]
+fn test_decode_with_cap_exposes_only_the_requested_prefix() {
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("capped.ini");
+    let prefix = "hash = d94c8962\n";
+    let payload = format!("{prefix}{}", "x".repeat(32 * 1024));
+    fs::write(&path, payload).expect("write capped source");
+
+    let content = decode_ini_content_with_cap(&path, Some(prefix.len())).expect("decode prefix");
+
+    assert_eq!(content, prefix);
+}
+
+#[test]
 fn test_decode_utf16le_with_bom() {
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("utf16.ini");

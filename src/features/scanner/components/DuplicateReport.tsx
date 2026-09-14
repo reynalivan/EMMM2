@@ -5,7 +5,7 @@
  */
 
 import { formatAppError } from '../../../shared/lib/appError';
-import { useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
 import type { DuplicateSelection, ResolutionRequest } from '@/entities/workspace';
@@ -14,13 +14,28 @@ import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';
 import { toast } from '@/shared/ui/toast';
 import { useTranslation } from 'react-i18next';
+import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
 
 interface Props {
   activeFilter?: 'all' | 'high' | 'medium' | 'low';
   gameId?: string;
+  showApplyAction?: boolean;
+  onActionStateChange?: (state: DuplicateReportActionState) => void;
 }
 
-export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: Props) {
+export interface DuplicateReportActionState {
+  selectionCount: number;
+  isApplying: boolean;
+}
+
+export interface DuplicateReportHandle {
+  requestApply: () => void;
+}
+
+const DuplicateReport = forwardRef<DuplicateReportHandle, Props>(function DuplicateReport(
+  { activeFilter = 'all', gameId = '', showApplyAction = true, onActionStateChange },
+  ref,
+) {
   const { t } = useTranslation(['scanner']);
   const { data: report, isLoading, error } = useDedupReport(gameId);
   const { mutate: resolve, isPending } = useResolveDuplicates();
@@ -43,14 +58,20 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
     setSelections(newSelections);
   };
 
-  const handleApplyAll = () => {
+  const handleApplyAll = useCallback(() => {
     if (selections.size === 0) {
       toast.warning(t('scanner:report.no_actions_selected'));
       return;
     }
 
     setShowModal(true);
-  };
+  }, [selections.size, t]);
+
+  useImperativeHandle(ref, () => ({ requestApply: handleApplyAll }), [handleApplyAll]);
+
+  useEffect(() => {
+    onActionStateChange?.({ selectionCount: selections.size, isApplying: isPending });
+  }, [isPending, onActionStateChange, selections.size]);
 
   const convertSelectionsToRequests = (): ResolutionRequest[] =>
     report ? buildResolutionRequests(selections, report.groups) : [];
@@ -90,9 +111,9 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64 gap-3">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
-        <span className="text-base-content/60">{t('scanner:report.loading')}</span>
+      <div className="space-y-4" aria-busy="true" role="status">
+        <WorkspacePanelSkeleton variant="list" />
+        <p className="text-center text-sm text-base-content/60">{t('scanner:report.loading')}</p>
       </div>
     );
   }
@@ -152,23 +173,13 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
           </p>
         </div>
 
-        <div className="flex gap-2">
-          {/* Apply All Button */}
-          <button
-            className="btn btn-primary"
-            onClick={handleApplyAll}
-            disabled={selections.size === 0 || isPending}
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {t('scanner:report.applying')}
-              </>
-            ) : (
-              t('scanner:report.apply_actions', { count: selections.size })
-            )}
-          </button>
-        </div>
+        {showApplyAction && (
+          <DuplicateReportApplyButton
+            selectionCount={selections.size}
+            isApplying={isPending}
+            onApply={handleApplyAll}
+          />
+        )}
       </div>
 
       {/* Duplicate Table */}
@@ -191,4 +202,39 @@ export default function DuplicateReport({ activeFilter = 'all', gameId = '' }: P
       />
     </div>
   );
+});
+
+DuplicateReport.displayName = 'DuplicateReport';
+
+interface DuplicateReportApplyButtonProps {
+  selectionCount: number;
+  isApplying: boolean;
+  onApply: () => void;
 }
+
+export function DuplicateReportApplyButton({
+  selectionCount,
+  isApplying,
+  onApply,
+}: DuplicateReportApplyButtonProps) {
+  const { t } = useTranslation(['scanner']);
+
+  return (
+    <button
+      className="btn btn-primary btn-sm gap-2 whitespace-nowrap"
+      onClick={onApply}
+      disabled={selectionCount === 0 || isApplying}
+    >
+      {isApplying ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t('scanner:report.applying')}
+        </>
+      ) : (
+        t('scanner:report.apply_actions', { count: selectionCount })
+      )}
+    </button>
+  );
+}
+
+export default DuplicateReport;

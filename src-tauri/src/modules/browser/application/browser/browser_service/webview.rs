@@ -3,10 +3,18 @@
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 
-use super::adblock::{discover_profile_dir, BrowserAdblockState};
+use super::adblock::{BrowserAdblockState, discover_profile_dir};
 use super::paths::get_downloads_root_for_game;
 use super::settings::{normalize_url, validate_http_url};
 use crate::shared::errors::BrowserError;
+
+// Keep embedded sites on their standard desktop experience. Some download
+// pages otherwise select a reduced WebView-specific flow.
+const DISCOVER_DESKTOP_USER_AGENT: &str = concat!(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
+    "AppleWebKit/537.36 (KHTML, like Gecko) ",
+    "Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0"
+);
 
 /// Open a browser tab for a user-supplied URL (normalizes a missing scheme first).
 pub async fn open_tab(
@@ -42,12 +50,12 @@ pub async fn open_child_webview(
     let tab_id = uuid::Uuid::new_v4().to_string();
     let label = format!("browser-tab-{}", &tab_id[..8]);
 
-    let game_id = crate::modules::system::adapters::sqlite::settings::get_setting(
-        &db,
-        "active_game_id",
-    )
-    .await?
-    .ok_or_else(|| BrowserError::InvalidSetting("Discover requires an active game".to_string()))?;
+    let game_id =
+        crate::modules::system::adapters::sqlite::settings::get_setting(&db, "active_game_id")
+            .await?
+            .ok_or_else(|| {
+                BrowserError::InvalidSetting("Discover requires an active game".to_string())
+            })?;
     let downloads_root = get_downloads_root_for_game(&app, &db, &game_id).await;
     let history_db_for_load = db.clone();
     let history_db_for_title = db.clone();
@@ -78,6 +86,7 @@ pub async fn open_child_webview(
         ),
     )
     .data_directory(discover_profile)
+    .user_agent(DISCOVER_DESKTOP_USER_AGENT)
     .devtools(cfg!(debug_assertions))
     .zoom_hotkeys_enabled(true)
     .on_navigation({
@@ -111,7 +120,9 @@ pub async fn open_child_webview(
                 let history_db = history_db_for_load.clone();
                 let history_url = url_str.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = super::metadata::record_history(&history_db, &history_url, None, None).await {
+                    if let Err(error) =
+                        super::metadata::record_history(&history_db, &history_url, None, None).await
+                    {
                         log::debug!("Could not record Discover history: {error}");
                     }
                 });
@@ -132,7 +143,10 @@ pub async fn open_child_webview(
         let history_url = url.clone();
         let history_title = title.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(error) = super::metadata::update_history_metadata(&history_db, &history_url, &history_title).await {
+            if let Err(error) =
+                super::metadata::update_history_metadata(&history_db, &history_url, &history_title)
+                    .await
+            {
                 log::debug!("Could not update Discover history title: {error}");
             }
         });

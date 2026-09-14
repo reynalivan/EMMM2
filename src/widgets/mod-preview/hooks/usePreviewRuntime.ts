@@ -1,21 +1,23 @@
 import { useMemo } from 'react';
-import { useWorkspaceViewModel } from '@/features/workspace-runtime';
 import {
-  useAllModIniDocuments,
+  useWorkspacePreview,
+  useWorkspaceSelectionInput,
+  useWorkspaceStructure,
+} from '@/features/workspace-runtime';
+import {
   useClearPreviewImages,
-  useModIniFiles,
+  useModIniDocuments,
   usePreviewImages,
   useRemovePreviewImage,
   useSavePreviewImage,
   useUpdateModInfoDetails,
   useWriteModIni,
-  type IniFileEntry,
 } from './usePreviewData';
 import {
   isWorkspaceExplorerNode,
   type WorkspaceExplorerNode,
   type WorkspacePreview,
-  type WorkspaceViewModel,
+  type WorkspaceStructureViewModel,
 } from '@/entities/workspace';
 import type { IniDocumentLike } from '../utils/previewPanelUtils';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime';
@@ -38,8 +40,10 @@ interface PreviewRuntimeState {
   resolvedTitle: string | null;
   resolvedSubtitle: string | null;
   sourceUnavailableMessage: string | null;
-  availableObjects: WorkspaceViewModel['objects'];
-  iniFiles: IniFileEntry[];
+  availableObjects: WorkspaceStructureViewModel['objects'];
+  isPreviewLoading: boolean;
+  previewError: unknown | null;
+  retryPreview: () => Promise<unknown>;
   iniDocuments: PreviewIniDocument[];
   images: string[];
   previewImagesQuery: ReturnType<typeof usePreviewImages>;
@@ -51,8 +55,18 @@ interface PreviewRuntimeState {
 }
 
 export function usePreviewRuntime(): PreviewRuntimeState {
-  const { data: workspace } = useWorkspaceViewModel();
-  const activePath = workspace?.preview.selected_path ?? null;
+  const structureQuery = useWorkspaceStructure();
+  const workspace = structureQuery.data;
+  const currentSelection = useWorkspaceSelectionInput();
+  const sourceUnavailableMessage =
+    workspace?.runtime?.source_state?.status === 'unavailable'
+      ? (workspace.runtime.source_state.message ?? DEFAULT_SOURCE_UNAVAILABLE_MESSAGE)
+      : null;
+  const previewQuery = useWorkspacePreview({
+    enabled: Boolean(workspace) && !sourceUnavailableMessage && !structureQuery.isPlaceholderData,
+  });
+  const previewResult = previewQuery.data?.context_status === 'ready' ? previewQuery.data : null;
+  const activePath = previewResult?.preview.selected_path ?? null;
   const activeGameId = useAppStore((state) => state.activeGameId);
   const folderConflicts = useAppStore((state) =>
     activeGameId
@@ -68,18 +82,20 @@ export function usePreviewRuntime(): PreviewRuntimeState {
           ),
         ) ?? null);
   const detailPath = folderNameConflict ? null : activePath;
-  const previewSummary = workspace?.preview ?? null;
-  const selectedNode = workspace?.preview.selected_node ?? null;
+  const previewSummary = previewResult?.preview ?? null;
+  const selectedNode = previewResult?.preview.selected_node ?? null;
   const selectedFolder = isWorkspaceExplorerNode(selectedNode) ? selectedNode : null;
   const availableObjects = workspace?.objects ?? [];
-  const sourceUnavailableMessage =
-    workspace?.runtime?.source_state?.status === 'unavailable'
-      ? (workspace.runtime.source_state.message ?? DEFAULT_SOURCE_UNAVAILABLE_MESSAGE)
-      : null;
-  const resolvedTitle = workspace?.preview.display_title ?? selectedFolder?.display_name ?? null;
-  const resolvedSubtitle = workspace?.preview.display_subtitle ?? null;
+  const resolvedTitle = previewSummary?.display_title ?? selectedFolder?.display_name ?? null;
+  const resolvedSubtitle = previewSummary?.display_subtitle ?? null;
+  const isPreviewLoading = Boolean(
+    currentSelection.selectedModPath &&
+    !sourceUnavailableMessage &&
+    (!workspace || previewQuery.isPending || previewQuery.data?.context_status === 'context_stale'),
+  );
+  const previewError = previewQuery.isError ? previewQuery.error : null;
 
-  const iniFilesQuery = useModIniFiles(detailPath);
+  const iniDocumentsQuery = useModIniDocuments(detailPath);
   const previewImagesQuery = usePreviewImages(detailPath);
   // Each mutation invalidates its own detail queries in `usePreviewData`.
   const updateModInfo = useUpdateModInfoDetails();
@@ -88,16 +104,13 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const clearPreviewImages = useClearPreviewImages();
   const writeModIni = useWriteModIni();
 
-  const iniFiles = useMemo<IniFileEntry[]>(() => iniFilesQuery.data ?? [], [iniFilesQuery.data]);
-
-  const allIniQueries = useAllModIniDocuments(detailPath, iniFiles);
   const iniDocuments = useMemo(
     () =>
-      iniFiles.map((file, index) => ({
-        fileName: file.filename,
-        document: allIniQueries[index]?.data as IniDocumentLike | null | undefined,
+      (iniDocumentsQuery.data ?? []).map((entry) => ({
+        fileName: entry.filename,
+        document: entry.document as IniDocumentLike,
       })),
-    [allIniQueries, iniFiles],
+    [iniDocumentsQuery.data],
   );
 
   const images = useMemo(() => previewImagesQuery.data ?? [], [previewImagesQuery.data]);
@@ -111,7 +124,9 @@ export function usePreviewRuntime(): PreviewRuntimeState {
     resolvedSubtitle,
     sourceUnavailableMessage,
     availableObjects,
-    iniFiles,
+    isPreviewLoading,
+    previewError,
+    retryPreview: previewQuery.refetch,
     iniDocuments,
     images,
     previewImagesQuery,

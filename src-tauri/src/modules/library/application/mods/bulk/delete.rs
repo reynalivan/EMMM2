@@ -67,6 +67,7 @@ pub fn execute_prepared_bulk_delete(
     let mut applied_sequences = Vec::new();
     let progress_interval = std::cmp::max(1, total / 10);
     let mut cancelled = false;
+    let mut processed_count = 0;
     for (index, item) in prepared.items.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             cancelled = true;
@@ -93,6 +94,7 @@ pub fn execute_prepared_bulk_delete(
                 error,
             }),
         }
+        processed_count += 1;
     }
     let _ = app.emit(
         "bulk-progress",
@@ -103,7 +105,7 @@ pub fn execute_prepared_bulk_delete(
                 "common:bulk_progress.done"
             }
             .to_string(),
-            current: total,
+            current: processed_count,
             total,
             active: false,
         },
@@ -114,7 +116,8 @@ pub fn execute_prepared_bulk_delete(
             failures,
             CollectionReferenceImpact::default(),
             Vec::new(),
-        ),
+        )
+        .with_execution_state(cancelled, processed_count, total),
         applied_sequences,
     }
 }
@@ -194,6 +197,7 @@ pub async fn bulk_delete(
     let progress_interval = std::cmp::max(1, total / 10);
 
     let mut cancelled = false;
+    let mut processed_count = 0;
     for (i, path) in paths.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             cancelled = true;
@@ -219,6 +223,7 @@ pub async fn bulk_delete(
                 error: e,
             }),
         }
+        processed_count += 1;
     }
 
     let _ = app.emit(
@@ -230,7 +235,7 @@ pub async fn bulk_delete(
                 "common:bulk_progress.done"
             }
             .to_string(),
-            current: total,
+            current: processed_count,
             total,
             active: false,
         },
@@ -241,5 +246,6 @@ pub async fn bulk_delete(
         failures,
         CollectionReferenceImpact::default(),
         Vec::new(),
-    ))
+    )
+    .with_execution_state(cancelled, processed_count, total))
 }

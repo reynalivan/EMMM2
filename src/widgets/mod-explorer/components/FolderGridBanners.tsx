@@ -1,4 +1,4 @@
-import { FolderOpen, AlertTriangle, LoaderCircle, Lock } from 'lucide-react';
+import { FolderOpen, AlertTriangle, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   openFolderConflictManagerDialog,
@@ -23,10 +23,9 @@ export interface FolderGridBannersProps {
   handleToggleSelf: (enabled: boolean) => void;
   /** Display name of nearest disabled ancestor — null when not locked */
   ancestorDisabledBy: string | null;
-  /** Open the EnableParent confirmation dialog with impact preview */
+  /** Explicitly enable the disabled parent shown in this notice. */
   onOpenEnableParentDialog: () => void;
   diskSourceUnavailableMessage: string | null;
-  recoveryStatus: 'ready' | 'syncing' | 'failed';
   mutationsDisabled: boolean;
 }
 
@@ -45,16 +44,12 @@ export default function FolderGridBanners({
   ancestorDisabledBy,
   onOpenEnableParentDialog,
   diskSourceUnavailableMessage,
-  recoveryStatus,
   mutationsDisabled,
 }: FolderGridBannersProps) {
   const { t } = useTranslation(['grid', 'folder_grid']);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const conflictsByGame = useAppStore((state) => state.folderConflictsByGame);
   const renameConfirmationsByGame = useAppStore((state) => state.renameConfirmationsByGame);
-  const reconcileProgress = useAppStore((state) =>
-    activeGameId ? (state.diskReconcileByGame[activeGameId]?.progress ?? null) : null,
-  );
   const diskConflicts = activeGameId
     ? (conflictsByGame[activeGameId] ?? EMPTY_DISK_CONFLICTS)
     : EMPTY_DISK_CONFLICTS;
@@ -67,48 +62,25 @@ export default function FolderGridBanners({
   }
 
   const isObjectLevel = currentPath.length === 1;
+  const hasNotices = Boolean(
+    diskSourceUnavailableMessage ||
+    diskConflicts.length > 0 ||
+    renameConfirmations.length > 0 ||
+    ancestorDisabledBy ||
+    (isFlatModRoot && !selfIsEnabled),
+  );
+
+  if (!hasNotices) {
+    return null;
+  }
 
   return (
-    <>
+    <div
+      className="folder-grid-notices relative z-20 shrink-0 px-4 pt-3"
+      data-testid="folder-grid-notices"
+    >
       {diskSourceUnavailableMessage && (
         <WorkspaceSourceUnavailableBanner message={diskSourceUnavailableMessage} />
-      )}
-
-      {(recoveryStatus === 'syncing' || reconcileProgress) && (
-        <div
-          className="mb-3 flex items-center gap-3 rounded-lg border border-info/30 bg-info/10 px-3 py-2"
-          role="status"
-          data-testid="workspace-reconcile-sync-banner"
-        >
-          <LoaderCircle
-            size={16}
-            className="shrink-0 animate-spin motion-reduce:animate-none text-info"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs text-info">{t('banners.disk_syncing')}</div>
-            {reconcileProgress && reconcileProgress.total_units !== null && (
-              <div className="mt-1 flex items-center gap-2">
-                <progress
-                  className="progress progress-info h-1.5 flex-1"
-                  value={reconcileProgress.completed_units}
-                  max={reconcileProgress.total_units}
-                  aria-label={t('banners.disk_syncing')}
-                />
-                <span className="shrink-0 text-[10px] tabular-nums text-info/80">
-                  {reconcileProgress.completed_units}/{reconcileProgress.total_units}
-                  {reconcileProgress.eta_ms !== null
-                    ? ` · ~${Math.ceil(reconcileProgress.eta_ms / 1000)}s`
-                    : ''}
-                </span>
-              </div>
-            )}
-            {reconcileProgress && reconcileProgress.current_root && (
-              <div className="mt-1 truncate text-[10px] text-info/75">
-                {reconcileProgress.current_root}
-              </div>
-            )}
-          </div>
-        </div>
       )}
 
       {diskConflicts.length > 0 && (
@@ -145,25 +117,24 @@ export default function FolderGridBanners({
         </div>
       )}
 
-      {/* ── Parent-Disabled Notice (compact, topmost) ─────────────────────── */}
+      {/* This stays in document flow: sticky notices can sit below the global top bar. */}
       {ancestorDisabledBy && (
-        <div className="sticky top-0 z-20 -mx-4 mb-3 flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-1.5 shadow-sm backdrop-blur-md">
-          <Lock size={12} className="text-warning shrink-0" />
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2">
+          <Lock size={14} className="shrink-0 text-warning" />
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold text-warning/90 leading-none truncate uppercase tracking-wider">
+            <p className="truncate text-xs font-semibold text-warning">
               {isObjectLevel
                 ? t('banners.parent_disabled_object_title')
                 : t('banners.parent_disabled_title', { name: ancestorDisabledBy })}
             </p>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              className="btn btn-sm btn-warning text-[10px] px-4 font-bold shadow-sm"
-              onClick={onOpenEnableParentDialog}
-            >
-              {t('banners.enable_parent_btn')}
-            </button>
-          </div>
+          <button
+            className="btn btn-xs shrink-0 btn-warning"
+            disabled={mutationsDisabled}
+            onClick={onOpenEnableParentDialog}
+          >
+            {t('banners.enable_parent_btn')}
+          </button>
         </div>
       )}
 
@@ -218,6 +189,6 @@ export default function FolderGridBanners({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

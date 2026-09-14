@@ -15,6 +15,7 @@ import type { PreviewTreeNode } from '@/entities/collection';
 import { ApplyCollectionActions } from './ApplyCollectionActions';
 import { extractMissingModsPayload, formatAppError } from '../../../shared/lib/appError';
 import type { ApplyResult } from '@/entities/collection';
+import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
 
 interface ApplyCollectionModalProps {
   collectionId: string;
@@ -39,6 +40,7 @@ interface StatePanelProps {
   nodes?: PreviewTreeNode[];
   colorClass: string;
   emptyMessage: string;
+  treeIdentity: string;
   t: TFunction;
 }
 
@@ -52,8 +54,10 @@ function StatePanel({
   nodes,
   colorClass,
   emptyMessage,
+  treeIdentity,
   t,
 }: StatePanelProps) {
+  const [treeScrollElement, setTreeScrollElement] = useState<HTMLDivElement | null>(null);
   return (
     <div className={`flex-1 flex flex-col max-h-full overflow-hidden ${containerClass}`}>
       <div className="p-4 bg-base-300/30 border-b border-base-content/5 shrink-0">
@@ -80,8 +84,14 @@ function StatePanel({
           value={summary.object_count}
         />
       </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-        <CollectionTreeView nodes={nodes} colorClass={colorClass} emptyMessage={emptyMessage} />
+      <div ref={setTreeScrollElement} className="flex-1 overflow-y-auto custom-scrollbar p-4">
+        <CollectionTreeView
+          nodes={nodes}
+          colorClass={colorClass}
+          emptyMessage={emptyMessage}
+          scrollElement={treeScrollElement}
+          treeIdentity={treeIdentity}
+        />
       </div>
     </div>
   );
@@ -188,9 +198,11 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
 
         <div className="flex-1 overflow-hidden bg-base-100 flex min-h-[50vh]">
           {previewQuery.isLoading ? (
-            <div className="flex flex-col h-full items-center justify-center w-full text-base-content/50">
-              <Loader2 size={32} className="animate-spin mb-4 opacity-50 text-primary" />
-              <p>{t('collections:apply.actions.loading')}</p>
+            <div className="flex h-full w-full flex-col text-base-content/50" aria-busy="true">
+              <WorkspacePanelSkeleton variant="preview" />
+              <p className="px-6 pb-6 text-center text-sm">
+                {t('collections:apply.actions.loading')}
+              </p>
             </div>
           ) : missingPaths ? (
             <div className="w-full p-6 flex flex-col gap-4 justify-center">
@@ -275,6 +287,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 nodes={preview.current_tree_nodes}
                 colorClass="text-error/70"
                 emptyMessage={t('collections:apply.panels.empty_before')}
+                treeIdentity={`before:${collectionId}`}
                 t={t}
               />
 
@@ -293,6 +306,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 nodes={preview.target_tree_nodes}
                 colorClass="text-success/70"
                 emptyMessage={t('collections:apply.panels.empty_after')}
+                treeIdentity={`after:${collectionId}`}
                 t={t}
               />
             </div>

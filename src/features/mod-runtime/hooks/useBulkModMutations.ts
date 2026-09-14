@@ -23,6 +23,7 @@ import {
   notifyCollectionReferenceImpact,
 } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
+  formatBulkCancelledMessage,
   formatBulkFailureMessage,
   formatBulkSuccessMessage,
 } from '../../../shared/lib/hooks/bulkToastMessages';
@@ -65,6 +66,9 @@ export function useBulkToggle() {
       if (result.collection_impact) notifyCollectionReferenceImpact(result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'toggle'));
+      }
+      if (result.cancelled) {
+        toast.info(formatBulkCancelledMessage(result));
       }
       notifyCommittedMutationSyncWarning(result);
     },
@@ -111,6 +115,9 @@ export function useBulkDelete() {
       if (result.collection_impact) notifyCollectionReferenceImpact(result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'delete'));
+      }
+      if (result.cancelled) {
+        toast.info(formatBulkCancelledMessage(result));
       }
       notifyCommittedMutationSyncWarning(result);
     },

@@ -32,7 +32,7 @@ export function TagInput({ tags = [], onChange, placeholder, className = '' }: T
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-1 p-1 border border-base-content/20 rounded-lg bg-base-100 focus-within:outline-2 focus-within:outline-primary/50 transition-all ${className}`}
+      className={`flex flex-wrap items-center gap-1 rounded-lg border border-base-content/20 bg-base-100 p-1 transition-[border-color] duration-150 focus-within:outline-2 focus-within:outline-primary/50 ${className}`}
     >
       {tags.map((tag) => (
         <span key={tag} className="badge badge-primary gap-1 px-2 py-3 text-xs flex items-center">
@@ -40,7 +40,7 @@ export function TagInput({ tags = [], onChange, placeholder, className = '' }: T
           <button
             type="button"
             onClick={() => removeTag(tag)}
-            className="hover:bg-primary-focus rounded-full p-0.5"
+            className="workspace-interactive rounded-full p-0.5 hover:bg-primary-focus focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-1"
             aria-label={t('actions.remove', { item: tag })}
           >
             <X size={12} />

@@ -139,7 +139,7 @@ export function AutoDetectResult({
           {t('result.add_another')}
         </button>
         <button
-          className="btn btn-primary px-8 gap-2 shadow-lg shadow-primary/20 flex-1 hover:brightness-110 active:scale-[0.98] transition-all"
+          className="btn btn-primary flex-1 gap-2 px-8 shadow-lg shadow-primary/20 transition-[background-color,border-color,color,opacity,transform] duration-150 hover:brightness-110"
           onClick={() => onConfirm(confirmedGames)}
         >
           {t('result.confirm')}

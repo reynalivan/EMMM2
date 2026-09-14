@@ -24,5 +24,21 @@ describe('utils', () => {
       expect(tauriCore.convertFileSrc).toHaveBeenCalledWith('/test/path/image.png');
       expect(result).toBe('asset:///test/path/image.png');
     });
+
+    it.each([
+      'asset://localhost/E%3A/Mods/TestMod/preview.webp',
+      'file:///E:/Mods/TestMod/preview.webp',
+      'data:image/webp;base64,UklGRg==',
+      'blob:http://localhost/preview-image',
+    ])('keeps an existing loadable URI unchanged', (path) => {
+      expect(getFileUrl(path)).toBe(path);
+    });
+
+    it('converts UNC paths through the Tauri asset protocol', () => {
+      const path = '\\\\server\\mods\\TestMod\\preview.webp';
+
+      expect(getFileUrl(path)).toBe(`asset://${path}`);
+      expect(tauriCore.convertFileSrc).toHaveBeenCalledWith(path);
+    });
   });
 });

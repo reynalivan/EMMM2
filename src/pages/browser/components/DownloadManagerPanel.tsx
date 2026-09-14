@@ -12,6 +12,10 @@ import { useTranslation } from 'react-i18next';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '@/shared/lib/utils/formatters';
 import { ExternalLink, Pause, Play, RefreshCw, RotateCcw, X } from 'lucide-react';
+import VirtualList from '@/shared/ui/components/ui/VirtualList';
+import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
+
+const getDownloadItemKey = (item: BrowserDownloadItem) => item.id;
 
 export function DownloadManagerPanel() {
   const { t } = useTranslation(['browser']);
@@ -33,8 +37,10 @@ export function DownloadManagerPanel() {
     openDownloadSource,
     retryDownload,
     refreshDownloads,
+    isLoading,
     isRefreshing,
-  } = useDownloads(activeGameId);
+  } = useDownloads(activeGameId, { subscribe: false });
+  const usesVirtualList = downloads.length > 80;
 
   return (
     <div
@@ -100,8 +106,10 @@ export function DownloadManagerPanel() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2">
-        {downloads.length === 0 ? (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden py-2">
+        {isLoading ? (
+          <WorkspacePanelSkeleton variant="list" />
+        ) : downloads.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -120,21 +128,44 @@ export function DownloadManagerPanel() {
             </svg>
             <p className="text-sm">{t('downloads.empty')}</p>
           </div>
+        ) : usesVirtualList ? (
+          <VirtualList
+            items={downloads}
+            getItemKey={getDownloadItemKey}
+            estimateSize={() => 92}
+            ariaLabel={t('downloads.title')}
+            className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20"
+            renderItem={(item) => (
+              <DownloadRow
+                item={item}
+                queuePosition={getQueuePosition(downloads, item.id)}
+                onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
+                onCancel={() => cancelDownload(item.id)}
+                onPause={() => pauseDownload(item.id)}
+                onResume={() => resumeDownload(item.id)}
+                onRefreshLink={() => refreshDownloadLink(item.id)}
+                onOpenSource={() => openDownloadSource(item.id)}
+                onRetry={() => retryDownload(item.id)}
+              />
+            )}
+          />
         ) : (
-          downloads.map((item) => (
-            <DownloadRow
-              key={item.id}
-              item={item}
-              queuePosition={getQueuePosition(downloads, item.id)}
-              onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
-              onCancel={() => cancelDownload(item.id)}
-              onPause={() => pauseDownload(item.id)}
-              onResume={() => resumeDownload(item.id)}
-              onRefreshLink={() => refreshDownloadLink(item.id)}
-              onOpenSource={() => openDownloadSource(item.id)}
-              onRetry={() => retryDownload(item.id)}
-            />
-          ))
+          <div className="overflow-y-auto">
+            {downloads.map((item) => (
+              <DownloadRow
+                key={item.id}
+                item={item}
+                queuePosition={getQueuePosition(downloads, item.id)}
+                onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
+                onCancel={() => cancelDownload(item.id)}
+                onPause={() => pauseDownload(item.id)}
+                onResume={() => resumeDownload(item.id)}
+                onRefreshLink={() => refreshDownloadLink(item.id)}
+                onOpenSource={() => openDownloadSource(item.id)}
+                onRetry={() => retryDownload(item.id)}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -153,7 +184,7 @@ interface RowProps {
   onRetry: () => void;
 }
 
-function DownloadRow({
+export function DownloadRow({
   item,
   queuePosition,
   onDelete,

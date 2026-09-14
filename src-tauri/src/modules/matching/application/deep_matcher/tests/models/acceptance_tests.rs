@@ -18,6 +18,7 @@ fn db_entry(name: &str, aliases: &[&str], object_type: &str) -> DbEntry {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(),
+        runtime_targets: vec![],
     }
 }
 

@@ -1,10 +1,13 @@
 use crate::modules::library::application::mods::bulk;
 use crate::modules::library::application::mods::info_json;
 use crate::modules::mutation::coordinator::MutationCoordinator;
+use crate::modules::reconciliation::application::disk_reconcile::emit::require_applied_reconcile;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::guard::ValidatedPath;
 use crate::shared::errors::AppError;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, State};
 
@@ -105,6 +108,77 @@ fn partition_toggle_paths(
     (safe, failures)
 }
 
+/// A UI selection can contain the same folder through multiple paths, or a
+/// parent and its child. Rename planning is only well-defined for disjoint
+/// folders, so canonical aliases collapse while overlapping entries are both
+/// returned as per-item failures.
+fn normalize_toggle_paths(
+    validated: Vec<ValidatedPath>,
+) -> (Vec<ValidatedPath>, Vec<bulk::BulkActionError>) {
+    let mut seen = HashSet::new();
+    let unique = validated
+        .into_iter()
+        .filter(|path| seen.insert(physical_path_key(path.as_ref())))
+        .collect::<Vec<_>>();
+    let unique_by_path = unique
+        .iter()
+        .enumerate()
+        .map(|(index, path)| (physical_path_key(path.as_ref()), index))
+        .collect::<HashMap<_, _>>();
+    let mut overlapping = vec![false; unique.len()];
+    for (index, path) in unique.iter().enumerate() {
+        let mut ancestor = path.as_ref().parent();
+        while let Some(parent) = ancestor {
+            if let Some(other_index) = unique_by_path.get(&physical_path_key(parent)) {
+                overlapping[index] = true;
+                overlapping[*other_index] = true;
+            }
+            ancestor = parent.parent();
+        }
+    }
+    let failures = overlapping
+        .iter()
+        .enumerate()
+        .filter_map(|(index, is_overlapping)| {
+            is_overlapping.then_some(bulk::BulkActionError {
+                path: unique[index].original().to_string(),
+                error: AppError::Validation(
+                    "Bulk toggle cannot include both a folder and one of its descendants"
+                        .to_string(),
+                ),
+            })
+        })
+        .collect::<Vec<_>>();
+    let safe = unique
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, path)| (!overlapping[index]).then_some(path))
+        .collect();
+    (safe, failures)
+}
+
+/// A canonical OS path is physical identity: unlike a logical mod identity it
+/// must keep the `DISABLED` prefix, otherwise two conflict candidates could be
+/// silently collapsed into one requested mutation.
+fn physical_path_key(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let regular = if let Some(unc) = normalized.strip_prefix("//?/UNC/") {
+        format!("//{unc}")
+    } else if let Some(path) = normalized.strip_prefix("//?/") {
+        path.to_string()
+    } else {
+        normalized
+    };
+    regular
+        .chars()
+        .map(|character| character.to_ascii_lowercase())
+        .collect()
+}
+
+fn append_preflight_failures(result: &mut bulk::BulkResult, failures: Vec<bulk::BulkActionError>) {
+    result.failures.extend(failures);
+}
+
 /// Stop the running bulk toggle/delete after the item in flight. Work already
 /// done stays done — the trailing reconcile still converges the DB.
 #[specta::specta]
@@ -130,8 +204,22 @@ pub async fn bulk_toggle_mods(
     enable: bool,
 ) -> Result<bulk::BulkResult, AppError> {
     let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
-    // Security validation for all paths
-    let validated = crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
+    // Containment failures reject the entire request. Stale folders are local
+    // failures, so a multi-select remains useful when one entry disappeared.
+    let (validated, stale_paths) =
+        crate::platform::fs::guard::validate_mod_toggle_paths(&config, &game_id, &paths)?;
+    let (validated, overlapping_paths) = normalize_toggle_paths(validated);
+    let mut preflight_failures = stale_paths
+        .into_iter()
+        .map(|(path, error)| bulk::BulkActionError { path, error })
+        .collect::<Vec<_>>();
+    preflight_failures.extend(overlapping_paths);
+    if validated.is_empty() {
+        let result =
+            bulk::BulkResult::new(Vec::new(), preflight_failures).with_execution_state(false, 0, 0);
+        record_bulk_toggle_result(&app, diagnostics_enabled, &result).await;
+        return Ok(result);
+    }
     let preflight_paths = validated
         .iter()
         .map(|path| path.to_string_lossy().into_owned())
@@ -143,10 +231,12 @@ pub async fn bulk_toggle_mods(
         Some(&preflight_paths),
     )
     .await?;
-    let (validated, preflight_failures) =
+    let (validated, folder_conflict_failures) =
         partition_toggle_paths(validated, &preflight.folder_conflicts);
+    preflight_failures.extend(folder_conflict_failures);
     if validated.is_empty() {
-        let result = bulk::BulkResult::new(Vec::new(), preflight_failures);
+        let result =
+            bulk::BulkResult::new(Vec::new(), preflight_failures).with_execution_state(false, 0, 0);
         record_bulk_toggle_result(&app, diagnostics_enabled, &result).await;
         return Ok(result);
     }
@@ -164,10 +254,9 @@ pub async fn bulk_toggle_mods(
                 crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata,
             )
             .await?;
-        let mut result =
-            bulk::execute_prepared_bulk_toggle(&app, &state, &prepared, cancel_state.begin())
-                .result;
-        result.failures.extend(preflight_failures);
+        let cancel = cancel_state.begin();
+        let mut result = bulk::execute_prepared_bulk_toggle(&app, &state, &prepared, cancel).result;
+        append_preflight_failures(&mut result, preflight_failures);
         record_bulk_toggle_result(&app, diagnostics_enabled, &result).await;
         return Ok(result);
     }
@@ -190,9 +279,9 @@ pub async fn bulk_toggle_mods(
         game_guard,
         operation_guard,
     );
-    let mut execution =
-        bulk::execute_prepared_bulk_toggle(&app, &state, &prepared, cancel_state.begin());
-    execution.result.failures.extend(preflight_failures);
+    let cancel = cancel_state.begin();
+    let mut execution = bulk::execute_prepared_bulk_toggle(&app, &state, &prepared, cancel);
+    append_preflight_failures(&mut execution.result, preflight_failures);
 
     for sequence in &planned_sequences {
         if execution.applied_sequences.contains(sequence) {
@@ -217,7 +306,7 @@ pub async fn bulk_toggle_mods(
     )
     .await;
 
-    match reconcile_result {
+    match reconcile_result.and_then(require_applied_reconcile) {
         Ok(reconcile_result) => {
             mutation_lease.mark_db_committed()?;
             mutation_lease.commit()?;
@@ -244,7 +333,7 @@ pub async fn bulk_toggle_mods(
                 &game_id,
                 &mutation_lease,
             )
-            .await
+            .await.and_then(require_applied_reconcile)
             {
                 let combined =
                     format!("{error}; rollback projection failed: {rollback_reconcile_error}");
@@ -274,18 +363,31 @@ pub async fn bulk_delete_mods(
     // Required, like `delete_mod`: it names the mods root the paths must sit
     // inside, and the game whose index rows may be pruned. Optional, it let a
     // caller skip containment entirely.
-    let validated = crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
+    let (validated, stale_paths) =
+        crate::platform::fs::guard::validate_mod_toggle_paths(&config, &game_id, &paths)?;
+    let (validated, overlapping_paths) = normalize_toggle_paths(validated);
+    let mut preflight_failures = stale_paths
+        .into_iter()
+        .map(|(path, error)| bulk::BulkActionError { path, error })
+        .collect::<Vec<_>>();
+    preflight_failures.extend(overlapping_paths);
+    if validated.is_empty() {
+        return Ok(
+            bulk::BulkResult::new(Vec::new(), preflight_failures).with_execution_state(false, 0, 0)
+        );
+    }
+    let preflight_paths = validated
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
         pool.inner(),
         &game_id,
-        Some(&paths),
+        Some(&preflight_paths),
     )
     .await?;
 
-    if validated.is_empty() {
-        return Ok(bulk::BulkResult::new(Vec::new(), Vec::new()));
-    }
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
     let prepared = bulk::prepare_bulk_delete(&validated)?;
     let planned_sequences = prepared
@@ -311,8 +413,9 @@ pub async fn bulk_delete_mods(
         game_guard,
         operation_guard,
     );
-    let mut execution =
-        bulk::execute_prepared_bulk_delete(&app, &state, &prepared, cancel_state.begin());
+    let cancel = cancel_state.begin();
+    let mut execution = bulk::execute_prepared_bulk_delete(&app, &state, &prepared, cancel);
+    append_preflight_failures(&mut execution.result, preflight_failures);
     for sequence in &planned_sequences {
         if execution.applied_sequences.contains(sequence) {
             mutation_lease.mark_step_applied(*sequence)?;
@@ -331,17 +434,11 @@ pub async fn bulk_delete_mods(
         &game_id,
         &mutation_lease,
     )
-    .await;
+    .await
+    .and_then(require_applied_reconcile);
     let reconcile = match reconcile {
-        Ok(reconcile) if reconcile.status.applied() => reconcile,
-        outcome => {
-            let error = match outcome {
-                Ok(reconcile) => AppError::Io(format!(
-                    "Bulk delete reconcile requires attention: {:?}",
-                    reconcile.status
-                )),
-                Err(error) => error,
-            };
+        Ok(reconcile) => reconcile,
+        Err(error) => {
             mutation_lease.begin_rollback()?;
             if let Err(rollback_error) =
                 bulk::rollback_prepared_bulk_delete(&state, &prepared, &execution.applied_sequences)
@@ -353,13 +450,18 @@ pub async fn bulk_delete_mods(
             for sequence in &execution.applied_sequences {
                 mutation_lease.mark_step_rolled_back(*sequence)?;
             }
-            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+            if let Err(rollback_reconcile_error) = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
                 &app,
                 pool.inner(),
                 &game_id,
                 &mutation_lease,
             )
-            .await?;
+            .await.and_then(require_applied_reconcile) {
+                let combined =
+                    format!("{error}; rollback projection failed: {rollback_reconcile_error}");
+                mutation_lease.fail(combined.clone())?;
+                return Err(AppError::Io(combined));
+            }
             mutation_lease.finish_rollback()?;
             return Err(error);
         }
@@ -647,5 +749,93 @@ mod tests {
         state.cancel();
         assert!(state.0.load(Ordering::SeqCst));
         assert!(!state.begin().load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn preflight_failures_do_not_change_execution_progress_totals() {
+        let mut result = bulk::BulkResult::new(vec!["done".to_string()], Vec::new())
+            .with_execution_state(true, 1, 3);
+        append_preflight_failures(
+            &mut result,
+            vec![bulk::BulkActionError {
+                path: "missing".to_string(),
+                error: AppError::Io("Mod folder is no longer available".to_string()),
+            }],
+        );
+
+        assert_eq!(result.processed_count, 1);
+        assert_eq!(result.unprocessed_count, 2);
+        assert_eq!(result.failures.len(), 1);
+    }
+
+    #[test]
+    fn physical_selection_keys_keep_enabled_and_disabled_conflict_candidates_distinct() {
+        assert_ne!(
+            physical_path_key(std::path::Path::new("C:/Mods/DISABLED Blue")),
+            physical_path_key(std::path::Path::new("C:/Mods/Blue")),
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn bulk_toggle_deduplicates_aliases_and_rejects_nested_targets() {
+        use crate::modules::settings::application::config::GameConfig;
+
+        let pool = crate::test_utils::init_test_db().await.pool;
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mods_root = temp_dir.path().join("Mods");
+        let parent = mods_root.join("Parent");
+        let child = parent.join("Child");
+        let sibling = mods_root.join("Sibling");
+        std::fs::create_dir_all(&child).expect("nested folders");
+        std::fs::create_dir_all(&sibling).expect("sibling folder");
+
+        let config = ConfigService::new_for_test_async(pool).await;
+        let mut settings = config.get_settings();
+        settings.games.push(GameConfig {
+            id: "game-1".to_string(),
+            name: "Test Game".to_string(),
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            instance_path: mods_root.clone(),
+            mod_path: mods_root.clone(),
+            ready_to_move_path: None,
+            launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+            game_exe: Some(mods_root.join("game.exe")),
+            loader_exe: None,
+            xxmi_launcher_exe: None,
+            launch_args: None,
+            warnings: Vec::new(),
+        });
+        config.save_settings(settings).expect("save settings");
+
+        let aliases = vec![
+            "Sibling".to_string(),
+            sibling
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        ];
+        let (validated, failures) =
+            crate::platform::fs::guard::validate_mod_toggle_paths(&config, "game-1", &aliases)
+                .expect("aliases stay inside the root");
+        let (safe, overlaps) = normalize_toggle_paths(validated);
+        assert!(failures.is_empty());
+        assert!(overlaps.is_empty());
+        assert_eq!(safe.len(), 1, "canonical aliases execute only once");
+
+        let nested = vec!["Parent".to_string(), "Parent/Child".to_string()];
+        let (validated, failures) =
+            crate::platform::fs::guard::validate_mod_toggle_paths(&config, "game-1", &nested)
+                .expect("nested paths are individually contained");
+        let (safe, overlaps) = normalize_toggle_paths(validated);
+        assert!(failures.is_empty());
+        assert!(safe.is_empty());
+        assert_eq!(
+            overlaps
+                .iter()
+                .map(|failure| failure.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Parent", "Parent/Child"]
+        );
     }
 }

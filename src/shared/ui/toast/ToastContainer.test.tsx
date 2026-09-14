@@ -29,6 +29,12 @@ describe('ToastContainer', () => {
       vi.advanceTimersByTime(100);
     });
 
+    expect(screen.getByText('Auto dismiss me')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(160);
+    });
+
     expect(screen.queryByText('Auto dismiss me')).not.toBeInTheDocument();
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
@@ -51,6 +57,10 @@ describe('ToastContainer', () => {
 
     act(() => {
       if (dismissButton) fireEvent.click(dismissButton);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(160);
     });
 
     expect(screen.queryByText('Permission denied')).not.toBeInTheDocument();

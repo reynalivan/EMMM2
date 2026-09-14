@@ -153,19 +153,24 @@ export function closeDialogIfTargetRemoved(
     return state.dialogState;
   }
 
-  const targetPath =
+  const targetPaths =
     state.dialogState.kind === 'fileInUse'
-      ? state.dialogState.data.path
+      ? [state.dialogState.data.path]
       : state.dialogState.kind === 'folderEnableParent'
-        ? state.dialogState.ancestorPath
+        ? [
+            state.dialogState.folder.path,
+            ...state.dialogState.requirement.parents.map((parent) => parent.path),
+          ]
         : 'folder' in state.dialogState
-          ? state.dialogState.folder.path
-          : null;
-  if (!targetPath) {
+          ? [state.dialogState.folder.path]
+          : [];
+  if (targetPaths.length === 0) {
     return state.dialogState;
   }
 
-  const hit = invalidPaths.some((path) => pathStartsWith(path, targetPath));
+  const hit = invalidPaths.some((path) =>
+    targetPaths.some((targetPath) => pathStartsWith(path, targetPath)),
+  );
 
   if (!hit) {
     return state.dialogState;

@@ -1,4 +1,12 @@
-import { AlertTriangle, CheckCircle, Download, FileDown, RefreshCw, Upload } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle,
+  Coffee,
+  Download,
+  FileDown,
+  RefreshCw,
+  Upload,
+} from 'lucide-react';
 import { useAppStore } from '@/app/store';
 import { useSettings } from '@/entities/settings';
 import { commands } from '@/shared/api/tauri/bindings';
@@ -16,6 +24,9 @@ import { useEffect, useState } from 'react';
 import { TrustInformationDialog, type TrustDocument } from '../TrustInformationDialog';
 import { SettingsRow, SettingsSection } from '../SettingsLayout';
 import { formatBytes } from '@/shared/lib/utils/formatters';
+import { useToastStore } from '@/shared/ui/toast';
+
+const SUPPORT_URL = 'https://ko-fi.com/reynalivan';
 
 const CUSTOM_THEME_TEMPLATE = {
   id: 'midnight-blue',
@@ -64,6 +75,7 @@ export default function GeneralTab() {
   const { settings, updateTheme, updateLanguage, setTelemetryEnabled } = useSettings();
   const { customThemes, refreshCustomThemes } = useCustomThemes();
   const { t } = useTranslation(['settings', 'common']);
+  const { addToast } = useToastStore();
   const [appVersion, setAppVersion] = useState('');
   const [activeTrustDocument, setActiveTrustDocument] = useState<TrustDocument | null>(null);
   const [isImportingTheme, setIsImportingTheme] = useState(false);
@@ -94,6 +106,14 @@ export default function GeneralTab() {
 
   const handleLanguageChange = (value: string) => {
     updateLanguage.mutate(value);
+  };
+
+  const handleOpenSupport = async () => {
+    try {
+      await commands.browserOpenExternally(SUPPORT_URL);
+    } catch (cause) {
+      addToast('error', t('general.support.open_failed', { error: formatAppError(cause) }));
+    }
   };
 
   const handleImportTheme = async () => {
@@ -354,6 +374,24 @@ export default function GeneralTab() {
               <span aria-hidden="true">›</span>
             </button>
           ))}
+        </div>
+        <div className="mt-3 rounded-box border border-base-300/70 bg-base-200/35 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">{t('general.support.title')}</p>
+              <p className="mt-0.5 text-xs text-base-content/60">
+                {t('general.support.description')}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm gap-2"
+              onClick={() => void handleOpenSupport()}
+            >
+              <Coffee size={15} />
+              {t('general.support.action')}
+            </button>
+          </div>
         </div>
       </SettingsSection>
       <TrustInformationDialog

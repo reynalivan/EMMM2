@@ -255,7 +255,7 @@ export default tseslint.config(
 
   // importPipeline preflights a user-supplied path before import; that probe is allowed.
   {
-  files: ['src/widgets/object-sidebar/utils/importPipeline.ts'],
+    files: ['src/widgets/object-sidebar/utils/importPipeline.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 

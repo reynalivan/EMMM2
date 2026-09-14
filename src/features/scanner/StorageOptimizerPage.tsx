@@ -1,9 +1,14 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Play, StopCircle, EyeOff } from 'lucide-react';
 import { useActiveGame } from '@/entities/game';
 import { useCancelDedupScan, useIgnoredPairs, useStartDedupScan } from './hooks/useDedup';
 import type { DupScanEvent } from '@/entities/workspace';
 import DedupFeature from './components/DedupFeature';
+import {
+  DuplicateReportApplyButton,
+  type DuplicateReportActionState,
+  type DuplicateReportHandle,
+} from './components/DuplicateReport';
 import { IgnoredPairsModal } from './components/IgnoredPairsModal';
 import { useTranslation } from 'react-i18next';
 import { IDLE_DEDUP_SCAN_PROGRESS, type DedupScanProgress } from './utils/dedupProgress';
@@ -28,6 +33,11 @@ export default function StorageOptimizerPage() {
   const stopStoredScan = useDedupScanStore((state) => state.stopScan);
   const [showIgnoredModal, setShowIgnoredModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'high' | 'medium' | 'low'>('all');
+  const duplicateReportRef = useRef<DuplicateReportHandle>(null);
+  const [duplicateActionState, setDuplicateActionState] = useState<DuplicateReportActionState>({
+    selectionCount: 0,
+    isApplying: false,
+  });
 
   const { data: ignoredPairs } = useIgnoredPairs(activeGame?.id || '');
   const activeGameId = activeGame?.id ?? null;
@@ -36,6 +46,14 @@ export default function StorageOptimizerPage() {
   const progress: DedupScanProgress =
     scanGameId === activeGameId ? storedProgress : IDLE_DEDUP_SCAN_PROGRESS;
   const isScanning = progress.isScanning;
+
+  const handleDuplicateActionStateChange = useCallback((next: DuplicateReportActionState) => {
+    setDuplicateActionState((current) =>
+      current.selectionCount === next.selectionCount && current.isApplying === next.isApplying
+        ? current
+        : next,
+    );
+  }, []);
 
   const handleEvent = useCallback(
     (event: DupScanEvent) => {
@@ -76,7 +94,16 @@ export default function StorageOptimizerPage() {
     <WorkspacePageFrame
       context={
         <WorkspaceContextBar
-          description={<StorageFilterTabs activeTab={activeTab} onChange={setActiveTab} />}
+          description={
+            <div className="flex w-full flex-wrap items-center gap-3">
+              <StorageFilterTabs activeTab={activeTab} onChange={setActiveTab} />
+              <DuplicateReportApplyButton
+                selectionCount={duplicateActionState.selectionCount}
+                isApplying={duplicateActionState.isApplying}
+                onApply={() => duplicateReportRef.current?.requestApply()}
+              />
+            </div>
+          }
         />
       }
     >
@@ -111,7 +138,13 @@ export default function StorageOptimizerPage() {
       </TopBarActionsPortal>
       <WorkspacePageContent>
         {/* ── Filter Tabs ────────────────────────────────────────────── */}
-        <DedupFeature activeFilter={activeTab} gameId={activeGame?.id ?? ''} {...progress} />
+        <DedupFeature
+          activeFilter={activeTab}
+          gameId={activeGame?.id ?? ''}
+          reportRef={duplicateReportRef}
+          onReportActionStateChange={handleDuplicateActionStateChange}
+          {...progress}
+        />
       </WorkspacePageContent>
 
       {showIgnoredModal && activeGame && (

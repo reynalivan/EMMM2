@@ -70,14 +70,7 @@ pub fn detect_conflicts(ini_files: &[(PathBuf, PathBuf)]) -> Vec<ConflictInfo> {
 pub fn discover_runtime_ini_files(mod_root: &Path) -> Vec<PathBuf> {
     runtime_entries(mod_root)
         .filter(|entry| entry.file_type().is_file())
-        .filter(|entry| !entry.file_name().eq_ignore_ascii_case("desktop.ini"))
-        .filter(|entry| {
-            entry
-                .path()
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"))
-        })
+        .filter(is_runtime_ini)
         .map(|entry| entry.into_path())
         .collect()
 }
@@ -100,6 +93,37 @@ pub fn detect_conflicts_with_roots(
         }
     }
 
+    collect_conflicts(groups)
+}
+
+/// Scan each enabled mod root once for both runtime INIs and ShaderFixes
+/// replacements. The combined walk keeps conflict sources in lockstep while
+/// avoiding a second recursive traversal of the same root.
+pub(crate) fn detect_runtime_conflicts(mod_roots: &[PathBuf]) -> Vec<ConflictInfo> {
+    let mut groups: HashMap<(ConflictKind, String, Option<String>), Vec<HashEntry>> =
+        HashMap::new();
+    let mut scanned_roots = HashSet::new();
+
+    for mod_root in mod_roots {
+        if !scanned_roots.insert(mod_root) {
+            continue;
+        }
+        for entry in runtime_entries(mod_root).filter(|entry| entry.file_type().is_file()) {
+            if is_runtime_ini(&entry) {
+                add_entries(&mut groups, parse_ini_hashes(entry.path(), mod_root));
+            }
+            if let Some(replacement) = replacement_entry(entry.path(), mod_root) {
+                add_entry(&mut groups, replacement);
+            }
+        }
+    }
+
+    collect_conflicts(groups)
+}
+
+fn collect_conflicts(
+    groups: HashMap<(ConflictKind, String, Option<String>), Vec<HashEntry>>,
+) -> Vec<ConflictInfo> {
     let mut conflicts: Vec<_> = groups
         .into_iter()
         .filter_map(|((_kind, _hash, _stage), entries)| build_conflict(entries))
@@ -117,26 +141,57 @@ fn add_entries(
     entries: Vec<HashEntry>,
 ) {
     for entry in entries {
-        let key = (
-            entry.kind,
-            entry.hash.clone(),
-            entry.evidence.shader_stage.clone(),
-        );
-        groups.entry(key).or_default().push(entry);
+        add_entry(groups, entry);
     }
 }
 
+fn add_entry(
+    groups: &mut HashMap<(ConflictKind, String, Option<String>), Vec<HashEntry>>,
+    entry: HashEntry,
+) {
+    let key = (
+        entry.kind,
+        entry.hash.clone(),
+        entry.evidence.shader_stage.clone(),
+    );
+    groups.entry(key).or_default().push(entry);
+}
+
 fn build_conflict(entries: Vec<HashEntry>) -> Option<ConflictInfo> {
+    // A hash group can contain many sections across many mods. Build the
+    // lookup once so deciding whether an entry overlaps another mod does not
+    // rescan the entire group for every entry.
+    let mut all_mod_paths = HashSet::new();
+    let mut unindexed_mod_paths = HashSet::new();
+    let mut indexed_mod_paths: HashMap<u32, HashSet<&str>> = HashMap::new();
+    for entry in &entries {
+        let mod_path = entry.evidence.mod_path.as_str();
+        all_mod_paths.insert(mod_path);
+        match entry.evidence.match_first_index {
+            Some(index) => {
+                indexed_mod_paths.entry(index).or_default().insert(mod_path);
+            }
+            None => {
+                unindexed_mod_paths.insert(mod_path);
+            }
+        }
+    }
+
     let involved: Vec<_> = entries
         .iter()
-        .filter(|entry| {
-            entries.iter().any(|other| {
-                entry.evidence.mod_path != other.evidence.mod_path
-                    && indices_can_overlap(
-                        entry.evidence.match_first_index,
-                        other.evidence.match_first_index,
-                    )
-            })
+        .filter(|entry| match entry.evidence.match_first_index {
+            // An unindexed section can overlap any section from another mod.
+            None => all_mod_paths.len() > 1,
+            // An indexed section can overlap an unindexed section, or another
+            // section using the same index, as long as it belongs to another
+            // mod. The lookup avoids a per-entry scan of the whole hash group.
+            Some(index) => {
+                let mod_path = entry.evidence.mod_path.as_str();
+                unindexed_mod_paths.iter().any(|other| *other != mod_path)
+                    || indexed_mod_paths
+                        .get(&index)
+                        .is_some_and(|paths| paths.iter().any(|other| *other != mod_path))
+            }
         })
         .collect();
 
@@ -182,10 +237,6 @@ fn build_conflict(entries: Vec<HashEntry>) -> Option<ConflictInfo> {
         mod_paths,
         evidence,
     })
-}
-
-fn indices_can_overlap(left: Option<u32>, right: Option<u32>) -> bool {
-    left.is_none() || right.is_none() || left == right
 }
 
 fn path_is_active(path: &str) -> bool {
@@ -354,6 +405,15 @@ fn runtime_entries(mod_root: &Path) -> impl Iterator<Item = DirEntry> + '_ {
                 )
         })
         .filter_map(Result::ok)
+}
+
+fn is_runtime_ini(entry: &DirEntry) -> bool {
+    !entry.file_name().eq_ignore_ascii_case("desktop.ini")
+        && entry
+            .path()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"))
 }
 
 fn replacement_entry(path: &Path, mod_root: &Path) -> Option<HashEntry> {

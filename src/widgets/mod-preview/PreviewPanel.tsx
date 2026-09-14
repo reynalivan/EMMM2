@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/app/store';
@@ -18,6 +18,7 @@ import PreviewConfirmDialogs from './components/PreviewConfirmDialogs';
 import PreviewHeader from './components/PreviewHeader';
 import { openFolderConflictManagerDialog } from '@/features/workspace-runtime';
 import PreviewFolderConflictState from './components/PreviewFolderConflictState';
+import { PreviewErrorState, PreviewLoadingState } from './components/PreviewReadState';
 import ModHealthSection from './components/ModHealthSection';
 import { useModHealth } from './hooks/useModHealth';
 import { toModHealthPanelData } from './utils/modHealthPresentation';
@@ -31,6 +32,8 @@ export default function PreviewPanel() {
   const setMobilePane = useAppStore((state) => state.setMobilePane);
   const runtime = useWorkspaceRuntime();
   const { activeGame } = useActiveGame();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
 
   const {
     activePath,
@@ -40,6 +43,9 @@ export default function PreviewPanel() {
     resolvedTitle,
     resolvedSubtitle,
     sourceUnavailableMessage,
+    isPreviewLoading,
+    previewError,
+    retryPreview,
     images,
     currentImageIndex,
     setCurrentImageIndex,
@@ -79,7 +85,11 @@ export default function PreviewPanel() {
   });
   const canEdit = Boolean(activePath) && !sourceUnavailableMessage && !folderNameConflict;
   const interactiveActivePath = folderNameConflict ? null : activePath;
-  const modHealth = useModHealth(sourceUnavailableMessage ? null : interactiveActivePath);
+  const modHealthPath =
+    sourceUnavailableMessage || !selectedFolder?.is_effectively_active
+      ? null
+      : interactiveActivePath;
+  const modHealth = useModHealth(modHealthPath);
   const modViewerExternalReview = useModViewerExternalReview(
     sourceUnavailableMessage ? null : interactiveActivePath,
   );
@@ -133,6 +143,36 @@ export default function PreviewPanel() {
     pasteThumbnailFromClipboard,
   });
 
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const header = headerRef.current;
+    if (!panel || !header) return;
+
+    const syncHeaderHeight = () => {
+      panel.style.setProperty('--preview-header-height', `${header.offsetHeight}px`);
+    };
+
+    syncHeaderHeight();
+    const observer = new ResizeObserver(syncHeaderHeight);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [activePath]);
+
+  if (isPreviewLoading) {
+    return <PreviewLoadingState />;
+  }
+
+  if (previewError) {
+    return (
+      <PreviewErrorState
+        errorMessage={formatAppError(previewError)}
+        onRetry={() => {
+          void retryPreview();
+        }}
+      />
+    );
+  }
+
   if (!activePath) {
     return (
       <PreviewEmptyState
@@ -159,7 +199,9 @@ export default function PreviewPanel() {
 
   return (
     <div
-      className="workspace-scroll-owner flex h-full w-full max-w-none flex-col overflow-y-auto border-l border-base-content/5 bg-base-100/85 px-6 pb-6"
+      ref={panelRef}
+      key={activePath}
+      className="preview-panel workspace-context-enter workspace-scroll-owner flex h-full w-full max-w-none flex-col overflow-y-auto border-l border-base-content/5 bg-base-100/85 px-6 pb-6 pt-[var(--workspace-topbar-height)]"
       onScroll={handleScroll}
     >
       <input
@@ -207,23 +249,25 @@ export default function PreviewPanel() {
         }}
       />
 
-      <PreviewHeader
-        selectedFolder={selectedFolder}
-        resolvedTitle={resolvedTitle}
-        resolvedSubtitle={resolvedSubtitle}
-        titleDraft={titleDraft}
-        warningText={primaryWarningText}
-        warningTooltip={warningTooltip}
-        sourceUnavailableMessage={sourceUnavailableMessage}
-        isScrolled={isScrolled}
-        canEdit={canEdit}
-        actions={actions}
-        onTitleChange={setTitleDraft}
-        onBackToGrid={() => setMobilePane('grid')}
-        onClearSelection={() =>
-          runtime.clearSelection({ resetExplorer: true, clearObjectSelection: true })
-        }
-      />
+      <div ref={headerRef}>
+        <PreviewHeader
+          selectedFolder={selectedFolder}
+          resolvedTitle={resolvedTitle}
+          resolvedSubtitle={resolvedSubtitle}
+          titleDraft={titleDraft}
+          warningText={primaryWarningText}
+          warningTooltip={warningTooltip}
+          sourceUnavailableMessage={sourceUnavailableMessage}
+          isScrolled={isScrolled}
+          canEdit={canEdit}
+          actions={actions}
+          onTitleChange={setTitleDraft}
+          onBackToGrid={() => setMobilePane('grid')}
+          onClearSelection={() =>
+            runtime.clearSelection({ resetExplorer: true, clearObjectSelection: true })
+          }
+        />
+      </div>
 
       <GallerySection
         images={images}

@@ -2,6 +2,7 @@ use crate::modules::automation::application::hotkeys::{HotkeyConfig, KeyViewerCo
 use crate::modules::games::adapters::sqlite::game;
 use crate::modules::games::domain::models::LaunchMode;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
@@ -30,12 +31,34 @@ pub struct GameConfig {
 #[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
 pub struct SafetyConfig {
     pub keywords: Vec<String>,
+    /// Per-game Safe Mode state. Classification remains unchanged; this only
+    /// controls whether runtime apply paths may activate non-safe managed mods.
+    #[serde(default)]
+    pub runtime_safe_mode_by_game: BTreeMap<String, bool>,
 }
 
 impl Default for SafetyConfig {
     fn default() -> Self {
         Self {
             keywords: vec!["nsfw".into(), "nude".into(), "18+".into()],
+            runtime_safe_mode_by_game: BTreeMap::new(),
+        }
+    }
+}
+
+impl SafetyConfig {
+    pub fn runtime_safe_mode_for(&self, game_id: &str) -> bool {
+        self.runtime_safe_mode_by_game
+            .get(game_id)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    pub fn set_runtime_safe_mode(&mut self, game_id: String, enabled: bool) {
+        if enabled {
+            self.runtime_safe_mode_by_game.insert(game_id, true);
+        } else {
+            self.runtime_safe_mode_by_game.remove(&game_id);
         }
     }
 }
@@ -53,32 +76,6 @@ pub struct AiConfig {
 pub struct ExternalToolsConfig {
     #[serde(default)]
     pub mod_viewer_executable: Option<PathBuf>,
-}
-
-/// Preferences for the signed, public catalog release channel. This contains
-/// no GitHub account data or credentials.
-#[derive(Serialize, Deserialize, Debug, Clone, specta::Type)]
-pub struct CatalogUpdateConfig {
-    #[serde(default = "default_catalog_update_check")]
-    pub auto_check: bool,
-    #[serde(default)]
-    pub auto_install: bool,
-    #[serde(default)]
-    pub last_successful_check_unix_seconds: Option<i64>,
-}
-
-const fn default_catalog_update_check() -> bool {
-    true
-}
-
-impl Default for CatalogUpdateConfig {
-    fn default() -> Self {
-        Self {
-            auto_check: true,
-            auto_install: false,
-            last_successful_check_unix_seconds: None,
-        }
-    }
 }
 
 /// Explicit consent for the anonymous diagnostics channel. This contains no
@@ -109,8 +106,6 @@ pub struct AppSettings {
     #[serde(default)]
     pub external_tools: ExternalToolsConfig,
     #[serde(default)]
-    pub catalog_updates: CatalogUpdateConfig,
-    #[serde(default)]
     pub diagnostics: DiagnosticsSettings,
 }
 
@@ -137,7 +132,6 @@ impl Default for AppSettings {
             hotkeys: HotkeyConfig::default(),
             keyviewer: KeyViewerConfig::default(),
             external_tools: ExternalToolsConfig::default(),
-            catalog_updates: CatalogUpdateConfig::default(),
             diagnostics: DiagnosticsSettings::default(),
         }
     }

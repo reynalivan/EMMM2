@@ -81,6 +81,7 @@ function batch(status: ImportBatch['status']): ImportBatch {
         matchCategory: null,
         subCategory: null,
         classificationMetadata: {},
+        sourceMetadata: {},
         categorySuggestions: [],
         canonicalSuggestions: [],
         destinationSuggestions: [],
@@ -141,6 +142,9 @@ describe('ImportBatchWizardHost archive analysis', () => {
       ),
     );
     expect(mocks.analyzeImportBatch).not.toHaveBeenCalled();
+    expect(document.querySelector('.fixed.inset-0')).toHaveClass(
+      'z-[var(--workspace-layer-overlay)]',
+    );
 
     const channel = mocks.analyzeImportBatchWithOptions.mock.calls[0][1] as InstanceType<
       typeof mocks.MockChannel<ExtractionEvent>

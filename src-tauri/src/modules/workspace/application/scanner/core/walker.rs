@@ -63,6 +63,10 @@ const ARCHIVE_EXTENSIONS: &[&str] = &["zip", "7z", "rar"];
 /// Extensions to check during content scanning per Epic 2 §B.2.
 const SCAN_EXTENSIONS: &[&str] = &["ini", "dds", "txt", "buf", "ib", "vb"];
 
+pub(crate) fn is_scannable_extension(extension: &str) -> bool {
+    SCAN_EXTENSIONS.contains(&extension)
+}
+
 /// Scan the root Mods directory and return real mod folders as candidates.
 ///
 /// Recurses up to a maximum depth of 6, using `classifier::classify_folder` to determine
@@ -279,7 +283,7 @@ pub fn scan_folder_content(folder: &Path, max_depth: usize) -> FolderContent {
         }
 
         // Only include files with extensions we care about
-        if SCAN_EXTENSIONS.contains(&extension.as_str()) {
+        if is_scannable_extension(&extension) {
             files.push(FileInfo {
                 path: path.to_path_buf(),
                 name,

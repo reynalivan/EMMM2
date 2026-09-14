@@ -142,6 +142,7 @@ async fn applying_analysis_result_is_atomic_and_invalidates_acknowledgment_once(
     );
     assert_eq!(item.review_gate, result.review_gate);
     assert_eq!(item.diagnostics, result.diagnostics);
+    assert_eq!(item.source_metadata, result.source_metadata);
 
     assert!(
         apply_analysis_result(&context.pool, "item-analysis", &result)
@@ -205,6 +206,7 @@ fn analysis_result_for_test() -> AnalysisResult {
         selected_category: StableCategory::Character,
         selected_sub_category: None,
         classification_metadata: serde_json::json!({"source": "test"}),
+        source_metadata: serde_json::json!({"gamebanana": {"itemId": 528562}}),
         payload_manifest: PayloadManifest {
             version: 1,
             file_count: 1,

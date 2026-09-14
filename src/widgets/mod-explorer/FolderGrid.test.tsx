@@ -202,7 +202,9 @@ describe('FolderGrid', () => {
 
     expect(screen.getByTestId('folder-grid')).toHaveClass('folder-grid-container');
     expect(container.querySelector('[class*="folder-grid-chrome-height"]')).toBeInTheDocument();
-    expect(container.querySelector('.folder-grid-scroll')).toBeInTheDocument();
+    expect(container.querySelector('.folder-grid-scroll')).toHaveClass(
+      'pb-[var(--folder-grid-bottom-inset)]',
+    );
     expect(screen.getByTestId('folder-grid-footer').parentElement).toHaveClass(
       'absolute',
       'bottom-0',

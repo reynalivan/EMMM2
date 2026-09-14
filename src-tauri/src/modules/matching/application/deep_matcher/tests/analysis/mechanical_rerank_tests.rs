@@ -19,6 +19,7 @@ fn mock_db_with_entry(entry_id: usize, entry: DbEntry) -> MasterDb {
             thumbnail_path: None,
             metadata: None,
             hash_db: HashMap::new(),
+            runtime_targets: vec![],
         });
     }
     entries[entry_id] = entry.clone();
@@ -48,6 +49,7 @@ fn test_gb_exact_mod_name_bonus() {
         thumbnail_path: None,
         metadata: None,
         hash_db: HashMap::new(),
+        runtime_targets: vec![],
     };
     let db = mock_db_with_entry(0, entry);
     let candidate = base_candidate(0);
@@ -79,6 +81,7 @@ fn test_gb_category_mismatch_penalty() {
         thumbnail_path: None,
         metadata: None,
         hash_db: HashMap::new(),
+        runtime_targets: vec![],
     };
     let db = mock_db_with_entry(0, entry);
     let candidate = base_candidate(0);
@@ -110,6 +113,7 @@ fn test_gb_description_keywords_bonus() {
         thumbnail_path: None,
         metadata: None,
         hash_db: HashMap::new(),
+        runtime_targets: vec![],
     };
     let db = mock_db_with_entry(0, entry);
     let candidate = base_candidate(0);

@@ -27,6 +27,7 @@ function diskReconcileResult(overrides: Partial<DiskReconcileResult> = {}): Disk
     reconcile_revision: 1,
     reason: 'WatcherBatch',
     status: 'Applied',
+    scan_scope: 'Scoped',
     folder_conflicts: [],
     rename_confirmations: [],
     error_message: null,

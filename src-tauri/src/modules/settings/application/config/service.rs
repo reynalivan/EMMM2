@@ -11,6 +11,7 @@ use std::{
 use tauri::AppHandle;
 
 use super::models::AppSettings;
+use crate::modules::automation::application::hotkeys::{HotkeyConfig, KeyViewerConfig};
 
 pub struct ConfigService {
     pub(super) pool: SqlitePool,
@@ -167,8 +168,12 @@ impl ConfigService {
             }
             ensure_existing_mod_paths_unchanged(current, &new_settings)?;
             let has_api_key = current.ai.has_api_key;
+            // Runtime Safe Mode is controlled by the mutation path, never by
+            // a whole Settings payload captured in the frontend.
+            let runtime_safe_mode_by_game = current.safety.runtime_safe_mode_by_game.clone();
             *current = new_settings;
             current.ai.has_api_key = has_api_key;
+            current.safety.runtime_safe_mode_by_game = runtime_safe_mode_by_game;
             if current
                 .active_game_id
                 .as_ref()
@@ -231,6 +236,51 @@ impl ConfigService {
         })
     }
 
+    /// Commit the four runtime control bindings and KeyViewer enablement as
+    /// one settings revision. The caller registers OS bindings first and
+    /// restores them if this durable write fails.
+    pub fn set_hotkey_configuration(
+        &self,
+        expected_revision: u64,
+        hotkeys: HotkeyConfig,
+        keyviewer: KeyViewerConfig,
+    ) -> Result<AppSettings, AppError> {
+        crate::modules::automation::application::hotkeys::manager::validate_binding_configuration(
+            &hotkeys,
+        )?;
+        self.update_settings(move |settings| {
+            if settings.revision != expected_revision {
+                return Err(AppError::Validation(
+                    "Settings changed since this screen was loaded. Refresh and retry your edit."
+                        .to_string(),
+                ));
+            }
+            settings.hotkeys = hotkeys;
+            settings.keyviewer = keyviewer;
+            Ok(())
+        })?;
+        Ok(self.get_settings())
+    }
+
+    /// Persist the per-game Safe Mode decision without accepting a stale full
+    /// Settings snapshot from the UI.
+    pub fn set_runtime_safe_mode(
+        &self,
+        game_id: &str,
+        enabled: bool,
+    ) -> Result<AppSettings, AppError> {
+        self.update_settings(|settings| {
+            if !settings.games.iter().any(|game| game.id == game_id) {
+                return Err(AppError::NotFound(format!("Game {game_id} not found")));
+            }
+            settings
+                .safety
+                .set_runtime_safe_mode(game_id.to_string(), enabled);
+            Ok(())
+        })?;
+        Ok(self.get_settings())
+    }
+
     /// Update the diagnostics consent without accepting a stale full settings snapshot.
     pub fn set_telemetry_enabled(&self, enabled: bool) -> Result<AppSettings, AppError> {
         self.update_settings(move |settings| {
@@ -256,22 +306,6 @@ impl ConfigService {
             Ok(())
         })?;
         Ok(self.get_settings())
-    }
-
-    pub fn set_catalog_auto_install(&self, enabled: bool) -> Result<AppSettings, AppError> {
-        self.update_settings(move |settings| {
-            settings.catalog_updates.auto_install = enabled;
-            settings.catalog_updates.auto_check = true;
-            Ok(())
-        })?;
-        Ok(self.get_settings())
-    }
-
-    pub fn record_catalog_update_check(&self, unix_seconds: i64) -> Result<(), AppError> {
-        self.update_settings(move |settings| {
-            settings.catalog_updates.last_successful_check_unix_seconds = Some(unix_seconds);
-            Ok(())
-        })
     }
 
     /// Get a reference to the pool (for use in commands that need direct DB access).

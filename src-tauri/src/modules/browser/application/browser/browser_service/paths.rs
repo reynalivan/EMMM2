@@ -125,13 +125,11 @@ pub async fn get_downloads_root_for_game(
     db: &SqlitePool,
     game_id: &str,
 ) -> PathBuf {
-    if let Ok(inbox) = crate::modules::ingestion::application::import_batch::ready_to_move::resolve_mod_inbox_root(
-        app,
-        db,
-        game_id,
-        None,
-    )
-    .await
+    if let Ok(inbox) =
+        crate::modules::ingestion::application::import_batch::ready_to_move::resolve_mod_inbox_root(
+            app, db, game_id, None,
+        )
+        .await
     {
         return inbox;
     }

@@ -3,6 +3,7 @@
 
 use super::naming::{
     find_existing_sibling_case_insensitive, rename_conflict_error, standardize_prefix,
+    SiblingNameIndex,
 };
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::guard::ValidatedPath;
@@ -33,9 +34,31 @@ impl ToggleRenamePlan {
         crate::platform::fs::file_utils::rename_cross_drive_fallback(&self.new_path, &self.old_path)
             .map_err(|error| map_toggle_error(&self.new_path, noun, error))
     }
+
+    pub fn rebase_paths(&mut self, rewrites: &[(PathBuf, PathBuf)]) {
+        self.old_path = rebase_path(self.old_path.clone(), rewrites);
+        self.new_path = rebase_path(self.new_path.clone(), rewrites);
+    }
+}
+
+fn rebase_path(mut path: PathBuf, rewrites: &[(PathBuf, PathBuf)]) -> PathBuf {
+    for (old_path, new_path) in rewrites {
+        if let Ok(suffix) = path.strip_prefix(old_path) {
+            path = new_path.join(suffix);
+        }
+    }
+    path
 }
 
 pub fn plan_toggle_rename(src: &Path, enable: bool) -> Result<Option<ToggleRenamePlan>, AppError> {
+    plan_toggle_rename_with_sibling_index(src, enable, None)
+}
+
+pub fn plan_toggle_rename_with_sibling_index(
+    src: &Path,
+    enable: bool,
+    sibling_index: Option<&SiblingNameIndex>,
+) -> Result<Option<ToggleRenamePlan>, AppError> {
     if !src.exists() || !src.is_dir() {
         return Err(AppError::Io(format!(
             "Mod folder does not exist: {}",
@@ -52,7 +75,11 @@ pub fn plan_toggle_rename(src: &Path, enable: bool) -> Result<Option<ToggleRenam
         .parent()
         .ok_or_else(|| AppError::Io("Invalid path".to_string()))?;
     let new_path = parent.join(&new_name);
-    if let Some(existing_path) = find_existing_sibling_case_insensitive(parent, &new_name, src) {
+    let existing_path = match sibling_index {
+        Some(index) => index.find_collision(&new_name, src),
+        None => find_existing_sibling_case_insensitive(parent, &new_name, src),
+    };
+    if let Some(existing_path) = existing_path {
         let base = crate::modules::workspace::domain::normalizer::normalize_display_name(&old_name);
         return Err(rename_conflict_error(&new_path, &existing_path, &base));
     }

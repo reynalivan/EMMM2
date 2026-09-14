@@ -3,6 +3,11 @@
     "loading": "加载中...",
     "new_tab": "新标签页",
     "close": "关闭",
+    "close_tab": "关闭标签页",
+    "duplicate_tab": "复制标签页",
+    "reload_tab": "重新加载标签页",
+    "reopen_last_closed_tab": "重新打开最近关闭的标签页",
+    "tab_menu": "标签页菜单",
     "back": "后退",
     "forward": "前进",
     "refresh": "刷新",
@@ -19,10 +24,10 @@
     "saved": "已保存",
     "add_bookmark": "添加书签",
     "remove_bookmark": "移除书签",
-    "bookmarks_and_history": "书签和历史记录",
     "open_externally": "在默认浏览器中打开",
     "view": "视图",
     "find_in_page": "在页面中查找",
+    "find_shortcut": "Ctrl+F",
     "find": "查找",
     "session_save_failed": "Discover 无法保存所有打开的标签页以供恢复。",
     "zoom_in": "放大",
@@ -43,11 +48,14 @@
     "confirm_action": "确认操作",
     "open_downloads": "打开下载面板"
   },
-  "welcome": {
-    "title": "应用内浏览器",
-    "description": "直接浏览和下载模组。在“下载”中管理已下载的文件。",
-    "browse_gb": "浏览 GameBanana",
-    "google": "谷歌"
+  "new_tab": {
+    "title": "新标签页",
+    "search_label": "搜索 Google",
+    "search_placeholder": "搜索 Google 或输入网址",
+    "search": "搜索",
+    "bookmarks": "书签",
+    "empty_bookmarks": "保存页面以在此处显示。",
+    "open_library": "管理书签"
   },
   "library": {
     "title": "书签和历史记录",
@@ -59,6 +67,11 @@
     "empty_bookmarks": "尚无已保存的书签。",
     "empty_history": "尚无浏览历史记录。",
     "remove_bookmark": "移除书签",
+    "edit_bookmark": "编辑书签",
+    "editor_title": "编辑书签",
+    "editor_name": "名称",
+    "editor_url": "地址",
+    "save_bookmark": "保存更改",
     "clear_history": "清除历史记录",
     "clear_history_confirm": "要清除全部 Discover 浏览历史记录吗？这不会清除 Cookie 或站点数据。",
     "history_cleared": "Discover 浏览历史记录已清除。",
@@ -69,6 +82,17 @@
     "description": "请检查网络连接、网站地址或其证书，然后重试。",
     "retry": "重试",
     "open_externally": "在外部浏览器中打开"
+  },
+  "image_preview": {
+    "title": "图片预览",
+    "image_alt": "从页面中选择的图片"
+  },
+  "base64_decode": {
+    "title": "已解码的 Base64 文本",
+    "open_link": "打开链接",
+    "copy": "复制",
+    "copied": "已复制到剪贴板。",
+    "copy_failed": "无法复制到剪贴板。"
   },
   "downloads": {
     "title": "下载",
@@ -135,6 +159,7 @@
       "destination": "保存到",
       "file_type": "文件类型",
       "file_size": "大小",
+      "blocked_file_warning": "为保护您的模组库，已阻止下载可执行文件和脚本。",
       "risky_file_warning": "此文件可能会在您的电脑上运行代码。仅在您信任来源时继续。",
       "confirm": "下载",
       "confirm_failed": "无法开始下载。请重试。",

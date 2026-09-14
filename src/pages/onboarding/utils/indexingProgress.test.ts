@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DiskReconcileProgress } from '../../../shared/api/tauri/bindings';
-import { calculateOverallIndexingProgress } from './indexingProgress';
+import { calculateOverallIndexingProgress, estimatedRemainingMs } from './indexingProgress';
 
 function progress(overrides: Partial<DiskReconcileProgress>): DiskReconcileProgress {
   return {
@@ -67,5 +67,21 @@ describe('calculateOverallIndexingProgress', () => {
     );
 
     expect(result?.percent).toBe(82);
+  });
+});
+
+describe('estimatedRemainingMs', () => {
+  it('uses the active scan ETA before the first game completes', () => {
+    expect(
+      estimatedRemainingMs(
+        {
+          completed: 0,
+          total: 1,
+          currentGame: 'New Game',
+          completedDurationsMs: [],
+        },
+        1_500,
+      ),
+    ).toBe(1_500);
   });
 });

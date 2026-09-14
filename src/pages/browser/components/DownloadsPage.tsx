@@ -13,6 +13,11 @@ import {
   WorkspacePageFrame,
 } from '@/shared/ui/components/layout/WorkspacePageFrame';
 import { TopBarActionsPortal } from '@/widgets/top-bar';
+import { DownloadRow } from './DownloadManagerPanel';
+import VirtualList from '@/shared/ui/components/ui/VirtualList';
+import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
+
+const getDownloadItemKey = (item: BrowserDownloadItem) => item.id;
 
 export default function DownloadsPage() {
   const { t } = useTranslation('browser');
@@ -22,10 +27,16 @@ export default function DownloadsPage() {
     downloads,
     deleteDownload,
     cancelDownload,
+    pauseDownload,
+    resumeDownload,
+    refreshDownloadLink,
+    openDownloadSource,
     retryDownload,
     refreshDownloads,
+    isLoading,
     isRefreshing,
   } = useDownloads(activeGameId);
+  const usesVirtualList = downloads.length > 80;
 
   const renderStatus = (status: DownloadStatus) => {
     const badge = DOWNLOAD_STATUS_BADGE[status] ?? DOWNLOAD_STATUS_BADGE.requested;
@@ -66,10 +77,35 @@ export default function DownloadsPage() {
         </button>
       </TopBarActionsPortal>
       <WorkspacePageContent className="space-y-4">
-        {downloads.length === 0 ? (
+        {isLoading ? (
+          <WorkspacePanelSkeleton variant="list" />
+        ) : downloads.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center text-base-content/70">
             <Download size={48} className="mb-4 text-base-content/30" />
             <h2 className="text-lg font-semibold text-base-content">{t('downloads.empty')}</h2>
+          </div>
+        ) : usesVirtualList ? (
+          <div className="workspace-surface flex min-h-0 max-h-[calc(100vh-15rem)] flex-col overflow-hidden">
+            <VirtualList
+              items={downloads}
+              getItemKey={getDownloadItemKey}
+              estimateSize={() => 92}
+              ariaLabel={t('downloads.title')}
+              className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-base-content/20"
+              renderItem={(item) => (
+                <DownloadRow
+                  item={item}
+                  queuePosition={getQueuePosition(downloads, item.id)}
+                  onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
+                  onCancel={() => cancelDownload(item.id)}
+                  onPause={() => pauseDownload(item.id)}
+                  onResume={() => resumeDownload(item.id)}
+                  onRefreshLink={() => refreshDownloadLink(item.id)}
+                  onOpenSource={() => openDownloadSource(item.id)}
+                  onRetry={() => retryDownload(item.id)}
+                />
+              )}
+            />
           </div>
         ) : (
           <div className="workspace-surface overflow-x-auto">

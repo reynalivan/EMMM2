@@ -152,6 +152,7 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
                 watcher_events: None,
                 path_hints: &[],
                 progress_reporter: None,
+                precomputed_discovery: None,
             },
         )
         .await;
@@ -282,6 +283,7 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
             watcher_events: (!rename_events.is_empty()).then_some(rename_events.as_slice()),
             path_hints: &[],
             progress_reporter: None,
+            precomputed_discovery: None,
         },
     )
     .await;

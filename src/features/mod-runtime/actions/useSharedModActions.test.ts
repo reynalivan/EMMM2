@@ -203,6 +203,7 @@ describe('useSharedModActions', () => {
         kind: 'modDuplicateWarning',
         folder,
         duplicates,
+        enableDisabledAncestors: false,
       },
     });
     const { result } = renderHook(() => useSharedModActions(), {
@@ -214,8 +215,8 @@ describe('useSharedModActions', () => {
       result.current.handleDuplicateEnableOnly();
     });
 
-    expect(switchResolveDuplicateForceEnable).toHaveBeenCalledWith(folder);
-    expect(switchResolveDuplicateEnableOnly).toHaveBeenCalledWith(folder);
+    expect(switchResolveDuplicateForceEnable).toHaveBeenCalledWith(folder, false);
+    expect(switchResolveDuplicateEnableOnly).toHaveBeenCalledWith(folder, false);
   });
 
   it('rejects invalid rename input without calling the mutation', async () => {

@@ -3,7 +3,7 @@
  * Category/Sort/Status filtering is fully delegated to FilterPanel.
  */
 
-import { Search, RefreshCw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-react';
+import { Search, RefreshCw, Plus, ScanSearch, SlidersHorizontal, X, Sparkles } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GameSchema, FilterDef, CategoryDef } from '@/entities/game-object';
@@ -22,6 +22,8 @@ interface ToolbarProps {
   isSyncing: boolean;
   onSync: () => void;
   onCreateNew: () => void;
+  onCheckCatalog?: () => void;
+  isCatalogChecking?: boolean;
   /** Per-category filters for FilterPanel */
   categoryFilters: FilterDef[];
   activeFilters: Record<string, string[]>;
@@ -64,6 +66,8 @@ export default function ObjectListToolbar({
   isSyncing,
   onSync,
   onCreateNew,
+  onCheckCatalog,
+  isCatalogChecking = false,
   categoryFilters,
   activeFilters,
   onFilterChange,
@@ -102,17 +106,16 @@ export default function ObjectListToolbar({
           {/* Auto Organize drop overlay — slides in from top, solid on hover */}
           {isDragging && (
             <div
-              className={`absolute inset-0 z-20 flex items-center justify-center rounded-lg transition-all duration-300 animate-[slideDown_200ms_ease-out] ${
+              className={`workspace-transient-enter absolute inset-0 z-20 flex items-center justify-center rounded-lg border-2 transition-[background-color,border-color,color] duration-150 ${
                 isActiveZone
                   ? 'bg-base-300 border-2 border-primary shadow-lg'
                   : 'bg-base-200 border-2 border-dashed border-base-300/50'
               }`}
-              style={{ animation: 'slideDown 200ms ease-out' }}
             >
               <div
                 className={`flex items-center gap-2 ${isActiveZone ? 'text-primary font-bold' : 'text-base-content/50'}`}
               >
-                <Sparkles size={20} className={isActiveZone ? 'animate-pulse' : ''} />
+                <Sparkles size={20} />
                 <span className="text-sm font-semibold">{t('toolbar.auto_organize')}</span>
               </div>
             </div>
@@ -157,7 +160,7 @@ export default function ObjectListToolbar({
               {/* Filter toggle */}
               {showFilterPanel && (
                 <button
-                  className={`btn btn-sm btn-square relative transition-all duration-200 ${
+                  className={`btn btn-sm btn-square relative transition-[background-color,border-color,color] duration-150 ${
                     filterOpen
                       ? 'btn-primary btn-outline'
                       : activeCount > 0
@@ -178,13 +181,28 @@ export default function ObjectListToolbar({
               )}
 
               <button
-                className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin' : ''} text-base-content/50 hover:text-primary`}
+                className={`btn btn-sm btn-square btn-ghost ${isSyncing ? 'animate-spin motion-reduce:animate-none' : ''} text-base-content/50 hover:text-primary`}
                 onClick={onSync}
                 title={t('toolbar.auto_reorganize')}
                 disabled={isSyncing || mutationsDisabled}
               >
                 <RefreshCw size={16} />
               </button>
+              {onCheckCatalog && (
+                <button
+                  className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
+                  onClick={onCheckCatalog}
+                  title={t('toolbar.catalog_check')}
+                  disabled={isCatalogChecking}
+                >
+                  <ScanSearch
+                    size={16}
+                    className={
+                      isCatalogChecking ? 'animate-pulse motion-reduce:animate-none' : undefined
+                    }
+                  />
+                </button>
+              )}
               <button
                 className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
                 onClick={onCreateNew}

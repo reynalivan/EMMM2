@@ -110,6 +110,7 @@ function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileRes
     collections_changed: false,
     runtime_file_changed: false,
     status: 'Applied',
+    scan_scope: 'Scoped',
     folder_conflicts: [],
     rename_confirmations: [],
     error_message: null,
@@ -246,10 +247,9 @@ describe('applyDiskReconcileResult', () => {
       queryKey: runtimeQueryKeys.folderStructure,
       refetchType: 'active',
     });
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-      queryKey: modHealthKeys.all,
-      refetchType: 'active',
-    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith(
+      expect.objectContaining({ predicate: expect.any(Function), refetchType: 'active' }),
+    );
   });
 
   it('refreshes the shallow workspace after a no-op initial recovery', () => {
@@ -265,7 +265,67 @@ describe('applyDiskReconcileResult', () => {
     });
   });
 
-  it('auto-opens an applied folder-conflict report once per fingerprint', () => {
+  it('invalidates only scoped Health reports related to changed disk paths', async () => {
+    const client = new QueryClient();
+    const aliceReport = modHealthKeys.report('game-1', 'E:/Mods/Alice/Blue');
+    const bobReport = modHealthKeys.report('game-1', 'E:/Mods/Bob/Green');
+    client.setQueryData(aliceReport, { report: 'alice' });
+    client.setQueryData(bobReport, { report: 'bob' });
+
+    applyDiskReconcileResult(
+      createResult({
+        changed_roots: ['Alice'],
+        thumbnail_roots: ['Alice'],
+        path_updates: [{ from: 'Alice/Old', to: 'Alice/Blue', kind: 'Mod' }],
+        cleared_selection_paths: ['Alice/Removed'],
+      }),
+      client,
+      createActiveGame(),
+    );
+
+    await waitFor(() => {
+      expect(client.getQueryState(aliceReport)?.isInvalidated).toBe(true);
+    });
+    expect(client.getQueryState(bobReport)?.isInvalidated).not.toBe(true);
+  });
+
+  it('invalidates every game Health report after a full discovery', async () => {
+    const client = new QueryClient();
+    const aliceReport = modHealthKeys.report('game-1', 'E:/Mods/Alice/Blue');
+    const bobReport = modHealthKeys.report('game-1', 'E:/Mods/Bob/Green');
+    client.setQueryData(aliceReport, { report: 'alice' });
+    client.setQueryData(bobReport, { report: 'bob' });
+
+    applyDiskReconcileResult(createResult({ scan_scope: 'Full' }), client, createActiveGame());
+
+    await waitFor(() => {
+      expect(client.getQueryState(aliceReport)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(bobReport)?.isInvalidated).toBe(true);
+    });
+  });
+
+  it('keeps scoped Health invalidation targeted when the result is no longer active', async () => {
+    const client = new QueryClient();
+    const aliceReport = modHealthKeys.report('game-1', 'E:/Mods/Alice/Blue');
+    const bobReport = modHealthKeys.report('game-1', 'E:/Mods/Bob/Green');
+    client.setQueryData(aliceReport, { report: 'alice' });
+    client.setQueryData(bobReport, { report: 'bob' });
+
+    applyDiskReconcileResult(
+      createResult({ changed_roots: ['Alice'] }),
+      client,
+      null,
+      false,
+      'E:/Mods',
+    );
+
+    await waitFor(() => {
+      expect(client.getQueryState(aliceReport)?.isInvalidated).toBe(true);
+    });
+    expect(client.getQueryState(bobReport)?.isInvalidated).not.toBe(true);
+  });
+
+  it('keeps initial, repeated, and changed folder-conflict reports non-modal', () => {
     const state = useAppStore.getState();
     const group = {
       group_id: 'group-1',
@@ -311,8 +371,7 @@ describe('applyDiskReconcileResult', () => {
     expect(state.applyFolderConflictReconcileResult).toHaveBeenCalledWith(
       expect.objectContaining({ folder_conflicts: [group] }),
     );
-    expect(state.dispatchWorkspaceRuntime).toHaveBeenCalledTimes(2);
-    expect(state.dispatchWorkspaceRuntime).toHaveBeenCalledWith({
+    expect(state.dispatchWorkspaceRuntime).not.toHaveBeenCalledWith({
       type: 'DIALOG_OPENED',
       dialog: { kind: 'folderConflicts' },
     });
@@ -393,7 +452,9 @@ describe('applyDiskReconcileResult', () => {
       dialog: { kind: 'renameConfirmations' },
     });
     expect(state.setDiskReconcileTimestamp).not.toHaveBeenCalled();
-    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith(
+      expect.objectContaining({ predicate: expect.any(Function), refetchType: 'active' }),
+    );
   });
 
   it('refreshes ObjectList when path updates rewrite object-relative paths', async () => {
@@ -725,6 +786,92 @@ describe('useDiskReconcileCoordinator', () => {
 
     await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
     expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WindowRefocused', null, false);
+  });
+
+  it('finishes A, skips queued B, then reconciles the latest C context', async () => {
+    const firstRefresh = createDeferred<DiskReconcileResult>();
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    reconcileDiskState
+      .mockReturnValueOnce(firstRefresh.promise)
+      .mockResolvedValueOnce(createResult({ game_id: 'game-3', reason: 'GameSwitched' }));
+    const gameA = createActiveGame();
+    const gameB = { ...gameA, id: 'game-2', mod_path: 'F:/Mods' };
+    const gameC = { ...gameA, id: 'game-3', mod_path: 'G:/Mods' };
+
+    const { rerender } = renderHook(
+      ({ game }: { game: GameConfig | null }) =>
+        useDiskReconcileCoordinator(game, new QueryClient()),
+      { initialProps: { game: gameA } },
+    );
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+
+    rerender({ game: gameB });
+    rerender({ game: gameC });
+    expect(reconcileDiskState).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstRefresh.resolve(createResult({ reason: 'ModsViewEntered' }));
+      await firstRefresh.promise;
+    });
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
+    expect(reconcileDiskState.mock.calls.map(([gameId]) => gameId)).toEqual(['game-1', 'game-3']);
+  });
+
+  it('replaces a queued refresh when the active mods root changes within one game', async () => {
+    const firstRefresh = createDeferred<DiskReconcileResult>();
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    reconcileDiskState
+      .mockReturnValueOnce(firstRefresh.promise)
+      .mockResolvedValueOnce(createResult({ reason: 'GameSwitched' }));
+    const game = createActiveGame();
+
+    const { rerender } = renderHook(
+      ({ activeGame }: { activeGame: GameConfig | null }) =>
+        useDiskReconcileCoordinator(activeGame, new QueryClient()),
+      { initialProps: { activeGame: game } },
+    );
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+
+    rerender({ activeGame: { ...game, mod_path: 'F:/Mods' } });
+    rerender({ activeGame: { ...game, mod_path: 'G:/Mods' } });
+
+    await act(async () => {
+      firstRefresh.resolve(createResult({ reason: 'ModsViewEntered' }));
+      await firstRefresh.promise;
+    });
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
+    expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'GameSwitched', null, true);
+  });
+
+  it('does not start a queued refresh after the coordinator unmounts', async () => {
+    const firstRefresh = createDeferred<DiskReconcileResult>();
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    reconcileDiskState.mockReturnValueOnce(firstRefresh.promise);
+    const gameA = createActiveGame();
+    const gameB = { ...gameA, id: 'game-2', mod_path: 'F:/Mods' };
+
+    const { rerender, unmount } = renderHook(
+      ({ game }: { game: GameConfig | null }) =>
+        useDiskReconcileCoordinator(game, new QueryClient()),
+      { initialProps: { game: gameA } },
+    );
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+    rerender({ game: gameB });
+    unmount();
+
+    await act(async () => {
+      firstRefresh.resolve(createResult({ reason: 'ModsViewEntered' }));
+      await firstRefresh.promise;
+    });
+    expect(reconcileDiskState).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a rename-confirmation game unhydrated and forces the next repair to be full', async () => {

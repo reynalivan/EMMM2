@@ -9,17 +9,18 @@
 //! and `enigo`/`windows-sys` keystroke sending will be added when their
 //! Cargo.toml dependencies are introduced.
 
-pub mod actions;
 pub mod cycle_preset;
 pub mod focus;
 pub mod manager;
 pub mod reload;
+pub mod safe_mode;
 
 #[cfg(test)]
 mod tests;
 
 use std::time::{Duration, Instant};
 
+use crate::shared::errors::AppError;
 use serde::{Deserialize, Serialize};
 
 // ─── Action Types ────────────────────────────────────────────────────────────
@@ -27,27 +28,31 @@ use serde::{Deserialize, Serialize};
 /// All actions that can be triggered by a global hotkey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 pub enum HotkeyAction {
+    /// Apply or remove the per-game Safe Mode filter (default: F5).
+    ToggleSafeMode,
     /// Switch to next Collection preset (default: Ctrl+F6).
     NextPreset,
     /// Switch to previous Collection preset (default: Shift+F6).
     PrevPreset,
     /// Toggle KeyViewer overlay visibility (default: F7).
     ToggleOverlay,
-    /// Switch to next Variant Folder (default: Ctrl+F8).
-    NextVariantFolder,
-    /// Switch to previous Variant Folder (default: Shift+F8).
-    PrevVariantFolder,
 }
 
 impl HotkeyAction {
-    /// Every bindable action. Registration, listing, and conflict detection all
-    /// iterate this, so adding a variant cannot silently miss one of them.
-    pub const ALL: [HotkeyAction; 5] = [
+    /// Every action exposed in Settings. The overlay key is intentionally not
+    /// registered with the OS: 3DMigoto owns it inside the game process.
+    pub const ALL: [HotkeyAction; 4] = [
+        HotkeyAction::ToggleSafeMode,
         HotkeyAction::NextPreset,
         HotkeyAction::PrevPreset,
         HotkeyAction::ToggleOverlay,
-        HotkeyAction::NextVariantFolder,
-        HotkeyAction::PrevVariantFolder,
+    ];
+
+    /// The subset that Tauri registers as OS-level shortcuts.
+    pub const OS_ACTIONS: [HotkeyAction; 3] = [
+        HotkeyAction::ToggleSafeMode,
+        HotkeyAction::NextPreset,
+        HotkeyAction::PrevPreset,
     ];
 }
 
@@ -58,30 +63,46 @@ impl HotkeyAction {
 pub struct HotkeyConfig {
     /// Whether hotkeys are globally enabled.
     pub enabled: bool,
-    /// Cooldown between successive hotkey triggers (milliseconds).
-    #[specta(type = f64)]
-    pub cooldown_ms: u64,
     /// Key binding strings (e.g. "F6", "Shift+F6").
+    #[serde(default = "default_safe_mode_key")]
+    pub safe_mode: String,
+    #[serde(default = "default_next_preset_key")]
     pub next_preset: String,
+    #[serde(default = "default_prev_preset_key")]
     pub prev_preset: String,
+    #[serde(default = "default_overlay_key")]
     pub toggle_overlay: String,
-    pub next_variant: String,
-    pub prev_variant: String,
+}
+
+fn default_safe_mode_key() -> String {
+    "F5".to_string()
+}
+
+fn default_next_preset_key() -> String {
+    "Ctrl+F6".to_string()
+}
+
+fn default_prev_preset_key() -> String {
+    "Shift+F6".to_string()
+}
+
+fn default_overlay_key() -> String {
+    "F7".to_string()
 }
 
 impl Default for HotkeyConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            cooldown_ms: 500,
-            next_preset: "Ctrl+F6".to_string(),
-            prev_preset: "Shift+F6".to_string(),
-            toggle_overlay: "F7".to_string(),
-            next_variant: "Ctrl+F8".to_string(),
-            prev_variant: "Shift+F8".to_string(),
+            safe_mode: default_safe_mode_key(),
+            next_preset: default_next_preset_key(),
+            prev_preset: default_prev_preset_key(),
+            toggle_overlay: default_overlay_key(),
         }
     }
 }
+
+const HOTKEY_MUTATION_COOLDOWN: Duration = Duration::from_millis(500);
 
 /// KeyViewer-specific configuration — persisted in AppSettings.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -112,12 +133,21 @@ pub struct HotkeyState {
 }
 
 impl HotkeyState {
-    /// Create a new `HotkeyState` with the given cooldown.
-    pub fn new(cooldown_ms: u64) -> Self {
+    /// Create the state with the fixed mutation cooldown.
+    pub fn new() -> Self {
         Self {
             switch_lock: false,
             last_trigger: None,
-            cooldown: Duration::from_millis(cooldown_ms),
+            cooldown: HOTKEY_MUTATION_COOLDOWN,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_for_test(cooldown: Duration) -> Self {
+        Self {
+            switch_lock: false,
+            last_trigger: None,
+            cooldown,
         }
     }
 
@@ -160,10 +190,11 @@ impl HotkeyState {
             .map(|t| t.elapsed() < self.cooldown)
             .unwrap_or(false)
     }
+}
 
-    /// Update the cooldown duration (e.g. after settings change).
-    pub fn update_cooldown(&mut self, new_cooldown_ms: u64) {
-        self.cooldown = Duration::from_millis(new_cooldown_ms);
+impl Default for HotkeyState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -171,12 +202,90 @@ impl HotkeyState {
 /// action → config-field mapping is written; everything else derives from it.
 pub fn get_key_string(config: &HotkeyConfig, action: HotkeyAction) -> &str {
     match action {
+        HotkeyAction::ToggleSafeMode => &config.safe_mode,
         HotkeyAction::NextPreset => &config.next_preset,
         HotkeyAction::PrevPreset => &config.prev_preset,
         HotkeyAction::ToggleOverlay => &config.toggle_overlay,
-        HotkeyAction::NextVariantFolder => &config.next_variant,
-        HotkeyAction::PrevVariantFolder => &config.prev_variant,
     }
+}
+
+/// Validate and normalize a binding before it is registered or emitted into a
+/// generated 3DMigoto `key =` line. Settings are untrusted input: a newline or
+/// INI delimiter here could add arbitrary directives to the overlay file.
+pub fn validate_3dmigoto_binding(key_str: &str) -> Result<String, AppError> {
+    if key_str.chars().any(|character| {
+        character.is_control() || matches!(character, ';' | '#' | '=' | '\\' | '/')
+    }) {
+        return Err(AppError::Validation(
+            "Hotkey contains a disallowed control character or INI delimiter".to_string(),
+        ));
+    }
+
+    let normalized = key_str.trim().replace(' ', "").to_ascii_lowercase();
+    let tokens: Vec<&str> = normalized.split('+').collect();
+    if normalized.is_empty() || tokens.iter().any(|token| token.is_empty()) {
+        return Err(AppError::Validation("Hotkey cannot be empty".to_string()));
+    }
+    if tokens.len() > 4 {
+        return Err(AppError::Validation(
+            "Hotkey has too many modifiers".to_string(),
+        ));
+    }
+
+    let (main, modifiers) = tokens
+        .split_last()
+        .expect("validated non-empty shortcut has a main key");
+    let mut seen_modifiers = std::collections::HashSet::new();
+    for modifier in modifiers {
+        if !matches!(
+            *modifier,
+            "ctrl"
+                | "control"
+                | "shift"
+                | "alt"
+                | "meta"
+                | "win"
+                | "super"
+                | "no_ctrl"
+                | "no_shift"
+                | "no_alt"
+        ) {
+            return Err(AppError::Validation(format!(
+                "Unsupported hotkey modifier '{modifier}'"
+            )));
+        }
+        if !seen_modifiers.insert(*modifier) {
+            return Err(AppError::Validation(format!(
+                "Hotkey repeats modifier '{modifier}'"
+            )));
+        }
+    }
+
+    let valid_main = matches!(*main, "[" | "]")
+        || main
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_');
+    if !valid_main
+        || matches!(
+            *main,
+            "ctrl"
+                | "control"
+                | "shift"
+                | "alt"
+                | "meta"
+                | "win"
+                | "super"
+                | "no_ctrl"
+                | "no_shift"
+                | "no_alt"
+        )
+    {
+        return Err(AppError::Validation(format!(
+            "Unsupported hotkey main key '{main}'"
+        )));
+    }
+
+    Ok(normalized)
 }
 
 /// List all configurable hotkey actions with their current bindings.

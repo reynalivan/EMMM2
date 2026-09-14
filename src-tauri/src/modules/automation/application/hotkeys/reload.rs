@@ -3,20 +3,43 @@ use enigo::{
     Enigo, Key, Keyboard, Settings,
 };
 
+use crate::modules::automation::application::hotkeys::focus;
 use crate::modules::automation::application::hotkeys::manager::normalize_shortcut;
 use crate::modules::automation::application::keyviewer::generator;
 use crate::modules::settings::application::config::AppSettings;
 use crate::shared::errors::AppError;
 
-pub fn trigger_reload_fixes(settings: &AppSettings) -> Result<String, AppError> {
+/// Reload INI configuration after publishing generated KeyViewer artifacts.
+/// This intentionally does not claim that 3DMigoto has acknowledged the
+/// reload; it only reports that the key was sent while the game was focused.
+pub fn trigger_reload_config(settings: &AppSettings) -> Result<String, AppError> {
     let Some(active_game) = settings.active_game() else {
         return Err(AppError::Internal("No active game configured".to_string()));
     };
+    if !focus::is_active_game_focused(settings) {
+        return Err(AppError::Validation(
+            "NeedsManualReload: active game is not focused".to_string(),
+        ));
+    }
+    let binding = generator::discover_reload_key_for_game(active_game)?.reload_config_key;
+    trigger_reload_binding(settings, &binding)?;
+    Ok(binding)
+}
 
-    let discovered_key = generator::discover_reload_key_for_game(active_game)?.reload_fixes_key;
+pub fn configured_reload_config_binding(settings: &AppSettings) -> Result<String, AppError> {
+    let active_game = settings
+        .active_game()
+        .ok_or_else(|| AppError::Internal("No active game configured".to_string()))?;
+    Ok(generator::discover_reload_key_for_game(active_game)?.reload_config_key)
+}
 
-    send_reload_key(&discovered_key)?;
-    Ok(discovered_key)
+fn trigger_reload_binding(settings: &AppSettings, binding: &str) -> Result<(), AppError> {
+    if !focus::is_active_game_focused(settings) {
+        return Err(AppError::Validation(
+            "NeedsManualReload: active game is not focused".to_string(),
+        ));
+    }
+    send_reload_key(binding)
 }
 
 fn send_reload_key(key_str: &str) -> Result<(), AppError> {
@@ -42,17 +65,31 @@ fn send_reload_key(key_str: &str) -> Result<(), AppError> {
 
     let mut enigo = Enigo::new(&Settings::default())?;
 
-    for modifier in &modifiers {
-        enigo.key(*modifier, Press)?;
+    let mut pressed = 0usize;
+    let send_result = (|| -> Result<(), AppError> {
+        for modifier in &modifiers {
+            enigo.key(*modifier, Press)?;
+            pressed += 1;
+        }
+        enigo.key(main_key, Click)?;
+        Ok(())
+    })();
+
+    let mut release_error = None;
+    for modifier in modifiers[..pressed].iter().rev() {
+        if let Err(error) = enigo.key(*modifier, Release) {
+            release_error.get_or_insert(error);
+        }
     }
 
-    enigo.key(main_key, Click)?;
-
-    for modifier in modifiers.iter().rev() {
-        enigo.key(*modifier, Release)?;
+    match (send_result, release_error) {
+        (Ok(()), None) => Ok(()),
+        (Err(error), None) => Err(error),
+        (Ok(()), Some(error)) => Err(error.into()),
+        (Err(error), Some(release_error)) => Err(AppError::Internal(format!(
+            "Reload input failed ({error}); modifier release also failed ({release_error})"
+        ))),
     }
-
-    Ok(())
 }
 
 fn parse_modifier(token: &str) -> Result<Key, AppError> {
@@ -122,7 +159,7 @@ const NAMED_KEYS: &[(&str, Key)] = &[
 
 /// Resolve the non-modifier key of a reload binding.
 ///
-/// d3dx.ini may bind `reload_fixes` to any key, not just a function key — a
+/// d3dx.ini may bind `reload_config` to any key, not just a function key — a
 /// letter, a digit, `VK_F5`, or a named key are all valid there. Rejecting
 /// those would fail every preset cycle at press time, so all of them resolve.
 fn parse_main_key(token: &str) -> Result<Key, AppError> {

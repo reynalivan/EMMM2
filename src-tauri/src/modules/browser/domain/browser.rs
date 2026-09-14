@@ -21,3 +21,14 @@ pub struct BrowserDownloadDto {
     pub started_at: String,
     pub finished_at: Option<String>,
 }
+
+/// A verified GameBanana page that initiated a Discover download.
+///
+/// This is intentionally unavailable for ordinary download URLs: a CDN or
+/// signed asset URL is not reliable submission identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserGameBananaProvenance {
+    pub origin_page_url: String,
+    pub item_type: String,
+    pub item_id: u64,
+}

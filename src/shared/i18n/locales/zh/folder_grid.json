@@ -58,6 +58,7 @@
     "read_only_until_resolved": "解决命名冲突前，无法打开或更改此文件夹。",
     "resolve_selected": "解决所选冲突",
     "open_folder": "打开文件夹",
+    "open_folder_failed": "无法打开文件夹：{{error}}",
     "folder_info": "文件夹信息",
     "created": "创建于",
     "modified": "修改于",

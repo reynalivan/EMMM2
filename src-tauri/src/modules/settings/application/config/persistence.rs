@@ -4,8 +4,8 @@ use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
 
 use super::models::{
-    config_to_game_row, game_row_to_config, AiConfig, AppSettings, CatalogUpdateConfig,
-    DiagnosticsSettings, ExternalToolsConfig, SafetyConfig,
+    config_to_game_row, game_row_to_config, AiConfig, AppSettings, DiagnosticsSettings,
+    ExternalToolsConfig, SafetyConfig,
 };
 use super::ConfigService;
 
@@ -19,7 +19,7 @@ struct PersistedAiConfig {
 
 impl ConfigService {
     /// Load AppSettings from the SQLite database.
-    pub(super) async fn load_from_db(pool: &SqlitePool) -> Result<AppSettings, AppError> {
+    pub(crate) async fn load_from_db(pool: &SqlitePool) -> Result<AppSettings, AppError> {
         let kv = settings::get_all_settings(pool).await?;
         let games = game::get_all_games(pool)
             .await?
@@ -70,11 +70,6 @@ impl ConfigService {
             .and_then(|v| serde_json::from_str(v).ok())
             .unwrap_or_default();
 
-        let catalog_updates: CatalogUpdateConfig = kv
-            .get("catalog_updates")
-            .and_then(|v| serde_json::from_str(v).ok())
-            .unwrap_or_default();
-
         let diagnostics: DiagnosticsSettings = kv
             .get("diagnostics")
             .and_then(|v| serde_json::from_str(v).ok())
@@ -92,7 +87,6 @@ impl ConfigService {
             hotkeys,
             keyviewer,
             external_tools,
-            catalog_updates,
             diagnostics,
         })
     }
@@ -143,9 +137,6 @@ impl ConfigService {
 
         let external_tools_json = serde_json::to_string(&settings.external_tools)?;
         settings::set_setting(&mut *tx, "external_tools", &external_tools_json).await?;
-
-        let catalog_updates_json = serde_json::to_string(&settings.catalog_updates)?;
-        settings::set_setting(&mut *tx, "catalog_updates", &catalog_updates_json).await?;
 
         let diagnostics_json = serde_json::to_string(&settings.diagnostics)?;
         settings::set_setting(&mut *tx, "diagnostics", &diagnostics_json).await?;

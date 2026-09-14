@@ -1,6 +1,5 @@
 import {
   RefreshCw,
-  Settings,
   MoreVertical,
   PanelRightClose,
   PanelRightOpen,
@@ -41,7 +40,6 @@ export default function GlobalActions({
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
   const workspaceView = useAppStore((state) => state.workspaceView);
-  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
   const isPreviewOpen = useAppStore((state) => state.isPreviewOpen);
   const togglePreview = useAppStore((state) => state.togglePreview);
   const reconcileInProgress = useAppStore((state) =>
@@ -119,6 +117,7 @@ export default function GlobalActions({
 
   const refreshDisabled = !activeGame || isRefreshing || reconcileInProgress;
   const showSync = workspaceView === 'mods';
+  const showMobileMenu = workspaceView === 'mods';
 
   return (
     <div className="flex items-center gap-2 md:gap-3">
@@ -144,126 +143,117 @@ export default function GlobalActions({
       </div>
 
       {/* Mobile Menu Dropdown */}
-      <div className="dropdown dropdown-end xl:hidden">
-        <button
-          type="button"
-          className="btn btn-sm btn-ghost btn-square text-base-content/70"
-          aria-label={t('actions.more', 'More actions')}
-          title={t('actions.more', 'More actions')}
-        >
-          <MoreVertical size={18} aria-hidden="true" />
-        </button>
-        <LiquidSurface
-          liquidRole="overlay"
-          className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-64 rounded-xl shadow-lg"
-        >
-          <ul
-            tabIndex={0}
-            className="menu max-h-[calc(100vh-5rem)] w-full overflow-x-hidden overflow-y-auto p-2"
+      {showMobileMenu && (
+        <div className="dropdown dropdown-end xl:hidden">
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost btn-square text-base-content/70"
+            aria-label={t('actions.more', 'More actions')}
+            title={t('actions.more', 'More actions')}
           >
-            {workspaceView === 'mods' && safetyFilter && onSafetyFilterChange && (
-              <li className="block w-full min-w-0 max-w-full">
-                <div className="!block w-full min-w-0 max-w-full px-2 pb-2">
-                  <span className="mb-1.5 block px-0 py-0 text-[10px] font-medium uppercase tracking-widest text-base-content/45">
-                    {t('common:safety_filter.label', 'Mod safety filter')}
-                  </span>
-                  <div
-                    className="grid w-full min-w-0 grid-cols-3 gap-1 rounded-lg bg-base-content/5 p-1"
-                    role="group"
-                    aria-label={t('common:safety_filter.label', 'Mod safety filter')}
-                  >
-                    {SAFETY_FILTERS.map((filter) => {
-                      const FilterIcon = filter.icon;
-                      const isActive = safetyFilter === filter.value;
+            <MoreVertical size={18} aria-hidden="true" />
+          </button>
+          <LiquidSurface
+            liquidRole="overlay"
+            className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-64 rounded-xl shadow-lg"
+          >
+            <ul
+              tabIndex={0}
+              className="menu max-h-[calc(100vh-5rem)] w-full overflow-x-hidden overflow-y-auto p-2"
+            >
+              {workspaceView === 'mods' && safetyFilter && onSafetyFilterChange && (
+                <li className="block w-full min-w-0 max-w-full">
+                  <div className="!block w-full min-w-0 max-w-full px-2 pb-2">
+                    <span className="mb-1.5 block px-0 py-0 text-[10px] font-medium uppercase tracking-widest text-base-content/45">
+                      {t('common:safety_filter.label', 'Mod safety filter')}
+                    </span>
+                    <div
+                      className="grid w-full min-w-0 grid-cols-3 gap-1 rounded-lg bg-base-content/5 p-1"
+                      role="group"
+                      aria-label={t('common:safety_filter.label', 'Mod safety filter')}
+                    >
+                      {SAFETY_FILTERS.map((filter) => {
+                        const FilterIcon = filter.icon;
+                        const isActive = safetyFilter === filter.value;
 
-                      return (
-                        <button
-                          key={filter.value}
-                          type="button"
-                          className={`flex min-h-8 min-w-0 items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
-                            isActive
-                              ? 'bg-base-100 text-base-content shadow-sm'
-                              : 'text-base-content/60 hover:bg-base-content/5 hover:text-base-content'
-                          }`}
-                          aria-pressed={isActive}
-                          onClick={(event) => {
-                            onSafetyFilterChange(filter.value);
-                            event.currentTarget.blur();
-                          }}
-                        >
-                          <FilterIcon size={13} className={filter.className} aria-hidden="true" />
-                          {t(`common:safety_filter.${filter.value}`, filter.value)}
-                        </button>
-                      );
-                    })}
+                        return (
+                          <button
+                            key={filter.value}
+                            type="button"
+                            className={`flex min-h-8 min-w-0 items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
+                              isActive
+                                ? 'bg-base-100 text-base-content shadow-sm'
+                                : 'text-base-content/60 hover:bg-base-content/5 hover:text-base-content'
+                            }`}
+                            aria-pressed={isActive}
+                            onClick={(event) => {
+                              onSafetyFilterChange(filter.value);
+                              event.currentTarget.blur();
+                            }}
+                          >
+                            <FilterIcon size={13} className={filter.className} aria-hidden="true" />
+                            {t(`common:safety_filter.${filter.value}`, filter.value)}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </li>
-            )}
+                </li>
+              )}
 
-            {workspaceView === 'mods' && (
+              {workspaceView === 'mods' && (
+                <li
+                  id="topbar-more-collection-portal"
+                  className="block w-full min-w-0 max-w-full empty:hidden"
+                />
+              )}
+
               <li
-                id="topbar-more-collection-portal"
+                id="topbar-more-launch-portal"
                 className="block w-full min-w-0 max-w-full empty:hidden"
               />
-            )}
 
-            <li
-              id="topbar-more-launch-portal"
-              className="block w-full min-w-0 max-w-full empty:hidden"
-            />
-
-            <li className="my-1 h-px bg-base-content/10" aria-hidden="true" />
-
-            <li>
-              <button
-                type="button"
-                className="gap-2 hover:bg-base-content/10"
-                onClick={(event) => {
-                  event.currentTarget.blur();
-                  setWorkspaceView('settings');
-                }}
-              >
-                <Settings size={16} /> {t('actions.settings')}
-              </button>
-            </li>
-            {showSync && (
-              <li>
-                <button
-                  type="button"
-                  className="gap-2 hover:bg-base-content/10"
-                  disabled={refreshDisabled}
-                  onClick={(event) => {
-                    event.currentTarget.blur();
-                    void runFullReconcile();
-                  }}
-                >
-                  <RefreshCw
-                    size={16}
-                    className={isRefreshing ? 'animate-spin motion-reduce:animate-none' : undefined}
-                  />{' '}
-                  {t('actions.refresh')}
-                </button>
-              </li>
-            )}
-            {workspaceView === 'mods' && (
-              <li>
-                <button
-                  type="button"
-                  className="gap-2 hover:bg-base-content/10"
-                  onClick={(event) => {
-                    event.currentTarget.blur();
-                    togglePreview();
-                  }}
-                >
-                  {isPreviewOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-                  {isPreviewOpen ? t('actions.hide_preview') : t('actions.show_preview')}
-                </button>
-              </li>
-            )}
-          </ul>
-        </LiquidSurface>
-      </div>
+              <li className="my-1 h-px bg-base-content/10" aria-hidden="true" />
+              {showSync && (
+                <li>
+                  <button
+                    type="button"
+                    className="gap-2 hover:bg-base-content/10"
+                    disabled={refreshDisabled}
+                    onClick={(event) => {
+                      event.currentTarget.blur();
+                      void runFullReconcile();
+                    }}
+                  >
+                    <RefreshCw
+                      size={16}
+                      className={
+                        isRefreshing ? 'animate-spin motion-reduce:animate-none' : undefined
+                      }
+                    />{' '}
+                    {t('actions.refresh')}
+                  </button>
+                </li>
+              )}
+              {workspaceView === 'mods' && (
+                <li>
+                  <button
+                    type="button"
+                    className="gap-2 hover:bg-base-content/10"
+                    onClick={(event) => {
+                      event.currentTarget.blur();
+                      togglePreview();
+                    }}
+                  >
+                    {isPreviewOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+                    {isPreviewOpen ? t('actions.hide_preview') : t('actions.show_preview')}
+                  </button>
+                </li>
+              )}
+            </ul>
+          </LiquidSurface>
+        </div>
+      )}
 
       <div className="mx-1 hidden h-6 w-px bg-base-content/10 xl:block" />
 

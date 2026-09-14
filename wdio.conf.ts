@@ -25,7 +25,7 @@ const E2E_BINARY = path.resolve(__dirname, 'src-tauri/target/debug/emmm-e2e.exe'
 export const config = {
   hostname: '127.0.0.1',
   port: 4444,
-  specs: ['./test/specs/**/*.e2e.ts'],
+  specs: ['./tests/e2e/specs/**/*.e2e.ts'],
   maxInstances: 1,
   capabilities: [
     {

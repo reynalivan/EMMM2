@@ -6,6 +6,7 @@
 import { FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ListStateView, { ListEmptyState } from '../../../shared/ui/components/ui/ListStateView';
+import WorkspacePanelSkeleton from '../../../shared/ui/components/ui/WorkspacePanelSkeleton';
 
 interface StatesProps {
   isLoading: boolean;
@@ -94,6 +95,7 @@ export default function ObjectListStates({
       isError={isError}
       error={errorInfo}
       errorFallback={t('states.load_error')}
+      loadingContent={<WorkspacePanelSkeleton variant="list" />}
     >
       {renderEmpty()}
     </ListStateView>

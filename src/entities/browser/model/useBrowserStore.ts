@@ -4,6 +4,8 @@ export interface BrowserTab {
   id: string; // The webview label
   url: string;
   title: string;
+  /** A local Discover start page with no native WebView backing it. */
+  isNewTab?: boolean;
   /** Native WebView favicon URL when the page exposes one. */
   favicon?: string | null;
   /** Native WebView zoom factor, isolated to this tab. */
@@ -12,14 +14,27 @@ export interface BrowserTab {
   isLoading?: boolean;
 }
 
+export function createNewBrowserTab(): BrowserTab {
+  return {
+    id: `new-tab-${crypto.randomUUID()}`,
+    url: '',
+    title: '',
+    isNewTab: true,
+  };
+}
+
 interface BrowserStore {
   /** The open browser tabs backing the MultiWebview */
   gameId: string | null;
   tabs: BrowserTab[];
   activeTabId: string | null;
+  recentlyClosedTabs: BrowserTab[];
 
   addTab: (tab: BrowserTab) => void;
+  replaceTab: (id: string, tab: BrowserTab) => void;
   removeTab: (id: string) => void;
+  recordClosedTab: (tab: BrowserTab) => void;
+  removeLastClosedTab: () => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, updates: Partial<BrowserTab>) => void;
   setGameContext: (gameId: string | null) => void;
@@ -39,6 +54,7 @@ export const useBrowserStore = create<BrowserStore>()((set) => ({
   gameId: null,
   tabs: [],
   activeTabId: null,
+  recentlyClosedTabs: [],
 
   addTab: (tab) =>
     set((s) => ({
@@ -46,9 +62,16 @@ export const useBrowserStore = create<BrowserStore>()((set) => ({
       activeTabId: tab.id,
     })),
 
+  replaceTab: (id, tab) =>
+    set((s) => ({
+      tabs: s.tabs.map((current) => (current.id === id ? tab : current)),
+      activeTabId: s.activeTabId === id ? tab.id : s.activeTabId,
+    })),
+
   removeTab: (id) =>
     set((s) => {
-      const nextTabs = s.tabs.filter((t) => t.id !== id);
+      const remainingTabs = s.tabs.filter((t) => t.id !== id);
+      const nextTabs = remainingTabs.length > 0 ? remainingTabs : [createNewBrowserTab()];
       let nextActive = s.activeTabId;
       // If we closed the active tab, pick the previous one
       if (nextActive === id && nextTabs.length > 0) {
@@ -59,6 +82,18 @@ export const useBrowserStore = create<BrowserStore>()((set) => ({
       return { tabs: nextTabs, activeTabId: nextActive };
     }),
 
+  recordClosedTab: (tab) => {
+    if (tab.isNewTab || !tab.url) return;
+    set((state) => ({
+      recentlyClosedTabs: [{ ...tab, isLoading: false }, ...state.recentlyClosedTabs].slice(0, 10),
+    }));
+  },
+
+  removeLastClosedTab: () =>
+    set((state) => ({
+      recentlyClosedTabs: state.recentlyClosedTabs.slice(1),
+    })),
+
   setActiveTab: (id) => set({ activeTabId: id }),
 
   updateTab: (id, updates) =>
@@ -67,7 +102,11 @@ export const useBrowserStore = create<BrowserStore>()((set) => ({
     })),
 
   setGameContext: (gameId) =>
-    set((state) => (state.gameId === gameId ? state : { gameId, tabs: [], activeTabId: null })),
+    set((state) =>
+      state.gameId === gameId
+        ? state
+        : { gameId, tabs: [], activeTabId: null, recentlyClosedTabs: [] },
+    ),
 
   isDownloadPanelOpen: false,
   isDownloadConfirmationOpen: false,

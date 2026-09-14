@@ -111,6 +111,63 @@ async fn runtime_descriptor_returns_only_compact_global_status_data() {
 }
 
 #[tokio::test]
+async fn runtime_descriptor_excludes_terminal_rows_hidden_by_a_disabled_parent() {
+    let ctx = init_test_db().await;
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-hidden-parent",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert game");
+    insert_test_object(
+        &ctx.pool,
+        &TestObjectFixture {
+            id: "object-hidden-parent",
+            game_id: "game-hidden-parent",
+            name: "AINOZ",
+            folder_path: "DISABLED AINOZ",
+            object_type: "Character",
+        },
+    )
+    .await
+    .expect("insert object");
+    insert_test_mod(
+        &ctx.pool,
+        &TestModFixture {
+            id: "mod-hidden-parent",
+            game_id: "game-hidden-parent",
+            object_id: Some("object-hidden-parent"),
+            actual_name: "Blue",
+            folder_path: "DISABLED AINOZ/Blue",
+            status: ItemStatus::Enabled,
+            is_safe: false,
+            object_type: Some("Character"),
+            mods_path: Some("E:/Mods"),
+        },
+    )
+    .await
+    .expect("insert mod");
+    sqlx::query("UPDATE mods SET safety_source = 'manual' WHERE id = 'mod-hidden-parent'")
+        .execute(&ctx.pool)
+        .await
+        .expect("classify safety");
+
+    let descriptor = get_collection_runtime_descriptor(&ctx.pool, "game-hidden-parent")
+        .await
+        .expect("load runtime descriptor");
+
+    assert_eq!(descriptor.counts.active_mod_count, 0);
+    assert!(descriptor.safety.is_safe);
+    assert!(descriptor.safety.is_safety_classified);
+}
+
+#[tokio::test]
 async fn runtime_state_reads_the_full_runtime() {
     let ctx = init_test_db().await;
 

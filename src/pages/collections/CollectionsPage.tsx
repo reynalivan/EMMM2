@@ -258,7 +258,7 @@ export default function CollectionsPage() {
           {t('collections:page.actions.save_current')}
         </button>
       </TopBarActionsPortal>
-      <WorkspacePageContent className="flex flex-col gap-4">
+      <WorkspacePageContent className="flex min-h-0 flex-col gap-4 lg:h-full">
         {runtime.data?.last_changes?.source === 'draft' && (
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-warning/25 bg-warning/8 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -307,11 +307,11 @@ export default function CollectionsPage() {
         )}
 
         {/* Main Grid */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12 lg:overflow-hidden">
           {/* LEFT: Collection List */}
-          <div className="lg:col-span-8 flex flex-col">
+          <div className="flex min-h-0 flex-col lg:col-span-8">
             <div className="workspace-surface flex flex-1 flex-col overflow-hidden">
-              <div className="card-body relative min-h-75 flex-1 overflow-auto p-0 custom-scrollbar">
+              <div className="card-body relative min-h-75 flex-1 overflow-auto p-0 custom-scrollbar lg:min-h-0">
                 <CollectionList
                   rows={rows}
                   selectedId={effectiveSelectedId}

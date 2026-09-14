@@ -130,12 +130,18 @@ pub async fn get_collection_runtime_state(
         crate::modules::collections::application::collection::live_runtime_is_safe(pool, game_id)
             .await
             .map_err(RuntimeStateError::from)?;
-    let is_safety_classified = current_mods.iter().all(|member| {
-        member
-            .safety_source
-            .as_deref()
-            .is_some_and(|source| source != crate::shared::safety_constants::SAFETY_SOURCE_UNKNOWN)
-    });
+    let is_safety_classified = current_mods
+        .iter()
+        .filter(|member| {
+            crate::modules::collections::application::collection::is_mod_effectively_active(
+                &member.mod_path,
+            )
+        })
+        .all(|member| {
+            member.safety_source.as_deref().is_some_and(|source| {
+                source != crate::shared::safety_constants::SAFETY_SOURCE_UNKNOWN
+            })
+        });
     let projected_state = projected_state::build_projected_state(
         &current_mods,
         &current_objects,

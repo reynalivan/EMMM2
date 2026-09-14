@@ -1,5 +1,5 @@
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToastStore, type Toast } from './store';
 
@@ -33,16 +33,29 @@ export function ToastContainer() {
 }
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  const [isExiting, setIsExiting] = useState(false);
+  const beginDismiss = useCallback(() => setIsExiting(true), []);
+
   useEffect(() => {
-    if (toast.duration && toast.duration > 0 && toast.duration !== Infinity) {
-      const timer = setTimeout(onDismiss, toast.duration);
+    if (isExiting) {
+      const timer = setTimeout(onDismiss, 160);
       return () => clearTimeout(timer);
     }
-  }, [toast, onDismiss]);
+  }, [isExiting, onDismiss]);
+
+  useEffect(() => {
+    if (!isExiting && toast.duration && toast.duration > 0 && toast.duration !== Infinity) {
+      const timer = setTimeout(beginDismiss, toast.duration);
+      return () => clearTimeout(timer);
+    }
+  }, [beginDismiss, isExiting, toast.duration]);
 
   return (
     <div
-      className={`alert ${colors[toast.type]} shadow-lg min-w-75 flex justify-between animate-in slide-in-from-right-5 fade-in duration-300`}
+      className={`alert ${colors[toast.type]} min-w-75 shadow-lg ${
+        isExiting ? 'workspace-toast-exit' : 'workspace-toast-enter'
+      } flex justify-between`}
+      role={toast.type === 'error' ? 'alert' : 'status'}
     >
       <div className="flex items-center gap-2">
         {icons[toast.type]}
@@ -53,7 +66,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           <button
             onClick={() => {
               toast.action!.onClick();
-              onDismiss();
+              beginDismiss();
             }}
             className="btn btn-ghost btn-xs font-bold uppercase tracking-wide opacity-90 hover:opacity-100"
           >
@@ -61,7 +74,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           </button>
         )}
         <button
-          onClick={onDismiss}
+          onClick={beginDismiss}
           className="btn btn-ghost btn-xs btn-circle opacity-80 hover:opacity-100"
         >
           <X size={14} />

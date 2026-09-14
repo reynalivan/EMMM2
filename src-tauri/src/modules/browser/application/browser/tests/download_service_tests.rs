@@ -43,9 +43,16 @@ async fn create_download_lands_as_requested_row_in_the_listing() {
 #[tokio::test]
 async fn update_status_stamps_finished_at_only_for_terminal_states() {
     let db = init_test_db().await.pool;
-    let id = create_download(&db, "game-1", None, "a.zip", "https://x/a.zip", "C:/dl/a.zip")
-        .await
-        .unwrap();
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "a.zip",
+        "https://x/a.zip",
+        "C:/dl/a.zip",
+    )
+    .await
+    .unwrap();
 
     update_status(&db, &id, "in_progress", Some(10), Some(100), None, None)
         .await
@@ -69,9 +76,16 @@ async fn update_status_stamps_finished_at_only_for_terminal_states() {
 #[tokio::test]
 async fn cancel_download_marks_stale_record_canceled_and_keeps_the_row() {
     let db = init_test_db().await.pool;
-    let id = create_download(&db, "game-1", None, "b.zip", "https://x/b.zip", "C:/dl/b.zip")
-        .await
-        .unwrap();
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "b.zip",
+        "https://x/b.zip",
+        "C:/dl/b.zip",
+    )
+    .await
+    .unwrap();
 
     // Nothing is in flight, so the DB path runs.
     cancel_download(&db, &id, None).await.unwrap();
@@ -110,12 +124,26 @@ async fn clear_old_downloads_uses_the_configured_retention_window() {
         .await
         .unwrap();
 
-    let stale = create_download(&db, "game-1", None, "old.zip", "https://x/old.zip", "C:/dl/old.zip")
-        .await
-        .unwrap();
-    let fresh = create_download(&db, "game-1", None, "new.zip", "https://x/new.zip", "C:/dl/new.zip")
-        .await
-        .unwrap();
+    let stale = create_download(
+        &db,
+        "game-1",
+        None,
+        "old.zip",
+        "https://x/old.zip",
+        "C:/dl/old.zip",
+    )
+    .await
+    .unwrap();
+    let fresh = create_download(
+        &db,
+        "game-1",
+        None,
+        "new.zip",
+        "https://x/new.zip",
+        "C:/dl/new.zip",
+    )
+    .await
+    .unwrap();
 
     // `update_status` always stamps "now", so backdate the stale row directly.
     update_status(&db, &stale, "finished", None, None, None, None)
@@ -141,12 +169,26 @@ async fn clear_old_downloads_uses_the_configured_retention_window() {
 async fn download_listing_is_isolated_by_game() {
     let db = init_test_db().await.pool;
 
-    create_download(&db, "game-1", None, "one.zip", "https://x/one.zip", "C:/dl/one.zip")
-        .await
-        .unwrap();
-    create_download(&db, "game-2", None, "two.zip", "https://x/two.zip", "C:/dl/two.zip")
-        .await
-        .unwrap();
+    create_download(
+        &db,
+        "game-1",
+        None,
+        "one.zip",
+        "https://x/one.zip",
+        "C:/dl/one.zip",
+    )
+    .await
+    .unwrap();
+    create_download(
+        &db,
+        "game-2",
+        None,
+        "two.zip",
+        "https://x/two.zip",
+        "C:/dl/two.zip",
+    )
+    .await
+    .unwrap();
 
     assert_eq!(list_downloads(&db, "game-1").await.unwrap().len(), 1);
     assert_eq!(list_downloads(&db, "game-2").await.unwrap().len(), 1);

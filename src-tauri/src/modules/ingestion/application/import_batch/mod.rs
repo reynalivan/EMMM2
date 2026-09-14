@@ -1,6 +1,7 @@
 pub mod analyze;
 pub mod coordinator;
 pub mod extraction_state;
+pub mod gamebanana;
 pub mod mod_inbox;
 pub mod mod_inbox_watcher;
 pub mod payload_manifest;

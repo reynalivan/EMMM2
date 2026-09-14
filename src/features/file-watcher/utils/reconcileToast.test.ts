@@ -13,6 +13,7 @@ function manualResult(): DiskReconcileResult {
     reconcile_revision: 1,
     reason: 'ManualRepair',
     status: 'Applied',
+    scan_scope: 'Full',
     folder_conflicts: [],
     rename_confirmations: [],
     error_message: null,

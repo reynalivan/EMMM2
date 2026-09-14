@@ -10,7 +10,7 @@ use crate::modules::reconciliation::application::disk_reconcile::reconcile::{
     reconcile_disk_projection, ReconcileDiskProjectionRequest,
 };
 use crate::modules::reconciliation::application::disk_reconcile::types::{
-    DiskReconcileReason, DiskReconcileStatus,
+    DiskReconcileReason, DiskReconcileScanScope, DiskReconcileStatus,
 };
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
 
@@ -57,6 +57,7 @@ async fn run_reconcile(
         watcher_events: None,
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await
     .expect("reconcile should succeed")
@@ -203,6 +204,7 @@ async fn projection_refresh_failure_rolls_back_core_reconcile_rows() {
         watcher_events: None,
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await;
 
@@ -609,6 +611,10 @@ async fn thumbnail_only_watcher_batch_skips_projection_and_unrelated_classificat
     .await;
 
     assert_eq!(outcome.status, DiskReconcileStatus::Applied);
+    assert_eq!(
+        outcome.scan_scope,
+        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileScanScope::None
+    );
     assert_eq!(outcome.thumbnail_roots, vec!["Alice"]);
     assert!(!outcome.objects_changed);
     assert!(!outcome.folders_changed);
@@ -670,6 +676,7 @@ async fn watcher_event_for_mods_root_forces_full_source_validation() {
         watcher_events: None,
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await
     .expect_err("a Mods-root watcher event must validate every root");
@@ -1005,6 +1012,7 @@ async fn scoped_single_root_event_keeps_existing_conflict_scope_snapshot() {
         outcome.status,
         DiskReconcileStatus::AppliedWithFolderConflicts
     );
+    assert_eq!(outcome.scan_scope, DiskReconcileScanScope::Full);
     assert_eq!(mod_row(&pool, "g_single_root_conflict").await, before);
     let mod_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
         .bind("g_single_root_conflict")
@@ -1151,6 +1159,7 @@ async fn offline_semantic_rename_without_identity_requires_confirmation_and_keep
         watcher_events: Some(std::slice::from_ref(&resolution_event)),
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await
     .expect("confirmed rename should reconcile");
@@ -1319,6 +1328,7 @@ async fn confirmed_separate_change_prunes_old_runtime_row_and_adds_current_folde
         watcher_events: Some(std::slice::from_ref(&resolution_event)),
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await
     .expect("separate changes should reconcile");
@@ -1389,6 +1399,7 @@ async fn watcher_rename_event_is_sufficient_evidence_when_filesystem_identity_is
         watcher_events: Some(std::slice::from_ref(&event)),
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await
     .expect("watcher evidence should reconcile");

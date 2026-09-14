@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
+import { FaroRoutes } from '@grafana/faro-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { initLogger } from '@/shared/lib/logger';
 import { useAppStore } from '@/app/store';
@@ -133,7 +134,7 @@ function AppRouter() {
   }
 
   return (
-    <Routes>
+    <FaroRoutes routesComponent={Routes}>
       <Route
         path="/welcome"
         element={
@@ -151,7 +152,7 @@ function AppRouter() {
       />
       <Route path="/dashboard" element={<DashboardWorkspace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    </FaroRoutes>
   );
 }
 
@@ -195,6 +196,7 @@ import {
   RenameConfirmationManager,
   WorkspaceSourceUnavailableDialog,
 } from '@/widgets/mod-explorer';
+import { WorkspaceParentEnableDialogHost } from '@/features/workspace-runtime';
 
 export default function App() {
   useThemeRuntime();
@@ -222,6 +224,7 @@ export default function App() {
           <RenameConfirmationManager />
           <FileInUseDialog />
           <WorkspaceSourceUnavailableDialog />
+          <WorkspaceParentEnableDialogHost />
           <DiagnosticsErrorDialog />
           <CrashRecoveryDialog />
         </>

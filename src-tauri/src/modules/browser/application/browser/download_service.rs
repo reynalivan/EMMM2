@@ -1,6 +1,10 @@
 use crate::shared::errors::BrowserError;
 use chrono::Utc;
+use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::path::Path;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -10,9 +14,35 @@ use crate::modules::browser::application::browser::{browser_service, download_ha
 /// DTO for the frontend download list. Defined in `repo::browser`; re-exported
 /// so existing `download_service::BrowserDownloadDto` users keep compiling.
 pub use crate::modules::browser::domain::browser::BrowserDownloadDto;
+pub use crate::modules::browser::domain::browser::BrowserGameBananaProvenance;
+
+const MAX_GAMEBANANA_PROVENANCE_HASH_BYTES: u64 = 128 * 1024 * 1024;
 
 fn now_stamp() -> String {
     Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
+/// Return a bounded signature for a completed GameBanana archive.
+///
+/// Large files are intentionally skipped: absence of enrichment is safer than
+/// holding up an import just to establish optional remote provenance.
+pub(crate) fn gamebanana_source_signature(path: &Path) -> Option<(i64, String)> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_GAMEBANANA_PROVENANCE_HASH_BYTES {
+        return None;
+    }
+    let size_bytes = i64::try_from(metadata.len()).ok()?;
+    let mut reader = BufReader::new(File::open(path).ok()?);
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut hasher = Sha256::new();
+    loop {
+        let bytes_read = reader.read(&mut buffer).ok()?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    Some((size_bytes, format!("{:x}", hasher.finalize())))
 }
 
 /// Insert a new `requested` download record.
@@ -25,7 +55,10 @@ pub async fn create_download(
     file_path: &str,
 ) -> Result<String, BrowserError> {
     let id = Uuid::new_v4().to_string();
-    create_download_with_id(db, &id, game_id, session_id, filename, source_url, file_path, 0, None).await?;
+    create_download_with_id(
+        db, &id, game_id, session_id, filename, source_url, file_path, 0, None,
+    )
+    .await?;
     Ok(id)
 }
 
@@ -42,6 +75,34 @@ pub async fn create_download_with_id(
     queue_order: i64,
     tab_label: Option<&str>,
 ) -> Result<(), BrowserError> {
+    create_download_with_id_and_provenance(
+        db,
+        id,
+        game_id,
+        session_id,
+        filename,
+        source_url,
+        file_path,
+        queue_order,
+        tab_label,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_download_with_id_and_provenance(
+    db: &SqlitePool,
+    id: &str,
+    game_id: &str,
+    session_id: Option<&str>,
+    filename: &str,
+    source_url: &str,
+    file_path: &str,
+    queue_order: i64,
+    tab_label: Option<&str>,
+    provenance: Option<&BrowserGameBananaProvenance>,
+) -> Result<(), BrowserError> {
     let now = now_stamp();
 
     browser::insert_download(
@@ -56,10 +117,46 @@ pub async fn create_download_with_id(
             queue_order,
             started_at: &now,
             tab_label,
+            origin_page_url: provenance.map(|value| value.origin_page_url.as_str()),
+            gamebanana_item_type: provenance.map(|value| value.item_type.as_str()),
+            gamebanana_item_id: provenance.map(|value| value.item_id),
         },
     )
     .await?;
 
+    Ok(())
+}
+
+pub async fn gamebanana_provenance_for_source_path(
+    db: &SqlitePool,
+    game_id: &str,
+    source_path: &str,
+) -> Result<Option<BrowserGameBananaProvenance>, BrowserError> {
+    let path = std::path::PathBuf::from(source_path);
+    let Some((source_size_bytes, source_sha256)) =
+        tokio::task::spawn_blocking(move || gamebanana_source_signature(&path))
+            .await
+            .ok()
+            .flatten()
+    else {
+        return Ok(None);
+    };
+    Ok(browser::find_gamebanana_provenance_for_source_path(
+        db,
+        game_id,
+        source_path,
+        source_size_bytes,
+        &source_sha256,
+    )
+    .await?)
+}
+
+pub async fn store_gamebanana_content_hash(
+    db: &SqlitePool,
+    download_id: &str,
+    content_sha256: &str,
+) -> Result<(), BrowserError> {
+    browser::store_gamebanana_content_hash(db, download_id, content_sha256).await?;
     Ok(())
 }
 
@@ -215,7 +312,9 @@ pub async fn refresh_download_link(
 ) -> Result<(), BrowserError> {
     let row = browser::get_retryable_download(db, download_id)
         .await?
-        .ok_or_else(|| BrowserError::Download("Only failed or canceled downloads can be refreshed".into()))?;
+        .ok_or_else(|| {
+            BrowserError::Download("Only failed or canceled downloads can be refreshed".into())
+        })?;
     let label = row.tab_label.ok_or_else(|| {
         BrowserError::Download("The source tab is no longer available for refresh".into())
     })?;
@@ -231,7 +330,9 @@ pub async fn open_download_source(
 ) -> Result<String, BrowserError> {
     let row = browser::get_retryable_download(db, download_id)
         .await?
-        .ok_or_else(|| BrowserError::Download("Only failed or canceled downloads can be reopened".into()))?;
+        .ok_or_else(|| {
+            BrowserError::Download("Only failed or canceled downloads can be reopened".into())
+        })?;
     let source_url = row
         .source_url
         .ok_or_else(|| BrowserError::Download("The original download URL is unavailable".into()))?;

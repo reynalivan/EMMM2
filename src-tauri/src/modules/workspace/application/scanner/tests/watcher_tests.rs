@@ -276,6 +276,30 @@ fn backend_rescan_flag_requests_full_reconcile() {
     ));
 }
 
+#[test]
+fn importer_d3dx_ini_is_forwarded_without_watching_importer_assets() {
+    let mods_root = Path::new(r"E:\Importer\Mods");
+    let d3dx = Path::new(r"E:\Importer\d3dx.ini");
+    let state = WatcherState::new();
+    let session = state.begin_session(mods_root);
+    let event = Event::new(EventKind::Modify(ModifyKind::Any)).add_path(d3dx.to_path_buf());
+    let emitted = std::cell::RefCell::new(Vec::new());
+
+    classify_event_with_runtime_config(
+        &event,
+        mods_root,
+        Some(d3dx),
+        &state.suppressor,
+        &session,
+        &|event| emitted.borrow_mut().push(event),
+    );
+
+    assert!(matches!(
+        emitted.into_inner().as_slice(),
+        [ModWatchEvent::Modified(path)] if path == &d3dx.to_string_lossy()
+    ));
+}
+
 // Regression: folders with dots in the name ("Mod v1.2") must not be
 // mistaken for files with irrelevant extensions and dropped.
 #[test]
@@ -371,4 +395,29 @@ fn watcher_session_generation_invalidates_old_roots() {
 
     state.invalidate_session();
     assert!(!state.is_current_session(&second));
+}
+
+#[test]
+fn replaced_watcher_session_cannot_publish_after_the_current_session_changes() {
+    let state = WatcherState::new();
+    let first = state.begin_session(Path::new(r"E:\ModsA"));
+    let mut publishes = 0;
+
+    assert_eq!(
+        state.with_current_session(&first, || {
+            publishes += 1;
+            "first"
+        }),
+        Some("first")
+    );
+    state.begin_session(Path::new(r"E:\ModsB"));
+
+    assert_eq!(
+        state.with_current_session(&first, || {
+            publishes += 1;
+            "stale"
+        }),
+        None
+    );
+    assert_eq!(publishes, 1);
 }

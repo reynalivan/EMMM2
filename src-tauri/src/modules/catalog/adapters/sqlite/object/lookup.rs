@@ -28,6 +28,44 @@ pub async fn get_runtime_descriptors(
     .await
 }
 
+/// Resolves only the candidate owner roots for one folder. Callers pass the
+/// folder key and its ancestors, ordered from deepest to root, then preserve
+/// the existing nearest-owner rule in memory.
+pub async fn get_runtime_descriptors_for_folder_path_keys(
+    pool: &SqlitePool,
+    game_id: &str,
+    folder_path_keys: &[String],
+) -> Result<Vec<ObjectRuntimeDescriptor>, sqlx::Error> {
+    if folder_path_keys.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Keep room for game_id below SQLite's common 999 bind-variable limit.
+    const FOLDER_PATH_KEY_CHUNK_SIZE: usize = 900;
+    let mut owners = Vec::new();
+    for keys in folder_path_keys.chunks(FOLDER_PATH_KEY_CHUNK_SIZE) {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT id, name, folder_path, folder_path_key, matched_entry_key, matched_alias_name, object_type, thumbnail_path FROM objects WHERE game_id = ",
+        );
+        query.push_bind(game_id);
+        query.push(" AND folder_path_key IN (");
+        {
+            let mut separated = query.separated(", ");
+            for folder_path_key in keys {
+                separated.push_bind(folder_path_key);
+            }
+        }
+        query.push(") ORDER BY LENGTH(folder_path_key) DESC, name ASC");
+        owners.extend(
+            query
+                .build_query_as::<ObjectRuntimeDescriptor>()
+                .fetch_all(pool)
+                .await?,
+        );
+    }
+    Ok(owners)
+}
+
 pub async fn get_category_counts(
     pool: &SqlitePool,
     game_id: &str,
@@ -125,6 +163,39 @@ pub async fn get_game_object_by_id(
     .bind(id)
     .fetch_optional(pool)
     .await
+}
+
+pub async fn get_game_objects_by_ids(
+    pool: &SqlitePool,
+    game_id: &str,
+    ids: &[String],
+) -> Result<Vec<crate::modules::games::domain::models::GameObject>, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // SQLite's bind-variable limit is commonly 999; reserve room for game_id.
+    const OBJECT_LOOKUP_CHUNK_SIZE: usize = 900;
+    let mut objects = Vec::with_capacity(ids.len());
+    for ids_chunk in ids.chunks(OBJECT_LOOKUP_CHUNK_SIZE) {
+        let mut query = QueryBuilder::<Sqlite>::new("SELECT * FROM objects WHERE game_id = ");
+        query.push_bind(game_id);
+        query.push(" AND id IN (");
+        {
+            let mut ids_query = query.separated(", ");
+            for id in ids_chunk {
+                ids_query.push_bind(id);
+            }
+        }
+        query.push(")");
+        objects.extend(
+            query
+                .build_query_as::<crate::modules::games::domain::models::GameObject>()
+                .fetch_all(pool)
+                .await?,
+        );
+    }
+    Ok(objects)
 }
 
 pub async fn get_mod_count_for_object(pool: &SqlitePool, id: &str) -> Result<i64, sqlx::Error> {

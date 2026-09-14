@@ -2,6 +2,9 @@ use super::types::SourceInspection;
 use crate::modules::ingestion::application::import_batch::types::{
     MatchEvidence, SourceFingerprint,
 };
+use crate::modules::workspace::application::scanner::core::walker::{
+    is_scannable_extension, FileInfo, FolderContent,
+};
 use crate::shared::errors::ScannerError;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -11,6 +14,14 @@ pub struct InspectionRequest {
     pub source_path: PathBuf,
     pub planned_name: Option<String>,
     pub match_extensions: Vec<String>,
+}
+
+/// A fresh, per-request disk snapshot for classification. It intentionally has
+/// no cache lifetime: callers use it immediately for both fingerprinting and
+/// matching, then discard it.
+pub struct InspectedSource {
+    pub inspection: SourceInspection,
+    pub content: FolderContent,
 }
 
 pub fn normalized_match_name(value: &str) -> String {
@@ -36,6 +47,12 @@ pub fn source_display_name(value: &str) -> String {
 }
 
 pub fn inspect_source(request: &InspectionRequest) -> Result<SourceInspection, ScannerError> {
+    Ok(inspect_source_with_content(request)?.inspection)
+}
+
+pub fn inspect_source_with_content(
+    request: &InspectionRequest,
+) -> Result<InspectedSource, ScannerError> {
     if !request.source_path.is_dir() {
         return Err(ScannerError::NotADirectory {
             path: request.source_path.to_string_lossy().into_owned(),
@@ -65,6 +82,9 @@ pub fn inspect_source(request: &InspectionRequest) -> Result<SourceInspection, S
         .metadata()
         .and_then(|metadata| metadata.modified())
         .ok();
+    let mut subfolder_names = Vec::new();
+    let mut files = Vec::new();
+    let mut ini_files = Vec::new();
 
     for entry in walkdir::WalkDir::new(&request.source_path)
         .min_depth(1)
@@ -74,14 +94,31 @@ pub fn inspect_source(request: &InspectionRequest) -> Result<SourceInspection, S
         .filter_map(Result::ok)
     {
         let path = entry.path();
-        if entry.file_type().is_symlink() {
-            continue;
-        }
         if entry.file_type().is_dir() {
-            nested_names.insert(entry.file_name().to_string_lossy().into_owned());
+            let name = entry.file_name().to_string_lossy().into_owned();
+            nested_names.insert(name.clone());
+            subfolder_names.push(name);
             continue;
         }
-        if !entry.file_type().is_file() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let extension = path
+            .extension()
+            .map(|value| value.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        if extension == "ini" {
+            ini_files.push(path.to_path_buf());
+        }
+        if is_scannable_extension(&extension) {
+            files.push(FileInfo {
+                path: path.to_path_buf(),
+                name,
+                extension: extension.clone(),
+            });
+        }
+
+        // `scan_folder_content` includes symlinks in matcher content, while
+        // source inspection intentionally excludes them from fingerprints.
+        if entry.file_type().is_symlink() || !entry.file_type().is_file() {
             continue;
         }
         file_count = file_count.saturating_add(1);
@@ -95,10 +132,6 @@ pub fn inspect_source(request: &InspectionRequest) -> Result<SourceInspection, S
         if let Some(stem) = path.file_stem() {
             nested_names.insert(stem.to_string_lossy().into_owned());
         }
-        let extension = path
-            .extension()
-            .map(|value| value.to_string_lossy().to_ascii_lowercase())
-            .unwrap_or_default();
         if !allowed_extensions.contains(&extension) {
             continue;
         }
@@ -114,23 +147,30 @@ pub fn inspect_source(request: &InspectionRequest) -> Result<SourceInspection, S
         .map(|duration| duration.as_millis().to_string())
         .unwrap_or_else(|| "0".to_string());
     let source_path = request.source_path.to_string_lossy().into_owned();
-    Ok(SourceInspection {
-        source_path: source_path.clone(),
-        source_name: source_name.clone(),
-        normalized_name: normalized_match_name(&source_name),
-        nested_names: nested_names.into_iter().collect(),
-        matching_files,
-        ini_sections: ini_sections.into_iter().collect(),
-        evidence: vec![MatchEvidence {
-            source: "folder_name".to_string(),
-            value: source_name,
-            score: 1.0,
-        }],
-        fingerprint: SourceFingerprint {
-            path: source_path,
-            modified_unix_ms,
-            size_bytes: total_size.to_string(),
-            file_count,
+    Ok(InspectedSource {
+        inspection: SourceInspection {
+            source_path: source_path.clone(),
+            source_name: source_name.clone(),
+            normalized_name: normalized_match_name(&source_name),
+            nested_names: nested_names.into_iter().collect(),
+            matching_files,
+            ini_sections: ini_sections.into_iter().collect(),
+            evidence: vec![MatchEvidence {
+                source: "folder_name".to_string(),
+                value: source_name,
+                score: 1.0,
+            }],
+            fingerprint: SourceFingerprint {
+                path: source_path,
+                modified_unix_ms,
+                size_bytes: total_size.to_string(),
+                file_count,
+            },
+        },
+        content: FolderContent {
+            subfolder_names,
+            files,
+            ini_files,
         },
     })
 }

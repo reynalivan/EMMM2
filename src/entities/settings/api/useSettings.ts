@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '@/shared/api/tauri/bindings';
-import type { AppSettings, AiConfig } from '../model/settings';
+import type { AppSettings, AiConfig, HotkeyConfig, KeyViewerConfig } from '../model/settings';
 import { useToastStore } from '@/shared/ui/toast';
 import { normalizeThemeSetting, type ThemeSetting } from '@/shared/lib/themeOptions';
 import i18n from '@/shared/i18n/config';
@@ -155,21 +155,6 @@ export function useSettings() {
     },
   });
 
-  const catalogAutoInstallMutation = useMutation({
-    mutationFn: (enabled: boolean) => commands.setCatalogAutoInstall(enabled),
-    onSuccess: async (savedSettings) => {
-      queryClient.setQueryData(settingsKeys.all, savedSettings);
-      await publishQueryScopes(queryClient, ['settings']);
-    },
-    onError: (err) => {
-      console.error(err);
-      addToast(
-        'error',
-        t('settings:general.catalog_assets.auto_update_failed', { error: String(err) }),
-      );
-    },
-  });
-
   const telemetryEnabledMutation = useMutation({
     mutationFn: (enabled: boolean) => commands.setTelemetryEnabled(enabled),
     onSuccess: async (savedSettings) => {
@@ -181,6 +166,18 @@ export function useSettings() {
       addToast('error', t('settings:diagnostics.save_failed', { error: String(err) }));
     },
   });
+
+  const saveHotkeyConfiguration = async (
+    expectedRevision: number,
+    hotkeys: HotkeyConfig,
+    keyviewer: KeyViewerConfig,
+  ) => {
+    const result = await commands.saveHotkeyConfiguration(expectedRevision, hotkeys, keyviewer);
+    notifyCommittedMutationSyncWarning(result);
+    queryClient.setQueryData(settingsKeys.all, result.settings);
+    await publishQueryScopes(queryClient, ['settings']);
+    return result.settings;
+  };
 
   return {
     settings: settingsQuery.data,
@@ -194,8 +191,8 @@ export function useSettings() {
     deleteAiApiKey,
     updateTheme: updateThemeMutation,
     setModViewerExecutable: modViewerExecutableMutation,
-    setCatalogAutoInstall: catalogAutoInstallMutation,
     setTelemetryEnabled: telemetryEnabledMutation,
+    saveHotkeyConfiguration,
     updateLanguage: useMutation({
       mutationFn: async (language: string) => {
         if (!settingsQuery.data) throw new Error('Settings not loaded');

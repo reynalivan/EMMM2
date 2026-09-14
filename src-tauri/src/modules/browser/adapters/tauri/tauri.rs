@@ -138,6 +138,17 @@ pub async fn browser_delete_bookmark(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn browser_update_bookmark(
+    id: String,
+    url: String,
+    title: String,
+    db: State<'_, SqlitePool>,
+) -> Result<browser_service::BrowserBookmark, AppError> {
+    Ok(browser_service::update_bookmark(db.inner(), &id, &url, &title).await?)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn browser_list_history(
     limit: i64,
     db: State<'_, SqlitePool>,

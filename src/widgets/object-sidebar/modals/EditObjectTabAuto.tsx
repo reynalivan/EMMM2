@@ -149,8 +149,16 @@ export function EditObjectTabAuto({
                 {suggestions.map((sugg) => (
                   <div
                     key={sugg.name}
-                    className="flex items-center gap-2 p-2 border border-base-200 rounded-lg hover:border-primary/50 hover:bg-base-200/50 cursor-pointer transition-all"
+                    role="button"
+                    tabIndex={0}
+                    className="workspace-interactive flex cursor-pointer items-center gap-2 rounded-lg border border-base-200 p-2 hover:border-primary/50 hover:bg-base-200/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
                     onClick={() => handleDbSelect(sugg)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleDbSelect(sugg);
+                      }
+                    }}
                   >
                     {sugg.thumbnail_path ? (
                       <img

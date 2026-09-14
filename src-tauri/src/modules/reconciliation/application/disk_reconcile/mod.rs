@@ -3,6 +3,7 @@ pub mod disk_snapshot;
 pub mod emit;
 pub mod helpers;
 pub mod identity_conflicts;
+pub mod onboarding_session;
 pub mod orchestrator;
 pub mod path_classifier;
 pub mod path_updates;

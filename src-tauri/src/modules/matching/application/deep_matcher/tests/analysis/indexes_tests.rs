@@ -19,6 +19,7 @@ fn db_entries() -> Vec<DbEntry> {
                 "Default".to_string(),
                 vec!["D94C8962".to_string(), "0x00000000d94c8962".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Albedo".to_string(),
@@ -37,6 +38,7 @@ fn db_entries() -> Vec<DbEntry> {
                 "Default".to_string(),
                 vec!["d94c8962".to_string(), "0xC77E380B".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "NoHash".to_string(),
@@ -50,6 +52,7 @@ fn db_entries() -> Vec<DbEntry> {
                 "Default".to_string(),
                 vec!["invalid".to_string(), "123".to_string()],
             )]),
+            runtime_targets: vec![],
         },
     ]
 }

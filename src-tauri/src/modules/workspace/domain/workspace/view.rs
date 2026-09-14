@@ -4,19 +4,46 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
-pub struct WorkspaceViewModelInput {
+pub struct WorkspaceStructureInput {
     pub filter: ObjectFilter,
     pub selected_object_folder_path: Option<String>,
+    pub explorer_sub_path: Option<String>,
+}
+
+#[derive(Clone, Serialize, specta::Type)]
+pub struct WorkspaceNavigationSelection {
+    pub selected_object_folder_path: Option<String>,
+    pub explorer_sub_path: Option<String>,
+    pub current_path: Vec<String>,
+    pub reconciliation_status: WorkspaceSelectionReconciliationStatus,
+    pub reconciliation_reason: Option<WorkspaceSelectionReconciliationReason>,
+    pub affected_paths: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+pub struct WorkspacePreviewInput {
+    pub game_id: String,
     pub explorer_sub_path: Option<String>,
     pub selected_mod_path: Option<String>,
 }
 
 #[derive(Clone, Serialize, specta::Type)]
-pub struct WorkspaceSelection {
-    pub selected_object_folder_path: Option<String>,
+pub struct WorkspacePreviewRequestIdentity {
+    pub game_id: String,
     pub explorer_sub_path: Option<String>,
     pub selected_mod_path: Option<String>,
-    pub current_path: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspacePreviewContextStatus {
+    Ready,
+    ContextStale,
+}
+
+#[derive(Clone, Serialize, specta::Type)]
+pub struct WorkspacePreviewSelection {
+    pub selected_mod_path: Option<String>,
     pub reconciliation_status: WorkspaceSelectionReconciliationStatus,
     pub reconciliation_reason: Option<WorkspaceSelectionReconciliationReason>,
     pub affected_paths: Vec<String>,
@@ -129,6 +156,47 @@ pub enum WorkspaceSourceStatus {
 }
 
 #[derive(Clone, Serialize, specta::Type)]
+pub struct WorkspaceStructureViewModel {
+    pub objects: Vec<WorkspaceObjectNode>,
+    pub explorer: WorkspaceExplorer,
+    pub selection: WorkspaceNavigationSelection,
+    pub runtime: WorkspaceRuntime,
+}
+
+#[derive(Clone, Serialize, specta::Type)]
+pub struct WorkspacePreviewResult {
+    pub request_identity: WorkspacePreviewRequestIdentity,
+    pub context_status: WorkspacePreviewContextStatus,
+    pub preview: WorkspacePreview,
+    pub selection: WorkspacePreviewSelection,
+}
+
+/// Legacy aggregate used only by the pre-split workspace fixtures. It is not
+/// exposed through Tauri and prevents parity tests from becoming a second
+/// runtime path.
+#[cfg(test)]
+#[derive(Clone)]
+pub struct WorkspaceViewModelInput {
+    pub filter: ObjectFilter,
+    pub selected_object_folder_path: Option<String>,
+    pub explorer_sub_path: Option<String>,
+    pub selected_mod_path: Option<String>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+pub struct WorkspaceSelection {
+    pub selected_object_folder_path: Option<String>,
+    pub explorer_sub_path: Option<String>,
+    pub selected_mod_path: Option<String>,
+    pub current_path: Vec<String>,
+    pub reconciliation_status: WorkspaceSelectionReconciliationStatus,
+    pub reconciliation_reason: Option<WorkspaceSelectionReconciliationReason>,
+    pub affected_paths: Vec<String>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
 pub struct WorkspaceViewModel {
     pub objects: Vec<WorkspaceObjectNode>,
     pub explorer: WorkspaceExplorer,

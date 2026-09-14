@@ -161,10 +161,14 @@ mod tests {
     async fn set_homepage_upserts_the_stored_value() {
         let db = init_test_db().await.pool;
 
-        set_homepage(&db, "game-1", "https://gamebanana.com").await.unwrap();
+        set_homepage(&db, "game-1", "https://gamebanana.com")
+            .await
+            .unwrap();
         assert_eq!(get_homepage(&db, "game-1").await, "https://gamebanana.com");
 
-        set_homepage(&db, "game-2", "http://localhost:1420").await.unwrap();
+        set_homepage(&db, "game-2", "http://localhost:1420")
+            .await
+            .unwrap();
         assert_eq!(get_homepage(&db, "game-1").await, "https://gamebanana.com");
         assert_eq!(get_homepage(&db, "game-2").await, "http://localhost:1420");
     }
@@ -172,9 +176,13 @@ mod tests {
     #[tokio::test]
     async fn set_homepage_rejects_a_bad_scheme_without_writing() {
         let db = init_test_db().await.pool;
-        set_homepage(&db, "game-1", "https://ok.test").await.unwrap();
+        set_homepage(&db, "game-1", "https://ok.test")
+            .await
+            .unwrap();
 
-        let err = set_homepage(&db, "game-1", "javascript:alert(1)").await.unwrap_err();
+        let err = set_homepage(&db, "game-1", "javascript:alert(1)")
+            .await
+            .unwrap_err();
 
         assert!(matches!(err, BrowserError::InvalidUrl(_)));
         assert_eq!(get_homepage(&db, "game-1").await, "https://ok.test");

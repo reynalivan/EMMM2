@@ -1,6 +1,8 @@
-use crate::modules::catalog::application::match_engine::canonical_match::match_canonical_objects;
+use crate::modules::catalog::application::match_engine::canonical_match::{
+    match_canonical_objects_with_prepared_content, prepare_canonical_match_db,
+};
 use crate::modules::catalog::application::match_engine::inspection::{
-    inspect_source, InspectionRequest,
+    inspect_source_with_content, InspectionRequest,
 };
 use crate::modules::catalog::application::objects::classification::{
     CanonicalClassificationMatch, ObjectClassificationInput,
@@ -11,6 +13,7 @@ use crate::modules::ingestion::application::import_batch::types::{
 use crate::shared::errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -140,29 +143,43 @@ pub async fn preview_object_classification_batch(
     let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?;
+    let canonical_db = prepare_canonical_match_db(master_db);
+    let objects_by_id = crate::modules::catalog::adapters::sqlite::object::get_game_objects_by_ids(
+        db,
+        &input.game_id,
+        &input.object_ids,
+    )
+    .await?
+    .into_iter()
+    .map(|object| (object.id.clone(), object))
+    .collect::<HashMap<_, _>>();
     let mut result = Vec::with_capacity(input.object_ids.len());
 
     for object_id in &input.object_ids {
-        let object =
-            crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, object_id)
-                .await?
-                .filter(|object| object.game_id == input.game_id)
-                .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;
+        let object = objects_by_id
+            .get(object_id)
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("Object '{object_id}'")))?;
         let source = Path::new(&mods_root).join(&object.folder_path);
-        let inspection = inspect_source(&InspectionRequest {
+        let inspected = inspect_source_with_content(&InspectionRequest {
             source_path: source.clone(),
             planned_name: Some(object.name.clone()),
             match_extensions: match_extensions.to_vec(),
         })?;
-        let canonical_suggestions =
-            match_canonical_objects(&source, &object.name, master_db, filters);
+        let canonical_suggestions = match_canonical_objects_with_prepared_content(
+            &source,
+            &object.name,
+            &canonical_db,
+            filters,
+            &inspected.content,
+        );
         result.push(ObjectClassificationPreviewItem {
             object_id: object.id,
             object_name: object.name,
             source_path: source.to_string_lossy().into_owned(),
             current_category: object.object_type,
             canonical_suggestions,
-            fingerprint: inspection.fingerprint,
+            fingerprint: inspected.inspection.fingerprint,
         });
     }
     Ok(result)
@@ -193,23 +210,35 @@ pub async fn apply_object_classification_batch(
     let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &input.game_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?;
+    let canonical_db = prepare_canonical_match_db(master_db);
+    let object_ids = input
+        .items
+        .iter()
+        .map(|item| item.object_id.clone())
+        .collect::<Vec<_>>();
+    let objects_by_id = crate::modules::catalog::adapters::sqlite::object::get_game_objects_by_ids(
+        db,
+        &input.game_id,
+        &object_ids,
+    )
+    .await?
+    .into_iter()
+    .map(|object| (object.id.clone(), object))
+    .collect::<HashMap<_, _>>();
     let mut prepared = Vec::with_capacity(input.items.len());
 
     for item in input.items {
-        let object = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(
-            db,
-            &item.object_id,
-        )
-        .await?
-        .filter(|object| object.game_id == input.game_id)
-        .ok_or_else(|| AppError::NotFound(format!("Object '{}'", item.object_id)))?;
+        let object = objects_by_id
+            .get(&item.object_id)
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("Object '{}'", item.object_id)))?;
         let source = Path::new(&mods_root).join(&object.folder_path);
-        let current = inspect_source(&InspectionRequest {
+        let inspected = inspect_source_with_content(&InspectionRequest {
             source_path: source.clone(),
             planned_name: Some(object.name.clone()),
             match_extensions: match_extensions.to_vec(),
         })?;
-        if current.fingerprint != item.fingerprint {
+        if inspected.inspection.fingerprint != item.fingerprint {
             return Err(AppError::Validation(format!(
                 "stale_preview: object '{}' changed after classification preview",
                 object.name
@@ -219,9 +248,11 @@ pub async fn apply_object_classification_batch(
             ObjectClassificationDecision::Canonical { entry_key } => {
                 canonical_classification_input(
                     master_db,
+                    &canonical_db,
                     filters,
                     &source,
                     &object.name,
+                    &inspected.content,
                     input.game_id.clone(),
                     item.object_id,
                     entry_key,
@@ -270,9 +301,11 @@ pub async fn apply_object_classification_batch(
 
 fn canonical_classification_input(
     master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
+    canonical_db: &crate::modules::matching::application::deep_matcher::MasterDb,
     filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
     source: &Path,
     object_name: &str,
+    content: &crate::modules::workspace::application::scanner::core::walker::FolderContent,
     game_id: String,
     object_id: String,
     entry_key: String,
@@ -311,9 +344,15 @@ fn canonical_classification_input(
             "Canonical entry '{entry_key}' has invalid metadata"
         )));
     }
-    let matched = match_canonical_objects(source, object_name, master_db, filters)
-        .into_iter()
-        .find(|candidate| candidate.entry_key == entry_key);
+    let matched = match_canonical_objects_with_prepared_content(
+        source,
+        object_name,
+        canonical_db,
+        filters,
+        content,
+    )
+    .into_iter()
+    .find(|candidate| candidate.entry_key == entry_key);
     let canonical_match = CanonicalClassificationMatch {
         entry_key,
         alias_name: matched

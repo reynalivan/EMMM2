@@ -50,22 +50,18 @@ export default function ObjectListDropIndicators({
       {isDragging ? (
         <div
           ref={bottomRef}
-          className={`relative z-30 border-t border-dashed border-t-2 px-3 py-5 transition-all duration-200 ${
+          className={`workspace-transient-enter relative z-30 border-t-2 border-dashed px-3 py-5 transition-[background-color,border-color] duration-150 ${
             activeDropZone === 'new-object'
               ? 'border-primary bg-primary/15'
               : 'border-base-300/50 bg-base-200/70'
           }`}
-          style={{ animation: 'slideUp 200ms ease-out' }}
         >
           <div
             className={`flex items-center justify-center gap-2 ${
               activeDropZone === 'new-object' ? 'text-primary' : 'text-base-content/50'
             }`}
           >
-            <FolderPlus
-              size={18}
-              className={activeDropZone === 'new-object' ? 'animate-pulse' : ''}
-            />
+            <FolderPlus size={18} />
             <span className="text-xs font-medium">{t('item.append_new')}</span>
           </div>
         </div>
@@ -73,7 +69,7 @@ export default function ObjectListDropIndicators({
         <footer
           ref={bottomRef}
           data-testid="object-list-count-overlay"
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center justify-end gap-3 px-2 pb-2 pt-1.5"
+          className="pointer-events-none relative z-30 flex shrink-0 items-center justify-end gap-3 px-2 pb-2 pt-1.5"
         >
           {selectedObjectType && (
             <button

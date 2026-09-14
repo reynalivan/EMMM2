@@ -199,6 +199,15 @@ describe('Dashboard - TC-33', () => {
       expect(screen.queryByRole('button', { name: /^refresh$/i })).not.toBeInTheDocument();
     });
 
+    it('groups the dashboard entrance by scan priority', () => {
+      const { container } = render(<Dashboard />);
+
+      expect(container.querySelector('.dashboard-entrance')).toBeInTheDocument();
+      expect(container.querySelector('.dashboard-entrance__scope')).toBeInTheDocument();
+      expect(container.querySelector('.dashboard-entrance__actions')).toBeInTheDocument();
+      expect(container.querySelector('.dashboard-entrance__content')).toBeInTheDocument();
+    });
+
     it('renders Total Mods stat tile correctly', () => {
       render(<Dashboard />);
 

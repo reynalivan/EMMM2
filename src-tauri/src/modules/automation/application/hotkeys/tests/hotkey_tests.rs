@@ -3,8 +3,8 @@
 use std::thread;
 use std::time::Duration;
 
-use crate::modules::automation::application::hotkeys::actions::{
-    plan_cycle_preset, plan_noop, resolve_next_preset, CycleDirection,
+use crate::modules::automation::application::hotkeys::cycle_preset::{
+    resolve_next_preset, CycleDirection,
 };
 use crate::modules::automation::application::hotkeys::{
     detect_conflicts, get_key_string, list_bindings, HotkeyAction, HotkeyConfig, HotkeyState,
@@ -17,7 +17,7 @@ use crate::modules::automation::application::hotkeys::{
 fn hotkey_config_defaults() {
     let config = HotkeyConfig::default();
     assert!(config.enabled);
-    assert_eq!(config.cooldown_ms, 500);
+    assert_eq!(config.safe_mode, "F5");
     assert_eq!(config.next_preset, "Ctrl+F6");
     assert_eq!(config.prev_preset, "Shift+F6");
     assert_eq!(config.toggle_overlay, "F7");
@@ -32,6 +32,7 @@ fn keyviewer_config_defaults() {
 #[test]
 fn get_key_string_maps_correctly() {
     let config = HotkeyConfig::default();
+    assert_eq!(get_key_string(&config, HotkeyAction::ToggleSafeMode), "F5");
     assert_eq!(get_key_string(&config, HotkeyAction::NextPreset), "Ctrl+F6");
     assert_eq!(
         get_key_string(&config, HotkeyAction::PrevPreset),
@@ -44,15 +45,7 @@ fn get_key_string_maps_correctly() {
 fn list_bindings_returns_correct_count() {
     let config = HotkeyConfig::default();
     let bindings = list_bindings(&config);
-    assert_eq!(bindings.len(), 5);
-    assert_eq!(
-        get_key_string(&config, HotkeyAction::NextVariantFolder),
-        "Ctrl+F8"
-    );
-    assert_eq!(
-        get_key_string(&config, HotkeyAction::PrevVariantFolder),
-        "Shift+F8"
-    );
+    assert_eq!(bindings.len(), 4);
 }
 
 // ... existing conflict and debounce tests ...
@@ -94,21 +87,21 @@ fn conflict_detection_case_insensitive() {
 
 #[test]
 fn first_acquire_succeeds() {
-    let mut state = HotkeyState::new(500);
+    let mut state = HotkeyState::new_for_test(Duration::from_millis(500));
     assert!(state.try_acquire());
     assert!(state.is_locked());
 }
 
 #[test]
 fn second_acquire_fails_while_locked() {
-    let mut state = HotkeyState::new(500);
+    let mut state = HotkeyState::new_for_test(Duration::from_millis(500));
     assert!(state.try_acquire());
     assert!(!state.try_acquire()); // Dropped
 }
 
 #[test]
 fn acquire_succeeds_after_release() {
-    let mut state = HotkeyState::new(0); // no cooldown
+    let mut state = HotkeyState::new_for_test(Duration::ZERO);
     assert!(state.try_acquire());
     state.release();
     assert!(!state.is_locked());
@@ -117,7 +110,7 @@ fn acquire_succeeds_after_release() {
 
 #[test]
 fn cooldown_prevents_rapid_retrigger() {
-    let mut state = HotkeyState::new(200);
+    let mut state = HotkeyState::new_for_test(Duration::from_millis(200));
     assert!(state.try_acquire());
     state.release();
     // Immediately after release, cooldown should still be active
@@ -127,7 +120,7 @@ fn cooldown_prevents_rapid_retrigger() {
 
 #[test]
 fn cooldown_expires_allows_retrigger() {
-    let mut state = HotkeyState::new(50); // 50ms cooldown
+    let mut state = HotkeyState::new_for_test(Duration::from_millis(50));
     assert!(state.try_acquire());
     state.release();
     thread::sleep(Duration::from_millis(60)); // Wait past cooldown
@@ -185,20 +178,6 @@ fn unicode_preset_cycle_matches_current_name_with_ascii_case_fold_only() {
     assert_eq!(next, Some("中文Preset".to_string()));
 }
 
-#[test]
-fn plan_cycle_preset_sets_status() {
-    let result = plan_cycle_preset("MyPreset");
-    assert_eq!(result.status.preset_name, Some("MyPreset".to_string()));
-    assert!(result.needs_reload);
-}
-
 // ─── Variant Folder Cycling ──────────────────────────────────────────────────
 
 // ─── No-op ───────────────────────────────────────────────────────────────────
-
-#[test]
-fn noop_has_no_reload() {
-    let result = plan_noop(HotkeyAction::NextPreset, "No presets configured");
-    assert!(!result.needs_reload);
-    assert!(result.summary.contains("No presets"));
-}

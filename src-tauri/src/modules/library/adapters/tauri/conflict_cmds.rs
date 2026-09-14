@@ -98,6 +98,50 @@ pub async fn get_folder_conflict_details(
     .await?
 }
 
+/// Opens a current folder-name-conflict candidate for inspection.
+///
+/// This is read-only, but cannot use the ordinary Explorer command because
+/// that command intentionally rejects unresolved conflict paths.
+#[specta::specta]
+#[tauri::command]
+pub async fn open_folder_conflict_candidate(
+    config: State<'_, ConfigService>,
+    game_id: String,
+    group_id: String,
+    path: String,
+) -> Result<(), AppError> {
+    let candidate_path = validate_path(&config, &game_id, &path)?;
+    let mods_root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let census_game_id = game_id.clone();
+    let census_group_id = group_id.clone();
+    let census_candidate_path = candidate_path.clone();
+    let is_current_candidate = tokio::task::spawn_blocking(move || {
+        let census = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_disk_identity_census(
+            &mods_root,
+        )
+        .map_err(|error| AppError::Internal(error.into_message()))?;
+        let conflicts = crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census(
+            &census_game_id,
+            &census,
+        );
+        Ok::<_, AppError>(conflict_group_contains_candidate(
+            &conflicts,
+            &census_group_id,
+            &census_candidate_path,
+        ))
+    })
+    .await??;
+    if !is_current_candidate {
+        return Err(AppError::NotFound(
+            "Folder conflict is stale or already resolved".to_string(),
+        ));
+    }
+
+    crate::platform::process::reveal_in_file_manager(&candidate_path)
+}
+
 #[specta::specta]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -387,6 +431,21 @@ fn paths_refer_to_same_entry(canonical_path: &Path, candidate: &Path) -> bool {
         .is_ok_and(|canonical_candidate| canonical_candidate == canonical_path)
 }
 
+fn conflict_group_contains_candidate(
+    groups: &[crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup],
+    group_id: &str,
+    candidate_path: &Path,
+) -> bool {
+    groups
+        .iter()
+        .find(|group| group.group_id == group_id)
+        .is_some_and(|group| {
+            group.candidates.iter().any(|candidate| {
+                paths_refer_to_same_entry(candidate_path, Path::new(&candidate.path))
+            })
+        })
+}
+
 fn path_is_enabled(path: &Path) -> bool {
     !path.components().any(|component| {
         component
@@ -595,6 +654,36 @@ mod tests {
 
         assert!(paths_refer_to_same_entry(&canonical, &candidate));
         assert!(paths_refer_to_same_entry(&canonical, &canonical));
+    }
+
+    #[test]
+    fn conflict_candidate_must_belong_to_the_active_group() {
+        use crate::modules::reconciliation::application::disk_reconcile::types::{
+            FolderNameConflictCandidate, FolderNameConflictGroup,
+        };
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let candidate = temp.path().join("DISABLED Candidate");
+        std::fs::create_dir(&candidate).unwrap();
+        let canonical = candidate.canonicalize().unwrap();
+        let groups = vec![FolderNameConflictGroup {
+            group_id: "current".to_string(),
+            identity: "candidate".to_string(),
+            display_name: "Candidate".to_string(),
+            candidates: vec![FolderNameConflictCandidate {
+                path: candidate.to_string_lossy().to_string(),
+                folder_name: "DISABLED Candidate".to_string(),
+                base_name: "Candidate".to_string(),
+                is_enabled: false,
+            }],
+        }];
+
+        assert!(conflict_group_contains_candidate(
+            &groups, "current", &canonical
+        ));
+        assert!(!conflict_group_contains_candidate(
+            &groups, "stale", &canonical
+        ));
     }
 
     #[test]

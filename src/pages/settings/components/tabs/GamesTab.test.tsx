@@ -116,7 +116,15 @@ describe('GamesTab (TC-02)', () => {
         launch_args: null,
       },
       inspection: {} as never,
-      reconcile: {} as never,
+      reconcile: {
+        change_summary: {
+          object_changes: { added: 0, removed: 0, renamed: 0, modified: 0 },
+          mod_changes: { added: 1, removed: 0, renamed: 0, modified: 0 },
+        },
+        collection_reference_impact: { affected_collection_count: 0 },
+      } as never,
+      emmm_data_moved: false,
+      watcher_warning: null,
     });
     vi.mocked(commands.getSettings).mockResolvedValue({
       revision: 4,

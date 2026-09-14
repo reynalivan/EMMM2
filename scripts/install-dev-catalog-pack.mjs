@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const devAppIdentifier = 'com.reynalivan.emmm.dev';
 const packDirectory = 'asset-pack';
-const packEntries = ['manifest.json', 'catalog', 'images'];
+const packEntries = ['manifest.json', 'catalog', 'assets'];
 
 function hasErrorCode(error, code) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
@@ -23,7 +23,9 @@ async function pathExists(path) {
 }
 
 function resolveSourcePath() {
-  return resolve(process.env.EMMM_DEV_CATALOG_SOURCE ?? join(projectRoot, '..', '3dm-catalog-asset'));
+  return resolve(
+    process.env.EMMM_DEV_CATALOG_SOURCE ?? join(projectRoot, '..', '3dm-catalog-asset'),
+  );
 }
 
 function resolveDestinationPath() {
@@ -45,7 +47,9 @@ function hasText(value) {
 }
 
 async function sha256File(path) {
-  return createHash('sha256').update(await readFile(path)).digest('hex');
+  return createHash('sha256')
+    .update(await readFile(path))
+    .digest('hex');
 }
 
 async function validateSource(source) {
@@ -58,12 +62,11 @@ async function validateSource(source) {
   }
 
   if (
-    manifest.format_version !== 1 ||
+    Object.hasOwn(manifest, 'format_version') ||
     !hasText(manifest.id) ||
     !hasText(manifest.version) ||
     !hasText(manifest.author) ||
     !hasText(manifest.source) ||
-    !hasText(manifest.license) ||
     !manifest.catalogs ||
     typeof manifest.catalogs !== 'object'
   ) {

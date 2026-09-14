@@ -3,7 +3,6 @@ import FolderGridToolbar from './components/FolderGridToolbar';
 import FolderGridBanners from './components/FolderGridBanners';
 import FolderGridModals from './modals/FolderGridModals';
 import DragOverlay from './components/DragOverlay';
-import EnableParentDialog from './modals/EnableParentDialog';
 import BulkProgressBar from './components/BulkProgressBar';
 import BulkActionBar from './components/BulkActionBar';
 import { useFolderGrid } from './hooks/useFolderGrid';
@@ -12,6 +11,7 @@ import { useFolderGridViewModel } from './hooks/useFolderGridViewModel';
 import FolderGridStateViews from './components/FolderGridStateViews';
 import FolderGridContent from './components/FolderGridContent';
 import FolderGridFooter from './components/FolderGridFooter';
+import FolderGridSyncToast from './components/FolderGridSyncToast';
 
 export default function FolderGrid() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -21,6 +21,7 @@ export default function FolderGrid() {
     previousFolders,
     sortedFolders,
     isLoading,
+    isRefreshing,
     isError,
     error,
     selfDisplayMode,
@@ -58,13 +59,7 @@ export default function FolderGrid() {
     closeMoveDialog,
     objects,
     ancestorDisabledBy,
-    enableParentDialogOpen,
-    enableParentDialogAncestorName,
-    enableParentDialogWillActivate,
-    enableParentDialogStayDisabled,
     openEnableParentDialog,
-    closeEnableParentDialog,
-    handleEnableParent,
     deleteConfirm,
     setDeleteConfirm,
     handleDeleteConfirm,
@@ -149,27 +144,6 @@ export default function FolderGrid() {
         if (!e.defaultPrevented) setActivePane('folderGrid');
       }}
     >
-      <div className="shrink-0 px-4">
-        <FolderGridBanners
-          isLoading={isLoading}
-          isError={isError}
-          isFlatModRoot={isFlatModRoot}
-          selfIsEnabled={selfIsEffectivelyActive || selfIsEnabled}
-          selfReasons={selfReasons}
-          isMobile={isMobile}
-          isPreviewOpen={isPreviewOpen}
-          setMobilePane={setMobilePane}
-          togglePreview={togglePreview}
-          handleToggleSelf={handleToggleSelf}
-          ancestorDisabledBy={ancestorDisabledBy}
-          currentPath={currentPath}
-          onOpenEnableParentDialog={openEnableParentDialog}
-          diskSourceUnavailableMessage={workspaceSourceUnavailableMessage}
-          recoveryStatus={recoveryStatus}
-          mutationsDisabled={mutationsDisabled}
-        />
-      </div>
-
       <div ref={chromeRef} className="shrink-0">
         <FolderGridToolbar
           isMobile={isMobile}
@@ -189,8 +163,27 @@ export default function FolderGrid() {
           setExplorerSearch={setExplorerSearch}
           canCreateFolder={!mutationsDisabled && folderGrid.currentFolderPath !== null}
           onCreateFolder={openCreateFolderDialog}
+          isRefreshing={isRefreshing}
         />
       </div>
+
+      <FolderGridBanners
+        isLoading={isLoading}
+        isError={isError}
+        isFlatModRoot={isFlatModRoot}
+        selfIsEnabled={selfIsEffectivelyActive || selfIsEnabled}
+        selfReasons={selfReasons}
+        isMobile={isMobile}
+        isPreviewOpen={isPreviewOpen}
+        setMobilePane={setMobilePane}
+        togglePreview={togglePreview}
+        handleToggleSelf={handleToggleSelf}
+        ancestorDisabledBy={ancestorDisabledBy}
+        currentPath={currentPath}
+        onOpenEnableParentDialog={openEnableParentDialog}
+        diskSourceUnavailableMessage={workspaceSourceUnavailableMessage}
+        mutationsDisabled={mutationsDisabled}
+      />
 
       <FolderGridStateViews
         isLoading={isLoading}
@@ -217,6 +210,8 @@ export default function FolderGrid() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-2">
         <FolderGridFooter visibleCount={visibleFolders.length} />
       </div>
+
+      <FolderGridSyncToast recoveryStatus={recoveryStatus} />
 
       <FolderGridModals
         moveDialog={moveDialog}
@@ -245,18 +240,6 @@ export default function FolderGrid() {
         closeCreateFolderDialog={closeCreateFolderDialog}
         handleCreateFolder={handleCreateFolder}
       />
-
-      {/* Enable Parent Dialog */}
-      {ancestorDisabledBy && (
-        <EnableParentDialog
-          open={enableParentDialogOpen}
-          onClose={closeEnableParentDialog}
-          ancestorName={enableParentDialogAncestorName}
-          willActivate={enableParentDialogWillActivate}
-          stayDisabled={enableParentDialogStayDisabled}
-          onConfirm={handleEnableParent}
-        />
-      )}
 
       <BulkProgressBar />
 

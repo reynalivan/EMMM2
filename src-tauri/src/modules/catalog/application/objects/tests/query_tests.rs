@@ -35,6 +35,7 @@ async fn run_full_disk_reconcile(
         watcher_events: None,
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await
     .expect("Disk Reconcile should succeed in test")
@@ -286,6 +287,7 @@ async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
         watcher_events: None,
         path_hints: &[],
         progress_reporter: None,
+        precomputed_discovery: None,
     })
     .await
     .expect("missing source should return a typed no-write result");

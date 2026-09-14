@@ -119,8 +119,9 @@ pub async fn dup_scan_start(
         });
 
         let outcome =
-            match crate::modules::duplicates::application::dedup::scanner::scan_duplicates(
+            match crate::modules::duplicates::application::dedup::scanner::scan_duplicates_for_candidates(
                 Path::new(&mods_root_for_task),
+                candidates,
                 &game_id_for_task,
                 &db_for_task,
                 Arc::clone(&cancel_flag),

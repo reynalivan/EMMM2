@@ -63,6 +63,23 @@ pub struct GameBananaRef {
     pub item_id: u64,
 }
 
+impl GameBananaRef {
+    /// Canonical public submission URL, without tracking parameters or fragments.
+    pub fn canonical_page_url(&self) -> Option<String> {
+        let resource_type = match self.item_type.as_str() {
+            "Mod" => "mods",
+            "Tool" => "tools",
+            "Script" => "scripts",
+            "Skin" => "skins",
+            _ => return None,
+        };
+        Some(format!(
+            "https://gamebanana.com/{resource_type}/{}",
+            self.item_id
+        ))
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct GameBananaConfig {
     pub enabled: bool,

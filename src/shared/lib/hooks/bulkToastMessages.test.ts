@@ -13,6 +13,7 @@ vi.mock('@/shared/lib/appError', () => ({
 
 import {
   BULK_TOAST_PREVIEW_LIMIT,
+  formatBulkCancelledMessage,
   formatBulkFailureMessage,
   formatBulkSuccessMessage,
   truncateNameList,
@@ -112,6 +113,14 @@ describe('formatBulkFailureMessage', () => {
   it('falls back to the whole path when it has no trailing segment', () => {
     expect(formatBulkFailureMessage([{ path: '/mods/', error: 'boom' }], 'import')).toContain(
       '"name":"/mods/"',
+    );
+  });
+});
+
+describe('formatBulkCancelledMessage', () => {
+  it('reports the exact completed and unprocessed totals', () => {
+    expect(formatBulkCancelledMessage({ processed_count: 2, unprocessed_count: 3 })).toBe(
+      'common:bulk_progress.cancelled_summary|' + JSON.stringify({ processed: 2, total: 5 }),
     );
   });
 });

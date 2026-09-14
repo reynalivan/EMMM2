@@ -11,7 +11,10 @@
     "filter_status": "Status: {{status}}",
     "filter_meta": "{{label}}: {{value}}",
     "click_to_clear": "klik untuk menghapus",
-    "click_to_remove": "klik untuk membuang"
+    "click_to_remove": "klik untuk membuang",
+    "catalog_check": "Periksa object ini dengan katalog",
+    "catalog_check_started": "Memeriksa object ini dengan katalog aktif.",
+    "catalog_check_failed": "Tidak dapat memulai pemeriksaan katalog."
   },
   "filter": {
     "sort_label": "Urutkan",

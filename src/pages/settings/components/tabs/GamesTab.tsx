@@ -1,6 +1,6 @@
 import { formatAppError } from '../../../../shared/lib/appError';
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Play, Inbox } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, Inbox, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '@/entities/settings';
 import type { GameConfig } from '@/entities/game';
@@ -19,6 +19,17 @@ interface PendingSourceChange {
   inspection: GameModsDirectoryInspection;
 }
 
+interface SourceChangeSummary {
+  objectsAdded: number;
+  objectsRemoved: number;
+  objectsMoved: number;
+  modsAdded: number;
+  modsRemoved: number;
+  modsMoved: number;
+  collectionsAffected: number;
+  emmmDataMoved: boolean;
+}
+
 export default function GamesTab() {
   const { t } = useTranslation(['settings', 'common', 'grid']);
   const { settings, saveSettingsAsync } = useSettings();
@@ -31,6 +42,8 @@ export default function GamesTab() {
   const [pendingSourceChange, setPendingSourceChange] = useState<PendingSourceChange | null>(null);
   const [sourceConfirmation, setSourceConfirmation] = useState('');
   const [sourceChangeError, setSourceChangeError] = useState<string | null>(null);
+  const [sourceChangeWarning, setSourceChangeWarning] = useState<string | null>(null);
+  const [sourceChangeSummary, setSourceChangeSummary] = useState<SourceChangeSummary | null>(null);
   const [sourceChangePending, setSourceChangePending] = useState(false);
   const [pendingDeleteGameId, setPendingDeleteGameId] = useState<string | null>(null);
 
@@ -80,6 +93,18 @@ export default function GamesTab() {
     );
     await saveSettingsAsync({ ...refreshed, games });
     applyDiskReconcileResult(applied.reconcile, queryClient, applied.game);
+    const { object_changes, mod_changes } = applied.reconcile.change_summary;
+    setSourceChangeSummary({
+      objectsAdded: object_changes.added,
+      objectsRemoved: object_changes.removed,
+      objectsMoved: object_changes.renamed,
+      modsAdded: mod_changes.added,
+      modsRemoved: mod_changes.removed,
+      modsMoved: mod_changes.renamed,
+      collectionsAffected: applied.reconcile.collection_reference_impact.affected_collection_count,
+      emmmDataMoved: applied.emmm_data_moved,
+    });
+    setSourceChangeWarning(applied.watcher_warning);
   };
 
   const handleSave = async (game: GameConfig): Promise<boolean> => {
@@ -96,7 +121,14 @@ export default function GamesTab() {
           inspection.summary.classification === 'Matching' ||
           inspection.summary.classification === 'NewLibrary'
         ) {
-          await applySourceChange(pending, false, null);
+          setSourceChangePending(true);
+          setSourceChangeWarning(null);
+          setSourceChangeSummary(null);
+          try {
+            await applySourceChange(pending, false, null);
+          } finally {
+            setSourceChangePending(false);
+          }
           return true;
         }
         setPendingSourceChange(pending);
@@ -117,6 +149,8 @@ export default function GamesTab() {
     if (!pendingSourceChange) return;
     setSourceChangePending(true);
     setSourceChangeError(null);
+    setSourceChangeWarning(null);
+    setSourceChangeSummary(null);
     try {
       const classification = pendingSourceChange.inspection.summary.classification;
       await applySourceChange(
@@ -147,6 +181,7 @@ export default function GamesTab() {
             className="btn btn-primary btn-sm gap-2 whitespace-nowrap"
             data-testid="games-add"
             onClick={handleAdd}
+            disabled={sourceChangePending}
           >
             <Plus size={18} /> {t('settings:games.add')}
           </button>
@@ -208,6 +243,7 @@ export default function GamesTab() {
                         setActiveGameId(game.id);
                         setWorkspaceView('mod-inbox');
                       }}
+                      disabled={sourceChangePending}
                       title={t('settings:games.actions.scan_ready_to_move')}
                     >
                       <Inbox size={16} />
@@ -215,7 +251,7 @@ export default function GamesTab() {
                     <button
                       className="btn btn-ghost btn-sm join-item text-primary"
                       onClick={() => setActiveGameId(game.id)}
-                      disabled={activeGameId === game.id}
+                      disabled={sourceChangePending || activeGameId === game.id}
                       title={t('settings:games.actions.set_active')}
                     >
                       <Play size={16} />
@@ -223,6 +259,7 @@ export default function GamesTab() {
                     <button
                       className="btn btn-ghost btn-sm join-item"
                       onClick={() => handleEdit(game)}
+                      disabled={sourceChangePending}
                       title={t('settings:games.actions.edit')}
                     >
                       <Edit2 size={16} />
@@ -230,6 +267,7 @@ export default function GamesTab() {
                     <button
                       className="btn btn-ghost btn-sm join-item text-error hover:bg-error/10"
                       onClick={() => handleDelete(game.id)}
+                      disabled={sourceChangePending}
                       title={t('settings:games.actions.remove')}
                     >
                       <Trash2 size={16} />
@@ -241,6 +279,23 @@ export default function GamesTab() {
           )}
         </div>
       </SettingsSection>
+      {sourceChangeWarning && (
+        <div className="alert alert-warning mt-4 text-sm" role="alert">
+          {sourceChangeWarning}
+        </div>
+      )}
+      {sourceChangeSummary && (
+        <div className="alert alert-success mt-4 text-sm" role="status">
+          <span>
+            {t('settings:games.source_change_summary', { ...sourceChangeSummary })}{' '}
+            {t(
+              sourceChangeSummary.emmmDataMoved
+                ? 'settings:games.source_change_artifacts_moved'
+                : 'settings:games.source_change_artifacts_unchanged',
+            )}
+          </span>
+        </div>
+      )}
 
       <GameFormModal
         isOpen={isModalOpen}
@@ -250,6 +305,7 @@ export default function GamesTab() {
         existingModPaths={settings.games
           .filter((game) => game.id !== editingGame?.id)
           .map((game) => game.mod_path)}
+        isSourceMigrationPending={sourceChangePending}
       />
       <ConfirmDialog
         open={pendingDeleteGameId !== null}
@@ -278,6 +334,12 @@ export default function GamesTab() {
             {sourceChangeError && (
               <p className="alert alert-error mt-3 text-sm" role="alert">
                 {sourceChangeError}
+              </p>
+            )}
+            {sourceChangePending && (
+              <p className="alert alert-info mt-3 text-sm" role="status">
+                <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                {t('settings:games.source_change_progress')}
               </p>
             )}
             {pendingSourceChange.inspection.summary.classification === 'Different' && (

@@ -231,6 +231,15 @@ pub async fn stage_import_batch_sources_with_options(
         }
         let source = PathBuf::from(&item.source_path);
         let outcome = if source.is_dir() {
+            let source_for_validation = source.clone();
+            let cancellation = options.cancel_token.clone();
+            tokio::task::spawn_blocking(move || {
+                super::payload_manifest::validate_import_payload_tree(
+                    &source_for_validation,
+                    cancellation.as_deref(),
+                )
+            })
+            .await??;
             if batch.flow == super::types::ImportFlow::ReadyToMove {
                 stage_ready_to_move_folder(db, batch_id, &item.id, &source, staging_root).await
             } else {

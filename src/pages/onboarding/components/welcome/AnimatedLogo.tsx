@@ -67,7 +67,7 @@ export default function AnimatedLogo() {
                 cx: {
                   duration: 2,
                   ease: 'easeInOut',
-                  repeat: Infinity,
+                  repeat: prefersReduced ? 0 : Infinity,
                   repeatType: 'mirror',
                   repeatDelay: 3,
                   delay: prefersReduced ? 0 : 3.0,
@@ -98,7 +98,7 @@ export default function AnimatedLogo() {
                 cx: {
                   duration: 2,
                   ease: 'easeInOut',
-                  repeat: Infinity,
+                  repeat: prefersReduced ? 0 : Infinity,
                   repeatType: 'mirror',
                   repeatDelay: 3,
                   delay: prefersReduced ? 0 : 4.0,
@@ -127,7 +127,11 @@ export default function AnimatedLogo() {
                 initial: { stopColor: '#64B3E4' },
                 idle: {
                   stopColor: prefersReduced ? '#64B3E4' : ['#64B3E4', '#A390E4', '#64B3E4'],
-                  transition: { duration: 6, ease: 'easeInOut', repeat: Infinity },
+                  transition: {
+                    duration: 6,
+                    ease: 'easeInOut',
+                    repeat: prefersReduced ? 0 : Infinity,
+                  },
                 },
               }}
             />
@@ -137,7 +141,12 @@ export default function AnimatedLogo() {
                 initial: { stopColor: '#5B8AFF' },
                 idle: {
                   stopColor: prefersReduced ? '#5B8AFF' : ['#5B8AFF', '#8F75F0', '#5B8AFF'],
-                  transition: { duration: 6, ease: 'easeInOut', repeat: Infinity, delay: 0.5 },
+                  transition: {
+                    duration: 6,
+                    ease: 'easeInOut',
+                    repeat: prefersReduced ? 0 : Infinity,
+                    delay: 0.5,
+                  },
                 },
               }}
             />

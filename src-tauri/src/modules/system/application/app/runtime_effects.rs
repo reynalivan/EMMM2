@@ -31,6 +31,9 @@ pub struct RuntimeSideEffects<'a> {
     pub collections_dirty: bool,
     /// Regenerate the in-game overlay artifacts.
     pub overlay_refresh: bool,
+    /// Why the snapshot is being refreshed. This keeps startup/recovery
+    /// maintenance distinct from ordinary effective-mod changes.
+    pub overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause,
 }
 
 /// The post-commit outcome of runtime work. A mutation has already committed
@@ -110,6 +113,7 @@ async fn finalize_runtime_side_effects_once(
         config,
         game_id,
         overlay_refresh,
+        overlay_cause,
         ..
     } = request;
 
@@ -117,10 +121,14 @@ async fn finalize_runtime_side_effects_once(
         return Ok(false);
     }
 
-    crate::modules::system::application::app::post_apply::trigger_overlay_refresh_for_game(
-        pool, config, game_id,
+    crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
+        pool,
+        config,
+        game_id,
+        overlay_cause,
     )
-    .await?;
+    .await?
+    .ensure_success()?;
 
     Ok(true)
 }

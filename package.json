@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "native:prepare": "node scripts/tauri.mjs --prepare-only",
     "tauri": "node scripts/tauri.mjs",
+    "release:prepare": "node scripts/prepare-release.mjs",
     "validate:observability": "node scripts/validate-observability-env.mjs",
     "i18n:status": "i18next-cli status",
     "i18n:lint": "i18next-cli lint",
@@ -30,7 +31,9 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@grafana/faro-react": "^2.11.0",
     "@grafana/faro-web-sdk": "^2.11.0",
+    "@grafana/faro-web-tracing": "^2.11.0",
     "@hookform/resolvers": "^5.4.0",
     "@radix-ui/react-context-menu": "^2.3.2",
     "@tanstack/react-query": "^5.101.2",

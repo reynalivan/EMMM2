@@ -20,7 +20,8 @@ EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 ## 4. Architecture Standards
 
 - **Backend**: `src-tauri/src/` (Tauri v2, Rust, SQLite). Mandatory DAL separation.
-- **Tauri IPC**: Follow `.docs/knowledge/tauri-command-registration.md`; every frontend command must be registered, permission-allowlisted, generated, and covered by the registry test.
+- **Tauri IPC**: Follow `docs/knowledge/tauri-command-registration.md`; every frontend command must be registered, permission-allowlisted, generated, and covered by the registry test.
+- **Tauri releases**: Follow `docs/knowledge/tauri-updater-release.md`; keep release versions synchronized, generate signed updater artifacts, and never expose or replace the updater private key.
 - **Frontend**: `src/features/` (domain slices), `src/components/` (atoms).
 - **Modularity**: Keep modules cohesive and easy to navigate; split large files when responsibility, state, or control flow becomes hard to reason about, never by a mechanical line limit. Single Source of Truth; no logic duplication.
 
@@ -40,7 +41,7 @@ EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 
 ## 3. Workflow
 
-1. **HISTORY**: Read the 3-4 latest files from `.docs/history/` to understand recent context, patterns, and avoid regressions.
+1. **HISTORY**: Read the 3-4 latest files from `docs/history/` to understand recent context, patterns, and avoid regressions.
 2. **PLAN**: Research context -> `implementation_plan.md` -> User Approval. No guessing.
 3. **ACT**: Execute via `./.agent/workflows/` + `./.agent/skills/`.
 4. **REFLECT**: Verify quality, eslint, build check, run test.

@@ -3,6 +3,11 @@
     "loading": "Loading...",
     "new_tab": "New Tab",
     "close": "Close",
+    "close_tab": "Close tab",
+    "duplicate_tab": "Duplicate tab",
+    "reload_tab": "Reload tab",
+    "reopen_last_closed_tab": "Reopen last closed tab",
+    "tab_menu": "Tab menu",
     "back": "Back",
     "forward": "Forward",
     "refresh": "Refresh",
@@ -14,17 +19,15 @@
     "insecure_connection": "Insecure connection",
     "http_warning": "This page is not using HTTPS, so its connection may be visible or modified by others. Continue?",
     "suspicious_url_warning": "This URL looks unusual. Check the domain carefully before continuing. Open it?",
-    "http_warning": "This page is not using HTTPS, so its connection may be visible or modified by others. Continue?",
-    "suspicious_url_warning": "This URL looks unusual. Check the domain carefully before continuing. Open it?",
     "browser_menu": "Discover browser menu",
     "adblock": "Ad block",
     "saved": "Saved",
     "add_bookmark": "Add bookmark",
     "remove_bookmark": "Remove bookmark",
-    "bookmarks_and_history": "Bookmarks & history",
     "open_externally": "Open in default browser",
     "view": "View",
     "find_in_page": "Find in page",
+    "find_shortcut": "Ctrl+F",
     "find": "Find",
     "session_save_failed": "Discover could not save every open tab for recovery.",
     "zoom_in": "Zoom in",
@@ -45,11 +48,14 @@
     "confirm_action": "Confirm action",
     "open_downloads": "Open Downloads panel"
   },
-  "welcome": {
-    "title": "In-App Browser",
-    "description": "Browse and download mods directly. Manage downloaded files from Downloads.",
-    "browse_gb": "Browse GameBanana",
-    "google": "Google"
+  "new_tab": {
+    "title": "New Tab",
+    "search_label": "Search Google",
+    "search_placeholder": "Search Google or enter a URL",
+    "search": "Search",
+    "bookmarks": "Bookmarks",
+    "empty_bookmarks": "Save pages to keep them here.",
+    "open_library": "Manage bookmarks"
   },
   "library": {
     "title": "Bookmarks & history",
@@ -61,6 +67,11 @@
     "empty_bookmarks": "No saved bookmarks yet.",
     "empty_history": "No browsing history yet.",
     "remove_bookmark": "Remove bookmark",
+    "edit_bookmark": "Edit bookmark",
+    "editor_title": "Edit bookmark",
+    "editor_name": "Name",
+    "editor_url": "Address",
+    "save_bookmark": "Save changes",
     "clear_history": "Clear history",
     "clear_history_confirm": "Clear all Discover browsing history? This does not clear cookies or site data.",
     "history_cleared": "Discover browsing history cleared.",
@@ -71,6 +82,17 @@
     "description": "Check your connection, the site address, or its certificate, then try again.",
     "retry": "Try again",
     "open_externally": "Open externally"
+  },
+  "image_preview": {
+    "title": "Image preview",
+    "image_alt": "Image selected from the page"
+  },
+  "base64_decode": {
+    "title": "Decoded Base64 text",
+    "open_link": "Open link",
+    "copy": "Copy",
+    "copied": "Copied to clipboard.",
+    "copy_failed": "Could not copy to clipboard."
   },
   "downloads": {
     "title": "Downloads",
@@ -128,6 +150,7 @@
       "destination": "Save to",
       "file_type": "File type",
       "file_size": "Size",
+      "blocked_file_warning": "Executable and script downloads are blocked to protect your mod library.",
       "risky_file_warning": "This file can run code on your computer. Only continue if you trust the source.",
       "confirm": "Download",
       "confirm_failed": "Could not start the download. Please try again.",

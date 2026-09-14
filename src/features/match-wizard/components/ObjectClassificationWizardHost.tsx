@@ -12,6 +12,7 @@ import type {
 } from '../../../shared/api/tauri/bindings.gen';
 import { formatAppError } from '../../../shared/lib/appError';
 import { toast } from '@/shared/ui/toast';
+import VirtualList from '@/shared/ui/components/ui/VirtualList';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 import {
   subscribeObjectClassificationWizard,
@@ -208,6 +209,24 @@ export function ObjectClassificationWizardHost() {
     }
   };
 
+  const ignoreSuggestion = async (objectId: string) => {
+    if (!request?.onIgnore) return;
+    setBusy(true);
+    try {
+      await request.onIgnore(objectId);
+      setItems((current) => current.filter((item) => item.objectId !== objectId));
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[objectId];
+        return next;
+      });
+    } catch (error) {
+      toast.error(t('errors.commit', { error: formatAppError(error) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <dialog open className="modal modal-open" aria-label={t('classification_title')}>
       <div className="modal-box max-w-6xl h-[82vh] flex flex-col">
@@ -228,172 +247,82 @@ export function ObjectClassificationWizardHost() {
             {t('classification_select_high_confidence')}
           </button>
         </div>
-        <div className="overflow-auto flex-1 mt-3 border border-base-300 rounded-box">
-          <table className="table table-sm table-pin-rows">
-            <thead>
-              <tr>
-                <th>{t('classification_select')}</th>
-                <th>{t('columns.source')}</th>
-                <th>{t('columns.canonical')}</th>
-                <th>{t('columns.confidence')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                const draft = drafts[item.objectId];
-                const selectedEntry = catalog.find(
-                  (entry) => entry.entryKey === draft?.canonicalEntryKey,
-                );
-                const selectedSuggestion = item.canonicalSuggestions.find(
-                  (suggestion) => suggestion.entryKey === selectedEntry?.entryKey,
-                );
-                const categoryDef = schema?.categories.find(
-                  (category) => category.name === draft?.category,
-                );
-                const draftMetadata = draft?.metadata ?? null;
-                const metadata = isJsonObject(draftMetadata) ? draftMetadata : {};
-                const canSelect = draft?.mode === 'manual' || selectedEntry !== undefined;
-                return (
-                  <tr key={item.objectId}>
-                    <td>
-                      <input
-                        aria-label={t('classification_select_row', { name: item.objectName })}
-                        checked={draft?.selected ?? false}
-                        className="checkbox checkbox-sm"
-                        disabled={busy || !canSelect}
-                        type="checkbox"
-                        onChange={(event) =>
-                          updateDraft(item.objectId, (current) => ({
-                            ...current,
-                            selected: event.target.checked,
-                          }))
-                        }
-                      />
-                    </td>
-                    <td className="min-w-56">
-                      <div className="font-medium">{item.objectName}</div>
-                      <div className="text-xs opacity-50">{item.currentCategory}</div>
-                      <div
-                        className="mt-1 max-w-64 truncate text-xs opacity-50"
-                        title={item.sourcePath}
+        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-box border border-base-300">
+          <div
+            className="grid grid-cols-[3.5rem_minmax(14rem,1fr)_minmax(22rem,1.7fr)_minmax(14rem,1fr)] gap-3 border-b border-base-300 bg-base-200 px-3 py-2 text-sm font-medium text-base-content/70"
+            role="row"
+          >
+            <div role="columnheader">{t('classification_select')}</div>
+            <div role="columnheader">{t('columns.source')}</div>
+            <div role="columnheader">{t('columns.canonical')}</div>
+            <div role="columnheader">{t('columns.confidence')}</div>
+          </div>
+          <VirtualList
+            ariaLabel={t('classification_title')}
+            className="min-h-0 flex-1"
+            contentClassName="p-0"
+            estimateSize={() => 188}
+            getItemKey={(item) => item.objectId}
+            items={items}
+            renderItem={(item) => {
+              const draft = drafts[item.objectId];
+              const selectedEntry = catalog.find(
+                (entry) => entry.entryKey === draft?.canonicalEntryKey,
+              );
+              const selectedSuggestion = item.canonicalSuggestions.find(
+                (suggestion) => suggestion.entryKey === selectedEntry?.entryKey,
+              );
+              const categoryDef = schema?.categories.find(
+                (category) => category.name === draft?.category,
+              );
+              const draftMetadata = draft?.metadata ?? null;
+              const metadata = isJsonObject(draftMetadata) ? draftMetadata : {};
+              const canSelect = draft?.mode === 'manual' || selectedEntry !== undefined;
+              return (
+                <div
+                  className="grid grid-cols-[3.5rem_minmax(14rem,1fr)_minmax(22rem,1.7fr)_minmax(14rem,1fr)] gap-3 border-b border-base-300 px-3 py-3"
+                  role="row"
+                >
+                  <div role="cell">
+                    <input
+                      aria-label={t('classification_select_row', { name: item.objectName })}
+                      checked={draft?.selected ?? false}
+                      className="checkbox checkbox-sm"
+                      disabled={busy || !canSelect}
+                      type="checkbox"
+                      onChange={(event) =>
+                        updateDraft(item.objectId, (current) => ({
+                          ...current,
+                          selected: event.target.checked,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="min-w-0" role="cell">
+                    <div className="font-medium">{item.objectName}</div>
+                    <div className="text-xs opacity-50">{item.currentCategory}</div>
+                    <div
+                      className="mt-1 max-w-64 truncate text-xs opacity-50"
+                      title={item.sourcePath}
+                    >
+                      {item.sourcePath}
+                    </div>
+                    {request.onIgnore && (
+                      <button
+                        className="btn btn-ghost btn-xs mt-2"
+                        disabled={busy}
+                        type="button"
+                        onClick={() => void ignoreSuggestion(item.objectId)}
                       >
-                        {item.sourcePath}
-                      </div>
-                    </td>
-                    <td className="min-w-96">
-                      {draft?.mode === 'manual' ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-medium">
-                              {t('classification_manual')}
-                            </span>
-                            <button
-                              className="btn btn-ghost btn-xs"
-                              disabled={busy}
-                              type="button"
-                              onClick={() =>
-                                updateDraft(item.objectId, (current) => ({
-                                  ...current,
-                                  mode: 'canonical',
-                                }))
-                              }
-                            >
-                              {t('classification_use_catalog')}
-                            </button>
-                          </div>
-                          <select
-                            aria-label={t('columns.category')}
-                            className="select select-bordered select-sm w-full"
-                            disabled={busy}
-                            value={draft.category}
-                            onChange={(event) => {
-                              const category = event.target.value as StableCategory;
-                              updateDraft(item.objectId, (current) => ({
-                                ...current,
-                                category,
-                                subCategory: null,
-                                metadata: {},
-                              }));
-                            }}
-                          >
-                            {CATEGORIES.map((category) => (
-                              <option key={category}>{category}</option>
-                            ))}
-                          </select>
-                          {categoryDef?.subcategories && categoryDef.subcategories.length > 0 && (
-                            <select
-                              aria-label={t('classification_subcategory')}
-                              className="select select-bordered select-xs w-full"
-                              disabled={busy}
-                              value={draft.subCategory ?? ''}
-                              onChange={(event) =>
-                                updateDraft(item.objectId, (current) => ({
-                                  ...current,
-                                  subCategory: event.target.value || null,
-                                }))
-                              }
-                            >
-                              <option value="" />
-                              {categoryDef.subcategories.map((subcategory) => (
-                                <option key={subcategory}>{subcategory}</option>
-                              ))}
-                            </select>
-                          )}
-                          {categoryDef?.filters?.map((filter) => (
-                            <label className="block" key={filter.key}>
-                              <span className="text-xs opacity-60">{filter.label}</span>
-                              <select
-                                className="select select-bordered select-xs w-full"
-                                disabled={busy}
-                                value={String(metadata[filter.key] ?? '')}
-                                onChange={(event) =>
-                                  updateDraft(item.objectId, (current) => ({
-                                    ...current,
-                                    metadata: {
-                                      ...metadata,
-                                      [filter.key]: event.target.value,
-                                    },
-                                  }))
-                                }
-                              >
-                                <option value="" />
-                                {filter.options.map((option) => (
-                                  <option key={option}>{option}</option>
-                                ))}
-                              </select>
-                            </label>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <CanonicalObjectCombobox
-                            disabled={busy}
-                            emptyLabel={t('classification_no_catalog_match')}
-                            entries={catalog}
-                            selectedEntryKey={draft?.canonicalEntryKey ?? null}
-                            suggestions={item.canonicalSuggestions}
-                            onSelect={(entryKey) =>
-                              updateDraft(item.objectId, (current) => ({
-                                ...current,
-                                mode: 'canonical',
-                                canonicalEntryKey: entryKey,
-                                selected: true,
-                              }))
-                            }
-                          />
-                          <div className="flex flex-wrap gap-1">
-                            {selectedEntry && (
-                              <span className="badge badge-outline badge-sm">
-                                {selectedEntry.category}
-                              </span>
-                            )}
-                            {selectedEntry &&
-                              metadataChips(selectedEntry, schema).map((chip) => (
-                                <span className="badge badge-ghost badge-sm" key={chip.label}>
-                                  {chip.label}: {chip.value}
-                                </span>
-                              ))}
-                          </div>
+                        {t('classification_ignore_suggestion')}
+                      </button>
+                    )}
+                  </div>
+                  <div className="min-w-0" role="cell">
+                    {draft?.mode === 'manual' ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">{t('classification_manual')}</span>
                           <button
                             className="btn btn-ghost btn-xs"
                             disabled={busy}
@@ -401,45 +330,149 @@ export function ObjectClassificationWizardHost() {
                             onClick={() =>
                               updateDraft(item.objectId, (current) => ({
                                 ...current,
-                                mode: 'manual',
-                                selected: false,
+                                mode: 'canonical',
                               }))
                             }
                           >
-                            {t('classification_manual')}
+                            {t('classification_use_catalog')}
                           </button>
                         </div>
-                      )}
-                    </td>
-                    <td className="min-w-56">
-                      {selectedSuggestion ? (
-                        <>
-                          <div>
-                            {t('classification_confidence_tier', {
-                              score: selectedSuggestion.confidencePercentage,
-                              tier: selectedSuggestion.confidenceTier,
-                            })}
-                          </div>
-                          <details className="mt-1 text-xs text-info">
-                            <summary>{t('classification_why_suggested')}</summary>
-                            <ul className="mt-1 list-disc pl-4 text-base-content">
-                              {selectedSuggestion.evidence.map((evidence) => (
-                                <li key={`${evidence.source}-${evidence.value}`}>
-                                  {evidence.value}
-                                </li>
+                        <select
+                          aria-label={t('columns.category')}
+                          className="select select-bordered select-sm w-full"
+                          disabled={busy}
+                          value={draft.category}
+                          onChange={(event) => {
+                            const category = event.target.value as StableCategory;
+                            updateDraft(item.objectId, (current) => ({
+                              ...current,
+                              category,
+                              subCategory: null,
+                              metadata: {},
+                            }));
+                          }}
+                        >
+                          {CATEGORIES.map((category) => (
+                            <option key={category}>{category}</option>
+                          ))}
+                        </select>
+                        {categoryDef?.subcategories && categoryDef.subcategories.length > 0 && (
+                          <select
+                            aria-label={t('classification_subcategory')}
+                            className="select select-bordered select-xs w-full"
+                            disabled={busy}
+                            value={draft.subCategory ?? ''}
+                            onChange={(event) =>
+                              updateDraft(item.objectId, (current) => ({
+                                ...current,
+                                subCategory: event.target.value || null,
+                              }))
+                            }
+                          >
+                            <option value="" />
+                            {categoryDef.subcategories.map((subcategory) => (
+                              <option key={subcategory}>{subcategory}</option>
+                            ))}
+                          </select>
+                        )}
+                        {categoryDef?.filters?.map((filter) => (
+                          <label className="block" key={filter.key}>
+                            <span className="text-xs opacity-60">{filter.label}</span>
+                            <select
+                              className="select select-bordered select-xs w-full"
+                              disabled={busy}
+                              value={String(metadata[filter.key] ?? '')}
+                              onChange={(event) =>
+                                updateDraft(item.objectId, (current) => ({
+                                  ...current,
+                                  metadata: {
+                                    ...metadata,
+                                    [filter.key]: event.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="" />
+                              {filter.options.map((option) => (
+                                <option key={option}>{option}</option>
                               ))}
-                            </ul>
-                          </details>
-                        </>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                            </select>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <CanonicalObjectCombobox
+                          disabled={busy}
+                          emptyLabel={t('classification_no_catalog_match')}
+                          entries={catalog}
+                          selectedEntryKey={draft?.canonicalEntryKey ?? null}
+                          suggestions={item.canonicalSuggestions}
+                          onSelect={(entryKey) =>
+                            updateDraft(item.objectId, (current) => ({
+                              ...current,
+                              mode: 'canonical',
+                              canonicalEntryKey: entryKey,
+                              selected: true,
+                            }))
+                          }
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {selectedEntry && (
+                            <span className="badge badge-outline badge-sm">
+                              {selectedEntry.category}
+                            </span>
+                          )}
+                          {selectedEntry &&
+                            metadataChips(selectedEntry, schema).map((chip) => (
+                              <span className="badge badge-ghost badge-sm" key={chip.label}>
+                                {chip.label}: {chip.value}
+                              </span>
+                            ))}
+                        </div>
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          disabled={busy}
+                          type="button"
+                          onClick={() =>
+                            updateDraft(item.objectId, (current) => ({
+                              ...current,
+                              mode: 'manual',
+                              selected: false,
+                            }))
+                          }
+                        >
+                          {t('classification_manual')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0" role="cell">
+                    {selectedSuggestion ? (
+                      <>
+                        <div>
+                          {t('classification_confidence_tier', {
+                            score: selectedSuggestion.confidencePercentage,
+                            tier: selectedSuggestion.confidenceTier,
+                          })}
+                        </div>
+                        <details className="mt-1 text-xs text-info">
+                          <summary>{t('classification_why_suggested')}</summary>
+                          <ul className="mt-1 list-disc pl-4 text-base-content">
+                            {selectedSuggestion.evidence.map((evidence) => (
+                              <li key={`${evidence.source}-${evidence.value}`}>{evidence.value}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      </>
+                    ) : (
+                      '-'
+                    )}
+                  </div>
+                </div>
+              );
+            }}
+          />
         </div>
         <div className="modal-action">
           <button

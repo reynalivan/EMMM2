@@ -1,5 +1,9 @@
-import type { WorkspaceExplorerNode } from '@/entities/workspace';
-import type { WorkspaceFileInUseDialogData, WorkspaceDialogState } from './workspaceState';
+import type { WorkspaceParentEnableRequirement, WorkspaceSwitchInput } from '@/entities/workspace';
+import type {
+  WorkspaceDuplicateTarget,
+  WorkspaceFileInUseDialogData,
+  WorkspaceDialogState,
+} from './workspaceState';
 import { dispatchWorkspaceRuntimeEvent } from './workspaceStoreBridge';
 
 export function openFolderConflictManagerDialog(): void {
@@ -31,10 +35,9 @@ export function openWorkspaceFileInUseDialog(data: WorkspaceFileInUseDialogData)
 }
 
 export function openWorkspaceEnableParentDialog(data: {
-  ancestorName: string;
-  ancestorPath: string;
-  willActivate: WorkspaceExplorerNode[];
-  stayDisabled: WorkspaceExplorerNode[];
+  folder: WorkspaceDuplicateTarget;
+  requirement: WorkspaceParentEnableRequirement;
+  resumeInput: WorkspaceSwitchInput;
 }): void {
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_OPENED',

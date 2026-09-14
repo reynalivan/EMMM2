@@ -54,6 +54,7 @@ fn test_full_alias_recheck_rescues_match_after_deep_ini_collection() {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Control Hero".to_string(),
@@ -64,6 +65,7 @@ fn test_full_alias_recheck_rescues_match_after_deep_ini_collection() {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
     ]);
 
@@ -112,6 +114,7 @@ fn test_full_budget_overflow_keeps_partial_signals_and_continues_matching() {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -150,6 +153,7 @@ fn test_full_pipeline_rejects_fuzzy_below_floor() {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -183,6 +187,7 @@ fn test_full_pipeline_fuzzy_rescue_never_auto_matches() {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(

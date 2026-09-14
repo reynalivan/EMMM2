@@ -35,6 +35,28 @@ fn test_save_ini_creates_bak_and_updates_only_target_line() {
     assert!(updated_content.contains("$keep = 9"));
 }
 
+#[test]
+fn save_ini_skips_backup_and_replacement_for_a_noop_line_update() {
+    let tmp = TempDir::new().unwrap();
+    let ini_path = tmp.path().join("config.ini");
+    let original = "[Constants]\n$swapvar = 0\n";
+    fs::write(&ini_path, original).unwrap();
+
+    let document = read_ini_document(&ini_path).unwrap();
+    save_ini_with_updates(
+        &document,
+        &document.source_hash,
+        &[(1, "$swapvar = 0".to_string())],
+    )
+    .unwrap();
+
+    assert_eq!(fs::read_to_string(&ini_path).unwrap(), original);
+    assert!(
+        !backup_path_for(&ini_path).unwrap().exists(),
+        "a no-op must not create a backup or replace the source file"
+    );
+}
+
 // Covers: NC-6.3-01
 #[test]
 fn test_save_ini_rejects_raw_fallback_document() {

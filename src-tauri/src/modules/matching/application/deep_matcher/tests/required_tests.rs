@@ -86,6 +86,7 @@ fn test_deep_scan_primary_fallback_no_hashes_can_automatch() {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(), // No hashes available
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(
@@ -135,6 +136,7 @@ fn test_direct_name_support_only_never_auto_matches() {
         thumbnail_path: None,
         metadata: None,
         hash_db: std::collections::HashMap::new(),
+        runtime_targets: vec![],
     }]);
 
     let result_quick = match_folder_quick(
@@ -190,6 +192,7 @@ fn test_margin_not_met_forces_needs_review() {
                 "Default".to_string(),
                 vec!["aaaa1111".to_string()],
             )]),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Beta".to_string(),
@@ -203,6 +206,7 @@ fn test_margin_not_met_forces_needs_review() {
                 "Default".to_string(),
                 vec!["bbbb2222".to_string()],
             )]),
+            runtime_targets: vec![],
         },
     ]);
 
@@ -303,6 +307,7 @@ fn test_negative_evidence_penalty_reduces_score_on_mixed_signals() {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Yae Miko".to_string(),
@@ -313,6 +318,7 @@ fn test_negative_evidence_penalty_reduces_score_on_mixed_signals() {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
     ]);
 
@@ -399,6 +405,7 @@ fn test_ultra_close_margin_forces_review_with_primary_evidence() {
             thumbnail_path: None,
             metadata: None,
             hash_db: std::collections::HashMap::new(),
+            runtime_targets: vec![],
         },
         DbEntry {
             name: "Beta".to_string(),
@@ -412,6 +419,7 @@ fn test_ultra_close_margin_forces_review_with_primary_evidence() {
                 "Default".to_string(),
                 vec!["aaaa1111".to_string()],
             )]),
+            runtime_targets: vec![],
         },
     ]);
 
@@ -499,6 +507,7 @@ fn test_alias_recheck_after_deep_scan_rescues_match() {
             "Default".to_string(),
             vec!["aabbccdd".to_string()],
         )]),
+        runtime_targets: vec![],
     }]);
 
     let result = match_folder_full(

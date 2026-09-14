@@ -18,6 +18,16 @@ fn emit_event(app: &tauri::AppHandle, payload: WatchEventPayload) {
     let _ = app.emit("mod_watch:event", payload);
 }
 
+fn emit_reconcile_result_for_current_session(
+    app: &tauri::AppHandle,
+    session: &WatcherSession,
+    result: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+) -> bool {
+    app.state::<WatcherState>()
+        .with_current_session(session, || app.emit("disk_reconcile:result", result))
+        .is_some()
+}
+
 async fn record_watcher_outcome(
     app: &tauri::AppHandle,
     outcome: crate::modules::system::application::telemetry::TelemetryOutcome,
@@ -110,12 +120,20 @@ pub fn start_watcher(
     game_id: String,
 ) -> Result<(), ScannerError> {
     let path_obj = std::path::Path::new(&path);
+    let runtime_config_path = app
+        .state::<crate::modules::settings::application::config::ConfigService>()
+        .get_settings()
+        .games
+        .into_iter()
+        .find(|game| game.id == game_id)
+        .map(|game| game.instance_path.join("d3dx.ini"));
 
     log::info!("Starting watcher on: {}", path);
 
     let (session, rx) = replace_watcher(state, path_obj, |session| {
-        crate::modules::workspace::application::scanner::watcher::watch_mod_directory(
+        crate::modules::workspace::application::scanner::watcher::watch_mod_directory_with_runtime_config(
             path_obj,
+            runtime_config_path.as_deref(),
             state.suppressor.clone(),
             session,
         )
@@ -161,7 +179,8 @@ async fn process_event_loop(
         app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
     let config = app.state::<crate::modules::settings::application::config::ConfigService>();
     let operation_lock = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
-    let session_recovery = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+    let watcher_state = app.state::<WatcherState>();
+    let session_recovery = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_for_watcher(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: &pool,
             config: config.inner(),
@@ -173,7 +192,8 @@ async fn process_event_loop(
                     app.clone(),
                     game_id.clone(),
                     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
-                ),
+                )
+                .for_watcher_session(session.clone()),
             )),
         },
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
@@ -181,19 +201,23 @@ async fn process_event_loop(
             crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
             Vec::new(),
             true,
-        )
-        .for_watcher_session(session.clone()),
+        ),
+        watcher_state.inner(),
+        session.clone(),
     )
     .await;
     match session_recovery {
-        Ok(result) if app.state::<WatcherState>().is_current_session(&session) => {
+        Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
+            if app.state::<WatcherState>().is_current_session(&session) => {
             record_reconcile_outcome(
                 &app,
                 crate::modules::system::application::telemetry::TelemetryOutcome::Success,
                 crate::modules::system::application::telemetry::TelemetryErrorCode::None,
             )
             .await;
-            let _ = app.emit("disk_reconcile:result", result);
+            if !emit_reconcile_result_for_current_session(&app, &session, result) {
+                return;
+            }
         }
         Err(error) if app.state::<WatcherState>().is_current_session(&session) => {
             let error_code =
@@ -284,29 +308,34 @@ async fn process_event_loop(
                     } else {
                         crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::WatcherBatch
                     },
-                ),
+                )
+                .for_watcher_session(session.clone()),
             )),
         };
 
         // Disk Reconcile only. Watcher must never invoke the Deep Match Scanner pipeline.
+        let watcher_state = app.state::<WatcherState>();
         let result = if events_lost {
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_for_watcher(
                 context,
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
                     game_id.clone(),
                     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
                     Vec::new(),
                     true,
-                )
-                .for_watcher_session(session.clone()),
+                ),
+                watcher_state.inner(),
+                session.clone(),
             )
             .await
         } else {
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_from_watcher_batch(
                 context,
                 game_id.clone(),
+                std::path::Path::new(&mods_path_root),
                 changed_paths,
                 &batch,
+                watcher_state.inner(),
                 session.clone(),
             )
             .await
@@ -316,7 +345,7 @@ async fn process_event_loop(
             break;
         }
         match result {
-            Ok(result) => {
+            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)) => {
                 record_watcher_outcome(
                     &app,
                     crate::modules::system::application::telemetry::TelemetryOutcome::Success,
@@ -329,7 +358,12 @@ async fn process_event_loop(
                     crate::modules::system::application::telemetry::TelemetryErrorCode::None,
                 )
                 .await;
-                let _ = app.emit("disk_reconcile:result", result);
+                if !emit_reconcile_result_for_current_session(&app, &session, result) {
+                    break;
+                }
+            }
+            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Superseded) => {
+                break;
             }
             Err(error) => {
                 let error_code = crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(&error);

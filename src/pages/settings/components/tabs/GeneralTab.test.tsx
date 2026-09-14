@@ -1,5 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
 import GeneralTab from './GeneralTab';
 import type { ThemeMetadata } from '../../../../shared/api/tauri/bindings';
 
@@ -19,7 +20,6 @@ vi.mock('@tauri-apps/api/core', () => ({
     version: null,
     message: null,
     entries: 0,
-    missing_assets: 0,
   }),
 }));
 
@@ -60,24 +60,13 @@ vi.mock('@/entities/settings', () => ({
       },
       hotkeys: {
         enabled: false,
-        game_focus_only: false,
-        cooldown_ms: 150,
+        safe_mode: 'F5',
         next_preset: '',
         prev_preset: '',
-        next_variant: '',
-        prev_variant: '',
         toggle_overlay: '',
       },
       keyviewer: {
         enabled: false,
-        status_ttl_seconds: 4,
-        overlay_toggle_key: '',
-        keybinds_dir: '',
-      },
-      catalog_updates: {
-        auto_check: true,
-        auto_install: false,
-        last_successful_check_unix_seconds: null,
       },
     },
     updateTheme: {
@@ -166,6 +155,18 @@ describe('GeneralTab (TC-04)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
     fireEvent.click(screen.getByRole('button', { name: /Terms of Use/i }));
     expect(screen.getByRole('dialog')).toHaveTextContent('independent third-party utility');
+  });
+
+  it('opens the Ko-fi support page from General settings', async () => {
+    render(<GeneralTab />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buy me a coffee' }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('browser_open_externally', {
+        url: 'https://ko-fi.com/reynalivan',
+      }),
+    );
   });
 
   it('keeps application updates within System', () => {

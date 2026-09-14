@@ -50,6 +50,7 @@ function reconcileResult(status: DiskReconcileResult['status'] = 'Applied'): Dis
     reconcile_revision: 1,
     reason: 'ManualRepair',
     status,
+    scan_scope: 'Full',
     folder_conflicts: [],
     rename_confirmations: [],
     error_message: status === 'SourceUnavailable' ? 'Folder missing' : null,
@@ -126,6 +127,7 @@ describe('GlobalActions', () => {
     renderActions();
 
     expect(screen.queryByTitle('actions.refresh')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('actions.more')).not.toBeInTheDocument();
   });
 
   it('runs one forced full reconcile from the global refresh action', async () => {

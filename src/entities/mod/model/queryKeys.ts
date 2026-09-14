@@ -14,6 +14,7 @@ export const detailsKeys = {
   all: ['details'] as const,
   modInfo: (folderPath: string) => [...detailsKeys.all, 'mod-info', folderPath] as const,
   iniFiles: (folderPath: string) => [...detailsKeys.all, 'ini-files', folderPath] as const,
+  iniDocuments: (folderPath: string) => [...detailsKeys.all, 'ini-documents', folderPath] as const,
   iniDocument: (folderPath: string, fileName: string) =>
     [...detailsKeys.all, 'ini-document', folderPath, fileName] as const,
   previewImages: (folderPath: string) =>

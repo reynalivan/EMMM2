@@ -95,6 +95,14 @@
       "naming_conflict": "Konflik penamaan terdeteksi"
     }
   },
+  "parent_enable_dialog": {
+    "title": "Aktifkan folder yang diperlukan",
+    "target_blocked": "{{name}} belum dapat aktif sampai folder parent yang dinonaktifkan diaktifkan.",
+    "parents_required": "Folder yang perlu diaktifkan ({{count}})",
+    "will_activate": "Akan menjadi aktif ({{count}})",
+    "stay_disabled": "Tetap nonaktif ({{count}})",
+    "confirm": "Aktifkan folder dan lanjutkan"
+  },
   "fields": {
     "name": "Nama",
     "category": "Kategori",
@@ -117,6 +125,7 @@
   },
   "reconcile": {
     "runtime_effects_pending": "Perubahan disk sudah diterapkan, tetapi pembaruan runtime masih tertunda.",
+    "manual_reload_required": "Muat ulang manual diperlukan: fokuskan game, lalu tekan {{binding}}.",
     "cleanup_pending": "Item sudah dihapus, tetapi pemindahan file karantina ke Tempat Sampah masih tertunda."
   },
   "bulk_progress": {
@@ -124,6 +133,7 @@
     "disabling": "Menonaktifkan mod...",
     "deleting": "Memindahkan mod ke tempat sampah...",
     "cancelled": "Dibatalkan",
+    "cancelled_summary": "Dibatalkan setelah {{processed}} dari {{total}} mod",
     "done": "Selesai"
   }
 }

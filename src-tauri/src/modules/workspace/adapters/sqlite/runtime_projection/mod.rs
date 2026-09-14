@@ -211,3 +211,123 @@ async fn refresh_object_projection_tx(
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::refresh_projection_for_object_ids_tx;
+    use sqlx::{Connection, SqliteConnection};
+    use std::fs;
+    use std::time::{Duration, Instant};
+
+    const OBJECT_COUNT: usize = 1_000;
+    const SAMPLE_COUNT: usize = 5;
+
+    fn median<T: Ord + Copy>(mut samples: Vec<T>) -> T {
+        samples.sort_unstable();
+        samples[samples.len() / 2]
+    }
+
+    async fn total_changes(conn: &mut SqliteConnection) -> i64 {
+        sqlx::query_scalar("SELECT total_changes()")
+            .fetch_one(conn)
+            .await
+            .expect("SQLite should report total changes")
+    }
+
+    async fn refresh(
+        conn: &mut SqliteConnection,
+        object_ids: &[String],
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = conn.begin().await?;
+        refresh_projection_for_object_ids_tx(&mut *tx, "game", object_ids.to_vec()).await?;
+        tx.commit().await
+    }
+
+    #[tokio::test]
+    #[ignore = "manual P2 runtime projection I/O baseline"]
+    async fn benchmark_noop_projection_refresh_1000_objects() {
+        let workspace = tempfile::tempdir().expect("temporary workspace should be created");
+        let database_path = workspace.path().join("projection.sqlite");
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&database_path)
+            .create_if_missing(true);
+        let mut conn = SqliteConnection::connect_with(&options)
+            .await
+            .expect("temporary SQLite database should open");
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&mut conn)
+            .await
+            .expect("WAL mode should be enabled");
+        sqlx::query("PRAGMA wal_autocheckpoint = 0")
+            .execute(&mut conn)
+            .await
+            .expect("automatic checkpoint should be disabled for measurement");
+        sqlx::query(
+            "CREATE TABLE objects (id TEXT PRIMARY KEY, game_id TEXT, object_type TEXT, status INTEGER)",
+        )
+        .execute(&mut conn)
+        .await
+        .expect("objects table should be created");
+        sqlx::query(
+            "CREATE TABLE mods (object_id TEXT, is_safe INTEGER, safety_source TEXT, status INTEGER, folder_path TEXT)",
+        )
+        .execute(&mut conn)
+        .await
+        .expect("mods table should be created");
+        sqlx::query(
+            "CREATE TABLE object_runtime_projection (game_id TEXT, object_id TEXT, object_type TEXT, mod_count_safe INTEGER, mod_count_unsafe INTEGER, enabled_count_safe INTEGER, enabled_count_unsafe INTEGER, is_object_disabled INTEGER, has_naming_conflict INTEGER, active_mod_paths_safe_json TEXT, active_mod_paths_unsafe_json TEXT, updated_at TEXT)",
+        )
+        .execute(&mut conn)
+        .await
+        .expect("projection table should be created");
+
+        let object_ids: Vec<String> = (0..OBJECT_COUNT)
+            .map(|index| format!("object-{index}"))
+            .collect();
+        for object_id in &object_ids {
+            sqlx::query(
+                "INSERT INTO objects (id, game_id, object_type, status) VALUES (?, 'game', 'Character', 1)",
+            )
+            .bind(object_id)
+            .execute(&mut conn)
+            .await
+            .expect("fixture object should be inserted");
+        }
+
+        refresh(&mut conn, &object_ids)
+            .await
+            .expect("initial projection should be built");
+        let wal_path = database_path.with_extension("sqlite-wal");
+        let mut elapsed = Vec::<Duration>::with_capacity(SAMPLE_COUNT);
+        let mut row_changes = Vec::<i64>::with_capacity(SAMPLE_COUNT);
+        let mut wal_growth = Vec::<u64>::with_capacity(SAMPLE_COUNT);
+
+        for _ in 0..SAMPLE_COUNT {
+            let changes_before = total_changes(&mut conn).await;
+            let wal_before = fs::metadata(&wal_path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            let started = Instant::now();
+            refresh(&mut conn, &object_ids)
+                .await
+                .expect("no-op projection refresh should succeed");
+            elapsed.push(started.elapsed());
+            row_changes.push(total_changes(&mut conn).await - changes_before);
+            let wal_after = fs::metadata(&wal_path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            wal_growth.push(wal_after.saturating_sub(wal_before));
+        }
+
+        assert!(row_changes
+            .iter()
+            .all(|changes| *changes == (OBJECT_COUNT * 2) as i64));
+        eprintln!(
+            "p2_projection_noop_1000: p50={:?}; max={:?}; sqlite_row_changes_per_refresh={}; wal_growth_p50={} bytes",
+            median(elapsed.clone()),
+            elapsed.iter().copied().max().expect("samples should exist"),
+            median(row_changes),
+            median(wal_growth),
+        );
+    }
+}

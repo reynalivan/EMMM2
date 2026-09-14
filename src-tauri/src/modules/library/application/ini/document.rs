@@ -19,8 +19,13 @@ static VARIABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
     .expect("valid variable regex")
 });
-static KEY_BACK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s*(key|back)\s*=\s*([^;#\r\n]+)").expect("valid key regex"));
+static KEY_BACK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^\s*(key|back)\s*=\s*([^;#\r\n]+)").expect("valid key regex")
+});
+static KEY_SECTION_PROPERTY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^\s*(type|condition)\s*=\s*([^;#\r\n]+)")
+        .expect("valid Key section property regex")
+});
 
 /// Refuse to build an editable model for files this large — the editor holds
 /// the whole document in memory and round-trips it on save.
@@ -55,6 +60,10 @@ pub struct KeyBinding {
     pub section_name: String,
     pub key: Option<String>,
     pub back: Option<String>,
+    /// Original 3DMigoto binding semantic, such as `toggle` or `hold`.
+    pub binding_type: Option<String>,
+    /// Unevaluated in-game condition retained for preview and diagnostics.
+    pub condition: Option<String>,
     #[specta(type = f64)]
     pub key_line_idx: Option<usize>,
     #[specta(type = f64)]
@@ -152,6 +161,8 @@ fn parse_structured(raw_lines: &[String]) -> Option<(Vec<IniVariable>, Vec<KeyBi
     let mut section_spellings: HashMap<String, String> = HashMap::new();
     let mut key_section: Option<String> = None;
     let mut section_binding_start = 0;
+    let mut section_binding_type: Option<String> = None;
+    let mut section_condition: Option<String> = None;
 
     for (idx, line) in raw_lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -178,6 +189,8 @@ fn parse_structured(raw_lines: &[String]) -> Option<(Vec<IniVariable>, Vec<KeyBi
                             .clone()
                     });
                 section_binding_start = key_bindings.len();
+                section_binding_type = None;
+                section_condition = None;
                 continue;
             }
         }
@@ -195,6 +208,22 @@ fn parse_structured(raw_lines: &[String]) -> Option<(Vec<IniVariable>, Vec<KeyBi
         let Some(section_name) = key_section.as_ref() else {
             continue;
         };
+
+        if let Some(caps) = KEY_SECTION_PROPERTY_RE.captures(line) {
+            let value = caps[2].trim().to_string();
+            if caps[1].eq_ignore_ascii_case("type") {
+                section_binding_type = Some(value.clone());
+                for binding in &mut key_bindings[section_binding_start..] {
+                    binding.binding_type = Some(value.clone());
+                }
+            } else {
+                section_condition = Some(value.clone());
+                for binding in &mut key_bindings[section_binding_start..] {
+                    binding.condition = Some(value.clone());
+                }
+            }
+            continue;
+        }
 
         let Some(caps) = KEY_BACK_RE.captures(line) else {
             continue;
@@ -215,6 +244,8 @@ fn parse_structured(raw_lines: &[String]) -> Option<(Vec<IniVariable>, Vec<KeyBi
                     section_name: section_name.to_string(),
                     key: None,
                     back: None,
+                    binding_type: section_binding_type.clone(),
+                    condition: section_condition.clone(),
                     key_line_idx: None,
                     back_line_idx: None,
                 });

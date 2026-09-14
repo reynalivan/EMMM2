@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft,
   Copy,
+  Download,
   FolderOpen,
+  Globe,
   Inbox,
   LayoutGrid,
   Layers,
@@ -84,6 +86,11 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
       label: t('nav.mod_inbox'),
     },
     {
+      id: 'storage-optimizer' as const,
+      icon: Copy,
+      label: t('nav.storage_optimizer'),
+    },
+    {
       id: 'collections' as const,
       icon: Layers,
       label: t('nav.collections'),
@@ -94,9 +101,14 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
       label: t('nav.settings'),
     },
     {
-      id: 'storage-optimizer' as const,
-      icon: Copy,
-      label: t('nav.storage_optimizer'),
+      id: 'browser' as const,
+      icon: Globe,
+      label: t('nav.browser'),
+    },
+    {
+      id: 'downloads' as const,
+      icon: Download,
+      label: t('nav.downloads'),
     },
   ];
 

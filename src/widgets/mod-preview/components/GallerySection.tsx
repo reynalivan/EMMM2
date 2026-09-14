@@ -2,11 +2,13 @@ import {
   type Dispatch,
   type SetStateAction,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   forwardRef,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft,
@@ -119,6 +121,9 @@ function GalleryActionMenu({
   onRequestClearAll,
 }: GalleryActionMenuProps) {
   const { t } = useTranslation(['preview']);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const runAction = (action: () => void) => {
     onOpenChange(false);
     action();
@@ -126,84 +131,136 @@ function GalleryActionMenu({
   const actionClassName =
     'flex w-full items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm text-base-content transition-colors hover:bg-base-content/8 focus-visible:bg-base-content/8 disabled:pointer-events-none disabled:opacity-40';
 
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+
+      const rect = trigger.getBoundingClientRect();
+      const menuWidth = Math.min(288, window.innerWidth - 16);
+      setMenuPosition({
+        top: rect.bottom + 8,
+        left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      onOpenChange(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onOpenChange(false);
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen, onOpenChange]);
+
   return (
-    <details
-      className="dropdown dropdown-end absolute right-2 top-2 z-10"
-      open={isOpen}
-      onToggle={(event) => onOpenChange(event.currentTarget.open)}
-      onBlur={(event) => {
-        const nextFocus = event.relatedTarget;
-        if (!(nextFocus instanceof Node) || !event.currentTarget.contains(nextFocus)) {
-          onOpenChange(false);
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          onOpenChange(false);
-        }
-      }}
-    >
-      <summary
-        className="glass-surface btn btn-circle btn-sm list-none text-base-content shadow-sm hover:border-primary hover:bg-primary hover:text-primary-content"
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="glass-surface btn btn-circle btn-sm absolute right-2 top-2 z-10 text-base-content shadow-sm hover:border-primary hover:bg-primary hover:text-primary-content"
         aria-label={t('preview:gallery.actions_label')}
         title={t('preview:gallery.actions_label')}
+        aria-expanded={isOpen}
+        onClick={() => onOpenChange(!isOpen)}
       >
         <Ellipsis size={18} />
-      </summary>
-      <LiquidSurface
-        liquidRole="overlay"
-        className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-72 rounded-lg shadow-xl"
-      >
-        <ul className="menu w-full p-1" aria-label={t('preview:gallery.actions_label')}>
-          <li>
-            <button
-              type="button"
-              className={actionClassName}
-              disabled={!canEdit || isMutating}
-              onClick={() => runAction(onPaste)}
-            >
-              <ClipboardPaste size={16} className="text-base-content/70" />
-              {t('preview:gallery.menu.paste')}
-            </button>
-          </li>
-          <li>
-            <button
-              type="button"
-              className={actionClassName}
-              disabled={!canEdit || isMutating}
-              onClick={() => runAction(onImport)}
-            >
-              <ImagePlus size={16} className="text-base-content/70" />
-              {t('preview:gallery.menu.import')}
-            </button>
-          </li>
-          <li className="my-1 h-px bg-base-content/10" role="separator" />
-          <li>
-            <button
-              type="button"
-              className={`${actionClassName} text-error hover:bg-error/10 focus-visible:bg-error/10`}
-              disabled={!activePath || isMutating}
-              onClick={() => runAction(onRequestRemoveCurrent)}
-            >
-              <Trash2 size={16} />
-              {t('preview:gallery.menu.remove_current')}
-            </button>
-          </li>
-          <li>
-            <button
-              type="button"
-              className={`${actionClassName} text-error hover:bg-error/10 focus-visible:bg-error/10`}
-              disabled={!hasImages || isMutating}
-              onClick={() => runAction(onRequestClearAll)}
-            >
-              <Trash2 size={16} />
-              {t('preview:gallery.menu.clear_all')}
-            </button>
-          </li>
-        </ul>
-      </LiquidSurface>
-    </details>
+      </button>
+      {isOpen &&
+        createPortal(
+          <div
+            ref={menuRef}
+            data-testid="gallery-action-menu"
+            className="fixed z-[var(--workspace-layer-popover)]"
+            style={{
+              top: menuPosition.top,
+              left: menuPosition.left,
+              width: 'min(18rem, calc(100vw - 1rem))',
+            }}
+          >
+            <LiquidSurface liquidRole="overlay" className="w-full rounded-lg shadow-xl">
+              <ul
+                role="menu"
+                className="menu w-full p-1"
+                aria-label={t('preview:gallery.actions_label')}
+              >
+                <li>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={actionClassName}
+                    disabled={!canEdit || isMutating}
+                    onClick={() => runAction(onPaste)}
+                  >
+                    <ClipboardPaste size={16} className="text-base-content/70" />
+                    {t('preview:gallery.menu.paste')}
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={actionClassName}
+                    disabled={!canEdit || isMutating}
+                    onClick={() => runAction(onImport)}
+                  >
+                    <ImagePlus size={16} className="text-base-content/70" />
+                    {t('preview:gallery.menu.import')}
+                  </button>
+                </li>
+                <li className="my-1 h-px bg-base-content/10" role="separator" />
+                <li>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={`${actionClassName} text-error hover:bg-error/10 focus-visible:bg-error/10`}
+                    disabled={!activePath || isMutating}
+                    onClick={() => runAction(onRequestRemoveCurrent)}
+                  >
+                    <Trash2 size={16} />
+                    {t('preview:gallery.menu.remove_current')}
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={`${actionClassName} text-error hover:bg-error/10 focus-visible:bg-error/10`}
+                    disabled={!hasImages || isMutating}
+                    onClick={() => runAction(onRequestClearAll)}
+                  >
+                    <Trash2 size={16} />
+                    {t('preview:gallery.menu.clear_all')}
+                  </button>
+                </li>
+              </ul>
+            </LiquidSurface>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

@@ -8,12 +8,14 @@ import FolderConflictManager from './FolderConflictManager';
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {
     getFolderConflictDetails: vi.fn(),
+    openFolderConflictCandidate: vi.fn(),
     resolveFolderNameConflict: vi.fn(),
     trashFolderConflictCandidate: vi.fn(),
   },
 }));
 
 const getFolderConflictDetails = vi.mocked(commands.getFolderConflictDetails);
+const openFolderConflictCandidate = vi.mocked(commands.openFolderConflictCandidate);
 const resolveFolderNameConflict = vi.mocked(commands.resolveFolderNameConflict);
 
 describe('FolderConflictManager', () => {
@@ -144,6 +146,7 @@ describe('FolderConflictManager', () => {
       reconcile_revision: 2,
       reason: 'InternalMutation',
       status: 'Applied',
+      scan_scope: 'Full',
       folder_conflicts: [],
       rename_confirmations: [],
       error_message: null,
@@ -185,7 +188,16 @@ describe('FolderConflictManager', () => {
     expect(keepActions[0]).toBeChecked();
     expect(screen.getAllByRole('button', { name: 'Rename' })).toHaveLength(2);
     expect(screen.getByText('Keep')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Open folder' })).not.toBeInTheDocument();
+    const openFolderButtons = screen.getAllByRole('button', { name: 'Open folder' });
+    expect(openFolderButtons).toHaveLength(3);
+    fireEvent.click(openFolderButtons[1]);
+    await waitFor(() => {
+      expect(openFolderConflictCandidate).toHaveBeenCalledWith(
+        'game-1',
+        'group-1',
+        'C:/Mods/Alice/DISABLED Blue',
+      );
+    });
     fireEvent.change(inputs[0], { target: { value: 'Blue Two' } });
     fireEvent.change(inputs[1], { target: { value: 'Blue Three' } });
     fireEvent.click(screen.getByRole('button', { name: /Rename 2 folders.*Next/ }));

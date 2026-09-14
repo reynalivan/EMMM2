@@ -206,8 +206,7 @@ pub async fn refresh_import_item_suggestions(
             .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
     let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(
         Some(&resource_dir),
@@ -245,8 +244,7 @@ pub async fn preview_import_library_readiness(
             .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
     let schema = crate::modules::games::application::game::schema_loader::load_schema(
         &resource_dir,
@@ -287,8 +285,7 @@ pub async fn refresh_import_batch_matches(
             .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
     let filters = crate::modules::workspace::application::scanner::master_db::ini_filters(
         Some(&resource_dir),
@@ -502,8 +499,7 @@ pub async fn commit_import_batch(
             .ok_or_else(|| AppError::NotFound(format!("Game '{}'", batch.game_id)))? as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     let report = crate::modules::mutation::application::workspace_mutation::import_commit::commit_import_batch(
         &app,
         pool.inner(),
@@ -773,8 +769,7 @@ pub async fn preview_object_classification_batch(
             .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))? as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
     let schema = crate::modules::games::application::game::schema_loader::load_schema(
         &resource_dir,
@@ -807,8 +802,7 @@ pub async fn list_canonical_classification_catalog(
             .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}'")))? as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     Ok(
         crate::modules::catalog::application::objects::classification_batch::list_canonical_classification_catalog(
             &master_db,
@@ -842,8 +836,7 @@ pub async fn apply_object_classification_batch(
             .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))? as i32;
     let master_db =
         crate::modules::workspace::application::scanner::master_db::get_cached(&app, game_type)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("MasterDB for game type {game_type}")))?;
+            .await?;
     let resource_dir = app.path().resource_dir().map_err(AppError::from)?;
     let schema = crate::modules::games::application::game::schema_loader::load_schema(
         &resource_dir,
@@ -937,6 +930,7 @@ async fn settle_classification_runtime_effects(
             game_id,
             collections_dirty: true,
             overlay_refresh: true,
+            overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
         },
     )
     .await;

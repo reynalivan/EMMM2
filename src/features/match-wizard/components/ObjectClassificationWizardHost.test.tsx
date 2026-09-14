@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   CanonicalClassificationCatalogEntry,
@@ -38,6 +39,15 @@ vi.mock('@/shared/ui/toast', () => ({
   toast: { error: mocks.toastError, success: mocks.toastSuccess, warning: vi.fn() },
 }));
 vi.mock('@/shared/lib/queryRefresh', () => ({ publishQueryScopes: mocks.publishQueryScopes }));
+vi.mock('@/shared/ui/components/ui/VirtualList', () => ({
+  default: ({
+    items,
+    renderItem,
+  }: {
+    items: unknown[];
+    renderItem: (item: unknown) => ReactNode;
+  }) => <div>{items.map(renderItem)}</div>,
+}));
 
 const ayaka: CanonicalClassificationCatalogEntry = {
   entryKey: 'ayaka',

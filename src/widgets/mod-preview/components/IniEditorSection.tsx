@@ -58,7 +58,9 @@ export default function IniEditorSection({
     <div className="mb-6 relative">
       <div
         className={`${
-          shouldStickToolbar ? 'glass-surface sticky top-17 z-10 -mx-6 px-6' : 'bg-transparent'
+          shouldStickToolbar
+            ? 'glass-surface sticky top-[calc(var(--workspace-topbar-height)+var(--preview-header-height))] z-10 -mx-6 px-6'
+            : 'bg-transparent'
         } mb-2 flex items-center justify-between border-b border-base-content/10 py-2`}
       >
         <h3 className="text-sm font-semibold text-base-content/80">

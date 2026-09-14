@@ -9,6 +9,7 @@ import { GameType, type GameConfig } from '@/entities/game';
 // Mock Tauri dependencies
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
 
 // Mock heavily styled/animated child components to simplify the test tree
 vi.mock('./components/welcome/AuroraBackground', () => ({
@@ -187,9 +188,17 @@ describe('WelcomeScreen (TC-03)', () => {
 
   it('shows determinate onboarding indexing progress while a game reconcile is running', async () => {
     let progressHandler: ((event: { payload: unknown }) => void) | undefined;
+    let workPlanHandler: ((event: { payload: unknown }) => void) | undefined;
+    let snapshotHandler: ((event: { payload: unknown }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (event, handler) => {
       if (event === 'disk_reconcile:progress') {
         progressHandler = handler as unknown as (event: { payload: unknown }) => void;
+      }
+      if (event === 'onboarding_indexing:work_plan') {
+        workPlanHandler = handler as unknown as (event: { payload: unknown }) => void;
+      }
+      if (event === 'onboarding_indexing:snapshot_progress') {
+        snapshotHandler = handler as unknown as (event: { payload: unknown }) => void;
       }
       return () => undefined;
     });
@@ -199,7 +208,16 @@ describe('WelcomeScreen (TC-03)', () => {
     });
     (invoke as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({
+        session_id: 'session-1',
+        work_plans: [
+          {
+            game_id: 'new-game',
+            work_units: 10,
+            roots: [{ root_name: 'Alice', work_units: 10 }],
+          },
+        ],
+      })
       .mockReturnValueOnce(reconcile);
 
     render(<WelcomeScreen onComplete={mockOnComplete} />);
@@ -213,6 +231,20 @@ describe('WelcomeScreen (TC-03)', () => {
       '0',
     );
 
+    await waitFor(() => expect(snapshotHandler).toBeDefined());
+    act(() => {
+      snapshotHandler?.({
+        payload: {
+          session_id: 'session-1',
+          game_id: 'new-game',
+          phase: 'Scanning',
+          completed_games: 0,
+          total_games: 1,
+        },
+      });
+    });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+
     await waitFor(() => expect(progressHandler).toBeDefined());
     act(() => {
       progressHandler?.({
@@ -225,15 +257,34 @@ describe('WelcomeScreen (TC-03)', () => {
           total_units: 10,
           current_root: 'Alice',
           elapsed_ms: 1_000,
-          eta_ms: 1_500,
+          eta_ms: 2_500,
         },
       });
     });
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '85');
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '100');
     expect(screen.getByText('Overall progress')).toBeInTheDocument();
+    expect(screen.getByText('About 3s remaining')).toBeInTheDocument();
     expect(screen.getByText('Game 1 of 1 · New Game')).toBeInTheDocument();
     expect(screen.getByText('Scanning mod folders [Alice] · Step 2 of 4')).toBeInTheDocument();
+
+    await waitFor(() => expect(workPlanHandler).toBeDefined());
+    act(() => {
+      workPlanHandler?.({
+        payload: {
+          session_id: 'session-1',
+          work_plan: {
+            game_id: 'new-game',
+            work_units: 100,
+            roots: [
+              { root_name: 'Alice', work_units: 1 },
+              { root_name: 'Bob', work_units: 99 },
+            ],
+          },
+        },
+      });
+    });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '6');
 
     unblock();
     await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());

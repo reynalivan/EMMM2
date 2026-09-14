@@ -42,7 +42,14 @@ export function useFolderGridRuntime({
   const { isMobile } = useResponsive();
   const safetyFilter = useAppStore((state) => state.safetyFilter);
   const parentRef = useRef<HTMLDivElement>(null);
-  const { data: workspace, isLoading, isError, error, isPlaceholderData } = useWorkspaceViewModel();
+  const {
+    data: workspace,
+    isLoading,
+    isFetching,
+    isError,
+    error,
+    isPlaceholderData,
+  } = useWorkspaceViewModel();
   const previousExplorerSubPath = getPreviousExplorerSubPath(explorerSubPath);
   const previousFolderSelection = useMemo(
     () => ({ explorerSubPath: previousExplorerSubPath, selectedModPath: null }),
@@ -95,6 +102,7 @@ export function useFolderGridRuntime({
     previousFolders,
     sortedFolders,
     isLoading,
+    isRefreshing: isFetching && !isLoading,
     isError,
     error,
     isPlaceholderData,

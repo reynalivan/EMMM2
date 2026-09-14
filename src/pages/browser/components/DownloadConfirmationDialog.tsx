@@ -18,6 +18,7 @@ export function DownloadConfirmationDialog({
   onReject,
 }: DownloadConfirmationDialogProps) {
   const { t } = useTranslation(['browser']);
+  const isBlocked = request.risk_level === 'blocked';
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   let sourceHost = request.source_url;
   try {
@@ -136,6 +137,13 @@ export function DownloadConfirmationDialog({
           </div>
         </dl>
 
+        {isBlocked && (
+          <p className="mt-3 flex gap-2 rounded-box border border-error/35 bg-error/10 px-3 py-2 text-xs text-base-content/80">
+            <AlertTriangle size={16} className="shrink-0 text-error" aria-hidden />
+            {t('downloads.confirmation.blocked_file_warning')}
+          </p>
+        )}
+
         {request.risk_level === 'warning' && (
           <p className="mt-3 flex gap-2 rounded-box border border-warning/35 bg-warning/10 px-3 py-2 text-xs text-base-content/80">
             <AlertTriangle size={16} className="shrink-0 text-warning" aria-hidden />
@@ -145,6 +153,7 @@ export function DownloadConfirmationDialog({
 
         <div className="modal-action mt-5">
           <button
+            ref={isBlocked ? confirmButtonRef : undefined}
             className="btn btn-ghost"
             type="button"
             onClick={onReject}
@@ -152,21 +161,23 @@ export function DownloadConfirmationDialog({
           >
             {t('common:action.cancel')}
           </button>
-          <button
-            ref={confirmButtonRef}
-            className="btn btn-primary min-w-28"
-            type="button"
-            onClick={onConfirm}
-            disabled={isSubmitting}
-            aria-busy={isSubmitting}
-          >
-            {isSubmitting ? (
-              <span className="loading loading-spinner loading-sm" aria-hidden />
-            ) : (
-              <Download size={16} aria-hidden />
-            )}
-            {t('downloads.confirmation.confirm')}
-          </button>
+          {!isBlocked && (
+            <button
+              ref={isBlocked ? undefined : confirmButtonRef}
+              className="btn btn-primary min-w-28"
+              type="button"
+              onClick={onConfirm}
+              disabled={isSubmitting}
+              aria-busy={isSubmitting}
+            >
+              {isSubmitting ? (
+                <span className="loading loading-spinner loading-sm" aria-hidden />
+              ) : (
+                <Download size={16} aria-hidden />
+              )}
+              {t('downloads.confirmation.confirm')}
+            </button>
+          )}
         </div>
       </div>
     </dialog>

@@ -3,6 +3,11 @@
     "loading": "Memuat...",
     "new_tab": "Tab Baru",
     "close": "Tutup",
+    "close_tab": "Tutup tab",
+    "duplicate_tab": "Duplikat tab",
+    "reload_tab": "Muat ulang tab",
+    "reopen_last_closed_tab": "Buka lagi tab terakhir yang ditutup",
+    "tab_menu": "Menu tab",
     "back": "Kembali",
     "forward": "Maju",
     "refresh": "Segarkan",
@@ -12,8 +17,6 @@
     "go": "Buka",
     "secure_connection": "Koneksi HTTPS aman",
     "insecure_connection": "Koneksi tidak aman",
-    "secure_connection": "Koneksi HTTPS aman",
-    "insecure_connection": "Koneksi tidak aman",
     "http_warning": "Halaman ini tidak memakai HTTPS sehingga koneksinya dapat dilihat atau diubah pihak lain. Lanjutkan?",
     "suspicious_url_warning": "URL ini terlihat tidak biasa. Periksa domain dengan teliti sebelum melanjutkan. Buka?",
     "browser_menu": "Menu browser Jelajahi",
@@ -21,10 +24,10 @@
     "saved": "Tersimpan",
     "add_bookmark": "Tambah bookmark",
     "remove_bookmark": "Hapus bookmark",
-    "bookmarks_and_history": "Bookmark & riwayat",
     "open_externally": "Buka di browser utama",
     "view": "Tampilan",
     "find_in_page": "Cari di halaman",
+    "find_shortcut": "Ctrl+F",
     "find": "Cari",
     "session_save_failed": "Discover tidak dapat menyimpan semua tab terbuka untuk pemulihan.",
     "zoom_in": "Perbesar",
@@ -45,11 +48,14 @@
     "confirm_action": "Konfirmasi tindakan",
     "open_downloads": "Buka panel Unduhan"
   },
-  "welcome": {
-    "title": "Browser Dalam Aplikasi",
-    "description": "Telusuri dan unduh mod secara langsung. Kelola file yang diunduh dari Unduhan.",
-    "browse_gb": "Telusuri GameBanana",
-    "google": "Google"
+  "new_tab": {
+    "title": "Tab Baru",
+    "search_label": "Cari di Google",
+    "search_placeholder": "Cari di Google atau masukkan URL",
+    "search": "Cari",
+    "bookmarks": "Bookmark",
+    "empty_bookmarks": "Simpan halaman agar tampil di sini.",
+    "open_library": "Kelola bookmark"
   },
   "library": {
     "title": "Bookmark & riwayat",
@@ -61,6 +67,11 @@
     "empty_bookmarks": "Belum ada bookmark tersimpan.",
     "empty_history": "Belum ada riwayat penelusuran.",
     "remove_bookmark": "Hapus bookmark",
+    "edit_bookmark": "Edit bookmark",
+    "editor_title": "Edit bookmark",
+    "editor_name": "Nama",
+    "editor_url": "Alamat",
+    "save_bookmark": "Simpan perubahan",
     "clear_history": "Hapus riwayat",
     "clear_history_confirm": "Hapus semua riwayat penelusuran Jelajahi? Cookie dan data situs tidak akan dihapus.",
     "history_cleared": "Riwayat penelusuran Jelajahi telah dihapus.",
@@ -71,6 +82,17 @@
     "description": "Periksa koneksi, alamat situs, atau sertifikatnya, lalu coba lagi.",
     "retry": "Coba lagi",
     "open_externally": "Buka di luar aplikasi"
+  },
+  "image_preview": {
+    "title": "Pratinjau gambar",
+    "image_alt": "Gambar yang dipilih dari halaman"
+  },
+  "base64_decode": {
+    "title": "Teks Base64 yang didekode",
+    "open_link": "Buka tautan",
+    "copy": "Salin",
+    "copied": "Disalin ke clipboard.",
+    "copy_failed": "Tidak dapat menyalin ke clipboard."
   },
   "downloads": {
     "title": "Unduhan",
@@ -137,6 +159,7 @@
       "destination": "Simpan ke",
       "file_type": "Tipe file",
       "file_size": "Ukuran",
+      "blocked_file_warning": "Unduhan executable dan script diblokir untuk melindungi library mod Anda.",
       "risky_file_warning": "File ini dapat menjalankan kode di komputer. Lanjutkan hanya jika Anda memercayai sumbernya.",
       "confirm": "Unduh",
       "confirm_failed": "Tidak dapat memulai unduhan. Silakan coba lagi.",

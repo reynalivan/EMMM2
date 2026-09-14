@@ -556,7 +556,7 @@ pub async fn preview_randomized_loadout(
                     pool,
                     &candidate.object_id,
                     &input.game_id,
-                    &candidate.folder_path,
+                    Some(&candidate.id),
                 )
                 .await?;
             projected_paths

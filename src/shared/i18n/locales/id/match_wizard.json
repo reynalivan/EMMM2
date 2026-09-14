@@ -18,6 +18,7 @@
   "classification_select": "Pilih",
   "classification_select_row": "Pilih {{name}}",
   "classification_select_high_confidence": "Pilih semua rekomendasi confidence tinggi",
+  "classification_ignore_suggestion": "Abaikan saran",
   "classification_manual": "Klasifikasikan manual",
   "classification_use_catalog": "Gunakan katalog canonical",
   "classification_subcategory": "Subkategori",

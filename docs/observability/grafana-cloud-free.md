@@ -6,21 +6,26 @@ EMMM diagnostics are opt-in. The application has no collector, proxy, polling lo
 
 For local verification, copy `.env.example` to `.env` and fill the values there. The `pnpm tauri` wrapper passes its local `.env` values to the native build; `.env` remains ignored by Git. For releases, create the GitHub Actions Secrets with the exact names below. Grafana is optional: a release without every value still completes without remote telemetry. Once any Grafana value is supplied, the release workflow validates the complete set before packaging so partial configuration does not ship silently.
 
-| Build environment variable | Purpose |
-| --- | --- |
-| `EMMM_GRAFANA_OTLP_METRICS_ENDPOINT` | HTTPS OTLP metrics endpoint ending in `/v1/metrics` |
-| `EMMM_GRAFANA_OTLP_AUTHORIZATION` | Write-only Grafana ingest authorization value |
-| `VITE_GRAFANA_FARO_URL` | Grafana Faro collector URL |
-| `VITE_GRAFANA_FARO_API_KEY` | Faro write-only ingest key |
-| `VITE_APP_VERSION` | Release version attached to frontend diagnostics |
+| Build environment variable           | Purpose                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `EMMM_GRAFANA_OTLP_METRICS_ENDPOINT` | HTTPS OTLP metrics endpoint ending in `/v1/metrics`                                                   |
+| `EMMM_GRAFANA_OTLP_AUTHORIZATION`    | Write-only Grafana ingest authorization value                                                         |
+| `VITE_GRAFANA_FARO_URL`              | Complete Grafana Faro collector URL copied from Web SDK Configuration; it normally embeds the app key |
+| `VITE_GRAFANA_FARO_API_KEY`          | Optional separate key for a custom collector; leave empty for the standard Grafana Cloud URL          |
+| `VITE_GRAFANA_FARO_TRACING_ENABLED`  | Optional `true` switch for HTTP tracing; leave `false` for the lightweight default                    |
+| `VITE_APP_VERSION`                   | Release version attached to frontend diagnostics                                                      |
 
-The required GitHub Actions Secrets are `EMMM_GRAFANA_OTLP_METRICS_ENDPOINT`, `EMMM_GRAFANA_OTLP_AUTHORIZATION`, `VITE_GRAFANA_FARO_URL`, and `VITE_GRAFANA_FARO_API_KEY`. `VITE_APP_VERSION` is set automatically from the release tag. For a local readiness check, run `pnpm validate:observability` with `EMMM_REQUIRE_GRAFANA_OBSERVABILITY=true`; it validates only presence and URL format and never prints secret values.
+The required GitHub Actions Secrets are `EMMM_GRAFANA_OTLP_METRICS_ENDPOINT`, `EMMM_GRAFANA_OTLP_AUTHORIZATION`, and `VITE_GRAFANA_FARO_URL`. `VITE_GRAFANA_FARO_API_KEY` is optional, and `VITE_APP_VERSION` is set automatically from the release tag. For a local readiness check, run `pnpm validate:observability` with `EMMM_REQUIRE_GRAFANA_OBSERVABILITY=true`; it validates only presence and URL format and never prints secret values.
 
 The desktop binary can be inspected, so ingest credentials are treated as public-but-scoped. Create separate write-only tokens for this stack, restrict them to ingestion, and rotate by shipping a new release if abused. Human dashboard access must use separate credentials.
 
 ## Data and cadence
 
 Rust queues a seven-day, UTC daily aggregate with only `release`, `operation`, `outcome`, and `error_code` attributes. The OTLP payload deliberately excludes paths, mod/game IDs and names, URLs, timestamps as labels, error text, and diagnostic hashes. New UI errors are sent through Faro only after consent or an explicit one-time send. The app attempts native aggregate export at startup and then once every 24 hours while it stays open; failed delivery waits for the next lifecycle attempt.
+
+Faro uses 10% volatile session sampling. It does not create persistent sessions, and the Grafana setup screen should use the matching 10% value with Persistent sessions disabled. This limits routine browser telemetry while keeping the application's explicit consent and one-time diagnostic flows intact.
+
+The React Router v7 integration is enabled, while console capture, browser performance instrumentation, and CSP instrumentation stay off to keep the payload small. Route-change events and Faro's default page/browser metadata are filtered so paths and URLs are not exported. Distributed HTTP tracing is opt-in through `VITE_GRAFANA_FARO_TRACING_ENABLED=true`; leave it `false` for the default low-cost setup because traces can include request destinations and add volume.
 
 Current native emitters cover onboarding, launch, disk reconcile, collection apply, restore, import commit and extraction, watcher lifecycle plus overflow, classification batches and accepted/cancelled review decisions, auto-match outcomes, single-item safety toggles, and bulk toggle item outcomes. A separate `rejected` review outcome is intentionally absent until the product exposes a distinct rejected decision rather than overloading cancellation.
 

@@ -1361,7 +1361,7 @@ fn validate_targets_still_available(
                 plan.item.id
             ))
         })?;
-        let current_manifest = crate::modules::ingestion::application::import_batch::payload_manifest::build_payload_manifest(
+        let current_manifest = crate::modules::ingestion::application::import_batch::payload_manifest::build_validated_import_payload_manifest(
             &plan.source,
             None,
         )?;
@@ -1545,6 +1545,7 @@ async fn settle_runtime_effects(app: &tauri::AppHandle, pool: &sqlx::SqlitePool,
             game_id,
             collections_dirty: true,
             overlay_refresh: true,
+            overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
         },
     )
     .await;
