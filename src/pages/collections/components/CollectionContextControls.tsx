@@ -1,9 +1,7 @@
-import {
-  ApplyCollectionModal,
-  SaveCollectionModal,
-  useCollectionRuntimeDescriptor,
-  useCollections,
-} from '@/pages/collections';
+import { ApplyCollectionModal } from './ApplyCollectionModal';
+import { SaveCollectionModal } from './SaveCollectionModal';
+import { useCollectionRuntimeDescriptor } from '../hooks/useCollectionRuntime';
+import { useCollections } from '../hooks/useCollections';
 import { getCollectionDisplayName, useRuntimeLabels } from '@/shared/lib/runtimeLabels';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';

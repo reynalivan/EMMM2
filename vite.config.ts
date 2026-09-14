@@ -52,6 +52,18 @@ export default defineConfig(({ command, mode }) => {
               if (id.includes('framer-motion') || id.includes('motion')) return 'vendor-motion';
               if (id.includes('@tanstack') || id.includes('query-core')) return 'vendor-query';
               if (id.includes('zustand')) return 'vendor-state';
+              if (id.includes('recharts')) return 'vendor-charts';
+              if (id.includes('@grafana') || id.includes('@opentelemetry')) {
+                return 'vendor-observability';
+              }
+              if (id.includes('react-router')) return 'vendor-router';
+              if (id.includes('i18next')) return 'vendor-i18n';
+              if (id.includes('react-hook-form') || id.includes('@hookform')) return 'vendor-forms';
+              if (id.includes('zod')) return 'vendor-validation';
+              if (id.includes('@radix-ui') || id.includes('@floating-ui')) {
+                return 'vendor-primitives';
+              }
+              if (id.includes('quick-liquid')) return 'vendor-liquid';
 
               // Core libraries: only include the actual React core and scheduler
               if (

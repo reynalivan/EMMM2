@@ -7,7 +7,7 @@ import { useActiveConflicts } from '@/features/mod-runtime';
 import { useAppStore } from '@/app/store';
 import { RandomizerModal } from '@/features/randomizer';
 import { ConflictModal } from '@/features/conflict-report';
-import { ConflictToast } from '@/features/scanner';
+import ConflictToast from '@/features/scanner/components/ConflictToast';
 import { useTranslation } from 'react-i18next';
 import type { ConflictInfo } from '@/entities/workspace';
 import { toast } from '@/shared/ui/toast';

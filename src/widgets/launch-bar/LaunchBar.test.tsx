@@ -46,8 +46,8 @@ vi.mock('@/features/randomizer', () => ({
 vi.mock('@/features/conflict-report', () => ({
   ConflictModal: () => <div data-testid="conflict-modal"></div>,
 }));
-vi.mock('@/features/scanner', () => ({
-  ConflictToast: ({ onDismiss }: { onDismiss: () => void }) => (
+vi.mock('@/features/scanner/components/ConflictToast', () => ({
+  default: ({ onDismiss }: { onDismiss: () => void }) => (
     <button data-testid="conflict-toast" onClick={onDismiss}>
       Dismiss conflict
     </button>

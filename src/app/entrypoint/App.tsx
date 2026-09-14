@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, type ReactNode, useEffect, useState } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { FaroRoutes } from '@grafana/faro-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -6,9 +6,10 @@ import { initLogger } from '@/shared/lib/logger';
 import { useAppStore } from '@/app/store';
 import { useSettings } from '@/entities/settings';
 import i18n from '@/shared/i18n/config';
-import { useThemeRuntime, DynamicThemeInjector } from '@/pages/settings';
+import { DynamicThemeInjector } from '@/pages/settings/components/theme/DynamicThemeInjector';
+import { useThemeRuntime } from '@/pages/settings/hooks/useThemeRuntime';
 import type { PipelineTask } from '@/entities/task';
-import { RecoveryDialog } from '@/pages/collections';
+import { RecoveryDialog } from '@/pages/collections/components/RecoveryDialog';
 import { WelcomeScreen } from '@/pages/onboarding';
 import { commands } from '@/shared/api/tauri/bindings';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
@@ -19,19 +20,41 @@ import { DiagnosticsErrorDialog } from '@/shared/ui/components/ui/DiagnosticsErr
 import { CrashRecoveryDialog } from '@/shared/ui/components/ui/CrashRecoveryDialog';
 import { AppShell } from '@/widgets/app-shell';
 import { TopBar } from '@/widgets/top-bar';
-import { Dashboard } from '@/pages/dashboard';
-import { CollectionContextControls, CollectionsPage } from '@/pages/collections';
-import { SettingsPage } from '@/pages/settings';
-import { ModInboxPage } from '@/pages/mod-inbox';
-import { StorageOptimizerPage } from '@/features/scanner';
+import CollectionContextControls from '@/pages/collections/components/CollectionContextControls';
 import { ExternalChangeHandler } from '@/features/file-watcher';
 import { ImportBatchWizardHost } from '@/features/import-batches';
 import { ObjectClassificationWizardHost } from '@/features/match-wizard';
-import { FolderGrid, ExplorerEmptyState } from '@/widgets/mod-explorer';
-import { PreviewPanel } from '@/widgets/mod-preview';
-import { ObjectList } from '@/widgets/object-sidebar';
 import { LaunchBar } from '@/widgets/launch-bar';
-import { BrowserPage, DownloadConfirmationHost, DownloadsPage } from '@/pages/browser';
+import { DownloadConfirmationHost } from '@/pages/browser/components/DownloadConfirmationHost';
+import FolderConflictManager from '@/widgets/mod-explorer/modals/FolderConflictManager';
+import RenameConfirmationManager from '@/widgets/mod-explorer/modals/RenameConfirmationManager';
+import WorkspaceSourceUnavailableDialog from '@/widgets/mod-explorer/components/WorkspaceSourceUnavailableDialog';
+
+const Dashboard = lazy(() => import('@/pages/dashboard/Dashboard'));
+const CollectionsPage = lazy(() => import('@/pages/collections/CollectionsPage'));
+const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage'));
+const ModInboxPage = lazy(() => import('@/pages/mod-inbox/ModInboxPage'));
+const StorageOptimizerPage = lazy(() => import('@/features/scanner/StorageOptimizerPage'));
+const BrowserPage = lazy(() =>
+  import('@/pages/browser/components/BrowserPage').then(({ BrowserPage: Component }) => ({
+    default: Component,
+  })),
+);
+const DownloadsPage = lazy(() => import('@/pages/browser/components/DownloadsPage'));
+const ObjectList = lazy(() => import('@/widgets/object-sidebar/ObjectList'));
+const FolderGrid = lazy(() => import('@/widgets/mod-explorer/FolderGrid'));
+const PreviewPanel = lazy(() => import('@/widgets/mod-preview/PreviewPanel'));
+const ExplorerEmptyState = lazy(
+  () => import('@/widgets/mod-explorer/components/ExplorerEmptyState'),
+);
+
+function WorkspaceContentFallback() {
+  return <div className="h-full" aria-busy="true" />;
+}
+
+function deferWorkspaceContent(content: ReactNode) {
+  return <Suspense fallback={<WorkspaceContentFallback />}>{content}</Suspense>;
+}
 
 function AppRouter() {
   const navigate = useNavigate();
@@ -174,28 +197,23 @@ function DashboardWorkspace() {
           </>
         )
       }
-      dashboard={<Dashboard />}
-      collections={<CollectionsPage />}
-      settings={<SettingsPage />}
-      browser={<BrowserPage />}
-      downloads={<DownloadsPage />}
-      storageOptimizer={<StorageOptimizerPage />}
-      modInbox={<ModInboxPage />}
-      objectList={<ObjectList />}
-      folderGrid={<FolderGrid />}
-      previewPanel={<PreviewPanel />}
-      explorerEmptyState={<ExplorerEmptyState />}
+      dashboard={deferWorkspaceContent(<Dashboard />)}
+      collections={deferWorkspaceContent(<CollectionsPage />)}
+      settings={deferWorkspaceContent(<SettingsPage />)}
+      browser={deferWorkspaceContent(<BrowserPage />)}
+      downloads={deferWorkspaceContent(<DownloadsPage />)}
+      storageOptimizer={deferWorkspaceContent(<StorageOptimizerPage />)}
+      modInbox={deferWorkspaceContent(<ModInboxPage />)}
+      objectList={deferWorkspaceContent(<ObjectList />)}
+      folderGrid={deferWorkspaceContent(<FolderGrid />)}
+      previewPanel={deferWorkspaceContent(<PreviewPanel />)}
+      explorerEmptyState={deferWorkspaceContent(<ExplorerEmptyState />)}
     />
   );
 }
 
 import { ToastContainer } from '@/shared/ui/toast';
 import { FileInUseDialog } from '@/features/file-watcher';
-import {
-  FolderConflictManager,
-  RenameConfirmationManager,
-  WorkspaceSourceUnavailableDialog,
-} from '@/widgets/mod-explorer';
 import { WorkspaceParentEnableDialogHost } from '@/features/workspace-runtime';
 
 export default function App() {
