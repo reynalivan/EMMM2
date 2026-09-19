@@ -54,48 +54,39 @@ fn keyviewer_box_resource(index: usize) -> String {
 
 const OVERLAY_LEFT: f32 = -0.97;
 const OVERLAY_RIGHT: f32 = 0.00;
-const OVERLAY_STATUS_TOP: f32 = -0.04;
-const OVERLAY_STATUS_BOTTOM: f32 = -0.15;
+const OVERLAY_STATUS_TOP: f32 = 0.36;
+const OVERLAY_STATUS_BOTTOM: f32 = 0.23;
 const OVERLAY_PANEL_TOP: f32 = -0.22;
 const OVERLAY_PANEL_BOTTOM: f32 = -0.96;
-const OVERLAY_COLUMN_GAP: f32 = 0.04;
-const OVERLAY_MAX_ROWS_PER_COLUMN: usize = 3;
+const OVERLAY_TEXT_ALIGNMENT_LEFT: u8 = 0;
+const OVERLAY_VERTICAL_ANCHOR_BOTTOM: u8 = 3;
+const OVERLAY_STATUS_SCALE: f32 = 1.35;
+const OVERLAY_CHARACTER_SCALE: f32 = 1.35;
 
 /// Bumped when generated text geometry changes so existing overlays are republished.
-pub const KEYVIEWER_LAYOUT_REVISION: u8 = 2;
+pub const KEYVIEWER_LAYOUT_REVISION: u8 = 3;
 
-fn status_box_data() -> String {
+fn text_box_data(top: f32, bottom: f32, scale: f32) -> String {
     format!(
-        "{OVERLAY_LEFT:.2} {OVERLAY_STATUS_TOP:.2} {OVERLAY_RIGHT:.2} {OVERLAY_STATUS_BOTTOM:.2}  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  1.10"
+        "{OVERLAY_LEFT:.2} {top:.2} {OVERLAY_RIGHT:.2} {bottom:.2}  1 1 1 1  0 0 0 0.92  0.02 0.02  {OVERLAY_TEXT_ALIGNMENT_LEFT} {OVERLAY_VERTICAL_ANCHOR_BOTTOM}  0  {scale:.2}"
     )
 }
 
-fn character_box_data(index: usize, panel_count: usize) -> String {
-    let columns = panel_count
-        .div_ceil(OVERLAY_MAX_ROWS_PER_COLUMN)
-        .clamp(1, 2);
-    let rows = panel_count.div_ceil(columns).max(1);
-    let column = index % columns;
-    let row = index / columns;
-    let column_width =
-        (OVERLAY_RIGHT - OVERLAY_LEFT - OVERLAY_COLUMN_GAP * (columns - 1) as f32) / columns as f32;
-    let left = OVERLAY_LEFT + column as f32 * (column_width + OVERLAY_COLUMN_GAP);
-    let right = if column + 1 == columns {
-        OVERLAY_RIGHT
-    } else {
-        left + column_width
-    };
-    let available_height = OVERLAY_PANEL_TOP - OVERLAY_PANEL_BOTTOM;
-    let height = available_height / rows as f32;
-    let top = OVERLAY_PANEL_TOP - row as f32 * height;
-    let bottom = top - height + OVERLAY_COLUMN_GAP;
-    let scale = match rows {
-        1 => 1.12,
-        2 => 0.95,
-        _ => (0.82 * (3.0 / rows as f32)).clamp(0.72, 0.82),
-    };
-    format!(
-        "{left:.2} {top:.2} {right:.2} {bottom:.2}  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  {scale:.2}"
+fn status_box_data() -> String {
+    text_box_data(
+        OVERLAY_STATUS_TOP,
+        OVERLAY_STATUS_BOTTOM,
+        OVERLAY_STATUS_SCALE,
+    )
+}
+
+/// Keep every character panel anchored to the same normalized viewport box.
+/// Character match order must not affect where the active panel is rendered.
+fn character_box_data() -> String {
+    text_box_data(
+        OVERLAY_PANEL_TOP,
+        OVERLAY_PANEL_BOTTOM,
+        OVERLAY_CHARACTER_SCALE,
     )
 }
 
@@ -236,10 +227,7 @@ pub fn generate_keyviewer_ini_for_resources(
         lines.push(format!("[{}]", keyviewer_box_resource(box_index)));
         lines.push("type = StructuredBuffer".to_string());
         lines.push("array = 1".to_string());
-        lines.push(format!(
-            "data = R32_FLOAT  {}",
-            character_box_data(box_index, matches.len())
-        ));
+        lines.push(format!("data = R32_FLOAT  {}", character_box_data()));
         lines.push(String::new());
     }
 

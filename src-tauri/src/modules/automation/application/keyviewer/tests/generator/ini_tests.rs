@@ -75,7 +75,7 @@ fn keyviewer_ini_draws_status_and_detected_character_panels_directly() {
 }
 
 #[test]
-fn keyviewer_ini_docks_status_and_character_panels_at_bottom_left() {
+fn keyviewer_ini_anchors_viewport_panels_left_and_scales_them_up() {
     let ini = generate_keyviewer_ini(
         &[make_match_result("Albedo", &["aabb1111"])],
         "F7",
@@ -83,26 +83,23 @@ fn keyviewer_ini_docks_status_and_character_panels_at_bottom_left() {
     );
 
     assert!(ini.contains(
-        "data = R32_FLOAT  -0.97 -0.04 0.00 -0.15  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  1.10"
+        "data = R32_FLOAT  -0.97 0.36 0.00 0.23  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.35"
     ));
     assert!(ini.contains(
-        "data = R32_FLOAT  -0.97 -0.22 0.00 -0.92  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  1.12"
+        "data = R32_FLOAT  -0.97 -0.22 0.00 -0.96  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.35"
     ));
 }
 
 #[test]
-fn keyviewer_ini_keeps_multiple_panels_inside_the_left_dock() {
+fn keyviewer_ini_uses_the_same_viewport_geometry_for_every_match() {
     let matches = (0..4)
         .map(|index| make_match_result(&format!("Character{index}"), &["aabb1111"]))
         .collect::<Vec<_>>();
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
-    assert!(ini.contains(
-        "data = R32_FLOAT  -0.97 -0.22 -0.50 -0.55  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  0.95"
-    ));
-    assert!(ini.contains(
-        "data = R32_FLOAT  -0.47 -0.22 0.00 -0.55  1 1 1 1  0 0 0 0.92  0.02 0.02  1 3  0  0.95"
-    ));
+    let character_geometry =
+        "data = R32_FLOAT  -0.97 -0.22 0.00 -0.96  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.35";
+    assert_eq!(ini.matches(character_geometry).count(), matches.len());
 }
 
 #[test]
