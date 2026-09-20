@@ -3,6 +3,7 @@ import { Gamepad2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GAME_OPTIONS, useActiveGame, type GameConfig } from '@/entities/game';
 import { useGameSwitch } from '@/features/workspace-runtime';
+import { useAppStore } from '@/app/store';
 import { LiquidSurface } from '@/shared/ui/liquid';
 
 interface GameSelectorProps {
@@ -13,6 +14,9 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
   const { t } = useTranslation('layout');
   const { activeGame, games = [], isLoading } = useActiveGame();
   const { switchGame } = useGameSwitch();
+  const activeActivation = useAppStore((state) =>
+    activeGame?.id ? state.gameActivationByGame?.[activeGame.id] : undefined,
+  );
   const [isSwitching, setIsSwitching] = useState(false);
 
   // Derive display info from active game
@@ -52,7 +56,10 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
   }
 
   const handleSwitchGame = async (gameId: string) => {
-    if (isSwitching || gameId === activeGame?.id) return;
+    const retryingActive =
+      gameId === activeGame?.id &&
+      (activeActivation?.phase === 'failed' || activeActivation?.phase === 'source_unavailable');
+    if (isSwitching || (gameId === activeGame?.id && !retryingActive)) return;
 
     setIsSwitching(true);
     try {
@@ -140,6 +147,13 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
                   }`}
                 >
                   <span>{game.name}</span>
+                  {isActive &&
+                    (activeActivation?.phase === 'failed' ||
+                      activeActivation?.phase === 'source_unavailable') && (
+                      <span className="ml-auto text-xs font-medium text-warning">
+                        {t('game_selector.retry')}
+                      </span>
+                    )}
                 </button>
               </li>
             );

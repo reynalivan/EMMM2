@@ -1,3 +1,5 @@
+import i18n from 'i18next';
+
 type StructuredError = {
   type: string;
   payload?: unknown;
@@ -67,6 +69,10 @@ function normalizeStructuredError(value: unknown): StructuredError | null {
   return { type, payload };
 }
 
+export function isExplorerSnapshotExpired(error: unknown): boolean {
+  return normalizeStructuredError(error)?.type === 'ExplorerSnapshotExpired';
+}
+
 function formatStructuredPayload(error: StructuredError): string | null {
   switch (error.type) {
     case 'App':
@@ -83,6 +89,13 @@ function formatStructuredPayload(error: StructuredError): string | null {
     case 'Security':
     case 'NotFound':
       return typeof error.payload === 'string' ? error.payload : error.type;
+    case 'ExplorerSnapshotExpired': {
+      const fallback = 'The folder listing changed. Reload it and select the mods again.';
+      const translated = i18n.t('common:errors.explorer_snapshot_expired', {
+        defaultValue: fallback,
+      });
+      return typeof translated === 'string' && translated.length > 0 ? translated : fallback;
+    }
     case 'PathBusy':
       return typeof error.payload === 'object' && error.payload
         ? `Path is busy and cannot be renamed right now: ${String((error.payload as Record<string, unknown>).path ?? '')}`

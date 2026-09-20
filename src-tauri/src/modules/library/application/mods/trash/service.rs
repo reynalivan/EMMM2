@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 pub struct PreparedTrashMove {
     source: PathBuf,
     quarantine: PathBuf,
+    expected_identity: String,
 }
 
 impl PreparedTrashMove {
@@ -24,10 +25,21 @@ impl PreparedTrashMove {
         &self.quarantine
     }
 
+    pub fn expected_identity(&self) -> &str {
+        &self.expected_identity
+    }
+
     pub fn execute(&self, state: &WatcherState) -> Result<(), AppError> {
         let _guard = state
             .suppressor
             .suppress_paths([self.source.as_path(), self.quarantine.as_path()]);
+        self.require_expected_identity(&self.source, "trash source")?;
+        if self.quarantine.exists() {
+            return Err(AppError::Io(format!(
+                "Trash quarantine destination already exists: {}",
+                self.quarantine.display()
+            )));
+        }
         std::fs::rename(&self.source, &self.quarantine)
             .map_err(|error| AppError::Io(error.to_string()))
     }
@@ -36,15 +48,26 @@ impl PreparedTrashMove {
         let _guard = state
             .suppressor
             .suppress_paths([self.source.as_path(), self.quarantine.as_path()]);
-        if self.source.exists() {
+        let source_exists = self.source.exists();
+        let quarantine_exists = self.quarantine.exists();
+        if source_exists && quarantine_exists {
+            return Err(AppError::Io(format!(
+                "Trash rollback found both source and quarantine paths: {} and {}",
+                self.source.display(),
+                self.quarantine.display()
+            )));
+        }
+        if source_exists {
+            self.require_expected_identity(&self.source, "restored trash source")?;
             return Ok(());
         }
-        if !self.quarantine.exists() {
+        if !quarantine_exists {
             return Err(AppError::Io(format!(
                 "Trash rollback source is missing: {}",
                 self.quarantine.display()
             )));
         }
+        self.require_expected_identity(&self.quarantine, "trash quarantine")?;
         std::fs::rename(&self.quarantine, &self.source)
             .map_err(|error| AppError::Io(error.to_string()))
     }
@@ -53,7 +76,20 @@ impl PreparedTrashMove {
         if !self.quarantine.exists() {
             return Ok(());
         }
+        self.require_expected_identity(&self.quarantine, "trash quarantine")?;
         move_to_trash(&self.quarantine)
+    }
+
+    fn require_expected_identity(&self, path: &Path, label: &str) -> Result<(), AppError> {
+        let actual = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(path);
+        if actual.as_deref() == Some(self.expected_identity.as_str()) {
+            Ok(())
+        } else {
+            Err(AppError::Io(format!(
+                "{label} changed after validation: {}",
+                path.display()
+            )))
+        }
     }
 }
 
@@ -70,10 +106,18 @@ pub fn prepare_trash_move(source: &Path) -> Result<PreparedTrashMove, AppError> 
     let parent = source
         .parent()
         .ok_or_else(|| AppError::Validation("Trash source has no parent directory".to_string()))?;
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(source)
+        .ok_or_else(|| {
+            AppError::Io(format!(
+                "Could not determine trash source identity: {}",
+                source.display()
+            ))
+        })?;
     let quarantine = parent.join(format!(".emmm-trash-{}", uuid::Uuid::new_v4().simple()));
     Ok(PreparedTrashMove {
         source: source.to_path_buf(),
         quarantine,
+        expected_identity,
     })
 }
 

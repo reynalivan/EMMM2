@@ -178,6 +178,18 @@ pub(crate) struct WorkspaceObjectMapping<'a> {
 pub(crate) fn map_workspace_objects(
     mapping: WorkspaceObjectMapping<'_>,
 ) -> Vec<WorkspaceObjectNode> {
+    if mapping.root_folders.is_empty() {
+        return mapping
+            .objects
+            .into_iter()
+            .map(|object| {
+                let folder_exists = mapping.source_available
+                    && relative_sub_path_exists(mapping.mods_path, &object.folder_path);
+                map_workspace_object(object, folder_exists)
+            })
+            .collect();
+    }
+
     let mut objects_by_path: HashMap<String, ObjectSummary> = mapping
         .objects
         .into_iter()

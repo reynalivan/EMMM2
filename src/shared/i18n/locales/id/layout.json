@@ -5,7 +5,7 @@
     "mod_inbox": "Kotak Masuk Mod",
     "collections": "Koleksi",
     "settings": "Pengaturan",
-    "browser": "Browser",
+    "discover": "Temukan",
     "downloads": "Unduhan",
     "storage_optimizer": "Pengoptimal Penyimpanan",
     "app_menu_tip": "Menu Aplikasi",
@@ -39,7 +39,8 @@
   "game_selector": {
     "select_game": "Pilih Game",
     "loading": "Memuat...",
-    "add_game": "Tambah Game"
+    "add_game": "Tambah Game",
+    "retry": "Coba Lagi"
   },
   "context": {
     "loading": "Memuat...",

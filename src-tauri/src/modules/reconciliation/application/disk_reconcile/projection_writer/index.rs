@@ -3,9 +3,11 @@
 
 use crate::shared::errors::AppError;
 use std::collections::HashMap;
+use std::path::Path;
 
 use crate::modules::catalog::adapters::sqlite::object::ReconcileObjectRow as DbObjectRow;
 use crate::modules::library::adapters::sqlite::mods::ReconcileModRow as DbModRow;
+use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskProjection;
 
 use super::keys::runtime_logical_path_key;
 
@@ -26,6 +28,56 @@ async fn load_db_mods(
     Ok(
         crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(conn, game_id)
             .await?,
+    )
+}
+
+async fn load_scoped_db_objects(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    root_keys: &[String],
+    projection: &DiskProjection,
+) -> Result<Vec<DbObjectRow>, AppError> {
+    let identities = projection
+        .objects
+        .iter()
+        .filter_map(|entry| entry.filesystem_identity.clone())
+        .collect::<Vec<_>>();
+    Ok(
+        crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile_scope(
+            conn,
+            game_id,
+            root_keys,
+            &identities,
+        )
+        .await?,
+    )
+}
+
+async fn load_scoped_db_mods(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    mods_path: &Path,
+    root_keys: &[String],
+    projection: &DiskProjection,
+) -> Result<Vec<DbModRow>, AppError> {
+    let identities = projection
+        .mods
+        .iter()
+        .filter_map(|entry| entry.filesystem_identity.clone())
+        .collect::<Vec<_>>();
+    let mods_root = mods_path.to_string_lossy();
+    let mod_root_path_keys = root_keys
+        .iter()
+        .map(|root| crate::shared::path_key::folder_path_key(root, Some(&mods_root)))
+        .collect::<Vec<_>>();
+    Ok(
+        crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile_scope(
+            conn,
+            game_id,
+            &mod_root_path_keys,
+            &identities,
+        )
+        .await?,
     )
 }
 
@@ -52,7 +104,23 @@ impl DbIndex {
     ) -> Result<Self, AppError> {
         let objects = load_db_objects(&mut *conn, game_id).await?;
         let mods = load_db_mods(&mut *conn, game_id).await?;
+        Ok(Self::from_rows(objects, mods))
+    }
 
+    pub(super) async fn load_scoped(
+        conn: &mut sqlx::SqliteConnection,
+        game_id: &str,
+        mods_path: &Path,
+        root_keys: &[String],
+        projection: &DiskProjection,
+    ) -> Result<Self, AppError> {
+        let objects = load_scoped_db_objects(&mut *conn, game_id, root_keys, projection).await?;
+        let mods =
+            load_scoped_db_mods(&mut *conn, game_id, mods_path, root_keys, projection).await?;
+        Ok(Self::from_rows(objects, mods))
+    }
+
+    fn from_rows(objects: Vec<DbObjectRow>, mods: Vec<DbModRow>) -> Self {
         let mut objects_by_key = HashMap::with_capacity(objects.len());
         let mut objects_by_runtime_key = HashMap::with_capacity(objects.len());
         let mut objects_by_id = HashMap::with_capacity(objects.len());
@@ -91,7 +159,7 @@ impl DbIndex {
             }
         }
 
-        Ok(Self {
+        Self {
             objects,
             objects_by_key,
             objects_by_runtime_key,
@@ -103,7 +171,11 @@ impl DbIndex {
             mods_by_path_lower,
             mods_by_runtime_key,
             mods_by_filesystem_identity,
-        })
+        }
+    }
+
+    pub(super) fn row_counts(&self) -> (usize, usize) {
+        (self.objects.len(), self.mods.len())
     }
 
     pub(super) fn object_by_key(&self, folder_path_key: &str) -> Option<&DbObjectRow> {

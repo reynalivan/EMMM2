@@ -3,18 +3,10 @@
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 
-use super::adblock::{BrowserAdblockState, discover_profile_dir};
+use super::adblock::{discover_profile_dir, BrowserAdblockState};
 use super::paths::get_downloads_root_for_game;
 use super::settings::{normalize_url, validate_http_url};
 use crate::shared::errors::BrowserError;
-
-// Keep embedded sites on their standard desktop experience. Some download
-// pages otherwise select a reduced WebView-specific flow.
-const DISCOVER_DESKTOP_USER_AGENT: &str = concat!(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
-    "AppleWebKit/537.36 (KHTML, like Gecko) ",
-    "Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0"
-);
 
 /// Open a browser tab for a user-supplied URL (normalizes a missing scheme first).
 pub async fn open_tab(
@@ -86,7 +78,6 @@ pub async fn open_child_webview(
         ),
     )
     .data_directory(discover_profile)
-    .user_agent(DISCOVER_DESKTOP_USER_AGENT)
     .devtools(cfg!(debug_assertions))
     .zoom_hotkeys_enabled(true)
     .on_navigation({

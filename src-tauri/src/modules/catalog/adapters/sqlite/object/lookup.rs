@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use super::types::*;
@@ -89,6 +91,72 @@ pub async fn get_rows_for_reconcile(
     .bind(game_id)
     .fetch_all(&mut *conn)
     .await
+}
+
+/// Loads only object rows that can participate in a scoped projection.
+///
+/// Root keys cover normal create/update/prune work. Filesystem identities are
+/// included as a second indexed lookup so a rename can still resolve the
+/// pre-rename row after its path key changed.
+pub async fn get_rows_for_reconcile_scope(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    root_keys: &[String],
+    filesystem_identities: &[String],
+) -> Result<Vec<ReconcileObjectRow>, sqlx::Error> {
+    const LOOKUP_CHUNK_SIZE: usize = 900;
+    let mut rows = Vec::new();
+    let mut seen_ids = HashSet::new();
+
+    for keys in root_keys.chunks(LOOKUP_CHUNK_SIZE) {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT id, name, folder_path, folder_path_key, status, filesystem_identity FROM objects WHERE game_id = ",
+        );
+        query.push_bind(game_id);
+        query.push(" AND folder_path_key IN (");
+        {
+            let mut separated = query.separated(", ");
+            for key in keys {
+                separated.push_bind(key);
+            }
+        }
+        query.push(")");
+        for row in query
+            .build_query_as::<ReconcileObjectRow>()
+            .fetch_all(&mut *conn)
+            .await?
+        {
+            if seen_ids.insert(row.id.clone()) {
+                rows.push(row);
+            }
+        }
+    }
+
+    for identities in filesystem_identities.chunks(LOOKUP_CHUNK_SIZE) {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT id, name, folder_path, folder_path_key, status, filesystem_identity FROM objects WHERE game_id = ",
+        );
+        query.push_bind(game_id);
+        query.push(" AND filesystem_identity IN (");
+        {
+            let mut separated = query.separated(", ");
+            for identity in identities {
+                separated.push_bind(identity);
+            }
+        }
+        query.push(")");
+        for row in query
+            .build_query_as::<ReconcileObjectRow>()
+            .fetch_all(&mut *conn)
+            .await?
+        {
+            if seen_ids.insert(row.id.clone()) {
+                rows.push(row);
+            }
+        }
+    }
+
+    Ok(rows)
 }
 
 pub async fn get_game_id_conn(

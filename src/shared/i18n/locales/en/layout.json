@@ -9,7 +9,7 @@
     "mod_inbox": "Mod Inbox",
     "collections": "Collections",
     "settings": "Settings",
-    "browser": "Browser",
+    "discover": "Discover",
     "downloads": "Downloads",
     "storage_optimizer": "Storage Optimizer",
     "app_menu_tip": "App Menu",
@@ -43,7 +43,8 @@
   "game_selector": {
     "select_game": "Select Game",
     "loading": "Loading...",
-    "add_game": "Add Game"
+    "add_game": "Add Game",
+    "retry": "Retry"
   },
   "context": {
     "loading": "Loading...",

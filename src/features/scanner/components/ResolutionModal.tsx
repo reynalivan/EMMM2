@@ -118,10 +118,21 @@ export default function ResolutionModal({
                       </div>
                       <div className="text-xs text-error flex items-center gap-2 pl-2 border-l-2 border-error/30 mt-1 italic">
                         <Trash2 size={12} />
-                        {t('scanner:resolution.delete_others', {
-                          count: group!.members.length - 1,
-                        })}
+                        {t(
+                          group!.confidenceScore === 100
+                            ? 'scanner:resolution.delete_others'
+                            : 'scanner:resolution.delete_others_non_exact',
+                          {
+                            count: group!.members.length - 1,
+                          },
+                        )}
                       </div>
+                      {group!.confidenceScore !== 100 && (
+                        <div className="text-xs text-warning flex items-start gap-2 pl-2 border-l-2 border-warning/30 mt-2">
+                          <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                          <span>{t('scanner:resolution.non_exact_warning')}</span>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="text-sm flex items-center gap-2">

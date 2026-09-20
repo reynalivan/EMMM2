@@ -44,7 +44,7 @@ impl MasterDb {
             .map(|(index, ((entry, name_tokens), alias_tokens))| {
                 let tag_tokens = catalog_tags(entry)
                     .into_iter()
-                    .flat_map(|tag| normalizer::preprocess_text(tag))
+                    .flat_map(normalizer::preprocess_text)
                     .collect::<HashSet<_>>();
                 let keywords = name_tokens
                     .union(alias_tokens)

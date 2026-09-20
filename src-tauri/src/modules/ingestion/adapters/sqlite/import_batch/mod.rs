@@ -398,8 +398,7 @@ pub async fn list_active_mod_inbox_sources_for_paths(
 ) -> Result<Vec<ActiveModInboxSource>, sqlx::Error> {
     let mut sources = Vec::new();
     for path_chunk in source_paths.chunks(ACTIVE_SOURCE_PATH_BATCH_SIZE) {
-        let placeholders = std::iter::repeat("?")
-            .take(path_chunk.len())
+        let placeholders = std::iter::repeat_n("?", path_chunk.len())
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
@@ -670,7 +669,7 @@ pub(crate) async fn apply_analysis_result(
     let target_comparison_json = analysis
         .target_comparison
         .as_ref()
-        .map(|comparison| serde_json::to_string(comparison))
+        .map(serde_json::to_string)
         .transpose()
         .map_err(|error| decode_error(format!("could not encode target comparison: {error}")))?;
     let identity_match_status = if !analysis.review_gate.is_empty() {
@@ -708,7 +707,7 @@ pub(crate) async fn apply_analysis_result(
         mut destination_path,
         mut canonical_entry_key,
     ) = if let Some(destination) = default_destination {
-        let kind = serde_json::to_value(&destination.kind)
+        let kind = serde_json::to_value(destination.kind)
             .map_err(|error| decode_error(format!("could not encode destination kind: {error}")))?;
         let decision = match kind.as_str() {
             Some("specific_target") => "keep_specific_target",

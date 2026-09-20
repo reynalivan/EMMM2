@@ -37,7 +37,8 @@ vi.mock('@/features/mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkPin: () => ({ mutate: vi.fn() }),
 }));
 
-const { mockUseWorkspaceViewModel } = vi.hoisted(() => ({
+const { mockUseWorkspaceViewModel, mockUseWorkspaceExplorerPages } = vi.hoisted(() => ({
+  mockUseWorkspaceExplorerPages: vi.fn(),
   mockUseWorkspaceViewModel: vi.fn((_options?: unknown) => ({
     data: {
       explorer: {
@@ -138,6 +139,11 @@ vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => ({
   useWorkspaceViewModel: (options?: unknown) => mockUseWorkspaceViewModel(options),
 }));
 
+vi.mock('@/features/workspace-runtime/hooks/useWorkspaceExplorerPages', () => ({
+  useWorkspaceExplorerPages: (query: unknown, options?: unknown) =>
+    mockUseWorkspaceExplorerPages(query, options),
+}));
+
 vi.mock('../../../shared/lib/hooks/useFileDrop', () => ({
   useFileDrop: () => ({ isDragging: false, dragPosition: null }),
 }));
@@ -153,6 +159,18 @@ vi.mock('@/entities/game', () => ({
 describe('useFolderGrid array bounds (TC-14)', () => {
   beforeEach(() => {
     mockUseWorkspaceViewModel.mockClear();
+    mockUseWorkspaceExplorerPages.mockReset();
+    mockUseWorkspaceExplorerPages.mockImplementation(() => ({
+      items: mockUseWorkspaceViewModel().data.explorer.children,
+      totalMatching: 4,
+      listingRevision: 'revision-1',
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      isError: false,
+      error: null,
+      fetchNextPage: vi.fn(),
+    }));
     useAppStore.setState({
       gridSelection: new Set(),
       selectedModPath: null,
@@ -188,7 +206,7 @@ describe('useFolderGrid array bounds (TC-14)', () => {
     expect(currentSelection.length).toBe(3);
   });
 
-  it('loads the previous breadcrumb folder with a separate workspace selection', () => {
+  it('loads the previous breadcrumb folder with a separate paged query', () => {
     useAppStore.setState({
       currentPath: ['SkinSelectImpact', 'Aglaea'],
       explorerSubPath: 'SkinSelectImpact/Aglaea',
@@ -196,12 +214,15 @@ describe('useFolderGrid array bounds (TC-14)', () => {
 
     renderHook(() => useFolderGrid(), { wrapper: createWrapper });
 
-    expect(mockUseWorkspaceViewModel).toHaveBeenCalledWith({
-      selectionOverrides: {
-        explorerSubPath: 'SkinSelectImpact',
-        selectedModPath: null,
-      },
-      enabled: true,
-    });
+    expect(mockUseWorkspaceExplorerPages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        explorer_sub_path: 'SkinSelectImpact',
+        search_query: null,
+        sort_field: 'name',
+        sort_order: 'asc',
+        safety_filter: 'all',
+      }),
+      { enabled: true },
+    );
   });
 });

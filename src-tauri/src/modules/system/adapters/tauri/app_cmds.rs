@@ -21,9 +21,9 @@ pub async fn record_native_error_metric(
         return Ok(());
     }
     let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
-        crate::modules::system::application::telemetry::TelemetryOperation::from_str(&operation),
+        crate::modules::system::application::telemetry::TelemetryOperation::from_label(&operation),
         crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
-        crate::modules::system::application::telemetry::TelemetryErrorCode::from_str(&error_code),
+        crate::modules::system::application::telemetry::TelemetryErrorCode::from_label(&error_code),
     );
     let _ = telemetry
         .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())

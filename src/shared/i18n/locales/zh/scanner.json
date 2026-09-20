@@ -117,6 +117,7 @@
     "delete_confirm": "您确定要删除 {{count}} 个模组吗？",
     "rename_tooltip": "双击重命名",
     "open_folder": "打开文件夹",
+    "non_exact_warning": "仅为相似匹配，将其他项目移入回收站前请仔细检查。",
     "columns": {
       "preview": "预览",
       "name": "模组名称",
@@ -128,6 +129,8 @@
     }
   },
   "resolution": {
+    "delete_others_non_exact": "将其他 {{count}} 个候选项目移入回收站",
+    "non_exact_warning": "警告：此组不是完全匹配。仅在确定要将其他项目移入回收站时确认。",
     "title": "确认解决",
     "summary": "您即将解决 {{count}} 个重复组。这将导致 {{deleted}} 个文件删除和 {{ignored}} 个白名单添加。",
     "keep_specific": "保留特定项",

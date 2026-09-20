@@ -37,7 +37,9 @@
       "delete": "删除收藏集",
       "mod_count": "{{count}} 个 Mod"
     },
-    "load_failed": "加载合集失败"
+    "load_failed": "加载合集失败",
+    "active_filtered": "当前加载项不在此安全筛选范围内。",
+    "show_active": "显示活动项"
   },
   "last_changes": {
     "title": "最近更改",
@@ -81,6 +83,21 @@
       "mod_count": "{{count}} 个 Mod",
       "empty_before": "当前没有活动的 Mod。",
       "empty_after": "收藏集为空。"
+    },
+    "diff": {
+      "view_label": "收藏集比较视图",
+      "full_collection": "完整收藏集",
+      "changes_only": "仅显示更改",
+      "safe_mode_on": "安全模式已开启",
+      "disable_count": "将禁用",
+      "enable_count": "将启用",
+      "unchanged_count": "保持活动",
+      "safe_mode_exclusions": "安全模式下，{{count}} 个不安全或未分类 Mod 将保持禁用。",
+      "will_enable": "将启用",
+      "will_disable": "将禁用",
+      "excluded_safe_mode": "安全模式下已排除",
+      "empty_disable": "没有 Mod 会被禁用。",
+      "empty_enable": "没有 Mod 会被启用。"
     },
     "actions": {
       "cancel": "取消",

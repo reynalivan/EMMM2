@@ -1,11 +1,50 @@
 import type { LiquidGlassConfig } from 'quick-liquid';
-import { useCustomTheme, useResolvedTheme } from '@/entities/settings';
-import type { CustomTheme, LiquidRoleConfig } from '@/shared/api/tauri/bindings';
+import { useQuery } from '@tanstack/react-query';
+import { useSyncExternalStore } from 'react';
+import {
+  commands,
+  type AppSettings,
+  type CustomTheme,
+  type LiquidRoleConfig,
+} from '@/shared/api/tauri/bindings';
 import { usePrefersReducedMotion } from '@/shared/lib/hooks/usePrefersReducedMotion';
+import { normalizeThemeSetting, resolveTheme } from '@/shared/lib/themeOptions';
 
 export const LIQUID_ROLES = ['nav', 'control', 'indicator', 'overlay'] as const;
 
 export type LiquidRole = (typeof LIQUID_ROLES)[number];
+
+const SETTINGS_QUERY_KEY = ['settings'] as const;
+const CUSTOM_THEME_QUERY_KEY = (id: string) => ['custom-themes', 'detail', id] as const;
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+function subscribeToColorScheme(onChange: () => void) {
+  const media = window.matchMedia(DARK_QUERY);
+  media.addEventListener('change', onChange);
+  return () => media.removeEventListener('change', onChange);
+}
+
+function useLiquidResolvedTheme(): string {
+  const settings = useQuery<AppSettings>({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => commands.getSettings(),
+    staleTime: Infinity,
+  });
+  const prefersDark = useSyncExternalStore(
+    subscribeToColorScheme,
+    () => window.matchMedia(DARK_QUERY).matches,
+  );
+  return resolveTheme(normalizeThemeSetting(settings.data?.theme), prefersDark);
+}
+
+function useLiquidCustomTheme(id: string | null) {
+  return useQuery<CustomTheme>({
+    queryKey: CUSTOM_THEME_QUERY_KEY(id ?? ''),
+    queryFn: () => commands.loadCustomTheme(id as string),
+    enabled: Boolean(id),
+    staleTime: Infinity,
+  });
+}
 
 const ROLE_CONFIG: Record<LiquidRole, Partial<LiquidGlassConfig>> = {
   nav: {
@@ -126,8 +165,8 @@ export function useLiquidThemeConfig(role: LiquidRole): {
   config: Partial<LiquidGlassConfig>;
   prefersReducedMotion: boolean;
 } {
-  const theme = useResolvedTheme();
-  const customTheme = useCustomTheme(theme === 'onyx' || theme === 'light' ? null : theme);
+  const theme = useLiquidResolvedTheme();
+  const customTheme = useLiquidCustomTheme(theme === 'onyx' || theme === 'light' ? null : theme);
   const prefersReducedMotion = usePrefersReducedMotion();
   const overrides = customRoleConfig(customTheme.data, role);
 

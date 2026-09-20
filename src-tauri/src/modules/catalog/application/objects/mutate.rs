@@ -149,6 +149,28 @@ impl PreparedObjectCreate {
         std::fs::create_dir(&self.stage).map_err(AppError::from)
     }
 
+    pub fn suppression_paths(&self) -> [std::path::PathBuf; 2] {
+        [self.stage.clone(), self.target.clone()]
+    }
+
+    pub fn target_path(&self) -> &std::path::Path {
+        &self.target
+    }
+
+    pub fn stage_path(&self) -> &std::path::Path {
+        &self.stage
+    }
+
+    pub fn ensure_target_is_available(&self) -> Result<(), AppError> {
+        if self.target.exists() {
+            return Err(AppError::Validation(format!(
+                "Object folder already exists: {}",
+                self.target.display()
+            )));
+        }
+        Ok(())
+    }
+
     pub fn journal_step(&self) -> crate::modules::mutation::journal::PlannedStep {
         crate::modules::mutation::journal::PlannedStep::rename(
             0,
@@ -196,12 +218,67 @@ pub async fn prepare_object_create(
     Ok(PreparedObjectCreate { stage, target })
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedObjectThumbnail {
+    pub file_name: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Materialize user-provided image data before the mutation lease is acquired.
+/// The command path passes the resulting bytes into the commit phase so a
+/// remote or slow source cannot hold watcher suppression or the game lock.
+pub async fn prepare_object_thumbnail(
+    input: &CreateObjectInput,
+    asset_root: Option<&std::path::Path>,
+) -> Result<Option<PreparedObjectThumbnail>, AppError> {
+    if let Some(source) = input.thumbnail.as_ref() {
+        return Ok(Some(PreparedObjectThumbnail {
+            file_name: "preview_custom.png".to_string(),
+            bytes: materialize_thumbnail_source(source).await?,
+        }));
+    }
+
+    let Some(root) = asset_root else {
+        return Ok(None);
+    };
+    let Some(source) = input.thumbnail_url.as_deref() else {
+        return Ok(None);
+    };
+    let source_path = std::path::PathBuf::from(source);
+    if !source_path.is_absolute() || !source_path.is_file() || !source_path.starts_with(root) {
+        return Ok(None);
+    }
+    let extension = source_path.extension().unwrap_or_default();
+    let bytes = std::fs::read(&source_path).map_err(|error| {
+        AppError::Io(format!(
+            "Failed to read object thumbnail '{}': {error}",
+            source_path.display()
+        ))
+    })?;
+    Ok(Some(PreparedObjectThumbnail {
+        file_name: format!("preview.{}", extension.to_string_lossy()),
+        bytes,
+    }))
+}
+
 pub struct PreparedObjectDelete {
     source: std::path::PathBuf,
     quarantine: std::path::PathBuf,
 }
 
 impl PreparedObjectDelete {
+    pub fn suppression_paths(&self) -> [std::path::PathBuf; 2] {
+        [self.source.clone(), self.quarantine.clone()]
+    }
+
+    pub fn source_path(&self) -> &std::path::Path {
+        &self.source
+    }
+
+    pub fn quarantine_path(&self) -> &std::path::Path {
+        &self.quarantine
+    }
+
     pub fn journal_step(&self) -> crate::modules::mutation::journal::PlannedStep {
         crate::modules::mutation::journal::PlannedStep::quarantine(
             0,
@@ -218,6 +295,34 @@ impl PreparedObjectDelete {
             .suppressor
             .suppress_paths([self.source.as_path(), self.quarantine.as_path()]);
         std::fs::rename(&self.source, &self.quarantine).map_err(AppError::from)
+    }
+
+    pub fn rollback(
+        &self,
+        watcher: &crate::modules::workspace::application::scanner::watcher::WatcherState,
+    ) -> Result<(), AppError> {
+        let _guard = watcher
+            .suppressor
+            .suppress_paths([self.source.as_path(), self.quarantine.as_path()]);
+        let source_exists = self.source.exists();
+        let quarantine_exists = self.quarantine.exists();
+        if source_exists && quarantine_exists {
+            return Err(AppError::Io(format!(
+                "Object delete rollback found both source and quarantine paths: {} and {}",
+                self.source.display(),
+                self.quarantine.display()
+            )));
+        }
+        if source_exists {
+            return Ok(());
+        }
+        if !quarantine_exists {
+            return Err(AppError::Io(format!(
+                "Object delete rollback source is missing: {}",
+                self.quarantine.display()
+            )));
+        }
+        std::fs::rename(&self.quarantine, &self.source).map_err(AppError::from)
     }
 
     pub fn finalize(&self) -> Result<(), AppError> {
@@ -267,6 +372,22 @@ pub async fn create_object_cmd_inner(
     app_handle: Option<&tauri::AppHandle>,
     input: CreateObjectInput,
 ) -> Result<String, AppError> {
+    let asset_root = app_handle.and_then(|app| {
+        use tauri::Manager;
+        app.path()
+            .app_data_dir()
+            .ok()
+            .map(|path| path.join("asset-pack"))
+    });
+    let prepared_thumbnail = prepare_object_thumbnail(&input, asset_root.as_deref()).await?;
+    create_object_cmd_inner_with_thumbnail(pool, input, prepared_thumbnail).await
+}
+
+pub async fn create_object_cmd_inner_with_thumbnail(
+    pool: &sqlx::SqlitePool,
+    input: CreateObjectInput,
+    prepared_thumbnail: Option<PreparedObjectThumbnail>,
+) -> Result<String, AppError> {
     let object_type = normalize_object_category(&input.object_type)?;
     let id = Uuid::new_v4().to_string();
     let metadata_str = input
@@ -303,32 +424,10 @@ pub async fn create_object_cmd_inner(
         );
     }
 
-    if let Some(source) = input.thumbnail.as_ref() {
-        let destination = target_dir.join("preview_custom.png");
+    if let Some(thumbnail) = prepared_thumbnail {
+        let destination = target_dir.join(thumbnail.file_name);
         thumbnail_abs_path = Some(destination.to_string_lossy().to_string());
-        pending_thumbnail = Some((destination, materialize_thumbnail_source(source).await?));
-    } else if let (Some(thumb), Some(app)) = (&input.thumbnail_url, app_handle) {
-        use tauri::Manager;
-        if let Ok(app_data_dir) = app.path().app_data_dir() {
-            let asset_root = app_data_dir.join("asset-pack");
-            let source_thumb = std::path::PathBuf::from(thumb);
-            if source_thumb.is_absolute()
-                && source_thumb.is_file()
-                && source_thumb.starts_with(&asset_root)
-            {
-                let ext = source_thumb.extension().unwrap_or_default();
-                let dest_thumb = target_dir.join(format!("preview.{}", ext.to_string_lossy()));
-
-                let thumbnail_bytes = std::fs::read(&source_thumb).map_err(|error| {
-                    AppError::Io(format!(
-                        "Failed to read object thumbnail '{}': {error}",
-                        source_thumb.display()
-                    ))
-                })?;
-                thumbnail_abs_path = Some(dest_thumb.to_string_lossy().to_string());
-                pending_thumbnail = Some((dest_thumb, thumbnail_bytes));
-            }
-        }
+        pending_thumbnail = Some((destination, thumbnail.bytes));
     }
 
     let created_folder = !target_dir.exists();
@@ -355,15 +454,13 @@ pub async fn create_object_cmd_inner(
                 return Err(error.into());
             }
         });
-        crate::platform::fs::atomic_file::atomic_write(dest, &thumbnail_bytes).map_err(
-            |error| {
-                cleanup_created_object_folder(&target_dir, created_folder);
-                AppError::Io(format!(
-                    "Failed to save object thumbnail to '{}': {error}",
-                    dest.display()
-                ))
-            },
-        )?;
+        crate::platform::fs::atomic_file::atomic_write(dest, thumbnail_bytes).map_err(|error| {
+            cleanup_created_object_folder(&target_dir, created_folder);
+            AppError::Io(format!(
+                "Failed to save object thumbnail to '{}': {error}",
+                dest.display()
+            ))
+        })?;
         crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate(dest);
     }
 
@@ -636,12 +733,9 @@ pub async fn delete_object(
     pool: &sqlx::SqlitePool,
     id: &str,
     force: bool,
-    watcher_state: &crate::modules::workspace::application::scanner::watcher::WatcherState,
+    _watcher_state: &crate::modules::workspace::application::scanner::watcher::WatcherState,
     _op_guard: &crate::platform::fs::operation_lock::OpGuard,
 ) -> Result<(), AppError> {
-    let _guard = crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(
-        &watcher_state.suppressor,
-    );
     // 1. Fetch object from DB to get game_id and folder_path
     let (obj_game_id, obj_folder_path) =
         crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool, id)

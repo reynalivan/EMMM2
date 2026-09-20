@@ -10,6 +10,7 @@ import { useFolderGridRuntime } from './useFolderGridRuntime';
 import { useFolderGridActions } from './useFolderGridActions';
 import { useFolderGridSelection } from './useFolderGridSelection';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime';
+import { useWorkspaceExplorerSelection } from './useWorkspaceExplorerSelection';
 
 export function useFolderGrid() {
   // Selector-scoped: a bare useAppStore() here re-runs the whole grid
@@ -65,6 +66,9 @@ export function useFolderGrid() {
     rawResponse,
     rawFolders,
     previousFolders,
+    hasMorePreviousFolders,
+    isLoadingMorePreviousFolders,
+    loadMorePreviousFolders,
     sortedFolders,
     isLoading,
     isRefreshing,
@@ -79,7 +83,12 @@ export function useFolderGrid() {
     scrollToIndex,
     columnCount,
     cardWidth,
+    explorerQuery,
+    isExplorerSearchPending,
+    totalMatching,
+    listingRevision,
   } = useFolderGridRuntime({
+    activeGameId: activeGame?.id,
     viewMode,
     currentPath,
     explorerSubPath,
@@ -88,6 +97,21 @@ export function useFolderGrid() {
     sortField,
     sortOrder,
     explorerSearchQuery,
+  });
+  const loadedExplorerPaths = useMemo(
+    () => sortedFolders.map((folder) => folder.path),
+    [sortedFolders],
+  );
+
+  const explorerSelection = useWorkspaceExplorerSelection({
+    query: explorerQuery,
+    selectionScopeKey: explorerSearchQuery,
+    listingRevision,
+    totalMatching,
+    loadedPaths: loadedExplorerPaths,
+    explicitPaths: gridSelection,
+    setExplicitPaths: setGridSelection,
+    clearExplicitPaths: clearGridSelection,
   });
 
   const selfNodeType = rawResponse?.self_node_type || null;
@@ -130,23 +154,30 @@ export function useFolderGrid() {
     explorerSubPath,
     ancestorDisabledPath,
     objects,
-    clearGridSelection,
+    clearGridSelection: explorerSelection.clearSelection,
     sourceAvailable,
   });
 
   const bulk = useFolderGridBulk({
-    gridSelection,
+    selection: explorerSelection.selection,
+    explorerQuery,
+    listingRevision,
+    selectionStable: !isExplorerSearchPending,
     sortedFolders,
-    clearGridSelection,
+    clearGridSelection: explorerSelection.clearSelection,
+    removeGridSelectionPaths: explorerSelection.removePaths,
     openMoveDialog: actions.openMoveDialog,
   });
 
   const { focusedId, handleKeyDown, handleToggleSelection, handleActivateItem } =
     useFolderGridSelection({
       sortedFolders,
-      gridSelection,
       selectedModPath: runtime.state.selectedModPath,
-      setGridSelection,
+      selection: explorerSelection.selection,
+      addSelectionPaths: explorerSelection.addPaths,
+      toggleSelectionPath: explorerSelection.togglePath,
+      clearSelection: explorerSelection.clearSelection,
+      selectAllMatching: explorerSelection.selectAllMatching,
       currentPath,
       isGridView,
       columnCount,
@@ -170,6 +201,9 @@ export function useFolderGrid() {
   return {
     rawFolders,
     previousFolders,
+    hasMorePreviousFolders,
+    isLoadingMorePreviousFolders,
+    loadMorePreviousFolders,
     sortedFolders,
     isLoading,
     isRefreshing,
@@ -192,6 +226,9 @@ export function useFolderGrid() {
     selectedObjectFolderPath,
     currentPath,
     explorerSearchQuery,
+    explorerQuery,
+    isExplorerSearchPending,
+    totalMatching,
     sortField,
     sortOrder,
     setSortField,
@@ -213,9 +250,13 @@ export function useFolderGrid() {
     focusedId,
     selectedModPath: runtime.state.selectedModPath,
     gridSelection,
+    explorerSelection: explorerSelection.selection,
+    selectedCount: explorerSelection.selectedCount,
+    isPathSelected: explorerSelection.isPathSelected,
+    selectAllMatching: explorerSelection.selectAllMatching,
     toggleGridSelection: handleToggleSelection,
     activateGridItem: handleActivateItem,
-    clearGridSelection,
+    clearGridSelection: explorerSelection.clearSelection,
     ...actions,
     renamingId: actions.renameDialog.folder?.path ?? null,
     handleRevealInExplorer,

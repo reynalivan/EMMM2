@@ -41,6 +41,7 @@
     "dismiss": "Dismiss"
   },
   "errors": {
+    "explorer_snapshot_expired": "The folder listing changed. Reload it and select the mods again.",
     "no_active_game": "No active game selected",
     "scan_failed": "Scan failed",
     "unknown": "An unknown error occurred",
@@ -125,6 +126,9 @@
   },
   "reconcile": {
     "runtime_effects_pending": "Disk changes were applied, but runtime refresh is still pending.",
+    "runtime_syncing": "Updating game runtime…",
+    "runtime_sync_failed": "Runtime update failed",
+    "manual_reload_short": "Manual reload required",
     "manual_reload_required": "Manual reload required: focus the game, then press {{binding}}.",
     "cleanup_pending": "The item was removed, but moving its quarantined files to the Recycle Bin is still pending."
   },

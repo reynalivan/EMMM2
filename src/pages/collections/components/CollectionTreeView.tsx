@@ -21,7 +21,11 @@ interface CollectionTreeViewProps {
   emptyMessage?: string;
   scrollElement?: HTMLDivElement | null;
   treeIdentity?: string;
+  nodeChanges?: ReadonlyMap<string, CollectionTreeNodeChange>;
 }
+
+export type CollectionTreeNodeChange =
+  'will_enable' | 'will_disable' | 'unchanged' | 'excluded_by_safe_mode';
 
 const TYPE_CHIP_CLASS_NAME =
   'badge badge-xs h-4 border border-base-content/10 bg-base-200/70 text-[9px] uppercase tracking-wide text-base-content/55';
@@ -69,6 +73,37 @@ function StatusChip({
   }
 
   return <span className={STATUS_CHIP_CLASS_NAME}>{semantics.statusLabel}</span>;
+}
+
+function ChangeChip({ change }: { change: CollectionTreeNodeChange | undefined }) {
+  const { t } = useTranslation('collections');
+
+  if (!change || change === 'unchanged') {
+    return null;
+  }
+
+  const presentation = {
+    will_enable: {
+      className: 'border-success/20 bg-success/10 text-success/85',
+      label: t('apply.diff.will_enable'),
+    },
+    will_disable: {
+      className: 'border-error/20 bg-error/10 text-error/85',
+      label: t('apply.diff.will_disable'),
+    },
+    excluded_by_safe_mode: {
+      className: 'border-warning/20 bg-warning/10 text-warning/85',
+      label: t('apply.diff.excluded_safe_mode'),
+    },
+  }[change];
+
+  return (
+    <span
+      className={`badge badge-xs h-4 border text-[9px] uppercase tracking-wide ${presentation.className}`}
+    >
+      {presentation.label}
+    </span>
+  );
 }
 
 function WarningIcon({ node }: { node: Pick<PreviewTreeNode, 'warnings' | 'inactive_reason'> }) {
@@ -138,13 +173,16 @@ function TreeLeaf({
   node,
   depth,
   gameId,
+  nodeChanges,
 }: {
   node: PreviewTreeNode;
   depth: number;
   gameId: string;
+  nodeChanges?: ReadonlyMap<string, CollectionTreeNodeChange>;
 }) {
   const hasActiveModDetail =
     node.kind === 'mod' && node.is_effectively_active && Boolean(node.path);
+  const change = nodeChanges?.get(node.id);
 
   return (
     <div
@@ -159,7 +197,19 @@ function TreeLeaf({
       <span className="font-mono text-[10px] text-base-content/18">└</span>
       <NodeVisual node={node} gameId={gameId} expanded={false} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-base-content/80">{node.name}</span>
+        <span
+          className={`block truncate font-medium ${
+            change === 'will_disable'
+              ? 'text-error/80 line-through'
+              : change === 'will_enable'
+                ? 'text-success/85'
+                : change === 'excluded_by_safe_mode'
+                  ? 'text-warning/85'
+                  : 'text-base-content/80'
+          }`}
+        >
+          {node.name}
+        </span>
         {hasActiveModDetail && (
           <span
             className="block truncate font-mono text-[10px] text-base-content/55"
@@ -171,6 +221,7 @@ function TreeLeaf({
       </span>
       <NodeTypeChip nodeType={node.node_type} />
       <StatusChip node={node} />
+      <ChangeChip change={change} />
       <WarningIcon node={node} />
     </div>
   );
@@ -180,10 +231,12 @@ function TreeFolder({
   node,
   depth,
   gameId,
+  nodeChanges,
 }: {
   node: PreviewTreeNode;
   depth: number;
   gameId: string;
+  nodeChanges?: ReadonlyMap<string, CollectionTreeNodeChange>;
 }) {
   const hasChildren = node.children.length > 0 && !node.collapse_children;
   const [collapsed, setCollapsed] = useState(() => shouldStartCollapsed(node));
@@ -228,9 +281,21 @@ function TreeFolder({
         <div className="relative ml-3 border-l border-base-content/8 pl-1.5">
           {node.children.map((child) =>
             child.kind === 'mod' ? (
-              <TreeLeaf key={child.id} node={child} depth={depth + 1} gameId={gameId} />
+              <TreeLeaf
+                key={child.id}
+                node={child}
+                depth={depth + 1}
+                gameId={gameId}
+                nodeChanges={nodeChanges}
+              />
             ) : (
-              <TreeFolder key={child.id} node={child} depth={depth + 1} gameId={gameId} />
+              <TreeFolder
+                key={child.id}
+                node={child}
+                depth={depth + 1}
+                gameId={gameId}
+                nodeChanges={nodeChanges}
+              />
             ),
           )}
         </div>
@@ -239,7 +304,15 @@ function TreeFolder({
   );
 }
 
-function InactiveSection({ node, gameId }: { node: PreviewTreeNode; gameId: string }) {
+function InactiveSection({
+  node,
+  gameId,
+  nodeChanges,
+}: {
+  node: PreviewTreeNode;
+  gameId: string;
+  nodeChanges?: ReadonlyMap<string, CollectionTreeNodeChange>;
+}) {
   const { t } = useTranslation('collections');
   const hasChildren = node.children.length > 0;
   const [collapsed, setCollapsed] = useState(() => shouldStartCollapsed(node));
@@ -279,9 +352,21 @@ function InactiveSection({ node, gameId }: { node: PreviewTreeNode; gameId: stri
         <div className="p-2">
           {node.children.map((child) =>
             child.kind === 'mod' ? (
-              <TreeLeaf key={child.id} node={child} depth={0} gameId={gameId} />
+              <TreeLeaf
+                key={child.id}
+                node={child}
+                depth={0}
+                gameId={gameId}
+                nodeChanges={nodeChanges}
+              />
             ) : (
-              <TreeFolder key={child.id} node={child} depth={0} gameId={gameId} />
+              <TreeFolder
+                key={child.id}
+                node={child}
+                depth={0}
+                gameId={gameId}
+                nodeChanges={nodeChanges}
+              />
             ),
           )}
         </div>
@@ -294,10 +379,12 @@ function ObjectRow({
   node,
   colorClass,
   gameId,
+  nodeChanges,
 }: {
   node: PreviewTreeNode;
   colorClass: string;
   gameId: string;
+  nodeChanges?: ReadonlyMap<string, CollectionTreeNodeChange>;
 }) {
   const { t } = useTranslation(['collections', 'common']);
   const inactiveSection = node.children.find((child) => child.node_type === SECTION_NODE_TYPE);
@@ -338,9 +425,21 @@ function ObjectRow({
             <div className="space-y-0.5">
               {activeChildren.map((child) =>
                 child.kind === 'mod' ? (
-                  <TreeLeaf key={child.id} node={child} depth={0} gameId={gameId} />
+                  <TreeLeaf
+                    key={child.id}
+                    node={child}
+                    depth={0}
+                    gameId={gameId}
+                    nodeChanges={nodeChanges}
+                  />
                 ) : (
-                  <TreeFolder key={child.id} node={child} depth={0} gameId={gameId} />
+                  <TreeFolder
+                    key={child.id}
+                    node={child}
+                    depth={0}
+                    gameId={gameId}
+                    nodeChanges={nodeChanges}
+                  />
                 ),
               )}
             </div>
@@ -349,7 +448,9 @@ function ObjectRow({
               {t('common:status.no_subfolders')}
             </div>
           ) : null}
-          {inactiveSection ? <InactiveSection node={inactiveSection} gameId={gameId} /> : null}
+          {inactiveSection ? (
+            <InactiveSection node={inactiveSection} gameId={gameId} nodeChanges={nodeChanges} />
+          ) : null}
         </div>
       )}
     </div>
@@ -424,6 +525,7 @@ function VirtualTreeRow({
   isExpanded,
   onToggle,
   onFocus,
+  nodeChanges,
 }: {
   row: FlatTreeRow;
   gameId: string;
@@ -431,13 +533,14 @@ function VirtualTreeRow({
   isExpanded: boolean;
   onToggle: (node: PreviewTreeNode) => void;
   onFocus: (id: string) => void;
+  nodeChanges?: ReadonlyMap<string, CollectionTreeNodeChange>;
 }) {
   const { t } = useTranslation(['collections', 'common']);
   const { node } = row;
   const hasChildren = node.children.length > 0 && !node.collapse_children;
 
   if (row.kind === 'leaf') {
-    return <TreeLeaf node={node} depth={row.depth} gameId={gameId} />;
+    return <TreeLeaf node={node} depth={row.depth} gameId={gameId} nodeChanges={nodeChanges} />;
   }
 
   if (row.kind === 'inactive') {
@@ -546,8 +649,9 @@ function VirtualCollectionTree({
   colorClass,
   scrollElement,
   treeIdentity,
+  nodeChanges,
 }: Required<Pick<CollectionTreeViewProps, 'nodes' | 'colorClass'>> &
-  Pick<CollectionTreeViewProps, 'gameId' | 'scrollElement' | 'treeIdentity'>) {
+  Pick<CollectionTreeViewProps, 'gameId' | 'scrollElement' | 'treeIdentity' | 'nodeChanges'>) {
   const [fallbackScrollElement, setFallbackScrollElement] = useState<HTMLDivElement | null>(null);
   const [expansionState, setExpansionState] = useState(() => ({
     treeIdentity,
@@ -643,6 +747,7 @@ function VirtualCollectionTree({
                 isExpanded={isExpanded(row.node)}
                 onToggle={toggle}
                 onFocus={setFocusedRowKey}
+                nodeChanges={nodeChanges}
               />
             </div>
           );
@@ -659,6 +764,7 @@ export function CollectionTreeView({
   emptyMessage,
   scrollElement,
   treeIdentity,
+  nodeChanges,
 }: CollectionTreeViewProps) {
   const { t } = useTranslation('collections');
   const tree = nodes ?? [];
@@ -679,6 +785,7 @@ export function CollectionTreeView({
         colorClass={colorClass}
         scrollElement={scrollElement}
         treeIdentity={treeIdentity}
+        nodeChanges={nodeChanges}
       />
     );
   }
@@ -691,6 +798,7 @@ export function CollectionTreeView({
           node={objectNode}
           colorClass={colorClass}
           gameId={gameId ?? ''}
+          nodeChanges={nodeChanges}
         />
       ))}
     </div>

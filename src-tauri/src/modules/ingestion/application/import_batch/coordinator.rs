@@ -402,6 +402,7 @@ pub(crate) struct MatchSuggestions {
     pub evidence: Vec<super::types::MatchEvidence>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn build_match_suggestions(
     db: &SqlitePool,
     item: &ImportItem,
@@ -438,6 +439,7 @@ pub(crate) async fn build_match_suggestions(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn build_match_suggestions_with_prepared_content(
     db: &SqlitePool,
     item: &ImportItem,

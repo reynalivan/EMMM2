@@ -27,7 +27,14 @@ export interface FolderGridModalsProps {
   bulkTagOpen: boolean;
   setBulkTagOpen: (open: boolean) => void;
   handleBulkTagSubmit: (tags: string[]) => void;
-  gridSelection: Set<string>;
+  selectionCount: number;
+  bulkMovePaths: string[] | null;
+  handleBulkMoveSubmit: (
+    targetId: string,
+    status: MoveStatus,
+    targetSubpath: string | null,
+  ) => Promise<void>;
+  clearBulkMovePaths: () => void;
   isIgnoreManagementOpen: boolean;
   setIsIgnoreManagementOpen: (open: boolean) => void;
   activeContextDialog: { open: boolean; folder: ModFolder | null; isProcessing: boolean };
@@ -55,7 +62,10 @@ export default function FolderGridModals({
   bulkTagOpen,
   setBulkTagOpen,
   handleBulkTagSubmit,
-  gridSelection,
+  selectionCount,
+  bulkMovePaths,
+  handleBulkMoveSubmit,
+  clearBulkMovePaths,
   isIgnoreManagementOpen,
   setIsIgnoreManagementOpen,
   activeContextDialog,
@@ -78,19 +88,18 @@ export default function FolderGridModals({
         <MoveToObjectDialog
           isOpen={moveDialog.open}
           onClose={closeMoveDialog}
-          targetModPaths={
-            gridSelection.size > 1
-              ? Array.from(gridSelection)
-              : [currentPath ?? moveDialog.folder.path]
-          }
+          targetModPaths={bulkMovePaths ?? [currentPath ?? moveDialog.folder.path]}
+          showSuccessToast={!bulkMovePaths}
           currentObjectId={moveDialog.folder.owner_object_id ?? undefined}
           objects={objects}
           onSubmit={async (targetId: string, status: MoveStatus, targetSubpath: string | null) => {
             if (!moveDialog.folder) return;
-            const targetPaths =
-              gridSelection.size > 1
-                ? Array.from(gridSelection)
-                : [currentPath ?? moveDialog.folder.path];
+            if (bulkMovePaths) {
+              await handleBulkMoveSubmit(targetId, status, targetSubpath);
+              clearBulkMovePaths();
+              return;
+            }
+            const targetPaths = bulkMovePaths ?? [currentPath ?? moveDialog.folder.path];
             await handleMoveToObject(
               moveDialog.folder,
               targetId,
@@ -98,6 +107,7 @@ export default function FolderGridModals({
               targetSubpath,
               targetPaths,
             );
+            clearBulkMovePaths();
           }}
         />
       )}
@@ -115,8 +125,8 @@ export default function FolderGridModals({
 
       <ConfirmDialog
         open={bulkDeleteConfirm}
-        title={t('modals.bulk_delete_title', { count: gridSelection.size })}
-        message={t('modals.bulk_delete_msg', { count: gridSelection.size })}
+        title={t('modals.bulk_delete_title', { count: selectionCount })}
+        message={t('modals.bulk_delete_msg', { count: selectionCount })}
         confirmLabel={t('modals.bulk_delete_confirm_btn')}
         danger
         onConfirm={handleBulkDeleteConfirm}

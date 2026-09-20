@@ -71,6 +71,71 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Recover an interrupted replacement before a caller reads or republishes a
+/// pointer file. A completed target always wins; otherwise the newest durable
+/// recovery sibling is restored and incomplete temporary files are discarded.
+pub fn recover_atomic_write(path: &Path) -> Result<bool, AppError> {
+    let Some(parent) = path.parent() else {
+        return Err(AppError::Validation(format!(
+            "Invalid artifact path: {}",
+            path.display()
+        )));
+    };
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return Err(AppError::Validation(format!(
+            "Invalid artifact path: {}",
+            path.display()
+        )));
+    };
+    if !parent.is_dir() {
+        return Ok(false);
+    }
+
+    let recovery_prefix = format!("{file_name}.recover.");
+    let temp_prefix = format!("{file_name}.tmp.");
+    let mut recoveries = Vec::new();
+    let mut temporaries = Vec::new();
+    for entry in fs::read_dir(parent)?.filter_map(Result::ok) {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(&recovery_prefix) {
+            let modified = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .ok();
+            recoveries.push((modified, entry.path()));
+        } else if name.starts_with(&temp_prefix) {
+            temporaries.push(entry.path());
+        }
+    }
+    recoveries.sort();
+
+    let mut restored = false;
+    if !path.exists() {
+        if let Some((_, recovery)) = recoveries.pop() {
+            fs::rename(&recovery, path)?;
+            restored = true;
+        }
+    }
+    for (_, recovery) in recoveries {
+        if let Err(error) = fs::remove_file(&recovery) {
+            log::warn!(
+                "Could not remove stale artifact recovery {}: {error}",
+                recovery.display()
+            );
+        }
+    }
+    for temporary in temporaries {
+        if let Err(error) = fs::remove_file(&temporary) {
+            log::warn!(
+                "Could not remove incomplete artifact temporary {}: {error}",
+                temporary.display()
+            );
+        }
+    }
+    Ok(restored)
+}
+
 pub fn create_staging_directory(active: &Path) -> Result<PathBuf, AppError> {
     let staging = unique_sibling(active, "staging")?;
     fs::create_dir_all(&staging)?;
@@ -108,4 +173,37 @@ pub fn replace_directory(staging: &Path, active: &Path) -> Result<(), AppError> 
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovers_pointer_after_crash_between_replace_phases() {
+        let temp = tempfile::tempdir().unwrap();
+        let pointer = temp.path().join("KeyViewer.ini");
+        let recovery = temp.path().join("KeyViewer.ini.recover.1.1");
+        let incomplete = temp.path().join("KeyViewer.ini.tmp.1.2");
+        fs::write(&recovery, "old pointer").unwrap();
+        fs::write(&incomplete, "new pointer").unwrap();
+
+        assert!(recover_atomic_write(&pointer).unwrap());
+        assert_eq!(fs::read_to_string(&pointer).unwrap(), "old pointer");
+        assert!(!recovery.exists());
+        assert!(!incomplete.exists());
+    }
+
+    #[test]
+    fn completed_pointer_wins_over_stale_recovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let pointer = temp.path().join("KeyViewer.ini");
+        let recovery = temp.path().join("KeyViewer.ini.recover.1.1");
+        fs::write(&pointer, "new pointer").unwrap();
+        fs::write(&recovery, "old pointer").unwrap();
+
+        assert!(!recover_atomic_write(&pointer).unwrap());
+        assert_eq!(fs::read_to_string(&pointer).unwrap(), "new pointer");
+        assert!(!recovery.exists());
+    }
 }

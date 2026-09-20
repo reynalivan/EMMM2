@@ -11,10 +11,7 @@
     "filter_status": "状态：{{status}}",
     "filter_meta": "{{label}}：{{value}}",
     "click_to_clear": "点击清除",
-    "click_to_remove": "点击移除",
-    "catalog_check": "使用目录检查此对象",
-    "catalog_check_started": "正在使用活动目录检查此对象。",
-    "catalog_check_failed": "无法开始目录检查。"
+    "click_to_remove": "点击移除"
   },
   "filter": {
     "sort_label": "排序",

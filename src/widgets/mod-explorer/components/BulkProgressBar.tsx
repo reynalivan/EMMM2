@@ -4,7 +4,14 @@ import { useBulkProgress } from '../hooks/useBulkProgress';
 
 export default function BulkProgressBar() {
   const { t } = useTranslation(['common']);
-  const { active, label, current, total } = useBulkProgress();
+  const {
+    operation_id: operationId,
+    cancellable,
+    active,
+    label,
+    current,
+    total,
+  } = useBulkProgress();
 
   if (!active) return null;
 
@@ -25,13 +32,15 @@ export default function BulkProgressBar() {
         {/* The wrapper is click-through so the bar never blocks the grid; only
             the button opts back in. Cancelling is idempotent, so no local
             pending state — the flag is already set on a second click. */}
-        <button
-          type="button"
-          className="btn btn-ghost btn-xs self-end pointer-events-auto"
-          onClick={() => void commands.bulkCancel()}
-        >
-          {t('common:actions.cancel')}
-        </button>
+        {cancellable && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs self-end pointer-events-auto"
+            onClick={() => void commands.bulkCancel(operationId)}
+          >
+            {t('common:actions.cancel')}
+          </button>
+        )}
       </div>
     </div>
   );

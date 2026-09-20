@@ -156,7 +156,13 @@
     "ops_title": "批量操作",
     "edit_metadata": "编辑元数据",
     "move_object": "移动到对象...",
-    "move_trash": "移动到回收站"
+    "move_trash": "移动到回收站",
+    "selection_limit": "批量操作最多支持 {{limit}} 个模组。",
+    "move_requires_loaded_selection": "移动前请加载完整且精确的选择。暂不支持跨未加载结果的全选移动。",
+    "move_success_one": "已移动 {{count}} 个模组。",
+    "move_success_other": "已移动 {{count}} 个模组。",
+    "move_failure_one": "{{count}} 个模组无法移动：{{error}}",
+    "move_failure_other": "{{count}} 个模组无法移动：{{error}}"
   },
   "bulk_toast": {
     "success": "已{{action}}：{{names}}",

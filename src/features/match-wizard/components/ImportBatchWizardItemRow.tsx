@@ -346,11 +346,11 @@ export function ImportBatchWizardItemRow({
           }
         />
       </td>
-      <td className="w-32 align-middle">
-        <div className="join join-vertical flex min-h-14 w-full flex-col justify-center">
+      <td className="w-48 min-w-0 align-middle">
+        <div className="flex min-h-14 w-full min-w-0 flex-col justify-center gap-px">
           <button
             type="button"
-            className={`btn btn-xs join-item justify-start ${proceed ? 'btn-success' : 'btn-ghost'}`}
+            className={`btn btn-xs h-auto min-h-6 w-full min-w-0 justify-start whitespace-normal break-words text-left leading-tight ${proceed ? 'btn-success' : 'btn-ghost'}`}
             disabled={busy}
             onClick={() => {
               if (!proceed && topSuggestion) {
@@ -364,12 +364,14 @@ export function ImportBatchWizardItemRow({
               }
             }}
           >
-            {t('actions.proceed')}
+            <span className="min-w-0 break-words whitespace-normal text-left leading-tight">
+              {t('actions.proceed')}
+            </span>
           </button>
           {canKeepSeparate && targetComparison && (
             <button
               type="button"
-              className="btn btn-xs join-item justify-start"
+              className="btn btn-xs h-auto min-h-6 w-full min-w-0 justify-start whitespace-normal break-words text-left leading-tight"
               disabled={busy}
               onClick={() => {
                 if (topSuggestion) {
@@ -380,18 +382,22 @@ export function ImportBatchWizardItemRow({
               }}
               title={targetComparison.suggestedSeparateName ?? undefined}
             >
-              {t('actions.keep_separate', { name: targetComparison.suggestedSeparateName })}
+              <span className="min-w-0 break-words whitespace-normal text-left leading-tight">
+                {t('actions.keep_separate', { name: targetComparison.suggestedSeparateName })}
+              </span>
             </button>
           )}
           <button
             type="button"
-            className={`btn btn-xs join-item justify-start ${
+            className={`btn btn-xs h-auto min-h-6 w-full min-w-0 justify-start whitespace-normal break-words text-left leading-tight ${
               item.decision === 'skip' ? 'btn-warning' : 'btn-ghost'
             }`}
             disabled={busy}
             onClick={() => void onSkip(item)}
           >
-            {t('actions.skip')}
+            <span className="min-w-0 break-words whitespace-normal text-left leading-tight">
+              {t('actions.skip')}
+            </span>
           </button>
         </div>
         {canRetry && (

@@ -3,7 +3,11 @@ import { waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useToastStore } from '@/shared/ui/toast';
-import type { DiskReconcileResult, FolderNameConflictGroup } from '@/shared/api/tauri/bindings';
+import type {
+  DiskReconcileResult,
+  FolderNameConflictGroup,
+  GameActivationResult,
+} from '@/shared/api/tauri/bindings';
 import { useAppStore } from './useAppStore';
 
 const folderConflict: FolderNameConflictGroup = {
@@ -70,16 +74,18 @@ beforeEach(() => {
 describe('useAppStore smoke net', () => {
   describe('startup recovery', () => {
     it('captures source-unavailable recovery before publishing the active game', async () => {
-      vi.mocked(listen).mockImplementationOnce(async (_event, handler) => {
-        handler({
-          payload: {
-            game_id: 'genshin',
-            status: 'SourceUnavailable',
-            error_message: 'Mods drive is unavailable',
-            folder_conflicts: [],
-            rename_confirmations: [],
-          },
-        } as never);
+      vi.mocked(listen).mockImplementation(async (event, handler) => {
+        if (event === 'disk_reconcile:result') {
+          handler({
+            payload: {
+              game_id: 'genshin',
+              status: 'SourceUnavailable',
+              error_message: 'Mods drive is unavailable',
+              folder_conflicts: [],
+              rename_confirmations: [],
+            },
+          } as never);
+        }
         return () => undefined;
       });
       vi.mocked(invoke).mockResolvedValueOnce({
@@ -109,8 +115,10 @@ describe('useAppStore smoke net', () => {
       const pendingPrefetch = new Promise<void>((resolve) => {
         releasePrefetch = resolve;
       });
-      vi.mocked(listen).mockImplementationOnce(async (_event, handler) => {
-        emitReconcile = handler as unknown as (event: { payload: DiskReconcileResult }) => void;
+      vi.mocked(listen).mockImplementation(async (event, handler) => {
+        if (event === 'disk_reconcile:result') {
+          emitReconcile = handler as unknown as (event: { payload: DiskReconcileResult }) => void;
+        }
         return () => undefined;
       });
       vi.mocked(invoke).mockImplementation((command) => {
@@ -124,6 +132,9 @@ describe('useAppStore smoke net', () => {
             }),
           });
           return Promise.resolve({ active_game_id: 'genshin', auto_close_launcher: false });
+        }
+        if (command === 'set_active_game') {
+          return Promise.resolve({ game_id: 'genshin', generation: 1, phase: 'syncing' });
         }
         return pendingPrefetch;
       });
@@ -153,6 +164,7 @@ describe('useAppStore smoke net', () => {
       const s = useAppStore.getState();
       expect(s.activeGameId).toBeNull();
       expect(s.workspaceView).toBe('dashboard');
+      expect(s.isAppMenuOpen).toBe(false);
       expect(s.currentPath).toEqual([]);
       expect(s.mobileActivePane).toBe('sidebar');
       expect(s.isPreviewOpen).toBe(true);
@@ -169,9 +181,11 @@ describe('useAppStore smoke net', () => {
 
   describe('navigation / routing', () => {
     it('switches workspace view and path', () => {
+      useAppStore.getState().setAppMenuOpen(true);
       useAppStore.getState().setWorkspaceView('collections');
       useAppStore.getState().setCurrentPath(['Mods', 'Diluc']);
       expect(useAppStore.getState().workspaceView).toBe('collections');
+      expect(useAppStore.getState().isAppMenuOpen).toBe(false);
       expect(useAppStore.getState().currentPath).toEqual(['Mods', 'Diluc']);
     });
 
@@ -244,6 +258,15 @@ describe('useAppStore smoke net', () => {
   });
 
   describe('game switching', () => {
+    it('propagates activation submission errors without publishing the game', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('activation rejected'));
+
+      await expect(useAppStore.getState().setActiveGameId('genshin')).rejects.toThrow(
+        'activation rejected',
+      );
+      expect(useAppStore.getState().activeGameId).toBeNull();
+    });
+
     it('does not publish the new game before the backend resets its recovery gate', async () => {
       let releaseBackend!: () => void;
       const backendReady = new Promise<void>((resolve) => {
@@ -257,6 +280,37 @@ describe('useAppStore smoke net', () => {
       releaseBackend();
       await switching;
       expect(useAppStore.getState().activeGameId).toBe('genshin');
+    });
+
+    it('does not let a superseded activation overwrite the latest game or settings cache', async () => {
+      let resolveFirstActivation!: (result: GameActivationResult) => void;
+      const firstActivation = new Promise<GameActivationResult>((resolve) => {
+        resolveFirstActivation = resolve;
+      });
+      vi.mocked(invoke).mockImplementation((command, args) => {
+        if (command === 'set_active_game') {
+          const gameId = (args as { gameId: string | null }).gameId;
+          if (gameId === 'genshin') {
+            return firstActivation;
+          }
+          return Promise.resolve({ game_id: gameId, generation: 12, phase: 'syncing' });
+        }
+        if (command === 'get_settings') {
+          return Promise.resolve({ active_game_id: 'star-rail' });
+        }
+        return Promise.resolve(null);
+      });
+
+      const firstSwitch = useAppStore.getState().setActiveGameId('genshin');
+      const latestSwitch = useAppStore.getState().setActiveGameId('star-rail');
+      await latestSwitch;
+      resolveFirstActivation({ game_id: 'genshin', generation: 11, phase: 'syncing' });
+      await firstSwitch;
+
+      expect(useAppStore.getState().activeGameId).toBe('star-rail');
+      expect(
+        vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_settings'),
+      ).toHaveLength(1);
     });
 
     it('setActiveGameId resets selection, sidebar and explorer navigation state', async () => {
@@ -356,6 +410,123 @@ describe('useAppStore smoke net', () => {
   });
 
   describe('disk reconcile bookkeeping', () => {
+    it('rejects stale runtime sync generations', () => {
+      const store = useAppStore.getState();
+      store.setRuntimeSyncStatus({
+        game_id: 'g1',
+        generation: 4,
+        phase: 'running',
+        cause: 'effective_mods_changed',
+        message: null,
+      });
+      useAppStore.getState().setRuntimeSyncStatus({
+        game_id: 'g1',
+        generation: 3,
+        phase: 'failed',
+        cause: 'effective_mods_changed',
+        message: 'stale failure',
+      });
+      useAppStore.getState().setRuntimeSyncStatus({
+        game_id: 'g1',
+        generation: 4,
+        phase: 'succeeded',
+        cause: 'effective_mods_changed',
+        message: null,
+      });
+      useAppStore.getState().setRuntimeSyncStatus({
+        game_id: 'g1',
+        generation: 4,
+        phase: 'queued',
+        cause: 'effective_mods_changed',
+        message: null,
+      });
+
+      expect(useAppStore.getState().runtimeSyncByGame.g1).toMatchObject({
+        generation: 4,
+        phase: 'succeeded',
+      });
+    });
+
+    it('rejects stale activation generations after a rapid game switch', () => {
+      const store = useAppStore.getState();
+      store.setGameActivationStatus({
+        game_id: 'g1',
+        generation: 8,
+        phase: 'syncing',
+        reconcile_revision: null,
+        runtime_sync_generation: null,
+        error: null,
+      });
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 7,
+        phase: 'ready',
+        reconcile_revision: 12,
+        runtime_sync_generation: 3,
+        error: null,
+      });
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 8,
+        phase: 'ready',
+        reconcile_revision: 13,
+        runtime_sync_generation: 4,
+        error: null,
+      });
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 8,
+        phase: 'syncing',
+        reconcile_revision: null,
+        runtime_sync_generation: null,
+        error: null,
+      });
+
+      expect(useAppStore.getState().gameActivationByGame.g1).toMatchObject({
+        generation: 8,
+        phase: 'ready',
+        reconcile_revision: 13,
+      });
+
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 9,
+        phase: 'source_unavailable',
+        reconcile_revision: null,
+        runtime_sync_generation: null,
+        error: 'Mods drive is unavailable',
+      });
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 9,
+        phase: 'source_unavailable',
+        reconcile_revision: null,
+        runtime_sync_generation: null,
+        error: null,
+      });
+      expect(useAppStore.getState().gameActivationByGame.g1.error).toBe(
+        'Mods drive is unavailable',
+      );
+
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g2',
+        generation: 10,
+        phase: 'source_unavailable',
+        reconcile_revision: null,
+        runtime_sync_generation: null,
+        error: null,
+      });
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g2',
+        generation: 10,
+        phase: 'source_unavailable',
+        reconcile_revision: null,
+        runtime_sync_generation: null,
+        error: 'Detailed watcher failure',
+      });
+      expect(useAppStore.getState().gameActivationByGame.g2.error).toBe('Detailed watcher failure');
+    });
+
     it('timestamp write clears pending and unavailable flags for that game', () => {
       useAppStore.getState().markDiskReconcilePending('g1', true);
       useAppStore.getState().setDiskSourceUnavailable('g1', 'gone');

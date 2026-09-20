@@ -9,9 +9,15 @@ import { LiquidSurface } from '@/shared/ui/liquid';
 import { getFileUrl } from '@/shared/lib/utils';
 
 type CanonicalObjectComboboxProps = {
+  ariaLabel?: string;
+  categoryLabel?: (category: string) => string;
   disabled?: boolean;
   emptyLabel: string;
   entries: CanonicalClassificationCatalogEntry[];
+  manualOptionHint?: string;
+  manualOptionLabel?: string;
+  onSelectManual?: () => void;
+  searchPlaceholder?: string;
   suggestions: CanonicalSuggestion[];
   selectedEntryKey: string | null;
   onSelect: (entryKey: string) => void;
@@ -49,9 +55,15 @@ function metadataChips(entry: CanonicalClassificationCatalogEntry): string[] {
 }
 
 export function CanonicalObjectCombobox({
+  ariaLabel = 'Canonical object',
+  categoryLabel = (category) => category,
   disabled = false,
   emptyLabel,
   entries,
+  manualOptionHint,
+  manualOptionLabel,
+  onSelectManual,
+  searchPlaceholder = 'Search canonical object',
   suggestions,
   selectedEntryKey,
   onSelect,
@@ -96,9 +108,19 @@ export function CanonicalObjectCombobox({
     );
   }, [entries, query, suggestedKeys, suggestions]);
   const activeEntry = visibleEntries[activeIndex] ?? null;
+  const hasManualOption = onSelectManual !== undefined && manualOptionLabel !== undefined;
+  const activeManualOption = hasManualOption && activeIndex === visibleEntries.length;
+  const optionCount = visibleEntries.length + Number(hasManualOption);
 
   const selectEntry = (entryKey: string) => {
     onSelect(entryKey);
+    setQuery('');
+    setActiveIndex(0);
+    setIsOpen(false);
+  };
+
+  const selectManual = () => {
+    onSelectManual?.();
     setQuery('');
     setActiveIndex(0);
     setIsOpen(false);
@@ -150,16 +172,20 @@ export function CanonicalObjectCombobox({
       <input
         ref={triggerRef}
         aria-activedescendant={
-          isOpen && activeEntry ? `${listId}-${activeEntry.entryKey}` : undefined
+          isOpen && activeEntry
+            ? `${listId}-${activeEntry.entryKey}`
+            : activeManualOption
+              ? `${listId}-manual`
+              : undefined
         }
         aria-autocomplete="list"
         aria-controls={listId}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        aria-label="Canonical object"
+        aria-label={ariaLabel}
         className="input input-bordered input-sm w-full"
         disabled={disabled}
-        placeholder={selected?.name ?? 'Search canonical object'}
+        placeholder={selected?.name ?? searchPlaceholder}
         role="combobox"
         value={isOpen ? query : (selected?.name ?? '')}
         onBlur={() => setIsOpen(false)}
@@ -177,9 +203,7 @@ export function CanonicalObjectCombobox({
           if (event.key === 'ArrowDown') {
             event.preventDefault();
             setIsOpen(true);
-            setActiveIndex((current) =>
-              Math.min(current + 1, Math.max(visibleEntries.length - 1, 0)),
-            );
+            setActiveIndex((current) => Math.min(current + 1, Math.max(optionCount - 1, 0)));
           } else if (event.key === 'ArrowUp') {
             event.preventDefault();
             setIsOpen(true);
@@ -187,6 +211,9 @@ export function CanonicalObjectCombobox({
           } else if (event.key === 'Enter' && isOpen && activeEntry) {
             event.preventDefault();
             selectEntry(activeEntry.entryKey);
+          } else if (event.key === 'Enter' && isOpen && activeManualOption) {
+            event.preventDefault();
+            selectManual();
           } else if (event.key === 'Escape') {
             event.preventDefault();
             setIsOpen(false);
@@ -212,54 +239,76 @@ export function CanonicalObjectCombobox({
                 role="listbox"
                 style={{ maxHeight: popoverPosition.maxHeight }}
               >
-                {visibleEntries.length === 0 ? (
+                {visibleEntries.length === 0 && (
                   <li className="pointer-events-none px-3 py-2 text-sm opacity-60">{emptyLabel}</li>
-                ) : (
-                  visibleEntries.map((entry, index) => {
-                    const suggestion = suggestions.find((item) => item.entryKey === entry.entryKey);
-                    return (
-                      <li key={entry.entryKey}>
-                        <button
-                          aria-selected={entry.entryKey === selectedEntryKey}
-                          className={index === activeIndex ? 'active' : undefined}
-                          id={`${listId}-${entry.entryKey}`}
-                          role="option"
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onMouseEnter={() => setActiveIndex(index)}
-                          onClick={() => selectEntry(entry.entryKey)}
-                        >
-                          {entry.thumbnailPath ? (
-                            <img
-                              src={getFileUrl(entry.thumbnailPath)}
-                              alt=""
-                              className="size-10 shrink-0 rounded-md object-cover"
-                            />
-                          ) : (
-                            <span className="grid size-10 shrink-0 place-items-center rounded-md bg-base-200 text-base-content/45">
-                              <ImageIcon size={16} aria-hidden="true" />
-                            </span>
-                          )}
-                          <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                            <span className="truncate font-medium">{entry.name}</span>
-                            <span className="flex flex-wrap gap-1 text-xs opacity-80">
-                              <span className="badge badge-ghost badge-xs">{entry.category}</span>
-                              {suggestion && (
-                                <span className="badge badge-primary badge-xs">
-                                  {suggestion.confidencePercentage}%
-                                </span>
-                              )}
-                              {metadataChips(entry).map((chip) => (
-                                <span className="badge badge-outline badge-xs" key={chip}>
-                                  {chip}
-                                </span>
-                              ))}
-                            </span>
+                )}
+                {visibleEntries.map((entry, index) => {
+                  const suggestion = suggestions.find((item) => item.entryKey === entry.entryKey);
+                  return (
+                    <li key={entry.entryKey}>
+                      <button
+                        aria-selected={entry.entryKey === selectedEntryKey}
+                        className={index === activeIndex ? 'active' : undefined}
+                        id={`${listId}-${entry.entryKey}`}
+                        role="option"
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => selectEntry(entry.entryKey)}
+                      >
+                        {entry.thumbnailPath ? (
+                          <img
+                            src={getFileUrl(entry.thumbnailPath)}
+                            alt=""
+                            className="size-10 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="grid size-10 shrink-0 place-items-center rounded-md bg-base-200 text-base-content/45">
+                            <ImageIcon size={16} aria-hidden="true" />
                           </span>
-                        </button>
-                      </li>
-                    );
-                  })
+                        )}
+                        <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                          <span className="truncate font-medium">{entry.name}</span>
+                          <span className="flex flex-wrap gap-1 text-xs opacity-80">
+                            <span className="badge badge-ghost badge-xs">
+                              {categoryLabel(entry.category)}
+                            </span>
+                            {suggestion && (
+                              <span className="badge badge-primary badge-xs">
+                                {suggestion.confidencePercentage}%
+                              </span>
+                            )}
+                            {metadataChips(entry).map((chip) => (
+                              <span className="badge badge-outline badge-xs" key={chip}>
+                                {chip}
+                              </span>
+                            ))}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {hasManualOption && (
+                  <li className="mt-1 border-t border-base-300 pt-1">
+                    <button
+                      aria-selected={false}
+                      className={activeManualOption ? 'active' : undefined}
+                      id={`${listId}-manual`}
+                      role="option"
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActiveIndex(visibleEntries.length)}
+                      onClick={selectManual}
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                        <span className="font-medium">{manualOptionLabel}</span>
+                        {manualOptionHint && (
+                          <span className="text-xs opacity-60">{manualOptionHint}</span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
                 )}
               </ul>
             </LiquidSurface>

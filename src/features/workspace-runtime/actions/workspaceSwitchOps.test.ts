@@ -21,6 +21,11 @@ const setRenameConfirmations = vi.fn();
 const toastError = vi.fn();
 const toastInfo = vi.fn();
 const notifyCommittedMutationSyncWarning = vi.fn();
+const publishRuntimeDescriptor = vi.fn();
+const cancelRuntimeDescriptorQueries = vi.fn((queryClient: QueryClient) =>
+  queryClient.cancelQueries({ queryKey: ['workspace', 'mods'] }),
+);
+const appState = vi.hoisted(() => ({ activeGameId: 'game-1' as string | null }));
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
@@ -38,7 +43,11 @@ vi.mock('../state/workspaceDialogs', () => ({
 
 vi.mock('@/app/store', () => ({
   useAppStore: {
-    getState: () => ({ applyFolderConflictReconcileResult, setRenameConfirmations }),
+    getState: () => ({
+      activeGameId: appState.activeGameId,
+      applyFolderConflictReconcileResult,
+      setRenameConfirmations,
+    }),
   },
 }));
 
@@ -50,7 +59,9 @@ vi.mock('@/shared/ui/toast', () => ({
 }));
 
 vi.mock('@/shared/lib/queryRefresh', () => ({
-  publishRuntimeDescriptor: vi.fn(),
+  cancelRuntimeDescriptorQueries: (queryClient: QueryClient) =>
+    cancelRuntimeDescriptorQueries(queryClient),
+  publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
   publishQueryInvalidations: vi.fn(),
 }));
 
@@ -62,7 +73,9 @@ vi.mock('../../../shared/lib/committedMutationWarning', () => ({
 describe('workspace switch ops', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    appState.activeGameId = 'game-1';
     reconcileDiskStateCommand.mockResolvedValue(null);
+    publishRuntimeDescriptor.mockResolvedValue(undefined);
   });
 
   describe('togglePendingKey', () => {
@@ -260,6 +273,27 @@ describe('workspace switch ops', () => {
       await expect(executeWorkspaceSwitch(input)).resolves.toBeNull();
       expect(toastError).toHaveBeenCalledTimes(1);
     });
+
+    it('does not open repair UI for a failed switch from a superseded game', async () => {
+      appState.activeGameId = 'game-2';
+      executeWorkspaceSwitchCommand.mockRejectedValue(
+        new Error(
+          JSON.stringify({
+            type: 'RenameConflict',
+            attempted_target: 'E:/Mods/B',
+            existing_path: 'E:/Mods/A',
+            base_name: 'A',
+          }),
+        ),
+      );
+
+      await expect(executeWorkspaceSwitch(input)).resolves.toBeNull();
+
+      expect(reconcileDiskStateCommand).not.toHaveBeenCalled();
+      expect(openFolderConflictManagerDialog).not.toHaveBeenCalled();
+      expect(openRenameConfirmationDialog).not.toHaveBeenCalled();
+      expect(toastError).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps an applied disk switch silent after updating the workspace', async () => {
@@ -268,7 +302,7 @@ describe('workspace switch ops', () => {
       impact: { rewrites: [], refresh_scopes: [] },
     } as unknown as WorkspaceSwitchResult;
 
-    await applyWorkspaceSwitchEffects(new QueryClient(), result, 'folderSwitch');
+    applyWorkspaceSwitchEffects(new QueryClient(), result, 'folderSwitch');
 
     expect(toastInfo).not.toHaveBeenCalled();
   });
@@ -282,12 +316,71 @@ describe('workspace switch ops', () => {
       impact: { rewrites: [], refresh_scopes: [] },
     } as unknown as WorkspaceSwitchResult;
 
-    await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', { gameId: 'game-1' });
+    applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', { gameId: 'game-1' });
 
-    expect(invalidateQueries).toHaveBeenCalledTimes(1);
-    expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ['mod-health', 'report', 'game-1', 'e:/mods/a/blue'],
-      refetchType: 'active',
+    await vi.waitFor(() => {
+      expect(invalidateQueries).toHaveBeenCalledTimes(1);
+      expect(invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ['mod-health', 'report', 'game-1', 'e:/mods/a/blue'],
+        refetchType: 'active',
+      });
     });
+  });
+
+  it('returns after committed effects without waiting for background revalidation', async () => {
+    let finishCancellation!: () => void;
+    let finishRefresh!: () => void;
+    cancelRuntimeDescriptorQueries.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishCancellation = resolve;
+      }),
+    );
+    publishRuntimeDescriptor.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+    const queryClient = new QueryClient();
+    const cancelQueries = vi.spyOn(queryClient, 'cancelQueries');
+    const result = {
+      status: 'applied',
+      changed_folder_paths: ['E:/Mods/A/Blue'],
+      impact: {
+        rewrites: [],
+        refresh_scopes: ['workspaceChanged'],
+      },
+    } as unknown as WorkspaceSwitchResult;
+
+    expect(
+      applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', { gameId: 'game-1' }),
+    ).toBeUndefined();
+    expect(cancelRuntimeDescriptorQueries).toHaveBeenCalled();
+    expect(publishRuntimeDescriptor).not.toHaveBeenCalled();
+
+    finishCancellation();
+    await vi.waitFor(() => {
+      expect(cancelQueries).toHaveBeenCalled();
+      expect(publishRuntimeDescriptor).toHaveBeenCalled();
+    });
+    finishRefresh();
+  });
+
+  it('ignores a completed switch after another game became active', async () => {
+    appState.activeGameId = 'game-2';
+    const queryClient = new QueryClient();
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    const result = {
+      status: 'applied',
+      changed_folder_paths: ['E:/Games/One/Mods/A'],
+      impact: {
+        rewrites: [{ old_path: 'E:/Games/One/Mods/DISABLED A', new_path: 'E:/Games/One/Mods/A' }],
+        refresh_scopes: [],
+      },
+    } as unknown as WorkspaceSwitchResult;
+
+    applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', { gameId: 'game-1' });
+
+    expect(invalidateQueries).not.toHaveBeenCalled();
+    expect(publishRuntimeDescriptor).not.toHaveBeenCalled();
   });
 });

@@ -14,7 +14,7 @@ async fn preview_apply_blocks_when_mods_root_is_unavailable() {
         .await
         .expect("create collection");
 
-    let result = preview_apply(&ctx.pool, "game-1", &collection.id, Some(&mods_path)).await;
+    let result = preview_apply(&ctx.pool, "game-1", &collection.id, Some(&mods_path), false).await;
 
     match result {
         Err(CollectionError::RuntimeState(
@@ -34,9 +34,44 @@ async fn preview_apply_allows_collection_regardless_of_safety_classification() {
             .await
             .expect("create collection");
 
-    let result = preview_apply(&ctx.pool, "game-1", &collection.id, None).await;
+    let result = preview_apply(&ctx.pool, "game-1", &collection.id, None, false).await;
 
     assert!(result.is_ok(), "safety is view metadata, got {result:?}");
+}
+
+#[tokio::test]
+async fn preview_apply_uses_the_safe_mode_effective_target() {
+    let ctx = init_test_db().await;
+    seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
+    seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
+
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
+    let safe_mod = test_collection_mod(&collection.id, "AINOZ/Safe", "Safe");
+    let mut unsafe_mod = test_collection_mod(&collection.id, "AINOZ/Unsafe", "Unsafe");
+    unsafe_mod.is_safe = false;
+    let objects = vec![test_collection_object(&collection.id)];
+    let mods = vec![safe_mod, unsafe_mod];
+    let state = projected_state::build_projected_state(&mods, &objects, None);
+    persist_projected_state(&ctx.pool, &collection.id, &mods, &objects, &state)
+        .await
+        .expect("persist collection state");
+
+    let preview = preview_apply(&ctx.pool, "game-1", &collection.id, None, true)
+        .await
+        .expect("preview collection apply");
+
+    assert!(preview.safe_mode_enabled);
+    assert_eq!(preview.target_projected_state.active_roots.len(), 2);
+    assert_eq!(
+        preview.effective_target_projected_state.active_roots.len(),
+        1
+    );
+    assert_eq!(
+        preview.effective_target_projected_state.active_roots[0].display_name,
+        "Safe"
+    );
 }
 
 #[tokio::test]

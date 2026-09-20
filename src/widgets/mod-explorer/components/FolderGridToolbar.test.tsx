@@ -91,7 +91,7 @@ describe('FolderGridToolbar', () => {
     expect(screen.getByRole('status', { name: 'Loading...' })).toBeInTheDocument();
     expect(
       screen.getByTestId('folder-grid-toolbar-controls').closest('.folder-grid-action-bar'),
-    ).toBeTruthy();
+    ).toHaveClass('z-30');
     expect(screen.getByTestId('view-grid')).toBeInTheDocument();
     expect(screen.getByTestId('view-list')).toBeInTheDocument();
   });

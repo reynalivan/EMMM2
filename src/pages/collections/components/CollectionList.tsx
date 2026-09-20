@@ -120,7 +120,9 @@ export function CollectionList({
             const isSelected = rowId === selectedId;
             const isEditing = collection ? editingId === collection.id : false;
             const isCurrentRuntime = row.kind === 'current_runtime';
-            const isActive = isCurrentRuntime || collection?.id === activeCollectionId;
+            const isActiveBaseline = collection !== null && collection.id === activeCollectionId;
+            const isRunningState =
+              isCurrentRuntime || (isActiveBaseline && runtimeStatus === 'clean');
             const label = collection ? collection.name : isCurrentRuntime ? row.label : '';
             const modCount = collection
               ? collection.mod_count
@@ -173,16 +175,19 @@ export function CollectionList({
                   ) : (
                     <div className="font-medium text-[15px] flex items-center gap-2">
                       <span className="truncate max-w-30 2xl:max-w-50">{label}</span>
-                      {isActive && (
+                      {isRunningState && (
                         <span className="badge badge-sm badge-success opacity-90 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
-                          {activeCollectionId === rowId && runtimeStatus === 'modified'
-                            ? t('list.item.modified', 'Modified')
-                            : t('list.item.matches_runtime', 'Matches current runtime')}
+                          {t('list.item.active')}
                         </span>
                       )}
                       {isCurrentRuntime && (
                         <span className="badge badge-sm badge-ghost opacity-80 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
-                          {t('list.item.current_runtime', 'Live')}
+                          {t('list.item.unsaved')}
+                        </span>
+                      )}
+                      {isActiveBaseline && runtimeStatus === 'modified' && (
+                        <span className="badge badge-sm badge-ghost opacity-80 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
+                          {t('list.item.modified')}
                         </span>
                       )}
                       {collection && (
@@ -234,7 +239,7 @@ export function CollectionList({
                           {t('actions.save_current', 'Save')}
                         </button>
                       ) : null
-                    ) : isActive ? (
+                    ) : isActiveBaseline ? (
                       runtimeStatus === 'modified' && onSaveChanges ? (
                         <button
                           className="btn btn-sm btn-secondary"
@@ -258,7 +263,10 @@ export function CollectionList({
                           onApply(collection.id, collection.name);
                         }}
                         disabled={
-                          isApplying || !collection || collection.mod_count === 0 || isActive
+                          isApplying ||
+                          !collection ||
+                          collection.mod_count === 0 ||
+                          isActiveBaseline
                         }
                       >
                         {isApplying ? (

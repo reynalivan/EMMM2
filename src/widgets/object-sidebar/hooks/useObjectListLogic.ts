@@ -318,6 +318,7 @@ export function useObjectListLogic() {
     handleDisableObject: handlers.handleDisableObject,
     isSwitchPending: handlers.isSwitchPending,
     isObjectSwitchPending: handlers.isObjectSwitchPending,
+    isObjectBulkSwitchPending: handlers.isObjectBulkSwitchPending,
     categoryNames: handlers.categoryNames,
     handleSync: handlers.handleSync,
     handleBackgroundSync: handlers.handleBackgroundSync,

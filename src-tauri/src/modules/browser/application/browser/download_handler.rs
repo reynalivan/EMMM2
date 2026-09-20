@@ -730,15 +730,7 @@ pub fn attach_native_download_handler(
 ) -> Result<(), BrowserError> {
     #[cfg(target_os = "windows")]
     {
-        return native_windows::attach(
-            webview,
-            app,
-            db,
-            label,
-            downloads_root,
-            session_id,
-            game_id,
-        );
+        native_windows::attach(webview, app, db, label, downloads_root, session_id, game_id)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -755,7 +747,7 @@ pub async fn confirm_native_download(
 ) -> Result<bool, BrowserError> {
     #[cfg(target_os = "windows")]
     {
-        return native_windows::confirm(app, db, request_id).await;
+        native_windows::confirm(app, db, request_id).await
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -768,7 +760,7 @@ pub async fn confirm_native_download(
 pub fn reject_native_download(request_id: &str) -> Result<bool, BrowserError> {
     #[cfg(target_os = "windows")]
     {
-        return native_windows::reject(request_id);
+        native_windows::reject(request_id)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -781,7 +773,7 @@ pub fn reject_native_download(request_id: &str) -> Result<bool, BrowserError> {
 pub fn cancel_native_download(app: &AppHandle, download_id: &str) -> Result<bool, BrowserError> {
     #[cfg(target_os = "windows")]
     {
-        return native_windows::control(app, download_id, native_windows::DownloadControl::Cancel);
+        native_windows::control(app, download_id, native_windows::DownloadControl::Cancel)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -794,12 +786,13 @@ pub fn cancel_native_download(app: &AppHandle, download_id: &str) -> Result<bool
 pub fn pause_native_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
     #[cfg(target_os = "windows")]
     {
-        return native_windows::control(app, download_id, native_windows::DownloadControl::Pause)
-            .and_then(|found| {
+        native_windows::control(app, download_id, native_windows::DownloadControl::Pause).and_then(
+            |found| {
                 found.then_some(()).ok_or_else(|| {
                     BrowserError::Download("This download cannot be paused".to_string())
                 })
-            });
+            },
+        )
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -814,12 +807,13 @@ pub fn pause_native_download(app: &AppHandle, download_id: &str) -> Result<(), B
 pub fn resume_native_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
     #[cfg(target_os = "windows")]
     {
-        return native_windows::control(app, download_id, native_windows::DownloadControl::Resume)
-            .and_then(|found| {
+        native_windows::control(app, download_id, native_windows::DownloadControl::Resume).and_then(
+            |found| {
                 found.then_some(()).ok_or_else(|| {
                     BrowserError::Download("This download cannot be resumed".to_string())
                 })
-            });
+            },
+        )
     }
 
     #[cfg(not(target_os = "windows"))]

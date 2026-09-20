@@ -17,7 +17,7 @@ pub struct PreparedBulkDelete {
 }
 
 impl PreparedBulkDelete {
-    pub fn journal_steps(&self) -> Vec<(u32, std::path::PathBuf, std::path::PathBuf)> {
+    pub fn journal_steps(&self) -> Vec<(u32, std::path::PathBuf, std::path::PathBuf, String)> {
         self.items
             .iter()
             .enumerate()
@@ -26,6 +26,7 @@ impl PreparedBulkDelete {
                     sequence as u32,
                     item.source().to_path_buf(),
                     item.quarantine().to_path_buf(),
+                    item.expected_identity().to_string(),
                 )
             })
             .collect()
@@ -51,11 +52,14 @@ pub fn execute_prepared_bulk_delete(
     state: &WatcherState,
     prepared: &PreparedBulkDelete,
     cancel: &AtomicBool,
+    operation_id: &str,
 ) -> BulkDeleteExecution {
     let total = prepared.items.len();
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
+            operation_id: operation_id.to_string(),
+            cancellable: true,
             label: "common:bulk_progress.deleting".to_string(),
             current: 0,
             total,
@@ -77,6 +81,8 @@ pub fn execute_prepared_bulk_delete(
             let _ = app.emit(
                 "bulk-progress",
                 BulkProgressPayload {
+                    operation_id: operation_id.to_string(),
+                    cancellable: true,
                     label: "common:bulk_progress.deleting".to_string(),
                     current: index + 1,
                     total,
@@ -99,6 +105,8 @@ pub fn execute_prepared_bulk_delete(
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
+            operation_id: operation_id.to_string(),
+            cancellable: true,
             label: if cancelled {
                 "common:bulk_progress.cancelled"
             } else {
@@ -175,6 +183,7 @@ pub async fn bulk_delete(
     state: &WatcherState,
     paths: Vec<String>,
     cancel: &AtomicBool,
+    operation_id: &str,
 ) -> Result<BulkResult, crate::shared::errors::AppError> {
     // One guard across the whole batch: no watcher-event leaks between items.
     let _suppression = SuppressionGuard::new(&state.suppressor);
@@ -183,6 +192,8 @@ pub async fn bulk_delete(
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
+            operation_id: operation_id.to_string(),
+            cancellable: true,
             label: "common:bulk_progress.deleting".to_string(),
             current: 0,
             total,
@@ -208,6 +219,8 @@ pub async fn bulk_delete(
             let _ = app.emit(
                 "bulk-progress",
                 BulkProgressPayload {
+                    operation_id: operation_id.to_string(),
+                    cancellable: true,
                     label: "common:bulk_progress.deleting".to_string(),
                     current: i + 1,
                     total,
@@ -229,6 +242,8 @@ pub async fn bulk_delete(
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
+            operation_id: operation_id.to_string(),
+            cancellable: true,
             label: if cancelled {
                 "common:bulk_progress.cancelled"
             } else {

@@ -55,7 +55,6 @@ describe('Fase 3c — Folder identity conflict recovery', () => {
   });
 
   it('blocks without SQL 1555, then resolves the queue through rename and Trash', async () => {
-    await invokeInApp('start_watcher', { path: game.modsPath, gameId });
     await addMockMod(game, 'ConflictA', 'Mod A');
     await addMockMod(game, 'ConflictB', 'Mod B');
     const baseline = await invokeInApp<DiskReconcileResult>('reconcile_disk_state_cmd', {
@@ -175,8 +174,7 @@ describe('Fase 3c — Folder identity conflict recovery', () => {
     expect(afterRejectedRename.folder_conflicts).toHaveLength(0);
   });
 
-  it('heals a deep nested rename after the watcher was offline', async () => {
-    await invokeInApp('stop_watcher');
+  it('heals a deep nested rename from the active watcher projection', async () => {
     await createObject(gameId, 'OfflineRename');
     const oldPath = await addMockMod(game, path.join('OfflineRename', 'Variants'), 'Old Style');
     const baseline = await invokeInApp<DiskReconcileResult>('reconcile_disk_state_cmd', {
@@ -209,6 +207,5 @@ describe('Fase 3c — Folder identity conflict recovery', () => {
       ),
     ).toBe(true);
     expect((await findObject(gameId, 'OfflineRename'))?.mod_count).toBe(1);
-    await invokeInApp('start_watcher', { path: game.modsPath, gameId });
   });
 });

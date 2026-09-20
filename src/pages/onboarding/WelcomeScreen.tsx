@@ -16,24 +16,17 @@ import AuroraBackground from './components/welcome/AuroraBackground';
 import SmartDemoStrip from './components/welcome/SmartDemoStrip';
 import AnimatedLogo from './components/welcome/AnimatedLogo';
 import { useOnboardingDiskProgress } from './hooks/useOnboardingDiskProgress';
-import {
-  calculateOverallIndexingProgress,
-  estimatedRemainingMs,
-  formatEstimatedDuration,
-  INDEXING_STEP_COUNT,
-  type IndexingWorkPlan,
-  type IndexingProgress,
-} from './utils/indexingProgress';
+import { formatEstimatedDuration, type IndexingProgress } from './utils/indexingProgress';
 import type {
   DiskReconcilePhase,
   OnboardingIndexingSnapshotProgress,
-  OnboardingIndexingWorkPlanUpdate,
 } from '../../shared/api/tauri/bindings';
 import { LiquidSurface } from '@/shared/ui/liquid';
 
 type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 
 const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
+const RECONCILE_PHASE_COUNT = 4;
 
 function activityTranslationKey(
   phase: DiskReconcilePhase | undefined,
@@ -56,6 +49,28 @@ function activityTranslationKey(
   }
 }
 
+function displayRootName(root: string | null | undefined): string | null {
+  if (!root || root === '.') return null;
+  const normalized = root.replace(/\\/g, '/');
+  return normalized.slice(normalized.lastIndexOf('/') + 1) || null;
+}
+
+function reconcileStep(phase: DiskReconcilePhase | undefined): number {
+  switch (phase) {
+    case 'ScanningRoots':
+      return 2;
+    case 'Projecting':
+      return 3;
+    case 'Finalizing':
+    case 'Completed':
+    case 'Failed':
+      return 4;
+    case 'DiscoveringRoots':
+    default:
+      return 1;
+  }
+}
+
 export default function WelcomeScreen({
   onComplete,
 }: {
@@ -66,9 +81,9 @@ export default function WelcomeScreen({
   const [isScanning, setIsScanning] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
-  const [indexingWorkPlan, setIndexingWorkPlan] = useState<IndexingWorkPlan[] | null>(null);
   const [snapshotProgress, setSnapshotProgress] =
     useState<OnboardingIndexingSnapshotProgress | null>(null);
+  const [isRecheckingSnapshot, setIsRecheckingSnapshot] = useState(false);
   const indexingSessionRef = useRef<string | null>(null);
   const indexingInFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,33 +94,15 @@ export default function WelcomeScreen({
   const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames);
 
   useEffect(() => {
-    let mounted = true;
-    let unlisten: (() => void) | undefined;
-
-    void listen<OnboardingIndexingWorkPlanUpdate>(
-      'onboarding_indexing:work_plan',
-      ({ payload }) => {
-        if (!mounted || payload.session_id !== indexingSessionRef.current) return;
-        setIndexingWorkPlan(
-          (current) =>
-            current?.map((plan) =>
-              plan.game_id === payload.work_plan.game_id ? payload.work_plan : plan,
-            ) ?? current,
-        );
-      },
-    ).then((stop) => {
-      if (mounted) unlisten = stop;
-      else stop();
-    });
-
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (diskProgress) setSnapshotProgress(null);
+    if (!diskProgress) return;
+    const isTerminal =
+      diskProgress.current.phase === 'Completed' || diskProgress.current.phase === 'Failed';
+    if (isTerminal) {
+      setIsRecheckingSnapshot(false);
+    }
+    setSnapshotProgress((current) =>
+      current?.phase === 'Rechecking' && !isTerminal ? current : null,
+    );
   }, [diskProgress]);
 
   useEffect(() => {
@@ -118,6 +115,7 @@ export default function WelcomeScreen({
         if (!mounted || !indexingInFlightRef.current) return;
         if (indexingSessionRef.current && indexingSessionRef.current !== payload.session_id) return;
         indexingSessionRef.current = payload.session_id;
+        setIsRecheckingSnapshot(payload.phase === 'Rechecking');
         setSnapshotProgress(payload);
       },
     ).then((stop) => {
@@ -217,8 +215,8 @@ export default function WelcomeScreen({
     try {
       setError(null);
       setIsIndexing(true);
-      setIndexingWorkPlan(null);
       setSnapshotProgress(null);
+      setIsRecheckingSnapshot(false);
       indexingInFlightRef.current = true;
       const total = Math.max(1, games.length);
       const completedDurationsMs: number[] = [];
@@ -239,7 +237,6 @@ export default function WelcomeScreen({
       const session = await commands.beginOnboardingIndexing(games.map((game) => game.id));
       sessionId = session.session_id;
       indexingSessionRef.current = sessionId;
-      setIndexingWorkPlan(session.work_plans);
       setSnapshotProgress(null);
 
       // Disk Reconcile only. Onboarding must not trigger Deep Match Scanner implicitly.
@@ -274,10 +271,10 @@ export default function WelcomeScreen({
       setError(formatAppError(err));
       setIsIndexing(false);
       setIndexingProgress(null);
-      setIndexingWorkPlan(null);
     } finally {
       indexingInFlightRef.current = false;
       setSnapshotProgress(null);
+      setIsRecheckingSnapshot(false);
       const activeSessionId = sessionId ?? indexingSessionRef.current;
       indexingSessionRef.current = null;
       if (activeSessionId) {
@@ -521,34 +518,41 @@ export default function WelcomeScreen({
     const activeGame = detectedGames[activeGameIndex];
     const activeDiskProgress =
       diskProgress?.current.game_id === activeGame?.id ? diskProgress : null;
-    const overallProgress = activeDiskProgress
-      ? calculateOverallIndexingProgress(
-          activeDiskProgress.current,
-          detectedGames.map((game) => game.id),
-          indexingWorkPlan ?? [],
-          activeDiskProgress.completedRootsByGame,
-        )
+    const isPreparing =
+      snapshotProgress?.phase === 'Metadata' || snapshotProgress?.phase === 'Classifying';
+    const isRechecking = isRecheckingSnapshot || snapshotProgress?.phase === 'Rechecking';
+    const snapshotRootProgress = isPreparing ? snapshotProgress : null;
+    const diskRootProgress = activeDiskProgress?.current;
+    const totalRoots = snapshotRootProgress
+      ? snapshotRootProgress.total_roots
+      : (diskRootProgress?.total_units ?? 0);
+    const completedRoots = snapshotRootProgress
+      ? snapshotRootProgress.completed_roots
+      : (diskRootProgress?.completed_units ?? 0);
+    const hasDeterminateProgress = totalRoots > 0;
+    const progressPercent = hasDeterminateProgress
+      ? Math.round((completedRoots / totalRoots) * 100)
       : null;
-    // Snapshot creation precedes every game projection, so its per-game
-    // completion cannot be added to the sequential reconcile percentage
-    // without making the global bar move backwards. Keep the global bar at
-    // zero while reporting the active snapshot game and stage below.
-    const snapshotPercent = snapshotProgress ? 0 : null;
-    const percent =
-      snapshotPercent ??
-      overallProgress?.percent ??
-      Math.round((progress.completed / progress.total) * 100);
-    const remaining = snapshotProgress
-      ? null
-      : estimatedRemainingMs(progress, activeDiskProgress?.current.eta_ms);
-    const gameNumber = (overallProgress?.gameIndex ?? activeGameIndex) + 1;
+    const gameNumber = activeGameIndex + 1;
     const gameName = activeGame?.name ?? progress.currentGame ?? '';
-    const step = overallProgress?.step ?? 1;
-    const activityKey = snapshotProgress
-      ? snapshotProgress.phase === 'Scanning'
-        ? 'scanning'
-        : 'discovering'
-      : activityTranslationKey(activeDiskProgress?.current.phase, overallProgress?.folderName);
+    const activeRoot = displayRootName(
+      snapshotRootProgress?.current_root ?? diskRootProgress?.current_root,
+    );
+    const activityKey = activityTranslationKey(activeDiskProgress?.current.phase, activeRoot);
+    const activityText = isPreparing
+      ? t(
+          `onboarding:indexing.preparation.${snapshotProgress?.phase === 'Metadata' ? 'metadata' : 'classifying'}`,
+        )
+      : isRechecking
+        ? t('onboarding:indexing.preparation.rechecking')
+        : t(`onboarding:indexing.activity.${activityKey}`, {
+            folder: activeRoot,
+            step: reconcileStep(activeDiskProgress?.current.phase),
+            total: RECONCILE_PHASE_COUNT,
+          });
+    const progressLabel = isPreparing
+      ? t('onboarding:indexing.preparation_progress')
+      : t('onboarding:indexing.phase_progress');
 
     return (
       <div className="min-h-screen bg-base-100 flex items-center justify-center">
@@ -556,7 +560,6 @@ export default function WelcomeScreen({
           {/* Header */}
           <div className="mb-8">
             <div className="relative w-16 h-16 mx-auto mb-6">
-              <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping motion-reduce:animate-none" />
               <div className="relative bg-base-100 rounded-full w-full h-full flex items-center justify-center shadow-lg border border-base-content/10">
                 <Loader2 className="w-8 h-8 text-primary animate-spin motion-reduce:animate-none" />
               </div>
@@ -570,60 +573,77 @@ export default function WelcomeScreen({
           <div
             className="bg-base-200/50 rounded-2xl p-6 shadow-sm border border-base-content/5 space-y-5"
             aria-live="polite"
+            aria-busy
           >
             <div className="flex items-baseline justify-between">
-              <span className="text-sm font-medium text-base-content/70">
-                {t('onboarding:indexing.overall_progress')}
-              </span>
-              <span className="text-2xl font-semibold tracking-tight text-base-content">
-                {percent}
-                <span className="ml-0.5 text-sm font-medium text-base-content/50">%</span>
-              </span>
+              <span className="text-sm font-medium text-base-content/70">{progressLabel}</span>
+              {hasDeterminateProgress && (
+                <span className="text-sm font-semibold text-base-content">
+                  {t('onboarding:indexing.folders_complete', {
+                    completed: completedRoots,
+                    total: totalRoots,
+                  })}
+                </span>
+              )}
             </div>
 
-            {/* Custom Animated Bar */}
-            <div
-              className="h-2 w-full bg-base-300/50 rounded-full overflow-hidden shadow-inner relative"
-              role="progressbar"
-              aria-label={t('onboarding:indexing.progress_label')}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-            >
+            {hasDeterminateProgress && progressPercent !== null ? (
               <div
-                className="absolute bottom-0 left-0 top-0 bg-primary transition-[width] duration-150 ease-out motion-reduce:transition-none"
-                style={{ width: `${percent}%` }}
+                className="h-2 w-full bg-base-300/80 rounded-full overflow-hidden shadow-inner relative"
+                role="progressbar"
+                aria-label={progressLabel}
+                aria-valuemin={0}
+                aria-valuemax={totalRoots}
+                aria-valuenow={completedRoots}
               >
-                <div className="absolute inset-0 bg-white/10" />
+                <div
+                  className="absolute bottom-0 left-0 top-0 bg-primary transition-[width] duration-150 ease-out motion-reduce:transition-none"
+                  style={{ width: `${progressPercent}%` }}
+                />
               </div>
-            </div>
+            ) : (
+              <div className="h-2 w-full bg-base-300/80 rounded-full overflow-hidden shadow-inner">
+                <div className="h-full w-1/3 rounded-full bg-primary animate-pulse motion-reduce:animate-none" />
+              </div>
+            )}
 
-            {/* ETA */}
-            <p className="text-left text-xs font-medium text-base-content/50">
-              {remaining === null
-                ? t('onboarding:indexing.estimating')
-                : remaining < 2000
-                  ? t('onboarding:indexing.finishing_up')
-                  : t('onboarding:indexing.estimated_remaining', {
-                      duration: formatEstimatedDuration(remaining),
-                    })}
-            </p>
+            <p className="text-left text-sm text-base-content/70">{activityText}</p>
 
             <div className="border-t border-base-content/10 pt-5 text-left space-y-1.5">
               <p className="text-sm font-semibold text-base-content">
                 {t('onboarding:indexing.game_progress', {
                   current: gameNumber,
-                  total: progress.total,
+                  total: snapshotProgress?.total_games || progress.total,
                   game: gameName,
                 })}
               </p>
-              <p className="text-sm text-base-content/65">
-                {t(`onboarding:indexing.activity.${activityKey}`, {
-                  folder: overallProgress?.folderName,
-                  step,
-                  total: INDEXING_STEP_COUNT,
-                })}
-              </p>
+              {isPreparing && snapshotProgress && (
+                <div className="space-y-1 text-xs text-base-content/65">
+                  <p>
+                    {t('onboarding:indexing.files_inspected', {
+                      count: snapshotProgress.files_inspected,
+                    })}
+                  </p>
+                  <p>
+                    {t('onboarding:indexing.folders_classified', {
+                      count: snapshotProgress.folders_classified,
+                    })}
+                  </p>
+                  {activeRoot && (
+                    <p>{t('onboarding:indexing.current_root', { root: activeRoot })}</p>
+                  )}
+                  <p>
+                    {t('onboarding:indexing.elapsed', {
+                      duration: formatEstimatedDuration(snapshotProgress.elapsed_ms),
+                    })}
+                  </p>
+                </div>
+              )}
+              {!hasDeterminateProgress && (
+                <p className="text-xs text-base-content/65">
+                  {t('onboarding:indexing.waiting_for_stage')}
+                </p>
+              )}
             </div>
           </div>
         </div>

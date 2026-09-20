@@ -17,8 +17,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { browserAddressParts } from '../utils/browserUrl';
 import { LiquidSurface } from '@/shared/ui/liquid';
@@ -31,7 +30,6 @@ interface BrowserToolbarProps {
   activeTabUrl: string | null;
   isNewTab: boolean;
   isBookmarked: boolean;
-  activeZoom: number;
   isNavigating: boolean;
   isRefreshing: boolean;
   isMoreMenuOpen: boolean;
@@ -39,16 +37,7 @@ interface BrowserToolbarProps {
   onGoBack: () => void;
   onGoForward: () => void;
   onReload: () => void;
-  onNewTab: () => void;
   onToggleBookmark: () => void;
-  onOpenLibrary: (tab: 'bookmarks' | 'history') => void;
-  onOpenExternally: () => void;
-  onChangeZoom: (zoom: number) => void;
-  onOpenFind: () => void;
-  adblockEnabled: boolean;
-  onToggleAdblock: () => void;
-  onClearCookiesAndSiteData: () => void;
-  onClearCache: () => void;
 }
 
 export function BrowserToolbar({
@@ -59,7 +48,6 @@ export function BrowserToolbar({
   activeTabUrl,
   isNewTab,
   isBookmarked,
-  activeZoom,
   isNavigating,
   isRefreshing,
   isMoreMenuOpen,
@@ -67,22 +55,10 @@ export function BrowserToolbar({
   onGoBack,
   onGoForward,
   onReload,
-  onNewTab,
   onToggleBookmark,
-  onOpenLibrary,
-  onOpenExternally,
-  onChangeZoom,
-  onOpenFind,
-  adblockEnabled,
-  onToggleAdblock,
-  onClearCookiesAndSiteData,
-  onClearCache,
 }: BrowserToolbarProps) {
   const { t } = useTranslation(['browser']);
   const addressInputRef = useRef<HTMLInputElement>(null);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
-  const moreMenuTriggerRef = useRef<HTMLButtonElement>(null);
-  const [moreMenuPosition, setMoreMenuPosition] = useState({ top: 0, left: 0 });
   const [isEditingAddress, setIsEditingAddress] = useState(false);
   const formattedAddress = browserAddressParts(urlInput);
   const hasActiveWebview = Boolean(activeTabId) && !isNewTab;
@@ -100,54 +76,6 @@ export function BrowserToolbar({
     if (!isEditingAddress) return;
     addressInputRef.current?.focus();
   }, [isEditingAddress]);
-
-  useEffect(() => {
-    if (!isMoreMenuOpen) return;
-
-    const closeWhenLeavingMenu = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (moreMenuRef.current?.contains(target) || moreMenuTriggerRef.current?.contains(target)) {
-        return;
-      }
-      onMoreMenuOpenChange(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onMoreMenuOpenChange(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', closeWhenLeavingMenu);
-    window.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeWhenLeavingMenu);
-      window.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [isMoreMenuOpen, onMoreMenuOpenChange]);
-
-  useLayoutEffect(() => {
-    if (!isMoreMenuOpen) return;
-
-    const updatePosition = () => {
-      const trigger = moreMenuTriggerRef.current;
-      if (!trigger) return;
-
-      const rect = trigger.getBoundingClientRect();
-      const menuWidth = Math.min(240, window.innerWidth - 16);
-      setMoreMenuPosition({
-        top: rect.bottom + 8,
-        left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
-      });
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
-  }, [isMoreMenuOpen]);
 
   const startEditingAddress = () => setIsEditingAddress(true);
 
@@ -254,186 +182,208 @@ export function BrowserToolbar({
       </form>
 
       <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:ml-0">
-        <div className="relative">
-          <button
-            ref={moreMenuTriggerRef}
-            type="button"
-            className="btn btn-sm btn-ghost btn-square"
-            title={t('tabs.browser_menu')}
-            aria-label={t('tabs.browser_menu')}
-            aria-expanded={isMoreMenuOpen}
-            aria-controls="browser-toolbar-menu"
-            onClick={() => onMoreMenuOpenChange(!isMoreMenuOpen)}
-          >
-            <MoreHorizontal size={18} />
-          </button>
-          {isMoreMenuOpen &&
-            createPortal(
-              <div
-                ref={moreMenuRef}
-                data-testid="browser-toolbar-menu-overlay"
-                className="fixed z-[var(--workspace-layer-popover)]"
-                style={{
-                  top: moreMenuPosition.top,
-                  left: moreMenuPosition.left,
-                  width: 'min(15rem, calc(100vw - 1rem))',
-                }}
-              >
-                <LiquidSurface liquidRole="overlay" className="w-full rounded-box shadow-lg">
-                  <ul
-                    id="browser-toolbar-menu"
-                    className="menu w-full p-2"
-                    aria-label={t('tabs.browser_menu')}
-                  >
-                    <li>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={adblockEnabled}
-                        aria-label={t('tabs.adblock')}
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onToggleAdblock();
-                        }}
-                        className="flex items-center justify-between gap-3"
-                      >
-                        <span className="flex items-center gap-2">
-                          {adblockEnabled ? <ShieldCheck size={16} /> : <ShieldOff size={16} />}
-                          {t('tabs.adblock')}
-                        </span>
-                        <span className="text-xs text-base-content/60">
-                          {adblockEnabled ? t('tabs.on') : t('tabs.off')}
-                        </span>
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onNewTab();
-                        }}
-                      >
-                        <Plus size={16} />
-                        {t('tabs.new_tab')}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onOpenLibrary('bookmarks');
-                        }}
-                      >
-                        <Star size={16} />
-                        {t('library.bookmarks')}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onOpenLibrary('history');
-                        }}
-                      >
-                        <History size={16} />
-                        {t('library.history')}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        type="button"
-                        disabled={!hasActiveWebview || !activeTabUrl}
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onOpenExternally();
-                        }}
-                      >
-                        <ExternalLink size={16} />
-                        {t('tabs.open_externally')}
-                      </button>
-                    </li>
-                    <li className="menu-title mt-2 px-2 text-xs">{t('tabs.view')}</li>
-                    <li>
-                      <button
-                        type="button"
-                        disabled={!hasActiveWebview}
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onOpenFind();
-                        }}
-                      >
-                        <Search size={16} />
-                        {t('tabs.find_in_page')}
-                        <span className="ml-auto text-xs text-base-content/50">
-                          {t('tabs.find_shortcut')}
-                        </span>
-                      </button>
-                    </li>
-                    <li className="flex-row items-center justify-between px-2 py-1">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs btn-square"
-                        aria-label={t('tabs.zoom_out')}
-                        disabled={!hasActiveWebview || activeZoom <= 0.5}
-                        onClick={() => onChangeZoom(Number((activeZoom - 0.1).toFixed(1)))}
-                      >
-                        <ZoomOut size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs min-h-0 h-7"
-                        disabled={!hasActiveWebview || activeZoom === 1}
-                        onClick={() => onChangeZoom(1)}
-                      >
-                        {Math.round(activeZoom * 100)}%
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs btn-square"
-                        aria-label={t('tabs.zoom_in')}
-                        disabled={!hasActiveWebview || activeZoom >= 3}
-                        onClick={() => onChangeZoom(Number((activeZoom + 0.1).toFixed(1)))}
-                      >
-                        <ZoomIn size={15} />
-                      </button>
-                    </li>
-                    <li className="menu-title mt-2 px-2 text-xs">{t('tabs.privacy')}</li>
-                    <li>
-                      <button
-                        type="button"
-                        disabled={!hasActiveWebview}
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onClearCookiesAndSiteData();
-                        }}
-                      >
-                        <Cookie size={16} />
-                        {t('tabs.clear_cookies_and_site_data')}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        type="button"
-                        disabled={!hasActiveWebview}
-                        onClick={() => {
-                          onMoreMenuOpenChange(false);
-                          onClearCache();
-                        }}
-                      >
-                        <RotateCcw size={16} />
-                        {t('tabs.clear_cache')}
-                      </button>
-                    </li>
-                  </ul>
-                </LiquidSurface>
-              </div>,
-              document.body,
-            )}
-        </div>
+        <button
+          id="browser-toolbar-menu-trigger"
+          type="button"
+          className="btn btn-sm btn-ghost btn-square"
+          title={t('tabs.browser_menu')}
+          aria-label={t('tabs.browser_menu')}
+          aria-expanded={isMoreMenuOpen}
+          aria-controls="browser-toolbar-menu"
+          onClick={() => onMoreMenuOpenChange(!isMoreMenuOpen)}
+        >
+          <MoreHorizontal size={18} />
+        </button>
       </div>
+    </div>
+  );
+}
+
+interface BrowserToolbarMenuProps {
+  activeTabUrl: string | null;
+  activeZoom: number;
+  adblockEnabled: boolean;
+  hasActiveWebview: boolean;
+  onChangeZoom: (zoom: number) => void;
+  onClearCache: () => void;
+  onClearCookiesAndSiteData: () => void;
+  onClose: () => void;
+  onNewTab: () => void;
+  onOpenExternally: () => void;
+  onOpenFind: () => void;
+  onOpenLibrary: (tab: 'bookmarks' | 'history') => void;
+  onToggleAdblock: () => void;
+}
+
+export function BrowserToolbarMenu({
+  activeTabUrl,
+  activeZoom,
+  adblockEnabled,
+  hasActiveWebview,
+  onChangeZoom,
+  onClearCache,
+  onClearCookiesAndSiteData,
+  onClose,
+  onNewTab,
+  onOpenExternally,
+  onOpenFind,
+  onOpenLibrary,
+  onToggleAdblock,
+}: BrowserToolbarMenuProps) {
+  const { t } = useTranslation(['browser']);
+
+  return (
+    <div data-testid="browser-toolbar-menu" className="w-full max-w-sm">
+      <LiquidSurface liquidRole="overlay" className="w-full rounded-box shadow-lg">
+        <ul
+          id="browser-toolbar-menu"
+          className="menu w-full p-2"
+          aria-label={t('tabs.browser_menu')}
+        >
+          <li>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={adblockEnabled}
+              aria-label={t('tabs.adblock')}
+              onClick={() => {
+                onClose();
+                onToggleAdblock();
+              }}
+              className="flex items-center justify-between gap-3"
+            >
+              <span className="flex items-center gap-2">
+                {adblockEnabled ? <ShieldCheck size={16} /> : <ShieldOff size={16} />}
+                {t('tabs.adblock')}
+              </span>
+              <span className="text-xs text-base-content/60">
+                {adblockEnabled ? t('tabs.on') : t('tabs.off')}
+              </span>
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onNewTab();
+              }}
+            >
+              <Plus size={16} />
+              {t('tabs.new_tab')}
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenLibrary('bookmarks');
+              }}
+            >
+              <Star size={16} />
+              {t('library.bookmarks')}
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenLibrary('history');
+              }}
+            >
+              <History size={16} />
+              {t('library.history')}
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              disabled={!hasActiveWebview || !activeTabUrl}
+              onClick={() => {
+                onClose();
+                onOpenExternally();
+              }}
+            >
+              <ExternalLink size={16} />
+              {t('tabs.open_externally')}
+            </button>
+          </li>
+          <li className="menu-title mt-2 px-2 text-xs">{t('tabs.view')}</li>
+          <li>
+            <button
+              type="button"
+              disabled={!hasActiveWebview}
+              onClick={() => {
+                onClose();
+                onOpenFind();
+              }}
+            >
+              <Search size={16} />
+              {t('tabs.find_in_page')}
+              <span className="ml-auto text-xs text-base-content/50">
+                {t('tabs.find_shortcut')}
+              </span>
+            </button>
+          </li>
+          <li className="flex-row items-center justify-between px-2 py-1">
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs btn-square"
+              aria-label={t('tabs.zoom_out')}
+              disabled={!hasActiveWebview || activeZoom <= 0.5}
+              onClick={() => onChangeZoom(Number((activeZoom - 0.1).toFixed(1)))}
+            >
+              <ZoomOut size={15} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs min-h-0 h-7"
+              disabled={!hasActiveWebview || activeZoom === 1}
+              onClick={() => onChangeZoom(1)}
+            >
+              {Math.round(activeZoom * 100)}%
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs btn-square"
+              aria-label={t('tabs.zoom_in')}
+              disabled={!hasActiveWebview || activeZoom >= 3}
+              onClick={() => onChangeZoom(Number((activeZoom + 0.1).toFixed(1)))}
+            >
+              <ZoomIn size={15} />
+            </button>
+          </li>
+          <li className="menu-title mt-2 px-2 text-xs">{t('tabs.privacy')}</li>
+          <li>
+            <button
+              type="button"
+              disabled={!hasActiveWebview}
+              onClick={() => {
+                onClose();
+                onClearCookiesAndSiteData();
+              }}
+            >
+              <Cookie size={16} />
+              {t('tabs.clear_cookies_and_site_data')}
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              disabled={!hasActiveWebview}
+              onClick={() => {
+                onClose();
+                onClearCache();
+              }}
+            >
+              <RotateCcw size={16} />
+              {t('tabs.clear_cache')}
+            </button>
+          </li>
+        </ul>
+      </LiquidSurface>
     </div>
   );
 }

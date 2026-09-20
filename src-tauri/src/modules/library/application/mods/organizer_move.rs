@@ -40,6 +40,8 @@ struct PreparedOrganizerRename {
 pub struct PreparedOrganizerMove {
     renames: Vec<PreparedOrganizerRename>,
     primary_results: Vec<String>,
+    target_base_path: PathBuf,
+    target_base_requires_creation: bool,
 }
 
 impl PreparedOrganizerMove {
@@ -93,7 +95,8 @@ pub async fn prepare_move_mods_to_object(
 
     let base_path = Path::new(&game_mod_path);
     let target_obj_path = base_path.join(&target_obj.folder_path);
-    let target_base_path = resolve_target_base_path(&target_obj_path, params.target_subpath)?;
+    let (target_base_path, target_base_requires_creation) =
+        resolve_target_base_path(&target_obj_path, params.target_subpath)?;
     let mut renames = Vec::new();
     let mut primary_results = Vec::new();
     let mut seen_sources = HashSet::new();
@@ -180,6 +183,8 @@ pub async fn prepare_move_mods_to_object(
     Ok(PreparedOrganizerMove {
         renames,
         primary_results,
+        target_base_path,
+        target_base_requires_creation,
     })
 }
 
@@ -190,8 +195,13 @@ pub fn execute_prepared_move(
     let suppression_paths = prepared
         .renames
         .iter()
-        .flat_map(|rename| [rename.old_path.as_path(), rename.new_path.as_path()]);
+        .flat_map(|rename| [rename.old_path.as_path(), rename.new_path.as_path()])
+        .chain(std::iter::once(prepared.target_base_path.as_path()));
     let _suppression = watcher.suppressor.suppress_paths(suppression_paths);
+    if prepared.target_base_requires_creation && !prepared.target_base_path.exists() {
+        std::fs::create_dir_all(&prepared.target_base_path)
+            .map_err(|error| AppError::Io(error.to_string()))?;
+    }
     let mut applied: Vec<&PreparedOrganizerRename> = Vec::new();
     for rename in &prepared.renames {
         if let Err(error) = std::fs::rename(&rename.old_path, &rename.new_path) {
@@ -308,7 +318,8 @@ pub async fn move_mods_to_object_service(
 
     let base_path = Path::new(&game_mod_path);
     let target_obj_path = base_path.join(&target_obj.folder_path);
-    let target_base_path = resolve_target_base_path(&target_obj_path, params.target_subpath)?;
+    let (target_base_path, target_base_requires_creation) =
+        resolve_target_base_path(&target_obj_path, params.target_subpath)?;
 
     // Sources move under the target root: register each source plus the
     // target base so the paired From/To events are both covered.
@@ -319,6 +330,10 @@ pub async fn move_mods_to_object_service(
             .map(|path| path.as_ref().to_path_buf())
             .chain(std::iter::once(target_base_path.clone())),
     );
+    if target_base_requires_creation && !target_base_path.exists() {
+        std::fs::create_dir_all(&target_base_path)
+            .map_err(|error| AppError::Io(error.to_string()))?;
+    }
     let mut success = Vec::new();
     let mut failures = Vec::new();
     let mut path_hints = Vec::new();
@@ -367,13 +382,9 @@ pub async fn move_mods_to_object_service(
 fn resolve_target_base_path(
     target_obj_path: &Path,
     target_subpath: Option<&str>,
-) -> Result<PathBuf, AppError> {
+) -> Result<(PathBuf, bool), AppError> {
     let Some(relative_subpath) = parse_target_subpath(target_subpath)? else {
-        if !target_obj_path.exists() {
-            std::fs::create_dir_all(target_obj_path)
-                .map_err(|error| AppError::Io(error.to_string()))?;
-        }
-        return Ok(target_obj_path.to_path_buf());
+        return Ok((target_obj_path.to_path_buf(), true));
     };
 
     let target = target_obj_path.join(relative_subpath);
@@ -384,7 +395,7 @@ fn resolve_target_base_path(
         )));
     }
 
-    Ok(target)
+    Ok((target, false))
 }
 
 fn parse_target_subpath(target_subpath: Option<&str>) -> Result<Option<PathBuf>, AppError> {

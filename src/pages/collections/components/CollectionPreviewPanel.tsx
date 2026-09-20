@@ -126,6 +126,10 @@ export function CollectionPreviewPanel({
     );
   }
 
+  const isRunningCollection =
+    runtimeSnapshot?.runtime_status === 'clean' &&
+    runtimeSnapshot.active_collection_id === preview.collection.id;
+
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col">
       {/* Header */}
@@ -134,7 +138,7 @@ export function CollectionPreviewPanel({
           <div className="flex flex-col min-w-0">
             <h2 className="font-bold text-sm leading-tight flex items-center gap-2 truncate">
               <span className="truncate">{preview.collection.name}</span>
-              {preview.collection.is_active && (
+              {isRunningCollection && (
                 <span className="badge badge-sm badge-success opacity-90 text-[10px] py-0 h-4 uppercase font-bold tracking-wider shrink-0">
                   {t('collections:list.item.active')}
                 </span>

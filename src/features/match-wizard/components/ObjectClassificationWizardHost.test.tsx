@@ -6,7 +6,7 @@ import type {
   CanonicalClassificationCatalogEntry,
   ObjectClassificationPreviewItem,
 } from '../../../shared/api/tauri/bindings.gen';
-import { openObjectClassificationWizard } from '@/features/import-batches/classificationLauncher';
+import { openObjectClassificationWizard } from '@/features/import-batches/@x/match-wizard';
 import { ObjectClassificationWizardHost } from './ObjectClassificationWizardHost';
 
 const mocks = vi.hoisted(() => ({
@@ -37,6 +37,9 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
 }));
 vi.mock('@/shared/ui/toast', () => ({
   toast: { error: mocks.toastError, success: mocks.toastSuccess, warning: vi.fn() },
+}));
+vi.mock('@/shared/ui/liquid', () => ({
+  LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock('@/shared/lib/queryRefresh', () => ({ publishQueryScopes: mocks.publishQueryScopes }));
 vi.mock('@/shared/ui/components/ui/VirtualList', () => ({
@@ -171,8 +174,14 @@ describe('ObjectClassificationWizardHost', () => {
     renderHost();
     await openWizard([previewItem('object-unknown', 'Unknown source', null)]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'classification_manual' }));
+    const catalogSearch = screen.getByRole('combobox', {
+      name: 'classification_catalog_search_label',
+    });
+    fireEvent.focus(catalogSearch);
+    fireEvent.click(screen.getByRole('option', { name: /classification_manual/ }));
+    expect(screen.getByText('classification_footer_pending')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('classification_select_row:Unknown source'));
+    expect(screen.getByText('classification_footer_ready:1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'classification_apply_selected:1' }));
 
     await waitFor(() =>

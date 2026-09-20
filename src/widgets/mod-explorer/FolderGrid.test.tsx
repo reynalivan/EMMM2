@@ -89,6 +89,7 @@ vi.mock('./components/FolderGridFooter', () => ({
 const defaultHookReturn = {
   // Data & State
   sortedFolders: [],
+  totalMatching: 0,
   conflicts: [],
   isLoading: false,
   isPlaceholderData: false,
@@ -127,6 +128,9 @@ const defaultHookReturn = {
   handleKeyDown: vi.fn(),
   focusedId: null,
   gridSelection: new Set(),
+  selectedCount: 0,
+  isPathSelected: vi.fn(() => false),
+  selectAllMatching: vi.fn(),
   toggleGridSelection: vi.fn(),
   clearGridSelection: vi.fn(),
   handleToggleSelf: vi.fn(),
@@ -160,6 +164,8 @@ const defaultHookReturn = {
   handleBulkSafe: vi.fn(),
   handleBulkPin: vi.fn(),
   handleBulkMoveToObject: vi.fn(),
+  bulkMovePaths: null,
+  clearBulkMovePaths: vi.fn(),
 
   pinSafeDialog: { open: false, folder: null },
   handleToggleSafeRequest: vi.fn(),

@@ -210,7 +210,7 @@ describe('DuplicateTable', () => {
       expect(screen.getByText('Keep B: Mod B - Duplicate')).toBeInTheDocument();
     });
 
-    it('does not offer keep actions for an inexact group', () => {
+    it('offers keep actions for an inexact group with a warning', () => {
       const onSelectionChange = vi.fn();
 
       render(
@@ -221,8 +221,9 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      expect(screen.queryByText('Keep A: Mod C')).not.toBeInTheDocument();
-      expect(screen.queryByText('Keep B: Mod D')).not.toBeInTheDocument();
+      expect(screen.getByText('Keep A: Mod C')).toBeInTheDocument();
+      expect(screen.getByText('Keep B: Mod D')).toBeInTheDocument();
+      expect(screen.getByText(/similarity match only/i)).toBeInTheDocument();
       expect(screen.getByText(/Ignore/)).toBeInTheDocument();
     });
   });
@@ -252,7 +253,7 @@ describe('DuplicateTable', () => {
       });
     });
 
-    it('does not expose inexact members as keep-card buttons', () => {
+    it('exposes inexact members as keep-card buttons', () => {
       render(
         <DuplicateTable
           groups={mockGroups.slice(1)}
@@ -261,7 +262,7 @@ describe('DuplicateTable', () => {
         />,
       );
 
-      expect(screen.queryByRole('button', { name: 'Keep A: Mod C' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Keep A: Mod C' })).toBeInTheDocument();
     });
 
     it('calls onSelectionChange when a member is selected to be kept', () => {

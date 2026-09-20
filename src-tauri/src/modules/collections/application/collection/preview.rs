@@ -1,5 +1,6 @@
 //! Read-only previews: collection contents and the apply diff.
 
+use super::filter_target_mods_for_safe_mode;
 use super::live_state::load_live_runtime_state;
 use super::projection::{load_projected_collection_state, require_collection, require_game_match};
 use crate::modules::collections::adapters::sqlite as collection;
@@ -37,6 +38,7 @@ pub async fn preview_apply(
     game_id: &str,
     collection_id: &str,
     mods_path: Option<&str>,
+    safe_mode_enabled: bool,
 ) -> Result<ApplyPreview, CollectionError> {
     let collection = require_collection(pool, collection_id).await?;
     require_game_match(&collection, game_id)?;
@@ -57,14 +59,25 @@ pub async fn preview_apply(
     let current_tree_nodes =
         projected_state::build_preview_tree_from_projected_state(&current_projected_state);
     let target_state = load_projected_collection_state(pool, &collection, mods_path).await?;
+    let target_mods = projected_state::mods_from_projected_state(&collection.id, &target_state);
+    let target_objects =
+        projected_state::objects_from_projected_state(&collection.id, &target_state);
+    let effective_target_mods = filter_target_mods_for_safe_mode(target_mods, safe_mode_enabled);
+    let effective_target_state =
+        projected_state::build_projected_state(&effective_target_mods, &target_objects, mods_path);
 
     Ok(ApplyPreview {
         collection_name: collection.name,
         current_tree_nodes,
         target_tree_nodes: projected_state::build_preview_tree_from_projected_state(&target_state),
+        effective_target_tree_nodes: projected_state::build_preview_tree_from_projected_state(
+            &effective_target_state,
+        ),
         current_state_name: None,
         current_state_is_unsaved: true,
         current_projected_state,
         target_projected_state: target_state,
+        effective_target_projected_state: effective_target_state,
+        safe_mode_enabled,
     })
 }

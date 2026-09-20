@@ -204,6 +204,7 @@ async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_
             force_full: false,
             watcher_events: None,
             path_hints: &reconcile_hints,
+            trusted_mutation_scope: false,
             progress_reporter: None,
             precomputed_discovery: None,
         },

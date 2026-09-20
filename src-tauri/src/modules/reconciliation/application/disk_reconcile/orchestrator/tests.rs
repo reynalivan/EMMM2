@@ -4,8 +4,10 @@ use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcileReason, DiskReconcileScanScope, DiskReconcileStatus,
 };
 use crate::modules::workspace::application::scanner::watcher::{
-    ModWatchEvent, WatcherState, WatcherSuppressor,
+    ExpectedRenameEcho, ModWatchEvent, WatcherState, WatcherSuppressor,
 };
+use notify::event::{ModifyKind, RenameMode};
+use notify::EventKind;
 
 use super::*;
 
@@ -34,6 +36,368 @@ fn applied_result(
         pending_runtime_effects: Default::default(),
         warnings: Vec::new(),
     }
+}
+
+#[test]
+fn authority_token_uses_clean_scoped_and_full_catch_up_without_acknowledging_newer_events() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    std::fs::create_dir_all(mods_root.join("Alice")).expect("create Mods root");
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, 7);
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 7),
+        AuthorityCatchUp::Full { .. }
+    ));
+
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 7, 0, &baseline, &[],));
+    assert!(state.trusted_regional_mutation_allowed("game-1", &mods_root));
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 7),
+        AuthorityCatchUp::Clean {
+            reconcile_revision: 1,
+            ..
+        }
+    ));
+    assert!(state.handoff_authority_session("game-1", &mods_root, 7, 9));
+    state.begin_authority_session("game-1", &mods_root, 8);
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 9),
+        AuthorityCatchUp::Clean { .. }
+    ));
+
+    let alice_ini = mods_root.join("Alice").join("mod.ini");
+    state.observe_authority_event("game-1", 9, &mods_root, &[alice_ini], false);
+    assert!(!state.trusted_regional_mutation_allowed("game-1", &mods_root));
+    let observed_generation = match state.authority_catch_up("game-1", &mods_root, 9) {
+        AuthorityCatchUp::Scoped {
+            changed_paths,
+            observed_generation,
+        } => {
+            assert_eq!(
+                changed_paths,
+                vec![mods_root.join("Alice").to_string_lossy().into_owned()]
+            );
+            observed_generation
+        }
+        other => panic!("expected scoped catch-up, got {other:?}"),
+    };
+
+    state.observe_authority_event(
+        "game-1",
+        9,
+        &mods_root,
+        &[mods_root.join("Bob").join("mod.ini")],
+        false,
+    );
+    let mut scoped = applied_result("game-1");
+    scoped.scan_scope = DiskReconcileScanScope::Scoped;
+    state.record_result("game-1", &mut scoped);
+    assert!(!state.mark_authority_reconciled(
+        "game-1",
+        &mods_root,
+        9,
+        observed_generation,
+        &scoped,
+        &[mods_root.join("Alice").to_string_lossy().into_owned()],
+    ));
+
+    state.observe_authority_event(
+        "game-1",
+        9,
+        &mods_root,
+        &[temp.path().join("d3dx.ini")],
+        false,
+    );
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 9),
+        AuthorityCatchUp::Full { .. }
+    ));
+}
+
+#[test]
+fn inactive_watcher_failure_or_unproven_handoff_forces_full_catch_up() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_root).expect("create Mods root");
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, 3);
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 3, 0, &baseline, &[],));
+
+    state.invalidate_authority("game-1", &mods_root);
+    state.begin_authority_session("game-1", &mods_root, 4);
+
+    assert!(!state.trusted_regional_mutation_allowed("game-1", &mods_root));
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 4),
+        AuthorityCatchUp::Full { .. }
+    ));
+}
+
+#[test]
+fn root_only_watcher_event_forces_full_catch_up() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_root).expect("create Mods root");
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, 3);
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 3, 0, &baseline, &[],));
+
+    state.observe_authority_event(
+        "game-1",
+        3,
+        &mods_root,
+        std::slice::from_ref(&mods_root),
+        false,
+    );
+
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 3),
+        AuthorityCatchUp::Full { .. }
+    ));
+}
+
+#[test]
+fn watcher_gap_invalidates_an_otherwise_clean_authority_token() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_root).expect("create Mods root");
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, 3);
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 3, 0, &baseline, &[],));
+
+    state.observe_authority_event("game-1", 3, &mods_root, &[], true);
+
+    assert!(!state.trusted_regional_mutation_allowed("game-1", &mods_root));
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 3),
+        AuthorityCatchUp::Full { .. }
+    ));
+}
+
+#[test]
+fn excessive_dirty_roots_escalate_to_one_full_catch_up() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_root).expect("create Mods root");
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, 3);
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 3, 0, &baseline, &[],));
+    let paths = (0..=super::state::MAX_SCOPED_DIRTY_ROOTS)
+        .map(|index| mods_root.join(format!("Object {index}")).join("mod.ini"))
+        .collect::<Vec<_>>();
+
+    state.observe_authority_event("game-1", 3, &mods_root, &paths, false);
+
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, 3),
+        AuthorityCatchUp::Full { .. }
+    ));
+}
+
+#[test]
+fn trusted_rename_echo_is_consumed_and_commit_keeps_authority_clean() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    let old_path = mods_root.join("DISABLED Alice");
+    let new_path = mods_root.join("Alice");
+    std::fs::create_dir_all(&old_path).expect("source folder");
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_path)
+        .expect("source identity");
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&mods_root);
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, session.generation());
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled(
+        "game-1",
+        &mods_root,
+        session.generation(),
+        0,
+        &baseline,
+        &[],
+    ));
+    let authority = state
+        .trusted_internal_mutation_evidence("game-1", &mods_root, session.generation())
+        .expect("clean authority evidence");
+    watcher.suppressor.expect_rename_echoes(
+        "game-1",
+        &session,
+        [ExpectedRenameEcho {
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity,
+        }],
+    );
+
+    std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    let kind = EventKind::Modify(ModifyKind::Name(RenameMode::Both));
+    assert!(watcher.suppressor.consume_expected_rename_echo(
+        "game-1",
+        &session,
+        &kind,
+        &[old_path, new_path],
+    ));
+    let mut committed = applied_result("game-1");
+    committed.scan_scope = DiskReconcileScanScope::Scoped;
+    state.record_result("game-1", &mut committed);
+    assert!(state.mark_trusted_internal_mutation_reconciled(&authority, &committed, &[],));
+    assert!(matches!(
+        state.authority_catch_up("game-1", &mods_root, session.generation()),
+        AuthorityCatchUp::Clean {
+            reconcile_revision: 2,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn split_rename_echoes_are_consumed_as_one_trusted_mutation() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    let old_path = mods_root.join("DISABLED Alice");
+    let new_path = mods_root.join("Alice");
+    std::fs::create_dir_all(&old_path).expect("source folder");
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_path)
+        .expect("source identity");
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&mods_root);
+    watcher.suppressor.expect_rename_echoes(
+        "game-1",
+        &session,
+        [ExpectedRenameEcho {
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity,
+        }],
+    );
+
+    std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    assert!(watcher.suppressor.consume_expected_rename_echo(
+        "game-1",
+        &session,
+        &EventKind::Modify(ModifyKind::Name(RenameMode::From)),
+        std::slice::from_ref(&old_path),
+    ));
+    assert!(watcher.suppressor.consume_expected_rename_echo(
+        "game-1",
+        &session,
+        &EventKind::Modify(ModifyKind::Name(RenameMode::To)),
+        std::slice::from_ref(&new_path),
+    ));
+    assert!(!watcher.suppressor.consume_expected_rename_echo(
+        "game-1",
+        &session,
+        &EventKind::Modify(ModifyKind::Name(RenameMode::To)),
+        &[new_path],
+    ));
+}
+
+#[test]
+fn mismatched_identity_or_additional_rename_echo_dirties_authority() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    let old_path = mods_root.join("DISABLED Alice");
+    let new_path = mods_root.join("Alice");
+    std::fs::create_dir_all(&old_path).expect("source folder");
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_path)
+        .expect("source identity");
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&mods_root);
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, session.generation());
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled(
+        "game-1",
+        &mods_root,
+        session.generation(),
+        0,
+        &baseline,
+        &[],
+    ));
+    watcher.suppressor.expect_rename_echoes(
+        "game-1",
+        &session,
+        [ExpectedRenameEcho {
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity: format!("{expected_identity}-stale"),
+        }],
+    );
+
+    std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    let additional_path = mods_root.join("Bob").join("mod.ini");
+    let kind = EventKind::Modify(ModifyKind::Name(RenameMode::Both));
+    let mismatched_paths = vec![old_path.clone(), new_path.clone()];
+    assert!(!watcher.suppressor.consume_expected_rename_echo(
+        "game-1",
+        &session,
+        &kind,
+        &mismatched_paths,
+    ));
+    state.observe_authority_event(
+        "game-1",
+        session.generation(),
+        &mods_root,
+        &mismatched_paths,
+        false,
+    );
+    let paths = vec![old_path, new_path, additional_path];
+    assert!(!watcher
+        .suppressor
+        .consume_expected_rename_echo("game-1", &session, &kind, &paths,));
+    state.observe_authority_event("game-1", session.generation(), &mods_root, &paths, false);
+    assert!(!state.trusted_regional_mutation_allowed("game-1", &mods_root));
+}
+
+#[test]
+fn stale_watcher_session_cannot_consume_trusted_echo_evidence() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    let old_path = mods_root.join("DISABLED Alice");
+    let new_path = mods_root.join("Alice");
+    std::fs::create_dir_all(&old_path).expect("source folder");
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_path)
+        .expect("source identity");
+    let watcher = WatcherState::new();
+    let owner = watcher.begin_session(&mods_root);
+    let stale = watcher.begin_session(&mods_root);
+    watcher.suppressor.expect_rename_echoes(
+        "game-1",
+        &owner,
+        [ExpectedRenameEcho {
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity,
+        }],
+    );
+
+    std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    let kind = EventKind::Modify(ModifyKind::Name(RenameMode::Both));
+    assert!(!watcher.suppressor.consume_expected_rename_echo(
+        "game-1",
+        &stale,
+        &kind,
+        &[old_path.clone(), new_path.clone()],
+    ));
+    assert!(watcher.suppressor.consume_expected_rename_echo(
+        "game-1",
+        &owner,
+        &kind,
+        &[old_path, new_path],
+    ));
 }
 
 #[test]

@@ -13,6 +13,7 @@ export interface SharedModDialogState {
     folder: Pick<ModFolder, 'id' | 'path' | 'name'> | null;
     duplicates: DuplicateInfo[];
     enableDisabledAncestors: boolean;
+    parentEnableConfirmation: string | null;
   };
 }
 
@@ -21,7 +22,13 @@ const INITIAL_DIALOG_STATE: SharedModDialogState = {
   renameDialog: { open: false, folder: null },
   deleteConfirm: { open: false, folder: null },
   activeContextDialog: { open: false, folder: null, isProcessing: false },
-  duplicateWarning: { open: false, folder: null, duplicates: [], enableDisabledAncestors: false },
+  duplicateWarning: {
+    open: false,
+    folder: null,
+    duplicates: [],
+    enableDisabledAncestors: false,
+    parentEnableConfirmation: null,
+  },
 };
 
 const DIALOG_FIELD = {

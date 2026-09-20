@@ -7,6 +7,15 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{Emitter, State};
 
+fn emit_game_activation_status(
+    app: &tauri::AppHandle,
+    status: crate::modules::reconciliation::application::disk_reconcile::types::GameActivationStatus,
+) {
+    if let Err(error) = app.emit("game_activation:status", status) {
+        log::warn!("Could not emit game activation status: {error}");
+    }
+}
+
 const AI_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_AI_BASE_URL: &str = "https://api.openai.com/v1";
 
@@ -52,24 +61,12 @@ fn add_runtime_sync_warning(
     }
 }
 
-/// A Mods watcher improves freshness for later external edits, but publishing
-/// the current overlay snapshot must not depend on it starting successfully.
-async fn sync_after_watcher_start<F, Fut>(
+fn record_watcher_start_result(
     watcher_start: Result<(), AppError>,
     sync_warning: &mut Option<
         crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning,
     >,
-    request_sync: F,
-) -> Result<crate::modules::system::application::app::post_apply::RuntimeSyncResult, AppError>
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<
-        Output = Result<
-            crate::modules::system::application::app::post_apply::RuntimeSyncResult,
-            AppError,
-        >,
-    >,
-{
+) {
     if let Err(error) = watcher_start {
         log::warn!("Settings changed a runtime root but the watcher could not restart: {error}");
         add_runtime_sync_warning(
@@ -80,7 +77,31 @@ where
             ),
         );
     }
-    request_sync().await
+}
+
+fn validate_mods_roots_unchanged(
+    previous: &AppSettings,
+    requested: &AppSettings,
+) -> Result<(), AppError> {
+    crate::modules::settings::application::config::ensure_unique_game_ids(requested)?;
+    for previous_game in &previous.games {
+        let Some(requested_game) = requested
+            .games
+            .iter()
+            .find(|game| game.id == previous_game.id)
+        else {
+            continue;
+        };
+        if crate::shared::path_key::canonical_path_key_for_path(&previous_game.mod_path)
+            != crate::shared::path_key::canonical_path_key_for_path(&requested_game.mod_path)
+        {
+            return Err(AppError::Validation(format!(
+                "Use the Mods directory command to change the Mods root for '{}' safely",
+                previous_game.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[specta::specta]
@@ -173,9 +194,22 @@ pub async fn save_settings(
             "Use the active-game command to change the active game safely".to_string(),
         ));
     }
+    validate_mods_roots_unchanged(&previous, &settings)?;
     let saved = state.save_settings(settings)?;
+    let active_game_id = saved.active_game_id.as_deref();
+    let previous_active = previous
+        .active_game()
+        .filter(|game| Some(game.id.as_str()) == active_game_id);
+    let saved_active = saved.active_game();
+    let runtime_root_changed = matches!(
+        (previous_active, saved_active),
+        (Some(previous_game), Some(saved_game))
+            if previous_game.instance_path != saved_game.instance_path
+                || previous_game.game_type != saved_game.game_type
+    );
+    let safety_keywords_changed = saved.safety.keywords != previous.safety.keywords;
     let mut sync_warning = None;
-    if saved.safety.keywords != previous.safety.keywords {
+    if safety_keywords_changed && !runtime_root_changed {
         if let Some(game_id) = saved.active_game_id.as_deref() {
             let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
                 crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
@@ -197,27 +231,12 @@ pub async fn save_settings(
             sync_warning = settlement.sync_warning;
         }
     }
-    let active_game_id = saved.active_game_id.as_deref();
-    let previous_active = previous
-        .active_game()
-        .filter(|game| Some(game.id.as_str()) == active_game_id);
-    let saved_active = saved.active_game();
-    let runtime_root_changed = matches!(
-        (previous_active, saved_active),
-        (Some(previous_game), Some(saved_game))
-            if previous_game.instance_path != saved_game.instance_path
-                || previous_game.mod_path != saved_game.mod_path
-                || previous_game.game_type != saved_game.game_type
-    );
-    let overlay_cause = match (previous_active, saved_active) {
+    let runtime_sync_cause = match (previous_active, saved_active) {
         (Some(previous_game), Some(saved_game))
             if previous_game.instance_path != saved_game.instance_path
                 || previous_game.game_type != saved_game.game_type =>
         {
-            Some(crate::modules::system::application::app::post_apply::OverlaySyncCause::ImporterRootChanged)
-        }
-        (Some(previous_game), Some(saved_game)) if previous_game.mod_path != saved_game.mod_path => {
-            Some(crate::modules::system::application::app::post_apply::OverlaySyncCause::ModsRootChanged)
+            Some(crate::modules::reconciliation::api::RuntimeSyncCause::ImporterRootChanged)
         }
         (Some(_), Some(_))
             if saved.hotkeys.toggle_overlay != previous.hotkeys.toggle_overlay
@@ -226,7 +245,7 @@ pub async fn save_settings(
                 || saved.hotkeys.prev_preset != previous.hotkeys.prev_preset
                 || saved.keyviewer.enabled != previous.keyviewer.enabled =>
         {
-            Some(crate::modules::system::application::app::post_apply::OverlaySyncCause::SettingsChanged)
+            Some(crate::modules::reconciliation::api::RuntimeSyncCause::SettingsChanged)
         }
         _ => None,
     };
@@ -241,66 +260,16 @@ pub async fn save_settings(
             )
         })
     });
-    if let (Some(game_id), Some(cause)) = (active_game_id, overlay_cause) {
-        let request_sync = || {
-            crate::modules::system::application::app::post_apply::request_overlay_sync_with_retry_for_game(
-                pool.inner(),
-                state.inner(),
-                game_id,
-                cause,
-            )
-        };
-        let sync_result = match watcher_start.flatten() {
-            Some(result) => {
-                sync_after_watcher_start(
-                    result.map_err(AppError::from),
-                    &mut sync_warning,
-                    request_sync,
-                )
-                .await
-            }
-            None => request_sync().await,
-        };
-        match sync_result {
-            Ok(result) => {
-                if result.requires_retry() {
-                    disk_reconcile_state.inner().stage_runtime_effects(
-                        game_id,
-                        crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
-                            collections_dirty: false,
-                            overlay_refresh: true,
-                        },
-                    );
-                }
-                if let Some(message) = result.diagnostic_message() {
-                    log::warn!("Settings were committed but KeyViewer sync is pending: {message}");
-                    add_runtime_sync_warning(
-                        &mut sync_warning,
-                        if result.needs_manual_reload() {
-                            crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind::ManualReloadRequired
-                        } else {
-                            crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind::RuntimeSyncPending
-                        },
-                        message,
-                    );
-                }
-            }
-            Err(error) => {
-                disk_reconcile_state.inner().stage_runtime_effects(
-                    game_id,
-                    crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
-                        collections_dirty: false,
-                        overlay_refresh: true,
-                    },
-                );
-                log::warn!("Settings were committed but KeyViewer sync is pending: {error}");
-                add_runtime_sync_warning(
-                    &mut sync_warning,
-                    crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind::RuntimeSyncPending,
-                    error.to_string(),
-                );
-            }
-        }
+    if let Some(result) = watcher_start.flatten() {
+        record_watcher_start_result(result.map_err(AppError::from), &mut sync_warning);
+    }
+    if let (Some(game_id), Some(cause)) = (active_game_id, runtime_sync_cause) {
+        crate::modules::reconciliation::api::enqueue_runtime_sync(
+            &app,
+            pool.inner(),
+            game_id,
+            cause,
+        );
     }
     Ok(completed_settings_save(saved, sync_warning))
 }
@@ -316,68 +285,171 @@ pub async fn set_active_game(
         '_,
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-) -> Result<(), AppError> {
+    watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::GameActivationResult,
+    AppError,
+> {
+    use crate::modules::reconciliation::application::disk_reconcile::types::{
+        GameActivationPhase, GameActivationResult, GameActivationStatus,
+    };
+
     let _activation_guard = disk_reconcile_state.activation_guard().await;
-    if let Some(game_id) = game_id.as_deref() {
-        // Every activation is a new disk-authority boundary. The first
-        // workspace read must scan this game's current folder before using a
-        // DB projection that may predate changes made while the game was idle.
-        disk_reconcile_state.reset_initial_recovery(game_id);
-        let recovery_result =
-            match crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_disk_recovery(
-                &app,
-                pool.inner(),
-                disk_reconcile_state.inner(),
-                game_id,
-            )
-            .await
-            {
-                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
-                    result,
-                ) => Ok(result),
-                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
-                    error,
-                ) => Err(AppError::Io(format!(
-                    "Disk recovery failed while activating game '{game_id}': {error}"
-                ))),
-            };
-        match recovery_result {
-            Ok(result) => {
-                // Publish the selection only after the target game's disk
-                // recovery is terminal. A failed activation therefore needs
-                // no stale-snapshot rollback at all.
-                state.set_active_game(Some(game_id.to_string()))?;
-                if result.status
-                    != crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileStatus::Applied
-                {
-                    if let Err(error) = app.emit("disk_reconcile:result", result) {
-                        log::warn!(
-                            "Game activation reconciled but its resolution event could not be emitted: {error}"
-                        );
-                    }
-                }
-            }
-            Err(error) => {
-                return Err(error);
+    let settings_snapshot = state.get_settings();
+    let previous_game = settings_snapshot.active_game().cloned();
+    let target_game = game_id
+        .as_deref()
+        .map(|requested_game_id| {
+            settings_snapshot
+                .games
+                .iter()
+                .find(|game| game.id == requested_game_id)
+                .cloned()
+                .ok_or_else(|| AppError::NotFound(format!("Game '{requested_game_id}' not found")))
+        })
+        .transpose()?;
+    let generation = disk_reconcile_state.begin_activation(game_id.clone());
+    if let Err(error) = state.set_active_game(game_id.clone()) {
+        let restored_generation = disk_reconcile_state
+            .begin_activation(previous_game.as_ref().map(|game| game.id.clone()));
+        if let Some(previous) = &previous_game {
+            disk_reconcile_state.reset_initial_recovery(&previous.id);
+            let recovery_generation =
+                disk_reconcile_state.mark_initial_recovery_pending(&previous.id);
+            if let Err(restore_error) = crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher_for_activation(
+                app.clone(),
+                watcher.inner(),
+                pool.inner().clone(),
+                previous.mod_path.to_string_lossy().into_owned(),
+                previous.id.clone(),
+                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherActivation {
+                    activation_generation: restored_generation,
+                    recovery_generation,
+                },
+            ) {
+                let message = format!(
+                    "Could not restore '{}' after active-game persistence failed: {restore_error}",
+                    previous.name
+                );
+                disk_reconcile_state.finish_initial_recovery(
+                    &previous.id,
+                    recovery_generation,
+                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                        message.clone(),
+                    ),
+                );
+                log::error!("{message}");
             }
         }
-        if let Err(error) = crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
-            pool.inner(),
-            state.inner(),
-            game_id,
-            crate::modules::system::application::app::post_apply::OverlaySyncCause::GameActivated,
-        )
-        .await
-        .and_then(
-            crate::modules::system::application::app::post_apply::RuntimeSyncResult::ensure_success,
-        )
-        {
-            log::warn!("Active game changed but overlay refresh failed: {error}");
-        }
-    } else {
-        state.set_active_game(None)?;
+        return Err(error);
     }
-    Ok(())
+    if let Some(previous) = previous_game
+        .as_ref()
+        .filter(|previous| game_id.as_deref() != Some(previous.id.as_str()))
+    {
+        let runtime_config_path = previous.instance_path.join("d3dx.ini");
+        if previous.mod_path.is_dir() {
+            if let Err(error) = crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+                &app,
+                watcher.inner(),
+                &previous.id,
+                &previous.mod_path,
+                Some(&runtime_config_path),
+            ) {
+                log::warn!(
+                    "Could not preserve inactive watcher continuity for '{}': {error}",
+                    previous.id
+                );
+            }
+        }
+    }
+    watcher.invalidate_session();
+    *crate::shared::sync::lock(&watcher.watcher) = None;
+
+    let Some(game_id) = game_id else {
+        let status = GameActivationStatus {
+            game_id: None,
+            generation,
+            phase: GameActivationPhase::Ready,
+            reconcile_revision: None,
+            runtime_sync_generation: None,
+            error: None,
+        };
+        emit_game_activation_status(&app, status);
+        return Ok(GameActivationResult {
+            game_id: None,
+            generation,
+            phase: GameActivationPhase::Ready,
+        });
+    };
+    let game = target_game.expect("validated Some game id has a game");
+    disk_reconcile_state.reset_initial_recovery(&game_id);
+    let recovery_generation = disk_reconcile_state.mark_initial_recovery_pending(&game_id);
+    let syncing = GameActivationStatus {
+        game_id: Some(game_id.clone()),
+        generation,
+        phase: GameActivationPhase::Syncing,
+        reconcile_revision: None,
+        runtime_sync_generation: None,
+        error: None,
+    };
+    emit_game_activation_status(&app, syncing);
+
+    let unavailable = !game.mod_path.exists() || !game.mod_path.is_dir();
+    let start_result = if unavailable {
+        Err(crate::shared::errors::ScannerError::PathNotFound {
+            path: game.mod_path.to_string_lossy().into_owned(),
+        })
+    } else {
+        crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher_for_activation(
+            app.clone(),
+            watcher.inner(),
+            pool.inner().clone(),
+            game.mod_path.to_string_lossy().into_owned(),
+            game_id.clone(),
+            crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherActivation {
+                activation_generation: generation,
+                recovery_generation,
+            },
+        )
+    };
+    if let Err(error) = start_result {
+        let message = format!("Could not activate '{}': {error}", game.name);
+        disk_reconcile_state.finish_initial_recovery(
+            &game_id,
+            recovery_generation,
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                message.clone(),
+            ),
+        );
+        let phase = if unavailable {
+            GameActivationPhase::SourceUnavailable
+        } else {
+            GameActivationPhase::Failed
+        };
+        emit_game_activation_status(
+            &app,
+            GameActivationStatus {
+                game_id: Some(game_id.clone()),
+                generation,
+                phase: phase.clone(),
+                reconcile_revision: None,
+                runtime_sync_generation: None,
+                error: Some(message),
+            },
+        );
+        return Ok(GameActivationResult {
+            game_id: Some(game_id),
+            generation,
+            phase,
+        });
+    }
+
+    Ok(GameActivationResult {
+        game_id: Some(game_id),
+        generation,
+        phase: GameActivationPhase::Syncing,
+    })
 }
 
 #[specta::specta]
@@ -727,7 +799,8 @@ pub async fn test_ai_connection(
 mod tests {
     use super::{
         build_mod_viewer_command, completed_settings_save, ensure_mod_viewer_supports,
-        should_pass_disabled_ini, sync_after_watcher_start, validate_mod_viewer_folder,
+        record_watcher_start_result, should_pass_disabled_ini, validate_mod_viewer_folder,
+        validate_mods_roots_unchanged,
     };
     use crate::modules::games::domain::models::{GameType, LaunchMode};
     use crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile;
@@ -751,36 +824,45 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn watcher_start_failure_still_allows_a_published_overlay_sync() {
+    #[test]
+    fn watcher_start_failure_is_reported_without_blocking_runtime_queueing() {
         let mut warning = None;
-        let result = sync_after_watcher_start(
+        record_watcher_start_result(
             Err(crate::shared::errors::AppError::Io(
                 "injected watcher startup failure".to_string(),
             )),
             &mut warning,
-            || async {
-                Ok(
-                    crate::modules::system::application::app::post_apply::RuntimeSyncResult {
-                        cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::ModsRootChanged,
-                        publication: crate::modules::system::application::app::post_apply::RuntimeSyncPublication::Published,
-                        reload: crate::modules::system::application::app::post_apply::RuntimeReloadOutcome::NotRequired,
-                        failure: None,
-                    },
-                )
-            },
-        )
-        .await
-        .expect("watcher failure must not short-circuit overlay publication");
-
-        assert_eq!(
-            result.publication,
-            crate::modules::system::application::app::post_apply::RuntimeSyncPublication::Published
         );
         assert_eq!(
             warning.expect("watcher failure should be visible").kind,
             CommittedMutationSyncWarningKind::WatcherUnavailable
         );
+    }
+
+    #[test]
+    fn generic_settings_save_rejects_existing_game_mods_root_changes() {
+        let game = GameConfig {
+            id: "game-a".to_string(),
+            name: "Game A".to_string(),
+            game_type: GameType::GIMI,
+            instance_path: "C:/Games/Importer".into(),
+            mod_path: "C:/Games/Importer/Mods".into(),
+            ready_to_move_path: None,
+            launch_mode: LaunchMode::Standalone,
+            game_exe: None,
+            loader_exe: None,
+            xxmi_launcher_exe: None,
+            launch_args: None,
+            warnings: Vec::new(),
+        };
+        let mut previous = AppSettings::default();
+        previous.games.push(game.clone());
+        let mut requested = previous.clone();
+        requested.games[0].mod_path = "D:/Other/Mods".into();
+
+        assert!(validate_mods_roots_unchanged(&previous, &requested).is_err());
+        requested.games[0].mod_path = "C:\\Games\\Importer\\Mods".into();
+        assert!(validate_mods_roots_unchanged(&previous, &requested).is_ok());
     }
 
     #[test]

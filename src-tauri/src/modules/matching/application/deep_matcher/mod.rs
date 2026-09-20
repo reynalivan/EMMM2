@@ -34,9 +34,7 @@ use crate::modules::workspace::application::scanner::core::walker::{FolderConten
 use analysis::content::PreparedTokenFilters;
 
 /// Parse a GameBanana item only from a canonical site URL.
-pub fn gamebanana_reference_from_url(
-    url: &str,
-) -> Option<analysis::gamebanana::GameBananaRef> {
+pub fn gamebanana_reference_from_url(url: &str) -> Option<analysis::gamebanana::GameBananaRef> {
     analysis::gamebanana::gamebanana_reference_from_url(url)
 }
 

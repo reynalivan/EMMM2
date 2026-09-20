@@ -69,11 +69,13 @@ describe('buildResolutionRequests', () => {
     expect(buildResolutionRequests(selections, [group('g1', ['a'])])).toEqual([]);
   });
 
-  it('does not build destructive requests for an inexact group', () => {
+  it('builds destructive requests for an inexact group after explicit selection', () => {
     const selections = new Map<string, DuplicateSelection>([
       ['g1', { type: 'Keep', targetPath: 'a' }],
     ]);
 
-    expect(buildResolutionRequests(selections, [group('g1', ['a', 'b'], 85)])).toEqual([]);
+    expect(buildResolutionRequests(selections, [group('g1', ['a', 'b'], 85)])).toEqual([
+      { groupId: 'g1', action: 'keepA', folderA: 'a', folderB: 'b' },
+    ]);
   });
 });

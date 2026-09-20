@@ -2,9 +2,11 @@
 //! Moved out of `commands::app::workspace_cmds` so the command layer stays a
 //! thin State-extraction wrapper over this service.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+
+use sha2::{Digest, Sha256};
 
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
@@ -47,9 +49,55 @@ pub struct PreparedModSwitch {
 
 #[derive(Debug, Clone)]
 pub enum PreparedWorkspaceSwitch {
-    Immediate(WorkspaceSwitchResult),
+    Immediate(Box<WorkspaceSwitchResult>),
     Object(crate::modules::library::application::mods::object_switch::PreparedObjectSwitch),
+    Objects(Vec<crate::modules::library::application::mods::object_switch::PreparedObjectSwitch>),
     Mod(PreparedModSwitch),
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkspaceMutationRename {
+    pub sequence: u32,
+    pub old_path: PathBuf,
+    pub new_path: PathBuf,
+    pub identity_path: PathBuf,
+    pub expected_identity: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkspaceMutationScope {
+    pub renames: Vec<WorkspaceMutationRename>,
+    pub changed_paths: Vec<String>,
+    pub owning_roots: Vec<String>,
+    pub touched_object_ids: Vec<String>,
+}
+
+impl WorkspaceMutationScope {
+    pub fn has_trusted_identities(&self) -> bool {
+        !self.renames.is_empty()
+            && self
+                .renames
+                .iter()
+                .all(|rename| rename.expected_identity.is_some())
+    }
+
+    pub fn validate_identities(&self) -> Result<(), AppError> {
+        for rename in &self.renames {
+            let Some(expected) = rename.expected_identity.as_deref() else {
+                continue;
+            };
+            let actual = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(
+                &rename.identity_path,
+            );
+            if actual.as_deref() != Some(expected) {
+                return Err(AppError::Io(format!(
+                    "Folder changed while preparing the switch: {}",
+                    rename.identity_path.display()
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
 struct ResolvedModTarget {
@@ -86,6 +134,19 @@ impl PreparedWorkspaceSwitch {
         match self {
             Self::Immediate(_) => Vec::new(),
             Self::Object(prepared) => prepared.journal_steps(),
+            Self::Objects(prepared) => {
+                let mut sequence = 0_u32;
+                prepared
+                    .iter()
+                    .filter_map(|object| {
+                        let step = object.journal_step(sequence);
+                        if step.is_some() {
+                            sequence += 1;
+                        }
+                        step
+                    })
+                    .collect()
+            }
             Self::Mod(prepared) => prepared
                 .batches
                 .iter()
@@ -96,9 +157,62 @@ impl PreparedWorkspaceSwitch {
 
     pub fn immediate_result(&self) -> Option<WorkspaceSwitchResult> {
         match self {
-            Self::Immediate(result) => Some(result.clone()),
-            Self::Object(_) | Self::Mod(_) => None,
+            Self::Immediate(result) => Some(result.as_ref().clone()),
+            Self::Object(_) | Self::Objects(_) | Self::Mod(_) => None,
         }
+    }
+
+    pub fn mutation_scope(&self, mods_root: &Path) -> Result<WorkspaceMutationScope, AppError> {
+        let steps = self.journal_steps();
+        let mut prior_rewrites = Vec::<(PathBuf, PathBuf)>::new();
+        let mut renames = Vec::with_capacity(steps.len());
+        let mut changed_paths = Vec::with_capacity(steps.len() * 2);
+        let mut owning_roots = BTreeSet::new();
+
+        for (sequence, old_path, new_path) in steps {
+            let physical_source = reverse_rebase_path(old_path.clone(), &prior_rewrites);
+            let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(
+                &physical_source,
+            )
+            .ok_or_else(|| {
+                AppError::Io(format!(
+                    "Could not establish filesystem identity for {}",
+                    physical_source.display()
+                ))
+            })?;
+            for path in [&old_path, &new_path] {
+                changed_paths.push(path.to_string_lossy().into_owned());
+                if let Ok(relative) = path.strip_prefix(mods_root) {
+                    if let Some(root) = relative.components().next() {
+                        owning_roots.insert(root.as_os_str().to_string_lossy().into_owned());
+                    }
+                }
+            }
+            prior_rewrites.push((old_path.clone(), new_path.clone()));
+            renames.push(WorkspaceMutationRename {
+                sequence,
+                old_path,
+                new_path,
+                identity_path: physical_source,
+                expected_identity: Some(expected_identity),
+            });
+        }
+
+        let touched_object_ids = match self {
+            Self::Immediate(result) => result.changed_object_ids.clone(),
+            Self::Object(prepared) => vec![prepared.object_id().to_string()],
+            Self::Objects(prepared) => prepared
+                .iter()
+                .map(|object| object.object_id().to_string())
+                .collect(),
+            Self::Mod(prepared) => prepared.changed_object_ids.clone(),
+        };
+        Ok(WorkspaceMutationScope {
+            renames,
+            changed_paths,
+            owning_roots: owning_roots.into_iter().collect(),
+            touched_object_ids,
+        })
     }
 
     pub fn execute(
@@ -116,7 +230,7 @@ impl PreparedWorkspaceSwitch {
         watcher: &WatcherState,
     ) -> Result<WorkspaceSwitchResult, PreparedWorkspaceExecutionError> {
         match self {
-            Self::Immediate(result) => Ok(result.clone()),
+            Self::Immediate(result) => Ok(result.as_ref().clone()),
             Self::Object(prepared) => {
                 let outcome = prepared.execute(watcher)?;
                 let changed_folder_paths = if outcome.original_path == outcome.next_path {
@@ -143,6 +257,66 @@ impl PreparedWorkspaceSwitch {
                         std::slice::from_ref(&outcome.object_id),
                     ),
                     sync_warning: None,
+                    runtime_sync_generation: None,
+                })
+            }
+            Self::Objects(prepared_objects) => {
+                let mut applied = Vec::new();
+                let mut outcomes = Vec::new();
+                for prepared in prepared_objects {
+                    match prepared.execute(watcher) {
+                        Ok(outcome) => {
+                            applied.push(prepared);
+                            outcomes.push(outcome);
+                        }
+                        Err(error) => {
+                            for completed in applied.into_iter().rev() {
+                                if let Err(rollback_error) = completed.rollback(watcher) {
+                                    return Err(PreparedWorkspaceExecutionError::Compensation(
+                                        rollback_error,
+                                    ));
+                                }
+                            }
+                            return Err(PreparedWorkspaceExecutionError::Apply(error));
+                        }
+                    }
+                }
+                let mut rewrites = Vec::new();
+                let mut changed_folder_paths = Vec::new();
+                let mut seen_paths = HashSet::new();
+                let mut changed_object_ids = Vec::with_capacity(outcomes.len());
+                for outcome in outcomes {
+                    if outcome.original_path != outcome.next_path {
+                        changed_object_ids.push(outcome.object_id);
+                        for path in [&outcome.original_path, &outcome.next_path] {
+                            if seen_paths.insert(path.clone()) {
+                                changed_folder_paths.push(path.clone());
+                            }
+                        }
+                        rewrites.push(WorkspacePathRewrite {
+                            old_path: outcome.original_path,
+                            new_path: outcome.next_path,
+                        });
+                    }
+                }
+                let status = if rewrites.is_empty() {
+                    WorkspaceSwitchStatus::Noop
+                } else {
+                    WorkspaceSwitchStatus::Applied
+                };
+                let mut impact =
+                    build_switch_impact(None, None, &changed_folder_paths, &changed_object_ids);
+                impact.rewrites = rewrites;
+                Ok(WorkspaceSwitchResult {
+                    status,
+                    primary_path: None,
+                    changed_folder_paths,
+                    changed_object_ids,
+                    duplicates: Vec::new(),
+                    parent_enable_requirement: None,
+                    impact,
+                    sync_warning: None,
+                    runtime_sync_generation: None,
                 })
             }
             Self::Mod(prepared) => {
@@ -159,6 +333,8 @@ impl PreparedWorkspaceSwitch {
                         watcher,
                         batch,
                         &cancel,
+                        "workspace-switch",
+                        false,
                     );
                     if !execution.result.failures.is_empty() {
                         for (rollback_batch, rollback_sequences) in executions.iter().rev() {
@@ -216,6 +392,7 @@ impl PreparedWorkspaceSwitch {
                     parent_enable_requirement: None,
                     impact,
                     sync_warning: None,
+                    runtime_sync_generation: None,
                 })
             }
         }
@@ -225,6 +402,12 @@ impl PreparedWorkspaceSwitch {
         match self {
             Self::Immediate(_) => Ok(()),
             Self::Object(prepared) => prepared.rollback(watcher),
+            Self::Objects(prepared) => {
+                for object in prepared.iter().rev() {
+                    object.rollback(watcher)?;
+                }
+                Ok(())
+            }
             Self::Mod(prepared) => {
                 for batch in prepared.batches.iter().rev() {
                     crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
@@ -237,6 +420,67 @@ impl PreparedWorkspaceSwitch {
             }
         }
     }
+}
+
+pub async fn prepare_object_batch_switch(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    object_ids: &[String],
+    desired_enabled: bool,
+) -> Result<PreparedWorkspaceSwitch, AppError> {
+    let mut seen_ids = HashSet::new();
+    let mut unique_ids = Vec::new();
+    for object_id in object_ids {
+        if !seen_ids.insert(object_id.clone()) {
+            continue;
+        }
+        unique_ids.push(object_id.clone());
+    }
+    if unique_ids.is_empty() {
+        return Err(AppError::Validation(
+            "Object bulk switch requires at least one object".to_string(),
+        ));
+    }
+    const MAX_OBJECT_BATCH_SIZE: usize = 10_000;
+    if unique_ids.len() > MAX_OBJECT_BATCH_SIZE {
+        return Err(AppError::Validation(format!(
+            "Object bulk switch supports at most {MAX_OBJECT_BATCH_SIZE} objects"
+        )));
+    }
+    let prepared =
+        crate::modules::library::application::mods::object_switch::prepare_object_root_switches(
+            pool,
+            game_id,
+            &unique_ids,
+            desired_enabled,
+        )
+        .await?;
+    let mut mutation_paths = prepared
+        .iter()
+        .filter_map(|object| object.journal_step(0).map(|(_, old_path, _)| old_path))
+        .collect::<Vec<_>>();
+    mutation_paths.sort();
+    for (index, path) in mutation_paths.iter().enumerate() {
+        if mutation_paths
+            .iter()
+            .skip(index + 1)
+            .any(|candidate| candidate.starts_with(path) || path.starts_with(candidate))
+        {
+            return Err(AppError::Validation(
+                "Object bulk switch cannot include overlapping object roots".to_string(),
+            ));
+        }
+    }
+    Ok(PreparedWorkspaceSwitch::Objects(prepared))
+}
+
+fn reverse_rebase_path(mut path: PathBuf, rewrites: &[(PathBuf, PathBuf)]) -> PathBuf {
+    for (old_path, new_path) in rewrites.iter().rev() {
+        if let Ok(suffix) = path.strip_prefix(new_path) {
+            path = old_path.join(suffix);
+        }
+    }
+    path
 }
 
 pub async fn prepare_switch(
@@ -281,7 +525,7 @@ pub async fn prepare_switch(
     } else {
         Vec::new()
     };
-    if !disabled_parents.is_empty() && !input.enable_disabled_ancestors {
+    if !disabled_parents.is_empty() {
         let requirement = build_parent_enable_requirement(
             pool,
             &input.game_id,
@@ -290,16 +534,29 @@ pub async fn prepare_switch(
             &disabled_parents,
         )
         .await?;
-        return Ok(PreparedWorkspaceSwitch::Immediate(WorkspaceSwitchResult {
-            status: WorkspaceSwitchStatus::RequiresParentEnable,
-            primary_path: None,
-            changed_folder_paths: Vec::new(),
-            changed_object_ids: resolved_target.changed_object_ids.clone(),
-            duplicates: Vec::new(),
-            parent_enable_requirement: Some(requirement),
-            impact: build_switch_impact(None, None, &[], &resolved_target.changed_object_ids),
-            sync_warning: None,
-        }));
+        let confirmation_matches = input.enable_disabled_ancestors
+            && input.parent_enable_confirmation.as_deref()
+                == Some(requirement.confirmation_token.as_str());
+        if !confirmation_matches {
+            return Ok(PreparedWorkspaceSwitch::Immediate(Box::new(
+                WorkspaceSwitchResult {
+                    status: WorkspaceSwitchStatus::RequiresParentEnable,
+                    primary_path: None,
+                    changed_folder_paths: Vec::new(),
+                    changed_object_ids: resolved_target.changed_object_ids.clone(),
+                    duplicates: Vec::new(),
+                    parent_enable_requirement: Some(requirement),
+                    impact: build_switch_impact(
+                        None,
+                        None,
+                        &[],
+                        &resolved_target.changed_object_ids,
+                    ),
+                    sync_warning: None,
+                    runtime_sync_generation: None,
+                },
+            )));
+        }
     }
     let mut disable_paths = Vec::new();
     if input.desired_enabled && input.resolution != WorkspaceSwitchResolution::ForceEnable {
@@ -331,21 +588,24 @@ pub async fn prepare_switch(
                 pool, &target_rel, &input.game_id,
             ).await?;
             if !duplicates.is_empty() {
-                return Ok(PreparedWorkspaceSwitch::Immediate(WorkspaceSwitchResult {
-                    status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
-                    primary_path: None,
-                    changed_folder_paths: Vec::new(),
-                    changed_object_ids: resolved_target.changed_object_ids.clone(),
-                    duplicates: map_duplicates(duplicates),
-                    parent_enable_requirement: None,
-                    impact: build_switch_impact(
-                        None,
-                        None,
-                        &[],
-                        &resolved_target.changed_object_ids,
-                    ),
-                    sync_warning: None,
-                }));
+                return Ok(PreparedWorkspaceSwitch::Immediate(Box::new(
+                    WorkspaceSwitchResult {
+                        status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
+                        primary_path: None,
+                        changed_folder_paths: Vec::new(),
+                        changed_object_ids: resolved_target.changed_object_ids.clone(),
+                        duplicates: map_duplicates(duplicates),
+                        parent_enable_requirement: None,
+                        impact: build_switch_impact(
+                            None,
+                            None,
+                            &[],
+                            &resolved_target.changed_object_ids,
+                        ),
+                        sync_warning: None,
+                        runtime_sync_generation: None,
+                    },
+                )));
             }
         }
     }
@@ -491,21 +751,108 @@ async fn build_parent_enable_requirement(
         }
     }
 
+    let parents = disabled_parents
+        .iter()
+        .map(|path| WorkspaceParentEnableParent {
+            path: path.to_string_lossy().into_owned(),
+            name: display_name(path),
+        })
+        .collect::<Vec<_>>();
+    let confirmation_token = parent_enable_confirmation_token(
+        game_id,
+        mods_root,
+        target_path,
+        disabled_parents,
+        &will_activate,
+        &stay_disabled,
+    )?;
     Ok(WorkspaceParentEnableRequirement {
+        confirmation_token,
         requested_target: WorkspaceParentEnableImpact {
             path: target_path.to_string_lossy().into_owned(),
             name: display_name(target_path),
         },
-        parents: disabled_parents
-            .iter()
-            .map(|path| WorkspaceParentEnableParent {
-                path: path.to_string_lossy().into_owned(),
-                name: display_name(path),
-            })
-            .collect(),
+        parents,
         will_activate,
         stay_disabled,
     })
+}
+
+fn parent_enable_confirmation_token(
+    game_id: &str,
+    mods_root: &Path,
+    target_path: &Path,
+    disabled_parents: &[PathBuf],
+    will_activate: &[WorkspaceParentEnableImpact],
+    stay_disabled: &[WorkspaceParentEnableImpact],
+) -> Result<String, AppError> {
+    let outer_parent = disabled_parents.first().ok_or_else(|| {
+        AppError::Internal("Parent-enable confirmation requires a disabled parent".to_string())
+    })?;
+    let mut pending = vec![outer_parent.clone()];
+    let mut directories = Vec::new();
+    while let Some(directory) = pending.pop() {
+        let relative = directory.strip_prefix(mods_root).map_err(|_| {
+            AppError::Validation(format!(
+                "Parent-enable directory is outside the Mods root: {}",
+                directory.display()
+            ))
+        })?;
+        let identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&directory)
+            .ok_or_else(|| {
+                AppError::Io(format!(
+                    "Could not establish filesystem identity for {}",
+                    directory.display()
+                ))
+            })?;
+        directories.push((
+            crate::shared::path_key::canonical_path_key_for_path(relative),
+            identity,
+        ));
+        let entries = std::fs::read_dir(&directory).map_err(|error| {
+            AppError::Io(format!(
+                "Could not inspect parent-enable subtree '{}': {error}",
+                directory.display()
+            ))
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| AppError::Io(error.to_string()))?;
+            if entry
+                .file_type()
+                .map_err(|error| AppError::Io(error.to_string()))?
+                .is_dir()
+            {
+                pending.push(entry.path());
+            }
+        }
+    }
+    directories.sort();
+
+    let mut hasher = Sha256::new();
+    for value in [game_id, &target_path.to_string_lossy()] {
+        hash_confirmation_component(&mut hasher, value.as_bytes());
+    }
+    for parent in disabled_parents {
+        hash_confirmation_component(&mut hasher, parent.to_string_lossy().as_bytes());
+    }
+    for (path, identity) in directories {
+        hash_confirmation_component(&mut hasher, path.as_bytes());
+        hash_confirmation_component(&mut hasher, identity.as_bytes());
+    }
+    for impact in will_activate {
+        hash_confirmation_component(&mut hasher, b"active");
+        hash_confirmation_component(&mut hasher, impact.path.as_bytes());
+    }
+    for impact in stay_disabled {
+        hash_confirmation_component(&mut hasher, b"disabled");
+        hash_confirmation_component(&mut hasher, impact.path.as_bytes());
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn hash_confirmation_component(hasher: &mut Sha256, value: &[u8]) {
+    hasher.update((value.len() as u64).to_le_bytes());
+    hasher.update(value);
 }
 
 fn prepare_target_activation_batches(

@@ -154,8 +154,20 @@ describe('ResolutionModal', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/KEEP:/)).toBeInTheDocument();
-        expect(screen.getByText(/Delete 1 other identical item\(s\)/)).toBeInTheDocument();
+        expect(screen.getByText(/Move 1 other candidate item\(s\) to Trash/)).toBeInTheDocument();
         expect(screen.getByText('Mod A - Keep')).toBeInTheDocument();
+      });
+    });
+
+    it('warns before applying KeepA to an inexact group', async () => {
+      const selections = new Map([
+        ['group-1', { type: 'Keep', targetPath: '/path/mod-a' } as const],
+      ]);
+
+      render(<ResolutionModal {...defaultProps} isOpen={true} selections={selections} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/not an exact match/i)).toBeInTheDocument();
       });
     });
 

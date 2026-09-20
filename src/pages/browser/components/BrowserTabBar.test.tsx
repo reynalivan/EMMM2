@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { BrowserTabBar } from './BrowserTabBar';
+import { BrowserTabBar, BrowserTabContextMenu } from './BrowserTabBar';
 
 vi.mock('@/shared/ui/liquid', () => ({
   LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -17,6 +17,7 @@ const props = {
   onReloadTab: vi.fn(),
   onDuplicateTab: vi.fn(),
   onRestoreLastClosedTab: vi.fn(),
+  onOpenContextMenu: vi.fn(),
   onContextMenuOpenChange: vi.fn(),
 };
 
@@ -28,7 +29,7 @@ describe('BrowserTabBar', () => {
     expect(container.querySelector('.browser-tab-strip')).toHaveClass('overflow-y-hidden');
   });
 
-  it('offers tab actions from the selected tab context menu', () => {
+  it('requests an inline context-menu tray for the selected tab', () => {
     render(<BrowserTabBar {...props} />);
 
     fireEvent.contextMenu(screen.getByRole('tab', { name: 'Example' }), {
@@ -37,28 +38,30 @@ describe('BrowserTabBar', () => {
     });
 
     expect(props.onSelectTab).toHaveBeenCalledWith('browser-tab-1');
-    expect(screen.getByTestId('browser-tab-context-menu')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate tab' }));
-    expect(props.onDuplicateTab).toHaveBeenCalledWith('browser-tab-1');
-
-    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Example' }), {
-      clientX: 24,
-      clientY: 24,
-    });
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Reload tab' }));
-    expect(props.onReloadTab).toHaveBeenCalledWith('browser-tab-1');
+    expect(props.onOpenContextMenu).toHaveBeenCalledWith(props.tabs[0]);
+    expect(screen.queryByTestId('browser-tab-context-menu')).not.toBeInTheDocument();
   });
 
-  it('restores the last closed tab only when one is available', () => {
-    render(<BrowserTabBar {...props} />);
+  it('renders context actions in the supplied chrome tray and closes before acting', () => {
+    const onClose = vi.fn();
+    const onDuplicateTab = vi.fn();
+    const { container } = render(
+      <BrowserTabContextMenu
+        canRestoreLastClosedTab={false}
+        onClose={onClose}
+        onCloseTab={vi.fn()}
+        onDuplicateTab={onDuplicateTab}
+        onReloadTab={vi.fn()}
+        onRestoreLastClosedTab={vi.fn()}
+        tab={props.tabs[0]}
+      />,
+    );
 
-    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Example' }), {
-      clientX: 24,
-      clientY: 24,
-    });
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Reopen last closed tab' }));
+    expect(container.querySelector('[data-testid="browser-tab-context-menu"]')).toBeInTheDocument();
 
-    expect(props.onRestoreLastClosedTab).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate tab' }));
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onDuplicateTab).toHaveBeenCalledWith('browser-tab-1');
   });
 });

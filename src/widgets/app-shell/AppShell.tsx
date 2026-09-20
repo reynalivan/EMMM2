@@ -88,9 +88,13 @@ export default function AppShell({
       <div className="app-theme-background-dim" aria-hidden="true" />
       {runtimeHosts}
       {topBar}
-      <div data-testid="workspace-content" className="relative min-h-0 flex-1 overflow-hidden">
+      <main
+        id="workspace-main"
+        data-testid="workspace-content"
+        className="relative min-h-0 flex-1 overflow-hidden"
+      >
         <ErrorBoundary>{content}</ErrorBoundary>
-      </div>
+      </main>
     </div>
   );
 }

@@ -17,6 +17,94 @@ fn find_child_by_name_key(parent: &Path, needle: &str) -> Option<PathBuf> {
         .map(|entry| entry.path())
 }
 
+pub(super) struct ResolvedListingTarget {
+    pub base: PathBuf,
+    pub target: PathBuf,
+    pub is_root_disabled: bool,
+}
+
+pub(super) fn resolve_listing_target(
+    mods_path: &str,
+    sub_path: Option<&str>,
+) -> Result<ResolvedListingTarget, AppError> {
+    let mut base = Path::new(mods_path).to_path_buf();
+    let mut is_root_disabled = false;
+
+    if !base.exists() {
+        if let (Some(parent), Some(name)) = (base.parent(), base.file_name()) {
+            let disabled_name = format!("{}{}", crate::DISABLED_PREFIX, name.to_string_lossy());
+            let disabled_base = parent.join(disabled_name);
+            if disabled_base.exists() {
+                base = disabled_base;
+                is_root_disabled = true;
+            }
+        }
+    }
+
+    if !base.exists() {
+        return Err(AppError::Internal(format!(
+            "Mods path does not exist: {mods_path}"
+        )));
+    }
+    if !base.is_dir() {
+        return Err(AppError::Internal(format!(
+            "Mods path is not a directory: {mods_path}"
+        )));
+    }
+
+    if let Some(sp) = sub_path {
+        let requested = Path::new(sp);
+        if requested.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        }) {
+            return Err(AppError::Internal(
+                "PathEscapeError: sub_path resolves outside of mods_path".to_string(),
+            ));
+        }
+    }
+
+    let target = match sub_path {
+        Some(sp) if !sp.is_empty() => base.join(sp),
+        _ => base.clone(),
+    };
+    let target = if target.exists() {
+        target
+    } else if let (Some(parent), Some(name)) = (target.parent(), target.file_name()) {
+        let needle = name.to_string_lossy().to_string();
+        let disabled_needle = format!("{}{}", crate::DISABLED_PREFIX, needle);
+        find_child_by_name_key(parent, &needle)
+            .or_else(|| find_child_by_name_key(parent, &disabled_needle))
+            .unwrap_or(target)
+    } else {
+        target
+    };
+
+    let canonical_base = base.canonicalize()?;
+    let canonical_target = if target.exists() {
+        target.canonicalize().unwrap_or_else(|_| target.clone())
+    } else if let Some(sp) = sub_path.filter(|value| !value.is_empty()) {
+        canonical_base.join(sp)
+    } else {
+        canonical_base.clone()
+    };
+    if !canonical_target.starts_with(&canonical_base) {
+        return Err(AppError::Internal(
+            "PathEscapeError: sub_path resolves outside of mods_path".to_string(),
+        ));
+    }
+
+    Ok(ResolvedListingTarget {
+        base,
+        target,
+        is_root_disabled,
+    })
+}
+
 /// Stable id for a conflict group, derived from where it lives plus its
 /// normalized base name so the same clash keeps the same id across listings.
 ///
@@ -68,89 +156,16 @@ fn list_mod_folders_blocking(
     sub_path: Option<String>,
     shallow: bool,
 ) -> Result<crate::modules::workspace::application::explorer::types::FolderGridResponse, AppError> {
-    let mut base = Path::new(&mods_path).to_path_buf();
-    let mut is_root_disabled = false;
-
-    if !base.exists() {
-        // Check if the root directory itself is disabled (prefixed with "DISABLED ")
-        if let (Some(parent), Some(name)) = (base.parent(), base.file_name()) {
-            let disabled_name = format!("{}{}", crate::DISABLED_PREFIX, name.to_string_lossy());
-            let disabled_base = parent.join(disabled_name);
-            if disabled_base.exists() {
-                base = disabled_base;
-                is_root_disabled = true;
-            }
-        }
-    }
-
-    if !base.exists() {
-        return Err(AppError::Internal(format!(
-            "Mods path does not exist: {mods_path}"
-        )));
-    }
-    if !base.is_dir() {
-        return Err(AppError::Internal(format!(
-            "Mods path is not a directory: {mods_path}"
-        )));
-    }
+    let resolved_target = resolve_listing_target(&mods_path, sub_path.as_deref())?;
+    let base = resolved_target.base;
+    let target = resolved_target.target;
+    let is_root_disabled = resolved_target.is_root_disabled;
 
     log::debug!("Listing mods at base: {}", base.display());
-
-    // Resolve target directory (base + optional sub_path).
-    if let Some(sp) = &sub_path {
-        let requested = Path::new(sp);
-        if requested.components().any(|component| {
-            matches!(
-                component,
-                std::path::Component::ParentDir
-                    | std::path::Component::RootDir
-                    | std::path::Component::Prefix(_)
-            )
-        }) {
-            return Err(AppError::Internal(
-                "PathEscapeError: sub_path resolves outside of mods_path".to_string(),
-            ));
-        }
-    }
-
-    let target = match &sub_path {
-        Some(sp) if !sp.is_empty() => base.join(sp),
-        _ => base.to_path_buf(),
-    };
-
-    // Case-insensitive fallback: even on NTFS with case-sensitivity "disabled",
-    // some systems still treat paths case-sensitively. Zero cost when target exists.
-    let target = if target.exists() {
-        target
-    } else if let (Some(parent), Some(name)) = (target.parent(), target.file_name()) {
-        let needle = name.to_string_lossy().to_string();
-        let disabled_needle = format!("{}{}", crate::DISABLED_PREFIX, needle);
-        find_child_by_name_key(parent, &needle)
-            .or_else(|| find_child_by_name_key(parent, &disabled_needle))
-            .unwrap_or(target)
-    } else {
-        target
-    };
 
     // ── Traversal guard ─────────────────────────────────────────────────────────
     // Ensure the resolved target stays inside the declared mods root.
     // A crafted sub_path like "../../etc" could otherwise escape the boundary.
-    {
-        let canonical_base = base.canonicalize()?;
-        let canonical_target = if target.exists() {
-            target.canonicalize().unwrap_or_else(|_| target.clone())
-        } else if let Some(sp) = sub_path.as_deref().filter(|value| !value.is_empty()) {
-            canonical_base.join(sp)
-        } else {
-            canonical_base.clone()
-        };
-        if !canonical_target.starts_with(&canonical_base) {
-            return Err(AppError::Internal(
-                "PathEscapeError: sub_path resolves outside of mods_path".to_string(),
-            ));
-        }
-    }
-
     log::info!("Scanning filesystem for mods at {}", target.display());
 
     let mut folders = if shallow {

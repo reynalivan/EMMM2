@@ -23,6 +23,51 @@ async fn setup_root_only_workspace() -> (sqlx::SqlitePool, TempDir, String) {
 }
 
 #[tokio::test]
+async fn production_structure_keeps_large_explorer_listing_out_of_its_payload() {
+    let (pool, _mods_root, mods_path) = setup_root_only_workspace().await;
+    for index in 0..250 {
+        fs::create_dir_all(std::path::Path::new(&mods_path).join(format!("Folder {index:03}")))
+            .expect("root folder");
+    }
+
+    let structure = get_workspace_structure(
+        &pool,
+        WorkspaceStructureInput {
+            filter: build_filter("game_roots"),
+            selected_object_folder_path: None,
+            explorer_sub_path: None,
+        },
+    )
+    .await
+    .expect("bounded workspace structure");
+    assert!(structure.explorer.children.is_empty());
+    assert!(structure.objects.is_empty());
+
+    let page =
+        crate::modules::workspace::application::explorer::listing::list_workspace_explorer_page(
+            &pool,
+            mods_path,
+            WorkspaceExplorerPageInput {
+                query: WorkspaceExplorerQuery {
+                    game_id: "game_roots".to_string(),
+                    explorer_sub_path: None,
+                    search_query: None,
+                    sort_field: WorkspaceExplorerSortField::Name,
+                    sort_order: WorkspaceExplorerSortOrder::Asc,
+                    safety_filter: WorkspaceExplorerSafetyFilter::All,
+                },
+                cursor: None,
+                page_size: 25,
+            },
+        )
+        .await
+        .expect("first explorer page");
+    assert_eq!(page.items.len(), 25);
+    assert_eq!(page.total_matching, 250);
+    assert!(page.next_cursor.is_some());
+}
+
+#[tokio::test]
 async fn workspace_lists_visible_root_folders_without_database_objects() {
     let (pool, _mods_root, mods_path) = setup_root_only_workspace().await;
     fs::create_dir_all(std::path::Path::new(&mods_path).join("Aether")).expect("aether root");

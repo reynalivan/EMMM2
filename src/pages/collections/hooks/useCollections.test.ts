@@ -279,10 +279,13 @@ describe('useCollections', () => {
       collection_name: 'Preset',
       current_tree_nodes: [],
       target_tree_nodes: [],
+      effective_target_tree_nodes: [],
       current_state_name: null,
       current_state_is_unsaved: false,
       current_projected_state: createProjectedState(),
       target_projected_state: createProjectedState(),
+      effective_target_projected_state: createProjectedState(),
+      safe_mode_enabled: false,
     });
 
     const { rerender } = renderHook(

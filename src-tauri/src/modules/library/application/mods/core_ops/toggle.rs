@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 pub struct ToggleRenamePlan {
     old_path: PathBuf,
     new_path: PathBuf,
+    expected_identity: String,
 }
 
 impl ToggleRenamePlan {
@@ -25,7 +26,39 @@ impl ToggleRenamePlan {
         &self.new_path
     }
 
+    pub fn expected_identity(&self) -> &str {
+        &self.expected_identity
+    }
+
     pub fn apply(&self, noun: &str) -> Result<(), AppError> {
+        let actual_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&self.old_path);
+        if actual_identity.as_deref() != Some(self.expected_identity.as_str()) {
+            return Err(AppError::Io(format!(
+                "Folder changed while preparing the rename: {}",
+                self.old_path.display()
+            )));
+        }
+        let parent = self
+            .old_path
+            .parent()
+            .ok_or_else(|| AppError::Io("Invalid path".to_string()))?;
+        let new_name = self
+            .new_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        if let Some(existing_path) =
+            find_existing_sibling_case_insensitive(parent, &new_name, &self.old_path)
+        {
+            let old_name = self
+                .old_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let base =
+                crate::modules::workspace::domain::normalizer::normalize_display_name(&old_name);
+            return Err(rename_conflict_error(&self.new_path, &existing_path, &base));
+        }
         crate::platform::fs::file_utils::rename_cross_drive_fallback(&self.old_path, &self.new_path)
             .map_err(|error| map_toggle_error(&self.old_path, noun, error))
     }
@@ -84,9 +117,18 @@ pub fn plan_toggle_rename_with_sibling_index(
         return Err(rename_conflict_error(&new_path, &existing_path, &base));
     }
 
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(src)
+        .ok_or_else(|| {
+            AppError::Io(format!(
+                "Could not establish filesystem identity for {}",
+                src.display()
+            ))
+        })?;
+
     Ok(Some(ToggleRenamePlan {
         old_path: src.to_path_buf(),
         new_path,
+        expected_identity,
     }))
 }
 
@@ -222,4 +264,52 @@ pub async fn toggle_mod_inner_service_with_duplicate_policy(
         new_absolute_path,
         swapped_paths,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plan_toggle_rename;
+
+    #[test]
+    fn prepared_toggle_rejects_a_replacement_source_identity() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("DISABLED Blue");
+        let parked = temp.path().join("parked");
+        std::fs::create_dir(&source).expect("source");
+        let plan = plan_toggle_rename(&source, true)
+            .expect("plan")
+            .expect("rename plan");
+
+        std::fs::rename(&source, &parked).expect("park original");
+        std::fs::create_dir(&source).expect("replacement source");
+
+        let error = plan
+            .apply("mod folder")
+            .expect_err("replacement must be rejected");
+        assert!(error
+            .to_string()
+            .contains("Folder changed while preparing the rename"));
+        assert!(source.exists());
+        assert!(!temp.path().join("Blue").exists());
+    }
+
+    #[test]
+    fn prepared_toggle_rechecks_an_external_destination_collision() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("DISABLED Blue");
+        let target = temp.path().join("Blue");
+        std::fs::create_dir(&source).expect("source");
+        let plan = plan_toggle_rename(&source, true)
+            .expect("plan")
+            .expect("rename required");
+
+        std::fs::create_dir(&target).expect("external destination");
+
+        let error = plan
+            .apply("mod folder")
+            .expect_err("late collision must be rejected");
+        assert!(error.to_string().contains("RenameConflict"));
+        assert!(source.exists());
+        assert!(target.exists());
+    }
 }

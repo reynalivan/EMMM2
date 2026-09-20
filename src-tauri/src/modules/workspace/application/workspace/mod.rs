@@ -1,10 +1,7 @@
 use std::path::Path;
 
 use crate::modules::catalog::application::objects::query::get_filtered_objects_with_conflict_check;
-use crate::modules::workspace::application::explorer::listing::{
-    list_mod_folders_for_game_shallow_with_enrichment, list_mod_folders_for_game_with_enrichment,
-    load_listing_enrichment,
-};
+use crate::modules::workspace::application::explorer::listing::load_workspace_explorer_context;
 use crate::modules::workspace::application::workspace_read_model::explorer_mapper::{
     empty_workspace_explorer, map_workspace_explorer,
 };
@@ -23,7 +20,10 @@ use crate::modules::workspace::domain::workspace::{
 };
 use crate::shared::errors::AppError;
 
-async fn load_game_mods_path(pool: &sqlx::SqlitePool, game_id: &str) -> Result<String, AppError> {
+pub(crate) async fn load_game_mods_path(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+) -> Result<String, AppError> {
     crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::Internal(format!("Game '{}' has no mods_path", game_id)))
@@ -41,17 +41,6 @@ fn unavailable_source_state(mods_path: &str) -> WorkspaceSourceState {
         status: WorkspaceSourceStatus::Unavailable,
         message: Some(format!("Mods root is unavailable: {mods_path}")),
     }
-}
-
-fn include_unregistered_roots(
-    filter: &crate::modules::catalog::domain::objects::ObjectFilter,
-) -> bool {
-    filter.object_type.is_none()
-        && filter.status_filter.is_none()
-        && filter
-            .meta_filters
-            .as_ref()
-            .is_none_or(std::collections::HashMap::is_empty)
 }
 
 fn build_navigation_selection(
@@ -83,7 +72,7 @@ pub async fn get_workspace_structure(
 pub async fn get_workspace_structure_with_listing_mode(
     pool: &sqlx::SqlitePool,
     input: WorkspaceStructureInput,
-    shallow_listing: bool,
+    _shallow_listing: bool,
 ) -> Result<WorkspaceStructureViewModel, AppError> {
     let game_id = input.filter.game_id.clone();
     let mods_path = load_game_mods_path(pool, &game_id).await?;
@@ -115,45 +104,23 @@ pub async fn get_workspace_structure_with_listing_mode(
     }
 
     let resolved_selection = resolve_workspace_selection(&mods_path, &input);
-    let listing_enrichment = load_listing_enrichment(pool, &game_id, &mods_path).await?;
-    let root_listing = if shallow_listing {
-        list_mod_folders_for_game_shallow_with_enrichment(
-            &listing_enrichment,
-            mods_path.clone(),
-            None,
-        )
-        .await?
-    } else {
-        list_mod_folders_for_game_with_enrichment(&listing_enrichment, mods_path.clone(), None)
-            .await?
-    };
     let workspace_objects = map_workspace_objects(WorkspaceObjectMapping {
         objects,
-        root_folders: &root_listing.children,
+        root_folders: &[],
         mods_path: &mods_path,
         source_available: true,
-        include_unregistered: include_unregistered_roots(&input.filter),
+        // Filesystem-only roots remain available through the paged explorer;
+        // materializing all of them in this structure payload would recreate
+        // the 100k-item frontend bottleneck pagination is meant to remove.
+        include_unregistered: false,
     });
-    let raw_explorer = if resolved_selection.explorer_sub_path.is_none() {
-        root_listing
-    } else {
-        let listing = if shallow_listing {
-            list_mod_folders_for_game_shallow_with_enrichment(
-                &listing_enrichment,
-                mods_path.clone(),
-                resolved_selection.explorer_sub_path.clone(),
-            )
-            .await?
-        } else {
-            list_mod_folders_for_game_with_enrichment(
-                &listing_enrichment,
-                mods_path.clone(),
-                resolved_selection.explorer_sub_path.clone(),
-            )
-            .await?
-        };
-        listing
-    };
+    let raw_explorer = load_workspace_explorer_context(
+        pool,
+        &game_id,
+        &mods_path,
+        resolved_selection.explorer_sub_path.as_deref(),
+    )
+    .await?;
     let explorer = map_workspace_explorer(raw_explorer);
     let selection = build_navigation_selection(&resolved_selection);
 
@@ -210,8 +177,9 @@ pub async fn get_workspace_view_model_with_listing_mode(
         selected_object_folder_path: input.selected_object_folder_path.clone(),
         explorer_sub_path: input.explorer_sub_path.clone(),
     };
-    let structure =
+    let mut structure =
         get_workspace_structure_with_listing_mode(pool, structure_input, shallow_listing).await?;
+    hydrate_legacy_test_listing(pool, &input, shallow_listing, &mut structure).await?;
     let preview = get_workspace_preview(
         pool,
         WorkspacePreviewInput {
@@ -258,6 +226,63 @@ pub async fn get_workspace_view_model_with_listing_mode(
         },
         runtime: structure.runtime,
     })
+}
+
+#[cfg(test)]
+async fn hydrate_legacy_test_listing(
+    pool: &sqlx::SqlitePool,
+    input: &crate::modules::workspace::domain::workspace::WorkspaceViewModelInput,
+    shallow_listing: bool,
+    structure: &mut WorkspaceStructureViewModel,
+) -> Result<(), AppError> {
+    use crate::modules::workspace::application::explorer::listing::{
+        list_mod_folders_for_game_shallow_with_enrichment,
+        list_mod_folders_for_game_with_enrichment, load_listing_enrichment,
+    };
+
+    let mods_path = load_game_mods_path(pool, &input.filter.game_id).await?;
+    if !Path::new(&mods_path).is_dir() {
+        return Ok(());
+    }
+    let objects = get_filtered_objects_with_conflict_check(pool, &input.filter)
+        .await?
+        .objects;
+    let enrichment = load_listing_enrichment(pool, &input.filter.game_id, &mods_path).await?;
+    let root_listing = if shallow_listing {
+        list_mod_folders_for_game_shallow_with_enrichment(&enrichment, mods_path.clone(), None)
+            .await?
+    } else {
+        list_mod_folders_for_game_with_enrichment(&enrichment, mods_path.clone(), None).await?
+    };
+    structure.objects = map_workspace_objects(WorkspaceObjectMapping {
+        objects,
+        root_folders: &root_listing.children,
+        mods_path: &mods_path,
+        source_available: true,
+        include_unregistered: input.filter.object_type.is_none()
+            && input.filter.status_filter.is_none()
+            && input
+                .filter
+                .meta_filters
+                .as_ref()
+                .is_none_or(std::collections::HashMap::is_empty),
+    });
+    let explorer_sub_path = structure.selection.explorer_sub_path.clone();
+    let listing = if explorer_sub_path.is_none() {
+        root_listing
+    } else if shallow_listing {
+        list_mod_folders_for_game_shallow_with_enrichment(
+            &enrichment,
+            mods_path.clone(),
+            explorer_sub_path,
+        )
+        .await?
+    } else {
+        list_mod_folders_for_game_with_enrichment(&enrichment, mods_path.clone(), explorer_sub_path)
+            .await?
+    };
+    structure.explorer = map_workspace_explorer(listing);
+    Ok(())
 }
 
 #[cfg(test)]

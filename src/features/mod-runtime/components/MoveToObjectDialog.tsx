@@ -22,6 +22,7 @@ interface MoveToObjectDialogProps {
     status: MoveStatus,
     targetSubpath: string | null,
   ) => Promise<void> | void;
+  showSuccessToast?: boolean;
 }
 
 export default function MoveToObjectDialog({
@@ -31,6 +32,7 @@ export default function MoveToObjectDialog({
   currentObjectId,
   targetModPaths,
   onSubmit,
+  showSuccessToast = true,
 }: MoveToObjectDialogProps) {
   const { t } = useTranslation(['folder_grid', 'common']);
   const { activeGame } = useActiveGame();
@@ -155,9 +157,11 @@ export default function MoveToObjectDialog({
     try {
       const targetStatus: MoveStatus = disableAfterMove ? 'disabled' : 'keep';
       await onSubmit(selectedObjectId, targetStatus, targetSubpath);
-      toast.success(
-        t('folder_grid:move.toast.success', { name: selectedObject?.name || selectedObjectId }),
-      );
+      if (showSuccessToast) {
+        toast.success(
+          t('folder_grid:move.toast.success', { name: selectedObject?.name || selectedObjectId }),
+        );
+      }
       onClose();
     } catch (error) {
       toast.error(t('folder_grid:move.toast.failed', { error: formatAppError(error) }));

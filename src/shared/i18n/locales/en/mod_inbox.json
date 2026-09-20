@@ -31,13 +31,7 @@
     "resume_review": "Resume Review",
     "size_unknown": "Size unavailable",
     "empty_title": "Inbox is clear",
-    "empty_description": "Folders and archives added here will appear automatically.",
-    "layouts": {
-      "direct_mod": "Mod",
-      "folder_pack": "Mod pack · {{count}} roots",
-      "wrapper": "Wrapped mod",
-      "unknown": "Unrecognized layout"
-    }
+    "empty_description": "Folders and archives added here will appear automatically."
   },
   "processed": {
     "select_all": "Select all processed sources",

@@ -42,6 +42,7 @@ export function useObjectListHandlers({ objects, schema }: HandlerDeps) {
     bulkTagModal: bulk.bulkTagModal,
     setBulkTagModal: bulk.setBulkTagModal,
     isSyncing: scan.isSyncing,
+    isObjectBulkSwitchPending: bulk.isBulkSwitchPending,
 
     // CRUD Handlers
     handleDeleteObject: crud.handleDeleteObject,

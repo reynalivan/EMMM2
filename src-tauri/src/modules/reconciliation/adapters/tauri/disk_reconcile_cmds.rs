@@ -1,9 +1,65 @@
 use crate::shared::errors::AppError;
+use std::collections::HashMap;
 use std::path::{Component, Path};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
 
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
+
+#[derive(Default)]
+struct OnboardingSnapshotTelemetryState {
+    metadata_recorded: bool,
+    preparation_started_at: Option<Instant>,
+    classification_started_at: Option<Instant>,
+}
+
+fn snapshot_rechecking_progress(
+    session_id: String,
+    game_id: String,
+) -> crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotProgress{
+    crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotProgress {
+        session_id,
+        game_id,
+        phase: crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotPhase::Rechecking,
+        completed_games: 0,
+        total_games: 0,
+        completed_roots: 0,
+        total_roots: 0,
+        files_inspected: 0,
+        folders_classified: 0,
+        current_root: None,
+        elapsed_ms: 0,
+    }
+}
+
+fn record_onboarding_telemetry(
+    sink: &Option<crate::modules::system::application::telemetry::TelemetrySink>,
+    operation: crate::modules::system::application::telemetry::TelemetryOperation,
+    outcome: crate::modules::system::application::telemetry::TelemetryOutcome,
+    error_code: crate::modules::system::application::telemetry::TelemetryErrorCode,
+    duration: Duration,
+) {
+    if let Some(sink) = sink {
+        sink.try_enqueue([
+            crate::modules::system::application::telemetry::TelemetryEvent::new(
+                operation, outcome, error_code,
+            )
+            .with_duration(duration),
+        ]);
+    }
+}
+
+fn telemetry_outcome_for_error(
+    error: &AppError,
+) -> crate::modules::system::application::telemetry::TelemetryOutcome {
+    if matches!(error, AppError::Cancelled) {
+        crate::modules::system::application::telemetry::TelemetryOutcome::Cancelled
+    } else {
+        crate::modules::system::application::telemetry::TelemetryOutcome::Failed
+    }
+}
 
 fn checked_resolution_path(root: &Path, relative: &str) -> Result<String, AppError> {
     let path = Path::new(relative);
@@ -27,6 +83,27 @@ fn should_wait_for_initial_recovery(
         reason,
         DiskReconcileReason::ModsViewEntered | DiskReconcileReason::GameSwitched
     ) && matches!(readiness, InitialRecoveryReadiness::Syncing { .. })
+}
+
+fn enqueue_runtime_sync_after_manual_reconcile(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    config: &crate::modules::settings::application::config::ConfigService,
+    result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+) {
+    if !result.status.applied()
+        || (!result.folders_changed && !result.runtime_file_changed)
+        || config.get_settings().active_game_id.as_deref() != Some(result.game_id.as_str())
+    {
+        return;
+    }
+
+    crate::modules::reconciliation::api::enqueue_runtime_sync(
+        app,
+        pool,
+        &result.game_id,
+        crate::modules::reconciliation::api::RuntimeSyncCause::Recovery,
+    );
 }
 
 #[tauri::command]
@@ -101,49 +178,13 @@ pub async fn apply_game_mods_directory(
         log::warn!("{warning}");
         result.watcher_warning = Some(warning);
     }
-    match crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
-        pool.inner(),
-        config.inner(),
-        &result.game.id,
-        crate::modules::system::application::app::post_apply::OverlaySyncCause::ModsRootChanged,
-    )
-    .await
-    {
-        Ok(sync) => {
-            if sync.requires_retry() {
-                disk_reconcile_state.inner().stage_runtime_effects(
-                    &result.game.id,
-                    crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
-                        collections_dirty: false,
-                        overlay_refresh: true,
-                    },
-                );
-            }
-            if let Some(message) = sync.diagnostic_message() {
-                let warning =
-                    format!("KeyViewer sync is pending after the Mods root change: {message}");
-                log::warn!("{warning}");
-                result.watcher_warning = Some(match result.watcher_warning.take() {
-                    Some(existing) => format!("{existing} {warning}"),
-                    None => warning,
-                });
-            }
-        }
-        Err(error) => {
-            disk_reconcile_state.inner().stage_runtime_effects(
-                &result.game.id,
-                crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
-                    collections_dirty: false,
-                    overlay_refresh: true,
-                },
-            );
-            let warning = format!("KeyViewer sync is pending after the Mods root change: {error}");
-            log::warn!("{warning}");
-            result.watcher_warning = Some(match result.watcher_warning.take() {
-                Some(existing) => format!("{existing} {warning}"),
-                None => warning,
-            });
-        }
+    if config.get_settings().active_game_id.as_deref() == Some(result.game.id.as_str()) {
+        crate::modules::reconciliation::api::enqueue_runtime_sync(
+            &app,
+            pool.inner(),
+            &result.game.id,
+            crate::modules::reconciliation::api::RuntimeSyncCause::ModsRootChanged,
+        );
     }
     Ok(result)
 }
@@ -199,7 +240,7 @@ pub async fn reconcile_disk_state_cmd(
     }
     let progress_reporter = std::sync::Arc::new(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
-            app,
+            app.clone(),
             game_id.clone(),
             reason.clone(),
         ),
@@ -218,9 +259,15 @@ pub async fn reconcile_disk_state_cmd(
             reason,
             changed_paths.unwrap_or_default(),
             force_full.unwrap_or(false),
-        ),
+        )
+        .defer_overlay_sync(),
     )
     .await;
+    if let Ok(reconcile) = &result {
+        // `reconcile_disk_state` has returned, so its game and operation
+        // guards are gone before a reconstructible runtime refresh is queued.
+        enqueue_runtime_sync_after_manual_reconcile(&app, pool.inner(), config.inner(), reconcile);
+    }
     if diagnostics_enabled && result.is_ok() {
         let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
             crate::modules::system::application::telemetry::TelemetryOperation::Reconcile,
@@ -290,14 +337,111 @@ pub async fn begin_onboarding_indexing(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let progress_app = app.clone();
-    sessions
+    let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
+    let telemetry_sink = diagnostics_enabled
+        .then(|| {
+            app.try_state::<crate::modules::system::application::telemetry::TelemetrySink>()
+                .map(|sink| sink.inner().clone())
+        })
+        .flatten();
+    let phase_state = Arc::new(Mutex::new(HashMap::<
+        String,
+        OnboardingSnapshotTelemetryState,
+    >::new()));
+    let prepare_started_at = Instant::now();
+    let progress_telemetry_sink = telemetry_sink.clone();
+    let progress_phase_state = Arc::clone(&phase_state);
+    let result = sessions
         .begin_with_progress(requested_games, move |progress| {
+            if let Some(sink) = &progress_telemetry_sink {
+                let event = {
+                    let mut state = crate::shared::sync::lock(&progress_phase_state);
+                    let game_state = state.entry(progress.game_id.clone()).or_default();
+                    match progress.phase {
+                        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotPhase::Metadata
+                            if progress.files_inspected == 0 => {
+                                game_state.preparation_started_at = Some(Instant::now());
+                                None
+                            }
+                        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotPhase::Classifying
+                            if !game_state.metadata_recorded => {
+                                game_state.metadata_recorded = true;
+                                let preparation_duration = game_state
+                                    .preparation_started_at
+                                    .take()
+                                    .map(|started_at| started_at.elapsed())
+                                    .unwrap_or_else(|| Duration::from_millis(progress.elapsed_ms));
+                                game_state.classification_started_at = Some(Instant::now());
+                                Some(
+                                    crate::modules::system::application::telemetry::TelemetryEvent::new(
+                                        crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
+                                        crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                                        crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                                    )
+                                    .with_duration(preparation_duration),
+                                )
+                            }
+                        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotPhase::Ready => {
+                            game_state.classification_started_at.take().map(|started_at| {
+                                crate::modules::system::application::telemetry::TelemetryEvent::new(
+                                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingClassification,
+                                    crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                                    crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                                )
+                                .with_duration(started_at.elapsed())
+                            })
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some(event) = event {
+                    sink.try_enqueue([event]);
+                }
+            }
             if let Err(error) = progress_app.emit("onboarding_indexing:snapshot_progress", progress)
             {
                 log::debug!("Could not emit onboarding snapshot progress: {error}");
             }
         })
-        .await
+        .await;
+    if let (Some(sink), Err(error)) = (&telemetry_sink, &result) {
+        let (operation, duration) = {
+            let state = crate::shared::sync::lock(&phase_state);
+            let classification_started_at = state
+                .values()
+                .filter_map(|game_state| game_state.classification_started_at)
+                .max();
+            let preparation_started_at = state
+                .values()
+                .filter_map(|game_state| game_state.preparation_started_at)
+                .max();
+            match (classification_started_at, preparation_started_at) {
+                (Some(started_at), _) => (
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingClassification,
+                    started_at.elapsed(),
+                ),
+                (None, Some(started_at)) => (
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
+                    started_at.elapsed(),
+                ),
+                (None, None) => (
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
+                    prepare_started_at.elapsed(),
+                ),
+            }
+        };
+        sink.try_enqueue([
+            crate::modules::system::application::telemetry::TelemetryEvent::new(
+                operation,
+                telemetry_outcome_for_error(error),
+                crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(
+                    error,
+                ),
+            )
+            .with_duration(duration),
+        ]);
+    }
+    result
 }
 
 #[tauri::command]
@@ -326,6 +470,15 @@ pub async fn reconcile_onboarding_indexing_game(
     };
     use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
 
+    let telemetry_sink = config
+        .get_settings()
+        .diagnostics
+        .telemetry_enabled
+        .then(|| {
+            app.try_state::<crate::modules::system::application::telemetry::TelemetrySink>()
+                .map(|sink| sink.inner().clone())
+        })
+        .flatten();
     let snapshot_lease = match sessions.consume(&session_id, &game_id).await? {
         ConsumedOnboardingSnapshot::Snapshot(lease) => {
             if let Some(update) = lease.work_plan_update() {
@@ -335,6 +488,13 @@ pub async fn reconcile_onboarding_indexing_game(
         }
         ConsumedOnboardingSnapshot::FullFallback => None,
     };
+    let initial_recheck = snapshot_lease.is_none();
+    if initial_recheck {
+        app.emit(
+            "onboarding_indexing:snapshot_progress",
+            snapshot_rechecking_progress(session_id.clone(), game_id.clone()),
+        )?;
+    }
     let progress_reporter = std::sync::Arc::new(DiskReconcileProgressReporter::new(
         app.clone(),
         game_id.clone(),
@@ -357,11 +517,42 @@ pub async fn reconcile_onboarding_indexing_game(
     if let Some(lease) = &snapshot_lease {
         request = request.with_precomputed_discovery(lease.discovery());
     }
-    let mut result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+    let apply_started_at = Instant::now();
+    let mut result = match crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
         context.clone(),
         request,
     )
-    .await?;
+    .await
+    {
+        Ok(result) => {
+            record_onboarding_telemetry(
+                &telemetry_sink,
+                if initial_recheck {
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingRecheck
+                } else {
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingApply
+                },
+                crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                apply_started_at.elapsed(),
+            );
+            result
+        }
+        Err(error) => {
+            record_onboarding_telemetry(
+                &telemetry_sink,
+                if initial_recheck {
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingRecheck
+                } else {
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingApply
+                },
+                telemetry_outcome_for_error(&error),
+                crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(&error),
+                apply_started_at.elapsed(),
+            );
+            return Err(error);
+        }
+    };
 
     // The watcher stayed alive until the transaction completed. A late event
     // invalidates the preflight snapshot, so settle with the generic full path.
@@ -370,7 +561,12 @@ pub async fn reconcile_onboarding_indexing_game(
         None => false,
     };
     if changed_during_apply {
-        result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+        app.emit(
+            "onboarding_indexing:snapshot_progress",
+            snapshot_rechecking_progress(session_id, game_id.clone()),
+        )?;
+        let recheck_started_at = Instant::now();
+        result = match crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
             context,
             DiskReconcileRequest::manual(
                 game_id,
@@ -379,7 +575,29 @@ pub async fn reconcile_onboarding_indexing_game(
                 true,
             ),
         )
-        .await?;
+        .await
+        {
+            Ok(result) => {
+                record_onboarding_telemetry(
+                    &telemetry_sink,
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingRecheck,
+                    crate::modules::system::application::telemetry::TelemetryOutcome::Success,
+                    crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                    recheck_started_at.elapsed(),
+                );
+                result
+            }
+            Err(error) => {
+                record_onboarding_telemetry(
+                    &telemetry_sink,
+                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingRecheck,
+                    telemetry_outcome_for_error(&error),
+                    crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(&error),
+                    recheck_started_at.elapsed(),
+                );
+                return Err(error);
+            }
+        };
     }
     Ok(result)
 }

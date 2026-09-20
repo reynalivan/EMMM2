@@ -238,7 +238,7 @@ pub async fn apply_collection(
             game_id: &game_id,
             collection_id: &collection_id,
             capture_last_changes: true,
-            mods_path,
+            mods_path: mods_path.clone(),
             suppressor: watcher_state.suppressor.clone(),
             ignore_missing: ignore_missing.unwrap_or(false),
             settings,
@@ -246,6 +246,18 @@ pub async fn apply_collection(
         op_lock.inner(),
     )
     .await;
+
+    if let Ok(applied) = &result {
+        crate::modules::reconciliation::api::enqueue_runtime_sync_for_rewrites(
+            &app,
+            pool.inner(),
+            &game_id,
+            &mods_path,
+            crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
+            &applied.runtime_path_rewrites,
+        )
+        .await;
+    }
 
     drop(mutation_lease);
     record_collection_operation(
@@ -376,15 +388,6 @@ pub async fn restore_last_changes(
     game_id: String,
 ) -> Result<ApplyResult, AppError> {
     let started_at = std::time::Instant::now();
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
-        &app,
-        pool.inner(),
-        &game_id,
-    )
-    .await?;
-    let mutation_lease = disk_reconcile
-        .acquire_nested_mutation_lease(&game_id, op_lock.inner())
-        .await?;
     let runtime =
         crate::modules::collections::adapters::sqlite::runtime::get(pool.inner(), &game_id)
             .await?
@@ -399,6 +402,20 @@ pub async fn restore_last_changes(
         .iter()
         .find(|game| game.id == game_id)
         .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' not found")))?;
+    let mods_path = game.mod_path.clone();
+    let preflight_paths =
+        collection::collection_preflight_scope_paths(pool.inner(), &game_id, &draft_id, &mods_path)
+            .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+        &app,
+        pool.inner(),
+        &game_id,
+        Some(&preflight_paths),
+    )
+    .await?;
+    let mutation_lease = disk_reconcile
+        .acquire_nested_mutation_lease(&game_id, op_lock.inner())
+        .await?;
     let restored_baseline = collection::valid_active_baseline(
         pool.inner(),
         &game_id,
@@ -411,7 +428,7 @@ pub async fn restore_last_changes(
             game_id: &game_id,
             collection_id: &draft_id,
             capture_last_changes: false,
-            mods_path: game.mod_path.clone(),
+            mods_path: mods_path.clone(),
             suppressor: watcher_state.suppressor.clone(),
             ignore_missing: false,
             settings: settings.clone(),
@@ -420,14 +437,16 @@ pub async fn restore_last_changes(
         op_lock.inner(),
     )
     .await?;
-    drop(mutation_lease);
-    let reconcile = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+    crate::modules::reconciliation::api::enqueue_runtime_sync_for_rewrites(
         &app,
         pool.inner(),
         &game_id,
+        &mods_path,
+        crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
+        &result.runtime_path_rewrites,
     )
     .await;
-    let result = settle_restore_reconcile(result, reconcile);
+    drop(mutation_lease);
     record_collection_operation(
         &app,
         diagnostics_enabled,
@@ -437,18 +456,6 @@ pub async fn restore_last_changes(
     )
     .await;
     Ok(result)
-}
-
-fn settle_restore_reconcile(
-    mut result: ApplyResult,
-    reconcile: Result<
-        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
-        AppError,
-    >,
-) -> ApplyResult {
-    let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(reconcile);
-    result.sync_warning = settlement.sync_warning;
-    result
 }
 
 #[tauri::command]
@@ -507,9 +514,15 @@ pub async fn preview_apply_collection(
         .find(|g| g.id == game_id)
         .map(|g| g.mod_path.to_string_lossy().to_string());
 
-    let result =
-        collection::preview_apply(pool.inner(), &game_id, &collection_id, mods_path.as_deref())
-            .await?;
+    let safe_mode_enabled = settings.safety.runtime_safe_mode_for(&game_id);
+    let result = collection::preview_apply(
+        pool.inner(),
+        &game_id,
+        &collection_id,
+        mods_path.as_deref(),
+        safe_mode_enabled,
+    )
+    .await?;
     Ok(result)
 }
 
@@ -576,17 +589,21 @@ pub async fn resolve_recovery_task(
         },
     )
     .await?;
+    crate::modules::reconciliation::api::enqueue_runtime_sync(
+        &app,
+        pool.inner(),
+        &task.game_id,
+        crate::modules::reconciliation::api::RuntimeSyncCause::Recovery,
+    );
     drop(mutation_lease);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::modules::collections::domain::collection::ApplyResult;
     use crate::modules::reconciliation::application::disk_reconcile::types::{
-        CommittedMutationSyncWarningKind, FolderNameConflictCandidate, FolderNameConflictGroup,
+        FolderNameConflictCandidate, FolderNameConflictGroup,
     };
-    use crate::shared::errors::AppError;
 
     #[test]
     fn normal_apply_command_has_no_fallible_reconcile_after_service_commit() {
@@ -604,6 +621,16 @@ mod tests {
         assert!(
             !apply_command.contains("run_full_internal_disk_reconcile"),
             "a committed apply must not be converted to Err by an outer reconcile"
+        );
+        let durable_apply = apply_command
+            .find("apply_collection_durable")
+            .expect("durable collection apply");
+        let runtime_queue = apply_command
+            .find("enqueue_runtime_sync_for_rewrites")
+            .expect("async runtime queue");
+        assert!(
+            durable_apply < runtime_queue,
+            "runtime work must be queued only after the durable apply returns"
         );
     }
 
@@ -671,35 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn restore_reconcile_failure_is_returned_as_committed_success_warning() {
-        let result = ApplyResult {
-            mods_enabled: 1,
-            mods_disabled: 0,
-            warnings: Vec::new(),
-            final_state_name: Some("Last changes".to_string()),
-            partial_apply: false,
-            skipped_missing_paths: Vec::new(),
-            runtime_path_rewrites: Vec::new(),
-            sync_warning: None,
-        };
-
-        let settled = super::settle_restore_reconcile(
-            result,
-            Err(AppError::Io("injected reconcile failure".to_string())),
-        );
-
-        let warning = settled
-            .sync_warning
-            .expect("committed restore must return a typed sync warning");
-        assert_eq!(
-            warning.kind,
-            CommittedMutationSyncWarningKind::ReconcileFailed
-        );
-        assert!(warning.message.contains("injected reconcile failure"));
-    }
-
-    #[test]
-    fn restore_command_does_not_turn_post_commit_reconcile_into_an_error() {
+    fn restore_queues_runtime_sync_without_a_second_full_reconcile() {
         let source = include_str!("tauri.rs");
         let start = source
             .find("pub async fn restore_last_changes(")
@@ -711,18 +710,12 @@ mod tests {
             .expect("next command boundary");
         let restore_command = &remainder[..end];
 
-        assert!(restore_command.contains("settle_restore_reconcile(result, reconcile)"));
-        let reconcile_call = restore_command
-            .find("run_full_internal_disk_reconcile")
-            .map(|offset| &restore_command[offset..])
-            .expect("trailing reconcile call");
-        let reconcile_await = reconcile_call
-            .find(".await")
-            .map(|offset| &reconcile_call[offset..offset + 7])
-            .expect("trailing reconcile await");
         assert!(
-            reconcile_await.ends_with(';'),
-            "a committed restore must not return Err when its trailing reconcile fails"
+            !restore_command.contains("run_full_internal_disk_reconcile"),
+            "the durable pipeline already reconciled the affected roots"
         );
+        assert!(restore_command.contains("ensure_mutation_preflight_for_paths"));
+        assert!(!restore_command.contains("ensure_mutation_preflight("));
+        assert!(restore_command.contains("enqueue_runtime_sync_for_rewrites"));
     }
 }

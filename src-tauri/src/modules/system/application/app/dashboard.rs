@@ -1,6 +1,8 @@
+use crate::modules::dashboard::adapters::sqlite::dashboard;
 use crate::modules::library::application::ini::document::{
     list_ini_files, read_ini_document, IniDocument, KeyBinding,
 };
+use crate::modules::system::domain::mod_path::ModFolderPath;
 use crate::shared::errors::AppError;
 use std::collections::HashMap;
 
@@ -16,6 +18,8 @@ pub enum ActiveKeyControlKind {
 pub struct ActiveKeyBinding {
     pub mod_name: String,
     pub folder_path: String,
+    pub object_type: Option<String>,
+    pub matched_alias_name: Option<String>,
     pub section_name: String,
     pub key: Option<String>,
     pub back: Option<String>,
@@ -37,11 +41,19 @@ pub async fn get_active_keybindings_service(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Game {game_id} has no mods path")))?;
     let mods_root = std::path::PathBuf::from(mods_root);
-    // 1. Fetch enabled mods' folder paths and names for this game
-    let rows = crate::modules::library::adapters::sqlite::mods::get_enabled_mods_names_and_paths(
-        pool, game_id,
-    )
-    .await?;
+    // Fetch enabled mod paths plus the catalog metadata used for filtering.
+    let rows = dashboard::fetch_enabled_mods_for_keybindings(pool, game_id)
+        .await?
+        .into_iter()
+        .map(|(mod_name, folder_path, object_type, matched_alias_name)| {
+            (
+                mod_name,
+                ModFolderPath::from_stored(folder_path),
+                object_type,
+                matched_alias_name,
+            )
+        })
+        .collect();
 
     tokio::task::spawn_blocking(move || harvest_active_keybindings_for_mods(&mods_root, rows))
         .await?
@@ -49,13 +61,10 @@ pub async fn get_active_keybindings_service(
 
 fn harvest_active_keybindings_for_mods(
     mods_root: &std::path::Path,
-    rows: Vec<(
-        String,
-        crate::modules::system::domain::mod_path::ModFolderPath,
-    )>,
+    rows: Vec<(String, ModFolderPath, Option<String>, Option<String>)>,
 ) -> Result<Vec<ActiveKeyBinding>, AppError> {
     let mut bindings = Vec::new();
-    for (mod_name, folder_path) in rows {
+    for (mod_name, folder_path, object_type, matched_alias_name) in rows {
         let folder_path = folder_path.resolve(mods_root);
         let Ok(keybinds) = harvest_active_keybindings(&folder_path) else {
             continue;
@@ -69,6 +78,8 @@ fn harvest_active_keybindings_for_mods(
                 .map(|binding| ActiveKeyBinding {
                     mod_name: mod_name.clone(),
                     folder_path: folder_path.to_string_lossy().to_string(),
+                    object_type: object_type.clone(),
+                    matched_alias_name: matched_alias_name.clone(),
                     section_name: binding.key_binding.section_name,
                     key: binding.key_binding.key,
                     back: binding.key_binding.back,
@@ -196,8 +207,6 @@ pub struct DashboardPayload {
 
 /// Fetch all dashboard data in a single service call.
 pub async fn get_dashboard_payload(pool: &sqlx::SqlitePool) -> Result<DashboardPayload, AppError> {
-    use crate::modules::dashboard::adapters::sqlite::dashboard;
-
     let stats = dashboard::fetch_global_stats(pool).await?;
 
     // Independent reads. Serially they cost four extra round trips; WAL

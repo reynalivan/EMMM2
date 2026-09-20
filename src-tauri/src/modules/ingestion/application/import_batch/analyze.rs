@@ -117,6 +117,7 @@ pub async fn analyze_import_batch_with_options(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn analyze_import_batch_with_options_and_index(
     db: &SqlitePool,
     batch_id: &str,
@@ -367,10 +368,7 @@ fn classify_package_content(
     .len();
     let package_shape = if root_count > 1 {
         ImportPackageShape::Bundle
-    } else if ["body", "hat", "face"]
-        .iter()
-        .any(|component| normalized_name == *component)
-    {
+    } else if ["body", "hat", "face"].contains(&normalized_name) {
         ImportPackageShape::Composite
     } else {
         ImportPackageShape::Single

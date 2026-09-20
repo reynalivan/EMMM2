@@ -64,6 +64,7 @@ pub async fn create_download(
 
 /// Insert a new `requested` row with an id reserved by the queue registry.
 /// Reserving first makes queue limits and duplicate URL checks atomic in memory.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_download_with_id(
     db: &SqlitePool,
     id: &str,

@@ -2,12 +2,7 @@ import { Archive, Boxes, ExternalLink, FolderOpen, PackageOpen } from 'lucide-re
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../../shared/lib/utils/formatters';
-import type {
-  ModInboxEntry,
-  ModInboxEntryLayout,
-  ProcessedModInboxDestination,
-  ProcessedModInboxSource,
-} from './types';
+import type { ModInboxEntry, ProcessedModInboxDestination, ProcessedModInboxSource } from './types';
 import { parseModInboxTimestamp } from './time';
 
 const INITIAL_VISIBLE_DESTINATIONS = 20;
@@ -24,12 +19,6 @@ export function ReadyEntryRow({
   onResume: () => void;
 }) {
   const { t } = useTranslation('mod_inbox');
-  const layoutLabels: Record<ModInboxEntryLayout, string> = {
-    direct_mod: t('ready.layouts.direct_mod'),
-    folder_pack: t('ready.layouts.folder_pack', { count: entry.detectedRootCount }),
-    wrapper: t('ready.layouts.wrapper'),
-    unknown: t('ready.layouts.unknown'),
-  };
 
   return (
     <article className="workspace-surface flex items-center gap-4 p-4">
@@ -47,9 +36,6 @@ export function ReadyEntryRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="truncate font-semibold">{entry.name}</h3>
-          <span className={`badge badge-sm ${entry.layout === 'unknown' ? 'badge-warning' : ''}`}>
-            {layoutLabels[entry.layout]}
-          </span>
           {entry.archiveFormat && (
             <span className="badge badge-ghost badge-sm uppercase">{entry.archiveFormat}</span>
           )}

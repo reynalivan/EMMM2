@@ -63,9 +63,7 @@ impl OwnerIndex {
             if let Some(owner) = self.entries.get(candidate) {
                 return Some(owner);
             }
-            let Some((parent, _)) = candidate.rsplit_once('/') else {
-                return None;
-            };
+            let (parent, _) = candidate.rsplit_once('/')?;
             candidate = parent;
         }
     }
@@ -77,14 +75,7 @@ fn enrich_owner_metadata(
     mods_path: &str,
     sub_path: Option<&str>,
 ) {
-    for folder in &mut response.children {
-        let folder_key = folder_path_key(&folder.path, Some(mods_path));
-        let Some(owner) = index.resolve(&folder_key) else {
-            continue;
-        };
-        folder.owner_object_id = Some(owner.id.clone());
-        folder.owner_object_folder_path = Some(owner.folder_path.clone());
-    }
+    enrich_folder_owner_metadata(&mut response.children, index, mods_path);
 
     let Some(relative_sub_path) = sub_path.filter(|value| !value.is_empty()) else {
         return;
@@ -97,6 +88,21 @@ fn enrich_owner_metadata(
     };
     response.self_owner_object_id = Some(owner.id.clone());
     response.self_owner_object_folder_path = Some(owner.folder_path.clone());
+}
+
+fn enrich_folder_owner_metadata(
+    folders: &mut [crate::modules::workspace::application::explorer::types::ModFolder],
+    index: &OwnerIndex,
+    mods_path: &str,
+) {
+    for folder in folders {
+        let folder_key = folder_path_key(&folder.path, Some(mods_path));
+        let Some(owner) = index.resolve(&folder_key) else {
+            continue;
+        };
+        folder.owner_object_id = Some(owner.id.clone());
+        folder.owner_object_folder_path = Some(owner.folder_path.clone());
+    }
 }
 
 fn aggregate_safety(
@@ -137,7 +143,24 @@ fn enrich_safety(
     safety_aggregate: &HashMap<String, (bool, bool)>,
     mods_path: &str,
 ) {
-    for folder in &mut response.children {
+    enrich_folder_safety(
+        &mut response.children,
+        known_safety,
+        safety_aggregate,
+        mods_path,
+    );
+}
+
+fn enrich_folder_safety(
+    folders: &mut [crate::modules::workspace::application::explorer::types::ModFolder],
+    known_safety: &HashMap<
+        String,
+        crate::modules::library::adapters::sqlite::mods::SafetyClassification,
+    >,
+    safety_aggregate: &HashMap<String, (bool, bool)>,
+    mods_path: &str,
+) {
+    for folder in folders {
         let key = folder_path_key(&folder.path, Some(mods_path));
         if let Some(classification) = known_safety.get(&key) {
             folder.is_safe = classification.is_safe;

@@ -4,7 +4,14 @@
  */
 
 import { Folder, Home, Search, Star } from 'lucide-react';
-import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+  type UIEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/app/store';
 import { useThumbnail } from '@/entities/mod';
@@ -15,6 +22,9 @@ interface BreadcrumbsProps {
   path: string[];
   onNavigate: (index: number) => void;
   previousFolderItems?: WorkspaceExplorerNode[];
+  hasMorePreviousFolders?: boolean;
+  isLoadingMorePreviousFolders?: boolean;
+  loadMorePreviousFolders?: () => Promise<unknown> | void;
   onNavigateToPreviousFolder?: (name: string) => void;
   onGoHome: () => void;
   isRootHidden?: boolean;
@@ -67,6 +77,9 @@ export default function ExplorerBreadcrumbs({
   path,
   onNavigate,
   previousFolderItems = [],
+  hasMorePreviousFolders = false,
+  isLoadingMorePreviousFolders = false,
+  loadMorePreviousFolders,
   onNavigateToPreviousFolder,
   onGoHome,
   isRootHidden = false,
@@ -134,6 +147,15 @@ export default function ExplorerBreadcrumbs({
     event.preventDefault();
     closePreviousFolder();
     previousFolderButtonRef.current?.focus();
+  };
+  const handlePreviousFolderScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!hasMorePreviousFolders || isLoadingMorePreviousFolders || !loadMorePreviousFolders) {
+      return;
+    }
+    const list = event.currentTarget;
+    if (list.scrollHeight - list.scrollTop - list.clientHeight <= 64) {
+      void loadMorePreviousFolders();
+    }
   };
 
   return (
@@ -212,7 +234,11 @@ export default function ExplorerBreadcrumbs({
                             />
                           </label>
 
-                          <div className="custom-scrollbar mt-3 grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+                          <div
+                            data-testid="breadcrumb-previous-folder-list"
+                            className="custom-scrollbar mt-3 grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto pr-1"
+                            onScroll={handlePreviousFolderScroll}
+                          >
                             {previousFolders.map((folder) => (
                               <PreviousFolderItem
                                 key={folder.path}

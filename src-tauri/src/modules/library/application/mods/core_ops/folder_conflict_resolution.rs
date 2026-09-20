@@ -75,16 +75,6 @@ impl FolderConflictRenamePlan {
     }
 }
 
-/// Compatibility hook retained for callers predating the central mutation journal.
-pub fn recover_folder_conflict_journals(
-    _mods_root: &Path,
-    _suppressor: &std::sync::Arc<
-        crate::modules::workspace::application::scanner::watcher::WatcherSuppressor,
-    >,
-) -> Result<(), AppError> {
-    Ok(())
-}
-
 fn canonical(path: &Path) -> Result<PathBuf, AppError> {
     path.canonicalize()
         .map_err(|error| AppError::Security(format!("Invalid conflict path: {error}")))

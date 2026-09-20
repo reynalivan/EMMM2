@@ -23,8 +23,11 @@ macro_rules! emmm_collect_commands {
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_dashboard_stats,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_active_keybindings,
             crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_structure,
+            crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_explorer_page,
+            crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_explorer_bulk,
             crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_preview,
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_switch,
+            crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_object_bulk_switch,
             crate::modules::system::adapters::tauri::app_cmds::get_logs,
             crate::modules::system::adapters::tauri::app_cmds::open_log_folder,
             crate::modules::system::adapters::tauri::app_cmds::reset_database,
@@ -173,6 +176,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::workspace::adapters::tauri::folder_entries_cmds::list_folder_entries_cmd,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::apply_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::reconcile_disk_state_cmd,
+            crate::modules::reconciliation::adapters::tauri::runtime_sync::retry_runtime_sync,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::plan_onboarding_indexing_work,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::begin_onboarding_indexing,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::reconcile_onboarding_indexing_game,
@@ -181,8 +185,6 @@ macro_rules! emmm_collect_commands {
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::resolve_rename_confirmations,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_storage_size_backfill_status,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::start_storage_size_backfill,
-            crate::modules::workspace::adapters::tauri::watcher_cmds::start_watcher,
-            crate::modules::workspace::adapters::tauri::watcher_cmds::stop_watcher,
             crate::modules::duplicates::adapters::tauri::tauri::dup_scan_start,
             crate::modules::duplicates::adapters::tauri::tauri::dup_scan_cancel,
             crate::modules::duplicates::adapters::tauri::tauri::dup_scan_get_report,
@@ -356,6 +358,9 @@ pub fn run() {
             let telemetry_store =
                 crate::modules::system::application::telemetry::TelemetryStore::new(pool_ref.inner().clone());
             app.manage(telemetry_store.clone());
+            app.manage(crate::modules::system::application::telemetry::TelemetrySink::start(
+                telemetry_store.clone(),
+            ));
             if let Some(previous_session) = previous_session {
                 let diagnostics_enabled = app_handle
                     .state::<crate::modules::settings::application::config::ConfigService>()

@@ -1,20 +1,41 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { Webview } from '@tauri-apps/api/webview';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import type { BrowserTab } from '@/entities/browser';
 import { isDemoMode } from '@/shared/lib/appMode';
+import type { BrowserSurfacePresentation } from '../browserSurfacePresentation';
 
 /**
  * Keeps the native Tauri webviews positioned over `containerRef`, showing only
- * the active tab and hiding everything while a DOM overlay is open (native
- * webviews always paint above the DOM).
+ * the active tab. The presentation policy controls whether browser UI retains
+ * the native surface and which layer owns keyboard focus.
  */
 export function useWebviewSync(
   containerRef: RefObject<HTMLDivElement | null>,
   tabs: BrowserTab[],
   activeTabId: string | null,
-  overlayOpen: boolean,
+  presentation: BrowserSurfacePresentation,
 ): void {
+  const latestTabsRef = useRef(tabs);
+
+  useEffect(() => {
+    latestTabsRef.current = tabs;
+  }, [tabs]);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+
+    return () => {
+      latestTabsRef.current
+        .filter((tab) => !tab.isNewTab)
+        .forEach((tab) => {
+          Webview.getByLabel(tab.id)
+            .then((webview) => webview?.hide().catch(() => undefined))
+            .catch(() => undefined);
+        });
+    };
+  }, []);
+
   useEffect(() => {
     if (isDemoMode) {
       return;
@@ -34,6 +55,22 @@ export function useWebviewSync(
       isSyncing = true;
 
       try {
+        if (presentation.visibility === 'hidden') {
+          for (const tab of tabs) {
+            if (!isMounted) break;
+            if (tab.isNewTab) continue;
+
+            try {
+              const webview = await Webview.getByLabel(tab.id);
+              if (!isMounted) return;
+              await webview?.hide();
+            } catch (hideErr) {
+              console.error(`[Browser] Error hiding webview ${tab.id}:`, hideErr);
+            }
+          }
+          return;
+        }
+
         if (!containerRef.current) return;
         const rect = containerRef.current.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
@@ -43,13 +80,18 @@ export function useWebviewSync(
           if (tab.isNewTab) continue;
           try {
             const webview = await Webview.getByLabel(tab.id);
+            if (!isMounted) return;
             if (webview) {
-              if (tab.id === activeTabId && !overlayOpen) {
+              if (tab.id === activeTabId) {
                 try {
                   await webview.setSize(new LogicalSize(rect.width, rect.height));
+                  if (!isMounted) return;
                   await webview.setPosition(new LogicalPosition(rect.left, rect.top));
+                  if (!isMounted) return;
                   await webview.show();
-                  await webview.setFocus();
+                  if (isMounted && presentation.focus === 'browser') {
+                    await webview.setFocus();
+                  }
                 } catch (innerErr) {
                   console.error(
                     `[Browser] Error modifying webview properties for ${tab.id}:`,
@@ -96,17 +138,6 @@ export function useWebviewSync(
       isMounted = false;
       if (resizeObserver) resizeObserver.disconnect();
       window.removeEventListener('resize', handleWinResize);
-
-      // We do not await this, just fire and forget hides on unmount
-      tabs
-        .filter((tab) => !tab.isNewTab)
-        .forEach((t) => {
-          Webview.getByLabel(t.id)
-            .then((w) => {
-              if (w) w.hide().catch(() => {});
-            })
-            .catch(() => {});
-        });
     };
-  }, [containerRef, tabs, activeTabId, overlayOpen]);
+  }, [containerRef, tabs, activeTabId, presentation]);
 }

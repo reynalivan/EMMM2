@@ -1,13 +1,16 @@
 use super::{
-    get_workspace_preview, get_workspace_view_model, get_workspace_view_model_with_listing_mode,
+    get_workspace_preview, get_workspace_structure, get_workspace_view_model,
+    get_workspace_view_model_with_listing_mode,
 };
 use crate::modules::catalog::domain::objects::ObjectFilter;
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::workspace::domain::workspace::{
-    WorkspaceDisplayMode, WorkspaceNode, WorkspaceNodeKind, WorkspacePreviewContextStatus,
-    WorkspacePreviewInput, WorkspaceReasonCode, WorkspaceSelectionReconciliationReason,
-    WorkspaceSelectionReconciliationStatus, WorkspaceSourceStatus, WorkspaceSwitchPolicyKey,
-    WorkspaceViewModelInput, WorkspaceWarningCode,
+    WorkspaceDisplayMode, WorkspaceExplorerPageInput, WorkspaceExplorerQuery,
+    WorkspaceExplorerSafetyFilter, WorkspaceExplorerSortField, WorkspaceExplorerSortOrder,
+    WorkspaceNode, WorkspaceNodeKind, WorkspacePreviewContextStatus, WorkspacePreviewInput,
+    WorkspaceReasonCode, WorkspaceSelectionReconciliationReason,
+    WorkspaceSelectionReconciliationStatus, WorkspaceSourceStatus, WorkspaceStructureInput,
+    WorkspaceSwitchPolicyKey, WorkspaceViewModelInput, WorkspaceWarningCode,
 };
 use crate::test_utils::{
     init_test_db, insert_test_game, insert_test_mod, insert_test_object, TestGameFixture,

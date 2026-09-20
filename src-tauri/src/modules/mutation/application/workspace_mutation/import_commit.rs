@@ -3,6 +3,7 @@ use crate::modules::ingestion::application::import_batch::types::{
     ImportItemStatus, SourceFingerprint,
 };
 use crate::modules::matching::application::deep_matcher::{EntryKind, MasterDb};
+use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::shared::errors::AppError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
@@ -298,11 +299,9 @@ pub async fn commit_import_batch(
     let watcher = app
         .try_state::<crate::modules::workspace::application::scanner::watcher::WatcherState>()
         .ok_or_else(|| AppError::Internal("WatcherState is unavailable".to_string()))?;
-    let suppression = watcher.suppressor.suppress_paths(
-        plans
-            .iter()
-            .flat_map(|plan| [plan.source.as_path(), plan.target.as_path()]),
-    );
+    let suppression = watcher
+        .suppressor
+        .suppress_paths(import_mutation_suppression_paths(&plans, &[]));
     let mut journal = Vec::new();
     let mut created_directories = Vec::new();
     let mut collision_ids = BTreeSet::new();
@@ -462,6 +461,7 @@ pub async fn commit_import_batch(
                 &collision_ids,
                 &journal,
                 &created_directories,
+                watcher.inner(),
                 &mutation_lease,
                 &error,
             )
@@ -482,6 +482,7 @@ pub async fn commit_import_batch(
                 &collision_ids,
                 &journal,
                 &created_directories,
+                watcher.inner(),
                 &mutation_lease,
                 &error,
             )
@@ -594,9 +595,16 @@ async fn rollback_import_after_reconcile_failure(
     collision_ids: &BTreeSet<String>,
     journal: &[MoveJournalEntry],
     created_directories: &[PathBuf],
+    watcher: &WatcherState,
     mutation_lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
     reconcile_error: &AppError,
 ) -> Result<(), AppError> {
+    let _suppression = watcher
+        .suppressor
+        .suppress_paths(import_mutation_suppression_paths(
+            plans,
+            created_directories,
+        ));
     mutation_lease.begin_rollback()?;
     if let Err(rollback_error) = rollback_move_journal(journal) {
         let combined = format!("{reconcile_error}; import rollback failed: {rollback_error}");
@@ -1463,6 +1471,23 @@ async fn execute_moves(
     Ok(())
 }
 
+fn import_mutation_suppression_paths(
+    plans: &[PlannedMove],
+    created_directories: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut paths = Vec::with_capacity(plans.len() * 4 + created_directories.len());
+    for plan in plans {
+        paths.push(plan.source.clone());
+        paths.push(plan.target.clone());
+        paths.push(plan.object_dir.clone());
+        if let Some(parent) = plan.target.parent() {
+            paths.push(parent.to_path_buf());
+        }
+    }
+    paths.extend(created_directories.iter().cloned());
+    paths
+}
+
 fn cleanup_created_directories(paths: &[PathBuf]) {
     for path in paths.iter().rev() {
         if path.is_dir() {
@@ -1546,6 +1571,7 @@ async fn settle_runtime_effects(app: &tauri::AppHandle, pool: &sqlx::SqlitePool,
             collections_dirty: true,
             overlay_refresh: true,
             overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
+            overlay_roots: None,
         },
     )
     .await;

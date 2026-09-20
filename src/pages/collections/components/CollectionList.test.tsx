@@ -232,8 +232,49 @@ describe('CollectionList', () => {
       />,
     );
 
-    expect(screen.getByText('Live')).toBeInTheDocument();
+    expect(screen.getByText('list.item.active')).toBeInTheDocument();
+    expect(screen.getByText('list.item.unsaved')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Apply/i })).not.toBeInTheDocument();
+  });
+
+  it('marks current changes as the only active state when the baseline is modified', () => {
+    const rows: CollectionListRow[] = [
+      {
+        kind: 'current_runtime',
+        rowId: '__current_runtime__',
+        label: 'Current changes',
+        modCount: 2,
+        isActive: true,
+        isSafe: true,
+        isSafetyClassified: true,
+      },
+      {
+        kind: 'stored_collection',
+        rowId: 'stored-1',
+        collection: createCollection({ id: 'stored-1', name: 'Saved baseline' }),
+      },
+    ];
+
+    render(
+      <CollectionList
+        rows={rows}
+        selectedId="__current_runtime__"
+        isLoading={false}
+        onSelect={vi.fn()}
+        onApply={vi.fn()}
+        onDelete={vi.fn()}
+        onRename={vi.fn()}
+        onSave={vi.fn()}
+        onSaveChanges={vi.fn()}
+        activeCollectionId="stored-1"
+        runtimeStatus="modified"
+        isApplying={false}
+        isDeleting={false}
+      />,
+    );
+
+    expect(screen.getAllByText('list.item.active')).toHaveLength(1);
+    expect(screen.getByText('list.item.modified')).toBeInTheDocument();
   });
 });

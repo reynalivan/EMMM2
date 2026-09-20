@@ -10,6 +10,114 @@ pub struct WorkspaceStructureInput {
     pub explorer_sub_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceExplorerSortField {
+    Name,
+    ModifiedAt,
+    SizeBytes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceExplorerSortOrder {
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceExplorerSafetyFilter {
+    All,
+    Safe,
+    Unsafe,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct WorkspaceExplorerQuery {
+    pub game_id: String,
+    pub explorer_sub_path: Option<String>,
+    pub search_query: Option<String>,
+    pub sort_field: WorkspaceExplorerSortField,
+    pub sort_order: WorkspaceExplorerSortOrder,
+    pub safety_filter: WorkspaceExplorerSafetyFilter,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct WorkspaceExplorerPageInput {
+    pub query: WorkspaceExplorerQuery,
+    pub cursor: Option<String>,
+    pub page_size: u32,
+}
+
+#[derive(Clone, Serialize, specta::Type)]
+pub struct WorkspaceExplorerPage {
+    pub items: Vec<WorkspaceExplorerNode>,
+    pub next_cursor: Option<String>,
+    #[specta(type = f64)]
+    pub total_matching: u64,
+    pub query_fingerprint: String,
+    /// Opaque identity of the immutable backend listing used by this page.
+    /// Bulk actions must carry this value so they cannot silently include
+    /// folders that appeared after the user selected the result set.
+    pub listing_revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum WorkspaceExplorerSelection {
+    Explicit { paths: Vec<String> },
+    AllMatching { excluded_paths: Vec<String> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct WorkspaceExplorerSelectionInput {
+    pub query: WorkspaceExplorerQuery,
+    pub listing_revision: String,
+    pub selection: WorkspaceExplorerSelection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceExplorerBulkAction {
+    Toggle {
+        enable: bool,
+        operation_id: String,
+    },
+    Delete {
+        operation_id: String,
+    },
+    UpdateInfo {
+        update: crate::modules::library::application::mods::info_json::ModInfoUpdate,
+    },
+    SetSafety {
+        safe: bool,
+    },
+    SetFavorite {
+        favorite: bool,
+    },
+    SetPin {
+        pin: bool,
+    },
+    MoveToObject {
+        target_object_id: String,
+        target_subpath: Option<String>,
+        status: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct WorkspaceExplorerBulkInput {
+    pub selection: WorkspaceExplorerSelectionInput,
+    pub action: WorkspaceExplorerBulkAction,
+}
+
+#[derive(Clone)]
+pub struct ResolvedWorkspaceExplorerSelection {
+    pub paths: Vec<String>,
+    pub expected_identities: Vec<(String, String)>,
+}
+
 #[derive(Clone, Serialize, specta::Type)]
 pub struct WorkspaceNavigationSelection {
     pub selected_object_folder_path: Option<String>,

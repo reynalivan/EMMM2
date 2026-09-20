@@ -8,7 +8,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
 import { toast } from '@/shared/ui/toast';
 import { thumbnailKeys } from '@/entities/mod';
-import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
+import {
+  cancelRuntimeDescriptorQueries,
+  publishRuntimeDescriptor,
+} from '@/shared/lib/queryRefresh';
 import { applyRuntimeEffects } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   buildQueryRemovalDescriptor,
@@ -29,6 +32,15 @@ import {
 } from '../../../shared/lib/hooks/bulkToastMessages';
 import { resolveTogglePathRewrites } from '../utils/folderMutationPayloads';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
+import { useAppStore } from '@/app/store';
+
+function createBulkOperationId(kind: 'toggle' | 'delete'): string {
+  return `${kind}-${crypto.randomUUID()}`;
+}
+
+function isActiveGame(gameId: string): boolean {
+  return useAppStore.getState().activeGameId === gameId;
+}
 
 /** Hook to bulk toggle mods. */
 export function useBulkToggle() {
@@ -38,27 +50,45 @@ export function useBulkToggle() {
     // Bulk toggle is an explicit runtime switch path.
     // Global runtime refresh comes from one final publish, not per-item ad-hoc invalidation.
     mutationFn: (params: { gameId: string; paths: string[]; enable: boolean }) =>
-      commands.bulkToggleMods(params.gameId, params.paths, params.enable),
+      commands.bulkToggleMods(
+        params.gameId,
+        params.paths,
+        params.enable,
+        createBulkOperationId('toggle'),
+      ),
 
-    onSuccess: async (result, variables) => {
-      const pathRewrites = resolveTogglePathRewrites(
-        result.success,
-        result.path_rewrites,
-        variables.enable,
-      );
-      // No thumbnail drop: a toggle keeps the folder's identity, and the
-      // cache is identity-keyed — dropping here would evict the entry the
-      // new path is about to reuse and force a regeneration per mod.
-      applyRuntimeEffects(queryClient, buildWorkspacePathRewritesDescriptor(pathRewrites, []));
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor(
+    onSuccess: (result, variables) => {
+      const currentGame = isActiveGame(variables.gameId);
+      if (currentGame) {
+        const pathRewrites = resolveTogglePathRewrites(
+          result.success,
+          result.path_rewrites,
+          variables.enable,
+        );
+        const descriptor = buildRuntimeMutationDescriptor(
           'folderSwitch',
           collectionReferenceImpactRefreshEvents(result.collection_impact),
-        ),
-        'active',
-      );
+        );
+        const cancellation = cancelRuntimeDescriptorQueries(queryClient, descriptor);
+        // No thumbnail drop: a toggle keeps the folder's identity, and the
+        // cache is identity-keyed — dropping here would evict the entry the
+        // new path is about to reuse and force a regeneration per mod.
+        applyRuntimeEffects(queryClient, buildWorkspacePathRewritesDescriptor(pathRewrites, []));
+        void cancellation
+          .then(() => {
+            if (!isActiveGame(variables.gameId)) {
+              return;
+            }
+            return publishRuntimeDescriptor(queryClient, descriptor, 'active');
+          })
+          .catch((error: unknown) => {
+            console.error('[BulkToggle] Background cache refresh failed:', error);
+          });
+      }
 
+      if (!currentGame) {
+        return;
+      }
       if (result.success.length > 0) {
         const action = variables.enable ? 'enabled' : 'disabled';
         toast.success(formatBulkSuccessMessage(result.success, action));
@@ -73,6 +103,9 @@ export function useBulkToggle() {
       notifyCommittedMutationSyncWarning(result);
     },
     onError: (error, variables) => {
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
         return;
       }
@@ -91,8 +124,11 @@ export function useBulkDelete() {
     // `gameId` names both the mods root the paths must sit inside and the
     // game whose index rows get pruned; the backend refuses without it.
     mutationFn: (params: { paths: string[]; gameId: string }) =>
-      commands.bulkDeleteMods(params.gameId, params.paths),
-    onSuccess: async (result) => {
+      commands.bulkDeleteMods(params.gameId, params.paths, createBulkOperationId('delete')),
+    onSuccess: async (result, variables) => {
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       applyRuntimeEffects(
         queryClient,
         buildQueryRemovalDescriptor(
@@ -108,7 +144,9 @@ export function useBulkDelete() {
         ),
         'active',
       );
-
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       if (result.success.length > 0) {
         toast.success(formatBulkSuccessMessage(result.success, 'deleted'));
       }
@@ -131,12 +169,18 @@ export function useBulkUpdateInfo() {
   return useMutation({
     mutationFn: (params: { gameId: string; paths: string[]; update: ModInfoUpdate }) =>
       commands.bulkUpdateInfo(params.gameId, params.paths, sparse(params.update)),
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       await publishRuntimeDescriptor(
         queryClient,
         buildRuntimeMutationDescriptor('folderMetadataPreview'),
         'active',
       );
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       if (result.success.length > 0) {
         toast.success(formatBulkSuccessMessage(result.success, 'updated'));
       }
@@ -156,11 +200,17 @@ export function useBulkSafety() {
     mutationFn: (params: { gameId: string; paths: string[]; safe: boolean }) =>
       commands.bulkSetModSafety(params.gameId, params.paths, params.safe),
     onSuccess: async (result, variables) => {
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       await publishRuntimeDescriptor(
         queryClient,
         buildRuntimeMutationDescriptor('safetyClassification'),
         'active',
       );
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       if (result.success.length > 0) {
         toast.success(
           formatBulkSuccessMessage(
@@ -185,11 +235,17 @@ export function useBulkFavorite() {
     mutationFn: (params: { gameId: string; folderPaths: string[]; favorite: boolean }) =>
       commands.bulkToggleFavorite(params.gameId, params.folderPaths, params.favorite),
     onSuccess: async (result, variables) => {
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       await publishRuntimeDescriptor(
         queryClient,
         buildRuntimeMutationDescriptor('folderMetadataPreview'),
         'active',
       );
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       if (result.success.length > 0) {
         const action = variables.favorite ? 'favorited' : 'unfavorited';
         toast.success(formatBulkSuccessMessage(result.success, action));
@@ -210,11 +266,17 @@ export function useBulkPin() {
     mutationFn: (params: { gameId: string; folderPaths: string[]; pin: boolean }) =>
       commands.bulkPinMods(params.gameId, params.folderPaths, params.pin),
     onSuccess: async (result, variables) => {
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       await publishRuntimeDescriptor(
         queryClient,
         buildRuntimeMutationDescriptor('folderMetadataPreview'),
         'active',
       );
+      if (!isActiveGame(variables.gameId)) {
+        return;
+      }
       if (result.success.length > 0) {
         const action = variables.pin ? 'pinned' : 'unpinned';
         toast.success(formatBulkSuccessMessage(result.success, action));

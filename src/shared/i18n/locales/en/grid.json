@@ -160,7 +160,13 @@
     "ops_title": "Bulk Operations",
     "edit_metadata": "Edit Metadata",
     "move_object": "Move to Object...",
-    "move_trash": "Move to Trash"
+    "move_trash": "Move to Trash",
+    "selection_limit": "Bulk operations support at most {{limit}} mods.",
+    "move_requires_loaded_selection": "Load the full exact selection before moving. Select All across unloaded results is not supported yet.",
+    "move_success_one": "Moved {{count}} mod.",
+    "move_success_other": "Moved {{count}} mods.",
+    "move_failure_one": "{{count}} mod could not be moved: {{error}}",
+    "move_failure_other": "{{count}} mods could not be moved: {{error}}"
   },
   "bulk_toast": {
     "success": "{{action}}: {{names}}",

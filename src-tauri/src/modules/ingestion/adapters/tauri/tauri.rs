@@ -931,6 +931,7 @@ async fn settle_classification_runtime_effects(
             collections_dirty: true,
             overlay_refresh: true,
             overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
+            overlay_roots: None,
         },
     )
     .await;

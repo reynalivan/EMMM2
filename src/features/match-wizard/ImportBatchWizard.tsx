@@ -358,7 +358,7 @@ export function ImportBatchWizard({
                     <col className="w-[30%]" />
                     <col className="w-[36%]" />
                     <col className="w-[18%]" />
-                    <col className="w-32" />
+                    <col className="w-48" />
                   </colgroup>
                   <thead className="sticky top-0 z-20 bg-base-100 shadow-[0_1px_0_hsl(var(--bc)/0.1)]">
                     <tr className="text-[10px] uppercase tracking-wider text-base-content/55">

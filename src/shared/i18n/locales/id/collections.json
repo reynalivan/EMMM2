@@ -37,7 +37,9 @@
       "matches_runtime": "Sama dengan runtime saat ini",
       "save_changes": "Simpan perubahan"
     },
-    "load_failed": "Gagal memuat koleksi"
+    "load_failed": "Gagal memuat koleksi",
+    "active_filtered": "Loadout aktif berada di luar filter keamanan ini.",
+    "show_active": "Tampilkan yang aktif"
   },
   "last_changes": {
     "title": "Perubahan terakhir",
@@ -81,6 +83,21 @@
       "mod_count": "{{count}} mod",
       "empty_before": "Tidak ada mod yang aktif saat ini.",
       "empty_after": "Koleksi kosong."
+    },
+    "diff": {
+      "view_label": "Tampilan perbandingan koleksi",
+      "full_collection": "Koleksi utuh",
+      "changes_only": "Hanya perubahan",
+      "safe_mode_on": "Mode Aman aktif",
+      "disable_count": "Akan nonaktif",
+      "enable_count": "Akan aktif",
+      "unchanged_count": "Tetap aktif",
+      "safe_mode_exclusions": "{{count}} mod tidak aman atau belum diklasifikasikan akan tetap nonaktif dalam Mode Aman.",
+      "will_enable": "Akan aktif",
+      "will_disable": "Akan nonaktif",
+      "excluded_safe_mode": "Dikecualikan di Mode Aman",
+      "empty_disable": "Tidak ada mod yang akan dinonaktifkan.",
+      "empty_enable": "Tidak ada mod yang akan diaktifkan."
     },
     "actions": {
       "cancel": "Batal",

@@ -27,8 +27,6 @@ vi.mock('@tauri-apps/api/event', () => ({
 vi.mock('../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
-    stopWatcher: vi.fn().mockResolvedValue(undefined),
-    startWatcher: vi.fn().mockResolvedValue(undefined),
     reconcileDiskStateCmd: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -139,7 +137,7 @@ describe('ExternalChangeHandler integration', () => {
       </QueryClientProvider>,
     );
 
-    await waitFor(() => expect(commands.startWatcher).toHaveBeenCalledWith('E:/Mods', 'game-1'));
+    await waitFor(() => expect(eventHandlers['disk_reconcile:result']).toBeTypeOf('function'));
 
     await act(async () => {
       eventHandlers['disk_reconcile:result']({

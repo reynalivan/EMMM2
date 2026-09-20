@@ -10,7 +10,8 @@ use crate::modules::catalog::domain::objects::ObjectRuntimeDescriptor;
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
-    collect_scoped_disk_discovery_with_progress, DiskProjectionError, DiskSizeScan,
+    collect_scoped_disk_discovery_with_progress,
+    collect_trusted_scoped_disk_discovery_with_progress, DiskProjectionError, DiskSizeScan,
     DiskSnapshotProgress,
 };
 use crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census;
@@ -62,6 +63,7 @@ pub struct ReconcileDiskProjectionRequest<'a> {
     pub force_full: bool,
     pub watcher_events: Option<&'a [ModWatchEvent]>,
     pub path_hints: &'a [DiskReconcilePathHint],
+    pub trusted_mutation_scope: bool,
     pub progress_reporter:
         Option<Arc<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter>>,
     /// A complete discovery captured by the onboarding session watcher.
@@ -234,6 +236,7 @@ fn record_runtime_modifications(
 pub async fn reconcile_disk_projection(
     request: ReconcileDiskProjectionRequest<'_>,
 ) -> Result<ReconcileOutcome, AppError> {
+    let reconcile_started = std::time::Instant::now();
     let ReconcileDiskProjectionRequest {
         pool,
         game_id,
@@ -244,6 +247,7 @@ pub async fn reconcile_disk_projection(
         force_full,
         watcher_events,
         path_hints,
+        trusted_mutation_scope,
         progress_reporter,
         precomputed_discovery,
     } = request;
@@ -310,10 +314,6 @@ pub async fn reconcile_disk_projection(
         || !matches!(reason, DiskReconcileReason::WatcherBatch)
         || !changed_roots.is_empty();
 
-    let before_descriptors =
-        crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(pool, game_id)
-            .await?;
-
     let mut objects_changed = false;
     let mut folders_changed = false;
     let mut cleared_selection_paths = Vec::new();
@@ -341,13 +341,26 @@ pub async fn reconcile_disk_projection(
             let snapshot_path = mods_path.to_path_buf();
             let snapshot_roots = changed_roots.clone();
             let snapshot_progress = progress_reporter.clone();
-            let known_mod_keys =
+            let mods_root = mods_path.to_string_lossy();
+            let mod_scope_root_keys = changed_roots
+                .iter()
+                .map(|root| crate::shared::path_key::folder_path_key(root, Some(&mods_root)))
+                .collect::<Vec<_>>();
+            let known_mod_keys = if trusted_mutation_scope && requested_scoped {
+                crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_roots(
+                    pool,
+                    game_id,
+                    &mod_scope_root_keys,
+                )
+                .await?
+            } else {
                 crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_game(
                     pool, game_id,
                 )
                 .await?
-                .into_iter()
-                .collect();
+            }
+            .into_iter()
+            .collect();
             let size_scan = if matches!(reason, DiskReconcileReason::StorageSizeBackfill) {
                 DiskSizeScan::full()
             } else {
@@ -364,13 +377,22 @@ pub async fn reconcile_disk_projection(
                         );
                     }
                 };
-                collect_scoped_disk_discovery_with_progress(
-                    &snapshot_path,
-                    &snapshot_roots,
-                    requested_scoped,
-                    Some(&size_scan),
-                    Some(&on_progress),
-                )
+                if trusted_mutation_scope && requested_scoped {
+                    collect_trusted_scoped_disk_discovery_with_progress(
+                        &snapshot_path,
+                        &snapshot_roots,
+                        Some(&size_scan),
+                        Some(&on_progress),
+                    )
+                } else {
+                    collect_scoped_disk_discovery_with_progress(
+                        &snapshot_path,
+                        &snapshot_roots,
+                        requested_scoped,
+                        Some(&size_scan),
+                        Some(&on_progress),
+                    )
+                }
             })
             .await?;
             match snapshot {
@@ -388,6 +410,8 @@ pub async fn reconcile_disk_projection(
             }
         };
         let scoped = discovery.scoped;
+        let scan_counts = discovery.scan_counts;
+        let discovery_timings = discovery.timings;
         scan_scope = if scoped {
             DiskReconcileScanScope::Scoped
         } else {
@@ -395,6 +419,24 @@ pub async fn reconcile_disk_projection(
         };
         let census = discovery.census;
         let mut projection = discovery.projection;
+        let scope_root_keys = changed_roots
+            .iter()
+            .map(|root| crate::shared::path_key::canonical_name_key(root))
+            .collect::<Vec<_>>();
+        let before_descriptors = if scoped {
+            crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors_for_folder_path_keys(
+                pool,
+                game_id,
+                &scope_root_keys,
+            )
+            .await?
+        } else {
+            crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(
+                pool, game_id,
+            )
+            .await?
+        };
+        let projection_started = std::time::Instant::now();
         if force_full {
             crate::platform::images::thumbnail_cache::ThumbnailCache::clear_memory();
             thumbnail_roots = projection
@@ -453,6 +495,7 @@ pub async fn reconcile_disk_projection(
             mods_path,
             &projection,
             &effective_watcher_events,
+            scoped.then_some(scope_root_keys.as_slice()),
         )
         .await?;
         protected_object_keys.extend(rename_detection.protected_object_keys);
@@ -496,6 +539,7 @@ pub async fn reconcile_disk_projection(
                 safe_mode_keywords,
                 projection,
                 changed_roots: &changed_roots,
+                scoped,
                 force_full,
                 path_updates: &mut path_updates,
                 collection_reference_impact: &mut collection_reference_impact,
@@ -518,15 +562,43 @@ pub async fn reconcile_disk_projection(
                 .await?;
         }
         tx.commit().await?;
+        let db_projection_ms = projection_started
+            .elapsed()
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64;
+        log::info!(
+            "disk reconcile timing game_id={} scan_scope={:?} full_scan_count={} affected_roots={} census_directories={} classified_roots={} classified_directories={} db_object_rows_loaded={} db_mod_rows_loaded={} census_ms={} classification_ms={} db_projection_ms={} total_ms={}",
+            game_id,
+            scan_scope,
+            usize::from(scan_scope == DiskReconcileScanScope::Full),
+            changed_roots.len(),
+            scan_counts.census_directories,
+            scan_counts.classified_roots,
+            scan_counts.classified_directories,
+            write_outcome.db_object_rows_loaded,
+            write_outcome.db_mod_rows_loaded,
+            discovery_timings.census_ms,
+            discovery_timings.classification_ms,
+            db_projection_ms,
+            reconcile_started.elapsed().as_millis(),
+        );
 
         objects_changed = write_outcome.objects_changed;
         folders_changed = write_outcome.folders_changed;
 
-        let after_descriptors =
+        let after_descriptors = if scoped {
+            crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors_for_folder_path_keys(
+                pool,
+                game_id,
+                &scope_root_keys,
+            )
+            .await?
+        } else {
             crate::modules::catalog::adapters::sqlite::object::get_runtime_descriptors(
                 pool, game_id,
             )
-            .await?;
+            .await?
+        };
 
         // Both the cleared-selection diff and the changed-root merge compare the
         // same two descriptor sets; build each set once.

@@ -299,6 +299,7 @@ pub async fn apply_object_classification_batch(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn canonical_classification_input(
     master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
     canonical_db: &crate::modules::matching::application::deep_matcher::MasterDb,

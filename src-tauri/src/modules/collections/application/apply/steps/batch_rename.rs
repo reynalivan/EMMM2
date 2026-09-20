@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::modules::collections::application::apply::apply_pipeline::ApplyContext;
+use crate::modules::library::application::mods::core_ops::ToggleRenamePlan;
 use crate::modules::mutation::application::workspace_mutation::engine::{
     plan_runtime_toggles, RuntimeRenamePlan, RuntimeToggleBatchRequest, RuntimeToggleOperation,
     RuntimeToggleTarget,
@@ -9,14 +10,9 @@ use crate::modules::mutation::journal::PlannedStep;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::shared::errors::{AppError, CollectionError};
 
-struct ObjectTogglePlan {
-    current_path: std::path::PathBuf,
-    target_path: std::path::PathBuf,
-}
-
 pub(crate) struct PreparedCollectionRenames {
     mod_plans: Vec<RuntimeRenamePlan>,
-    object_plans: Vec<ObjectTogglePlan>,
+    object_plans: Vec<ToggleRenamePlan>,
 }
 
 pub async fn prepare(ctx: &mut ApplyContext) -> Result<Vec<PlannedStep>, CollectionError> {
@@ -40,18 +36,24 @@ pub async fn prepare(ctx: &mut ApplyContext) -> Result<Vec<PlannedStep>, Collect
     let object_plans = load_object_plans(ctx).await?;
     let mut steps = Vec::with_capacity(mod_plans.len() + object_plans.len());
     for plan in &mod_plans {
-        steps.push(PlannedStep::rename(
-            steps.len() as u32,
-            plan.old_path().to_path_buf(),
-            plan.new_path().to_path_buf(),
-        ));
+        steps.push(
+            PlannedStep::rename(
+                steps.len() as u32,
+                plan.old_path().to_path_buf(),
+                plan.new_path().to_path_buf(),
+            )
+            .with_expected_identity(Some(plan.expected_identity().to_string())),
+        );
     }
     for plan in &object_plans {
-        steps.push(PlannedStep::rename(
-            steps.len() as u32,
-            plan.current_path.clone(),
-            plan.target_path.clone(),
-        ));
+        steps.push(
+            PlannedStep::rename(
+                steps.len() as u32,
+                plan.old_path().to_path_buf(),
+                plan.new_path().to_path_buf(),
+            )
+            .with_expected_identity(Some(plan.expected_identity().to_string())),
+        );
     }
     ctx.prepared_renames = Some(PreparedCollectionRenames {
         mod_plans,
@@ -107,22 +109,16 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     }
 
     for plan in prepared.object_plans {
-        if let Err(error) = std::fs::rename(&plan.current_path, &plan.target_path) {
+        if let Err(error) = plan.apply("object folder") {
             rollback_applied(ctx, planned_count, &applied);
             reconcile_after_mutation_failure(ctx, &[]).await;
-            return Err(object_toggle_error(
-                crate::modules::library::application::mods::core_ops::map_toggle_error(
-                    &plan.current_path,
-                    "object folder",
-                    error,
-                ),
-            ));
+            return Err(object_toggle_error(error));
         }
         let sequence = applied.len() as u32;
         applied.push((
             sequence,
-            plan.current_path.clone(),
-            plan.target_path.clone(),
+            plan.old_path().to_path_buf(),
+            plan.new_path().to_path_buf(),
         ));
         if let Some(guard) = ctx.mutation_guard.as_ref() {
             if let Err(error) = guard.mark_step_applied(sequence) {
@@ -130,8 +126,8 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
                 return Err(object_toggle_error(error));
             }
         }
-        let original_path = plan.current_path.to_string_lossy().to_string();
-        let next_path = plan.target_path.to_string_lossy().to_string();
+        let original_path = plan.old_path().to_string_lossy().to_string();
+        let next_path = plan.new_path().to_string_lossy().to_string();
         changed_paths.extend([original_path.clone(), next_path.clone()]);
         ctx.runtime_path_rewrites.push(WorkspacePathRewrite {
             old_path: original_path,
@@ -151,17 +147,41 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
                 force_full: false,
                 watcher_events: None,
                 path_hints: &[],
+                // Every plan was identity-checked immediately before a
+                // same-parent enable/disable rename and is journaled with that
+                // identity. No unrelated root can participate in this write.
+                trusted_mutation_scope: true,
                 progress_reporter: None,
                 precomputed_discovery: None,
             },
         )
         .await;
-        if let Err(error) = reconcile {
-            rollback_applied(ctx, planned_count, &applied);
-            reconcile_after_mutation_failure(ctx, &[]).await;
-            return Err(CollectionError::Db(format!(
-                "Post-rename disk reconcile failed: {error}"
-            )));
+        match reconcile {
+            Ok(outcome) if outcome.status.applied() => {
+                log::debug!(
+                    "apply_pipeline[batch_rename]: scan_scope={:?} full_scan_count={}",
+                    outcome.scan_scope,
+                    usize::from(
+                        outcome.scan_scope
+                            == crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileScanScope::Full
+                    )
+                );
+            }
+            Ok(outcome) => {
+                rollback_applied(ctx, planned_count, &applied);
+                reconcile_after_mutation_failure(ctx, &[]).await;
+                return Err(CollectionError::Db(format!(
+                    "Post-rename disk reconcile did not apply: {:?}",
+                    outcome.status
+                )));
+            }
+            Err(error) => {
+                rollback_applied(ctx, planned_count, &applied);
+                reconcile_after_mutation_failure(ctx, &[]).await;
+                return Err(CollectionError::Db(format!(
+                    "Post-rename disk reconcile failed: {error}"
+                )));
+            }
         }
     }
     log::info!(
@@ -204,14 +224,20 @@ fn rollback_applied(
     ctx.runtime_path_rewrites.clear();
 }
 
-async fn load_object_plans(ctx: &ApplyContext) -> Result<Vec<ObjectTogglePlan>, CollectionError> {
-    let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(
-        &mut conn,
+async fn load_object_plans(ctx: &ApplyContext) -> Result<Vec<ToggleRenamePlan>, CollectionError> {
+    let object_ids = ctx
+        .target_objects
+        .iter()
+        .map(|target| target.object_id.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let rows = crate::modules::catalog::adapters::sqlite::object::get_game_objects_by_ids(
+        &ctx.pool,
         &ctx.game_id,
+        &object_ids,
     )
     .await?;
-    drop(conn);
     let by_id = rows
         .into_iter()
         .map(|row| (row.id.clone(), row))
@@ -238,10 +264,7 @@ async fn load_object_plans(ctx: &ApplyContext) -> Result<Vec<ObjectTogglePlan>, 
         else {
             continue;
         };
-        plans.push(ObjectTogglePlan {
-            current_path,
-            target_path: plan.new_path().to_path_buf(),
-        });
+        plans.push(plan);
     }
     Ok(plans)
 }
@@ -282,6 +305,7 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
             force_full: true,
             watcher_events: (!rename_events.is_empty()).then_some(rename_events.as_slice()),
             path_hints: &[],
+            trusted_mutation_scope: false,
             progress_reporter: None,
             precomputed_discovery: None,
         },
@@ -301,10 +325,20 @@ async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[St
 async fn load_targets_by_key(
     ctx: &ApplyContext,
 ) -> Result<HashMap<String, RuntimeToggleTarget>, CollectionError> {
+    let root_keys = ctx
+        .to_enable
+        .iter()
+        .chain(&ctx.to_disable)
+        .map(|key| key.to_lowercase())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let mut conn = ctx.pool.acquire().await?;
-    let rows = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(
+    let rows = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile_scope(
         &mut conn,
         &ctx.game_id,
+        &root_keys,
+        &[],
     )
     .await?;
     drop(conn);

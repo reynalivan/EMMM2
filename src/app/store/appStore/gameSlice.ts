@@ -11,7 +11,9 @@ import type {
   DiskReconcileProgress,
   DiskReconcileReason,
   FolderNameConflictGroup,
+  GameActivationStatus,
   RenameConfirmationGroup,
+  RuntimeSyncStatus,
 } from '@/shared/api/tauri/bindings';
 
 /** Disk Reconcile bookkeeping for one game. */
@@ -36,6 +38,32 @@ const EMPTY_DISK_RECONCILE: DiskReconcileEntry = {
   revision: 0,
 };
 
+let runtimeStatusListenersReady: Promise<void> | null = null;
+let activeGameRequestSequence = 0;
+
+const runtimePhaseOrder: Record<RuntimeSyncStatus['phase'], number> = {
+  queued: 0,
+  running: 1,
+  succeeded: 2,
+  needs_manual_reload: 2,
+  failed: 2,
+};
+
+const activationPhaseOrder: Record<GameActivationStatus['phase'], number> = {
+  syncing: 0,
+  ready: 1,
+  source_unavailable: 1,
+  failed: 1,
+};
+
+function activationStatusInformationScore(status: GameActivationStatus): number {
+  return (
+    Number(status.reconcile_revision !== null) +
+    Number(status.runtime_sync_generation !== null) +
+    Number(status.error !== null)
+  );
+}
+
 export type FolderConflictReportStatus = 'open' | 'resolvedExternally' | 'cleared';
 
 /** Latest disk-authoritative folder-conflict report for one game. */
@@ -56,6 +84,8 @@ export interface GameSlice {
   folderConflictsByGame: Record<string, FolderNameConflictGroup[]>;
   folderConflictReportsByGame: Record<string, FolderConflictReport>;
   renameConfirmationsByGame: Record<string, RenameConfirmationGroup[]>;
+  runtimeSyncByGame: Record<string, RuntimeSyncStatus>;
+  gameActivationByGame: Record<string, GameActivationStatus>;
 
   initStore: () => Promise<void>;
   setActiveGameId: (id: string | null) => Promise<void>;
@@ -67,6 +97,8 @@ export interface GameSlice {
   setFolderConflicts: (gameId: string, conflicts: FolderNameConflictGroup[]) => void;
   applyFolderConflictReconcileResult: (result: DiskReconcileResult) => boolean;
   setRenameConfirmations: (gameId: string, groups: RenameConfirmationGroup[]) => void;
+  setRuntimeSyncStatus: (status: RuntimeSyncStatus) => void;
+  setGameActivationStatus: (status: GameActivationStatus) => void;
 }
 
 export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
@@ -77,8 +109,28 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
   folderConflictsByGame: {},
   folderConflictReportsByGame: {},
   renameConfirmationsByGame: {},
+  runtimeSyncByGame: {},
+  gameActivationByGame: {},
 
   initStore: async () => {
+    if (!runtimeStatusListenersReady) {
+      runtimeStatusListenersReady = Promise.all([
+        listen<RuntimeSyncStatus>('runtime_sync:status', (event) => {
+          get().setRuntimeSyncStatus(event.payload);
+        }),
+        listen<GameActivationStatus>('game_activation:status', (event) => {
+          get().setGameActivationStatus(event.payload);
+        }),
+      ])
+        .then(() => undefined)
+        .catch((error) => {
+          runtimeStatusListenersReady = null;
+          throw error;
+        });
+    }
+    await runtimeStatusListenersReady.catch((error) => {
+      console.error('Failed to register runtime status listeners', error);
+    });
     const startupReportsByGame = new Map<string, DiskReconcileResult>();
     let startupInitialized = false;
     const unlisten = await listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
@@ -95,9 +147,20 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
     try {
       const settings = await commands.getSettings();
       const activeGameId = settings.active_game_id;
+      const activation = activeGameId ? await commands.setActiveGame(activeGameId) : null;
       const activeReport = activeGameId ? (startupReportsByGame.get(activeGameId) ?? null) : null;
       const activeReportRevision = activeReport?.reconcile_revision ?? 0;
 
+      if (activation?.game_id) {
+        get().setGameActivationStatus({
+          game_id: activation.game_id,
+          generation: activation.generation,
+          phase: activation.phase,
+          reconcile_revision: null,
+          runtime_sync_generation: null,
+          error: null,
+        });
+      }
       set({
         activeGameId,
         autoCloseLauncher: settings.auto_close_launcher ?? false,
@@ -158,12 +221,30 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
   },
 
   setActiveGameId: async (id) => {
+    const requestSequence = ++activeGameRequestSequence;
     try {
       // The backend resets the per-game disk recovery gate here. Publish the
       // new active ID only afterwards so no workspace query can race ahead and
       // hydrate from a projection created before external/offline changes.
-      await commands.setActiveGame(id);
-      queryClient.setQueryData(settingsKeys.all, await commands.getSettings());
+      const activation = await commands.setActiveGame(id);
+      if (requestSequence !== activeGameRequestSequence) {
+        return;
+      }
+      const settings = await commands.getSettings();
+      if (requestSequence !== activeGameRequestSequence) {
+        return;
+      }
+      queryClient.setQueryData(settingsKeys.all, settings);
+      if (activation?.game_id) {
+        get().setGameActivationStatus({
+          game_id: activation.game_id,
+          generation: activation.generation,
+          phase: activation.phase,
+          reconcile_revision: null,
+          runtime_sync_generation: null,
+          error: null,
+        });
+      }
       set({
         activeGameId: id,
         // Reset explorer state to prevent stale paths from previous game
@@ -197,7 +278,12 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
         ]);
       }
     } catch (e) {
+      if (requestSequence !== activeGameRequestSequence) {
+        return;
+      }
       console.error('Failed to sync active game to backend', e);
+      toast.error(formatAppError(e));
+      throw e;
     }
   },
 
@@ -333,4 +419,48 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
         [gameId]: groups,
       },
     })),
+  setRuntimeSyncStatus: (status) =>
+    set((state) => {
+      const current = state.runtimeSyncByGame[status.game_id];
+      if (
+        current &&
+        (current.generation > status.generation ||
+          (current.generation === status.generation &&
+            runtimePhaseOrder[current.phase] > runtimePhaseOrder[status.phase]))
+      ) {
+        return {};
+      }
+      return {
+        runtimeSyncByGame: {
+          ...state.runtimeSyncByGame,
+          [status.game_id]: status,
+        },
+      };
+    }),
+  setGameActivationStatus: (status) =>
+    set((state) => {
+      if (!status.game_id) {
+        return {};
+      }
+      const current = state.gameActivationByGame[status.game_id];
+      const currentPhaseOrder = current ? activationPhaseOrder[current.phase] : -1;
+      const nextPhaseOrder = activationPhaseOrder[status.phase];
+      if (
+        current &&
+        (current.generation > status.generation ||
+          (current.generation === status.generation &&
+            (currentPhaseOrder > nextPhaseOrder ||
+              (currentPhaseOrder === nextPhaseOrder &&
+                activationStatusInformationScore(current) >=
+                  activationStatusInformationScore(status)))))
+      ) {
+        return {};
+      }
+      return {
+        gameActivationByGame: {
+          ...state.gameActivationByGame,
+          [status.game_id]: status,
+        },
+      };
+    }),
 });

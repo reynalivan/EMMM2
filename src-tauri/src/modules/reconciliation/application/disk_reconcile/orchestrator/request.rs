@@ -166,6 +166,10 @@ pub struct DiskReconcileRequest {
     pub(super) watcher_events: Vec<ModWatchEvent>,
     pub(super) watcher_session: Option<WatcherSession>,
     pub(super) path_hints: Vec<DiskReconcilePathHint>,
+    /// Only a durable internal mutation, or its locked identity-validated
+    /// regional preflight, may set this. It bypasses the global directory
+    /// census but never the strict classifier for the affected roots.
+    pub(super) trusted_mutation_scope: bool,
     /// The caller owns a later, better-defined overlay boundary. A Mods-root
     /// change publishes only after its replacement watcher is active.
     pub(super) defer_overlay_sync: bool,
@@ -217,7 +221,7 @@ fn watcher_event_has_cross_root_rename(mods_path: &Path, event: &ModWatchEvent) 
         | ModWatchEvent::Removed(_)
         | ModWatchEvent::Modified(_)
         | ModWatchEvent::RenameResolution { .. }
-        | ModWatchEvent::Error(_) => return false,
+        | ModWatchEvent::Error(_) => false,
     }
 }
 
@@ -277,6 +281,7 @@ impl DiskReconcileRequest {
             watcher_events: Vec::new(),
             watcher_session: None,
             path_hints: Vec::new(),
+            trusted_mutation_scope: false,
             defer_overlay_sync: false,
             precomputed_discovery: None,
         }
@@ -296,6 +301,7 @@ impl DiskReconcileRequest {
             watcher_events: Vec::new(),
             watcher_session: None,
             path_hints,
+            trusted_mutation_scope: false,
             defer_overlay_sync: false,
             precomputed_discovery: None,
         }
@@ -318,7 +324,11 @@ impl DiskReconcileRequest {
             watcher_events: watcher_events.to_vec(),
             watcher_session: None,
             path_hints: Vec::new(),
-            defer_overlay_sync: false,
+            trusted_mutation_scope: false,
+            // A watcher owns only disk observation and projection. Runtime
+            // publication is queued by its lifecycle after this request has
+            // returned and released both mutation leases.
+            defer_overlay_sync: true,
             precomputed_discovery: None,
         }
     }
@@ -334,6 +344,7 @@ impl DiskReconcileRequest {
             watcher_events,
             watcher_session: None,
             path_hints: Vec::new(),
+            trusted_mutation_scope: false,
             defer_overlay_sync: false,
             precomputed_discovery: None,
         }
@@ -346,6 +357,22 @@ impl DiskReconcileRequest {
 
     pub(crate) fn defer_overlay_sync(mut self) -> Self {
         self.defer_overlay_sync = true;
+        self
+    }
+
+    pub(in crate::modules::reconciliation::application::disk_reconcile) fn trust_durable_mutation_scope(
+        mut self,
+    ) -> Self {
+        debug_assert!(matches!(self.reason, DiskReconcileReason::InternalMutation));
+        self.trusted_mutation_scope = true;
+        self
+    }
+
+    pub(in crate::modules::reconciliation::application::disk_reconcile) fn trust_locked_regional_preflight(
+        mut self,
+    ) -> Self {
+        debug_assert!(matches!(self.reason, DiskReconcileReason::InternalMutation));
+        self.trusted_mutation_scope = true;
         self
     }
 
@@ -394,6 +421,7 @@ mod tests {
             DiskReconcileRequest::watcher_batch("game-1".to_string(), &mods_path, paths, &events);
 
         assert!(!request.force_full);
+        assert!(request.defer_overlay_sync);
     }
 
     #[test]

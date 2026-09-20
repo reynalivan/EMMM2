@@ -25,7 +25,6 @@ import {
   openRenameConfirmationDialog,
   workspaceKeys,
 } from '@/features/workspace-runtime/@x/file-watcher';
-import { useWatcherLifecycle } from '../utils/watcherLifecycle';
 import { useDiskReconcileProgress } from '../utils/reconcileProgress';
 import { isDuplicateWatcherError, type WatchErrorPayload } from '../utils/watcherError';
 import { reconcileModViewerExternalReviews } from '@/features/mod-runtime/@x/file-watcher';
@@ -287,6 +286,9 @@ export function useDiskReconcileCoordinator(
 ) {
   const workspaceView = useAppStore((state) => state.workspaceView);
   const diskReconcileByGame = useAppStore((state) => state.diskReconcileByGame);
+  const gameActivation = useAppStore((state) =>
+    activeGame?.id ? state.gameActivationByGame?.[activeGame.id] : undefined,
+  );
   const markDiskReconcilePending = useAppStore((state) => state.markDiskReconcilePending);
   const setDiskReconcileProgress = useAppStore((state) => state.setDiskReconcileProgress);
   const inFlightRef = useRef<QueuedDiskReconcileRefresh | null>(null);
@@ -299,10 +301,8 @@ export function useDiskReconcileCoordinator(
   const workspaceViewRef = useRef(workspaceView);
   const contextGenerationRef = useRef(0);
   const activeContextRef = useRef<DiskReconcileRefreshContext | null>(null);
-  const lastActiveContextRef = useRef<DiskReconcileRefreshContext | null>(null);
   const isMountedRef = useRef(true);
 
-  useWatcherLifecycle(activeGame);
   useDiskReconcileProgress(activeGame?.id ?? null);
 
   useEffect(() => {
@@ -351,6 +351,12 @@ export function useDiskReconcileCoordinator(
     },
     [markGameHydrated],
   );
+
+  useEffect(() => {
+    if (activeGame?.id && gameActivation?.phase === 'ready') {
+      markGameHydrated(activeGame.id);
+    }
+  }, [activeGame?.id, gameActivation?.phase, markGameHydrated]);
 
   const shouldSync = useCallback(
     (gameId: string, forceFull: boolean) => {
@@ -496,25 +502,21 @@ export function useDiskReconcileCoordinator(
   );
 
   useEffect(() => {
-    const currentContext = activeContextRef.current;
-    const previousContext = lastActiveContextRef.current;
-    if (
-      currentContext &&
-      previousContext &&
-      !isSameRefreshTarget(previousContext, currentContext)
-    ) {
-      requiresFullReconcileByGameRef.current[currentContext.gameId] = true;
-    }
-    lastActiveContextRef.current = currentContext;
-  }, [activeGame?.id, activeGame?.mod_path]);
-
-  useEffect(() => {
     const currentGameId = activeGame?.id ?? null;
     const modsPathKey = canonicalPathKey(activeGame?.mod_path);
     const syncKey =
       currentGameId && modsPathKey ? `${workspaceView}:${currentGameId}:${modsPathKey}` : null;
 
     if (!currentGameId || workspaceView !== 'mods') {
+      lastModsViewSyncKeyRef.current = syncKey;
+      return;
+    }
+
+    if (
+      gameActivation?.phase === 'syncing' ||
+      gameActivation?.phase === 'source_unavailable' ||
+      gameActivation?.phase === 'failed'
+    ) {
       lastModsViewSyncKeyRef.current = syncKey;
       return;
     }
@@ -527,9 +529,8 @@ export function useDiskReconcileCoordinator(
 
     const requiresFull = requiresFullReconcileByGameRef.current[currentGameId] ?? false;
     const isHydrated = hydratedModsViewByGameRef.current[currentGameId] ?? false;
-    const reason: DiskReconcileReason = requiresFull ? 'GameSwitched' : 'ModsViewEntered';
-    void runRefresh(reason, requiresFull || !isHydrated);
-  }, [activeGame?.id, activeGame?.mod_path, runRefresh, workspaceView]);
+    void runRefresh('ModsViewEntered', requiresFull || !isHydrated);
+  }, [activeGame?.id, activeGame?.mod_path, gameActivation?.phase, runRefresh, workspaceView]);
 
   useEffect(() => {
     if (!activeGame?.id) {

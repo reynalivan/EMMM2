@@ -214,10 +214,11 @@ fn validate_liquid_config(config: &LiquidThemeConfig) -> Result<(), AppError> {
         config.control.as_ref(),
         config.indicator.as_ref(),
         config.overlay.as_ref(),
-    ] {
-        if let Some(role) = role {
-            validate_liquid_role(role)?;
-        }
+    ]
+    .into_iter()
+    .flatten()
+    {
+        validate_liquid_role(role)?;
     }
     Ok(())
 }

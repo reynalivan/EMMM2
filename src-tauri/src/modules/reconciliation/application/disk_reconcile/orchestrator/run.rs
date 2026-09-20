@@ -47,6 +47,10 @@ fn requested_runtime_effects(
     }
 }
 
+fn should_settle_runtime_effects(applied: bool, defer_overlay_sync: bool) -> bool {
+    applied && !defer_overlay_sync
+}
+
 async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskReconcileResult {
     let applied = request.outcome.status.applied();
     let current_effects = requested_runtime_effects(
@@ -57,17 +61,11 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
         request.outcome.runtime_file_changed,
         request.defer_overlay_sync,
     );
-    let pending_effects = if applied {
-        request
+    let settlement = if should_settle_runtime_effects(applied, request.defer_overlay_sync) {
+        let pending_effects = request
             .context
             .state
-            .stage_runtime_effects(request.game_id, current_effects)
-    } else {
-        PendingRuntimeEffects::default()
-    };
-    let collections_changed = pending_effects.collections_dirty;
-
-    let settlement = if applied {
+            .stage_runtime_effects(request.game_id, current_effects);
         Some(
             crate::modules::system::application::app::runtime_effects::settle_committed_runtime_effects(
                 request.context.state,
@@ -75,7 +73,7 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
                     pool: request.context.pool,
                     config: request.context.config,
                     game_id: request.game_id,
-                    collections_dirty: collections_changed,
+                    collections_dirty: pending_effects.collections_dirty,
                     overlay_refresh: pending_effects.overlay_refresh,
                     overlay_cause: match request.reason {
                         DiskReconcileReason::StartupBoot => crate::modules::system::application::app::post_apply::OverlaySyncCause::Startup,
@@ -86,6 +84,8 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
                         DiskReconcileReason::InternalMutation => crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
                         DiskReconcileReason::ModsViewEntered | DiskReconcileReason::WindowRefocused | DiskReconcileReason::StorageSizeBackfill => crate::modules::system::application::app::post_apply::OverlaySyncCause::Recovery,
                     },
+                    overlay_roots: matches!(request.reason, DiskReconcileReason::WatcherBatch)
+                        .then_some(request.outcome.changed_roots.as_slice()),
                 },
             )
             .await,
@@ -93,6 +93,7 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
     } else {
         None
     };
+    let collections_changed = applied && current_effects.collections_dirty;
     let result_pending_effects = settlement
         .as_ref()
         .map_or(PendingRuntimeEffects::default(), |result| {
@@ -140,6 +141,7 @@ pub(super) struct RefreshRequest<'a> {
     pub(super) force_full: bool,
     pub(super) watcher_events: Vec<ModWatchEvent>,
     pub(super) path_hints: Vec<super::request::DiskReconcilePathHint>,
+    pub(super) trusted_mutation_scope: bool,
     pub(super) defer_overlay_sync: bool,
     pub(super) precomputed_discovery: Option<DiskScopedDiscovery>,
 }
@@ -163,11 +165,6 @@ pub(super) async fn run_refresh_once(
     } else {
         Some(request.watcher_events.as_slice())
     };
-    crate::modules::library::application::mods::core_ops::recover_folder_conflict_journals(
-        &game.mod_path,
-        &request.context.watcher_suppressor,
-    )?;
-
     if let Some(progress) = &request.context.progress_reporter {
         progress.emit(DiskReconcilePhase::DiscoveringRoots, 0, None, None);
     }
@@ -181,6 +178,7 @@ pub(super) async fn run_refresh_once(
         force_full: request.force_full,
         watcher_events,
         path_hints: &request.path_hints,
+        trusted_mutation_scope: request.trusted_mutation_scope,
         progress_reporter: request.context.progress_reporter.clone(),
         precomputed_discovery: request.precomputed_discovery,
     })
@@ -270,6 +268,13 @@ mod tests {
         );
 
         assert_eq!(effects, PendingRuntimeEffects::default());
+    }
+
+    #[test]
+    fn deferred_internal_mutation_never_waits_for_runtime_settlement() {
+        assert!(!should_settle_runtime_effects(true, true));
+        assert!(should_settle_runtime_effects(true, false));
+        assert!(!should_settle_runtime_effects(false, false));
     }
 
     #[test]

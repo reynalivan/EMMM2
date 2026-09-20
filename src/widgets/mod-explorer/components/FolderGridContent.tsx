@@ -41,7 +41,8 @@ export default function FolderGridContent({
     isPlaceholderData,
     isLoading,
     isError,
-    gridSelection,
+    selectedCount,
+    isPathSelected,
     selectedModPath,
     handleNavigate,
     activateGridItem,
@@ -136,7 +137,7 @@ export default function FolderGridContent({
                       <div key={folder.path} className="min-w-0">
                         <FolderCard
                           folder={folder}
-                          isSelected={gridSelection.has(folder.path)}
+                          isSelected={isPathSelected(folder.path)}
                           isActive={selectedModPath === folder.path}
                           onNavigate={handleNavigate}
                           onActivate={activateGridItem}
@@ -150,7 +151,7 @@ export default function FolderGridContent({
                           onRename={handleRenameRequest}
                           onDelete={handleDeleteRequest}
                           isFocused={focusedId === folder.path}
-                          selectionSize={gridSelection.size}
+                          selectionSize={selectedCount}
                           onBulkToggle={handleBulkToggle}
                           onBulkDelete={handleBulkDeleteRequest}
                           onBulkTag={handleBulkTagRequest}
@@ -200,12 +201,12 @@ export default function FolderGridContent({
               >
                 <FolderListRow
                   item={folder}
-                  isSelected={gridSelection.has(folder.path)}
+                  isSelected={isPathSelected(folder.path)}
                   isActive={selectedModPath === folder.path}
                   onActivate={activateGridItem}
                   toggleSelection={toggleGridSelection}
                   onToggleEnabled={handleToggleEnabledGuarded}
-                  selectionSize={gridSelection.size}
+                  selectionSize={selectedCount}
                   onBulkToggle={handleBulkToggle}
                   onBulkDelete={handleBulkDeleteRequest}
                   onBulkTag={handleBulkTagRequest}

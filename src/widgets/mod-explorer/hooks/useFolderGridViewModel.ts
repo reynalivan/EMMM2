@@ -24,6 +24,9 @@ export function useFolderGridViewModel({
   const diskSourceUnavailableMessage = useAppStore((state) =>
     activeGameId ? (state.diskReconcileByGame[activeGameId]?.unavailable ?? null) : null,
   );
+  const activation = useAppStore((state) =>
+    activeGameId ? state.gameActivationByGame?.[activeGameId] : undefined,
+  );
   const setActivePane = useAppStore((state) => state.setActivePane);
   const isIgnoreManagementOpen = useAppStore((state) => state.isIgnoreManagementOpen);
   const setIsIgnoreManagementOpen = useAppStore((state) => state.setIgnoreManagementOpen);
@@ -59,16 +62,16 @@ export function useFolderGridViewModel({
     [folderNameConflicts],
   );
 
+  const activationFailed =
+    activation?.phase === 'failed' || activation?.phase === 'source_unavailable';
+  const effectiveRecoveryStatus =
+    activation?.phase === 'syncing' ? 'syncing' : activationFailed ? 'failed' : recoveryStatus;
   const workspaceSourceUnavailableMessage =
-    sourceUnavailableMessage ?? diskSourceUnavailableMessage;
+    sourceUnavailableMessage ?? diskSourceUnavailableMessage ?? activation?.error ?? null;
   const mutationsDisabled =
-    recoveryStatus === 'syncing' ||
+    effectiveRecoveryStatus !== 'ready' ||
     Boolean(workspaceSourceUnavailableMessage) ||
     hasBlockingDiskReport;
-
-  const handleSelectAll = () => {
-    useAppStore.getState().setGridSelection(new Set(sortedFolders.map((folder) => folder.path)));
-  };
 
   return {
     visibleFolders: sortedFolders,
@@ -79,8 +82,7 @@ export function useFolderGridViewModel({
     isIgnoreManagementOpen,
     setIsIgnoreManagementOpen,
     workspaceSourceUnavailableMessage,
-    recoveryStatus,
+    recoveryStatus: effectiveRecoveryStatus,
     mutationsDisabled,
-    handleSelectAll,
   };
 }

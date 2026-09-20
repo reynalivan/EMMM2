@@ -8,7 +8,7 @@ use tempfile::tempdir;
 use super::coordinator::MutationCoordinator;
 use super::journal::{
     DatabaseProjectionStatus, MutationStepKind, OperationJournal, OperationPlan, OperationStatus,
-    PlannedStep, StepStatus,
+    PlannedStep, StepSettlement, StepStatus,
 };
 use super::recovery::{RecoveryRoots, RecoveryRunner};
 use crate::platform::fs::operation_lock::OperationLock;
@@ -46,6 +46,125 @@ fn rename_plan(old_path: &Path, new_path: &Path) -> OperationPlan {
             new_path.to_path_buf(),
         )],
     )
+}
+
+fn batch_rename_plan(root: &Path, step_count: usize) -> OperationPlan {
+    OperationPlan::new(
+        "bulk-rename",
+        GAME_ID,
+        (0..step_count)
+            .map(|sequence| {
+                PlannedStep::rename(
+                    sequence as u32,
+                    root.join(format!("Old-{sequence}")),
+                    root.join(format!("New-{sequence}")),
+                )
+            })
+            .collect(),
+    )
+}
+
+#[test]
+fn batch_step_settlement_persists_once_and_reopens_atomically() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(batch_rename_plan(temp.path(), 3))
+        .unwrap();
+    journal.mark_applying(&id).unwrap();
+    journal.reset_persistence_metrics();
+
+    journal
+        .settle_steps(
+            &id,
+            &[
+                (0, StepSettlement::Applied),
+                (1, StepSettlement::Skipped),
+                (2, StepSettlement::Applied),
+            ],
+        )
+        .unwrap();
+
+    assert_eq!(journal.persistence_metrics().writes, 1);
+    let operation = &journal.entries()[0];
+    assert_eq!(operation.status, OperationStatus::Applied);
+    assert_eq!(operation.steps[0].status, StepStatus::Applied);
+    assert_eq!(operation.steps[1].status, StepStatus::Skipped);
+    assert_eq!(operation.steps[2].status, StepStatus::Applied);
+    drop(journal);
+
+    let reopened = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let operation = &reopened.entries()[0];
+    assert_eq!(operation.status, OperationStatus::Applied);
+    assert_eq!(operation.steps[0].status, StepStatus::Applied);
+    assert_eq!(operation.steps[1].status, StepStatus::Skipped);
+    assert_eq!(operation.steps[2].status, StepStatus::Applied);
+}
+
+#[test]
+fn invalid_batch_step_settlement_is_atomic() {
+    let temp = tempdir().unwrap();
+    let journal =
+        OperationJournal::open(temp.path().join("journal.json"), TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(batch_rename_plan(temp.path(), 2))
+        .unwrap();
+    journal.mark_applying(&id).unwrap();
+    journal.reset_persistence_metrics();
+
+    assert!(journal
+        .settle_steps(
+            &id,
+            &[(0, StepSettlement::Applied), (0, StepSettlement::Skipped)],
+        )
+        .is_err());
+    assert!(journal
+        .settle_steps(&id, &[(9, StepSettlement::Applied)])
+        .is_err());
+
+    assert_eq!(journal.persistence_metrics().writes, 0);
+    let operation = &journal.entries()[0];
+    assert_eq!(operation.status, OperationStatus::Applying);
+    assert!(operation
+        .steps
+        .iter()
+        .all(|step| step.status == StepStatus::Planned));
+}
+
+#[test]
+fn rollback_step_settlement_persists_once() {
+    let temp = tempdir().unwrap();
+    let journal =
+        OperationJournal::open(temp.path().join("journal.json"), TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(batch_rename_plan(temp.path(), 2))
+        .unwrap();
+    journal.mark_applying(&id).unwrap();
+    journal
+        .settle_steps(
+            &id,
+            &[(0, StepSettlement::Applied), (1, StepSettlement::Applied)],
+        )
+        .unwrap();
+    journal.begin_rollback(&id).unwrap();
+    journal.reset_persistence_metrics();
+
+    journal
+        .settle_steps(
+            &id,
+            &[
+                (1, StepSettlement::RolledBack),
+                (0, StepSettlement::RolledBack),
+            ],
+        )
+        .unwrap();
+
+    assert_eq!(journal.persistence_metrics().writes, 1);
+    assert!(journal.entries()[0]
+        .steps
+        .iter()
+        .all(|step| step.status == StepStatus::RolledBack));
 }
 
 fn recovery_runner(
@@ -546,6 +665,95 @@ async fn crash_after_one_rename_rolls_back_applied_steps_in_reverse() {
 }
 
 #[tokio::test]
+async fn crash_after_partial_batch_before_settlement_uses_disk_evidence() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("staging");
+    let old_a = game_root.join("OldA");
+    let new_a = game_root.join("NewA");
+    let old_b = game_root.join("OldB");
+    let new_b = game_root.join("NewB");
+    std::fs::create_dir_all(&old_a).unwrap();
+    std::fs::create_dir_all(&old_b).unwrap();
+    let identity_a = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_a).unwrap();
+    let identity_b = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_b).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+    let guard = coordinator
+        .acquire_operation(OperationPlan::new(
+            "bulk-rename",
+            GAME_ID,
+            vec![
+                PlannedStep::rename(0, old_a.clone(), new_a.clone())
+                    .with_expected_identity(Some(identity_a)),
+                PlannedStep::rename(1, old_b.clone(), new_b.clone())
+                    .with_expected_identity(Some(identity_b)),
+            ],
+        ))
+        .await
+        .unwrap();
+
+    std::fs::rename(&old_a, &new_a).unwrap();
+    drop(guard);
+
+    recovery_runner(journal.clone(), &game_root, &staging_root)
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(old_a.exists());
+    assert!(old_b.exists());
+    assert!(!new_a.exists());
+    assert!(!new_b.exists());
+    assert_eq!(journal.entries()[0].status, OperationStatus::RolledBack);
+}
+
+#[tokio::test]
+async fn crash_after_batch_renames_before_settlement_uses_disk_evidence() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("staging");
+    let old_a = game_root.join("OldA");
+    let new_a = game_root.join("NewA");
+    let old_b = game_root.join("OldB");
+    let new_b = game_root.join("NewB");
+    std::fs::create_dir_all(&old_a).unwrap();
+    std::fs::create_dir_all(&old_b).unwrap();
+    let identity_a = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_a).unwrap();
+    let identity_b = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_b).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+    let guard = coordinator
+        .acquire_operation(OperationPlan::new(
+            "bulk-rename",
+            GAME_ID,
+            vec![
+                PlannedStep::rename(0, old_a.clone(), new_a.clone())
+                    .with_expected_identity(Some(identity_a)),
+                PlannedStep::rename(1, old_b.clone(), new_b.clone())
+                    .with_expected_identity(Some(identity_b)),
+            ],
+        ))
+        .await
+        .unwrap();
+
+    std::fs::rename(&old_a, &new_a).unwrap();
+    std::fs::rename(&old_b, &new_b).unwrap();
+    drop(guard);
+
+    recovery_runner(journal.clone(), &game_root, &staging_root)
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(old_a.exists());
+    assert!(old_b.exists());
+    assert!(!new_a.exists());
+    assert!(!new_b.exists());
+    assert_eq!(journal.entries()[0].status, OperationStatus::RolledBack);
+}
+
+#[tokio::test]
 async fn crash_after_all_renames_rolls_back_when_projection_is_not_committed() {
     let temp = tempdir().unwrap();
     let game_root = temp.path().join("Mods");
@@ -829,10 +1037,9 @@ impl JournalBenchmarkScenario {
         }
     }
 
-    fn expected_writes(self, step_count: usize) -> u64 {
+    fn expected_writes(self) -> u64 {
         match self {
-            Self::SuccessfulCommit => step_count as u64 + 4,
-            Self::PartialRollback => step_count as u64 + 3,
+            Self::SuccessfulCommit | Self::PartialRollback => 5,
         }
     }
 }
@@ -848,7 +1055,7 @@ struct JournalBenchmarkSample {
 #[ignore = "manual journal I/O baseline; performs synchronous temporary-file writes"]
 fn benchmark_bulk_journal_persistence_baseline() {
     for history_limit in [1, 64, 256] {
-        for step_count in [500, 1_000] {
+        for step_count in [100, 1_000, 10_000] {
             for scenario in [
                 JournalBenchmarkScenario::SuccessfulCommit,
                 JournalBenchmarkScenario::PartialRollback,
@@ -864,7 +1071,7 @@ fn benchmark_bulk_journal_persistence_baseline() {
                     samples[((BENCHMARK_SAMPLES * 95).div_ceil(100)).saturating_sub(1)].elapsed;
                 let median_bytes = samples[BENCHMARK_SAMPLES / 2].serialized_bytes;
                 let final_file_bytes = samples[BENCHMARK_SAMPLES / 2].final_file_bytes;
-                let expected_writes = scenario.expected_writes(step_count);
+                let expected_writes = scenario.expected_writes();
 
                 assert!(samples
                     .iter()
@@ -910,21 +1117,25 @@ fn run_journal_benchmark_sample(
 
     match scenario {
         JournalBenchmarkScenario::SuccessfulCommit => {
-            for sequence in 0..step_count as u32 {
-                journal.mark_step_applied(&id, sequence).unwrap();
-            }
+            let settlements = (0..step_count as u32)
+                .map(|sequence| (sequence, StepSettlement::Applied))
+                .collect::<Vec<_>>();
+            journal.settle_steps(&id, &settlements).unwrap();
             journal.mark_db_committed(&id).unwrap();
             journal.complete(&id).unwrap();
         }
         JournalBenchmarkScenario::PartialRollback => {
             let applied_steps = step_count / 2;
-            for sequence in 0..applied_steps as u32 {
-                journal.mark_step_applied(&id, sequence).unwrap();
-            }
+            let applied = (0..applied_steps as u32)
+                .map(|sequence| (sequence, StepSettlement::Applied))
+                .collect::<Vec<_>>();
+            journal.settle_steps(&id, &applied).unwrap();
             journal.begin_rollback(&id).unwrap();
-            for sequence in (0..applied_steps as u32).rev() {
-                journal.mark_step_rolled_back(&id, sequence).unwrap();
-            }
+            let rolled_back = (0..applied_steps as u32)
+                .rev()
+                .map(|sequence| (sequence, StepSettlement::RolledBack))
+                .collect::<Vec<_>>();
+            journal.settle_steps(&id, &rolled_back).unwrap();
         }
     }
 

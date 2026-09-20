@@ -43,6 +43,9 @@ export interface FolderGridToolbarProps {
   currentPath: string[];
   handleBreadcrumbClick: (index: number) => void;
   previousFolderItems: WorkspaceExplorerNode[];
+  hasMorePreviousFolders?: boolean;
+  isLoadingMorePreviousFolders?: boolean;
+  loadMorePreviousFolders?: () => Promise<unknown> | void;
   handleNavigate: (folderName: string) => void;
   handleGoHome: () => void;
   setMobilePane: (pane: 'sidebar' | 'grid' | 'details') => void;
@@ -64,6 +67,9 @@ export default function FolderGridToolbar({
   currentPath,
   handleBreadcrumbClick,
   previousFolderItems,
+  hasMorePreviousFolders,
+  isLoadingMorePreviousFolders,
+  loadMorePreviousFolders,
   handleNavigate,
   handleGoHome,
   setMobilePane,
@@ -119,7 +125,7 @@ export default function FolderGridToolbar({
   return (
     <LiquidSurface
       liquidRole="nav"
-      className="folder-grid-action-bar relative z-20 mt-[var(--workspace-topbar-height)] block w-full shrink-0"
+      className="folder-grid-action-bar relative z-30 mt-[var(--workspace-topbar-height)] block w-full shrink-0"
       contentClassName="h-auto"
       data-testid="folder-grid-toolbar"
     >
@@ -142,6 +148,9 @@ export default function FolderGridToolbar({
             path={currentPath}
             onNavigate={handleBreadcrumbClick}
             previousFolderItems={previousFolderItems}
+            hasMorePreviousFolders={hasMorePreviousFolders}
+            isLoadingMorePreviousFolders={isLoadingMorePreviousFolders}
+            loadMorePreviousFolders={loadMorePreviousFolders}
             onNavigateToPreviousFolder={handleNavigate}
             onGoHome={handleGoHome}
             isRootHidden

@@ -196,6 +196,32 @@ pub async fn run_full_internal_disk_reconcile_under_lease(
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
 > {
+    run_full_internal_disk_reconcile_under_lease_with_runtime(app, pool, game_id, lease, false)
+        .await
+}
+
+pub async fn run_deferred_full_internal_disk_reconcile_under_lease(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    run_full_internal_disk_reconcile_under_lease_with_runtime(app, pool, game_id, lease, true).await
+}
+
+async fn run_full_internal_disk_reconcile_under_lease_with_runtime(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+    defer_runtime: bool,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
     let config = app
         .try_state::<crate::modules::settings::application::config::ConfigService>()
         .ok_or_else(|| {
@@ -214,6 +240,14 @@ pub async fn run_full_internal_disk_reconcile_under_lease(
         })?;
     let reason = DiskReconcileReason::InternalMutation;
 
+    let request =
+        DiskReconcileRequest::manual(game_id.to_string(), reason.clone(), Vec::new(), true);
+    let request = if defer_runtime {
+        request.defer_overlay_sync()
+    } else {
+        request
+    };
+
     crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_lease(
         DiskReconcileContext {
             pool,
@@ -229,10 +263,76 @@ pub async fn run_full_internal_disk_reconcile_under_lease(
                 ),
             )),
         },
-        DiskReconcileRequest::manual(game_id.to_string(), reason, Vec::new(), true),
+        request,
         lease,
     )
     .await
+}
+
+/// Terminal projection for an identity-validated, durable internal rename.
+/// Runtime publication is intentionally deferred to the per-game async queue
+/// after the journal and DB projection have committed.
+pub async fn run_trusted_internal_disk_reconcile_under_lease(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    changed_paths: Vec<String>,
+    lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    run_trusted_internal_disk_reconcile_with_path_hints_under_lease(
+        app,
+        pool,
+        game_id,
+        changed_paths,
+        Vec::new(),
+        lease,
+    )
+    .await
+}
+
+fn validate_trusted_toggle_batch_scope(
+    config: &crate::modules::settings::application::config::ConfigService,
+    game_id: &str,
+    changed_paths: &[String],
+) -> Result<(), AppError> {
+    if changed_paths.is_empty() || !changed_paths.len().is_multiple_of(2) {
+        return Err(AppError::Validation(
+            "Trusted toggle reconcile requires complete rename pairs".to_string(),
+        ));
+    }
+    let mods_root = config
+        .mods_root_for(game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    for pair in changed_paths.chunks_exact(2) {
+        let old_path = std::path::Path::new(&pair[0]);
+        let new_path = std::path::Path::new(&pair[1]);
+        if !old_path.starts_with(&mods_root)
+            || !new_path.starts_with(&mods_root)
+            || old_path.parent() != new_path.parent()
+        {
+            return Err(AppError::Validation(
+                "Trusted toggle reconcile paths must share one parent inside the Mods root"
+                    .to_string(),
+            ));
+        }
+        let old_relative = old_path.strip_prefix(&mods_root).map_err(|_| {
+            AppError::Validation("Trusted toggle source is outside the Mods root".to_string())
+        })?;
+        let new_relative = new_path.strip_prefix(&mods_root).map_err(|_| {
+            AppError::Validation("Trusted toggle destination is outside the Mods root".to_string())
+        })?;
+        if crate::shared::path_key::folder_path_key(&old_relative.to_string_lossy(), None)
+            != crate::shared::path_key::folder_path_key(&new_relative.to_string_lossy(), None)
+        {
+            return Err(AppError::Validation(
+                "Trusted toggle reconcile paths do not preserve normalized identity".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Scoped terminal reconcile for a filesystem mutation that already owns the
@@ -247,6 +347,103 @@ pub async fn run_internal_disk_reconcile_with_path_hints_under_lease(
         crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint,
     >,
     lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    run_internal_disk_reconcile_with_path_hints_under_lease_options(
+        app,
+        pool,
+        game_id,
+        changed_paths,
+        path_hints,
+        lease,
+        InternalReconcileOptions {
+            defer_runtime: false,
+            trusted_scope: false,
+        },
+    )
+    .await
+}
+
+pub async fn run_deferred_internal_disk_reconcile_with_path_hints_under_lease(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    changed_paths: Vec<String>,
+    path_hints: Vec<
+        crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint,
+    >,
+    lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    run_internal_disk_reconcile_with_path_hints_under_lease_options(
+        app,
+        pool,
+        game_id,
+        changed_paths,
+        path_hints,
+        lease,
+        InternalReconcileOptions {
+            defer_runtime: true,
+            trusted_scope: false,
+        },
+    )
+    .await
+}
+
+pub async fn run_trusted_internal_disk_reconcile_with_path_hints_under_lease(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    changed_paths: Vec<String>,
+    path_hints: Vec<
+        crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint,
+    >,
+    lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    let config = app
+        .try_state::<crate::modules::settings::application::config::ConfigService>()
+        .ok_or_else(|| {
+            AppError::Internal("ConfigService state missing for disk reconcile".to_string())
+        })?;
+    validate_trusted_toggle_batch_scope(config.inner(), game_id, &changed_paths)?;
+    run_internal_disk_reconcile_with_path_hints_under_lease_options(
+        app,
+        pool,
+        game_id,
+        changed_paths,
+        path_hints,
+        lease,
+        InternalReconcileOptions {
+            defer_runtime: true,
+            trusted_scope: true,
+        },
+    )
+    .await
+}
+
+#[derive(Debug, Clone, Copy)]
+struct InternalReconcileOptions {
+    defer_runtime: bool,
+    trusted_scope: bool,
+}
+
+async fn run_internal_disk_reconcile_with_path_hints_under_lease_options(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    changed_paths: Vec<String>,
+    path_hints: Vec<
+        crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint,
+    >,
+    lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+    options: InternalReconcileOptions,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -283,6 +480,16 @@ pub async fn run_internal_disk_reconcile_with_path_hints_under_lease(
             )
             .collect(),
     );
+    let request = if options.trusted_scope {
+        request.trust_durable_mutation_scope()
+    } else {
+        request
+    };
+    let request = if options.defer_runtime {
+        request.defer_overlay_sync()
+    } else {
+        request
+    };
 
     crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_lease(
         DiskReconcileContext {
@@ -603,6 +810,78 @@ pub async fn mutation_preflight_report_for_paths(
         }
         Some(_) | None => run_full_internal_disk_reconcile(app, pool, game_id).await?,
     };
+    validate_mutation_preflight_result(app, result)
+}
+
+/// Regional preflight for a workspace mutation that already retains its game
+/// lock. The separate operation guard closes the only filesystem-mutation
+/// window while projection catches up, without reacquiring either lock.
+pub async fn mutation_preflight_report_under_game_lock(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    paths: Vec<String>,
+    trusted_regional_scope: bool,
+    game_guard: &tokio::sync::OwnedMutexGuard<()>,
+    operation_guard: &crate::platform::fs::operation_lock::OpGuard,
+) -> Result<DiskReconcileResult, AppError> {
+    ensure_initial_recovery_allows_mutation(app, game_id)?;
+    if paths.is_empty() {
+        return Err(AppError::Validation(
+            "Regional mutation preflight requires affected paths".to_string(),
+        ));
+    }
+    let config = app
+        .try_state::<crate::modules::settings::application::config::ConfigService>()
+        .ok_or_else(|| {
+            AppError::Internal("ConfigService state missing for disk reconcile".to_string())
+        })?;
+    let watcher = app
+        .try_state::<crate::modules::workspace::application::scanner::watcher::WatcherState>()
+        .ok_or_else(|| AppError::Internal("WatcherState missing for disk reconcile".to_string()))?;
+    let state = app.try_state::<DiskReconcileState>().ok_or_else(|| {
+        AppError::Internal("DiskReconcileState missing for disk reconcile".to_string())
+    })?;
+    let operation_lock = app
+        .try_state::<crate::modules::mutation::coordinator::MutationCoordinator>()
+        .ok_or_else(|| {
+            AppError::Internal("MutationCoordinator missing for disk reconcile".to_string())
+        })?;
+    let reason = DiskReconcileReason::InternalMutation;
+    let request = DiskReconcileRequest::manual(game_id.to_string(), reason.clone(), paths, false)
+        .defer_overlay_sync();
+    let request = if trusted_regional_scope {
+        request.trust_locked_regional_preflight()
+    } else {
+        request
+    };
+    let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_owned_game_lock(
+        DiskReconcileContext {
+            pool,
+            config: config.inner(),
+            state: state.inner(),
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: operation_lock.inner_lock(),
+            progress_reporter: Some(std::sync::Arc::new(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
+                    app.clone(),
+                    game_id,
+                    reason,
+                ),
+            )),
+        },
+        request,
+        game_guard,
+        operation_guard,
+    )
+    .await?;
+    validate_mutation_preflight_result(app, result)
+}
+
+fn validate_mutation_preflight_result(
+    app: &tauri::AppHandle,
+    result: DiskReconcileResult,
+) -> Result<DiskReconcileResult, AppError> {
     if result.status == DiskReconcileStatus::AppliedWithFolderConflicts {
         app.emit("disk_reconcile:result", &result)?;
     }

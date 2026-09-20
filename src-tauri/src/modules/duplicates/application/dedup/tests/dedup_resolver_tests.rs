@@ -328,11 +328,12 @@ async fn keep_rejects_two_spellings_of_the_same_folder() {
 }
 
 #[tokio::test]
-async fn keep_rejects_a_persisted_non_exact_group() {
+async fn keep_allows_an_explicitly_selected_persisted_non_exact_group() {
     let context = setup_context().await;
     let game_id = "game-1";
     let (folder_a, folder_b) = seed_pair(&context, game_id).await;
     seed_dedup_group(&context, game_id, "non-exact-group", &folder_a, &folder_b).await;
+    fs::write(Path::new(&folder_b).join("mod.ini"), "different-content").unwrap();
     let group_json: String =
         sqlx::query_scalar("SELECT reasons_json FROM dedup_groups WHERE id = ?")
             .bind("non-exact-group")
@@ -368,9 +369,10 @@ async fn keep_rejects_a_persisted_non_exact_group() {
     .await
     .unwrap();
 
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.successful, 1);
+    assert_eq!(summary.failed, 0);
     assert!(Path::new(&folder_a).exists());
-    assert!(Path::new(&folder_b).exists());
+    assert!(!Path::new(&folder_b).exists());
 }
 
 // Covers: TC-9.2-02 (Ignore Pair)

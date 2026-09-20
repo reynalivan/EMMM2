@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -39,6 +39,23 @@ pub enum StepStatus {
     Applied,
     Skipped,
     RolledBack,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepSettlement {
+    Applied,
+    Skipped,
+    RolledBack,
+}
+
+impl StepSettlement {
+    fn status(self) -> StepStatus {
+        match self {
+            Self::Applied => StepStatus::Applied,
+            Self::Skipped => StepStatus::Skipped,
+            Self::RolledBack => StepStatus::RolledBack,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +125,11 @@ impl PlannedStep {
 
     pub fn with_stage_path(mut self, stage_path: PathBuf) -> Self {
         self.stage_path = Some(stage_path);
+        self
+    }
+
+    pub fn with_expected_identity(mut self, expected_identity: Option<String>) -> Self {
+        self.expected_identity = expected_identity;
         self
     }
 }
@@ -400,6 +422,78 @@ impl OperationJournal {
                 )));
             }
             step.status = StepStatus::Skipped;
+            refresh_application_status(operation);
+            Ok(())
+        })
+    }
+
+    /// Validates the complete batch before applying it and persists one
+    /// active-state snapshot, so callers never expose partial settlement.
+    pub fn settle_steps(
+        &self,
+        id: &str,
+        settlements: &[(u32, StepSettlement)],
+    ) -> Result<(), AppError> {
+        if settlements.is_empty() {
+            return Ok(());
+        }
+
+        self.mutate_operation(id, |operation| {
+            let operation_status = operation.status;
+            require_status(
+                operation,
+                &[
+                    OperationStatus::Applying,
+                    OperationStatus::Applied,
+                    OperationStatus::RollingBack,
+                ],
+            )?;
+
+            let mut sequences = HashSet::with_capacity(settlements.len());
+            let step_indices = operation
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(index, step)| (step.sequence, index))
+                .collect::<HashMap<_, _>>();
+            let mut updates = Vec::with_capacity(settlements.len());
+            for (sequence, settlement) in settlements {
+                if !sequences.insert(*sequence) {
+                    return Err(AppError::Validation(format!(
+                        "Mutation journal step {sequence} is settled more than once"
+                    )));
+                }
+
+                let step_index = *step_indices.get(sequence).ok_or_else(|| {
+                        AppError::NotFound(format!(
+                            "Mutation journal step {sequence} for operation {id}"
+                        ))
+                    })?;
+                let step = &operation.steps[step_index];
+                let valid = matches!((operation_status, step.status, *settlement),
+                    (
+                        OperationStatus::Applying | OperationStatus::Applied,
+                        StepStatus::Planned,
+                        StepSettlement::Applied | StepSettlement::Skipped,
+                    ) |
+                    (
+                        OperationStatus::RollingBack,
+                        StepStatus::Planned | StepStatus::Applied,
+                        StepSettlement::RolledBack,
+                    )
+                );
+                if !valid {
+                    return Err(AppError::Validation(format!(
+                        "Mutation journal step {sequence} cannot transition from {:?} to {:?} while operation {id} is {:?}",
+                        step.status, settlement, operation_status
+                    )));
+                }
+                updates.push((step_index, settlement.status()));
+            }
+
+            for (step_index, status) in updates {
+                operation.steps[step_index].status = status;
+            }
             refresh_application_status(operation);
             Ok(())
         })
@@ -1025,7 +1119,7 @@ fn decode_step_statuses(encoded: &str, count: usize) -> Result<Vec<StepStatus>, 
             AppError::Validation("Mutation progress step status encoding is invalid".to_string())
         })?);
     }
-    if count % 4 != 0
+    if !count.is_multiple_of(4)
         && packed
             .last()
             .is_some_and(|byte| *byte >> ((count % 4) * 2) != 0)

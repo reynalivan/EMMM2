@@ -131,28 +131,52 @@ async fn test_get_active_keybindings_service_with_ini() {
     .await
     .unwrap();
 
+    crate::test_utils::insert_test_object(
+        &pool,
+        &crate::test_utils::TestObjectFixture {
+            id: "obj1",
+            game_id: "g1",
+            name: "Raiden Shogun",
+            folder_path: "Raiden Shogun",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE objects SET matched_alias_name = 'Raiden' WHERE id = 'obj1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
     crate::test_utils::insert_test_mod(
         &pool,
         &crate::test_utils::TestModFixture {
             id: "mod1",
             game_id: "g1",
-            object_id: None,
+            object_id: Some("obj1"),
             actual_name: "Mod 1",
             folder_path: mod_dir.to_str().unwrap(),
             status: ItemStatus::Enabled,
             is_safe: true,
-            object_type: Some("Other"),
+            object_type: Some("Character"),
             mods_path: Some("/g1/Mods"),
         },
     )
     .await
     .unwrap();
 
+    sqlx::query("UPDATE mods SET object_type = NULL WHERE id = 'mod1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
     let bindings = get_active_keybindings_service(&pool, "g1").await.unwrap();
 
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].mod_name, "Mod 1");
     assert_eq!(bindings[0].folder_path, mod_dir.to_string_lossy());
+    assert_eq!(bindings[0].object_type.as_deref(), Some("Character"));
+    assert_eq!(bindings[0].matched_alias_name.as_deref(), Some("Raiden"));
     assert_eq!(bindings[0].section_name, "KeyBinding1");
     assert_eq!(bindings[0].key.as_deref(), Some("F4"));
     assert_eq!(bindings[0].back.as_deref(), Some("shift"));

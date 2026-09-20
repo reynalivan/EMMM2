@@ -28,13 +28,7 @@
     "resume_review": "Lanjutkan Tinjauan",
     "size_unknown": "Ukuran tidak tersedia",
     "empty_title": "Kotak masuk kosong",
-    "empty_description": "Folder dan arsip yang ditambahkan akan muncul secara otomatis.",
-    "layouts": {
-      "direct_mod": "Mod",
-      "folder_pack": "Paket mod · {{count}} root",
-      "wrapper": "Mod terbungkus",
-      "unknown": "Susunan tidak dikenali"
-    }
+    "empty_description": "Folder dan arsip yang ditambahkan akan muncul secara otomatis."
   },
   "processed": {
     "select_all": "Pilih semua sumber yang diproses",

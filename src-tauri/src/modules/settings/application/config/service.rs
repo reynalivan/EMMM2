@@ -166,6 +166,7 @@ impl ConfigService {
                     "Use the active-game command to change the active game safely".to_string(),
                 ));
             }
+            ensure_unique_game_ids(&new_settings)?;
             ensure_existing_mod_paths_unchanged(current, &new_settings)?;
             let has_api_key = current.ai.has_api_key;
             // Runtime Safe Mode is controlled by the mutation path, never by
@@ -374,6 +375,19 @@ fn ensure_existing_mod_paths_unchanged(
             return Err(AppError::Validation(
                 "Use source recovery to change an existing game's mods directory".to_string(),
             ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_unique_game_ids(settings: &AppSettings) -> Result<(), AppError> {
+    let mut game_ids = std::collections::HashSet::with_capacity(settings.games.len());
+    for game in &settings.games {
+        if !game_ids.insert(game.id.as_str()) {
+            return Err(AppError::Validation(format!(
+                "Settings contain duplicate game id '{}'",
+                game.id
+            )));
         }
     }
     Ok(())

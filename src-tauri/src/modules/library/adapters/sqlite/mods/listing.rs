@@ -1,10 +1,12 @@
 //! Multi-row reads: mod sets scoped by game or object.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::types::{ModSubtreeEntry, ReconcileModRow};
 use crate::modules::system::domain::mod_path::ModFolderPath;
+use crate::shared::path_key::folder_path_key;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use std::path::Path;
 
 fn is_effectively_enabled_path(folder_path: &str) -> bool {
     !folder_path
@@ -23,6 +25,169 @@ pub async fn get_rows_for_reconcile(
     .bind(game_id)
     .fetch_all(&mut *conn)
     .await
+}
+
+fn push_root_key_predicate<'a>(
+    query: &mut QueryBuilder<'a, Sqlite>,
+    root_keys: &'a [String],
+    column: &str,
+) {
+    query.push(" AND (");
+    for (position, root_key) in root_keys.iter().enumerate() {
+        if position > 0 {
+            query.push(" OR ");
+        }
+        let descendant_start = format!("{root_key}/");
+        let descendant_end = format!("{root_key}0");
+        query
+            .push("(")
+            .push(column)
+            .push(" = ")
+            .push_bind(root_key)
+            .push(" OR (")
+            .push(column)
+            .push(" >= ")
+            .push_bind(descendant_start)
+            .push(" AND ")
+            .push(column)
+            .push(" < ")
+            .push_bind(descendant_end)
+            .push("))");
+    }
+    query.push(")");
+}
+
+/// Indexed rows for only the roots and physical identities participating in a
+/// scoped disk projection. The range predicate keeps descendant lookup on the
+/// `(game_id, folder_path_key)` index without wildcard scans.
+pub async fn get_rows_for_reconcile_scope(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    root_keys: &[String],
+    filesystem_identities: &[String],
+) -> Result<Vec<ReconcileModRow>, sqlx::Error> {
+    // Three binds per root plus game_id remain below SQLite's common limit.
+    const ROOT_CHUNK_SIZE: usize = 250;
+    const IDENTITY_CHUNK_SIZE: usize = 900;
+    let mut rows = Vec::new();
+    let mut seen_ids = HashSet::new();
+
+    for keys in root_keys.chunks(ROOT_CHUNK_SIZE) {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity, size_bytes FROM mods WHERE game_id = ",
+        );
+        query.push_bind(game_id);
+        push_root_key_predicate(&mut query, keys, "folder_path_key");
+        for row in query
+            .build_query_as::<ReconcileModRow>()
+            .fetch_all(&mut *conn)
+            .await?
+        {
+            if seen_ids.insert(row.id.clone()) {
+                rows.push(row);
+            }
+        }
+    }
+
+    for identities in filesystem_identities.chunks(IDENTITY_CHUNK_SIZE) {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity, size_bytes FROM mods WHERE game_id = ",
+        );
+        query.push_bind(game_id);
+        query.push(" AND filesystem_identity IN (");
+        {
+            let mut separated = query.separated(", ");
+            for identity in identities {
+                separated.push_bind(identity);
+            }
+        }
+        query.push(")");
+        for row in query
+            .build_query_as::<ReconcileModRow>()
+            .fetch_all(&mut *conn)
+            .await?
+        {
+            if seen_ids.insert(row.id.clone()) {
+                rows.push(row);
+            }
+        }
+    }
+
+    Ok(rows)
+}
+
+pub async fn get_folder_path_keys_for_roots(
+    pool: &SqlitePool,
+    game_id: &str,
+    root_keys: &[String],
+) -> Result<Vec<String>, sqlx::Error> {
+    const ROOT_CHUNK_SIZE: usize = 250;
+    let mut keys = Vec::new();
+    for roots in root_keys.chunks(ROOT_CHUNK_SIZE) {
+        let mut query =
+            QueryBuilder::<Sqlite>::new("SELECT folder_path_key FROM mods WHERE game_id = ");
+        query.push_bind(game_id);
+        push_root_key_predicate(&mut query, roots, "folder_path_key");
+        keys.extend(query.build_query_scalar::<String>().fetch_all(pool).await?);
+    }
+    Ok(keys)
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ExactRuntimeMod {
+    pub id: String,
+    pub folder_path: String,
+    pub status: i64,
+    pub has_descendants: i64,
+}
+
+/// Resolve exact terminal mod rows after a committed rename. The correlated
+/// descendant probe uses the `(game_id, folder_path_key)` index and lets the
+/// runtime queue distinguish a leaf toggle from a parent toggle without
+/// materializing the parent's complete subtree.
+pub async fn get_exact_runtime_mods_for_paths(
+    pool: &SqlitePool,
+    game_id: &str,
+    mods_root: &Path,
+    folder_paths: &[String],
+) -> Result<Vec<ExactRuntimeMod>, sqlx::Error> {
+    const PATH_CHUNK_SIZE: usize = 900;
+    let mods_root = mods_root.to_string_lossy();
+    let keys = folder_paths
+        .iter()
+        .map(|path| folder_path_key(path, Some(&mods_root)))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut rows = Vec::with_capacity(keys.len());
+    for chunk in keys.chunks(PATH_CHUNK_SIZE) {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT candidate.id, candidate.folder_path, candidate.status, \
+             EXISTS(SELECT 1 FROM mods descendant \
+                    WHERE descendant.game_id = candidate.game_id \
+                      AND descendant.folder_path_key >= candidate.folder_path_key || '/' \
+                      AND descendant.folder_path_key < candidate.folder_path_key || '0' \
+                    LIMIT 1) AS has_descendants \
+             FROM mods candidate WHERE candidate.game_id = ",
+        );
+        query
+            .push_bind(game_id)
+            .push(" AND candidate.folder_path_key IN (");
+        {
+            let mut separated = query.separated(", ");
+            for key in chunk {
+                separated.push_bind(key);
+            }
+        }
+        query.push(")");
+        rows.extend(
+            query
+                .build_query_as::<ExactRuntimeMod>()
+                .fetch_all(pool)
+                .await?,
+        );
+    }
+    Ok(rows)
 }
 
 #[derive(Clone, Copy)]

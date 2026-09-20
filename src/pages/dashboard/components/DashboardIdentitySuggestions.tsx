@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleHelp, FolderSearch2, LoaderCircle, ScanSearch } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -100,6 +101,81 @@ export function DashboardIdentitySuggestions({ gameId, onOpenSettings }: Props) 
               ? supportingText
               : t('identity_suggestions.check_detail');
 
+  const howToDialog = isHowToOpen ? (
+    <dialog
+      aria-describedby="identity-suggestions-how-to-description"
+      aria-labelledby="identity-suggestions-how-to-title"
+      className="modal modal-open modal-middle p-4"
+      onCancel={(event) => {
+        event.preventDefault();
+        setIsHowToOpen(false);
+      }}
+      onClose={() => setIsHowToOpen(false)}
+      open
+    >
+      <div className="modal-box max-h-[calc(100dvh-2rem)] w-11/12 max-w-lg overflow-hidden p-5">
+        <h2 id="identity-suggestions-how-to-title" className="text-lg font-semibold">
+          {t('identity_suggestions.how_to_title')}
+        </h2>
+        <p
+          id="identity-suggestions-how-to-description"
+          className="mt-2 text-sm leading-6 text-base-content/65"
+        >
+          {t('identity_suggestions.how_to_intro')}
+        </p>
+        <div className="mt-4 text-sm">
+          <h3 className="font-medium">{t('identity_suggestions.how_to_benefits_title')}</h3>
+          <ul className="mt-2 list-disc space-y-2 pl-5 text-base-content/70">
+            <li>{t('identity_suggestions.how_to_benefit_matching')}</li>
+            <li>{t('identity_suggestions.how_to_benefit_categories')}</li>
+            <li>
+              {status.hasKeyviewerTargets
+                ? t('identity_suggestions.how_to_benefit_keyviewer')
+                : t('identity_suggestions.how_to_benefit_safe')}
+            </li>
+          </ul>
+        </div>
+        <div className="modal-action">
+          {status.state === 'catalog_missing' ? (
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => {
+                setIsHowToOpen(false);
+                onOpenSettings();
+              }}
+            >
+              {t('identity_suggestions.setup_action')}
+            </button>
+          ) : status.state !== 'unsupported' && status.state !== 'checking' ? (
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => {
+                setIsHowToOpen(false);
+                void check();
+              }}
+            >
+              {t('identity_suggestions.check_action')}
+            </button>
+          ) : null}
+          <button className="btn btn-ghost" type="button" onClick={() => setIsHowToOpen(false)}>
+            {t('identity_suggestions.how_to_close')}
+          </button>
+        </div>
+      </div>
+      <form className="modal-backdrop" method="dialog">
+        <button type="button" onClick={() => setIsHowToOpen(false)}>
+          {t('identity_suggestions.how_to_close')}
+        </button>
+      </form>
+    </dialog>
+  ) : null;
+  const overlayRoot =
+    typeof document === 'undefined'
+      ? null
+      : (document.getElementById('workspace-main') ?? document.body);
+
   return (
     <>
       <section
@@ -164,84 +240,7 @@ export function DashboardIdentitySuggestions({ gameId, onOpenSettings }: Props) 
           </div>
         </div>
       </section>
-      {isHowToOpen && (
-        <dialog
-          aria-labelledby="identity-suggestions-how-to-title"
-          className="modal modal-open"
-          onClose={() => setIsHowToOpen(false)}
-          open
-        >
-          <div className="modal-box max-w-lg">
-            <h2 id="identity-suggestions-how-to-title" className="text-lg font-semibold">
-              {t('identity_suggestions.how_to_title')}
-            </h2>
-            <p className="mt-2 text-sm text-base-content/65">
-              {t('identity_suggestions.how_to_intro')}
-            </p>
-            <div className="mt-5 space-y-4 text-sm">
-              <div>
-                <h3 className="font-medium">{t('identity_suggestions.how_to_catalog_title')}</h3>
-                <p className="mt-1 text-base-content/60">
-                  {t('identity_suggestions.how_to_catalog_detail')}
-                </p>
-              </div>
-              <div>
-                <h3 className="font-medium">{t('identity_suggestions.how_to_check_title')}</h3>
-                <p className="mt-1 text-base-content/60">
-                  {t('identity_suggestions.how_to_check_detail')}
-                </p>
-              </div>
-              <div>
-                <h3 className="font-medium">{t('identity_suggestions.how_to_review_title')}</h3>
-                <p className="mt-1 text-base-content/60">
-                  {t('identity_suggestions.how_to_review_detail')}
-                </p>
-              </div>
-              <div>
-                <h3 className="font-medium">{t('identity_suggestions.how_to_benefits_title')}</h3>
-                <p className="mt-1 text-base-content/60">
-                  {status.hasKeyviewerTargets
-                    ? t('identity_suggestions.how_to_benefits_keyviewer')
-                    : t('identity_suggestions.how_to_benefits_matching')}
-                </p>
-              </div>
-            </div>
-            <div className="modal-action">
-              {status.state === 'catalog_missing' ? (
-                <button
-                  className="btn btn-primary"
-                  type="button"
-                  onClick={() => {
-                    setIsHowToOpen(false);
-                    onOpenSettings();
-                  }}
-                >
-                  {t('identity_suggestions.setup_action')}
-                </button>
-              ) : status.state !== 'unsupported' && status.state !== 'checking' ? (
-                <button
-                  className="btn btn-primary"
-                  type="button"
-                  onClick={() => {
-                    setIsHowToOpen(false);
-                    void check();
-                  }}
-                >
-                  {t('identity_suggestions.check_action')}
-                </button>
-              ) : null}
-              <button className="btn btn-ghost" type="button" onClick={() => setIsHowToOpen(false)}>
-                {t('identity_suggestions.how_to_close')}
-              </button>
-            </div>
-          </div>
-          <form className="modal-backdrop" method="dialog">
-            <button type="button" onClick={() => setIsHowToOpen(false)}>
-              {t('identity_suggestions.how_to_close')}
-            </button>
-          </form>
-        </dialog>
-      )}
+      {howToDialog && overlayRoot ? createPortal(howToDialog, overlayRoot) : null}
     </>
   );
 }

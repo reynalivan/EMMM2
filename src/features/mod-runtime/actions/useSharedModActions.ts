@@ -62,7 +62,17 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
   const handleDuplicateForceEnable = useCallback(
     (ignoreFuture: boolean = false) => {
       void (async () => {
-        const { folder, duplicates, enableDisabledAncestors } = state.duplicateWarning;
+        const { folder, duplicates, enableDisabledAncestors, parentEnableConfirmation } =
+          state.duplicateWarning;
+
+        const nextPath = await switchActions.resolveDuplicateForceEnable(
+          folder,
+          enableDisabledAncestors,
+          parentEnableConfirmation,
+        );
+        if (!nextPath) {
+          return;
+        }
 
         if (ignoreFuture && activeGame?.id && folder && duplicates.length > 0) {
           // Backend matches the ignore against the exact sorted set of
@@ -83,8 +93,6 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
             );
           }
         }
-
-        await switchActions.resolveDuplicateForceEnable(folder, enableDisabledAncestors);
       })();
     },
     [state.duplicateWarning, activeGame, switchActions, t],
@@ -94,10 +102,12 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     void switchActions.resolveDuplicateEnableOnly(
       state.duplicateWarning.folder,
       state.duplicateWarning.enableDisabledAncestors,
+      state.duplicateWarning.parentEnableConfirmation,
     );
   }, [
     state.duplicateWarning.enableDisabledAncestors,
     state.duplicateWarning.folder,
+    state.duplicateWarning.parentEnableConfirmation,
     switchActions,
   ]);
 

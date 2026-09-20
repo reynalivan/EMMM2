@@ -11,6 +11,7 @@ mod preview;
 mod projection;
 mod references;
 mod runtime;
+mod safe_target;
 
 pub use apply::*;
 pub use crud::*;
@@ -21,6 +22,7 @@ pub use preview::*;
 pub use projection::*;
 pub use references::*;
 pub use runtime::*;
+pub(crate) use safe_target::*;
 
 #[cfg(test)]
 mod tests;

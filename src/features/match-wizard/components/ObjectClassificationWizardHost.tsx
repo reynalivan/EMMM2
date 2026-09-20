@@ -136,6 +136,8 @@ export function ObjectClassificationWizardHost() {
       }),
     [drafts, items],
   );
+  const categoryLabel = (category: string) =>
+    t(`categories.${category}`, { defaultValue: category });
 
   if (!request) return null;
 
@@ -240,7 +242,10 @@ export function ObjectClassificationWizardHost() {
             disabled={busy}
             onChange={(event) => setDisableAfterApply(event.target.checked)}
           />
-          <span className="label-text">{t('classification_disable_after_apply')}</span>
+          <span>
+            <span className="label-text block">{t('classification_disable_after_apply')}</span>
+            <span className="text-xs text-base-content/60">{t('classification_disable_help')}</span>
+          </span>
         </label>
         <div className="mt-3 flex justify-end">
           <button className="btn btn-sm" disabled={busy} onClick={selectAllHighConfidence}>
@@ -300,7 +305,7 @@ export function ObjectClassificationWizardHost() {
                   </div>
                   <div className="min-w-0" role="cell">
                     <div className="font-medium">{item.objectName}</div>
-                    <div className="text-xs opacity-50">{item.currentCategory}</div>
+                    <div className="text-xs opacity-50">{categoryLabel(item.currentCategory)}</div>
                     <div
                       className="mt-1 max-w-64 truncate text-xs opacity-50"
                       title={item.sourcePath}
@@ -337,43 +342,55 @@ export function ObjectClassificationWizardHost() {
                             {t('classification_use_catalog')}
                           </button>
                         </div>
-                        <select
-                          aria-label={t('columns.category')}
-                          className="select select-bordered select-sm w-full"
-                          disabled={busy}
-                          value={draft.category}
-                          onChange={(event) => {
-                            const category = event.target.value as StableCategory;
-                            updateDraft(item.objectId, (current) => ({
-                              ...current,
-                              category,
-                              subCategory: null,
-                              metadata: {},
-                            }));
-                          }}
-                        >
-                          {CATEGORIES.map((category) => (
-                            <option key={category}>{category}</option>
-                          ))}
-                        </select>
-                        {categoryDef?.subcategories && categoryDef.subcategories.length > 0 && (
+                        <label className="block">
+                          <span className="text-xs text-base-content/60">
+                            {t('classification_object_type')}
+                          </span>
                           <select
-                            aria-label={t('classification_subcategory')}
-                            className="select select-bordered select-xs w-full"
+                            aria-label={t('classification_object_type')}
+                            className="select select-bordered select-sm w-full"
                             disabled={busy}
-                            value={draft.subCategory ?? ''}
-                            onChange={(event) =>
+                            value={draft.category}
+                            onChange={(event) => {
+                              const category = event.target.value as StableCategory;
                               updateDraft(item.objectId, (current) => ({
                                 ...current,
-                                subCategory: event.target.value || null,
-                              }))
-                            }
+                                category,
+                                subCategory: null,
+                                metadata: {},
+                              }));
+                            }}
                           >
-                            <option value="" />
-                            {categoryDef.subcategories.map((subcategory) => (
-                              <option key={subcategory}>{subcategory}</option>
+                            {CATEGORIES.map((category) => (
+                              <option key={category} value={category}>
+                                {categoryLabel(category)}
+                              </option>
                             ))}
                           </select>
+                        </label>
+                        {categoryDef?.subcategories && categoryDef.subcategories.length > 0 && (
+                          <label className="block">
+                            <span className="text-xs text-base-content/60">
+                              {t('classification_subcategory')}
+                            </span>
+                            <select
+                              aria-label={t('classification_subcategory')}
+                              className="select select-bordered select-xs w-full"
+                              disabled={busy}
+                              value={draft.subCategory ?? ''}
+                              onChange={(event) =>
+                                updateDraft(item.objectId, (current) => ({
+                                  ...current,
+                                  subCategory: event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="" />
+                              {categoryDef.subcategories.map((subcategory) => (
+                                <option key={subcategory}>{subcategory}</option>
+                              ))}
+                            </select>
+                          </label>
                         )}
                         {categoryDef?.filters?.map((filter) => (
                           <label className="block" key={filter.key}>
@@ -403,9 +420,21 @@ export function ObjectClassificationWizardHost() {
                     ) : (
                       <div className="space-y-2">
                         <CanonicalObjectCombobox
+                          ariaLabel={t('classification_catalog_search_label')}
+                          categoryLabel={categoryLabel}
                           disabled={busy}
                           emptyLabel={t('classification_no_catalog_match')}
                           entries={catalog}
+                          manualOptionHint={t('classification_catalog_manual_hint')}
+                          manualOptionLabel={t('classification_manual')}
+                          onSelectManual={() =>
+                            updateDraft(item.objectId, (current) => ({
+                              ...current,
+                              mode: 'manual',
+                              selected: false,
+                            }))
+                          }
+                          searchPlaceholder={t('classification_catalog_search_placeholder')}
                           selectedEntryKey={draft?.canonicalEntryKey ?? null}
                           suggestions={item.canonicalSuggestions}
                           onSelect={(entryKey) =>
@@ -420,7 +449,7 @@ export function ObjectClassificationWizardHost() {
                         <div className="flex flex-wrap gap-1">
                           {selectedEntry && (
                             <span className="badge badge-outline badge-sm">
-                              {selectedEntry.category}
+                              {categoryLabel(selectedEntry.category)}
                             </span>
                           )}
                           {selectedEntry &&
@@ -430,20 +459,6 @@ export function ObjectClassificationWizardHost() {
                               </span>
                             ))}
                         </div>
-                        <button
-                          className="btn btn-ghost btn-xs"
-                          disabled={busy}
-                          type="button"
-                          onClick={() =>
-                            updateDraft(item.objectId, (current) => ({
-                              ...current,
-                              mode: 'manual',
-                              selected: false,
-                            }))
-                          }
-                        >
-                          {t('classification_manual')}
-                        </button>
                       </div>
                     )}
                   </div>
@@ -453,7 +468,7 @@ export function ObjectClassificationWizardHost() {
                         <div>
                           {t('classification_confidence_tier', {
                             score: selectedSuggestion.confidencePercentage,
-                            tier: selectedSuggestion.confidenceTier,
+                            tier: t(`confidence.${selectedSuggestion.confidenceTier}`),
                           })}
                         </div>
                         <details className="mt-1 text-xs text-info">
@@ -474,26 +489,33 @@ export function ObjectClassificationWizardHost() {
             }}
           />
         </div>
-        <div className="modal-action">
-          <button
-            className="btn btn-ghost"
-            disabled={busy}
-            onClick={() => {
-              const onComplete = request.onComplete;
-              setRequest(null);
-              onComplete?.('cancelled');
-            }}
-          >
-            {t('common:actions.cancel')}
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={busy || selectedItems.length === 0}
-            onClick={() => void apply()}
-          >
-            {t('classification_apply_selected', { count: selectedItems.length })}
-          </button>
-        </div>
+        <footer className="-mx-6 mt-4 flex shrink-0 flex-col gap-3 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p aria-live="polite" className="text-sm text-base-content/65">
+            {selectedItems.length === 0
+              ? t('classification_footer_pending')
+              : t('classification_footer_ready', { count: selectedItems.length })}
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              className="btn btn-ghost"
+              disabled={busy}
+              onClick={() => {
+                const onComplete = request.onComplete;
+                setRequest(null);
+                onComplete?.('cancelled');
+              }}
+            >
+              {t('common:actions.cancel')}
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={busy || selectedItems.length === 0}
+              onClick={() => void apply()}
+            >
+              {t('classification_apply_selected', { count: selectedItems.length })}
+            </button>
+          </div>
+        </footer>
       </div>
     </dialog>
   );

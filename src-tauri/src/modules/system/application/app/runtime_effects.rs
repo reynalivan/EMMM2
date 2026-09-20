@@ -34,6 +34,9 @@ pub struct RuntimeSideEffects<'a> {
     /// Why the snapshot is being refreshed. This keeps startup/recovery
     /// maintenance distinct from ordinary effective-mod changes.
     pub overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause,
+    /// Watcher-backed reconciles can prove which top-level roots changed.
+    /// Other authority boundaries leave this unset and request full recovery.
+    pub overlay_roots: Option<&'a [String]>,
 }
 
 /// The post-commit outcome of runtime work. A mutation has already committed
@@ -114,6 +117,7 @@ async fn finalize_runtime_side_effects_once(
         game_id,
         overlay_refresh,
         overlay_cause,
+        overlay_roots,
         ..
     } = request;
 
@@ -121,14 +125,29 @@ async fn finalize_runtime_side_effects_once(
         return Ok(false);
     }
 
-    crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
-        pool,
-        config,
-        game_id,
-        overlay_cause,
-    )
-    .await?
-    .ensure_success()?;
+    let result = if let Some(roots) = overlay_roots.filter(|roots| !roots.is_empty()) {
+        crate::modules::system::application::app::post_apply::request_overlay_sync_for_game_scoped_roots(
+            pool,
+            config,
+            game_id,
+            overlay_cause,
+            roots
+                .iter()
+                .cloned()
+                .map(crate::modules::system::domain::mod_path::ModFolderPath::from_stored)
+                .collect(),
+        )
+        .await?
+    } else {
+        crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
+            pool,
+            config,
+            game_id,
+            overlay_cause,
+        )
+        .await?
+    };
+    result.ensure_success()?;
 
     Ok(true)
 }

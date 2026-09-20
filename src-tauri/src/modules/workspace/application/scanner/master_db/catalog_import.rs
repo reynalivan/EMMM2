@@ -86,7 +86,8 @@ pub async fn preview_github(
     let release = fetch_release(&source).await?;
     let zip_asset_id = find_asset(&release.assets, ZIP_ASSET_NAME)?;
     let client = github_import_client()?;
-    let archive = download_asset(&client, &source.repository, zip_asset_id, MAX_ARCHIVE_BYTES).await?;
+    let archive =
+        download_asset(&client, &source.repository, zip_asset_id, MAX_ARCHIVE_BYTES).await?;
     stage_archive(
         state,
         app_data_dir,
@@ -143,11 +144,16 @@ pub async fn install(
     app_data_dir: &Path,
     staging_token: &str,
 ) -> Result<InstalledCatalogProvenance, ScannerError> {
-    let pending = state.pending.lock().await.remove(staging_token).ok_or_else(|| {
-        ScannerError::Validation(
-            "Catalog review has expired. Check the pack again before installing.".to_string(),
-        )
-    })?;
+    let pending = state
+        .pending
+        .lock()
+        .await
+        .remove(staging_token)
+        .ok_or_else(|| {
+            ScannerError::Validation(
+                "Catalog review has expired. Check the pack again before installing.".to_string(),
+            )
+        })?;
     if Instant::now() > pending.expires_at {
         let _ = std::fs::remove_dir_all(&pending.staging_path);
         return Err(ScannerError::Validation(
@@ -313,7 +319,12 @@ impl GithubReleaseSource {
         let repo = format!("{owner}/{repository}");
         let release_api = suffix.map_or_else(
             || format!("https://api.github.com/repos/{repo}/releases/latest"),
-            |tag| format!("https://api.github.com/repos/{repo}/releases/tags/{}", urlencoding::encode(tag)),
+            |tag| {
+                format!(
+                    "https://api.github.com/repos/{repo}/releases/tags/{}",
+                    urlencoding::encode(tag)
+                )
+            },
         );
         Ok(Self {
             repository: repo,
@@ -401,7 +412,11 @@ fn github_import_client() -> Result<reqwest::Client, ScannerError> {
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.url().host_str().is_some_and(is_allowed_delivery_host) {
+            if attempt
+                .url()
+                .host_str()
+                .is_some_and(is_allowed_delivery_host)
+            {
                 attempt.follow()
             } else {
                 attempt.stop()
@@ -430,7 +445,10 @@ async fn read_response_limited(
     response: reqwest::Response,
     limit: usize,
 ) -> Result<Vec<u8>, ScannerError> {
-    if response.content_length().is_some_and(|size| size > limit as u64) {
+    if response
+        .content_length()
+        .is_some_and(|size| size > limit as u64)
+    {
         return Err(ScannerError::Validation(
             "Catalog release response exceeds the size limit".to_string(),
         ));
@@ -462,10 +480,11 @@ fn network_error(error: reqwest::Error) -> ScannerError {
 }
 
 pub(crate) fn extract_archive(bytes: &[u8], destination: &Path) -> Result<(), ScannerError> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|error| ScannerError::Parse {
-        what: "catalog archive".to_string(),
-        detail: error.to_string(),
-    })?;
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|error| ScannerError::Parse {
+            what: "catalog archive".to_string(),
+            detail: error.to_string(),
+        })?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
         return Err(ScannerError::Validation(
             "Catalog archive contains too many entries".to_string(),
@@ -474,10 +493,12 @@ pub(crate) fn extract_archive(bytes: &[u8], destination: &Path) -> Result<(), Sc
     let mut written = HashSet::new();
     let mut total_uncompressed = 0_u64;
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|error| ScannerError::Parse {
-            what: "catalog archive".to_string(),
-            detail: error.to_string(),
-        })?;
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| ScannerError::Parse {
+                what: "catalog archive".to_string(),
+                detail: error.to_string(),
+            })?;
         if entry.is_symlink() {
             return Err(ScannerError::Security(
                 "Catalog archive contains a symbolic link".to_string(),
@@ -500,9 +521,9 @@ pub(crate) fn extract_archive(bytes: &[u8], destination: &Path) -> Result<(), Sc
                 "Catalog archive contains an unsupported file".to_string(),
             ));
         }
-        total_uncompressed = total_uncompressed.checked_add(entry.size()).ok_or_else(|| {
-            ScannerError::Validation("Catalog archive is too large".to_string())
-        })?;
+        total_uncompressed = total_uncompressed
+            .checked_add(entry.size())
+            .ok_or_else(|| ScannerError::Validation("Catalog archive is too large".to_string()))?;
         if total_uncompressed > MAX_UNCOMPRESSED_BYTES {
             return Err(ScannerError::Validation(
                 "Catalog archive is too large".to_string(),
@@ -545,7 +566,10 @@ fn is_allowed_file(path: &Path) -> bool {
             name.to_str().is_some_and(|name| {
                 name.rsplit_once('.').is_some_and(|(stem, extension)| {
                     !stem.is_empty()
-                        && matches!(extension.to_ascii_lowercase().as_str(), "png" | "jpg" | "webp" | "gif")
+                        && matches!(
+                            extension.to_ascii_lowercase().as_str(),
+                            "png" | "jpg" | "webp" | "gif"
+                        )
                 })
             })
         }
@@ -611,10 +635,16 @@ mod tests {
     fn archive_file_allowlist_rejects_executables_and_nested_catalogs() {
         assert!(is_allowed_file(Path::new("manifest.json")));
         assert!(is_allowed_file(Path::new("catalog/gimi.json")));
-        assert!(is_allowed_file(Path::new("assets/gimi/characters/amber.webp")));
-        assert!(!is_allowed_file(Path::new("assets/gimi/characters/amber.svg")));
+        assert!(is_allowed_file(Path::new(
+            "assets/gimi/characters/amber.webp"
+        )));
+        assert!(!is_allowed_file(Path::new(
+            "assets/gimi/characters/amber.svg"
+        )));
         assert!(!is_allowed_file(Path::new("assets/gimi/amber.webp")));
-        assert!(!is_allowed_file(Path::new("images/gimi/characters/amber.webp")));
+        assert!(!is_allowed_file(Path::new(
+            "images/gimi/characters/amber.webp"
+        )));
         assert!(!is_allowed_file(Path::new("catalog/nested/gimi.json")));
         assert!(!is_allowed_file(Path::new("catalog/installer.exe")));
         assert!(!is_allowed_file(Path::new("script.js")));

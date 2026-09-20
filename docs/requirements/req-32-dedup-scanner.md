@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 - **Problem Statement**: Mod management frequently results in accumulating duplicate heavy assets (`.dds`, `.vb`, `.ib`) across different folder structures or imports, silently devouring disk space.
-- **Proposed Solution**: A two-pass BLAKE3 scanner that treats each terminal mod root as one logical unit. Partial hashes reduce candidates, full hashes prove exact identity, and only exact copies receive destructive resolution controls.
+- **Proposed Solution**: A two-pass BLAKE3 scanner that treats each terminal mod root as one logical unit. Partial hashes reduce candidates, full hashes prove exact identity, and the report lets users explicitly choose a keeper for any reported candidate while warning when the relation is not exact.
 - **Success Criteria**:
   - Scanning 1,000 files (avg 10MB) completes in ≤ 15s using `rayon` multi-threading (CPU scales to 80-90%).
   - Multi-Signal matching uses 1KB + 1KB partial sampling for files > 5MB, achieving a 100x speed increase for massive textures.
@@ -57,7 +57,7 @@ As a user, I want to review duplicates side-by-side and choose bulk resolutions,
 
 - A completed report is persisted and loaded per `game_id`. Starting, failing, or cancelling another scan does not replace the last successful report.
 - `Started`, `Finished`, `Cancelled`, and `Failed` are distinct lifecycle outcomes. The UI refreshes its report only after `Finished`.
-- Keep/Delete/Hardlink controls require verified 100% identity. Non-exact relationships remain review/ignore-only.
+- Keep/Delete can be explicitly selected for any reported candidate, with a warning for non-exact relationships. Hardlink still requires verified 100% identity.
 
 #### US-32.3: Safe Deletion & Trashing
 
@@ -72,8 +72,8 @@ As a user, I want the delete resolution to act as a soft-delete, so I can restor
 
 #### Resolution safety contract
 
-- Before Keep/Delete/Hardlink, the resolver recomputes full path-aware manifests for both folders.
-- If either folder changed after scanning, both folders are preserved and the request is reported as failed.
+- Before Keep/Delete on an exact group and before any Hardlink, the resolver recomputes full path-aware manifests for both folders. Non-exact Keep/Delete uses the persisted group membership, explicit user confirmation, and recoverable Trash.
+- If an exact group or Hardlink target changed after scanning, both folders are preserved and the request is reported as failed. Non-exact Keep/Delete follows the explicit candidate-selection warning and recoverable Trash flow.
 - Removal uses the recoverable recycle/trash service. Hardlink replacement stages the original file and restores it on failure.
 
 ### Non-Goals
@@ -125,7 +125,7 @@ CREATE TABLE duplicate_whitelist (
 
 - **Safe Recovery**: File removals execute soft delete procedures exclusively.
 - **Operation Guarantee**: Scan reads are lock-free and robust against `EACCESS`. Writes require global `OperationLock` + `WatcherSuppression` arrays during actual application loop to halt mid-way anomalies or recursive refresh triggers.
-- **Stale-input rejection**: Folder paths supplied by the UI are not proof. The resolver requires path-aware, full-BLAKE3 manifest equality immediately before Keep/Delete/Hardlink.
+- **Stale-input rejection**: Folder paths supplied by the UI are not proof. The resolver requires persisted group membership for every action, plus path-aware full-BLAKE3 manifest equality for exact Keep/Delete and all Hardlink actions. Non-exact Keep/Delete remains an explicitly confirmed, recoverable-Trash operation.
 
 ---
 

@@ -65,6 +65,19 @@
     "title": "Indexing your library",
     "subtitle": "Please wait while EMMM scans the game folders.",
     "overall_progress": "Overall progress",
+    "phase_progress": "Current stage",
+    "preparation_progress": "Preparation progress",
+    "folders_complete": "{{completed}} of {{total}} folders",
+    "files_inspected": "{{count}} files inspected",
+    "folders_classified": "{{count}} folders classified",
+    "current_root": "Current folder: {{root}}",
+    "elapsed": "Elapsed {{duration}}",
+    "waiting_for_stage": "Starting the next stage...",
+    "preparation": {
+      "metadata": "Reading file metadata",
+      "classifying": "Classifying mod folders",
+      "rechecking": "Library changed. Checking it again..."
+    },
     "game_progress": "Game {{current}} of {{total}} · {{game}}",
     "activity": {
       "discovering": "Preparing scan plan · Step {{step}} of {{total}}",
@@ -77,7 +90,7 @@
     },
     "preparing": "Preparing library…",
     "progress_label": "Indexing progress",
-    "estimating": "Estimating remaining time…",
+    "estimating": "Calculating estimate from scan speed…",
     "estimated_remaining": "About {{duration}} remaining",
     "phases": {
       "discovering": "1/4 Discovering Folders",

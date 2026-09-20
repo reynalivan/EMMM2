@@ -52,29 +52,33 @@ fn keyviewer_box_resource(index: usize) -> String {
     format!("ResourceEMMM_KeyViewerBox_{index}")
 }
 
-const OVERLAY_LEFT: f32 = -0.97;
-const OVERLAY_RIGHT: f32 = 0.00;
+const OVERLAY_STATUS_LEFT: f32 = -0.96;
+const OVERLAY_STATUS_RIGHT: f32 = -0.30;
+const OVERLAY_PANEL_LEFT: f32 = -0.96;
+const OVERLAY_PANEL_RIGHT: f32 = -0.56;
 const OVERLAY_STATUS_TOP: f32 = 0.36;
-const OVERLAY_STATUS_BOTTOM: f32 = 0.23;
-const OVERLAY_PANEL_TOP: f32 = -0.22;
-const OVERLAY_PANEL_BOTTOM: f32 = -0.96;
+const OVERLAY_STATUS_BOTTOM: f32 = 0.24;
+const OVERLAY_PANEL_TOP: f32 = -0.24;
+const OVERLAY_PANEL_BOTTOM: f32 = -0.92;
 const OVERLAY_TEXT_ALIGNMENT_LEFT: u8 = 0;
 const OVERLAY_VERTICAL_ANCHOR_BOTTOM: u8 = 3;
-const OVERLAY_STATUS_SCALE: f32 = 1.35;
-const OVERLAY_CHARACTER_SCALE: f32 = 1.35;
+const OVERLAY_STATUS_SCALE: f32 = 1.00;
+const OVERLAY_CHARACTER_SCALE: f32 = 0.92;
 
 /// Bumped when generated text geometry changes so existing overlays are republished.
-pub const KEYVIEWER_LAYOUT_REVISION: u8 = 3;
+pub const KEYVIEWER_LAYOUT_REVISION: u8 = 4;
 
-fn text_box_data(top: f32, bottom: f32, scale: f32) -> String {
+fn text_box_data(left: f32, top: f32, right: f32, bottom: f32, scale: f32) -> String {
     format!(
-        "{OVERLAY_LEFT:.2} {top:.2} {OVERLAY_RIGHT:.2} {bottom:.2}  1 1 1 1  0 0 0 0.92  0.02 0.02  {OVERLAY_TEXT_ALIGNMENT_LEFT} {OVERLAY_VERTICAL_ANCHOR_BOTTOM}  0  {scale:.2}"
+        "{left:.2} {top:.2} {right:.2} {bottom:.2}  1 1 1 1  0 0 0 0.92  0.02 0.02  {OVERLAY_TEXT_ALIGNMENT_LEFT} {OVERLAY_VERTICAL_ANCHOR_BOTTOM}  0  {scale:.2}"
     )
 }
 
 fn status_box_data() -> String {
     text_box_data(
+        OVERLAY_STATUS_LEFT,
         OVERLAY_STATUS_TOP,
+        OVERLAY_STATUS_RIGHT,
         OVERLAY_STATUS_BOTTOM,
         OVERLAY_STATUS_SCALE,
     )
@@ -84,7 +88,9 @@ fn status_box_data() -> String {
 /// Character match order must not affect where the active panel is rendered.
 fn character_box_data() -> String {
     text_box_data(
+        OVERLAY_PANEL_LEFT,
         OVERLAY_PANEL_TOP,
+        OVERLAY_PANEL_RIGHT,
         OVERLAY_PANEL_BOTTOM,
         OVERLAY_CHARACTER_SCALE,
     )

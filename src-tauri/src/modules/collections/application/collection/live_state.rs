@@ -43,11 +43,62 @@ pub(crate) async fn load_live_runtime_state(
             ..object
         })
         .collect();
+    let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id).await?;
+    Ok(build_live_runtime_state(
+        current_mod_rows,
+        current_objects,
+        mods_path.as_deref(),
+    ))
+}
+
+/// Runtime roots needed by collection apply. Unlike a snapshot capture this
+/// does not load unrelated objects that have no enabled mod beneath them.
+pub(crate) async fn load_live_active_projection_state(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<(Vec<CollectionMod>, Vec<CollectionObject>), CollectionError> {
+    let mods_path = load_game_mods_path(pool, game_id).await?;
+    let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id).await?;
+    let object_ids = current_mod_rows
+        .iter()
+        .map(|row| row.object_id.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let current_objects =
+        crate::modules::catalog::adapters::sqlite::object::get_game_objects_by_ids(
+            pool,
+            game_id,
+            &object_ids,
+        )
+        .await?
+        .into_iter()
+        .map(|object| CollectionObject {
+            kind: crate::modules::collections::domain::collection::MemberKind::Object,
+            collection_id: String::new(),
+            object_id: object.id,
+            is_enabled: is_object_enabled(Some(&object.folder_path)),
+            display_name: Some(object.name),
+            path_key: Some(object.folder_path),
+        })
+        .collect();
+
+    Ok(build_live_runtime_state(
+        current_mod_rows,
+        current_objects,
+        mods_path.as_deref(),
+    ))
+}
+
+fn build_live_runtime_state(
+    current_mod_rows: Vec<collection::LiveActiveModRow>,
+    current_objects: Vec<CollectionObject>,
+    mods_path: Option<&str>,
+) -> (Vec<CollectionMod>, Vec<CollectionObject>) {
     let current_objects_by_id: HashMap<&str, &CollectionObject> = current_objects
         .iter()
         .map(|object| (object.object_id.as_str(), object))
         .collect();
-    let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id).await?;
 
     let mut current_mods = Vec::with_capacity(current_mod_rows.len());
     for row in current_mod_rows {
@@ -75,7 +126,7 @@ pub(crate) async fn load_live_runtime_state(
             safety_source: safety_source.clone(),
         };
         let preview_metadata =
-            resolve_preview_terminal_metadata(preview_object, &preview_seed, mods_path.as_deref());
+            resolve_preview_terminal_metadata(preview_object, &preview_seed, mods_path);
 
         current_mods.push(CollectionMod {
             kind: crate::modules::collections::domain::collection::MemberKind::Mod,
@@ -94,7 +145,7 @@ pub(crate) async fn load_live_runtime_state(
         });
     }
 
-    Ok((current_mods, current_objects))
+    (current_mods, current_objects)
 }
 
 /// Absolute roots of the active mods that a current-runtime snapshot records.

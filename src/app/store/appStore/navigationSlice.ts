@@ -25,6 +25,7 @@ export type SettingsTab =
 export interface NavigationSlice {
   // Navigation State
   workspaceView: WorkspaceView;
+  isAppMenuOpen: boolean;
   settingsTab: SettingsTab;
   currentPath: string[];
 
@@ -35,6 +36,7 @@ export interface NavigationSlice {
   activePane: 'objectList' | 'folderGrid';
 
   setWorkspaceView: (view: WorkspaceView) => void;
+  setAppMenuOpen: (open: boolean) => void;
   setSettingsTab: (tab: SettingsTab) => void;
   setCurrentPath: (path: string[]) => void;
   setMobilePane: (pane: MobilePane) => void;
@@ -43,12 +45,14 @@ export interface NavigationSlice {
 
 export const createNavigationSlice: AppSliceCreator<NavigationSlice> = (set) => ({
   workspaceView: 'dashboard',
+  isAppMenuOpen: false,
   settingsTab: 'general',
   currentPath: [],
   mobileActivePane: 'sidebar',
   activePane: 'objectList',
 
-  setWorkspaceView: (view) => set({ workspaceView: view }),
+  setWorkspaceView: (view) => set({ workspaceView: view, isAppMenuOpen: false }),
+  setAppMenuOpen: (open) => set({ isAppMenuOpen: open }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   setCurrentPath: (path) => set({ currentPath: path }),
   setMobilePane: (pane) => set({ mobileActivePane: pane }),

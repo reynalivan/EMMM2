@@ -3,10 +3,11 @@
  * rework: per-item IPC errors were caught, logged, and then followed by an
  * unconditional success toast, so a failed bulk pin looked like it worked.
  */
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useObjectBulkActions } from './useObjectBulkActions';
 import type { WorkspaceObjectNode } from '@/entities/workspace';
+import { useAppStore } from '@/app/store';
 
 const pinObject = vi.fn();
 const updateObject = vi.fn();
@@ -15,6 +16,8 @@ const buildRuntimeMutationDescriptor = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
+const executeWorkspaceObjectBulkSwitch = vi.fn();
+const applyWorkspaceSwitchEffects = vi.fn();
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
@@ -49,6 +52,9 @@ vi.mock('@/features/workspace-runtime', async (importOriginal) => ({
   runObjectBatchMutation: async ({ mutation }: { mutation: () => Promise<void> }) => {
     await mutation();
   },
+  executeWorkspaceObjectBulkSwitch: (...args: unknown[]) =>
+    executeWorkspaceObjectBulkSwitch(...args),
+  applyWorkspaceSwitchEffects: (...args: unknown[]) => applyWorkspaceSwitchEffects(...args),
   useDeleteObject: () => ({ mutateAsync: vi.fn() }),
 }));
 
@@ -79,6 +85,18 @@ const objects = [
   { id: 'b', name: 'Yelan', tags: '["old"]', folder_path: 'Yelan' },
 ] as unknown as WorkspaceObjectNode[];
 
+const objectSwitchResult = {
+  status: 'applied',
+  primary_path: 'Ayaka',
+  changed_folder_paths: ['Ayaka', 'Yelan'],
+  changed_object_ids: ['a', 'b'],
+  duplicates: [],
+  parent_enable_requirement: null,
+  impact: { rewrites: [], refresh_scopes: [] },
+  sync_warning: null,
+  runtime_sync_generation: 7,
+};
+
 function setup() {
   const { result } = renderHook(() => useObjectBulkActions({ objects, setIsSyncing: vi.fn() }));
   return result;
@@ -86,6 +104,7 @@ function setup() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAppStore.setState({ activeGameId: 'game-1' });
 });
 
 describe('handleBulkPin', () => {
@@ -162,5 +181,59 @@ describe('handleBulkSafe', () => {
     expect(bulkSetModSafety).toHaveBeenCalledWith('game-1', ['Ayaka'], false);
     expect(buildRuntimeMutationDescriptor).toHaveBeenCalledWith('safetyClassification');
     expect(publishRuntimeDescriptor).toHaveBeenCalled();
+  });
+});
+
+describe('object enable batch', () => {
+  it('uses one atomic workspace command and one trailing effect publication', async () => {
+    executeWorkspaceObjectBulkSwitch.mockResolvedValue(objectSwitchResult);
+    applyWorkspaceSwitchEffects.mockResolvedValue(undefined);
+
+    await setup().current.handleBulkEnable(new Set(['a', 'b']));
+
+    expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledTimes(1);
+    expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledWith('game-1', ['a', 'b'], true);
+    expect(applyWorkspaceSwitchEffects).toHaveBeenCalledTimes(1);
+    expect(toastSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not publish effects or toast when every selected object is already in the target state', async () => {
+    executeWorkspaceObjectBulkSwitch.mockResolvedValue({
+      ...objectSwitchResult,
+      status: 'noop',
+      changed_folder_paths: [],
+      changed_object_ids: [],
+      runtime_sync_generation: null,
+    });
+
+    await setup().current.handleBulkEnable(new Set(['a', 'b']));
+
+    expect(applyWorkspaceSwitchEffects).not.toHaveBeenCalled();
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('suppresses a duplicate submit while the atomic batch is in flight', async () => {
+    let complete: ((value: typeof objectSwitchResult) => void) | undefined;
+    executeWorkspaceObjectBulkSwitch.mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    applyWorkspaceSwitchEffects.mockResolvedValue(undefined);
+    const hook = setup();
+
+    let first!: Promise<void>;
+    act(() => {
+      first = hook.current.handleBulkEnable(new Set(['a', 'b']));
+    });
+    await act(async () => {
+      await hook.current.handleBulkEnable(new Set(['a', 'b']));
+    });
+
+    expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      complete?.(objectSwitchResult);
+      await first;
+    });
   });
 });

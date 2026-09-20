@@ -241,11 +241,16 @@ pub struct UpdateCollectionInput {
 pub struct ApplyPreview {
     pub collection_name: String,
     pub current_tree_nodes: Vec<PreviewTreeNode>,
+    /// The collection as saved, including entries Safe Mode may exclude.
     pub target_tree_nodes: Vec<PreviewTreeNode>,
+    /// The target that the apply pipeline will actually use after Safe Mode filtering.
+    pub effective_target_tree_nodes: Vec<PreviewTreeNode>,
     pub current_state_name: Option<String>,
     pub current_state_is_unsaved: bool,
     pub current_projected_state: ProjectedCollectionState,
     pub target_projected_state: ProjectedCollectionState,
+    pub effective_target_projected_state: ProjectedCollectionState,
+    pub safe_mode_enabled: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]

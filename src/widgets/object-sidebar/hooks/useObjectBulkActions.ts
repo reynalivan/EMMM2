@@ -6,7 +6,7 @@
  */
 
 import { formatAppError } from '../../../shared/lib/appError';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
 import { toast } from '@/shared/ui/toast';
@@ -15,15 +15,17 @@ import { useTranslation } from 'react-i18next';
 import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,
+  applyWorkspaceSwitchEffects,
+  executeWorkspaceObjectBulkSwitch,
   runObjectBatchMutation,
   type RuntimeMutationClass,
   useDeleteObject,
-  useWorkspaceSwitchActions,
 } from '@/features/workspace-runtime';
 import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { runBulkClassifyAndMatch } from '../utils/runBulkClassifyAndMatch';
 import { parseTagList, resolveObjectNames } from '../utils/bulkSummary';
 import { truncateNameList } from '../../../shared/lib/hooks/bulkToastMessages';
+import { useAppStore } from '@/app/store';
 
 interface BulkDeps {
   objects: WorkspaceObjectNode[];
@@ -63,7 +65,8 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
   // The batch owns the single trailing refresh; per-item mutation callbacks
   // must not refetch the list after every successful delete.
   const deleteObjectMutation = useDeleteObject({ publishOnSuccess: false });
-  const switchActions = useWorkspaceSwitchActions();
+  const bulkSwitchInFlight = useRef(false);
+  const [isBulkSwitchPending, setIsBulkSwitchPending] = useState(false);
 
   const [bulkTagModal, setBulkTagModal] = useState<{
     open: boolean;
@@ -140,33 +143,33 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
 
   const runBulkSwitch = useCallback(
     async (ids: Set<string>, enable: boolean) => {
-      if (!activeGame) {
+      if (!activeGame || bulkSwitchInFlight.current) {
         return;
       }
 
-      let successCount = 0;
-      let failedCount = 0;
-      for (const object of objects.filter((candidate) => ids.has(candidate.id))) {
-        const nextPath = await switchActions.setNodeEnabled(object, enable, 'object_list', {
-          publish: false,
-        });
-        if (nextPath) {
-          successCount += 1;
-          continue;
+      bulkSwitchInFlight.current = true;
+      setIsBulkSwitchPending(true);
+      try {
+        const objectIds = objects
+          .filter((candidate) => ids.has(candidate.id))
+          .map((object) => object.id);
+        if (objectIds.length === 0) {
+          return;
         }
-        failedCount += 1;
-      }
 
-      if (successCount > 0) {
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor('objectSwitch'),
-          'active',
-        );
-      }
+        const result = await executeWorkspaceObjectBulkSwitch(activeGame.id, objectIds, enable);
+        if (!result || useAppStore.getState().activeGameId !== activeGame.id) {
+          return;
+        }
 
-      if (failedCount === 0) {
-        const single = successCount === 1;
+        const changedCount = result.changed_object_ids.length;
+        if (changedCount === 0) {
+          return;
+        }
+        applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
+          gameId: activeGame.id,
+        });
+        const single = changedCount === 1;
         toast.success(
           t(
             enable
@@ -176,15 +179,15 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
               : single
                 ? 'objects:toasts.disabled_one'
                 : 'objects:toasts.disabled_other',
-            { count: successCount },
+            { count: changedCount },
           ),
         );
-        return;
+      } finally {
+        bulkSwitchInFlight.current = false;
+        setIsBulkSwitchPending(false);
       }
-
-      toast.error(`${enable ? 'Enabled' : 'Disabled'} ${successCount}, failed ${failedCount}`);
     },
-    [activeGame, objects, queryClient, switchActions, t],
+    [activeGame, objects, queryClient, t],
   );
 
   const handleBulkEnable = useCallback(
@@ -309,6 +312,7 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
   return {
     bulkTagModal,
     setBulkTagModal,
+    isBulkSwitchPending,
     handleBulkDelete,
     handleBulkPin,
     handleBulkEnable,

@@ -117,17 +117,18 @@ pub async fn update_bookmark(
         ));
     }
 
-    let update = sqlx::query(
-        "UPDATE browser_bookmarks SET url = ?, title = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(&url)
-    .bind(title.trim())
-    .bind(Utc::now().timestamp())
-    .bind(id)
-    .execute(db)
-    .await?;
+    let update =
+        sqlx::query("UPDATE browser_bookmarks SET url = ?, title = ?, updated_at = ? WHERE id = ?")
+            .bind(&url)
+            .bind(title.trim())
+            .bind(Utc::now().timestamp())
+            .bind(id)
+            .execute(db)
+            .await?;
     if update.rows_affected() == 0 {
-        return Err(BrowserError::InvalidSetting("bookmark no longer exists".to_string()));
+        return Err(BrowserError::InvalidSetting(
+            "bookmark no longer exists".to_string(),
+        ));
     }
 
     sqlx::query_as::<_, BrowserBookmark>(
@@ -327,8 +328,9 @@ mod tests {
         .unwrap();
 
         let bookmarks = list_bookmarks(&db).await.unwrap();
-        assert_eq!(bookmarks.len(), 1);
-        assert_eq!(bookmarks[0].id, bookmark.id);
+        assert!(bookmarks
+            .iter()
+            .any(|candidate| candidate.id == bookmark.id));
         let history = list_history(&db, 10).await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].visit_count, 2);
@@ -336,7 +338,41 @@ mod tests {
 
         clear_history(&db).await.unwrap();
         assert!(list_history(&db, 10).await.unwrap().is_empty());
-        assert_eq!(list_bookmarks(&db).await.unwrap().len(), 1);
+        assert!(list_bookmarks(&db)
+            .await
+            .unwrap()
+            .iter()
+            .any(|candidate| candidate.id == bookmark.id));
+    }
+
+    #[tokio::test]
+    async fn default_gamebanana_bookmark_is_editable_and_deletable() {
+        let db = init_test_db().await.pool;
+        let default_bookmark = list_bookmarks(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|bookmark| bookmark.url == "https://gamebanana.com/")
+            .expect("default GameBanana bookmark");
+
+        let updated = update_bookmark(
+            &db,
+            &default_bookmark.id,
+            "https://gamebanana.com/mods",
+            "GameBanana Mods",
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.id, default_bookmark.id);
+        assert_eq!(updated.url, "https://gamebanana.com/mods");
+        assert_eq!(updated.title, "GameBanana Mods");
+
+        delete_bookmark(&db, &updated.id).await.unwrap();
+        assert!(list_bookmarks(&db)
+            .await
+            .unwrap()
+            .iter()
+            .all(|bookmark| bookmark.id != updated.id));
     }
 
     #[tokio::test]

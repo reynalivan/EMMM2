@@ -83,15 +83,15 @@ pub(super) async fn execute_cycle_preset(
     .await?;
 
     if collections.is_empty() {
-        let sync = crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
+        let generation = crate::modules::reconciliation::api::enqueue_runtime_sync(
+            app,
             pool_state.inner(),
-            &config_state,
             game_id,
-            crate::modules::system::application::app::post_apply::OverlaySyncCause::CollectionApplied,
-        )
-        .await?
-        .ensure_success()?;
-        return Ok(format!("No presets available (overlay: {:?})", sync.reload));
+            crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
+        );
+        return Ok(format!(
+            "No presets available (overlay queued as generation {generation})"
+        ));
     }
 
     let preset_names: Vec<String> = collections
@@ -155,16 +155,19 @@ pub(super) async fn execute_cycle_preset(
         )
         .await?;
 
-    drop(mutation_lease);
-    crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+    let generation = crate::modules::reconciliation::api::enqueue_runtime_sync_for_rewrites(
         app,
         pool_state.inner(),
         game_id,
+        &game.mod_path,
+        crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
+        &apply_result.runtime_path_rewrites,
     )
-    .await?;
+    .await;
+    drop(mutation_lease);
 
     Ok(format!(
-        "Preset: {} (changed components: {}; overlay sync requested by the collection apply)",
-        target.name, apply_result.mods_enabled
+        "Preset: {} (changed components: {}; overlay queued as generation {generation})",
+        target.name, apply_result.mods_enabled,
     ))
 }

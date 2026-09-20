@@ -2,6 +2,7 @@
 //! and healing the DB back to what disk actually shows.
 
 use crate::shared::errors::AppError;
+use std::collections::HashMap;
 use std::path::Path;
 
 fn build_object_path_candidates(
@@ -40,28 +41,47 @@ fn build_object_path_candidates(
 
 fn find_matching_object_root(mods_path: &Path, object_name: &str) -> Option<String> {
     let expected_key = crate::shared::path_key::canonical_name_key(object_name);
-    let entries = std::fs::read_dir(mods_path).ok()?;
+    index_object_roots(mods_path).remove(&expected_key)
+}
 
+fn index_object_roots(mods_path: &Path) -> HashMap<String, String> {
+    let Ok(entries) = std::fs::read_dir(mods_path) else {
+        return HashMap::new();
+    };
+    let mut indexed = HashMap::new();
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
             continue;
         }
-
-        let Some(folder_name) = path
-            .file_name()
-            .map(|value| value.to_string_lossy().to_string())
-        else {
+        let Some(name) = path.file_name().map(|name| name.to_string_lossy()) else {
             continue;
         };
-
-        let folder_key = crate::shared::path_key::canonical_name_key(&folder_name);
-        if folder_key == expected_key {
-            return Some(path.to_string_lossy().to_string());
-        }
+        indexed
+            .entry(crate::shared::path_key::canonical_name_key(&name))
+            .or_insert_with(|| path.to_string_lossy().into_owned());
     }
+    indexed
+}
 
-    None
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    #[test]
+    fn batch_index_preserves_single_resolver_first_match_on_canonical_collision() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp.path().join("Alice")).expect("enabled folder");
+        std::fs::create_dir(temp.path().join("DISABLED Alice")).expect("disabled folder");
+
+        let single = find_matching_object_root(temp.path(), "Alice").expect("single match");
+        let indexed = index_object_roots(temp.path());
+        let batch = indexed
+            .get(&crate::shared::path_key::canonical_name_key("Alice"))
+            .expect("batch match");
+
+        assert_eq!(batch, &single);
+    }
 }
 
 fn ensure_object_root_containment(
@@ -170,4 +190,63 @@ pub(super) async fn resolve_object_root_path(
     Err(AppError::RuntimePathNotFound {
         target: object.name.clone(),
     })
+}
+
+pub(super) async fn resolve_object_root_paths(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    object_ids: &[String],
+) -> Result<
+    Vec<(
+        crate::modules::workspace::application::scanner::core::types::GameObject,
+        String,
+        String,
+    )>,
+    AppError,
+> {
+    let objects = crate::modules::catalog::adapters::sqlite::object::get_game_objects_by_ids(
+        pool, game_id, object_ids,
+    )
+    .await?;
+    let objects_by_id = objects
+        .into_iter()
+        .map(|object| (object.id.clone(), object))
+        .collect::<HashMap<_, _>>();
+    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
+    let mods_root = Path::new(&mods_path);
+    let canonical_mods_root = mods_root
+        .canonicalize()
+        .map_err(|error| AppError::Validation(format!("Mods folder is unavailable: {error}")))?;
+    let indexed_roots = index_object_roots(mods_root);
+    let mut resolved = Vec::with_capacity(object_ids.len());
+
+    for object_id in object_ids {
+        let object = objects_by_id
+            .get(object_id)
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("Object not found: {object_id}")))?;
+        let mut found = None;
+        for candidate in build_object_path_candidates(mods_root, &object.folder_path, &object.name)
+        {
+            if Path::new(&candidate).exists() {
+                found = Some(candidate);
+                break;
+            }
+        }
+        let current_path = found
+            .or_else(|| {
+                indexed_roots
+                    .get(&crate::shared::path_key::canonical_name_key(&object.name))
+                    .cloned()
+            })
+            .ok_or_else(|| AppError::RuntimePathNotFound {
+                target: object.name.clone(),
+            })?;
+        ensure_object_root_containment(&canonical_mods_root, Path::new(&current_path))?;
+        resolved.push((object, mods_path.clone(), current_path));
+    }
+
+    Ok(resolved)
 }

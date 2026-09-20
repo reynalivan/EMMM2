@@ -232,6 +232,7 @@ describe('ModInboxPage', () => {
     );
 
     await screen.findByText('Raiden Pack');
+    expect(screen.queryByText('Mod pack · 2 roots')).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Select all ready entries' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Select Raiden Pack' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Select Nahida.zip' })).toBeChecked();

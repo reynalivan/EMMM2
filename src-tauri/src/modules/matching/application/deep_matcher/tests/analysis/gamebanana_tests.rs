@@ -1,7 +1,7 @@
 use crate::modules::matching::application::deep_matcher::analysis::content::FolderSignals;
 use crate::modules::matching::application::deep_matcher::analysis::gamebanana::{
-    GameBananaConfig, GameBananaGame, GameBananaRef, detect_gamebanana_ids,
-    fetch_gamebanana_metadata, gamebanana_reference_from_url,
+    detect_gamebanana_ids, fetch_gamebanana_metadata, gamebanana_reference_from_url,
+    GameBananaConfig, GameBananaGame, GameBananaRef,
 };
 
 #[test]

@@ -1,13 +1,12 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useResponsive } from '../../../shared/lib/hooks/useResponsive';
-import { sortFolders } from './folderCache';
-import { useWorkspaceViewModel } from '@/features/workspace-runtime';
+import { useWorkspaceExplorerPages, useWorkspaceViewModel } from '@/features/workspace-runtime';
 import { useFolderGridLayout } from './useFolderGridLayout';
-import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import type { WorkspaceExplorerQuery } from '@/entities/workspace';
 import { useAppStore } from '@/app/store';
-import { filterFoldersBySafety } from './safetyFilter';
 
 interface UseFolderGridRuntimeOptions {
+  activeGameId: string | undefined;
   viewMode: 'grid' | 'list';
   currentPath: string[];
   explorerSubPath: string | undefined;
@@ -16,6 +15,22 @@ interface UseFolderGridRuntimeOptions {
   sortField: 'name' | 'modified_at' | 'size_bytes';
   sortOrder: 'asc' | 'desc';
   explorerSearchQuery: string;
+}
+
+export const EXPLORER_SEARCH_DEBOUNCE_MS = 200;
+
+export function useDebouncedExplorerSearchQuery(searchQuery: string): string {
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(
+      () => setDebouncedSearchQuery(searchQuery),
+      EXPLORER_SEARCH_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  return debouncedSearchQuery;
 }
 
 export function getPreviousExplorerSubPath(
@@ -30,6 +45,7 @@ export function getPreviousExplorerSubPath(
 }
 
 export function useFolderGridRuntime({
+  activeGameId,
   viewMode,
   currentPath,
   explorerSubPath,
@@ -41,47 +57,70 @@ export function useFolderGridRuntime({
 }: UseFolderGridRuntimeOptions) {
   const { isMobile } = useResponsive();
   const safetyFilter = useAppStore((state) => state.safetyFilter);
+  const debouncedExplorerSearchQuery = useDebouncedExplorerSearchQuery(explorerSearchQuery);
+  const isExplorerSearchPending = explorerSearchQuery !== debouncedExplorerSearchQuery;
   const parentRef = useRef<HTMLDivElement>(null);
   const {
     data: workspace,
-    isLoading,
-    isFetching,
-    isError,
-    error,
+    isLoading: isWorkspaceLoading,
+    isFetching: isWorkspaceFetching,
+    isError: isWorkspaceError,
+    error: workspaceError,
     isPlaceholderData,
   } = useWorkspaceViewModel();
-  const previousExplorerSubPath = getPreviousExplorerSubPath(explorerSubPath);
-  const previousFolderSelection = useMemo(
-    () => ({ explorerSubPath: previousExplorerSubPath, selectedModPath: null }),
-    [previousExplorerSubPath],
+  const explorerQuery = useMemo<WorkspaceExplorerQuery | null>(
+    () =>
+      activeGameId
+        ? {
+            game_id: activeGameId,
+            explorer_sub_path: explorerSubPath ?? null,
+            search_query: debouncedExplorerSearchQuery.trim() || null,
+            sort_field: sortField,
+            sort_order: sortOrder,
+            safety_filter: safetyFilter,
+          }
+        : null,
+    [
+      activeGameId,
+      debouncedExplorerSearchQuery,
+      explorerSubPath,
+      safetyFilter,
+      sortField,
+      sortOrder,
+    ],
   );
-  const { data: previousWorkspace } = useWorkspaceViewModel({
-    selectionOverrides: previousFolderSelection,
-    enabled: currentPath.length > 1,
+  const sourceAvailable = workspace?.runtime?.source_state.status !== 'unavailable';
+  const explorerPages = useWorkspaceExplorerPages(explorerQuery, {
+    enabled: Boolean(workspace && sourceAvailable),
+  });
+  const previousExplorerSubPath = getPreviousExplorerSubPath(explorerSubPath);
+  const previousExplorerQuery = useMemo<WorkspaceExplorerQuery | null>(
+    () =>
+      activeGameId
+        ? {
+            game_id: activeGameId,
+            explorer_sub_path: previousExplorerSubPath ?? null,
+            search_query: null,
+            sort_field: 'name',
+            sort_order: 'asc',
+            safety_filter: 'all',
+          }
+        : null,
+    [activeGameId, previousExplorerSubPath],
+  );
+  const previousExplorerPages = useWorkspaceExplorerPages(previousExplorerQuery, {
+    enabled: Boolean(workspace && sourceAvailable && currentPath.length > 1),
   });
 
   const rawResponse = workspace?.explorer;
-  const rawFolders = useMemo(
-    () => rawResponse?.children || ([] as WorkspaceExplorerNode[]),
-    [rawResponse?.children],
-  );
-  const previousFolders = useMemo(
-    () => previousWorkspace?.explorer.children || ([] as WorkspaceExplorerNode[]),
-    [previousWorkspace?.explorer.children],
-  );
-  const filteredFolders = useMemo(() => {
-    const safetyFiltered = filterFoldersBySafety(rawFolders, safetyFilter);
-    if (!explorerSearchQuery) {
-      return safetyFiltered;
-    }
-
-    const query = explorerSearchQuery.toLowerCase();
-    return safetyFiltered.filter((folder) => folder.name.toLowerCase().includes(query));
-  }, [explorerSearchQuery, rawFolders, safetyFilter]);
-  const sortedFolders = useMemo(
-    () => sortFolders(filteredFolders, sortField, sortOrder),
-    [filteredFolders, sortField, sortOrder],
-  );
+  const rawFolders = explorerPages.items;
+  const previousFolders = previousExplorerPages.items;
+  const sortedFolders = rawFolders;
+  const {
+    fetchNextPage: fetchNextExplorerPage,
+    hasNextPage: hasNextExplorerPage,
+    isFetchingNextPage: isFetchingNextExplorerPage,
+  } = explorerPages;
   const isGridView = viewMode === 'grid' && !isMobile;
   const layout = useFolderGridLayout({
     parentRef,
@@ -91,6 +130,36 @@ export function useFolderGridRuntime({
     isGridView,
     itemCount: sortedFolders.length,
   });
+  const lastVirtualIndex = layout.virtualItems[layout.virtualItems.length - 1]?.index;
+
+  useEffect(() => {
+    if (
+      lastVirtualIndex === undefined ||
+      !hasNextExplorerPage ||
+      isFetchingNextExplorerPage ||
+      sortedFolders.length === 0
+    ) {
+      return;
+    }
+
+    const lastVisibleItemIndex = isGridView
+      ? (lastVirtualIndex + 1) * layout.columnCount - 1
+      : lastVirtualIndex;
+    const preloadThreshold = Math.max(10, layout.columnCount * 2);
+    if (lastVisibleItemIndex >= sortedFolders.length - preloadThreshold) {
+      void fetchNextExplorerPage();
+    }
+  }, [
+    fetchNextExplorerPage,
+    hasNextExplorerPage,
+    isFetchingNextExplorerPage,
+    isGridView,
+    lastVirtualIndex,
+    layout.columnCount,
+    sortedFolders.length,
+  ]);
+
+  const explorerLoading = sourceAvailable && explorerPages.isLoading;
 
   return {
     parentRef,
@@ -100,11 +169,18 @@ export function useFolderGridRuntime({
     rawResponse,
     rawFolders,
     previousFolders,
+    hasMorePreviousFolders: previousExplorerPages.hasNextPage,
+    isLoadingMorePreviousFolders: previousExplorerPages.isFetchingNextPage,
+    loadMorePreviousFolders: previousExplorerPages.fetchNextPage,
     sortedFolders,
-    isLoading,
-    isRefreshing: isFetching && !isLoading,
-    isError,
-    error,
+    explorerQuery,
+    isExplorerSearchPending,
+    totalMatching: explorerPages.totalMatching,
+    listingRevision: explorerPages.listingRevision,
+    isLoading: isWorkspaceLoading || explorerLoading,
+    isRefreshing: (isWorkspaceFetching && !isWorkspaceLoading) || explorerPages.isFetchingNextPage,
+    isError: isWorkspaceError || explorerPages.isError,
+    error: workspaceError ?? explorerPages.error,
     isPlaceholderData,
     ...layout,
   };

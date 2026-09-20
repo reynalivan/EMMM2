@@ -77,6 +77,19 @@ const runtimeEventScopes: Record<RuntimeRefreshEvent, RuntimeRefreshScope[]> = {
 
 const pendingRuntimeRefreshes = new WeakMap<QueryClient, PendingRuntimeRefresh>();
 
+function queryKeysForScopes(scopes: Iterable<RuntimeRefreshScope>): Array<readonly unknown[]> {
+  const uniqueKeys = new Map<string, readonly unknown[]>();
+  for (const scope of scopes) {
+    const queryKey = runtimeQueryKeys[scope];
+    uniqueKeys.set(JSON.stringify(queryKey), queryKey);
+  }
+  return [...uniqueKeys.values()];
+}
+
+function scopesForEvents(events: RuntimeRefreshEvent[]): RuntimeRefreshScope[] {
+  return events.flatMap((event) => runtimeEventScopes[event]);
+}
+
 // Verified equivalent to the previous hand-written lattice across all 16 pairs:
 // 'none' is the identity, and any two differing non-'none' types widen to 'all'.
 function mergeRefetchType(current: QueryRefetchType, next: QueryRefetchType): QueryRefetchType {
@@ -94,12 +107,7 @@ async function refreshRuntimeQueriesNow(
   // Logical scopes may intentionally share one physical query key (for
   // example folder structure and metadata). Deduplicate after resolving the
   // key so a bulk mutation never refetches the same cache entry twice.
-  const uniqueKeys = new Map<string, readonly unknown[]>();
-  for (const scope of options.scopes) {
-    const queryKey = runtimeQueryKeys[scope];
-    uniqueKeys.set(JSON.stringify(queryKey), queryKey);
-  }
-  const tasks = [...uniqueKeys.values()].map((queryKey) =>
+  const tasks = queryKeysForScopes(options.scopes).map((queryKey) =>
     queryClient.invalidateQueries({
       queryKey,
       refetchType,
@@ -167,11 +175,20 @@ async function publishRuntimeEvents(
   queryClient: QueryClient,
   options: PublishRuntimeEventsOptions,
 ): Promise<void> {
-  const scopes = options.events.flatMap((event) => runtimeEventScopes[event]);
+  const scopes = scopesForEvents(options.events);
   await scheduleRuntimeRefresh(queryClient, {
     scopes,
     refetchType: options.refetchType,
   });
+}
+
+/** Cancel older reads that could otherwise publish stale data over a committed mutation. */
+export async function cancelRuntimeDescriptorQueries(
+  queryClient: QueryClient,
+  descriptor: RuntimeEffectDescriptor,
+): Promise<void> {
+  const queryKeys = queryKeysForScopes(scopesForEvents(descriptor.refreshEvents));
+  await Promise.all(queryKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
 }
 
 export async function publishQueryScopes(

@@ -4,7 +4,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { applyDiskReconcileResult, useDiskReconcileCoordinator } from './useFileWatcher';
 import { isPreviewAffected } from '../utils/reconcileSelection';
-import { useWatcherLifecycle } from '../utils/watcherLifecycle';
 import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { runtimeQueryKeys } from '@/shared/lib/queryRefresh';
@@ -16,8 +15,6 @@ import { workspaceKeys } from '@/features/workspace-runtime/@x/file-watcher';
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
-    stopWatcher: vi.fn().mockResolvedValue(undefined),
-    startWatcher: vi.fn().mockResolvedValue(undefined),
     reconcileDiskStateCmd: vi.fn(),
   },
 }));
@@ -138,45 +135,6 @@ function createResult(overrides: Partial<DiskReconcileResult>): DiskReconcileRes
     ...overrides,
   };
 }
-
-describe('useWatcherLifecycle', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('starts through the backend atomic replacement without waiting for a frontend stop', async () => {
-    const pendingStop = createDeferred<void>();
-    vi.mocked(commands.stopWatcher).mockReturnValueOnce(pendingStop.promise);
-
-    const { unmount } = renderHook(() => useWatcherLifecycle(createActiveGame()));
-
-    await waitFor(() => expect(commands.startWatcher).toHaveBeenCalledWith('E:/Mods', 'game-1'));
-    expect(commands.stopWatcher).not.toHaveBeenCalled();
-    unmount();
-    pendingStop.resolve();
-    await waitFor(() => expect(commands.stopWatcher).toHaveBeenCalledTimes(1));
-  });
-
-  it('does not let stale cleanup stop a newly selected game watcher', async () => {
-    const gameA = createActiveGame();
-    const gameB = { ...createActiveGame(), id: 'game-2', mod_path: 'F:/Mods' };
-    const { rerender, unmount } = renderHook(
-      ({ game }: { game: GameConfig | null }) => useWatcherLifecycle(game),
-      { initialProps: { game: gameA } },
-    );
-
-    await waitFor(() => expect(commands.startWatcher).toHaveBeenCalledWith('E:/Mods', 'game-1'));
-    rerender({ game: gameB });
-    await waitFor(() => expect(commands.startWatcher).toHaveBeenCalledWith('F:/Mods', 'game-2'));
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(commands.stopWatcher).not.toHaveBeenCalled();
-    unmount();
-    await waitFor(() => expect(commands.stopWatcher).toHaveBeenCalledTimes(1));
-  });
-});
 
 describe('applyDiskReconcileResult', () => {
   const queryClient = {
@@ -846,7 +804,7 @@ describe('useDiskReconcileCoordinator', () => {
     });
 
     await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
-    expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'GameSwitched', null, true);
+    expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'ModsViewEntered', null, true);
   });
 
   it('does not start a queued refresh after the coordinator unmounts', async () => {

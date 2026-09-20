@@ -30,6 +30,7 @@ vi.mock('../hooks/useCollections', () => ({
       collection_name: 'Test Preset',
       current_tree_nodes: [],
       target_tree_nodes: [],
+      effective_target_tree_nodes: [],
       current_state_name: 'Current',
       current_state_is_unsaved: false,
       current_projected_state: {
@@ -46,6 +47,14 @@ vi.mock('../hooks/useCollections', () => ({
           object_count: 0,
         },
       },
+      effective_target_projected_state: {
+        summary: {
+          active_root_count: 0,
+          enabled_object_count: 0,
+          object_count: 0,
+        },
+      },
+      safe_mode_enabled: false,
     },
     isLoading: false,
     isError: false,

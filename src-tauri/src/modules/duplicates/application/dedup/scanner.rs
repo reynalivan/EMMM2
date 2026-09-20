@@ -367,11 +367,13 @@ fn profile_fingerprint(profile: &HashProfile) -> String {
     hasher.finalize().to_hex().to_string()
 }
 
+type ExactComponent = (Vec<usize>, Vec<(usize, usize)>);
+
 fn exact_components_after_whitelist(
     members: &[usize],
     mod_ids: &[Option<&str>],
     whitelist_pairs: &HashSet<(String, String)>,
-) -> Vec<(Vec<usize>, Vec<(usize, usize)>)> {
+) -> Vec<ExactComponent> {
     if whitelist_pairs.is_empty() {
         return vec![(
             members.to_vec(),

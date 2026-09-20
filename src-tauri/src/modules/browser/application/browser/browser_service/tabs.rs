@@ -79,7 +79,7 @@ pub fn set_zoom(app: AppHandle, label: &str, zoom: f64) -> Result<(), BrowserErr
 pub fn find_in_page(app: AppHandle, label: &str, query: String) -> Result<(), BrowserError> {
     let query = serde_json::to_string(&query)
         .map_err(|error| BrowserError::InvalidSetting(format!("invalid find query: {error}")))?;
-    resolve_webview(&app, label)?.eval(&format!(
+    resolve_webview(&app, label)?.eval(format!(
         "window.find({query}, false, false, true, false, true, false);"
     ))?;
     Ok(())

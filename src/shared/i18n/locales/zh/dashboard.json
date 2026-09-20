@@ -61,18 +61,14 @@
     "error_title": "身份检查需要处理",
     "error_detail": "上次本地检查未能完成。",
     "retry": "重试",
-    "how_to_action": "工作方式",
-    "how_to_title": "对象建议的工作方式",
-    "how_to_intro": "目录包是独立的数据文件。它可以提供名称、别名、艺术图和受支持的 KeyViewer 目标，而不会随 EMMM 捆绑。",
-    "how_to_catalog_title": "添加目录包",
-    "how_to_catalog_detail": "在设置中选择已审核的 GitHub 发布或本地 ZIP。安装目录包不会修改模组文件夹、元数据或图片。",
-    "how_to_check_title": "运行本地检查",
-    "how_to_check_detail": "可以在这里、Mod Inbox 预检或对象操作中开始检查。EMMM 只读取相关的本地对象数据。",
-    "how_to_review_title": "应用前审核",
-    "how_to_review_detail": "建议始终是可选的。请在分类向导中确认选中的高置信度匹配，然后 EMMM 才会修改元数据。",
-    "how_to_benefits_title": "目录可改进的内容",
-    "how_to_benefits_matching": "名称和别名可帮助找到对应的模组。您的图片不会改变。",
-    "how_to_benefits_keyviewer": "更容易找到对应的模组，并为支持的对象使用 KeyViewer 控件。您的图片不会改变。",
+    "how_to_action": "为什么添加目录包？",
+    "how_to_title": "帮助 EMMM 更好地理解您的游戏",
+    "how_to_intro": "上传 ZIP 文件或粘贴公开 GitHub 链接以添加目录包。它可以帮助 EMMM 识别游戏、更准确地匹配模组，并提供更好的分类建议。",
+    "how_to_benefits_title": "您将获得",
+    "how_to_benefit_matching": "更准确的游戏和模组匹配。",
+    "how_to_benefit_categories": "更清晰的分类，让您的模组库更容易浏览。",
+    "how_to_benefit_keyviewer": "为受支持的游戏和对象提供 KeyViewer 控件。",
+    "how_to_benefit_safe": "您的模组文件夹和图片保持不变。",
     "how_to_close": "关闭"
   },
   "waste": {
@@ -107,6 +103,14 @@
       "key_binding": "按键绑定",
       "key_toggle": "按键切换"
     },
-    "no_bindings": "在已启用的模组中未找到按键绑定"
+    "no_bindings": "在已启用的模组中未找到按键绑定",
+    "search_label": "搜索活跃按键映射",
+    "search_placeholder": "搜索模组文件夹、分类或别名",
+    "filter_label": "按分类筛选",
+    "filter_all": "所有分类",
+    "filter_unclassified": "未分类",
+    "clear_filters": "清除筛选",
+    "no_matches": "没有匹配当前筛选条件的按键映射",
+    "alias": "别名：{{alias}}"
   }
 }

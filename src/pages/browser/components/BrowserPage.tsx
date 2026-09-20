@@ -1,5 +1,5 @@
 import { useShallow } from 'zustand/react/shallow';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { listen } from '@tauri-apps/api/event';
 import { Webview } from '@tauri-apps/api/webview';
@@ -8,8 +8,8 @@ import { useDownloads } from '../hooks/useDownloads';
 import { useBrowserLibrary } from '../hooks/useBrowserLibrary';
 import { useWebviewSync } from '../hooks/useWebviewSync';
 import { normalizeBrowserUrl } from '../utils/browserUrl';
-import { BrowserTabBar } from './BrowserTabBar';
-import { BrowserToolbar } from './BrowserToolbar';
+import { BrowserTabBar, BrowserTabContextMenu } from './BrowserTabBar';
+import { BrowserToolbar, BrowserToolbarMenu } from './BrowserToolbar';
 import { DownloadManagerPanel } from './DownloadManagerPanel';
 import { BrowserLibraryPanel } from './BrowserLibraryPanel';
 import { BookmarkEditorDialog } from './BookmarkEditorDialog';
@@ -24,11 +24,22 @@ import ConfirmDialog from '@/shared/ui/components/ui/ConfirmDialog';
 import { isDemoMode } from '@/shared/lib/appMode';
 import { useAppStore } from '@/app/store';
 import { TopBarActionsPortal } from '@/widgets/top-bar';
+import {
+  getBrowserSidePanelLayout,
+  getBrowserSurfacePresentation,
+  type BrowserSidePanel,
+} from '../browserSurfacePresentation';
 
 type ConfirmationRequest = {
   message: string;
   onConfirm: () => void | Promise<void>;
 };
+
+type BrowserChromeTray =
+  | { kind: 'none' }
+  | { kind: 'find' }
+  | { kind: 'toolbar-menu' }
+  | { kind: 'tab-context-menu'; tab: BrowserTab };
 
 const MAX_DECODED_TEXT_CHARS = 750_000;
 
@@ -65,11 +76,9 @@ export function BrowserPage() {
     url: string;
     status: number;
   } | null>(null);
-  const [isFindOpen, setIsFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
-  const [isBrowserMenuOpen, setIsBrowserMenuOpen] = useState(false);
-  const [isTabContextMenuOpen, setIsTabContextMenuOpen] = useState(false);
+  const [chromeTray, setChromeTray] = useState<BrowserChromeTray>({ kind: 'none' });
   const [libraryTab, setLibraryTab] = useState<'bookmarks' | 'history'>('bookmarks');
   const [editingBookmark, setEditingBookmark] = useState<BrowserBookmark | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -78,10 +87,13 @@ export function BrowserPage() {
 
   // Container that the Webview will be placed over
   const containerRef = useRef<HTMLDivElement>(null);
+  const browserContentRef = useRef<HTMLDivElement>(null);
+  const [browserContentWidth, setBrowserContentWidth] = useState(0);
 
   // Select only the browser state used by this page.
   const {
     openDownloadPanel,
+    closeDownloadPanel,
     isDownloadPanelOpen,
     isDownloadConfirmationOpen,
     tabs,
@@ -97,6 +109,7 @@ export function BrowserPage() {
   } = useBrowserStore(
     useShallow((state) => ({
       openDownloadPanel: state.openDownloadPanel,
+      closeDownloadPanel: state.closeDownloadPanel,
       isDownloadPanelOpen: state.isDownloadPanelOpen,
       isDownloadConfirmationOpen: state.isDownloadConfirmationOpen,
       tabs: state.tabs,
@@ -112,21 +125,33 @@ export function BrowserPage() {
     })),
   );
 
-  // Native webviews always paint above the DOM, so any overlay that must sit
-  // on top of the page content requires hiding them while it's open.
-  const overlayOpen =
-    isDownloadPanelOpen ||
+  const activeSidePanel: BrowserSidePanel = isDownloadPanelOpen
+    ? 'downloads'
+    : isLibraryOpen
+      ? 'library'
+      : null;
+  const sidePanelLayout = getBrowserSidePanelLayout(activeSidePanel, browserContentWidth);
+  const hasBlockingOverlay =
     isDownloadConfirmationOpen ||
-    isLibraryOpen ||
-    isFindOpen ||
-    isBrowserMenuOpen ||
-    isTabContextMenuOpen ||
+    confirmation !== null ||
     editingBookmark !== null ||
     previewImageUrl !== null ||
     decodedText !== null ||
     navigationError?.label === activeTabId;
 
   const activeGameId = useAppStore((state) => state.activeGameId);
+  const isAppMenuOpen = useAppStore((state) => state.isAppMenuOpen);
+  const browserSurfacePresentation = useMemo(
+    () =>
+      getBrowserSurfacePresentation({
+        activeSidePanel,
+        availableWidth: browserContentWidth,
+        hasBlockingOverlay,
+        isAppMenuOpen,
+        isChromeTrayOpen: chromeTray.kind !== 'none',
+      }),
+    [activeSidePanel, browserContentWidth, chromeTray.kind, hasBlockingOverlay, isAppMenuOpen],
+  );
 
   const { activeCount, queuedCount } = useDownloads(activeGameId, {
     showFeedback: true,
@@ -144,6 +169,12 @@ export function BrowserPage() {
     clearHistory,
   } = useBrowserLibrary();
 
+  useEffect(() => {
+    if (isDownloadPanelOpen) {
+      setIsLibraryOpen(false);
+    }
+  }, [isDownloadPanelOpen]);
+
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeBookmark = activeTab
     ? bookmarks.find((bookmark) => bookmark.url === activeTab.url)
@@ -158,6 +189,7 @@ export function BrowserPage() {
 
   const performNavigate = useCallback(
     async (url: string, asNewTab: boolean = false) => {
+      setChromeTray({ kind: 'none' });
       setNavigationError(null);
       setIsNavigating(true);
       try {
@@ -311,8 +343,19 @@ export function BrowserPage() {
     return () => window.clearTimeout(timer);
   }, [activeGameId, activeTabId, isRestoringSession, t, tabs]);
 
-  // Handle resizing and positioning of the Tauri Webviews
-  useWebviewSync(containerRef, tabs, activeTabId, overlayOpen);
+  useEffect(() => {
+    const content = browserContentRef.current;
+    if (!content) return;
+
+    const updateWidth = () => setBrowserContentWidth(content.getBoundingClientRect().width);
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  useWebviewSync(containerRef, tabs, activeTabId, browserSurfacePresentation);
 
   // Listen for navigation changes from the backend (run ONCE on mount)
   useEffect(() => {
@@ -447,6 +490,7 @@ export function BrowserPage() {
   };
 
   const handleNewTab = useCallback(() => {
+    setChromeTray({ kind: 'none' });
     addTab(createNewBrowserTab());
     setUrlInput('');
   }, [addTab]);
@@ -610,7 +654,7 @@ export function BrowserPage() {
     if (!activeTabId || activeTab?.isNewTab || !findQuery.trim()) return;
     try {
       await commands.browserFindInPage(activeTabId, findQuery.trim());
-      setIsFindOpen(false);
+      setChromeTray({ kind: 'none' });
     } catch (error) {
       console.error('Failed to find text in Discover tab:', error);
       toast.error(t('tabs.operation_failed'));
@@ -634,12 +678,45 @@ export function BrowserPage() {
     [recordClosedTab, removeTab, tabs],
   );
 
+  const closeChromeTray = useCallback(
+    (restoreFocus: boolean = true) => {
+      if (chromeTray.kind === 'none') return;
+
+      const triggerId =
+        chromeTray.kind === 'toolbar-menu'
+          ? 'browser-toolbar-menu-trigger'
+          : chromeTray.kind === 'tab-context-menu'
+            ? `browser-tab-trigger-${chromeTray.tab.id}`
+            : null;
+
+      if (restoreFocus && triggerId) {
+        document.getElementById(triggerId)?.focus();
+      }
+      setChromeTray({ kind: 'none' });
+    },
+    [chromeTray],
+  );
+
+  useEffect(() => {
+    if (chromeTray.kind === 'none') return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeChromeTray();
+      }
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [chromeTray.kind, closeChromeTray]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key.toLowerCase() === 'f' && activeTabId && !activeTab?.isNewTab) {
         event.preventDefault();
-        setIsFindOpen(true);
+        setChromeTray({ kind: 'find' });
       }
       if (event.key.toLowerCase() === 'l') {
         event.preventDefault();
@@ -679,25 +756,51 @@ export function BrowserPage() {
 
   const handleBrowserMenuOpenChange = useCallback(
     (isOpen: boolean) => {
-      if (isOpen && activeTabId && !activeTab?.isNewTab && !isDemoMode) {
-        void Webview.getByLabel(activeTabId)
-          .then((webview) => webview?.hide())
-          .catch((error: unknown) => {
-            console.error(
-              '[Browser] Failed to hide webview before opening the toolbar menu:',
-              error,
-            );
-          });
+      if (isOpen) {
+        setChromeTray({ kind: 'toolbar-menu' });
+        return;
       }
-      setIsBrowserMenuOpen(isOpen);
+      closeChromeTray();
     },
-    [activeTab?.isNewTab, activeTabId],
+    [closeChromeTray],
   );
 
-  const handleOpenLibrary = useCallback((tab: 'bookmarks' | 'history') => {
-    setLibraryTab(tab);
-    setIsLibraryOpen(true);
-  }, []);
+  const handleOpenDownloads = useCallback(() => {
+    setIsLibraryOpen(false);
+    openDownloadPanel();
+  }, [openDownloadPanel]);
+
+  const handleOpenLibrary = useCallback(
+    (tab: 'bookmarks' | 'history') => {
+      closeDownloadPanel();
+      setLibraryTab(tab);
+      setIsLibraryOpen(true);
+    },
+    [closeDownloadPanel],
+  );
+
+  const sidePanel =
+    activeSidePanel === 'downloads' ? (
+      <DownloadManagerPanel layout={sidePanelLayout} />
+    ) : activeSidePanel === 'library' ? (
+      <BrowserLibraryPanel
+        layout={sidePanelLayout}
+        bookmarks={bookmarks}
+        history={history}
+        privacy={privacySummary}
+        isLoading={isLibraryLoading}
+        activeTab={libraryTab}
+        onTabChange={setLibraryTab}
+        onClose={() => setIsLibraryOpen(false)}
+        onNavigate={(url) => {
+          setIsLibraryOpen(false);
+          void handleNavigate(url);
+        }}
+        onDeleteBookmark={handleDeleteBookmark}
+        onEditBookmark={setEditingBookmark}
+        onClearHistory={handleClearHistory}
+      />
+    ) : null;
 
   return (
     <div className="flex flex-col h-full relative overflow-hidden bg-base-100/85">
@@ -705,7 +808,7 @@ export function BrowserPage() {
         <button
           type="button"
           className="btn btn-ghost btn-sm btn-square relative"
-          onClick={openDownloadPanel}
+          onClick={handleOpenDownloads}
           title={t('tabs.open_downloads')}
           aria-label={t('tabs.open_downloads')}
         >
@@ -720,14 +823,13 @@ export function BrowserPage() {
       <BrowserTabBar
         tabs={tabs}
         activeTabId={activeTabId}
-        canRestoreLastClosedTab={recentlyClosedTabs.length > 0}
-        onSelectTab={setActiveTab}
+        onSelectTab={(id) => {
+          setActiveTab(id);
+          setChromeTray({ kind: 'none' });
+        }}
         onCloseTab={(id) => void handleCloseTab(id)}
         onNewTab={handleNewTab}
-        onReloadTab={(id) => void handleReloadTab(id)}
-        onDuplicateTab={(id) => void handleDuplicateTab(id)}
-        onRestoreLastClosedTab={() => void handleRestoreLastClosedTab()}
-        onContextMenuOpenChange={setIsTabContextMenuOpen}
+        onOpenContextMenu={(tab) => setChromeTray({ kind: 'tab-context-menu', tab })}
       />
 
       <BrowserToolbar
@@ -738,125 +840,138 @@ export function BrowserPage() {
         activeTabUrl={activeTab?.isNewTab ? null : (activeTab?.url ?? null)}
         isNewTab={Boolean(activeTab?.isNewTab)}
         isBookmarked={Boolean(activeBookmark)}
-        activeZoom={activeTab?.zoom ?? 1}
         isNavigating={isNavigating || Boolean(activeTab?.isLoading)}
         isRefreshing={isRefreshing}
-        isMoreMenuOpen={isBrowserMenuOpen}
+        isMoreMenuOpen={chromeTray.kind === 'toolbar-menu'}
         onMoreMenuOpenChange={handleBrowserMenuOpenChange}
         onGoBack={handleGoBack}
         onGoForward={handleGoForward}
         onReload={handleReload}
-        onNewTab={handleNewTab}
         onToggleBookmark={handleToggleBookmark}
-        onOpenLibrary={handleOpenLibrary}
-        onOpenExternally={handleOpenExternally}
-        onChangeZoom={handleChangeZoom}
-        onOpenFind={() => setIsFindOpen(true)}
-        adblockEnabled={adblockEnabled}
-        onToggleAdblock={handleToggleAdblock}
-        onClearCookiesAndSiteData={handleClearCookiesAndSiteData}
-        onClearCache={handleClearCache}
       />
 
-      {isFindOpen && (
-        <form
-          className="absolute right-4 top-24 z-20 flex gap-2 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleFind();
-          }}
-        >
-          <input
-            autoFocus
-            className="input input-sm input-bordered w-56"
-            placeholder={t('tabs.find_in_page')}
-            value={findQuery}
-            onChange={(event) => setFindQuery(event.target.value)}
-          />
-          <button className="btn btn-primary btn-sm" type="submit">
-            {t('tabs.find')}
-          </button>
-          <button
-            className="btn btn-ghost btn-sm"
-            type="button"
-            onClick={() => setIsFindOpen(false)}
-          >
-            {t('tabs.close')}
-          </button>
-        </form>
+      {chromeTray.kind !== 'none' && (
+        <div className="shrink-0 border-b border-base-300 bg-base-200/70 p-2">
+          <div className="max-h-[min(24rem,50dvh)] overflow-y-auto">
+            {chromeTray.kind === 'find' && (
+              <form
+                className="flex flex-wrap gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleFind();
+                }}
+              >
+                <input
+                  id="browser-find-input"
+                  autoFocus
+                  className="input input-sm input-bordered w-56 max-w-full"
+                  placeholder={t('tabs.find_in_page')}
+                  value={findQuery}
+                  onChange={(event) => setFindQuery(event.target.value)}
+                />
+                <button className="btn btn-primary btn-sm" type="submit">
+                  {t('tabs.find')}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  onClick={() => closeChromeTray()}
+                >
+                  {t('tabs.close')}
+                </button>
+              </form>
+            )}
+            {chromeTray.kind === 'toolbar-menu' && (
+              <BrowserToolbarMenu
+                activeTabUrl={activeTab?.isNewTab ? null : (activeTab?.url ?? null)}
+                activeZoom={activeTab?.zoom ?? 1}
+                adblockEnabled={adblockEnabled}
+                hasActiveWebview={Boolean(activeTabId) && !activeTab?.isNewTab}
+                onChangeZoom={(zoom) => void handleChangeZoom(zoom)}
+                onClearCache={() => void handleClearCache()}
+                onClearCookiesAndSiteData={() => void handleClearCookiesAndSiteData()}
+                onClose={() => closeChromeTray()}
+                onNewTab={handleNewTab}
+                onOpenExternally={() => void handleOpenExternally()}
+                onOpenFind={() => setChromeTray({ kind: 'find' })}
+                onOpenLibrary={handleOpenLibrary}
+                onToggleAdblock={() => void handleToggleAdblock()}
+              />
+            )}
+            {chromeTray.kind === 'tab-context-menu' && (
+              <BrowserTabContextMenu
+                tab={chromeTray.tab}
+                canRestoreLastClosedTab={recentlyClosedTabs.length > 0}
+                onClose={() => closeChromeTray()}
+                onCloseTab={(id) => void handleCloseTab(id)}
+                onDuplicateTab={(id) => void handleDuplicateTab(id)}
+                onReloadTab={(id) => void handleReloadTab(id)}
+                onRestoreLastClosedTab={() => void handleRestoreLastClosedTab()}
+              />
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── Main Content / Webview Container ──────────────────────────── */}
       {/* This div acts as the reference for where the native Webview will be placed. */}
       {/* It must span the remaining height. */}
-      <div ref={containerRef} className="flex-1 w-full bg-base-100 relative">
-        {navigationError?.label === activeTabId && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-base-100 p-8">
-            <div className="max-w-md text-center">
-              <AlertTriangle className="mx-auto mb-4 text-warning" size={42} />
-              <h2 className="text-lg font-semibold">{t('error.title')}</h2>
-              <p className="mt-2 text-sm text-base-content/60">{t('error.description')}</p>
-              <p className="mt-2 truncate font-mono text-xs text-base-content/50">
-                {navigationError.url}
-              </p>
-              <div className="mt-5 flex justify-center gap-2">
-                <button className="btn btn-primary btn-sm" onClick={handleReload}>
-                  {t('error.retry')}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={handleOpenExternally}>
-                  {t('error.open_externally')}
-                </button>
+      <div
+        ref={browserContentRef}
+        className="relative flex min-h-0 flex-1 overflow-hidden bg-base-100"
+      >
+        {sidePanelLayout === 'full' && sidePanel ? (
+          <div className="min-h-0 flex-1">{sidePanel}</div>
+        ) : (
+          <>
+            <div
+              className="min-w-0 flex-1"
+              style={
+                browserSurfacePresentation.leftInsetPx > 0
+                  ? { marginLeft: browserSurfacePresentation.leftInsetPx }
+                  : undefined
+              }
+            >
+              <div ref={containerRef} className="relative h-full w-full bg-base-100">
+                {navigationError?.label === activeTabId && (
+                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-base-100 p-8">
+                    <div className="max-w-md text-center">
+                      <AlertTriangle className="mx-auto mb-4 text-warning" size={42} />
+                      <h2 className="text-lg font-semibold">{t('error.title')}</h2>
+                      <p className="mt-2 text-sm text-base-content/60">{t('error.description')}</p>
+                      <p className="mt-2 truncate font-mono text-xs text-base-content/50">
+                        {navigationError.url}
+                      </p>
+                      <div className="mt-5 flex justify-center gap-2">
+                        <button className="btn btn-primary btn-sm" onClick={handleReload}>
+                          {t('error.retry')}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={handleOpenExternally}>
+                          {t('error.open_externally')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {(!activeTab || activeTab.isNewTab) && (
+                  <BrowserNewTabPage
+                    bookmarks={bookmarks}
+                    onNavigate={(url) => void handleNavigate(url)}
+                    onSearchGoogle={handleSearchGoogle}
+                    onEditBookmark={setEditingBookmark}
+                    onOpenBookmarks={() => handleOpenLibrary('bookmarks')}
+                  />
+                )}
               </div>
             </div>
-          </div>
-        )}
-        {(!activeTab || activeTab.isNewTab) && (
-          <BrowserNewTabPage
-            bookmarks={bookmarks}
-            onNavigate={(url) => void handleNavigate(url)}
-            onSearchGoogle={handleSearchGoogle}
-            onEditBookmark={setEditingBookmark}
-            onOpenBookmarks={() => handleOpenLibrary('bookmarks')}
-          />
+            {sidePanelLayout === 'docked' && sidePanel}
+          </>
         )}
       </div>
 
       {/* ── Overlays (Rendered via Portal to avoid clipping) ──────────────────────── */}
       {createPortal(
         <>
-          {/* Download Manager Panel Backdrop (slide-in) */}
-          <div
-            className={`fixed inset-0 z-[var(--workspace-layer-overlay)] bg-overlay-mask backdrop-blur-sm transition-opacity duration-300 ${
-              isDownloadPanelOpen
-                ? 'opacity-100 pointer-events-auto'
-                : 'opacity-0 pointer-events-none'
-            }`}
-            onClick={() => useBrowserStore.getState().closeDownloadPanel()}
-          />
-
-          {/* Download Manager Panel */}
-          <div className="relative z-[calc(var(--workspace-layer-overlay)+1)]">
-            <DownloadManagerPanel />
-          </div>
-
-          {isLibraryOpen && (
-            <BrowserLibraryPanel
-              bookmarks={bookmarks}
-              history={history}
-              privacy={privacySummary}
-              isLoading={isLibraryLoading}
-              activeTab={libraryTab}
-              onTabChange={setLibraryTab}
-              onClose={() => setIsLibraryOpen(false)}
-              onNavigate={(url) => {
-                setIsLibraryOpen(false);
-                void handleNavigate(url);
-              }}
-              onDeleteBookmark={handleDeleteBookmark}
-              onEditBookmark={setEditingBookmark}
-              onClearHistory={handleClearHistory}
-            />
-          )}
           <BookmarkEditorDialog
             bookmark={editingBookmark}
             isSaving={updateBookmark.isPending}

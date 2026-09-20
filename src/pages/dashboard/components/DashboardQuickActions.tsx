@@ -71,19 +71,14 @@ export function DashboardQuickActions({
         onClick={() => setWorkspaceView('mod-inbox')}
       />
       <ActionTile
-        label={t('actions.storage_optimizer')}
-        icon={<Copy size={26} />}
-        onClick={() => setWorkspaceView('storage-optimizer')}
-      />
-      <ActionTile
         label={t('actions.collections')}
         icon={<Layers size={26} />}
         onClick={() => setWorkspaceView('collections')}
       />
       <ActionTile
-        label={t('actions.settings')}
-        icon={<Settings size={26} />}
-        onClick={() => setWorkspaceView('settings')}
+        label={t('actions.storage_optimizer')}
+        icon={<Copy size={26} />}
+        onClick={() => setWorkspaceView('storage-optimizer')}
       />
       <ActionTile
         id="dashboard-discover-btn"
@@ -96,6 +91,11 @@ export function DashboardQuickActions({
         label={t('actions.downloads')}
         icon={<Download size={26} />}
         onClick={() => setWorkspaceView('downloads')}
+      />
+      <ActionTile
+        label={t('actions.settings')}
+        icon={<Settings size={26} />}
+        onClick={() => setWorkspaceView('settings')}
       />
     </div>
   );

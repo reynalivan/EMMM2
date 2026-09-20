@@ -2,11 +2,12 @@
 
 use std::fs;
 use std::io::Write;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::modules::automation::application::keyviewer::harvester::{
-    harvest_hashes_from_ini, harvest_hashes_from_mod, harvest_mod, harvest_targets_from_ini,
-    HarvestCapabilities,
+    cached_entry_count_for_root, harvest_hashes_from_ini, harvest_hashes_from_mod, harvest_mod,
+    harvest_targets_from_ini, retain_cached_mods, HarvestCapabilities,
 };
 use crate::modules::matching::application::deep_matcher::models::types::RuntimeResourceKind;
 
@@ -16,6 +17,43 @@ fn write_ini(dir: &TempDir, name: &str, content: &str) -> std::path::PathBuf {
     let mut f = fs::File::create(&path).expect("create temp INI");
     f.write_all(content.as_bytes()).expect("write temp INI");
     path
+}
+
+#[test]
+fn retaining_active_mods_prunes_stale_capability_snapshots() {
+    let root = TempDir::new().unwrap();
+    let mod_path = root.path().join("Mod");
+    fs::create_dir(&mod_path).unwrap();
+    fs::write(
+        mod_path.join("mod.ini"),
+        "[TextureOverrideBody]\nhash = df65bb00\nvb0 = ResourceBody\nib = ResourceIndex\n",
+    )
+    .unwrap();
+    let vb0 = HarvestCapabilities::from_callback_slots(["vb0"]);
+    let ib = HarvestCapabilities::from_callback_slots(["ib"]);
+
+    harvest_mod(&mod_path, &vb0).unwrap();
+    harvest_mod(&mod_path, &ib).unwrap();
+    assert_eq!(cached_entry_count_for_root(root.path()), 2);
+
+    retain_cached_mods(root.path(), &ib, [mod_path.as_path()]);
+    assert_eq!(cached_entry_count_for_root(root.path()), 1);
+}
+
+#[test]
+fn cached_harvest_reuses_the_same_allocation() {
+    let dir = TempDir::new().unwrap();
+    write_ini(
+        &dir,
+        "position.ini",
+        "[TextureOverridePosition]\nhash = 6895f405\nvb0 = ResourcePosition\n",
+    );
+    let capabilities = HarvestCapabilities::from_callback_slots(["vb0"]);
+
+    let first = harvest_mod(dir.path(), &capabilities).unwrap();
+    let second = harvest_mod(dir.path(), &capabilities).unwrap();
+
+    assert!(Arc::ptr_eq(&first, &second));
 }
 
 #[test]
@@ -345,7 +383,7 @@ fn records_every_effective_ini_in_the_generation_fingerprint() {
 }
 
 #[test]
-fn cached_harvest_reparses_an_ini_after_its_file_snapshot_changes() {
+fn cached_harvest_reparses_equal_length_ini_when_timestamp_is_preserved() {
     let dir = TempDir::new().unwrap();
     let path = write_ini(
         &dir,
@@ -353,16 +391,22 @@ fn cached_harvest_reparses_an_ini_after_its_file_snapshot_changes() {
         "[TextureOverrideArlecchinoPosition]\nhash = 6895f405\nvb0 = ResourcePosition\n",
     );
     let capabilities = HarvestCapabilities::from_callback_slots(["vb0"]);
+    let original_modified = std::fs::metadata(&path).unwrap().modified().unwrap();
 
     let first = harvest_mod(dir.path(), &capabilities).unwrap();
     assert_eq!(first.targets[0].hash, "6895f405");
 
-    std::thread::sleep(std::time::Duration::from_millis(10));
     std::fs::write(
         &path,
         "[TextureOverrideArlecchinoPosition]\nhash = a1b2c3d4\nvb0 = ResourcePosition\n",
     )
     .unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(original_modified))
+        .unwrap();
 
     let second = harvest_mod(dir.path(), &capabilities).unwrap();
     assert_eq!(second.targets[0].hash, "a1b2c3d4");

@@ -12,7 +12,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installDevCatalogPack } from './install-dev-catalog-pack.mjs';
@@ -25,6 +25,7 @@ const triplet = 'x64-windows-static-md';
 const installedTripletRoot = join(localVcpkgRoot, 'installed', triplet);
 const stampPath = join(localVcpkgRoot, 'emmm-native-dependencies.json');
 const cargoCacheStampPath = join(localVcpkgRoot, 'emmm-cargo-native-cache.json');
+const localSigningKeyPath = join(homedir(), '.tauri', 'emmm.key');
 const lockId = createHash('sha1').update(projectRoot).digest('hex').slice(0, 12);
 const lockPath = join(tmpdir(), `emmm-vcpkg-${lockId}.lock`);
 const lockWaitMs = 250;
@@ -65,6 +66,21 @@ function loadProjectEnvironment() {
     if (!observabilityEnvironmentNames.has(name) && !originalEnvironment.has(name)) {
       delete process.env[name];
     }
+  }
+}
+
+async function loadLocalSigningKey() {
+  if (process.env.TAURI_SIGNING_PRIVATE_KEY?.trim()) return;
+
+  try {
+    const signingKey = await readFile(localSigningKeyPath, 'utf8');
+    if (signingKey.trim().length === 0) return;
+
+    process.env.TAURI_SIGNING_PRIVATE_KEY = signingKey;
+    console.log(`Using local Tauri updater signing key from ${localSigningKeyPath}`);
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT')) return;
+    throw new Error(`Unable to read local Tauri updater signing key: ${localSigningKeyPath}`);
   }
 }
 
@@ -359,8 +375,9 @@ async function runTauri(args) {
 }
 
 async function main() {
-  loadProjectEnvironment();
   const args = process.argv.slice(2);
+  loadProjectEnvironment();
+  if (args[0] === 'build' || args[0] === 'bundle') await loadLocalSigningKey();
   const prepareOnly = args.length === 1 && args[0] === '--prepare-only';
   await prepareWindowsDependencies();
   if (args[0] === 'dev') await installDevCatalogPack();

@@ -41,6 +41,7 @@
     "dismiss": "Abaikan"
   },
   "errors": {
+    "explorer_snapshot_expired": "Daftar folder telah berubah. Muat ulang lalu pilih mod kembali.",
     "no_active_game": "Tidak ada game aktif yang dipilih",
     "scan_failed": "Pemindaian gagal",
     "unknown": "Terjadi kesalahan yang tidak diketahui",
@@ -125,6 +126,9 @@
   },
   "reconcile": {
     "runtime_effects_pending": "Perubahan disk sudah diterapkan, tetapi pembaruan runtime masih tertunda.",
+    "runtime_syncing": "Memperbarui runtime game…",
+    "runtime_sync_failed": "Pembaruan runtime gagal",
+    "manual_reload_short": "Perlu muat ulang manual",
     "manual_reload_required": "Muat ulang manual diperlukan: fokuskan game, lalu tekan {{binding}}.",
     "cleanup_pending": "Item sudah dihapus, tetapi pemindahan file karantina ke Tempat Sampah masih tertunda."
   },

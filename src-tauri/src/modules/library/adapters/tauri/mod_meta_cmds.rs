@@ -492,6 +492,7 @@ pub async fn set_mod_category(
             collections_dirty: false,
             overlay_refresh: true,
             overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
+            overlay_roots: None,
         },
     )
     .await;
@@ -551,6 +552,7 @@ pub async fn set_object_mods_category(
             collections_dirty: true,
             overlay_refresh: true,
             overlay_cause: crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
+            overlay_roots: None,
         },
     )
     .await;
@@ -602,6 +604,60 @@ pub async fn move_mods_to_object(
     watcher: tauri::State<'_, WatcherState>,
     input: MoveModsToObjectInput,
 ) -> Result<crate::modules::library::application::mods::bulk::BulkResult, AppError> {
+    move_mods_to_object_impl(
+        app,
+        config,
+        pool,
+        op_lock,
+        disk_reconcile_state,
+        watcher,
+        input,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn move_mods_to_object_from_snapshot(
+    app: tauri::AppHandle,
+    config: tauri::State<'_, ConfigService>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
+    disk_reconcile_state: tauri::State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+    watcher: tauri::State<'_, WatcherState>,
+    input: MoveModsToObjectInput,
+    expected_identities: Vec<(String, String)>,
+) -> Result<crate::modules::library::application::mods::bulk::BulkResult, AppError> {
+    move_mods_to_object_impl(
+        app,
+        config,
+        pool,
+        op_lock,
+        disk_reconcile_state,
+        watcher,
+        input,
+        Some(expected_identities),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn move_mods_to_object_impl(
+    app: tauri::AppHandle,
+    config: tauri::State<'_, ConfigService>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    op_lock: tauri::State<'_, MutationCoordinator>,
+    disk_reconcile_state: tauri::State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+    watcher: tauri::State<'_, WatcherState>,
+    input: MoveModsToObjectInput,
+    expected_identities: Option<Vec<(String, String)>>,
+) -> Result<crate::modules::library::application::mods::bulk::BulkResult, AppError> {
     let folders =
         crate::platform::fs::guard::validate_paths(&config, &input.game_id, &input.folder_paths)?;
     let mut preflight_paths = folders
@@ -621,6 +677,11 @@ pub async fn move_mods_to_object(
         .game_lock(&input.game_id)
         .lock_owned()
         .await;
+    if let Some(expected_identities) = expected_identities.as_deref() {
+        crate::modules::workspace::application::explorer::listing::validate_workspace_explorer_selection_identities(
+            expected_identities,
+        )?;
+    }
     let prepared =
         crate::modules::library::application::mods::organizer_move::prepare_move_mods_to_object(
             pool.inner(),

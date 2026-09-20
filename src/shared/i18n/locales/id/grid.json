@@ -157,7 +157,13 @@
     "ops_title": "Operasi Massal",
     "edit_metadata": "Ubah Metadata",
     "move_object": "Pindah ke Objek...",
-    "move_trash": "Pindahkan ke Tempat Sampah"
+    "move_trash": "Pindahkan ke Tempat Sampah",
+    "selection_limit": "Operasi massal mendukung paling banyak {{limit}} mod.",
+    "move_requires_loaded_selection": "Muat seluruh pilihan secara lengkap sebelum memindahkan. Pilih Semua pada hasil yang belum dimuat belum didukung.",
+    "move_success_one": "Berhasil memindahkan {{count}} mod.",
+    "move_success_other": "Berhasil memindahkan {{count}} mod.",
+    "move_failure_one": "{{count}} mod tidak dapat dipindahkan: {{error}}",
+    "move_failure_other": "{{count}} mod tidak dapat dipindahkan: {{error}}"
   },
   "bulk_toast": {
     "success": "Berhasil {{action}}: {{names}}",

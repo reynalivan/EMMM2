@@ -19,7 +19,11 @@ export default function FolderGrid() {
   const folderGrid = useFolderGrid();
   const {
     previousFolders,
+    hasMorePreviousFolders,
+    isLoadingMorePreviousFolders,
+    loadMorePreviousFolders,
     sortedFolders,
+    totalMatching,
     isLoading,
     isRefreshing,
     isError,
@@ -34,6 +38,7 @@ export default function FolderGrid() {
     isMobile,
     currentPath,
     explorerSearchQuery,
+    isExplorerSearchPending,
     sortField,
     sortOrder,
     setSortField,
@@ -46,7 +51,8 @@ export default function FolderGrid() {
     setViewMode,
     setExplorerSearch,
     handleKeyDown,
-    gridSelection,
+    selectedCount,
+    selectAllMatching,
     clearGridSelection,
     handleToggleSelf,
     isCreateFolderOpen,
@@ -78,6 +84,10 @@ export default function FolderGrid() {
     handleBulkSafe,
     handleBulkPin,
     handleBulkMoveToObject,
+    handleBulkMoveSubmit,
+    bulkMovePaths,
+    clearBulkMovePaths,
+    bulkMutationPending,
     activeContextDialog,
     handleActiveContextCancel,
     handleActiveContextSubmit,
@@ -96,8 +106,9 @@ export default function FolderGrid() {
     setIsIgnoreManagementOpen,
     workspaceSourceUnavailableMessage,
     mutationsDisabled,
-    handleSelectAll,
   } = useFolderGridViewModel({ sortedFolders, sourceUnavailableMessage, recoveryStatus });
+  const effectiveMutationsDisabled =
+    mutationsDisabled || bulkMutationPending || isExplorerSearchPending;
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -125,16 +136,22 @@ export default function FolderGrid() {
       onKeyDown={(e) => {
         if (activePane !== 'folderGrid') return;
 
-        if (e.key === 'Escape' && gridSelection.size > 0) {
+        if (e.key === 'Escape' && selectedCount > 0) {
           e.preventDefault();
           clearGridSelection();
           return;
         }
 
-        if (e.key === 'Delete' && gridSelection.size > 0 && !mutationsDisabled) {
-          e.preventDefault();
-          handleBulkDeleteRequest();
-          return;
+        if (e.key === 'Delete') {
+          if (effectiveMutationsDisabled) {
+            e.preventDefault();
+            return;
+          }
+          if (selectedCount > 0) {
+            e.preventDefault();
+            handleBulkDeleteRequest();
+            return;
+          }
         }
 
         handleKeyDown(e);
@@ -150,6 +167,9 @@ export default function FolderGrid() {
           currentPath={currentPath}
           handleBreadcrumbClick={handleBreadcrumbClick}
           previousFolderItems={previousFolders}
+          hasMorePreviousFolders={hasMorePreviousFolders}
+          isLoadingMorePreviousFolders={isLoadingMorePreviousFolders}
+          loadMorePreviousFolders={loadMorePreviousFolders}
           handleNavigate={handleNavigate}
           handleGoHome={handleGoHome}
           setMobilePane={setMobilePane}
@@ -161,7 +181,7 @@ export default function FolderGrid() {
           setViewMode={setViewMode}
           explorerSearchQuery={explorerSearchQuery}
           setExplorerSearch={setExplorerSearch}
-          canCreateFolder={!mutationsDisabled && folderGrid.currentFolderPath !== null}
+          canCreateFolder={!effectiveMutationsDisabled && folderGrid.currentFolderPath !== null}
           onCreateFolder={openCreateFolderDialog}
           isRefreshing={isRefreshing}
         />
@@ -182,7 +202,7 @@ export default function FolderGrid() {
         currentPath={currentPath}
         onOpenEnableParentDialog={openEnableParentDialog}
         diskSourceUnavailableMessage={workspaceSourceUnavailableMessage}
-        mutationsDisabled={mutationsDisabled}
+        mutationsDisabled={effectiveMutationsDisabled}
       />
 
       <FolderGridStateViews
@@ -203,19 +223,22 @@ export default function FolderGrid() {
         visibleFolders={visibleFolders}
         conflictPathSet={conflictPathSet}
         folderConflictScopes={folderConflictScopes}
-        mutationsDisabled={mutationsDisabled}
-        onSelectAll={handleSelectAll}
+        mutationsDisabled={effectiveMutationsDisabled}
+        onSelectAll={selectAllMatching}
       />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-2">
-        <FolderGridFooter visibleCount={visibleFolders.length} />
+        <FolderGridFooter visibleCount={totalMatching} />
       </div>
 
       <FolderGridSyncToast recoveryStatus={recoveryStatus} />
 
       <FolderGridModals
         moveDialog={moveDialog}
-        closeMoveDialog={closeMoveDialog}
+        closeMoveDialog={() => {
+          clearBulkMovePaths();
+          closeMoveDialog();
+        }}
         handleMoveToObject={handleMoveToObject}
         deleteConfirm={deleteConfirm}
         setDeleteConfirm={setDeleteConfirm}
@@ -226,7 +249,10 @@ export default function FolderGrid() {
         bulkTagOpen={bulkTagOpen}
         setBulkTagOpen={setBulkTagOpen}
         handleBulkTagSubmit={handleBulkTagSubmit}
-        gridSelection={gridSelection}
+        selectionCount={selectedCount}
+        bulkMovePaths={bulkMovePaths}
+        handleBulkMoveSubmit={handleBulkMoveSubmit}
+        clearBulkMovePaths={clearBulkMovePaths}
         isIgnoreManagementOpen={isIgnoreManagementOpen}
         setIsIgnoreManagementOpen={setIsIgnoreManagementOpen}
         activeContextDialog={activeContextDialog}
@@ -244,7 +270,7 @@ export default function FolderGrid() {
       <BulkProgressBar />
 
       <BulkActionBar
-        count={gridSelection.size}
+        count={selectedCount}
         onClear={clearGridSelection}
         onToggle={handleBulkToggle}
         onDelete={handleBulkDeleteRequest}
@@ -253,7 +279,7 @@ export default function FolderGrid() {
         onMarkSafe={handleBulkSafe}
         onUpdateInfo={handleBulkTagRequest}
         onMoveToObject={handleBulkMoveToObject}
-        mutationsDisabled={mutationsDisabled}
+        mutationsDisabled={effectiveMutationsDisabled}
       />
 
       {/* Drag Overlay */}

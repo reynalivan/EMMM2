@@ -80,10 +80,10 @@ export default function DuplicateTable({
                     {group.members.map((member, mIdx) => (
                       <div
                         key={member.folderPath}
-                        role={isExactMatch && !disabled ? 'button' : undefined}
-                        tabIndex={isExactMatch && !disabled ? 0 : undefined}
+                        role={!disabled ? 'button' : undefined}
+                        tabIndex={!disabled ? 0 : undefined}
                         aria-label={
-                          isExactMatch && !disabled
+                          !disabled
                             ? t('scanner:table.keep_label', {
                                 id: String.fromCharCode(65 + mIdx),
                                 name: member.displayName,
@@ -91,7 +91,7 @@ export default function DuplicateTable({
                             : undefined
                         }
                         onClick={() => {
-                          if (isExactMatch && !disabled) {
+                          if (!disabled) {
                             onSelectionChange(group.groupId, {
                               type: 'Keep',
                               targetPath: member.folderPath,
@@ -99,11 +99,7 @@ export default function DuplicateTable({
                           }
                         }}
                         onKeyDown={(event) => {
-                          if (
-                            isExactMatch &&
-                            !disabled &&
-                            (event.key === 'Enter' || event.key === ' ')
-                          ) {
+                          if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
                             event.preventDefault();
                             onSelectionChange(group.groupId, {
                               type: 'Keep',
@@ -112,7 +108,7 @@ export default function DuplicateTable({
                           }
                         }}
                         className={`rounded-lg border p-3 transition-[background-color,border-color,opacity] duration-150 ${
-                          isExactMatch && !disabled
+                          !disabled
                             ? 'cursor-pointer hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2'
                             : ''
                         } ${
@@ -239,7 +235,7 @@ export default function DuplicateTable({
                             : ''
                       }`}
                       value={
-                        selectedAction?.type === 'Keep' && isExactMatch
+                        selectedAction?.type === 'Keep'
                           ? selectedAction.targetPath
                           : selectedAction?.type === 'Ignore'
                             ? 'ignore'
@@ -251,7 +247,7 @@ export default function DuplicateTable({
                           // No-op
                         } else if (val === 'ignore') {
                           onSelectionChange(group.groupId, { type: 'Ignore' });
-                        } else if (isExactMatch) {
+                        } else {
                           onSelectionChange(group.groupId, { type: 'Keep', targetPath: val });
                         }
                       }}
@@ -261,24 +257,29 @@ export default function DuplicateTable({
                       <option value="pending" disabled>
                         {t('scanner:table.select_action')}
                       </option>
-                      {isExactMatch && (
-                        <optgroup label={t('scanner:table.keep_one')}>
-                          {group.members.map((m, idx) => (
-                            <option key={m.folderPath} value={m.folderPath}>
-                              {t('scanner:table.keep_label', {
-                                id: String.fromCharCode(65 + idx),
-                                name: m.displayName,
-                              })}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
+                      <optgroup label={t('scanner:table.keep_one')}>
+                        {group.members.map((m, idx) => (
+                          <option key={m.folderPath} value={m.folderPath}>
+                            {t('scanner:table.keep_label', {
+                              id: String.fromCharCode(65 + idx),
+                              name: m.displayName,
+                            })}
+                          </option>
+                        ))}
+                      </optgroup>
                       <optgroup label={t('scanner:table.general')}>
                         <option value="ignore">{t('scanner:table.ignore')}</option>
                       </optgroup>
                     </select>
 
-                    {selectedAction?.type === 'Keep' && isExactMatch && (
+                    {!isExactMatch && (
+                      <span className="text-[10px] text-warning flex items-center gap-1 px-1">
+                        <AlertCircle size={10} />
+                        {t('scanner:table.non_exact_warning')}
+                      </span>
+                    )}
+
+                    {selectedAction?.type === 'Keep' && (
                       <span className="text-[10px] text-error flex items-center gap-1 px-1">
                         <Trash2 size={10} />
                         {t('scanner:table.will_delete', { count: group.members.length - 1 })}

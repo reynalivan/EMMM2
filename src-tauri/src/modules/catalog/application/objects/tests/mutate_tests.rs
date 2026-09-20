@@ -294,6 +294,7 @@ async fn reconcile_test_disk(pool: &sqlx::SqlitePool, mods_path: &std::path::Pat
             force_full: true,
             watcher_events: None,
             path_hints: &[],
+            trusted_mutation_scope: false,
             progress_reporter: None,
             precomputed_discovery: None,
         },

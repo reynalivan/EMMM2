@@ -159,4 +159,70 @@ describe('ExplorerBreadcrumbs', () => {
     fireEvent.click(screen.getByText('Castorice'));
     expect(onNavigateToPreviousFolder).toHaveBeenCalledWith('Castorice');
   });
+
+  it('loads sibling continuation pages while the previous-folder menu remains open', async () => {
+    const loadMorePreviousFolders = vi.fn().mockResolvedValue(undefined);
+    const firstPage = [
+      {
+        name: 'Aglaea',
+        path: 'E:/Mods/SkinSelectImpact/Aglaea',
+        is_favorite: false,
+      },
+    ] as WorkspaceExplorerNode[];
+    const secondPage = [
+      ...firstPage,
+      {
+        name: 'Castorice',
+        path: 'E:/Mods/SkinSelectImpact/Castorice',
+        is_favorite: false,
+      },
+    ] as WorkspaceExplorerNode[];
+    const baseProps = {
+      path: ['SkinSelectImpact', 'Current folder'],
+      onNavigate: vi.fn(),
+      onNavigateToPreviousFolder: vi.fn(),
+      onGoHome: vi.fn(),
+      isRootHidden: true,
+      loadMorePreviousFolders,
+    };
+    const { rerender } = render(
+      <ExplorerBreadcrumbs
+        {...baseProps}
+        previousFolderItems={firstPage}
+        hasMorePreviousFolders
+        isLoadingMorePreviousFolders={false}
+      />,
+    );
+
+    fireEvent.mouseEnter(screen.getByText('SkinSelectImpact'));
+    const list = screen.getByTestId('breadcrumb-previous-folder-list');
+    Object.defineProperties(list, {
+      scrollHeight: { value: 1_000 },
+      clientHeight: { value: 200 },
+      scrollTop: { value: 750, writable: true },
+    });
+    fireEvent.scroll(list);
+    await waitFor(() => expect(loadMorePreviousFolders).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <ExplorerBreadcrumbs
+        {...baseProps}
+        previousFolderItems={firstPage}
+        hasMorePreviousFolders
+        isLoadingMorePreviousFolders
+      />,
+    );
+    rerender(
+      <ExplorerBreadcrumbs
+        {...baseProps}
+        previousFolderItems={secondPage}
+        hasMorePreviousFolders
+        isLoadingMorePreviousFolders={false}
+      />,
+    );
+
+    fireEvent.scroll(screen.getByTestId('breadcrumb-previous-folder-list'));
+    await waitFor(() => expect(loadMorePreviousFolders).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Castorice')).toBeInTheDocument();
+  });
 });

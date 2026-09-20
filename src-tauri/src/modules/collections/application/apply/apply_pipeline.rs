@@ -10,7 +10,6 @@ use crate::modules::collections::domain::collection::{
     ApplyResult, Collection, CollectionMod, CollectionObject,
 };
 use crate::modules::settings::application::config::AppSettings;
-use crate::modules::system::application::app::post_apply::PostApplyContext;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
 use crate::modules::workspace::domain::task::TaskStatus;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
@@ -293,34 +292,6 @@ async fn execute_inner(
     );
 
     ctx.final_state_name = Some(ctx.collection()?.name.clone());
-
-    let post_ctx = PostApplyContext {
-        pool: ctx.pool.clone(),
-        game_id: ctx.game_id.clone(),
-        mods_path: ctx.mods_path.clone(),
-        hotkeys: ctx.settings.hotkeys.clone(),
-        keyviewer_enabled: ctx.settings.keyviewer.enabled,
-        safe_mode: ctx.settings.safety.runtime_safe_mode_for(&ctx.game_id),
-        status_fields: ctx.skipped_missing_paths.is_empty().then(|| {
-            crate::modules::automation::application::keyviewer::generator::StatusFields {
-                preset_name: ctx.final_state_name.clone(),
-                ..Default::default()
-            }
-        }),
-    };
-    if let Err(error) = crate::modules::system::application::app::post_apply::request_overlay_sync_with_context(
-        post_ctx,
-        crate::modules::system::application::app::post_apply::OverlaySyncCause::CollectionApplied,
-    )
-    .await
-    .and_then(
-        crate::modules::system::application::app::post_apply::RuntimeSyncResult::ensure_success,
-    )
-    {
-        log::warn!("apply_pipeline[post_apply]: {error}");
-        ctx.warnings
-            .push(format!("Runtime artifacts were not refreshed: {error}"));
-    }
 
     let apply_result = ApplyResult {
         mods_enabled: ctx.mods_enabled,

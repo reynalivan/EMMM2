@@ -166,13 +166,42 @@ async fn toggle_mods_mixed_rejects_duplicate_source_paths_before_renaming() {
 }
 
 #[test]
+fn prepared_runtime_rename_rejects_a_replaced_source_identity() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    let old_path = mods_path.join("Variant");
+    let displaced_path = mods_path.join("Original Variant");
+    std::fs::create_dir_all(&old_path).expect("mod folder");
+    let plans = plan_runtime_toggles(&RuntimeToggleBatchRequest {
+        mods_path,
+        operations: vec![RuntimeToggleOperation {
+            folder_path: "Variant".to_string(),
+            target_enabled: false,
+        }],
+    })
+    .expect("rename plan");
+
+    std::fs::rename(&old_path, &displaced_path).expect("displace original folder");
+    std::fs::create_dir_all(&old_path).expect("replacement folder");
+
+    let error = plans[0]
+        .apply()
+        .expect_err("replacement identity must be rejected");
+    assert!(error.to_string().contains("Folder changed"), "{error}");
+    assert!(old_path.exists());
+    assert!(!temp.path().join("Mods/DISABLED Variant").exists());
+}
+
+#[test]
 fn incomplete_rollback_is_reported_for_reconciliation() {
     let temp = tempfile::tempdir().expect("tempdir");
     let old_abs = temp.path().join("Variant");
     let new_abs = temp.path().join("DISABLED Variant");
     std::fs::create_dir_all(&old_abs).expect("old path");
     std::fs::create_dir_all(&new_abs).expect("new path");
-    let plan = RuntimeRenamePlan::new(old_abs.clone(), old_abs, new_abs, false);
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_abs)
+        .expect("folder identity");
+    let plan = RuntimeRenamePlan::new(old_abs.clone(), old_abs, new_abs, false, expected_identity);
     let mut warnings = Vec::new();
 
     rollback_successes(&[plan], &mut warnings);

@@ -186,16 +186,12 @@ describe('WelcomeScreen (TC-03)', () => {
     });
   });
 
-  it('shows determinate onboarding indexing progress while a game reconcile is running', async () => {
+  it('shows phase-specific preparation progress without fabricating an overall percentage', async () => {
     let progressHandler: ((event: { payload: unknown }) => void) | undefined;
-    let workPlanHandler: ((event: { payload: unknown }) => void) | undefined;
     let snapshotHandler: ((event: { payload: unknown }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (event, handler) => {
       if (event === 'disk_reconcile:progress') {
         progressHandler = handler as unknown as (event: { payload: unknown }) => void;
-      }
-      if (event === 'onboarding_indexing:work_plan') {
-        workPlanHandler = handler as unknown as (event: { payload: unknown }) => void;
       }
       if (event === 'onboarding_indexing:snapshot_progress') {
         snapshotHandler = handler as unknown as (event: { payload: unknown }) => void;
@@ -211,13 +207,7 @@ describe('WelcomeScreen (TC-03)', () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({
         session_id: 'session-1',
-        work_plans: [
-          {
-            game_id: 'new-game',
-            work_units: 10,
-            roots: [{ root_name: 'Alice', work_units: 10 }],
-          },
-        ],
+        work_plans: [],
       })
       .mockReturnValueOnce(reconcile);
 
@@ -227,10 +217,7 @@ describe('WelcomeScreen (TC-03)', () => {
     await screen.findByTestId('result-screen');
     fireEvent.click(screen.getByText('Result Continue'));
 
-    expect(await screen.findByRole('progressbar', { name: /indexing progress/i })).toHaveAttribute(
-      'aria-valuenow',
-      '0',
-    );
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 
     await waitFor(() => expect(snapshotHandler).toBeDefined());
     act(() => {
@@ -238,13 +225,47 @@ describe('WelcomeScreen (TC-03)', () => {
         payload: {
           session_id: 'session-1',
           game_id: 'new-game',
-          phase: 'Scanning',
+          phase: 'Metadata',
           completed_games: 0,
           total_games: 1,
+          completed_roots: 1,
+          total_roots: 4,
+          files_inspected: 128,
+          folders_classified: 0,
+          current_root: 'Alice',
+          elapsed_ms: 1_000,
         },
       });
     });
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByRole('progressbar', { name: /preparation progress/i })).toHaveAttribute(
+      'aria-valuenow',
+      '1',
+    );
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '4');
+    expect(screen.getByText('Reading file metadata')).toBeInTheDocument();
+    expect(screen.getByText('128 files inspected')).toBeInTheDocument();
+    expect(screen.getByText('Current folder: Alice')).toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+
+    act(() => {
+      snapshotHandler?.({
+        payload: {
+          session_id: 'session-1',
+          game_id: 'new-game',
+          phase: 'Classifying',
+          completed_games: 0,
+          total_games: 1,
+          completed_roots: 2,
+          total_roots: 4,
+          files_inspected: 128,
+          folders_classified: 6,
+          current_root: 'Bob',
+          elapsed_ms: 1_500,
+        },
+      });
+    });
+    expect(screen.getByText('Classifying mod folders')).toBeInTheDocument();
+    expect(screen.getByText('6 folders classified')).toBeInTheDocument();
 
     await waitFor(() => expect(progressHandler).toBeDefined());
     act(() => {
@@ -262,30 +283,39 @@ describe('WelcomeScreen (TC-03)', () => {
         },
       });
     });
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '85');
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '100');
-    expect(screen.getByText('Overall progress')).toBeInTheDocument();
-    expect(screen.getByText('About 3s remaining')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: /current stage/i })).toHaveAttribute(
+      'aria-valuenow',
+      '1',
+    );
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '1');
+    expect(screen.getByText('Current stage')).toBeInTheDocument();
+    expect(screen.getByText('Current stage').closest('[aria-live]')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
     expect(screen.getByText('Game 1 of 1 · New Game')).toBeInTheDocument();
     expect(screen.getByText('Scanning mod folders [Alice] · Step 2 of 4')).toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 
-    await waitFor(() => expect(workPlanHandler).toBeDefined());
     act(() => {
-      workPlanHandler?.({
+      snapshotHandler?.({
         payload: {
           session_id: 'session-1',
-          work_plan: {
-            game_id: 'new-game',
-            work_units: 100,
-            roots: [
-              { root_name: 'Alice', work_units: 1 },
-              { root_name: 'Bob', work_units: 99 },
-            ],
-          },
+          game_id: 'new-game',
+          phase: 'Rechecking',
+          completed_games: 0,
+          total_games: 0,
+          completed_roots: 0,
+          total_roots: 0,
+          files_inspected: 0,
+          folders_classified: 0,
+          current_root: null,
+          elapsed_ms: 0,
         },
       });
     });
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '6');
+    expect(screen.getByText('Library changed. Checking it again...')).toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 
     unblock();
     await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());

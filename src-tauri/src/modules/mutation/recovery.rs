@@ -78,7 +78,12 @@ impl RecoveryRunner {
                         if let Some(stage_path) = step.stage_path.as_deref() {
                             validate_recovery_path(stage_path, &self.roots.staging_root)?;
                         }
-                        classify_rename(old_path, new_path, step.stage_path.as_deref())
+                        classify_rename(
+                            old_path,
+                            new_path,
+                            step.stage_path.as_deref(),
+                            step.expected_identity.as_deref(),
+                        )
                     }
                     MutationStepKind::HardlinkReplace => {
                         let backup = step.stage_path.as_deref().ok_or_else(|| {
@@ -207,6 +212,7 @@ fn classify_rename(
     old_path: &Path,
     new_path: &Path,
     stage_path: Option<&Path>,
+    expected_identity: Option<&str>,
 ) -> Result<DiskStepState, AppError> {
     let old_exists = old_path.try_exists()?;
     let new_exists = new_path.try_exists()?;
@@ -214,9 +220,15 @@ fn classify_rename(
         Some(path) => path.try_exists()?,
         None => false,
     };
+    let old_matches = old_exists
+        && expected_identity
+            .is_none_or(|expected| filesystem_identity(old_path).as_deref() == Some(expected));
+    let new_matches = new_exists
+        && expected_identity
+            .is_none_or(|expected| filesystem_identity(new_path).as_deref() == Some(expected));
     Ok(match (old_exists, new_exists, stage_exists) {
-        (true, false, false) => DiskStepState::AtSource,
-        (false, true, false) => DiskStepState::AtTarget,
+        (true, false, false) if old_matches => DiskStepState::AtSource,
+        (false, true, false) if new_matches => DiskStepState::AtTarget,
         (false, false, true) => DiskStepState::AtStage,
         _ => DiskStepState::Ambiguous,
     })

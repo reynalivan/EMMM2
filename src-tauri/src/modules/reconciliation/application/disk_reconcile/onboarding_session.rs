@@ -14,8 +14,9 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use uuid::Uuid;
 
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
-    collect_onboarding_disk_discovery, collect_scoped_onboarding_disk_discovery,
-    DiskProjectionError, DiskScopedDiscovery,
+    collect_onboarding_disk_discovery, collect_onboarding_disk_discovery_with_progress,
+    collect_scoped_onboarding_disk_discovery, DiskProjectionError, DiskScopedDiscovery,
+    OnboardingDiscoveryPhase, OnboardingDiscoveryProgress,
 };
 use crate::modules::reconciliation::application::disk_reconcile::types::{
     OnboardingIndexingSession, OnboardingIndexingSnapshotPhase, OnboardingIndexingSnapshotProgress,
@@ -25,6 +26,7 @@ use crate::modules::settings::application::config::GameConfig;
 use crate::shared::errors::AppError;
 
 const SESSION_TTL: Duration = Duration::from_secs(15 * 60);
+const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(250);
 
 pub struct OnboardingIndexingSessionStore {
     sessions: Arc<Mutex<HashMap<String, OnboardingSession>>>,
@@ -50,6 +52,101 @@ struct PreparedGame {
     // This raw watcher deliberately bypasses workspace debounce/filtering so
     // every asset change invalidates the snapshot.
     watcher: RawOnboardingWatcher,
+}
+
+struct OnboardingSnapshotProgressReporter {
+    session_id: String,
+    game_id: String,
+    completed_games: u64,
+    total_games: u64,
+    started_at: Instant,
+    last_emitted_at: Mutex<Option<Duration>>,
+    on_progress: Arc<dyn Fn(OnboardingIndexingSnapshotProgress) + Send + Sync>,
+}
+
+impl OnboardingSnapshotProgressReporter {
+    fn new(
+        session_id: String,
+        game_id: String,
+        completed_games: u64,
+        total_games: u64,
+        on_progress: Arc<dyn Fn(OnboardingIndexingSnapshotProgress) + Send + Sync>,
+    ) -> Self {
+        Self {
+            session_id,
+            game_id,
+            completed_games,
+            total_games,
+            started_at: Instant::now(),
+            last_emitted_at: Mutex::new(None),
+            on_progress,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit(
+        &self,
+        phase: OnboardingIndexingSnapshotPhase,
+        completed_roots: usize,
+        total_roots: usize,
+        files_inspected: u64,
+        folders_classified: usize,
+        current_root: Option<String>,
+        force: bool,
+    ) {
+        let elapsed = self.started_at.elapsed();
+        let completed_current_game = matches!(phase, OnboardingIndexingSnapshotPhase::Ready);
+        let Ok(mut last_emitted_at) = self.last_emitted_at.lock() else {
+            return;
+        };
+        if !force
+            && last_emitted_at
+                .is_some_and(|last| elapsed.saturating_sub(last) < PROGRESS_EMIT_INTERVAL)
+        {
+            return;
+        }
+        *last_emitted_at = Some(elapsed);
+
+        (self.on_progress)(OnboardingIndexingSnapshotProgress {
+            session_id: self.session_id.clone(),
+            game_id: self.game_id.clone(),
+            phase,
+            completed_games: if completed_current_game {
+                self.completed_games.saturating_add(1)
+            } else {
+                self.completed_games
+            },
+            total_games: self.total_games,
+            completed_roots: u64::try_from(completed_roots).unwrap_or(u64::MAX),
+            total_roots: u64::try_from(total_roots).unwrap_or(u64::MAX),
+            files_inspected,
+            folders_classified: u64::try_from(folders_classified).unwrap_or(u64::MAX),
+            current_root,
+            elapsed_ms: elapsed.as_millis().min(u64::MAX as u128) as u64,
+        });
+    }
+
+    fn report_discovery(&self, progress: OnboardingDiscoveryProgress) {
+        let phase = match progress.phase {
+            OnboardingDiscoveryPhase::Metadata => OnboardingIndexingSnapshotPhase::Metadata,
+            OnboardingDiscoveryPhase::Classifying => OnboardingIndexingSnapshotPhase::Classifying,
+        };
+        let is_phase_start = matches!(progress.phase, OnboardingDiscoveryPhase::Metadata)
+            && progress.files_inspected == 0
+            || matches!(progress.phase, OnboardingDiscoveryPhase::Classifying)
+                && progress.completed_roots == 0
+                && progress.folders_classified == 0;
+        let force = is_phase_start || progress.is_terminal;
+        self.emit(
+            phase,
+            progress.completed_roots,
+            progress.total_roots,
+            progress.files_inspected,
+            progress.folders_classified,
+            progress.current_root,
+            force,
+        );
+    }
 }
 
 const RAW_WATCH_EVENT_CAPACITY: usize = 8_192;
@@ -129,7 +226,7 @@ impl RawOnboardingWatcher {
 }
 
 pub enum ConsumedOnboardingSnapshot {
-    Snapshot(OnboardingSnapshotLease),
+    Snapshot(Box<OnboardingSnapshotLease>),
     FullFallback,
 }
 
@@ -199,24 +296,27 @@ impl OnboardingIndexingSessionStore {
         let session_id = Uuid::new_v4().to_string();
         let game_ids = games.iter().map(|game| game.id.clone()).collect::<Vec<_>>();
         let total_games = game_ids.len() as u64;
-        let on_progress = Arc::new(on_progress);
+        let on_progress: Arc<dyn Fn(OnboardingIndexingSnapshotProgress) + Send + Sync> =
+            Arc::new(on_progress);
         let mut prepared_games = HashMap::new();
         for (index, game) in games.into_iter().enumerate() {
-            on_progress(OnboardingIndexingSnapshotProgress {
-                session_id: session_id.clone(),
-                game_id: game.id.clone(),
-                phase: OnboardingIndexingSnapshotPhase::Scanning,
-                completed_games: index as u64,
+            let progress_reporter = Arc::new(OnboardingSnapshotProgressReporter::new(
+                session_id.clone(),
+                game.id.clone(),
+                index as u64,
                 total_games,
-            });
-            let prepared = prepare_game(game).await?;
-            on_progress(OnboardingIndexingSnapshotProgress {
-                session_id: session_id.clone(),
-                game_id: prepared.game.id.clone(),
-                phase: OnboardingIndexingSnapshotPhase::Ready,
-                completed_games: index as u64 + 1,
-                total_games,
-            });
+                Arc::clone(&on_progress),
+            ));
+            let prepared = prepare_game(game, Arc::clone(&progress_reporter)).await?;
+            progress_reporter.emit(
+                OnboardingIndexingSnapshotPhase::Ready,
+                prepared.work_plan.roots.len(),
+                prepared.work_plan.roots.len(),
+                prepared.work_plan.file_count,
+                prepared.discovery.scan_counts.classified_directories,
+                None,
+                true,
+            );
             prepared_games.insert(prepared.game.id.clone(), prepared);
         }
         let work_plans = game_ids
@@ -286,21 +386,21 @@ impl OnboardingIndexingSessionStore {
             return Ok(ConsumedOnboardingSnapshot::FullFallback);
         }
         if changed_paths.is_empty() {
-            return Ok(ConsumedOnboardingSnapshot::Snapshot(
+            return Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
                 OnboardingSnapshotLease {
                     prepared,
                     work_plan_update: None,
                 },
-            ));
+            )));
         }
 
         let update = refresh_changed_roots(session_id, &mut prepared, &changed_paths).await?;
-        Ok(ConsumedOnboardingSnapshot::Snapshot(
+        Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
             OnboardingSnapshotLease {
                 prepared,
                 work_plan_update: Some(update),
             },
-        ))
+        )))
     }
 
     pub fn cancel(&self, session_id: &str) -> Result<(), AppError> {
@@ -322,13 +422,20 @@ impl OnboardingIndexingSessionStore {
     }
 }
 
-async fn prepare_game(game: GameConfig) -> Result<PreparedGame, AppError> {
+async fn prepare_game(
+    game: GameConfig,
+    progress_reporter: Arc<OnboardingSnapshotProgressReporter>,
+) -> Result<PreparedGame, AppError> {
     let watcher = RawOnboardingWatcher::start(&game.mod_path)?;
     let snapshot_game = game.clone();
     let (discovery, work_plan) = tokio::task::spawn_blocking(move || {
-        let onboarding =
-            collect_onboarding_disk_discovery(snapshot_game.id.clone(), &snapshot_game.mod_path)
-                .map_err(snapshot_error)?;
+        let on_progress = |progress| progress_reporter.report_discovery(progress);
+        let onboarding = collect_onboarding_disk_discovery_with_progress(
+            snapshot_game.id.clone(),
+            &snapshot_game.mod_path,
+            Some(&on_progress),
+        )
+        .map_err(snapshot_error)?;
         Ok::<_, AppError>((onboarding.discovery, onboarding.work_plan))
     })
     .await??;
@@ -486,6 +593,74 @@ fn snapshot_error(error: DiskProjectionError) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preparation_progress_reports_phase_transitions_and_throttles_heartbeats() {
+        let reports = Arc::new(Mutex::new(Vec::new()));
+        let captured_reports = Arc::clone(&reports);
+        let reporter = OnboardingSnapshotProgressReporter::new(
+            "session".to_string(),
+            "game".to_string(),
+            0,
+            1,
+            Arc::new(move |progress| {
+                crate::shared::sync::lock(&captured_reports).push(progress);
+            }),
+        );
+
+        reporter.report_discovery(OnboardingDiscoveryProgress {
+            phase: OnboardingDiscoveryPhase::Metadata,
+            completed_roots: 0,
+            total_roots: 2,
+            files_inspected: 0,
+            folders_classified: 0,
+            current_root: None,
+            is_terminal: false,
+        });
+        reporter.report_discovery(OnboardingDiscoveryProgress {
+            phase: OnboardingDiscoveryPhase::Metadata,
+            completed_roots: 0,
+            total_roots: 2,
+            files_inspected: 128,
+            folders_classified: 0,
+            current_root: Some("Alice".to_string()),
+            is_terminal: false,
+        });
+        reporter.report_discovery(OnboardingDiscoveryProgress {
+            phase: OnboardingDiscoveryPhase::Classifying,
+            completed_roots: 0,
+            total_roots: 2,
+            files_inspected: 128,
+            folders_classified: 0,
+            current_root: None,
+            is_terminal: false,
+        });
+        reporter.emit(
+            OnboardingIndexingSnapshotPhase::Ready,
+            2,
+            2,
+            128,
+            4,
+            None,
+            true,
+        );
+
+        let reports = crate::shared::sync::lock(&reports);
+        assert_eq!(reports.len(), 3);
+        assert_eq!(
+            reports
+                .iter()
+                .map(|report| report.phase.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                OnboardingIndexingSnapshotPhase::Metadata,
+                OnboardingIndexingSnapshotPhase::Classifying,
+                OnboardingIndexingSnapshotPhase::Ready,
+            ]
+        );
+        assert_eq!(reports[1].files_inspected, 128);
+        assert_eq!(reports[2].completed_games, 1);
+    }
 
     #[test]
     fn unmapped_raw_watcher_paths_force_the_safe_fallback() {

@@ -142,6 +142,42 @@ fn build_projected_state_counts_visible_roots_and_flags_missing_sources() {
 }
 
 #[test]
+fn active_root_keys_match_the_full_projection_without_building_preview_state() {
+    let objects = vec![make_object("Alice", true)];
+    let mods = vec![
+        make_member(
+            "Alice",
+            "Alice/Blue Dress",
+            Some("Alice/Blue Dress".to_string()),
+            "FlatModRoot",
+            true,
+        ),
+        make_member(
+            "Alice",
+            "Alice/Internal",
+            Some("Alice/Internal".to_string()),
+            "InternalAssets",
+            true,
+        ),
+        make_member(
+            "Alice",
+            "Alice/Disabled",
+            Some("Alice/Disabled".to_string()),
+            "FlatModRoot",
+            false,
+        ),
+    ];
+
+    let full = build_projected_state(&mods, &objects, None)
+        .active_roots
+        .into_iter()
+        .map(|root| root.root_key)
+        .collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(active_root_keys(&mods, &objects, None), full);
+}
+
+#[test]
 fn signature_ignores_missing_roots_but_tracks_object_toggle() {
     let base = ProjectedCollectionState {
         object_states: vec![ProjectedObjectState {

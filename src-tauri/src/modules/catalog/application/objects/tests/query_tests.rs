@@ -34,6 +34,7 @@ async fn run_full_disk_reconcile(
         force_full: true,
         watcher_events: None,
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })
@@ -286,6 +287,7 @@ async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
         force_full: true,
         watcher_events: None,
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })

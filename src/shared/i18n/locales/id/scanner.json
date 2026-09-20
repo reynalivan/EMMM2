@@ -117,6 +117,7 @@
     "delete_confirm": "Apakah Anda yakin ingin menghapus {{count}} mod?",
     "rename_tooltip": "Klik dua kali untuk mengubah nama",
     "open_folder": "Buka Folder",
+    "non_exact_warning": "Hanya kecocokan kemiripan — tinjau sebelum memindahkan item lain ke Trash.",
     "columns": {
       "preview": "Pratinjau",
       "name": "Nama Mod",
@@ -134,6 +135,8 @@
     "whitelist": "Daftar Putih",
     "keep_label": "SIMPAN:",
     "delete_others": "Hapus {{count}} item identik lainnya",
+    "delete_others_non_exact": "Pindahkan {{count}} kandidat item lain ke Trash",
+    "non_exact_warning": "Peringatan: grup ini bukan kecocokan exact. Konfirmasi hanya jika Anda memang ingin memindahkan item lain ke Trash.",
     "ignore_label": "ABAIKAN:",
     "ignore_desc": "Masukkan semua {{count}} anggota ke daftar putih",
     "confirm_button": "Konfirmasi & Selesaikan",

@@ -185,6 +185,51 @@ pub enum CommittedMutationSyncWarningKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeSyncPhase {
+    Queued,
+    Running,
+    Succeeded,
+    NeedsManualReload,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct RuntimeSyncStatus {
+    pub game_id: String,
+    pub generation: u64,
+    pub phase: RuntimeSyncPhase,
+    pub cause: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GameActivationPhase {
+    Syncing,
+    Ready,
+    SourceUnavailable,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct GameActivationResult {
+    pub game_id: Option<String>,
+    pub generation: u64,
+    pub phase: GameActivationPhase,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct GameActivationStatus {
+    pub game_id: Option<String>,
+    pub generation: u64,
+    pub phase: GameActivationPhase,
+    pub reconcile_revision: Option<u64>,
+    pub runtime_sync_generation: Option<u64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub struct IndexingRootWork {
     pub root_name: String,
     pub file_count: u64,
@@ -217,8 +262,10 @@ pub struct OnboardingIndexingWorkPlanUpdate {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub enum OnboardingIndexingSnapshotPhase {
-    Scanning,
+    Metadata,
+    Classifying,
     Ready,
+    Rechecking,
 }
 
 /// Progress for the pre-index snapshot phase. This is intentionally separate
@@ -230,6 +277,12 @@ pub struct OnboardingIndexingSnapshotProgress {
     pub phase: OnboardingIndexingSnapshotPhase,
     pub completed_games: u64,
     pub total_games: u64,
+    pub completed_roots: u64,
+    pub total_roots: u64,
+    pub files_inspected: u64,
+    pub folders_classified: u64,
+    pub current_root: Option<String>,
+    pub elapsed_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]

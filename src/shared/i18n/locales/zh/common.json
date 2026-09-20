@@ -41,6 +41,7 @@
     "dismiss": "忽略"
   },
   "errors": {
+    "explorer_snapshot_expired": "文件夹列表已更改。请重新加载并再次选择模组。",
     "no_active_game": "未选择活动游戏",
     "scan_failed": "扫描失败",
     "unknown": "发生了未知错误",
@@ -125,6 +126,9 @@
   },
   "reconcile": {
     "runtime_effects_pending": "磁盘更改已应用，但运行时刷新仍待处理。",
+    "runtime_syncing": "正在更新游戏运行时…",
+    "runtime_sync_failed": "运行时更新失败",
+    "manual_reload_short": "需要手动重新加载",
     "manual_reload_required": "需要手动重新加载：请聚焦游戏，然后按 {{binding}}。",
     "cleanup_pending": "项目已移除，但隔离文件仍在等待移入回收站。"
   },

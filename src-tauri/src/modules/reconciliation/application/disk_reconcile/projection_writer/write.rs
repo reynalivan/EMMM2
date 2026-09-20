@@ -90,10 +90,15 @@ async fn record_and_delete_displaced_object(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn prepare_identity_transitions(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
     projection: &DiskProjection,
+    mods_path: &Path,
+    scope_root_keys: &[String],
+    scoped: bool,
+    load_metrics: &mut ProjectionLoadMetrics,
     initial: &DbIndex,
     state: &mut ProjectionWriteState<'_>,
 ) -> Result<IdentityTransitionState, AppError> {
@@ -167,7 +172,23 @@ async fn prepare_identity_transitions(
         .await?;
     }
 
-    let after_objects = DbIndex::load(&mut *conn, game_id).await?;
+    let after_object_changes = if transitions.original_objects.is_empty() {
+        None
+    } else {
+        Some(
+            load_index(
+                &mut *conn,
+                game_id,
+                projection,
+                mods_path,
+                scope_root_keys,
+                scoped,
+                load_metrics,
+            )
+            .await?,
+        )
+    };
+    let after_objects = after_object_changes.as_ref().unwrap_or(initial);
     let mod_identities = disk_mod_identities(projection);
     let mut mod_sources = Vec::new();
     for disk_mod in &projection.mods {
@@ -289,6 +310,7 @@ pub(crate) struct ProjectionWriteRequest<'a> {
     pub safe_mode_keywords: &'a [String],
     pub projection: &'a DiskProjection,
     pub changed_roots: &'a [String],
+    pub scoped: bool,
     pub force_full: bool,
     pub path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
     pub collection_reference_impact: &'a mut CollectionReferenceImpact,
@@ -297,12 +319,40 @@ pub(crate) struct ProjectionWriteRequest<'a> {
     pub protected_mod_keys: &'a HashSet<String>,
 }
 
+async fn load_index(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    projection: &DiskProjection,
+    mods_path: &Path,
+    scope_root_keys: &[String],
+    scoped: bool,
+    metrics: &mut ProjectionLoadMetrics,
+) -> Result<DbIndex, AppError> {
+    let index = if scoped {
+        DbIndex::load_scoped(conn, game_id, mods_path, scope_root_keys, projection).await
+    } else {
+        DbIndex::load(conn, game_id).await
+    }?;
+    let (objects, mods) = index.row_counts();
+    metrics.object_rows = metrics.object_rows.saturating_add(objects);
+    metrics.mod_rows = metrics.mod_rows.saturating_add(mods);
+    Ok(index)
+}
+
+#[derive(Default)]
+struct ProjectionLoadMetrics {
+    object_rows: usize,
+    mod_rows: usize,
+}
+
 /// What the write passes touched, so the caller can refresh the runtime
 /// projection for exactly those objects instead of rebuilding the whole game.
 pub(crate) struct ProjectionWriteOutcome {
     pub(crate) objects_changed: bool,
     pub(crate) folders_changed: bool,
     pub(crate) touched_object_ids: HashSet<String>,
+    pub(crate) db_object_rows_loaded: usize,
+    pub(crate) db_mod_rows_loaded: usize,
 }
 
 pub(crate) async fn reconcile_projection_in_tx(
@@ -314,15 +364,28 @@ pub(crate) async fn reconcile_projection_in_tx(
     let safe_mode_keywords = request.safe_mode_keywords;
     let projection = request.projection;
     let changed_roots = request.changed_roots;
+    let scoped = request.scoped;
     let force_full = request.force_full;
     let protected_object_keys = request.protected_object_keys;
     let protected_mod_keys = request.protected_mod_keys;
 
-    let initial_index = DbIndex::load(&mut *conn, game_id).await?;
     let scope_root_keys = changed_roots
         .iter()
         .map(|root| root_key(root))
         .collect::<HashSet<_>>();
+    let mut ordered_scope_root_keys = scope_root_keys.iter().cloned().collect::<Vec<_>>();
+    ordered_scope_root_keys.sort_unstable();
+    let mut load_metrics = ProjectionLoadMetrics::default();
+    let initial_index = load_index(
+        &mut *conn,
+        game_id,
+        projection,
+        mods_path,
+        &ordered_scope_root_keys,
+        scoped,
+        &mut load_metrics,
+    )
+    .await?;
     let mods_root = mods_path.to_string_lossy().to_string();
 
     let mut state = ProjectionWriteState {
@@ -337,16 +400,43 @@ pub(crate) async fn reconcile_projection_in_tx(
         folders_changed: false,
     };
 
-    let identity_transitions =
-        prepare_identity_transitions(&mut *conn, game_id, projection, &initial_index, &mut state)
-            .await?;
-    let index = DbIndex::load(&mut *conn, game_id).await?;
+    let identity_transitions = prepare_identity_transitions(
+        &mut *conn,
+        game_id,
+        projection,
+        mods_path,
+        &ordered_scope_root_keys,
+        scoped,
+        &mut load_metrics,
+        &initial_index,
+        &mut state,
+    )
+    .await?;
+    let refreshed_index = if identity_transitions.original_objects.is_empty()
+        && identity_transitions.original_mods.is_empty()
+    {
+        None
+    } else {
+        Some(
+            load_index(
+                &mut *conn,
+                game_id,
+                projection,
+                mods_path,
+                &ordered_scope_root_keys,
+                scoped,
+                &mut load_metrics,
+            )
+            .await?,
+        )
+    };
+    let index = refreshed_index.as_ref().unwrap_or(&initial_index);
 
     let resolved_objects = apply_disk_objects(
         &mut *conn,
         game_id,
         projection,
-        &index,
+        index,
         &identity_transitions,
         &mut state,
     )
@@ -358,7 +448,7 @@ pub(crate) async fn reconcile_projection_in_tx(
             mods_root: &mods_root,
             safe_mode_keywords,
             projection,
-            index: &index,
+            index,
             resolved_objects: &resolved_objects,
             identity_transitions: &identity_transitions,
         },
@@ -376,12 +466,12 @@ pub(crate) async fn reconcile_projection_in_tx(
         &mut *conn,
         game_id,
         mods_path,
-        &index,
+        index,
         &prune_scope,
         &mut state,
     )
     .await?;
-    prune_missing_objects(&mut *conn, game_id, &index, &prune_scope, &mut state).await?;
+    prune_missing_objects(&mut *conn, game_id, index, &prune_scope, &mut state).await?;
     crate::modules::collections::application::collection::refresh_collection_signatures_tx(
         &mut *conn,
         &identity_transitions.collection_ids_to_refresh,
@@ -392,5 +482,7 @@ pub(crate) async fn reconcile_projection_in_tx(
         objects_changed: state.objects_changed,
         folders_changed: state.folders_changed,
         touched_object_ids: state.touched_object_ids,
+        db_object_rows_loaded: load_metrics.object_rows,
+        db_mod_rows_loaded: load_metrics.mod_rows,
     })
 }

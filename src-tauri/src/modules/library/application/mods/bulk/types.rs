@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 pub struct BulkProgressPayload {
+    pub operation_id: String,
+    pub cancellable: bool,
     pub label: String,
     #[specta(type = f64)]
     pub current: usize,
@@ -32,6 +34,7 @@ pub struct BulkResult {
     pub collection_impact: CollectionReferenceImpact,
     pub path_rewrites: Vec<WorkspacePathRewrite>,
     pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub runtime_sync_generation: Option<u64>,
 }
 
 impl BulkResult {
@@ -46,6 +49,7 @@ impl BulkResult {
             collection_impact: CollectionReferenceImpact::default(),
             path_rewrites: Vec::new(),
             sync_warning: None,
+            runtime_sync_generation: None,
         }
     }
 
@@ -65,6 +69,7 @@ impl BulkResult {
             collection_impact,
             path_rewrites,
             sync_warning: None,
+            runtime_sync_generation: None,
         }
     }
 
@@ -77,6 +82,11 @@ impl BulkResult {
         self.cancelled = cancelled;
         self.processed_count = processed_count;
         self.unprocessed_count = total_count.saturating_sub(processed_count);
+        self
+    }
+
+    pub fn with_runtime_sync_generation(mut self, generation: u64) -> Self {
+        self.runtime_sync_generation = Some(generation);
         self
     }
 }

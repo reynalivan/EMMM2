@@ -9,10 +9,15 @@ export * from './actions/useWorkspaceSwitchActions';
 export * from './actions/workspaceActionAvailability';
 export * from './actions/workspaceActionPolicy';
 export * from './actions/workspaceSwitchPolicy';
+export {
+  applyWorkspaceSwitchEffects,
+  executeWorkspaceObjectBulkSwitch,
+} from './actions/workspaceSwitchOps';
 export * from './components/WorkspaceSwitchControl';
 export * from './components/WorkspaceSwitchLabel';
 export * from './components/WorkspaceParentEnableDialogHost';
 export * from './hooks/useWorkspaceViewModel';
+export * from './hooks/useWorkspaceExplorerPages';
 export * from './optimistic/applyOptimisticEffects';
 export * from './optimistic/descriptor';
 export * from './optimistic/descriptorBuilders';

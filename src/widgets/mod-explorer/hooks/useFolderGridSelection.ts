@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ModFolder } from '@/entities/game-object';
+import type { WorkspaceExplorerSelectionModel } from '@/entities/workspace';
+import {
+  isWorkspaceExplorerPathSelected,
+  workspaceExplorerSelectionCount,
+} from '@/entities/workspace';
 import { workspaceKeys } from '@/features/workspace-runtime';
 import { publishQueryInvalidations } from '@/shared/lib/queryRefresh';
 import { useFolderNavigation } from './useFolderNavigation';
@@ -11,9 +16,12 @@ const getFolderPath = (folder: ModFolder) => folder.path;
 
 interface UseFolderGridSelectionOptions {
   sortedFolders: ModFolder[];
-  gridSelection: Set<string>;
   selectedModPath?: string | null;
-  setGridSelection: (selection: Set<string>) => void;
+  selection: WorkspaceExplorerSelectionModel;
+  addSelectionPaths: (paths: Iterable<string>) => void;
+  toggleSelectionPath: (path: string, multi: boolean) => void;
+  clearSelection: () => void;
+  selectAllMatching: () => void;
   currentPath: string[];
   isGridView: boolean;
   columnCount: number;
@@ -28,9 +36,12 @@ interface UseFolderGridSelectionOptions {
 
 export function useFolderGridSelection({
   sortedFolders,
-  gridSelection,
   selectedModPath = null,
-  setGridSelection,
+  selection,
+  addSelectionPaths,
+  toggleSelectionPath,
+  clearSelection,
+  selectAllMatching,
   currentPath,
   isGridView,
   columnCount,
@@ -54,13 +65,13 @@ export function useFolderGridSelection({
       return;
     }
 
-    const nextSelectedPath = Array.from(gridSelection).find((path) =>
-      visiblePathKeys.has(normalizeWorkspacePath(path)),
-    );
+    const nextSelectedPath = sortedFolders.find((folder) =>
+      isWorkspaceExplorerPathSelected(selection, folder.path),
+    )?.path;
     if (nextSelectedPath) {
       setAnchorId(nextSelectedPath);
     }
-  }, [anchorId, gridSelection, setAnchorId, visiblePathKeys]);
+  }, [anchorId, selection, setAnchorId, sortedFolders, visiblePathKeys]);
 
   const handleActivateItem = useCallback(
     (path: string) => {
@@ -70,11 +81,11 @@ export function useFolderGridSelection({
       ) {
         void publishQueryInvalidations(queryClient, [workspaceKeys.previews], 'active');
       }
-      setGridSelection(new Set());
+      clearSelection();
       selectMod(path, isMobile ? 'details' : undefined);
       setAnchorId(path);
     },
-    [isMobile, queryClient, selectMod, selectedModPath, setAnchorId, setGridSelection],
+    [clearSelection, isMobile, queryClient, selectMod, selectedModPath, setAnchorId],
   );
 
   const handleToggleSelection = useCallback(
@@ -82,31 +93,50 @@ export function useFolderGridSelection({
       if (isShift) {
         const range = getRange(path);
         if (range) {
-          const nextSelection = new Set(gridSelection);
-          for (const rangePath of range) {
-            nextSelection.add(rangePath);
-          }
-
-          setGridSelection(nextSelection);
+          addSelectionPaths(range);
           selectMod(path, isMobile ? 'details' : undefined);
           return;
         }
       }
 
-      const nextSelection = new Set(multi ? gridSelection : []);
-      if (nextSelection.has(path)) {
-        nextSelection.delete(path);
-      } else {
-        nextSelection.add(path);
+      let nextSelectedModPath: string | null = path;
+      let nextSelectionSize = 1;
+      if (selection.mode === 'explicit') {
+        const nextSelection = new Set(multi ? selection.paths : []);
+        if (nextSelection.has(path)) {
+          nextSelection.delete(path);
+        } else {
+          nextSelection.add(path);
+        }
+        nextSelectionSize = nextSelection.size;
+        const nextPaths = Array.from(nextSelection);
+        nextSelectedModPath = nextPaths[nextPaths.length - 1] ?? null;
+      } else if (multi) {
+        const wasSelected = isWorkspaceExplorerPathSelected(selection, path);
+        nextSelectionSize = workspaceExplorerSelectionCount(selection) + (wasSelected ? -1 : 1);
+        if (wasSelected) {
+          nextSelectedModPath =
+            sortedFolders.find(
+              (folder) =>
+                folder.path !== path && isWorkspaceExplorerPathSelected(selection, folder.path),
+            )?.path ?? null;
+        }
       }
 
-      setGridSelection(nextSelection);
-      const nextSelectedModPath =
-        nextSelection.size > 0 ? Array.from(nextSelection)[nextSelection.size - 1] : null;
-      selectMod(nextSelectedModPath, isMobile && nextSelection.size === 1 ? 'details' : undefined);
+      toggleSelectionPath(path, multi);
+      selectMod(nextSelectedModPath, isMobile && nextSelectionSize === 1 ? 'details' : undefined);
       setAnchorId(path);
     },
-    [getRange, gridSelection, isMobile, selectMod, setAnchorId, setGridSelection],
+    [
+      addSelectionPaths,
+      getRange,
+      isMobile,
+      selectMod,
+      selection,
+      setAnchorId,
+      sortedFolders,
+      toggleSelectionPath,
+    ],
   );
 
   const { focusedId, handleKeyDown } = useFolderNavigation({
@@ -116,7 +146,7 @@ export function useFolderGridSelection({
     onNavigate: (item: ModFolder) => handleNavigate(item.folder_name),
     onSelectionChange: (item: ModFolder, multi: boolean, isShift?: boolean) =>
       handleToggleSelection(item.path, multi, isShift),
-    onSelectAll: () => setGridSelection(new Set(sortedFolders.map((folder) => folder.path))),
+    onSelectAll: selectAllMatching,
     onDelete: (items: ModFolder[]) => {
       if (items.length > 0) {
         handleDeleteRequest(items[0]);

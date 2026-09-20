@@ -170,6 +170,45 @@ pub fn build_projected_state(
     }
 }
 
+/// Canonical active roots for apply diffing without allocating and sorting a
+/// complete preview projection. The root derivation intentionally matches
+/// `build_projected_state`.
+pub fn active_root_keys(
+    mods: &[CollectionMod],
+    objects: &[CollectionObject],
+    mods_path: Option<&str>,
+) -> std::collections::HashSet<String> {
+    let object_lookup = objects
+        .iter()
+        .map(|object| (object.object_id.as_str(), object))
+        .collect::<HashMap<_, _>>();
+
+    mods.iter()
+        .filter(|member| member.is_enabled)
+        .filter_map(|member| {
+            let object = object_lookup.get(member.object_id.as_str()).copied();
+            let metadata = resolve_preview_terminal_metadata(object, member, mods_path);
+            let root_type = metadata.node_type.as_deref()?;
+            if !is_visible_root_type(root_type) {
+                return None;
+            }
+            let source_path = metadata
+                .preview_path
+                .as_deref()
+                .map(|path| relative_source_path(path, mods_path))
+                .unwrap_or_else(|| member.mod_path.clone());
+            Some(
+                canonical_collection_path_key(&source_path, mods_path).unwrap_or_else(|| {
+                    member
+                        .mod_path_key
+                        .clone()
+                        .unwrap_or_else(|| canonical_name_key(&source_path))
+                }),
+            )
+        })
+        .collect()
+}
+
 fn merge_root_safety(root: &mut ProjectedActiveRoot, member: &CollectionMod) {
     let member_is_classified = member
         .safety_source

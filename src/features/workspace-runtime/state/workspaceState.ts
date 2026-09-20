@@ -31,6 +31,7 @@ export type WorkspaceDialogState =
       folder: WorkspaceDuplicateTarget;
       duplicates: DuplicateInfo[];
       enableDisabledAncestors: boolean;
+      parentEnableConfirmation: string | null;
     }
   | {
       kind: 'folderEnableParent';

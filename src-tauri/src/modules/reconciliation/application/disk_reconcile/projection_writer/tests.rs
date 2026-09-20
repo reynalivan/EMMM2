@@ -18,6 +18,8 @@ use super::{reconcile_projection_in_tx, ProjectionWriteRequest};
 struct WriterRun {
     objects_changed: bool,
     folders_changed: bool,
+    db_object_rows_loaded: usize,
+    db_mod_rows_loaded: usize,
     path_updates: Vec<DiskReconcilePathUpdate>,
     collection_reference_impact: CollectionReferenceImpact,
     change_summary: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileChangeSummary,
@@ -31,10 +33,11 @@ async fn run_writer(
     force_full: bool,
 ) -> WriterRun {
     let size_scan = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskSizeScan::full();
+    let scoped = !force_full && !changed_roots.is_empty();
     let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_scoped_disk_discovery_with_progress(
         mods_path,
         changed_roots,
-        false,
+        scoped,
         Some(&size_scan),
         None,
     )
@@ -53,6 +56,7 @@ async fn run_writer(
             safe_mode_keywords: &[],
             projection: &projection,
             changed_roots,
+            scoped,
             force_full,
             path_updates: &mut path_updates,
             collection_reference_impact: &mut impact,
@@ -68,6 +72,8 @@ async fn run_writer(
     WriterRun {
         objects_changed: write_outcome.objects_changed,
         folders_changed: write_outcome.folders_changed,
+        db_object_rows_loaded: write_outcome.db_object_rows_loaded,
+        db_mod_rows_loaded: write_outcome.db_mod_rows_loaded,
         path_updates,
         collection_reference_impact: impact,
         change_summary: change_summary.build(),
@@ -1083,6 +1089,8 @@ async fn scoped_run_leaves_out_of_scope_rows_untouched() {
 
     assert!(!run.objects_changed);
     assert!(!run.folders_changed);
+    assert_eq!(run.db_object_rows_loaded, 0);
+    assert_eq!(run.db_mod_rows_loaded, 0);
     let object_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE game_id = ?")
         .bind("game-1")
         .fetch_one(&ctx.pool)
@@ -1096,4 +1104,67 @@ async fn scoped_run_leaves_out_of_scope_rows_untouched() {
     assert_eq!(object_count, 1);
     assert_eq!(mod_count, 1);
     assert!(!run.change_summary.has_user_visible_changes);
+}
+
+#[tokio::test]
+async fn scoped_run_loads_only_rows_below_affected_roots() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    create_terminal_mod(&mods_path, "Alice", "Blue");
+    let mods_path_string = seed_game(&ctx.pool, "game-1", &mods_path).await;
+
+    for (object_id, object_name, mod_id, mod_name) in [
+        ("obj-alice", "Alice", "mod-blue", "Blue"),
+        ("obj-bob", "Bob", "mod-red", "Red"),
+    ] {
+        insert_test_object(
+            &ctx.pool,
+            &TestObjectFixture {
+                id: object_id,
+                game_id: "game-1",
+                name: object_name,
+                folder_path: object_name,
+                object_type: "Character",
+            },
+        )
+        .await
+        .expect("object seed");
+        let folder_path = format!("{object_name}/{mod_name}");
+        insert_test_mod(
+            &ctx.pool,
+            &TestModFixture {
+                id: mod_id,
+                game_id: "game-1",
+                object_id: Some(object_id),
+                actual_name: mod_name,
+                folder_path: &folder_path,
+                status: ItemStatus::Enabled,
+                is_safe: true,
+                object_type: Some("Character"),
+                mods_path: Some(&mods_path_string),
+            },
+        )
+        .await
+        .expect("mod seed");
+    }
+
+    let run = run_writer(
+        &ctx.pool,
+        "game-1",
+        &mods_path,
+        &["Alice".to_string()],
+        false,
+    )
+    .await;
+
+    assert_eq!(run.db_object_rows_loaded, 1);
+    assert_eq!(run.db_mod_rows_loaded, 1);
+    let bob_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM mods WHERE game_id = 'game-1' AND folder_path = 'Bob/Red'",
+    )
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("Bob row count");
+    assert_eq!(bob_count, 1);
 }

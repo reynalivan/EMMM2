@@ -10,6 +10,89 @@ async fn setup_pool() -> SqlitePool {
 }
 
 #[tokio::test]
+async fn exact_runtime_scope_distinguishes_leaf_from_parent_toggle() {
+    let pool = setup_pool().await;
+    let temp = tempfile::tempdir().unwrap();
+    let mods_root = temp.path().to_string_lossy().into_owned();
+    upsert_game(
+        &pool,
+        &GameRow {
+            id: "g_runtime_scope".into(),
+            name: "Runtime Scope".into(),
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: temp.path().join("game").to_string_lossy().into_owned(),
+            mods_path: Some(mods_root.clone()),
+            ready_to_move_path: None,
+            game_exe: None,
+            launcher_path: None,
+            loader_exe: None,
+            launch_mode: "standalone".into(),
+            xxmi_launcher_exe: None,
+            launch_args: None,
+        },
+    )
+    .await
+    .unwrap();
+    create_object(
+        &pool,
+        "scope_object",
+        "g_runtime_scope",
+        "Scope Object",
+        "Parent",
+        "Character",
+        None,
+        None,
+        "{}",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    for (id, path) in [
+        ("leaf_mod", "Leaf"),
+        ("parent_mod", "Parent"),
+        ("child_mod", "Parent/Child"),
+    ] {
+        crate::test_utils::insert_test_mod(
+            &pool,
+            &crate::test_utils::TestModFixture {
+                id,
+                game_id: "g_runtime_scope",
+                object_id: Some("scope_object"),
+                actual_name: id,
+                folder_path: path,
+                status: crate::modules::games::domain::models::ItemStatus::Enabled,
+                is_safe: true,
+                object_type: None,
+                mods_path: Some(&mods_root),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let rows = get_exact_runtime_mods_for_paths(
+        &pool,
+        "g_runtime_scope",
+        temp.path(),
+        &[
+            temp.path().join("Leaf").to_string_lossy().into_owned(),
+            temp.path().join("Parent").to_string_lossy().into_owned(),
+        ],
+    )
+    .await
+    .unwrap();
+    let by_id = rows
+        .into_iter()
+        .map(|row| (row.id.clone(), row))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    assert_eq!(by_id["leaf_mod"].has_descendants, 0);
+    assert_eq!(by_id["parent_mod"].has_descendants, 1);
+}
+
+#[tokio::test]
 async fn test_mod_repo_crud() {
     let pool = setup_pool().await;
 

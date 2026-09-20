@@ -230,6 +230,29 @@ async fn full_settings_save_cannot_change_existing_mods_path() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn full_settings_save_rejects_duplicate_game_ids_before_persistence() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let service = ConfigService::new_for_test(pool.clone());
+    let mut requested = service.get_settings();
+    let original = game("C:/Mods/Original");
+    let mut duplicate = original.clone();
+    duplicate.mod_path = PathBuf::from("C:/Mods/Replacement");
+    requested.games.extend([original, duplicate]);
+
+    let error = service
+        .save_settings(requested)
+        .expect_err("duplicate game ids must be rejected");
+
+    assert!(error.to_string().contains("duplicate game id"));
+    assert!(service.get_settings().games.is_empty());
+    let stored_games: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games")
+        .fetch_one(&pool)
+        .await
+        .expect("game count");
+    assert_eq!(stored_games, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failed_late_settings_write_rolls_back_database_and_memory() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let service = ConfigService::new_for_test(pool.clone());

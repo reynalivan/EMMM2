@@ -11,7 +11,12 @@
  */
 
 import { commands as gen } from './bindings.gen';
-import type { DiskReconcileReason, OnboardingIndexingWorkPlan, Result } from './bindings.gen';
+import type {
+  DiskReconcileReason,
+  GameActivationPhase,
+  OnboardingIndexingWorkPlan,
+  Result,
+} from './bindings.gen';
 import { resolveDemoCommand } from '@/demo/commands';
 
 // Re-export the generated types that callers historically imported from this
@@ -40,6 +45,8 @@ export type {
   GameModsDirectoryCandidateSummary,
   GameModsDirectoryClassification,
   GameModsDirectoryInspection,
+  GameActivationPhase,
+  GameActivationResult,
   GameObject,
   IniDocument,
   IniFileEntry,
@@ -115,6 +122,26 @@ export type DiskReconcileProgress = {
   eta_ms: number | null;
 };
 
+export type RuntimeSyncPhase =
+  'queued' | 'running' | 'succeeded' | 'needs_manual_reload' | 'failed';
+
+export type RuntimeSyncStatus = {
+  game_id: string;
+  generation: number;
+  phase: RuntimeSyncPhase;
+  cause: string;
+  message: string | null;
+};
+
+export type GameActivationStatus = {
+  game_id: string | null;
+  generation: number;
+  phase: GameActivationPhase;
+  reconcile_revision: number | null;
+  runtime_sync_generation: number | null;
+  error: string | null;
+};
+
 export type OnboardingIndexingWorkPlanUpdate = {
   session_id: string;
   work_plan: OnboardingIndexingWorkPlan;
@@ -123,9 +150,15 @@ export type OnboardingIndexingWorkPlanUpdate = {
 export type OnboardingIndexingSnapshotProgress = {
   session_id: string;
   game_id: string;
-  phase: 'Scanning' | 'Ready';
+  phase: 'Metadata' | 'Classifying' | 'Ready' | 'Rechecking';
   completed_games: number;
   total_games: number;
+  completed_roots: number;
+  total_roots: number;
+  files_inspected: number;
+  folders_classified: number;
+  current_root: string | null;
+  elapsed_ms: number;
 };
 
 type OkOf<T> = Extract<T, { status: 'ok' }>;
@@ -271,6 +304,7 @@ function telemetryErrorCode(error: unknown): string {
     ArchivePasswordRequired: 'validation',
     ArchivePasswordIncorrect: 'validation',
     ObjectHasMods: 'conflict',
+    ExplorerSnapshotExpired: 'conflict',
   };
   return codes[type] ?? 'unknown';
 }

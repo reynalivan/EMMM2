@@ -75,7 +75,7 @@ fn keyviewer_ini_draws_status_and_detected_character_panels_directly() {
 }
 
 #[test]
-fn keyviewer_ini_anchors_viewport_panels_left_and_scales_them_up() {
+fn keyviewer_ini_uses_compact_native_scale_and_left_alignment() {
     let ini = generate_keyviewer_ini(
         &[make_match_result("Albedo", &["aabb1111"])],
         "F7",
@@ -83,10 +83,10 @@ fn keyviewer_ini_anchors_viewport_panels_left_and_scales_them_up() {
     );
 
     assert!(ini.contains(
-        "data = R32_FLOAT  -0.97 0.36 0.00 0.23  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.35"
+        "data = R32_FLOAT  -0.96 0.36 -0.30 0.24  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.00"
     ));
     assert!(ini.contains(
-        "data = R32_FLOAT  -0.97 -0.22 0.00 -0.96  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.35"
+        "data = R32_FLOAT  -0.96 -0.24 -0.56 -0.92  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  0.92"
     ));
 }
 
@@ -98,7 +98,7 @@ fn keyviewer_ini_uses_the_same_viewport_geometry_for_every_match() {
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
     let character_geometry =
-        "data = R32_FLOAT  -0.97 -0.22 0.00 -0.96  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.35";
+        "data = R32_FLOAT  -0.96 -0.24 -0.56 -0.92  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  0.92";
     assert_eq!(ini.matches(character_geometry).count(), matches.len());
 }
 

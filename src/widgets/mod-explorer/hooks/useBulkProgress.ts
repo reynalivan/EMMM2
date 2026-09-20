@@ -3,6 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import { isDemoMode } from '@/shared/lib/appMode';
 
 export interface BulkProgressPayload {
+  operation_id: string;
+  cancellable: boolean;
   label: string;
   current: number;
   total: number;
@@ -11,6 +13,8 @@ export interface BulkProgressPayload {
 
 export function useBulkProgress() {
   const [progress, setProgress] = useState<BulkProgressPayload>({
+    operation_id: '',
+    cancellable: false,
     label: '',
     current: 0,
     total: 0,
@@ -30,8 +34,11 @@ export function useBulkProgress() {
 
         // Auto-hide when complete
         if (event.payload.active && event.payload.current >= event.payload.total) {
+          const completedOperationId = event.payload.operation_id;
           setTimeout(() => {
-            setProgress((prev) => ({ ...prev, active: false }));
+            setProgress((prev) =>
+              prev.operation_id === completedOperationId ? { ...prev, active: false } : prev,
+            );
           }, 1500);
         }
       });

@@ -37,7 +37,9 @@
       "matches_runtime": "Matches current runtime",
       "save_changes": "Save changes"
     },
-    "load_failed": "Failed to load collections"
+    "load_failed": "Failed to load collections",
+    "active_filtered": "The active loadout is outside this safety filter.",
+    "show_active": "Show active"
   },
   "last_changes": {
     "title": "Last changes",
@@ -81,6 +83,21 @@
       "mod_count": "{{count}} mods",
       "empty_before": "No mods currently active.",
       "empty_after": "Collection is empty."
+    },
+    "diff": {
+      "view_label": "Collection comparison view",
+      "full_collection": "Full collection",
+      "changes_only": "Changes only",
+      "safe_mode_on": "Safe Mode on",
+      "disable_count": "Will disable",
+      "enable_count": "Will enable",
+      "unchanged_count": "Stays active",
+      "safe_mode_exclusions": "{{count}} unsafe or unclassified mod(s) will remain disabled in Safe Mode.",
+      "will_enable": "Will enable",
+      "will_disable": "Will disable",
+      "excluded_safe_mode": "Excluded in Safe Mode",
+      "empty_disable": "No mods will be disabled.",
+      "empty_enable": "No mods will be enabled."
     },
     "actions": {
       "cancel": "Cancel",

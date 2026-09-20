@@ -1,4 +1,5 @@
-import { Clock, Keyboard } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Clock, Keyboard, Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { GameConfig } from '@/entities/game';
 import type { DashboardPayload } from '../model/dashboard';
@@ -8,6 +9,8 @@ import { formatRelativeDate } from '../../../shared/lib/utils/formatters';
 import VirtualList from '@/shared/ui/components/ui/VirtualList';
 
 const KEYBINDING_VIRTUALIZATION_THRESHOLD = 80;
+const ALL_CLASSIFICATIONS = '__all__';
+const UNCLASSIFIED_CLASSIFICATION = '__unclassified__';
 
 function keybindingKey(keybinding: ActiveKeyBinding): string {
   return `${keybinding.folder_path}:${keybinding.section_name}:${keybinding.key ?? ''}:${keybinding.back ?? ''}`;
@@ -94,7 +97,41 @@ function ActiveKeybindingsCard({
   gameId: string;
 }) {
   const { t } = useTranslation(['dashboard']);
-  const shouldVirtualize = keybindings.length > KEYBINDING_VIRTUALIZATION_THRESHOLD;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [classificationFilter, setClassificationFilter] = useState(ALL_CLASSIFICATIONS);
+  const classifications = useMemo(() => {
+    const values = new Set(
+      keybindings
+        .map((keybinding) => keybinding.object_type)
+        .filter((classification): classification is string => Boolean(classification)),
+    );
+    return [...values].sort((left, right) => left.localeCompare(right));
+  }, [keybindings]);
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+  const filteredKeybindings = useMemo(
+    () =>
+      keybindings.filter((keybinding) => {
+        const classification = keybinding.object_type?.trim() ?? '';
+        const searchableText = [
+          keybinding.mod_name,
+          keybinding.folder_path,
+          classification,
+          keybinding.matched_alias_name ?? '',
+        ]
+          .join(' ')
+          .toLocaleLowerCase();
+        const matchesSearch = !normalizedSearch || searchableText.includes(normalizedSearch);
+        const matchesClassification =
+          classificationFilter === ALL_CLASSIFICATIONS ||
+          (classificationFilter === UNCLASSIFIED_CLASSIFICATION
+            ? classification.length === 0
+            : classification === classificationFilter);
+        return matchesSearch && matchesClassification;
+      }),
+    [classificationFilter, keybindings, normalizedSearch],
+  );
+  const shouldVirtualize = filteredKeybindings.length > KEYBINDING_VIRTUALIZATION_THRESHOLD;
+  const hasActiveFilter = searchQuery.length > 0 || classificationFilter !== ALL_CLASSIFICATIONS;
 
   return (
     <div className="card bg-base-200/50 border border-base-300">
@@ -103,7 +140,7 @@ function ActiveKeybindingsCard({
           <Keyboard size={16} className="mr-1" />
           {t('keys.title')}
           {keybindings.length > 0 && (
-            <span className="badge badge-sm badge-ghost ml-1">{keybindings.length}</span>
+            <span className="badge badge-sm badge-ghost ml-1">{filteredKeybindings.length}</span>
           )}
         </h2>
         {isLoading ? (
@@ -112,97 +149,158 @@ function ActiveKeybindingsCard({
           </div>
         ) : keybindings.length > 0 ? (
           <>
-            <div className="space-y-2 sm:hidden" data-testid="active-keybindings-mobile-cards">
-              {shouldVirtualize ? (
-                <VirtualList
-                  ariaLabel={t('keys.title')}
-                  className="h-[min(55vh,34rem)]"
-                  contentClassName="pr-1"
-                  estimateSize={() => 176}
-                  getItemKey={keybindingKey}
-                  items={keybindings}
-                  renderItem={(keybinding) => (
-                    <ActiveKeybindingMobileCard gameId={gameId} keybinding={keybinding} />
-                  )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="input input-sm flex min-w-0 flex-1 items-center gap-2">
+                <Search size={15} aria-hidden="true" className="text-base-content/50" />
+                <span className="sr-only">{t('keys.search_label')}</span>
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={t('keys.search_placeholder')}
+                  aria-label={t('keys.search_label')}
+                  className="min-w-0 grow"
                 />
-              ) : (
-                keybindings.map((keybinding) => (
-                  <ActiveKeybindingMobileCard
-                    key={keybindingKey(keybinding)}
-                    gameId={gameId}
-                    keybinding={keybinding}
-                  />
-                ))
+              </label>
+              <label className="select select-sm w-full sm:w-48">
+                <span className="sr-only">{t('keys.filter_label')}</span>
+                <select
+                  value={classificationFilter}
+                  onChange={(event) => setClassificationFilter(event.target.value)}
+                  aria-label={t('keys.filter_label')}
+                >
+                  <option value={ALL_CLASSIFICATIONS}>{t('keys.filter_all')}</option>
+                  {classifications.map((classification) => (
+                    <option key={classification} value={classification}>
+                      {classification}
+                    </option>
+                  ))}
+                  <option value={UNCLASSIFIED_CLASSIFICATION}>
+                    {t('keys.filter_unclassified')}
+                  </option>
+                </select>
+              </label>
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm self-start sm:self-auto"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setClassificationFilter(ALL_CLASSIFICATIONS);
+                  }}
+                  aria-label={t('keys.clear_filters')}
+                >
+                  <X size={15} aria-hidden="true" />
+                  {t('keys.clear_filters')}
+                </button>
               )}
             </div>
-            <div className="hidden sm:block">
-              {shouldVirtualize ? (
-                <VirtualList
-                  ariaLabel={t('keys.title')}
-                  className="h-[min(55vh,34rem)] rounded-lg border border-base-300"
-                  estimateSize={() => 48}
-                  getItemKey={keybindingKey}
-                  items={keybindings}
-                  renderItem={(keybinding) => (
-                    <ActiveKeybindingDesktopRow gameId={gameId} keybinding={keybinding} />
+            {filteredKeybindings.length === 0 ? (
+              <p className="text-sm text-base-content/40 py-4 text-center">
+                {t('keys.no_matches')}
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2 sm:hidden" data-testid="active-keybindings-mobile-cards">
+                  {shouldVirtualize ? (
+                    <VirtualList
+                      ariaLabel={t('keys.title')}
+                      className="h-[min(55vh,34rem)]"
+                      contentClassName="pr-1"
+                      estimateSize={() => 176}
+                      getItemKey={keybindingKey}
+                      items={filteredKeybindings}
+                      renderItem={(keybinding) => (
+                        <ActiveKeybindingMobileCard gameId={gameId} keybinding={keybinding} />
+                      )}
+                    />
+                  ) : (
+                    filteredKeybindings.map((keybinding) => (
+                      <ActiveKeybindingMobileCard
+                        key={keybindingKey(keybinding)}
+                        gameId={gameId}
+                        keybinding={keybinding}
+                      />
+                    ))
                   )}
-                />
-              ) : (
-                <div className="hidden max-h-[min(55vh,34rem)] overflow-auto sm:block">
-                  <table className="table table-xs table-zebra">
-                    <thead className="sticky top-0 bg-base-200">
-                      <tr>
-                        <th>{t('keys.table_mod')}</th>
-                        <th>{t('keys.table_section')}</th>
-                        <th>{t('keys.table_key')}</th>
-                        <th>{t('keys.table_back')}</th>
-                        <th>{t('keys.table_control')}</th>
-                        <th>{t('keys.table_values')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {keybindings.map((keybinding) => (
-                        <tr key={keybindingKey(keybinding)}>
-                          <td className="max-w-48">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <ModThumbnail
-                                gameId={gameId}
-                                folderPath={keybinding.folder_path}
-                                sizeClassName="size-7"
-                              />
-                              <span
-                                className="truncate"
-                                title={String(keybinding.mod_name ?? '') || undefined}
-                              >
-                                {String(keybinding.mod_name ?? '')}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="text-base-content/60">{keybinding.section_name}</td>
-                          <td>
-                            {keybinding.key && <kbd className="kbd kbd-xs">{keybinding.key}</kbd>}
-                          </td>
-                          <td>
-                            {keybinding.back && <kbd className="kbd kbd-xs">{keybinding.back}</kbd>}
-                          </td>
-                          <td>
-                            <span className="badge badge-ghost badge-xs">
-                              {t(`keys.control_kind.${keybinding.control_kind}`)}
-                            </span>
-                          </td>
-                          <td
-                            className="max-w-40 truncate text-base-content/60"
-                            title={keybinding.value_summary ?? undefined}
-                          >
-                            {keybinding.value_summary ?? '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
-              )}
-            </div>
+                <div className="hidden sm:block">
+                  {shouldVirtualize ? (
+                    <VirtualList
+                      ariaLabel={t('keys.title')}
+                      className="h-[min(55vh,34rem)] rounded-lg border border-base-300"
+                      estimateSize={() => 48}
+                      getItemKey={keybindingKey}
+                      items={filteredKeybindings}
+                      renderItem={(keybinding) => (
+                        <ActiveKeybindingDesktopRow gameId={gameId} keybinding={keybinding} />
+                      )}
+                    />
+                  ) : (
+                    <div className="hidden max-h-[min(55vh,34rem)] overflow-auto sm:block">
+                      <table className="table table-xs table-zebra">
+                        <thead className="sticky top-0 bg-base-200">
+                          <tr>
+                            <th>{t('keys.table_mod')}</th>
+                            <th>{t('keys.table_section')}</th>
+                            <th>{t('keys.table_key')}</th>
+                            <th>{t('keys.table_back')}</th>
+                            <th>{t('keys.table_control')}</th>
+                            <th>{t('keys.table_values')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredKeybindings.map((keybinding) => (
+                            <tr key={keybindingKey(keybinding)}>
+                              <td className="max-w-48">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <ModThumbnail
+                                    gameId={gameId}
+                                    folderPath={keybinding.folder_path}
+                                    sizeClassName="size-7"
+                                  />
+                                  <div className="min-w-0">
+                                    <span
+                                      className="block truncate"
+                                      title={String(keybinding.mod_name ?? '') || undefined}
+                                    >
+                                      {String(keybinding.mod_name ?? '')}
+                                    </span>
+                                    <KeybindingCatalogMetadata keybinding={keybinding} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="text-base-content/60">{keybinding.section_name}</td>
+                              <td>
+                                {keybinding.key && (
+                                  <kbd className="kbd kbd-xs">{keybinding.key}</kbd>
+                                )}
+                              </td>
+                              <td>
+                                {keybinding.back && (
+                                  <kbd className="kbd kbd-xs">{keybinding.back}</kbd>
+                                )}
+                              </td>
+                              <td>
+                                <span className="badge badge-ghost badge-xs">
+                                  {t(`keys.control_kind.${keybinding.control_kind}`)}
+                                </span>
+                              </td>
+                              <td
+                                className="max-w-40 truncate text-base-content/60"
+                                title={keybinding.value_summary ?? undefined}
+                              >
+                                {keybinding.value_summary ?? '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </>
         ) : (
           <p className="text-sm text-base-content/40 py-4 text-center">{t('keys.no_bindings')}</p>
@@ -225,9 +323,12 @@ function ActiveKeybindingDesktopRow({
     <article className="grid min-h-12 grid-cols-[minmax(12rem,1.4fr)_minmax(8rem,1fr)_4rem_4rem_7rem_minmax(8rem,1fr)] items-center gap-2 border-b border-base-300 px-3 py-1.5 text-xs last:border-b-0">
       <div className="flex min-w-0 items-center gap-2">
         <ModThumbnail gameId={gameId} folderPath={keybinding.folder_path} sizeClassName="size-7" />
-        <span className="truncate" title={keybinding.mod_name}>
-          {keybinding.mod_name}
-        </span>
+        <div className="min-w-0">
+          <span className="block truncate" title={keybinding.mod_name}>
+            {keybinding.mod_name}
+          </span>
+          <KeybindingCatalogMetadata keybinding={keybinding} />
+        </div>
       </div>
       <span className="truncate text-base-content/60">{keybinding.section_name}</span>
       <span>{keybinding.key && <kbd className="kbd kbd-xs">{keybinding.key}</kbd>}</span>
@@ -262,6 +363,7 @@ function ActiveKeybindingMobileCard({
           >
             {String(keybinding.mod_name ?? '')}
           </p>
+          <KeybindingCatalogMetadata keybinding={keybinding} />
           <p className="truncate text-xs text-base-content/60">{keybinding.section_name}</p>
         </div>
       </div>
@@ -297,5 +399,28 @@ function ActiveKeybindingMobileCard({
         </div>
       </dl>
     </article>
+  );
+}
+
+function KeybindingCatalogMetadata({ keybinding }: { keybinding: ActiveKeyBinding }) {
+  const { t } = useTranslation(['dashboard']);
+  const hasClassification = Boolean(keybinding.object_type);
+  const hasAlias = Boolean(keybinding.matched_alias_name);
+
+  if (!hasClassification && !hasAlias) {
+    return null;
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-1 text-[10px] text-base-content/55">
+      {hasClassification && (
+        <span className="badge badge-ghost badge-xs">{keybinding.object_type}</span>
+      )}
+      {hasAlias && (
+        <span className="truncate" title={keybinding.matched_alias_name ?? undefined}>
+          {t('keys.alias', { alias: keybinding.matched_alias_name })}
+        </span>
+      )}
+    </div>
   );
 }

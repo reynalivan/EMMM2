@@ -170,7 +170,7 @@ fn match_canonical_objects_against(
     };
     let result = match_folder_phased_cached(
         &candidate,
-        &filtered,
+        filtered,
         content,
         ini_filters,
         &AiRerankConfig::default(),

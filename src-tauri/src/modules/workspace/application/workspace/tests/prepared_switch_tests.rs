@@ -72,6 +72,7 @@ async fn duplicate_resolutions_have_distinct_scoped_rename_plans() {
         desired_enabled: true,
         resolution: WorkspaceSwitchResolution::Normal,
         enable_disabled_ancestors: false,
+        parent_enable_confirmation: None,
         origin_surface: WorkspaceSwitchOriginSurface::FolderGrid,
     };
     let normal = prepare_switch(&input, &config, &pool).await.unwrap();
@@ -247,6 +248,7 @@ async fn mod_switch_describes_and_sequences_every_disabled_parent() {
         desired_enabled: true,
         resolution: WorkspaceSwitchResolution::ForceEnable,
         enable_disabled_ancestors: false,
+        parent_enable_confirmation: None,
         origin_surface: WorkspaceSwitchOriginSurface::FolderGrid,
     };
 
@@ -284,7 +286,22 @@ async fn mod_switch_describes_and_sequences_every_disabled_parent() {
     );
     assert!(child.exists(), "the requirement must not rename folders");
 
+    let stale_confirmation = requirement.confirmation_token.clone();
+    std::fs::create_dir_all(root.join("DISABLED Group/Late Arrival")).unwrap();
     input.enable_disabled_ancestors = true;
+    input.parent_enable_confirmation = Some(stale_confirmation);
+    let refreshed_requirement = prepare_switch(&input, &config, &pool)
+        .await
+        .unwrap()
+        .immediate_result()
+        .expect("a changed subtree must require renewed confirmation")
+        .parent_enable_requirement
+        .expect("renewed requirement");
+    assert_ne!(
+        refreshed_requirement.confirmation_token,
+        requirement.confirmation_token
+    );
+    input.parent_enable_confirmation = Some(refreshed_requirement.confirmation_token);
     let confirmed = prepare_switch(&input, &config, &pool).await.unwrap();
     let canonical_root = root.canonicalize().unwrap();
     assert_eq!(
@@ -303,4 +320,70 @@ async fn mod_switch_describes_and_sequences_every_disabled_parent() {
         ],
         "parents are renamed outer-to-inner before the requested child becomes effective",
     );
+    let scope = confirmed
+        .mutation_scope(&canonical_root)
+        .expect("mutation scope should be derived");
+    assert!(scope.has_trusted_identities());
+    assert_eq!(scope.renames.len(), 2);
+    assert_eq!(scope.changed_paths.len(), 4);
+    assert_eq!(scope.owning_roots, vec!["DISABLED Group", "Group"]);
+    assert_eq!(scope.touched_object_ids, vec!["alice"]);
+}
+
+#[tokio::test]
+async fn object_bulk_switch_prepares_one_identity_checked_atomic_plan() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Mods");
+    std::fs::create_dir_all(root.join("DISABLED Alice")).unwrap();
+    std::fs::create_dir_all(root.join("DISABLED Yelan")).unwrap();
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "game",
+            name: "Game",
+            game_type: GameType::GIMI,
+            path: temp.path().to_str().unwrap(),
+            mods_path: root.to_str(),
+        },
+    )
+    .await
+    .unwrap();
+    for (id, name, folder_path) in [
+        ("alice", "Alice", "DISABLED Alice"),
+        ("yelan", "Yelan", "DISABLED Yelan"),
+    ] {
+        insert_test_object(
+            &pool,
+            &TestObjectFixture {
+                id,
+                game_id: "game",
+                name,
+                folder_path,
+                object_type: "Character",
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let prepared = prepare_object_batch_switch(
+        &pool,
+        "game",
+        &["alice".into(), "yelan".into(), "alice".into()],
+        true,
+    )
+    .await
+    .unwrap();
+    let canonical_root = root.canonicalize().unwrap();
+    let steps = prepared.journal_steps();
+    assert_eq!(steps.len(), 2, "duplicate object IDs must be deduplicated");
+    assert_eq!(steps[0].0, 0);
+    assert_eq!(steps[1].0, 1);
+
+    let scope = prepared.mutation_scope(&canonical_root).unwrap();
+    assert!(scope.has_trusted_identities());
+    assert_eq!(scope.renames.len(), 2);
+    assert_eq!(scope.touched_object_ids, vec!["alice", "yelan"]);
+    assert_eq!(scope.changed_paths.len(), 4);
 }

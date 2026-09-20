@@ -56,6 +56,7 @@ async fn run_reconcile(
         force_full,
         watcher_events: None,
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })
@@ -203,6 +204,7 @@ async fn projection_refresh_failure_rolls_back_core_reconcile_rows() {
         force_full: true,
         watcher_events: None,
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })
@@ -675,6 +677,7 @@ async fn watcher_event_for_mods_root_forces_full_source_validation() {
         force_full: false,
         watcher_events: None,
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })
@@ -1158,6 +1161,7 @@ async fn offline_semantic_rename_without_identity_requires_confirmation_and_keep
         force_full: true,
         watcher_events: Some(std::slice::from_ref(&resolution_event)),
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })
@@ -1327,6 +1331,7 @@ async fn confirmed_separate_change_prunes_old_runtime_row_and_adds_current_folde
         force_full: true,
         watcher_events: Some(std::slice::from_ref(&resolution_event)),
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })
@@ -1398,6 +1403,7 @@ async fn watcher_rename_event_is_sufficient_evidence_when_filesystem_identity_is
         force_full: false,
         watcher_events: Some(std::slice::from_ref(&event)),
         path_hints: &[],
+        trusted_mutation_scope: false,
         progress_reporter: None,
         precomputed_discovery: None,
     })

@@ -421,3 +421,20 @@ fn replaced_watcher_session_cannot_publish_after_the_current_session_changes() {
     );
     assert_eq!(publishes, 1);
 }
+
+#[test]
+fn watcher_session_coverage_includes_runtime_config_path() {
+    let state = WatcherState::new();
+    let mods_root = Path::new(r"E:\Mods");
+    let old_runtime = Path::new(r"E:\GameA\d3dx.ini");
+    let new_runtime = Path::new(r"E:\GameB\d3dx.ini");
+    let session = state.prepare_session_with_runtime_config(mods_root, Some(old_runtime));
+    state.publish_session(&session);
+
+    assert!(state
+        .current_session_for_coverage(mods_root, Some(old_runtime))
+        .is_some());
+    assert!(state
+        .current_session_for_coverage(mods_root, Some(new_runtime))
+        .is_none());
+}

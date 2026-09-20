@@ -392,13 +392,8 @@ fn is_allowed_file(path: &Path) -> bool {
         [Component::Normal(root), Component::Normal(name)] if *root == "catalog" => {
             name.to_str().is_some_and(|name| name.ends_with(".json"))
         }
-        [
-            Component::Normal(root),
-            Component::Normal(_),
-            Component::Normal(category),
-            Component::Normal(name),
-        ] if *root == "assets"
-            && matches!(category.to_str(), Some("characters" | "weapons")) =>
+        [Component::Normal(root), Component::Normal(_), Component::Normal(category), Component::Normal(name)]
+            if *root == "assets" && matches!(category.to_str(), Some("characters" | "weapons")) =>
         {
             name.to_str().is_some_and(|name| {
                 name.rsplit_once('.').is_some_and(|(stem, extension)| {
@@ -455,9 +450,7 @@ mod tests {
         assert!(!is_allowed_file(Path::new(
             "assets/gimi/characters/amber.svg"
         )));
-        assert!(!is_allowed_file(Path::new(
-            "assets/gimi/amber.webp"
-        )));
+        assert!(!is_allowed_file(Path::new("assets/gimi/amber.webp")));
         assert!(!is_allowed_file(Path::new(
             "images/gimi/characters/amber.webp"
         )));

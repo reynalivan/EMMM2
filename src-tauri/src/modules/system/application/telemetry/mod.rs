@@ -28,6 +28,10 @@ pub enum TelemetryError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TelemetryOperation {
     Onboarding,
+    OnboardingPreparation,
+    OnboardingClassification,
+    OnboardingApply,
+    OnboardingRecheck,
     Classification,
     ClassificationReview,
     AutoMatch,
@@ -44,9 +48,13 @@ pub enum TelemetryOperation {
 }
 
 impl TelemetryOperation {
-    pub fn from_str(value: &str) -> Self {
+    pub fn from_label(value: &str) -> Self {
         match value {
             "onboarding" => Self::Onboarding,
+            "onboarding_preparation" => Self::OnboardingPreparation,
+            "onboarding_classification" => Self::OnboardingClassification,
+            "onboarding_apply" => Self::OnboardingApply,
+            "onboarding_recheck" => Self::OnboardingRecheck,
             "classification" => Self::Classification,
             "classification_review" => Self::ClassificationReview,
             "auto_match" => Self::AutoMatch,
@@ -65,6 +73,10 @@ impl TelemetryOperation {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Onboarding => "onboarding",
+            Self::OnboardingPreparation => "onboarding_preparation",
+            Self::OnboardingClassification => "onboarding_classification",
+            Self::OnboardingApply => "onboarding_apply",
+            Self::OnboardingRecheck => "onboarding_recheck",
             Self::Classification => "classification",
             Self::ClassificationReview => "classification_review",
             Self::AutoMatch => "auto_match",
@@ -139,7 +151,7 @@ pub enum TelemetryErrorCode {
 }
 
 impl TelemetryErrorCode {
-    pub fn from_str(value: &str) -> Self {
+    pub fn from_label(value: &str) -> Self {
         match value {
             "validation" => Self::Validation,
             "io" => Self::Io,
@@ -222,7 +234,8 @@ impl TelemetryErrorCode {
             crate::shared::errors::AppError::DuplicateConflict(_) => Self::Conflict,
             crate::shared::errors::AppError::FileInUse { .. }
             | crate::shared::errors::AppError::PathBusy { .. } => Self::External,
-            crate::shared::errors::AppError::ObjectHasMods(_) => Self::Conflict,
+            crate::shared::errors::AppError::ObjectHasMods(_)
+            | crate::shared::errors::AppError::ExplorerSnapshotExpired => Self::Conflict,
             crate::shared::errors::AppError::Cancelled => Self::Cancelled,
         }
     }
@@ -273,6 +286,40 @@ impl TelemetryEvent {
     pub const fn with_duration(mut self, duration: Duration) -> Self {
         self.duration = Some(duration);
         self
+    }
+}
+
+/// Bounded, best-effort telemetry sink used by latency-sensitive event loops.
+/// Diagnostics must never delay a reconcile result or grow an unbounded task
+/// queue when the local database is busy.
+#[derive(Clone)]
+pub struct TelemetrySink {
+    sender: tokio::sync::mpsc::Sender<Vec<TelemetryEvent>>,
+}
+
+impl TelemetrySink {
+    pub fn start(store: TelemetryStore) -> Self {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<TelemetryEvent>>(64);
+        tauri::async_runtime::spawn(async move {
+            while let Some(mut batch) = receiver.recv().await {
+                while let Ok(next) = receiver.try_recv() {
+                    batch.extend(next);
+                    if batch.len() >= 128 {
+                        break;
+                    }
+                }
+                let _ = store.record_rollup_batch(&batch, Utc::now()).await;
+            }
+        });
+        Self { sender }
+    }
+
+    pub fn try_enqueue(&self, events: impl IntoIterator<Item = TelemetryEvent>) {
+        let batch = events.into_iter().collect::<Vec<_>>();
+        if batch.is_empty() {
+            return;
+        }
+        let _ = self.sender.try_send(batch);
     }
 }
 
@@ -447,6 +494,45 @@ impl TelemetryStore {
         .execute(&self.pool)
         .await?;
 
+        Ok(())
+    }
+
+    pub async fn record_rollup_batch(
+        &self,
+        events: &[TelemetryEvent],
+        occurred_at: DateTime<Utc>,
+    ) -> Result<(), TelemetryError> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let mut transaction = self.pool.begin().await?;
+        for event in events {
+            let duration_ms = event
+                .duration
+                .map(duration_to_i64_millis)
+                .unwrap_or_default();
+            let duration_sample_count = if event.duration.is_some() { 1 } else { 0 };
+            sqlx::query(
+                "INSERT INTO telemetry_rollups (
+                    day_utc, release, operation, outcome, error_code,
+                    count, duration_ms_total, duration_sample_count
+                 ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                 ON CONFLICT(day_utc, release, operation, outcome, error_code) DO UPDATE SET
+                    count = telemetry_rollups.count + 1,
+                    duration_ms_total = telemetry_rollups.duration_ms_total + excluded.duration_ms_total,
+                    duration_sample_count = telemetry_rollups.duration_sample_count + excluded.duration_sample_count",
+            )
+            .bind(utc_day(occurred_at))
+            .bind(normalize_release(env!("CARGO_PKG_VERSION")))
+            .bind(event.operation.as_str())
+            .bind(event.outcome.as_str())
+            .bind(event.error_code.as_str())
+            .bind(duration_ms)
+            .bind(duration_sample_count)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -878,6 +964,10 @@ fn pending_crash_from_row(
 fn telemetry_operation_from_str(value: &str) -> TelemetryOperation {
     match value {
         "onboarding" => TelemetryOperation::Onboarding,
+        "onboarding_preparation" => TelemetryOperation::OnboardingPreparation,
+        "onboarding_classification" => TelemetryOperation::OnboardingClassification,
+        "onboarding_apply" => TelemetryOperation::OnboardingApply,
+        "onboarding_recheck" => TelemetryOperation::OnboardingRecheck,
         "classification" => TelemetryOperation::Classification,
         "classification_review" => TelemetryOperation::ClassificationReview,
         "auto_match" => TelemetryOperation::AutoMatch,
@@ -1093,6 +1183,20 @@ mod tests {
 
         for (error, expected) in cases {
             assert_eq!(TelemetryErrorCode::from_app_error(&error), expected);
+        }
+    }
+
+    #[test]
+    fn onboarding_phase_operation_labels_round_trip_without_payload_fields() {
+        for operation in [
+            TelemetryOperation::OnboardingPreparation,
+            TelemetryOperation::OnboardingClassification,
+            TelemetryOperation::OnboardingApply,
+            TelemetryOperation::OnboardingRecheck,
+        ] {
+            let label = operation.as_str();
+            assert_eq!(TelemetryOperation::from_label(label), operation);
+            assert_eq!(telemetry_operation_from_str(label), operation);
         }
     }
 

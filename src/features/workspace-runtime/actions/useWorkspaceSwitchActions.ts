@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '@/entities/game';
+import { useAppStore } from '@/app/store';
 import { toast } from '@/shared/ui/toast';
 import type {
   WorkspaceExplorerNode,
@@ -18,6 +19,7 @@ import {
   applyWorkspaceSwitchEffects,
   buildNodePendingKey,
   executeWorkspaceSwitch,
+  isWorkspaceGameCurrent,
   isWorkspaceObjectNode,
   togglePendingKey,
   type WorkspaceSwitchSurface,
@@ -40,6 +42,11 @@ export function useWorkspaceSwitchActions() {
   const { t } = useTranslation(['common', 'objects']);
   const queryClient = useQueryClient();
   const { activeGame } = useActiveGame();
+  const activationBlocksMutations = useAppStore((state) => {
+    if (!activeGame?.id) return false;
+    const activation = state.gameActivationByGame?.[activeGame.id];
+    return activation?.phase !== 'ready';
+  });
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
 
   const markPending = useCallback((key: string, pending: boolean) => {
@@ -53,7 +60,7 @@ export function useWorkspaceSwitchActions() {
       surface: WorkspaceSwitchSurface,
       options?: WorkspaceSwitchEffectsOptions,
     ) => {
-      if (!activeGame?.id) {
+      if (!activeGame?.id || activationBlocksMutations) {
         return null;
       }
 
@@ -66,10 +73,11 @@ export function useWorkspaceSwitchActions() {
         desired_enabled: desiredEnabled,
         resolution: 'normal',
         enable_disabled_ancestors: false,
+        parent_enable_confirmation: null,
         origin_surface: surface,
       };
       const result = await executeWorkspaceSwitch(input);
-      if (!result) {
+      if (!result || !isWorkspaceGameCurrent(input.game_id)) {
         return null;
       }
 
@@ -94,6 +102,7 @@ export function useWorkspaceSwitchActions() {
             folder: dialogFolder(node.path, node.name, node.id),
             duplicates: result.duplicates,
             enableDisabledAncestors: false,
+            parentEnableConfirmation: null,
           },
         });
         return null;
@@ -104,14 +113,14 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+      applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
         ...options,
         gameId: activeGame.id,
       });
 
       return nextPath;
     },
-    [activeGame, queryClient],
+    [activeGame, activationBlocksMutations, queryClient],
   );
 
   const setObjectNodeEnabled = useCallback(
@@ -126,9 +135,13 @@ export function useWorkspaceSwitchActions() {
       if (!activeGame) {
         return null;
       }
+      if (activationBlocksMutations) {
+        return null;
+      }
 
+      const gameId = activeGame.id;
       const result = await executeWorkspaceSwitch({
-        game_id: activeGame.id,
+        game_id: gameId,
         target: {
           kind: 'object_id',
           value: node.id,
@@ -136,20 +149,20 @@ export function useWorkspaceSwitchActions() {
         desired_enabled: desiredEnabled,
         resolution: 'normal',
         enable_disabled_ancestors: false,
+        parent_enable_confirmation: null,
         origin_surface: surface,
       });
 
-      if (!result?.primary_path) {
+      if (!result?.primary_path || !isWorkspaceGameCurrent(gameId)) {
         return null;
       }
 
       const nextPath = result.primary_path;
-      await applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
-        ...options,
-        gameId: activeGame.id,
-      });
-      // A no-op switch changed nothing on disk — don't announce a change.
       if (result.status !== 'noop') {
+        applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
+          ...options,
+          gameId,
+        });
         toast.success(
           t(desiredEnabled ? 'objects:toasts.enabled_one' : 'objects:toasts.disabled_one', {
             count: 1,
@@ -159,7 +172,7 @@ export function useWorkspaceSwitchActions() {
 
       return nextPath;
     },
-    [activeGame, queryClient, t],
+    [activeGame, activationBlocksMutations, queryClient, t],
   );
 
   const setNodeEnabled = useCallback(
@@ -195,7 +208,7 @@ export function useWorkspaceSwitchActions() {
 
   const setFolderPathEnabled = useCallback(
     async (path: string, desiredEnabled: boolean) => {
-      if (!activeGame?.id) {
+      if (!activeGame?.id || activationBlocksMutations) {
         return null;
       }
 
@@ -212,10 +225,11 @@ export function useWorkspaceSwitchActions() {
           desired_enabled: desiredEnabled,
           resolution: 'normal',
           enable_disabled_ancestors: false,
+          parent_enable_confirmation: null,
           origin_surface: 'folder_grid',
         };
         const result = await executeWorkspaceSwitch(input);
-        if (!result) {
+        if (!result || !isWorkspaceGameCurrent(input.game_id)) {
           return null;
         }
 
@@ -240,6 +254,7 @@ export function useWorkspaceSwitchActions() {
               folder,
               duplicates: result.duplicates,
               enableDisabledAncestors: false,
+              parentEnableConfirmation: null,
             },
           });
           return null;
@@ -250,7 +265,7 @@ export function useWorkspaceSwitchActions() {
           return null;
         }
 
-        await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+        applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
           gameId: activeGame.id,
         });
 
@@ -259,19 +274,20 @@ export function useWorkspaceSwitchActions() {
         markPending(pendingKey, false);
       }
     },
-    [activeGame, markPending, queryClient],
+    [activeGame, activationBlocksMutations, markPending, queryClient],
   );
 
   const resolveDuplicateForceEnable = useCallback(
     async (
       folder: Pick<WorkspaceExplorerNode, 'path'> | null,
       enableDisabledAncestors: boolean = false,
+      parentEnableConfirmation: string | null = null,
     ) => {
-      if (!folder || !activeGame?.id) {
+      if (!folder || !activeGame?.id || activationBlocksMutations) {
         return null;
       }
 
-      const result = await executeWorkspaceSwitch({
+      const input: WorkspaceSwitchInput = {
         game_id: activeGame.id,
         target: {
           kind: 'mod_path',
@@ -280,31 +296,49 @@ export function useWorkspaceSwitchActions() {
         desired_enabled: true,
         resolution: 'force_enable',
         enable_disabled_ancestors: enableDisabledAncestors,
+        parent_enable_confirmation: parentEnableConfirmation,
         origin_surface: 'folder_grid',
-      });
+      };
+      const result = await executeWorkspaceSwitch(input);
+      if (!isWorkspaceGameCurrent(input.game_id)) {
+        return null;
+      }
+      if (result?.status === 'requires_parent_enable' && result.parent_enable_requirement) {
+        dispatchWorkspaceRuntimeEvent({
+          type: 'DIALOG_OPENED',
+          dialog: {
+            kind: 'folderEnableParent',
+            folder: dialogFolder(folder.path),
+            requirement: result.parent_enable_requirement,
+            resumeInput: input,
+          },
+        });
+        return null;
+      }
       if (!result?.primary_path) {
         return null;
       }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+      applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
         gameId: activeGame.id,
       });
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, queryClient],
+    [activeGame, activationBlocksMutations, queryClient],
   );
 
   const resolveDuplicateEnableOnly = useCallback(
     async (
       folder: Pick<WorkspaceExplorerNode, 'path'> | null,
       enableDisabledAncestors: boolean = false,
+      parentEnableConfirmation: string | null = null,
     ) => {
-      if (!folder || !activeGame?.id) {
+      if (!folder || !activeGame?.id || activationBlocksMutations) {
         return null;
       }
 
-      const result = await executeWorkspaceSwitch({
+      const input: WorkspaceSwitchInput = {
         game_id: activeGame.id,
         target: {
           kind: 'mod_path',
@@ -313,32 +347,64 @@ export function useWorkspaceSwitchActions() {
         desired_enabled: true,
         resolution: 'enable_only_this',
         enable_disabled_ancestors: enableDisabledAncestors,
+        parent_enable_confirmation: parentEnableConfirmation,
         origin_surface: 'folder_grid',
-      });
+      };
+      const result = await executeWorkspaceSwitch(input);
       if (!result) {
         return null;
       }
+      if (!isWorkspaceGameCurrent(input.game_id)) {
+        return null;
+      }
+      if (result.status === 'requires_parent_enable' && result.parent_enable_requirement) {
+        dispatchWorkspaceRuntimeEvent({
+          type: 'DIALOG_OPENED',
+          dialog: {
+            kind: 'folderEnableParent',
+            folder: dialogFolder(folder.path),
+            requirement: result.parent_enable_requirement,
+            resumeInput: input,
+          },
+        });
+        return null;
+      }
 
-      await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+      applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
         gameId: activeGame.id,
       });
       dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'modDuplicateWarning' });
       return result.primary_path;
     },
-    [activeGame, queryClient],
+    [activeGame, activationBlocksMutations, queryClient],
   );
 
   const resolveParentEnable = useCallback(async () => {
     const dialogState = getWorkspaceRuntimeState().dialogState;
-    if (dialogState.kind !== 'folderEnableParent') {
+    if (dialogState.kind !== 'folderEnableParent' || activationBlocksMutations) {
       return null;
     }
 
-    const result = await executeWorkspaceSwitch({
+    const confirmedInput: WorkspaceSwitchInput = {
       ...dialogState.resumeInput,
       enable_disabled_ancestors: true,
-    });
-    if (!result) {
+      parent_enable_confirmation: dialogState.requirement.confirmation_token,
+    };
+    const result = await executeWorkspaceSwitch(confirmedInput);
+    if (!result || !isWorkspaceGameCurrent(confirmedInput.game_id)) {
+      return null;
+    }
+
+    if (result.status === 'requires_parent_enable' && result.parent_enable_requirement) {
+      dispatchWorkspaceRuntimeEvent({
+        type: 'DIALOG_OPENED',
+        dialog: {
+          kind: 'folderEnableParent',
+          folder: dialogState.folder,
+          requirement: result.parent_enable_requirement,
+          resumeInput: confirmedInput,
+        },
+      });
       return null;
     }
 
@@ -350,6 +416,7 @@ export function useWorkspaceSwitchActions() {
           folder: dialogState.folder,
           duplicates: result.duplicates,
           enableDisabledAncestors: true,
+          parentEnableConfirmation: dialogState.requirement.confirmation_token,
         },
       });
       return null;
@@ -358,14 +425,17 @@ export function useWorkspaceSwitchActions() {
       return null;
     }
 
-    await applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+    applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
       gameId: activeGame.id,
     });
     dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'folderEnableParent' });
     return result.primary_path;
-  }, [activeGame, queryClient]);
+  }, [activeGame, activationBlocksMutations, queryClient]);
 
-  const isPending = useMemo(() => Object.keys(pendingKeys).length > 0, [pendingKeys]);
+  const isPending = useMemo(
+    () => activationBlocksMutations || Object.keys(pendingKeys).length > 0,
+    [activationBlocksMutations, pendingKeys],
+  );
 
   const isNodePending = useCallback(
     (node: WorkspaceNode | null | undefined) => {
@@ -373,9 +443,9 @@ export function useWorkspaceSwitchActions() {
         return false;
       }
 
-      return !!pendingKeys[buildNodePendingKey(node)];
+      return activationBlocksMutations || !!pendingKeys[buildNodePendingKey(node)];
     },
-    [pendingKeys],
+    [activationBlocksMutations, pendingKeys],
   );
 
   return {

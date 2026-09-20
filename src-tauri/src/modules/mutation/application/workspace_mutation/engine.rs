@@ -66,6 +66,7 @@ pub struct RuntimeRenamePlan {
     requested_abs: PathBuf,
     new_abs: PathBuf,
     target_enabled: bool,
+    expected_identity: String,
 }
 
 impl RuntimeRenamePlan {
@@ -74,12 +75,14 @@ impl RuntimeRenamePlan {
         requested_abs: PathBuf,
         new_abs: PathBuf,
         target_enabled: bool,
+        expected_identity: String,
     ) -> Self {
         Self {
             old_abs,
             requested_abs,
             new_abs,
             target_enabled,
+            expected_identity,
         }
     }
 
@@ -95,7 +98,26 @@ impl RuntimeRenamePlan {
     pub fn target_enabled(&self) -> bool {
         self.target_enabled
     }
+    pub fn expected_identity(&self) -> &str {
+        &self.expected_identity
+    }
     pub fn apply(&self) -> std::io::Result<()> {
+        let actual_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&self.old_abs);
+        if actual_identity.as_deref() != Some(self.expected_identity.as_str()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Folder changed while preparing the rename: {}",
+                    self.old_abs.display()
+                ),
+            ));
+        }
+        if self.new_abs != self.old_abs && self.new_abs.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Target folder already exists: {}", self.new_abs.display()),
+            ));
+        }
         rename_cross_drive_fallback(&self.old_abs, &self.new_abs)
     }
     pub fn rollback(&self) -> std::io::Result<()> {
@@ -256,11 +278,20 @@ fn build_plan(
         )));
     }
 
+    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_abs)
+        .ok_or_else(|| {
+            AppError::Io(format!(
+                "Could not establish filesystem identity for {}",
+                old_abs.display()
+            ))
+        })?;
+
     Ok(Some(RuntimeRenamePlan::new(
         old_abs,
         requested_abs,
         new_abs,
         operation.target_enabled,
+        expected_identity,
     )))
 }
 

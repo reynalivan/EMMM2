@@ -97,6 +97,22 @@ async getWorkspaceStructure(input: WorkspaceStructureInput) : Promise<Result<Wor
     else return { status: "error", error: e  as any };
 }
 },
+async getWorkspaceExplorerPage(input: WorkspaceExplorerPageInput) : Promise<Result<WorkspaceExplorerPage, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_workspace_explorer_page", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async executeWorkspaceExplorerBulk(input: WorkspaceExplorerBulkInput) : Promise<Result<BulkResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_explorer_bulk", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getWorkspacePreview(input: WorkspacePreviewInput) : Promise<Result<WorkspacePreviewResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_workspace_preview", { input }) };
@@ -108,6 +124,14 @@ async getWorkspacePreview(input: WorkspacePreviewInput) : Promise<Result<Workspa
 async executeWorkspaceSwitch(input: WorkspaceSwitchInput) : Promise<Result<WorkspaceSwitchResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("execute_workspace_switch", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async executeWorkspaceObjectBulkSwitch(gameId: string, objectIds: string[], desiredEnabled: boolean) : Promise<Result<WorkspaceSwitchResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_object_bulk_switch", { gameId, objectIds, desiredEnabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -563,17 +587,17 @@ async renameModFolder(folderPath: string, newName: string, gameId: string) : Pro
     else return { status: "error", error: e  as any };
 }
 },
-async bulkToggleMods(gameId: string, paths: string[], enable: boolean) : Promise<Result<BulkResult, AppError>> {
+async bulkToggleMods(gameId: string, paths: string[], enable: boolean, operationId: string) : Promise<Result<BulkResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("bulk_toggle_mods", { gameId, paths, enable }) };
+    return { status: "ok", data: await TAURI_INVOKE("bulk_toggle_mods", { gameId, paths, enable, operationId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async bulkDeleteMods(gameId: string, paths: string[]) : Promise<Result<BulkResult, AppError>> {
+async bulkDeleteMods(gameId: string, paths: string[], operationId: string) : Promise<Result<BulkResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("bulk_delete_mods", { gameId, paths }) };
+    return { status: "ok", data: await TAURI_INVOKE("bulk_delete_mods", { gameId, paths, operationId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -615,9 +639,9 @@ async bulkPinMods(gameId: string, folderPaths: string[], pin: boolean) : Promise
  * Stop the running bulk toggle/delete after the item in flight. Work already
  * done stays done — the trailing reconcile still converges the DB.
  */
-async bulkCancel() : Promise<Result<null, AppError>> {
+async bulkCancel(operationId: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("bulk_cancel") };
+    return { status: "ok", data: await TAURI_INVOKE("bulk_cancel", { operationId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1104,7 +1128,7 @@ async testAiConnection() : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async setActiveGame(gameId: string | null) : Promise<Result<null, AppError>> {
+async setActiveGame(gameId: string | null) : Promise<Result<GameActivationResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_active_game", { gameId }) };
 } catch (e) {
@@ -1420,6 +1444,14 @@ async reconcileDiskStateCmd(gameId: string, reason: DiskReconcileReason, changed
     else return { status: "error", error: e  as any };
 }
 },
+async retryRuntimeSync(gameId: string) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retry_runtime_sync", { gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async planOnboardingIndexingWork(gameIds: string[]) : Promise<Result<OnboardingIndexingWorkPlan[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("plan_onboarding_indexing_work", { gameIds }) };
@@ -1478,38 +1510,6 @@ async getStorageSizeBackfillStatus() : Promise<StorageSizeBackfillStatus> {
 async startStorageSizeBackfill() : Promise<Result<StorageSizeBackfillStatus, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_storage_size_backfill") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Start the file watcher for a specific path.
- * Emits `mod_watch:event` to the frontend.
- *
- * Delegates the full lifecycle (thread spawning, event loop, DB sync) to
- * `services::scanner::watcher::lifecycle::start_watcher`.
- */
-async startWatcher(path: string, gameId: string) : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("start_watcher", { path, gameId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Stop the file watcher. Cleanly drops the `RecommendedWatcher`,
- * terminating the background event loop thread.
- *
- * Called by the frontend in `useEffect` cleanup when the active game changes
- * or the component unmounts.
- *
- * # Covers: req-05 AC-05.2.2, req-28 (Game Switch → stop → init)
- */
-async stopWatcher() : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("stop_watcher") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2001,7 +2001,7 @@ async browserClearOldDownloads() : Promise<Result<number, AppError>> {
 /**
  * A keybinding entry extracted from an enabled mod's INI file.
  */
-export type ActiveKeyBinding = { mod_name: string; folder_path: string; section_name: string; key: string | null; back: string | null; control_kind: ActiveKeyControlKind; value_summary: string | null }
+export type ActiveKeyBinding = { mod_name: string; folder_path: string; object_type: string | null; matched_alias_name: string | null; section_name: string; key: string | null; back: string | null; control_kind: ActiveKeyControlKind; value_summary: string | null }
 export type ActiveKeyControlKind = "key_binding" | "key_toggle"
 export type AiConfig = { enabled: boolean; has_api_key: boolean; base_url: string | null }
 export type AnalyzeImportBatchOptions = { batchId: string; password: string | null; unpackNested: boolean | null }
@@ -2009,7 +2009,13 @@ export type AnalyzeImportBatchOptions = { batchId: string; password: string | nu
  * Unified error type for Tauri command boundaries.
  * Each domain error converts into this for consistent frontend handling.
  */
-export type AppError = { type: "RuntimeState"; payload: RuntimeStateError } | { type: "Collection"; payload: CollectionError } | { type: "Metadata"; payload: MetadataError } | { type: "Browser"; payload: BrowserError } | { type: "Scanner"; payload: ScannerError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } | { type: "ArchivePasswordRequired" } | { type: "ArchivePasswordIncorrect" } | { type: "ArchiveUnsupported"; payload: { reason: ArchiveErrorKind } } | { type: "Io"; payload: string } | { type: "RuntimePathNotFound"; payload: { target: string } } | { type: "DuplicateConflict"; payload: DuplicateModInfo[] } | { type: "FileInUse"; payload: { path: string; processes: string[] } } | { type: "PathBusy"; payload: { path: string } } | { type: "ObjectHasMods"; payload: number } |
+export type AppError = { type: "RuntimeState"; payload: RuntimeStateError } | { type: "Collection"; payload: CollectionError } | { type: "Metadata"; payload: MetadataError } | { type: "Browser"; payload: BrowserError } | { type: "Scanner"; payload: ScannerError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } |
+/**
+ * The bounded in-memory explorer snapshot backing a cursor or symbolic
+ * selection is no longer available. Frontends may safely reload the
+ * listing, but must not reinterpret the old selection against new files.
+ */
+{ type: "ExplorerSnapshotExpired" } | { type: "ArchivePasswordRequired" } | { type: "ArchivePasswordIncorrect" } | { type: "ArchiveUnsupported"; payload: { reason: ArchiveErrorKind } } | { type: "Io"; payload: string } | { type: "RuntimePathNotFound"; payload: { target: string } } | { type: "DuplicateConflict"; payload: DuplicateModInfo[] } | { type: "FileInUse"; payload: { path: string; processes: string[] } } | { type: "PathBusy"; payload: { path: string } } | { type: "ObjectHasMods"; payload: number } |
 /**
  * The user cancelled a long-running operation.
  *
@@ -2033,7 +2039,15 @@ export type ApplyObjectClassificationItem = { objectId: string; decision: Object
 /**
  * Preview data for applying a collection (before → after).
  */
-export type ApplyPreview = { collection_name: string; current_tree_nodes: PreviewTreeNode[]; target_tree_nodes: PreviewTreeNode[]; current_state_name: string | null; current_state_is_unsaved: boolean; current_projected_state: ProjectedCollectionState; target_projected_state: ProjectedCollectionState }
+export type ApplyPreview = { collection_name: string; current_tree_nodes: PreviewTreeNode[];
+/**
+ * The collection as saved, including entries Safe Mode may exclude.
+ */
+target_tree_nodes: PreviewTreeNode[];
+/**
+ * The target that the apply pipeline will actually use after Safe Mode filtering.
+ */
+effective_target_tree_nodes: PreviewTreeNode[]; current_state_name: string | null; current_state_is_unsaved: boolean; current_projected_state: ProjectedCollectionState; target_projected_state: ProjectedCollectionState; effective_target_projected_state: ProjectedCollectionState; safe_mode_enabled: boolean }
 export type ApplyProgressSnapshot = { game_id: string; phase: string; completed: number; total: number; current_item: string | null; warnings: string[]; final_state_name: string | null; success: boolean }
 export type ApplyRandomizedLoadoutInput = { game_id: string; mod_ids: string[]; safety_filter: RandomizerSafetyFilter; scope: RandomizerScope; backup: RandomizedLoadoutBackupInput | null; preview_fingerprint: string }
 export type ApplyRandomizedLoadoutResult = { impact: WorkspaceImpact; backup: RandomizedLoadoutBackupResult | null; sync_warning: CommittedMutationSyncWarning | null; history_warning: string | null }
@@ -2056,7 +2070,7 @@ export type BrowserHistoryEntry = { url: string; hostname: string; title: string
 export type BrowserPrivacySummary = { bookmarks: number; history_entries: number; saved_permissions: number }
 export type BrowserSessionTab = { position: number; url: string; title: string; active: boolean }
 export type BulkActionError = { path: string; error: AppError }
-export type BulkResult = { success: string[]; failures: BulkActionError[]; cancelled: boolean; processed_count: number; unprocessed_count: number; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null }
+export type BulkResult = { success: string[]; failures: BulkActionError[]; cancelled: boolean; processed_count: number; unprocessed_count: number; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null; runtime_sync_generation: number | null }
 export type CanonicalClassificationCatalogEntry = { entryKey: string; name: string; category: StableCategory; metadata: JsonValue; thumbnailPath: string | null; aliases: string[] }
 export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; matchStatus?: ImportMatchStatus; evidence: MatchEvidence[] }
 export type CatalogImportPreview = { stagingToken: string; sourceKind: string; sourceLabel: string; sourceUrl: string | null; releaseTag: string | null; review: CatalogPackReview; replacesActivePack: boolean }
@@ -2329,6 +2343,8 @@ export type FolderConflictSummary = { path: string; folder_name: string; is_enab
 export type FolderEntry = { name: string; is_dir: boolean }
 export type FolderNameConflictCandidate = { path: string; folder_name: string; base_name: string; is_enabled: boolean }
 export type FolderNameConflictGroup = { group_id: string; identity: string; display_name: string; candidates: FolderNameConflictCandidate[] }
+export type GameActivationPhase = "syncing" | "ready" | "source_unavailable" | "failed"
+export type GameActivationResult = { game_id: string | null; generation: number; phase: GameActivationPhase }
 export type GameConfig = { id: string; name: string; game_type: number; instance_path?: string; mod_path: string;
 /**
  * Optional per-game ReadyToMove inbox. When absent, the OS Downloads default is used.
@@ -2648,7 +2664,23 @@ export type WhitelistEntry = { id: string; folderAId: string; folderBId: string;
 export type WorkspaceCapabilities = { can_toggle: boolean; can_rename: boolean; can_delete: boolean; can_move: boolean; can_toggle_safe: boolean; can_sync: boolean; can_enable_only_this: boolean; can_pin: boolean; can_edit_metadata: boolean; can_reveal_in_explorer: boolean; can_move_category: boolean; can_open_in_explorer: boolean }
 export type WorkspaceDisplayMode = "container_folder" | "mod_pack" | "variant" | "flat_mod" | "internal_assets" | "unknown"
 export type WorkspaceExplorer = { self_node_type: string | null; self_node_kind: WorkspaceNodeKind; self_display_mode: WorkspaceDisplayMode; self_type_chip: WorkspaceTypeChip | null; self_is_mod: boolean; self_is_enabled: boolean; self_is_effectively_active: boolean; self_owner_object_id: string | null; self_owner_object_folder_path: string | null; self_classification_reasons: string[]; children: WorkspaceExplorerNode[]; conflicts: ConflictGroup[]; ancestor_disabled_by: string | null; ancestor_disabled_path: string | null; inactive_reason: WorkspaceReason | null }
+export type WorkspaceExplorerBulkAction = { kind: "toggle"; enable: boolean; operation_id: string } | { kind: "delete"; operation_id: string } | { kind: "update_info"; update: ModInfoUpdate } | { kind: "set_safety"; safe: boolean } | { kind: "set_favorite"; favorite: boolean } | { kind: "set_pin"; pin: boolean } | { kind: "move_to_object"; target_object_id: string; target_subpath: string | null; status: string | null }
+export type WorkspaceExplorerBulkInput = { selection: WorkspaceExplorerSelectionInput; action: WorkspaceExplorerBulkAction }
 export type WorkspaceExplorerNode = { node_type: string; classification_reasons: string[]; id: string | null; owner_object_id: string | null; owner_object_folder_path: string | null; name: string; folder_name: string; path: string; is_enabled: boolean; is_directory: boolean; thumbnail_path: string | null; modified_at: number; size_bytes: number; has_info_json: boolean; is_favorite: boolean; is_misplaced: boolean; is_safe: boolean; is_safety_classified: boolean; contains_safe_mods: boolean; contains_unsafe_mods: boolean; metadata: Partial<{ [key in string]: string }> | null; category: string | null; conflict_group_id: string | null; conflict_state: string | null; warnings: string[]; node_kind: WorkspaceNodeKind; display_mode: WorkspaceDisplayMode; type_chip: WorkspaceTypeChip | null; display_name: string; is_effectively_active: boolean; ancestor_disabled: boolean; inactive_reason: WorkspaceReason | null; warning_state: WorkspaceWarningState; primary_warning: WorkspaceWarning | null; switch_state: WorkspaceSwitchState; switch_reason: WorkspaceReason | null; switch_policy_key: WorkspaceSwitchPolicyKey; capabilities: WorkspaceCapabilities; can_navigate: boolean }
+export type WorkspaceExplorerPage = { items: WorkspaceExplorerNode[]; next_cursor: string | null; total_matching: number; query_fingerprint: string;
+/**
+ * Opaque identity of the immutable backend listing used by this page.
+ * Bulk actions must carry this value so they cannot silently include
+ * folders that appeared after the user selected the result set.
+ */
+listing_revision: string }
+export type WorkspaceExplorerPageInput = { query: WorkspaceExplorerQuery; cursor: string | null; page_size: number }
+export type WorkspaceExplorerQuery = { game_id: string; explorer_sub_path: string | null; search_query: string | null; sort_field: WorkspaceExplorerSortField; sort_order: WorkspaceExplorerSortOrder; safety_filter: WorkspaceExplorerSafetyFilter }
+export type WorkspaceExplorerSafetyFilter = "all" | "safe" | "unsafe"
+export type WorkspaceExplorerSelection = { mode: "explicit"; paths: string[] } | { mode: "all_matching"; excluded_paths: string[] }
+export type WorkspaceExplorerSelectionInput = { query: WorkspaceExplorerQuery; listing_revision: string; selection: WorkspaceExplorerSelection }
+export type WorkspaceExplorerSortField = "name" | "modified_at" | "size_bytes"
+export type WorkspaceExplorerSortOrder = "asc" | "desc"
 export type WorkspaceImageSummary = { image_count: number; primary_image_path: string | null }
 export type WorkspaceImpact = { rewrites: WorkspacePathRewrite[]; changed_object_ids: string[]; changed_folder_paths: string[]; refresh_scopes: WorkspaceRefreshScope[]; warnings: string[] }
 export type WorkspaceIniSummary = { file_count: number; file_names: string[] }
@@ -2665,7 +2697,7 @@ export type WorkspaceParentEnableParent = { path: string; name: string }
  * disabled prefix. This payload is derived after disk preflight so the UI
  * can explain the exact prerequisite without guessing from visible nodes.
  */
-export type WorkspaceParentEnableRequirement = { requested_target: WorkspaceParentEnableImpact; parents: WorkspaceParentEnableParent[]; will_activate: WorkspaceParentEnableImpact[]; stay_disabled: WorkspaceParentEnableImpact[] }
+export type WorkspaceParentEnableRequirement = { confirmation_token: string; requested_target: WorkspaceParentEnableImpact; parents: WorkspaceParentEnableParent[]; will_activate: WorkspaceParentEnableImpact[]; stay_disabled: WorkspaceParentEnableImpact[] }
 export type WorkspacePathRewrite = { old_path: string; new_path: string }
 export type WorkspacePreview = { selected_path: string | null; selected_node: WorkspaceNode | null; is_flat_mod_root: boolean; display_title: string | null; display_subtitle: string | null; mod_info_summary: WorkspaceModInfoSummary | null; ini_summary: WorkspaceIniSummary | null; image_summary: WorkspaceImageSummary | null; warning_summary: WorkspaceWarningSummary }
 export type WorkspacePreviewContextStatus = "ready" | "context_stale"
@@ -2690,11 +2722,11 @@ export type WorkspaceSwitchInput = { game_id: string; target: WorkspaceSwitchTar
  * Parent activation is independent from duplicate conflict policy. A
  * boolean avoids a combinatorial set of resolution enum variants.
  */
-enable_disabled_ancestors?: boolean; origin_surface: WorkspaceSwitchOriginSurface }
+enable_disabled_ancestors?: boolean; parent_enable_confirmation?: string | null; origin_surface: WorkspaceSwitchOriginSurface }
 export type WorkspaceSwitchOriginSurface = "folder_grid" | "preview" | "object_list" | "collections"
 export type WorkspaceSwitchPolicyKey = "mod" | "object" | "blocked"
 export type WorkspaceSwitchResolution = "normal" | "force_enable" | "enable_only_this"
-export type WorkspaceSwitchResult = { status: WorkspaceSwitchStatus; primary_path: string | null; changed_folder_paths: string[]; changed_object_ids: string[]; duplicates: WorkspaceSwitchDuplicate[]; parent_enable_requirement: WorkspaceParentEnableRequirement | null; impact: WorkspaceImpact; sync_warning: CommittedMutationSyncWarning | null }
+export type WorkspaceSwitchResult = { status: WorkspaceSwitchStatus; primary_path: string | null; changed_folder_paths: string[]; changed_object_ids: string[]; duplicates: WorkspaceSwitchDuplicate[]; parent_enable_requirement: WorkspaceParentEnableRequirement | null; impact: WorkspaceImpact; sync_warning: CommittedMutationSyncWarning | null; runtime_sync_generation: number | null }
 export type WorkspaceSwitchState = "enabled" | "disabled" | "effectively_disabled" | "blocked_by_ancestor"
 export type WorkspaceSwitchStatus = "applied" | "requires_duplicate_resolution" | "requires_parent_enable" | "noop"
 export type WorkspaceSwitchTarget = { kind: WorkspaceSwitchTargetKind; value: string }

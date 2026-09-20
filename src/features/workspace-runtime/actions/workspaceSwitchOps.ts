@@ -23,7 +23,10 @@ import {
   buildRefreshDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '../optimistic/descriptorBuilders';
-import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
+import {
+  cancelRuntimeDescriptorQueries,
+  publishRuntimeDescriptor,
+} from '@/shared/lib/queryRefresh';
 import {
   openFolderConflictManagerDialog,
   openRenameConfirmationDialog,
@@ -63,6 +66,10 @@ export function parseRenameConflict(error: unknown): WorkspaceRenameConflictPayl
   } catch {
     return null;
   }
+}
+
+export function isWorkspaceGameCurrent(gameId: string): boolean {
+  return useAppStore.getState().activeGameId === gameId;
 }
 
 export function buildNodePendingKey(node: WorkspaceNode): string {
@@ -109,14 +116,22 @@ export async function executeWorkspaceSwitch(
 ): Promise<WorkspaceSwitchResult | null> {
   try {
     const result = await commands.executeWorkspaceSwitch(input);
-    notifyCommittedMutationSyncWarning(result);
+    if (isWorkspaceGameCurrent(input.game_id)) {
+      notifyCommittedMutationSyncWarning(result);
+    }
     return result;
   } catch (error) {
+    if (!isWorkspaceGameCurrent(input.game_id)) {
+      return null;
+    }
     const renameConflict = parseRenameConflict(error);
     if (renameConflict) {
       const report = await commands
         .reconcileDiskStateCmd(input.game_id, 'ManualRepair', null, true)
         .catch(() => null);
+      if (!isWorkspaceGameCurrent(input.game_id)) {
+        return null;
+      }
       const appStore = useAppStore.getState();
       const appliedReport = report ? appStore.applyFolderConflictReconcileResult(report) : false;
       if (report?.status === 'AppliedWithFolderConflicts' && report.folder_conflicts.length > 0) {
@@ -149,6 +164,37 @@ export async function executeWorkspaceSwitch(
   }
 }
 
+/** Runs one all-or-nothing object batch through the workspace mutation pipeline. */
+export async function executeWorkspaceObjectBulkSwitch(
+  gameId: string,
+  objectIds: string[],
+  desiredEnabled: boolean,
+): Promise<WorkspaceSwitchResult | null> {
+  try {
+    const result = await commands.executeWorkspaceObjectBulkSwitch(
+      gameId,
+      objectIds,
+      desiredEnabled,
+    );
+    if (isWorkspaceGameCurrent(gameId)) {
+      notifyCommittedMutationSyncWarning(result);
+    }
+    return result;
+  } catch (error) {
+    if (!isWorkspaceGameCurrent(gameId)) {
+      return null;
+    }
+    const fileInUse = extractFileInUsePayload(error);
+    if (fileInUse) {
+      openWorkspaceFileInUseDialog({ path: fileInUse.path, processes: fileInUse.processes });
+      return null;
+    }
+
+    toast.error(formatAppError(error));
+    return null;
+  }
+}
+
 /**
  * The post-switch cache work every switch shape shares: replay the backend's
  * path rewrites, then publish the refresh scopes.
@@ -157,42 +203,56 @@ export async function executeWorkspaceSwitch(
  * no-op — so it replays unconditionally. Thumbnails are identity-keyed and
  * survive a toggle, so nothing is dropped here.
  */
-export async function applyWorkspaceSwitchEffects(
+export function applyWorkspaceSwitchEffects(
   queryClient: QueryClient,
   result: WorkspaceSwitchResult,
   fallbackClass: WorkspaceSwitchFallbackClass,
   options: WorkspaceSwitchEffectsOptions = {},
-): Promise<void> {
+): void {
+  if (options.gameId && !isWorkspaceGameCurrent(options.gameId)) {
+    return;
+  }
+
+  const descriptor =
+    options.publish === false ? null : buildSwitchRefreshDescriptor(result.impact, fallbackClass);
+  const seen = new Set<string>();
+  const affectedPaths = (result.changed_folder_paths ?? []).filter((path) => {
+    const key = identityPathKey(path) ?? path;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  const healthKeys = options.gameId
+    ? affectedPaths.map((path) => modHealthKeys.report(options.gameId!, path))
+    : [];
+  const cancellation = Promise.all([
+    descriptor ? cancelRuntimeDescriptorQueries(queryClient, descriptor) : Promise.resolve(),
+    ...healthKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })),
+  ]);
+
   applyRuntimeEffects(
     queryClient,
     buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
   );
 
-  if (options.gameId) {
-    const seen = new Set<string>();
-    const affectedPaths = result.changed_folder_paths.filter((path) => {
-      const key = identityPathKey(path) ?? path;
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    });
-    await Promise.all(
-      affectedPaths.map((path) =>
-        queryClient.invalidateQueries({
-          queryKey: modHealthKeys.report(options.gameId!, path),
-          refetchType: 'active',
-        }),
-      ),
-    );
-  }
+  const backgroundRefresh = async () => {
+    await cancellation;
 
-  if (options.publish !== false) {
-    await publishRuntimeDescriptor(
-      queryClient,
-      buildSwitchRefreshDescriptor(result.impact, fallbackClass),
-      'active',
-    );
-  }
+    if (options.gameId && !isWorkspaceGameCurrent(options.gameId)) {
+      return;
+    }
+
+    await Promise.all([
+      ...healthKeys.map((queryKey) =>
+        queryClient.invalidateQueries({ queryKey, refetchType: 'active' }),
+      ),
+      descriptor ? publishRuntimeDescriptor(queryClient, descriptor, 'active') : Promise.resolve(),
+    ]);
+  };
+
+  void backgroundRefresh().catch((error: unknown) => {
+    console.error('[WorkspaceSwitch] Background cache refresh failed:', error);
+  });
 }

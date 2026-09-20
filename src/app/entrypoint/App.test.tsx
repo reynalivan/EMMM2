@@ -45,7 +45,6 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('FreshInstall');
-      if (cmd === 'stop_watcher') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -67,7 +66,6 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.resolve('HasConfig');
-      if (cmd === 'stop_watcher') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 
@@ -88,7 +86,6 @@ describe('App Bootstrap Routing & Initialization (TC-01)', () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
       if (cmd === 'app_startup_check') return Promise.resolve([]);
       if (cmd === 'check_config_status') return Promise.reject(new Error('Backend missing'));
-      if (cmd === 'stop_watcher') return Promise.resolve();
       return Promise.reject(new Error(`Unhandled mock command: ${cmd}`));
     });
 

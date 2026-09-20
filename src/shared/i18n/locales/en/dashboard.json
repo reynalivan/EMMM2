@@ -61,18 +61,14 @@
     "error_title": "Identity checking needs attention",
     "error_detail": "The last local check could not finish.",
     "retry": "Retry",
-    "how_to_action": "How it works",
-    "how_to_title": "How object suggestions work",
-    "how_to_intro": "Catalog packs are separate data files. They can provide names, aliases, artwork, and supported KeyViewer targets without being bundled with EMMM.",
-    "how_to_catalog_title": "Add a catalog pack",
-    "how_to_catalog_detail": "Choose a reviewed GitHub release or a local ZIP in Settings. Installing a pack does not change your mod folders, metadata, or images.",
-    "how_to_check_title": "Run a local check",
-    "how_to_check_detail": "Start a check here, from Mod Inbox preflight, or from an object action. EMMM only reads the relevant local object data.",
-    "how_to_review_title": "Review before applying",
-    "how_to_review_detail": "Suggestions remain optional. Confirm selected high-confidence matches in the classification wizard before EMMM changes metadata.",
-    "how_to_benefits_title": "What a catalog can improve",
-    "how_to_benefits_matching": "Names and aliases help you find the right mods. Your images stay unchanged.",
-    "how_to_benefits_keyviewer": "Find the right mods and use KeyViewer controls for supported objects. Your images stay unchanged.",
+    "how_to_action": "Why add a catalog?",
+    "how_to_title": "Help EMMM understand your games",
+    "how_to_intro": "Upload a ZIP file or paste a public GitHub link to add a catalog. It helps EMMM recognize your games, match mods more accurately, and suggest better categories.",
+    "how_to_benefits_title": "What you get",
+    "how_to_benefit_matching": "More accurate game and mod matching.",
+    "how_to_benefit_categories": "Clearer categories that make your library easier to browse.",
+    "how_to_benefit_keyviewer": "KeyViewer controls for supported games and objects.",
+    "how_to_benefit_safe": "Your mod folders and images stay unchanged.",
     "how_to_close": "Close"
   },
   "waste": {
@@ -107,6 +103,14 @@
       "key_binding": "Key binding",
       "key_toggle": "Key toggle"
     },
-    "no_bindings": "No keybindings found in enabled mods"
+    "no_bindings": "No keybindings found in enabled mods",
+    "search_label": "Search active key mappings",
+    "search_placeholder": "Search mod folder, classification, or alias",
+    "filter_label": "Filter by classification",
+    "filter_all": "All classifications",
+    "filter_unclassified": "Unclassified",
+    "clear_filters": "Clear filters",
+    "no_matches": "No key mappings match the current filters",
+    "alias": "Alias: {{alias}}"
   }
 }

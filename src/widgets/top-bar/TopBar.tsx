@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  AlertTriangle,
   ChevronLeft,
   Copy,
   Download,
@@ -10,11 +12,14 @@ import {
   Inbox,
   LayoutGrid,
   Layers,
+  LoaderCircle,
   PlayCircle,
+  RotateCcw,
   Settings,
 } from 'lucide-react';
 import { useAppStore } from '@/app/store';
 import { launchConfiguredGame, useActiveGame } from '@/entities/game';
+import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import { toast } from '@/shared/ui/toast';
 import GameSelector from './GameSelector';
@@ -22,22 +27,43 @@ import GlobalActions from './GlobalActions';
 import { SafetyFilterControl } from '@/shared/ui/components/ui/SafetyFilterControl';
 import { LiquidSurface } from '@/shared/ui/liquid';
 
+const APP_MENU_WIDTH_PX = 224;
+const APP_MENU_GAP_PX = 8;
+
+interface AppMenuPosition {
+  left: number;
+  top: number;
+}
+
 export interface TopBarProps {
   launchBar?: ReactNode;
   contextControls?: ReactNode;
 }
 
 export default function TopBar({ launchBar, contextControls }: TopBarProps) {
-  const { t } = useTranslation('layout');
+  const { t } = useTranslation(['layout', 'common']);
   const workspaceView = useAppStore((state) => state.workspaceView);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
+  const isAppMenuOpen = useAppStore((state) => state.isAppMenuOpen);
+  const setAppMenuOpen = useAppStore((state) => state.setAppMenuOpen);
   const safetyFilter = useAppStore((state) => state.safetyFilter);
   const setSafetyFilter = useAppStore((state) => state.setSafetyFilter);
   const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const { activeGame } = useActiveGame();
+  const runtimeSync = useAppStore((state) =>
+    activeGame?.id ? state.runtimeSyncByGame?.[activeGame.id] : undefined,
+  );
+  const gameActivation = useAppStore((state) =>
+    activeGame?.id ? state.gameActivationByGame?.[activeGame.id] : undefined,
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isRetryingRuntime, setIsRetryingRuntime] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuOverlayRef = useRef<HTMLDivElement>(null);
+  const wasAppMenuOpen = useRef(isAppMenuOpen);
+  const [menuPosition, setMenuPosition] = useState<AppMenuPosition | null>(null);
   const pageTitle =
     workspaceView === 'dashboard'
       ? t('nav.dashboard')
@@ -50,22 +76,52 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
             : workspaceView === 'settings'
               ? t('nav.settings')
               : workspaceView === 'browser'
-                ? t('nav.browser')
+                ? t('nav.discover')
                 : workspaceView === 'downloads'
                   ? t('nav.downloads')
                   : t('nav.storage_optimizer');
   const showLaunchBar = workspaceView === 'dashboard' || workspaceView === 'mods';
+
+  const closeAppMenu = useCallback(() => {
+    setMenuOpen(false);
+    setMenuPosition(null);
+    setAppMenuOpen(false);
+  }, [setAppMenuOpen]);
+
+  useEffect(() => {
+    if (wasAppMenuOpen.current && !isAppMenuOpen) {
+      setMenuOpen(false);
+      setMenuPosition(null);
+    }
+    wasAppMenuOpen.current = isAppMenuOpen;
+  }, [isAppMenuOpen]);
+
+  useEffect(() => () => setAppMenuOpen(false), [setAppMenuOpen]);
 
   const handleQuickPlay = async () => {
     if (!activeGame) return;
     setIsLaunching(true);
     try {
       await launchConfiguredGame(activeGame.id, autoCloseLauncher);
-      setMenuOpen(false);
+      closeAppMenu();
     } catch (cause) {
       toast.error(formatAppError(cause));
     } finally {
       setIsLaunching(false);
+    }
+  };
+
+  const handleRuntimeRetry = async () => {
+    if (!activeGame || isRetryingRuntime || (gameActivation && gameActivation.phase !== 'ready')) {
+      return;
+    }
+    setIsRetryingRuntime(true);
+    try {
+      await commands.retryRuntimeSync(activeGame.id);
+    } catch (cause) {
+      toast.error(formatAppError(cause));
+    } finally {
+      setIsRetryingRuntime(false);
     }
   };
 
@@ -86,43 +142,183 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
       label: t('nav.mod_inbox'),
     },
     {
-      id: 'storage-optimizer' as const,
-      icon: Copy,
-      label: t('nav.storage_optimizer'),
-    },
-    {
       id: 'collections' as const,
       icon: Layers,
       label: t('nav.collections'),
     },
     {
-      id: 'settings' as const,
-      icon: Settings,
-      label: t('nav.settings'),
+      id: 'storage-optimizer' as const,
+      icon: Copy,
+      label: t('nav.storage_optimizer'),
     },
     {
       id: 'browser' as const,
       icon: Globe,
-      label: t('nav.browser'),
+      label: t('nav.discover'),
     },
     {
       id: 'downloads' as const,
       icon: Download,
       label: t('nav.downloads'),
     },
+    {
+      id: 'settings' as const,
+      icon: Settings,
+      label: t('nav.settings'),
+    },
   ];
+
+  const handleMenuToggle = () => {
+    if (menuOpen) {
+      closeAppMenu();
+      return;
+    }
+
+    setMenuOpen(true);
+    setAppMenuOpen(true);
+  };
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+
+    const updateMenuPosition = () => {
+      const button = menuButtonRef.current;
+      if (!button) return;
+
+      const rect = button.getBoundingClientRect();
+      const maxLeft = Math.max(
+        APP_MENU_GAP_PX,
+        window.innerWidth - APP_MENU_WIDTH_PX - APP_MENU_GAP_PX,
+      );
+
+      setMenuPosition({
+        left: Math.min(Math.max(rect.left, APP_MENU_GAP_PX), maxLeft),
+        top: rect.bottom + APP_MENU_GAP_PX,
+      });
+    };
+
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    return () => window.removeEventListener('resize', updateMenuPosition);
+  }, [menuOpen]);
 
   // Close on click outside
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
+      const target = e.target as Node;
+      const clickedInsideMenu =
+        menuRef.current?.contains(target) || menuOverlayRef.current?.contains(target);
+
+      if (!clickedInsideMenu) {
+        closeAppMenu();
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [menuOpen]);
+  }, [closeAppMenu, menuOpen]);
+
+  const appMenuContent = (
+    <>
+      {workspaceView !== 'dashboard' && (
+        <>
+          <button
+            type="button"
+            data-testid="nav-dashboard"
+            onClick={() => {
+              setWorkspaceView('dashboard');
+              closeAppMenu();
+            }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-base-content/85 transition-colors hover:bg-base-content/8 hover:text-base-content"
+          >
+            <ChevronLeft size={16} className="text-base-content/60" />
+            {t('nav.back_to_dashboard')}
+          </button>
+          <div className="mx-2 my-1.5 h-px bg-base-content/10" />
+        </>
+      )}
+
+      {/* Quick Play */}
+      <button
+        onClick={() => void handleQuickPlay()}
+        disabled={!activeGame || isLaunching}
+        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left hover:bg-success/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed group"
+      >
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
+          <PlayCircle size={16} className="text-primary" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-base-content/90 transition-colors group-hover:text-primary">
+            {t('nav.quick_play')}
+          </p>
+          <p className="text-[10px] text-base-content/40 truncate">
+            {activeGame ? activeGame.name : t('nav.no_game_selected')}
+          </p>
+        </div>
+      </button>
+
+      <div className="h-px bg-base-300 my-1.5 mx-2" />
+
+      {/* Navigation Items */}
+      {NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
+        const isActive = workspaceView === item.id;
+        if (item.id === 'dashboard' && workspaceView !== 'dashboard') return null;
+
+        return (
+          <button
+            key={item.id}
+            data-testid={`nav-${item.id}`}
+            onClick={() => {
+              setWorkspaceView(item.id);
+              closeAppMenu();
+            }}
+            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors group ${
+              isActive ? 'bg-base-content/5' : 'hover:bg-base-300/60'
+            }`}
+          >
+            <div
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                isActive ? 'text-base-content' : 'text-base-content/55'
+              }`}
+            >
+              <Icon size={16} />
+            </div>
+            <span
+              className={`text-sm font-medium ${isActive ? 'text-base-content' : 'text-base-content/80 group-hover:text-base-content'} transition-colors`}
+            >
+              {item.label}
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+
+  const appMenuOverlay =
+    menuOpen && menuPosition && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={menuOverlayRef}
+            className="fixed z-[var(--workspace-layer-popover)] w-56 overflow-y-auto"
+            style={{
+              left: menuPosition.left,
+              top: menuPosition.top,
+              maxHeight: `calc(100dvh - ${menuPosition.top + APP_MENU_GAP_PX}px)`,
+            }}
+          >
+            <LiquidSurface
+              liquidRole="overlay"
+              data-testid="app-menu-overlay"
+              className="app-menu-overlay w-full rounded-xl shadow-lg"
+              contentClassName="p-2"
+            >
+              {appMenuContent}
+            </LiquidSurface>
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <LiquidSurface
@@ -135,7 +331,8 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
         {/* App Menu Toggle */}
         <div className="relative" ref={menuRef}>
           <button
-            onClick={() => setMenuOpen((v) => !v)}
+            ref={menuButtonRef}
+            onClick={handleMenuToggle}
             className={`cursor-pointer rounded-lg border p-2 transition-[background-color,border-color,color] duration-150 ${
               menuOpen
                 ? 'border-primary/30 bg-primary/10 text-primary'
@@ -145,89 +342,6 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
           >
             <LayoutGrid size={20} />
           </button>
-
-          {/* Dropdown Menu */}
-          {menuOpen && (
-            <LiquidSurface
-              liquidRole="overlay"
-              data-testid="app-menu-overlay"
-              className="app-menu-overlay absolute left-0 top-full z-[var(--workspace-layer-popover)] mt-2 w-56 rounded-xl shadow-lg"
-              contentClassName="p-2"
-            >
-              {workspaceView !== 'dashboard' && (
-                <>
-                  <button
-                    type="button"
-                    data-testid="nav-dashboard"
-                    onClick={() => {
-                      setWorkspaceView('dashboard');
-                      setMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-base-content/85 transition-colors hover:bg-base-content/8 hover:text-base-content"
-                  >
-                    <ChevronLeft size={16} className="text-base-content/60" />
-                    {t('nav.back_to_dashboard')}
-                  </button>
-                  <div className="mx-2 my-1.5 h-px bg-base-content/10" />
-                </>
-              )}
-
-              {/* Quick Play */}
-              <button
-                onClick={() => void handleQuickPlay()}
-                disabled={!activeGame || isLaunching}
-                className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left hover:bg-success/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed group"
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
-                  <PlayCircle size={16} className="text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-base-content/90 transition-colors group-hover:text-primary">
-                    {t('nav.quick_play')}
-                  </p>
-                  <p className="text-[10px] text-base-content/40 truncate">
-                    {activeGame ? activeGame.name : t('nav.no_game_selected')}
-                  </p>
-                </div>
-              </button>
-
-              <div className="h-px bg-base-300 my-1.5 mx-2" />
-
-              {/* Navigation Items */}
-              {NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const isActive = workspaceView === item.id;
-                if (item.id === 'dashboard' && workspaceView !== 'dashboard') return null;
-
-                return (
-                  <button
-                    key={item.id}
-                    data-testid={`nav-${item.id}`}
-                    onClick={() => {
-                      setWorkspaceView(item.id);
-                      setMenuOpen(false);
-                    }}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors group ${
-                      isActive ? 'bg-base-content/5' : 'hover:bg-base-300/60'
-                    }`}
-                  >
-                    <div
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                        isActive ? 'text-base-content' : 'text-base-content/55'
-                      }`}
-                    >
-                      <Icon size={16} />
-                    </div>
-                    <span
-                      className={`text-sm font-medium ${isActive ? 'text-base-content' : 'text-base-content/80 group-hover:text-base-content'} transition-colors`}
-                    >
-                      {item.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </LiquidSurface>
-          )}
         </div>
 
         {workspaceView === 'settings' ? (
@@ -247,6 +361,59 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
             <div className="hidden sm:block">
               <GameSelector />
             </div>
+            {runtimeSync &&
+              (runtimeSync.phase === 'queued' ||
+                runtimeSync.phase === 'running' ||
+                runtimeSync.phase === 'needs_manual_reload' ||
+                runtimeSync.phase === 'failed') && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  title={
+                    runtimeSync.message ??
+                    (runtimeSync.phase === 'failed'
+                      ? t('common:reconcile.runtime_sync_failed')
+                      : runtimeSync.phase === 'needs_manual_reload'
+                        ? t('common:reconcile.manual_reload_short')
+                        : t('common:reconcile.runtime_syncing'))
+                  }
+                  className={`hidden items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium md:flex ${
+                    runtimeSync.phase === 'failed' || runtimeSync.phase === 'needs_manual_reload'
+                      ? 'border-warning/30 bg-warning/10 text-warning'
+                      : 'border-base-content/15 bg-base-content/5 text-base-content/65'
+                  }`}
+                >
+                  {runtimeSync.phase === 'queued' || runtimeSync.phase === 'running' ? (
+                    <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <AlertTriangle size={13} aria-hidden="true" />
+                  )}
+                  <span>
+                    {runtimeSync.phase === 'failed'
+                      ? t('common:reconcile.runtime_sync_failed')
+                      : runtimeSync.phase === 'needs_manual_reload'
+                        ? t('common:reconcile.manual_reload_short')
+                        : t('common:reconcile.runtime_syncing')}
+                  </span>
+                  {runtimeSync.phase === 'failed' &&
+                    (!gameActivation || gameActivation.phase === 'ready') && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs h-5 min-h-0 gap-1 px-1"
+                        onClick={() => void handleRuntimeRetry()}
+                        disabled={isRetryingRuntime}
+                        aria-label={t('common:actions.retry')}
+                      >
+                        <RotateCcw
+                          size={11}
+                          className={isRetryingRuntime ? 'animate-spin' : undefined}
+                          aria-hidden="true"
+                        />
+                        {t('common:actions.retry')}
+                      </button>
+                    )}
+                </div>
+              )}
           </>
         )}
       </div>
@@ -294,6 +461,7 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
           </>
         )}
       </div>
+      {appMenuOverlay}
     </LiquidSurface>
   );
 }

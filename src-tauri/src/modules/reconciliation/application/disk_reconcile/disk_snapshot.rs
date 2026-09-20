@@ -163,12 +163,19 @@ pub struct DiskDiscoveryScanCounts {
     pub classified_directories: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DiskDiscoveryTimings {
+    pub census_ms: u64,
+    pub classification_ms: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct DiskScopedDiscovery {
     pub census: DiskIdentityCensus,
     pub projection: DiskProjection,
     pub scoped: bool,
     pub scan_counts: DiskDiscoveryScanCounts,
+    pub timings: DiskDiscoveryTimings,
 }
 
 /// A complete onboarding discovery and work plan derived from one metadata
@@ -179,10 +186,30 @@ pub struct OnboardingDiskDiscovery {
     pub work_plan: crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingWorkPlan,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnboardingDiscoveryPhase {
+    Metadata,
+    Classifying,
+}
+
+/// Progress from the filesystem preparation that precedes onboarding apply.
+/// The caller owns event throttling because it has the session/game context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnboardingDiscoveryProgress {
+    pub phase: OnboardingDiscoveryPhase,
+    pub completed_roots: usize,
+    pub total_roots: usize,
+    pub files_inspected: u64,
+    pub folders_classified: usize,
+    pub current_root: Option<String>,
+    pub is_terminal: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiskSnapshotProgress {
     pub completed_roots: usize,
     pub total_roots: usize,
+    pub classified_directories: usize,
     pub current_root: Option<String>,
 }
 
@@ -341,6 +368,65 @@ pub fn collect_disk_identity_census(mods_path: &Path) -> DiskProjectionResult<Di
     })
 }
 
+/// Collect identity evidence only below roots already proven by a durable
+/// internal mutation. External watcher input must keep using the global
+/// census because it does not carry that proof.
+fn collect_disk_identity_census_for_roots(
+    mods_path: &Path,
+    changed_roots: &[String],
+) -> DiskProjectionResult<DiskIdentityCensus> {
+    if !mods_path.exists() || !mods_path.is_dir() {
+        return Err(DiskProjectionError::SourceUnavailable(format!(
+            "Disk Reconcile mods path is unavailable: {}",
+            mods_path.display()
+        )));
+    }
+
+    let root_names = changed_roots.iter().collect::<BTreeSet<_>>();
+    let mut pending = Vec::new();
+    let mut top_level_roots = 0;
+    for root_name in root_names {
+        let mut components = Path::new(root_name).components();
+        let valid_root = matches!(components.next(), Some(std::path::Component::Normal(_)))
+            && components.next().is_none()
+            && !root_name.starts_with('.');
+        if !valid_root {
+            return Err(DiskProjectionError::Failed(format!(
+                "Trusted reconcile root is invalid: {root_name}"
+            )));
+        }
+
+        let root_path = mods_path.join(root_name);
+        if root_path.exists() && root_path.is_dir() {
+            top_level_roots += 1;
+            pending.push(root_path);
+        }
+    }
+
+    let mut entries = Vec::new();
+    while let Some(path) = pending.pop() {
+        let folder_path = relative_path_string(mods_path, &path)?;
+        let raw_name = runtime_dir_name(&path);
+        entries.push(DiskIdentityCensusEntry {
+            folder_path_key: crate::shared::path_key::folder_path_key(&folder_path, None),
+            folder_path,
+            raw_name,
+            absolute_path: path.clone(),
+        });
+        pending.extend(list_runtime_dirs(&path)?);
+    }
+    entries.sort_by(|left, right| {
+        left.folder_path
+            .to_ascii_lowercase()
+            .cmp(&right.folder_path.to_ascii_lowercase())
+    });
+
+    Ok(DiskIdentityCensus {
+        entries,
+        top_level_roots,
+    })
+}
+
 fn collect_terminal_mods(
     mods: &mut Vec<DiskModEntry>,
     mods_path: &Path,
@@ -494,6 +580,7 @@ fn collect_disk_projection_with_progress_and_stats(
         progress(DiskSnapshotProgress {
             completed_roots: 0,
             total_roots,
+            classified_directories: 0,
             current_root: None,
         });
     }
@@ -508,6 +595,7 @@ fn collect_disk_projection_with_progress_and_stats(
                     progress(DiskSnapshotProgress {
                         completed_roots: completed,
                         total_roots,
+                        classified_directories: classified_directories.load(Ordering::Relaxed),
                         current_root: Some(root_name.clone()),
                     });
                 }
@@ -541,6 +629,7 @@ fn collect_disk_projection_with_progress_and_stats(
                 progress(DiskSnapshotProgress {
                     completed_roots: completed,
                     total_roots,
+                    classified_directories: classified_directories.load(Ordering::Relaxed),
                     current_root: Some(root_name.clone()),
                 });
             }
@@ -567,8 +656,85 @@ pub fn collect_scoped_disk_discovery_with_progress(
     size_scan: Option<&DiskSizeScan>,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<DiskScopedDiscovery> {
-    let census = collect_disk_identity_census(mods_path)?;
+    collect_scoped_disk_discovery_with_census(
+        mods_path,
+        changed_roots,
+        scoped,
+        size_scan,
+        None,
+        progress,
+    )
+}
+
+/// Trusted internal mutations have already validated every source,
+/// destination, sibling collision, and filesystem identity under the game
+/// mutation lease. Their terminal projection can therefore avoid observing
+/// unrelated roots entirely.
+pub fn collect_trusted_scoped_disk_discovery_with_progress(
+    mods_path: &Path,
+    changed_roots: &[String],
+    size_scan: Option<&DiskSizeScan>,
+    progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
+) -> DiskProjectionResult<DiskScopedDiscovery> {
+    if changed_roots.is_empty() {
+        return Err(DiskProjectionError::Failed(
+            "Trusted scoped reconcile requires at least one changed root".to_string(),
+        ));
+    }
+    let census_started = std::time::Instant::now();
+    let census = collect_disk_identity_census_for_roots(mods_path, changed_roots)?;
+    let census_ms = census_started
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
+    let classification_started = std::time::Instant::now();
+    let (projection, classified_directories) = collect_disk_projection_with_progress_and_stats(
+        mods_path,
+        changed_roots,
+        true,
+        progress,
+        size_scan,
+    )?;
+    let classification_ms = classification_started
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
+
+    Ok(DiskScopedDiscovery {
+        scan_counts: DiskDiscoveryScanCounts {
+            census_directories: census.entries.len(),
+            classified_roots: changed_roots.iter().collect::<BTreeSet<_>>().len(),
+            classified_directories,
+        },
+        timings: DiskDiscoveryTimings {
+            census_ms,
+            classification_ms,
+        },
+        census,
+        projection,
+        scoped: true,
+    })
+}
+
+fn collect_scoped_disk_discovery_with_census(
+    mods_path: &Path,
+    changed_roots: &[String],
+    scoped: bool,
+    size_scan: Option<&DiskSizeScan>,
+    precomputed_census: Option<DiskIdentityCensus>,
+    progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
+) -> DiskProjectionResult<DiskScopedDiscovery> {
+    let census_started = std::time::Instant::now();
+    let census = match precomputed_census {
+        Some(census) => census,
+        None => collect_disk_identity_census(mods_path)?,
+    };
+    let census_ms = census_started
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
     let scoped = scoped && !census.has_cross_root_ambiguity();
+    let classification_started = std::time::Instant::now();
     let (projection, classified_directories) = collect_disk_projection_with_progress_and_stats(
         mods_path,
         changed_roots,
@@ -576,6 +742,10 @@ pub fn collect_scoped_disk_discovery_with_progress(
         progress,
         size_scan,
     )?;
+    let classification_ms = classification_started
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
     let classified_roots = if scoped {
         changed_roots.iter().collect::<BTreeSet<_>>().len()
     } else {
@@ -587,6 +757,10 @@ pub fn collect_scoped_disk_discovery_with_progress(
             census_directories: census.entries.len(),
             classified_roots,
             classified_directories,
+        },
+        timings: DiskDiscoveryTimings {
+            census_ms,
+            classification_ms,
         },
         census,
         projection,
@@ -601,7 +775,16 @@ pub fn collect_onboarding_disk_discovery(
     game_id: String,
     mods_path: &Path,
 ) -> DiskProjectionResult<OnboardingDiskDiscovery> {
-    let (roots, directory_sizes) = collect_onboarding_metadata(mods_path)?;
+    collect_onboarding_disk_discovery_with_progress(game_id, mods_path, None)
+}
+
+pub fn collect_onboarding_disk_discovery_with_progress(
+    game_id: String,
+    mods_path: &Path,
+    progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
+) -> DiskProjectionResult<OnboardingDiskDiscovery> {
+    let metadata = collect_onboarding_metadata(mods_path, progress)?;
+    let roots = metadata.roots;
     let file_count = roots.iter().map(|root| root.file_count).sum();
     let total_bytes = roots.iter().map(|root| root.total_bytes).sum();
     let work_units = roots.iter().map(|root| root.work_units).sum();
@@ -612,9 +795,29 @@ pub fn collect_onboarding_disk_discovery(
         work_units,
         roots,
     };
-    let size_scan = DiskSizeScan::precomputed(directory_sizes);
-    let discovery =
-        collect_scoped_disk_discovery_with_progress(mods_path, &[], false, Some(&size_scan), None)?;
+    let size_scan = DiskSizeScan::precomputed(metadata.directory_sizes);
+    let classification_progress = |snapshot: DiskSnapshotProgress| {
+        if let Some(progress) = progress {
+            progress(OnboardingDiscoveryProgress {
+                phase: OnboardingDiscoveryPhase::Classifying,
+                completed_roots: snapshot.completed_roots,
+                total_roots: snapshot.total_roots,
+                files_inspected: file_count,
+                folders_classified: snapshot.classified_directories,
+                current_root: snapshot.current_root,
+                is_terminal: snapshot.total_roots == 0
+                    || snapshot.completed_roots == snapshot.total_roots,
+            });
+        }
+    };
+    let discovery = collect_scoped_disk_discovery_with_census(
+        mods_path,
+        &[],
+        false,
+        Some(&size_scan),
+        Some(metadata.census),
+        progress.map(|_| &classification_progress as _),
+    )?;
     Ok(OnboardingDiskDiscovery {
         discovery,
         work_plan,
@@ -730,12 +933,17 @@ fn collect_onboarding_metadata_for_roots(
     Ok((roots, directory_sizes))
 }
 
+struct OnboardingMetadata {
+    roots:
+        Vec<crate::modules::reconciliation::application::disk_reconcile::types::IndexingRootWork>,
+    directory_sizes: HashMap<String, i64>,
+    census: DiskIdentityCensus,
+}
+
 fn collect_onboarding_metadata(
     mods_path: &Path,
-) -> DiskProjectionResult<(
-    Vec<crate::modules::reconciliation::application::disk_reconcile::types::IndexingRootWork>,
-    HashMap<String, i64>,
-)> {
+    progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
+) -> DiskProjectionResult<OnboardingMetadata> {
     if !mods_path.is_dir() {
         return Err(DiskProjectionError::SourceUnavailable(format!(
             "Disk Reconcile mods path is unavailable: {}",
@@ -743,11 +951,32 @@ fn collect_onboarding_metadata(
         )));
     }
 
+    let top_level_paths = list_runtime_dirs(mods_path)?;
     let mut roots = BTreeMap::<String, (u64, u64)>::new();
-    let mut directory_sizes = HashMap::<String, u64>::new();
-    for root in list_runtime_dirs(mods_path)? {
-        roots.entry(runtime_dir_name(&root)).or_default();
+    for root in &top_level_paths {
+        roots.entry(runtime_dir_name(root)).or_default();
     }
+    let runtime_root_names = roots.keys().cloned().collect::<BTreeSet<_>>();
+    let total_roots = runtime_root_names.len();
+    let mut census_entries = Vec::new();
+    let mut directory_paths = BTreeSet::from([mods_path.to_path_buf()]);
+    let mut direct_directory_sizes = HashMap::<PathBuf, u64>::new();
+    let mut files_inspected = 0_u64;
+    let mut completed_roots = 0_usize;
+    let mut active_root = None::<String>;
+
+    if let Some(progress) = progress {
+        progress(OnboardingDiscoveryProgress {
+            phase: OnboardingDiscoveryPhase::Metadata,
+            completed_roots,
+            total_roots,
+            files_inspected,
+            folders_classified: 0,
+            current_root: None,
+            is_terminal: false,
+        });
+    }
+
     for entry in WalkDir::new(mods_path).follow_links(false) {
         let entry = entry.map_err(|error| {
             DiskProjectionError::Failed(format!(
@@ -755,18 +984,45 @@ fn collect_onboarding_metadata(
                 mods_path.display()
             ))
         })?;
+        let path = entry.path();
+        let relative = path.strip_prefix(mods_path).map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to compute relative file path for '{}': {error}",
+                path.display()
+            ))
+        })?;
+
+        let next_root = relative
+            .components()
+            .next()
+            .and_then(|component| component.as_os_str().to_str())
+            .filter(|root| runtime_root_names.contains(*root))
+            .map(str::to_string);
+        if next_root != active_root {
+            if active_root.is_some() {
+                completed_roots = completed_roots.saturating_add(1).min(total_roots);
+            }
+            active_root = next_root;
+        }
+
+        if entry.file_type().is_dir() {
+            directory_paths.insert(path.to_path_buf());
+            if is_runtime_census_directory(relative) {
+                let folder_path = relative.to_string_lossy().to_string();
+                census_entries.push(DiskIdentityCensusEntry {
+                    folder_path_key: crate::shared::path_key::folder_path_key(&folder_path, None),
+                    folder_path,
+                    raw_name: runtime_dir_name(path),
+                    absolute_path: path.to_path_buf(),
+                });
+            }
+        }
         if !entry.file_type().is_file() {
             continue;
         }
         let metadata = entry.metadata().map_err(|error| {
             DiskProjectionError::Failed(format!(
                 "Failed to read file metadata for '{}': {error}",
-                entry.path().display()
-            ))
-        })?;
-        let relative = entry.path().strip_prefix(mods_path).map_err(|error| {
-            DiskProjectionError::Failed(format!(
-                "Failed to compute relative file path for '{}': {error}",
                 entry.path().display()
             ))
         })?;
@@ -783,32 +1039,47 @@ fn collect_onboarding_metadata(
         let root = roots.entry(root_name).or_default();
         root.0 = root.0.saturating_add(1);
         root.1 = root.1.saturating_add(metadata.len());
-
-        let mut directory = entry.path().parent();
-        while let Some(path) = directory {
-            if !path.starts_with(mods_path) {
-                break;
+        let parent = path.parent().ok_or_else(|| {
+            DiskProjectionError::Failed(format!(
+                "File '{}' has no parent directory",
+                path.display()
+            ))
+        })?;
+        let total = direct_directory_sizes
+            .entry(parent.to_path_buf())
+            .or_default();
+        *total = total.checked_add(metadata.len()).ok_or_else(|| {
+            DiskProjectionError::Failed(format!(
+                "Storage size overflow while sizing '{}'",
+                mods_path.display()
+            ))
+        })?;
+        files_inspected = files_inspected.saturating_add(1);
+        if files_inspected.is_multiple_of(128) {
+            if let Some(progress) = progress {
+                progress(OnboardingDiscoveryProgress {
+                    phase: OnboardingDiscoveryPhase::Metadata,
+                    completed_roots,
+                    total_roots,
+                    files_inspected,
+                    folders_classified: 0,
+                    current_root: active_root.clone(),
+                    is_terminal: false,
+                });
             }
-            let relative_directory = path.strip_prefix(mods_path).map_err(|error| {
-                DiskProjectionError::Failed(format!(
-                    "Failed to compute directory size key for '{}': {error}",
-                    path.display()
-                ))
-            })?;
-            let key = crate::shared::path_key::folder_path_key(
-                &relative_directory.to_string_lossy(),
-                None,
-            );
-            let total = directory_sizes.entry(key).or_default();
-            *total = total.checked_add(metadata.len()).ok_or_else(|| {
-                DiskProjectionError::Failed(format!(
-                    "Storage size overflow while sizing '{}'",
-                    mods_path.display()
-                ))
-            })?;
-            directory = path.parent();
         }
     }
+
+    if active_root.is_some() {
+        completed_roots = completed_roots.saturating_add(1).min(total_roots);
+    }
+    census_entries.sort_by(|left, right| {
+        left.folder_path
+            .to_ascii_lowercase()
+            .cmp(&right.folder_path.to_ascii_lowercase())
+    });
+    let directory_sizes =
+        roll_up_directory_sizes(mods_path, directory_paths, direct_directory_sizes)?;
 
     let roots = roots
         .into_iter()
@@ -820,7 +1091,87 @@ fn collect_onboarding_metadata(
             )
         })
         .collect();
-    let directory_sizes = directory_sizes
+    if let Some(progress) = progress {
+        progress(OnboardingDiscoveryProgress {
+            phase: OnboardingDiscoveryPhase::Metadata,
+            completed_roots,
+            total_roots,
+            files_inspected,
+            folders_classified: 0,
+            current_root: active_root,
+            is_terminal: true,
+        });
+    }
+    Ok(OnboardingMetadata {
+        roots,
+        directory_sizes,
+        census: DiskIdentityCensus {
+            entries: census_entries,
+            top_level_roots: total_roots,
+        },
+    })
+}
+
+fn is_runtime_census_directory(relative: &Path) -> bool {
+    !relative.as_os_str().is_empty()
+        && relative.components().all(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .is_some_and(|name| !name.starts_with('.'))
+        })
+}
+
+fn roll_up_directory_sizes(
+    mods_path: &Path,
+    directory_paths: BTreeSet<PathBuf>,
+    mut directory_sizes: HashMap<PathBuf, u64>,
+) -> DiskProjectionResult<HashMap<String, i64>> {
+    let mut directories = directory_paths.into_iter().collect::<Vec<_>>();
+    directories.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
+
+    for directory in &directories {
+        let size = directory_sizes.get(directory).copied().unwrap_or_default();
+        if size == 0 || directory == mods_path {
+            continue;
+        }
+        let Some(parent) = directory
+            .parent()
+            .filter(|path| path.starts_with(mods_path))
+        else {
+            continue;
+        };
+        let total = directory_sizes.entry(parent.to_path_buf()).or_default();
+        *total = total.checked_add(size).ok_or_else(|| {
+            DiskProjectionError::Failed(format!(
+                "Storage size overflow while sizing '{}'",
+                mods_path.display()
+            ))
+        })?;
+    }
+
+    let mut normalized_sizes = HashMap::<String, u64>::new();
+    for (directory, size) in directory_sizes {
+        if size == 0 || !directory.starts_with(mods_path) {
+            continue;
+        }
+        let relative = directory.strip_prefix(mods_path).map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to compute directory size key for '{}': {error}",
+                directory.display()
+            ))
+        })?;
+        let key = crate::shared::path_key::folder_path_key(&relative.to_string_lossy(), None);
+        let total = normalized_sizes.entry(key).or_default();
+        *total = total.checked_add(size).ok_or_else(|| {
+            DiskProjectionError::Failed(format!(
+                "Storage size overflow while sizing '{}'",
+                mods_path.display()
+            ))
+        })?;
+    }
+
+    normalized_sizes
         .into_iter()
         .map(|(key, bytes)| {
             i64::try_from(bytes).map(|bytes| (key, bytes)).map_err(|_| {
@@ -830,8 +1181,7 @@ fn collect_onboarding_metadata(
                 ))
             })
         })
-        .collect::<DiskProjectionResult<HashMap<_, _>>>()?;
-    Ok((roots, directory_sizes))
+        .collect()
 }
 
 #[cfg(test)]
@@ -899,6 +1249,81 @@ mod tests {
             onboarding.discovery.projection.mods[0].size_bytes,
             Some((ini_bytes.len() + 4) as i64)
         );
+    }
+
+    #[test]
+    fn onboarding_metadata_preserves_direct_files_hidden_folders_and_nested_mod_sizes() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        let terminal = temp.path().join("Alice").join("Nested").join("Blue Dress");
+        let hidden_terminal = temp.path().join(".cache").join("Ignored Mod");
+        std::fs::create_dir_all(&terminal).expect("nested terminal folder should be created");
+        std::fs::create_dir_all(&hidden_terminal)
+            .expect("hidden terminal folder should be created");
+        std::fs::write(temp.path().join("d3dx.ini"), b"abc")
+            .expect("direct root file should be written");
+        let ini_bytes = b"[TextureOverrideTest]\nhash = abc\n";
+        std::fs::write(terminal.join("mod.ini"), ini_bytes)
+            .expect("nested mod ini should be written");
+        std::fs::write(terminal.join("mesh.buf"), b"asset")
+            .expect("nested asset should be written");
+        std::fs::write(hidden_terminal.join("mod.ini"), b"hidden")
+            .expect("hidden mod ini should be written");
+
+        let metadata = collect_onboarding_metadata(temp.path(), None)
+            .expect("metadata collection should succeed");
+
+        assert_eq!(
+            metadata
+                .roots
+                .iter()
+                .map(|root| root.file_count)
+                .sum::<u64>(),
+            4
+        );
+        assert!(metadata.roots.iter().any(|root| root.root_name == "."));
+        assert!(metadata.roots.iter().any(|root| root.root_name == ".cache"));
+        assert!(metadata
+            .census
+            .entries
+            .iter()
+            .all(|entry| !entry.folder_path.starts_with(".cache")));
+
+        let nested_key = crate::shared::path_key::folder_path_key("Alice/Nested/Blue Dress", None);
+        assert_eq!(
+            metadata.directory_sizes.get(&nested_key),
+            Some(&((ini_bytes.len() + 5) as i64))
+        );
+
+        let onboarding = collect_onboarding_disk_discovery("game".to_string(), temp.path())
+            .expect("onboarding discovery should succeed");
+        assert_eq!(onboarding.discovery.projection.mods.len(), 1);
+        assert_eq!(
+            onboarding.discovery.projection.mods[0].size_bytes,
+            Some((ini_bytes.len() + 5) as i64)
+        );
+    }
+
+    #[test]
+    fn identity_census_detects_conflicting_normalized_names_across_roots() {
+        let census = DiskIdentityCensus {
+            entries: vec![
+                DiskIdentityCensusEntry {
+                    folder_path: "Alice/Shared".to_string(),
+                    folder_path_key: "shared".to_string(),
+                    raw_name: "Shared".to_string(),
+                    absolute_path: PathBuf::from("Alice/Shared"),
+                },
+                DiskIdentityCensusEntry {
+                    folder_path: "Bob/shared".to_string(),
+                    folder_path_key: "shared".to_string(),
+                    raw_name: "shared".to_string(),
+                    absolute_path: PathBuf::from("Bob/shared"),
+                },
+            ],
+            top_level_roots: 2,
+        };
+
+        assert!(census.has_cross_root_ambiguity());
     }
 
     #[test]
@@ -1044,6 +1469,35 @@ mod tests {
     }
 
     #[test]
+    fn trusted_scoped_discovery_does_not_census_unrelated_roots() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        for object in ["Alice", "Bob", "Carol"] {
+            let terminal = temp.path().join(object).join("Blue Dress");
+            std::fs::create_dir_all(&terminal).expect("terminal folder should be created");
+            std::fs::write(
+                terminal.join("mod.ini"),
+                "[TextureOverrideTest]\nhash = abc\n",
+            )
+            .expect("ini should be written");
+        }
+
+        let discovery = collect_trusted_scoped_disk_discovery_with_progress(
+            temp.path(),
+            &["Alice".to_string()],
+            None,
+            None,
+        )
+        .expect("trusted scoped discovery should succeed");
+
+        assert!(discovery.scoped);
+        assert_eq!(discovery.scan_counts.classified_roots, 1);
+        assert_eq!(discovery.scan_counts.census_directories, 2);
+        assert_eq!(discovery.scan_counts.classified_directories, 1);
+        assert_eq!(discovery.projection.objects.len(), 1);
+        assert_eq!(discovery.projection.objects[0].folder_path, "Alice");
+    }
+
+    #[test]
     fn snapshot_rejects_lossy_ini_bytes_instead_of_silently_skipping_the_mod() {
         let temp = tempfile::tempdir().expect("tempdir should be created");
         let terminal = temp.path().join("Alice").join("Blue Dress");
@@ -1060,53 +1514,86 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "manual 10k-folder performance fixture"]
-    fn benchmark_disk_snapshot_10k_folders() {
-        let temp = tempfile::tempdir().expect("tempdir should be created");
-        const OBJECTS: usize = 100;
-        const MODS_PER_OBJECT: usize = 100;
-        for object_index in 0..OBJECTS {
-            for mod_index in 0..MODS_PER_OBJECT {
-                let terminal = temp
-                    .path()
-                    .join(format!("Object {object_index:03}"))
-                    .join(format!("Mod {mod_index:03}"));
-                std::fs::create_dir_all(&terminal).expect("benchmark folder");
-                std::fs::write(
-                    terminal.join("mod.ini"),
-                    "[TextureOverrideBenchmark]\nhash = abc\n",
-                )
-                .expect("benchmark ini");
-            }
+    #[ignore = "manual 100/1k/10k-folder performance fixtures"]
+    fn benchmark_disk_snapshot_fixtures() {
+        fn percentile(
+            samples: &mut [std::time::Duration],
+            percentile: usize,
+        ) -> std::time::Duration {
+            samples.sort_unstable();
+            let rank = (samples.len() * percentile).div_ceil(100).saturating_sub(1);
+            samples[rank]
         }
 
-        let started = std::time::Instant::now();
-        let full = collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None, None)
-            .expect("full snapshot should succeed");
-        let full_elapsed = started.elapsed();
-        let started = std::time::Instant::now();
-        let scoped = collect_scoped_disk_discovery_with_progress(
-            temp.path(),
-            &["Object 000".to_string()],
-            true,
-            None,
-            None,
-        )
-        .expect("scoped snapshot should succeed");
-        let scoped_elapsed = started.elapsed();
+        for total_mods in [100_usize, 1_000, 10_000] {
+            let temp = tempfile::tempdir().expect("tempdir should be created");
+            let mods_per_object = 100;
+            let objects = total_mods.div_ceil(mods_per_object);
+            for object_index in 0..objects {
+                let count = (total_mods - object_index * mods_per_object).min(mods_per_object);
+                for mod_index in 0..count {
+                    let terminal = temp
+                        .path()
+                        .join(format!("Object {object_index:03}"))
+                        .join(format!("Mod {mod_index:03}"));
+                    std::fs::create_dir_all(&terminal).expect("benchmark folder");
+                    std::fs::write(
+                        terminal.join("mod.ini"),
+                        "[TextureOverrideBenchmark]\nhash = abc\n",
+                    )
+                    .expect("benchmark ini");
+                }
+            }
 
-        assert_eq!(full.projection.objects.len(), OBJECTS);
-        assert_eq!(full.projection.mods.len(), OBJECTS * MODS_PER_OBJECT);
-        assert_eq!(
-            full.scan_counts.classified_directories,
-            OBJECTS * MODS_PER_OBJECT
-        );
-        assert_eq!(scoped.scan_counts.classified_directories, MODS_PER_OBJECT);
-        eprintln!(
-            "disk_snapshot_10k: full={} strict directories in {full_elapsed:?}; scoped={} strict directories in {scoped_elapsed:?}; census={} directories",
-            full.scan_counts.classified_directories,
-            scoped.scan_counts.classified_directories,
-            scoped.scan_counts.census_directories,
-        );
+            let started = std::time::Instant::now();
+            let cold_full =
+                collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None, None)
+                    .expect("full snapshot should succeed");
+            let cold_full_elapsed = started.elapsed();
+            let started = std::time::Instant::now();
+            let cold_scoped = collect_trusted_scoped_disk_discovery_with_progress(
+                temp.path(),
+                &["Object 000".to_string()],
+                None,
+                None,
+            )
+            .expect("trusted scoped snapshot should succeed");
+            let cold_scoped_elapsed = started.elapsed();
+
+            let mut warm_full = Vec::new();
+            let mut warm_scoped = Vec::new();
+            for _ in 0..5 {
+                let started = std::time::Instant::now();
+                collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None, None)
+                    .expect("warm full snapshot should succeed");
+                warm_full.push(started.elapsed());
+                let started = std::time::Instant::now();
+                collect_trusted_scoped_disk_discovery_with_progress(
+                    temp.path(),
+                    &["Object 000".to_string()],
+                    None,
+                    None,
+                )
+                .expect("warm trusted scoped snapshot should succeed");
+                warm_scoped.push(started.elapsed());
+            }
+
+            assert_eq!(cold_full.projection.mods.len(), total_mods);
+            assert_eq!(cold_full.scan_counts.classified_directories, total_mods);
+            assert_eq!(
+                cold_scoped.scan_counts.classified_directories,
+                total_mods.min(mods_per_object)
+            );
+            assert!(cold_scoped.scoped);
+            let full_p50 = percentile(&mut warm_full.clone(), 50);
+            let full_p95 = percentile(&mut warm_full, 95);
+            let scoped_p50 = percentile(&mut warm_scoped.clone(), 50);
+            let scoped_p95 = percentile(&mut warm_scoped, 95);
+            eprintln!(
+                "disk_snapshot_{total_mods}: first_full={cold_full_elapsed:?} first_scoped={cold_scoped_elapsed:?} warm_full_p50={full_p50:?} warm_full_p95={full_p95:?} warm_scoped_p50={scoped_p50:?} warm_scoped_p95={scoped_p95:?} scoped_census={} scoped_classified={}",
+                cold_scoped.scan_counts.census_directories,
+                cold_scoped.scan_counts.classified_directories,
+            );
+        }
     }
 }

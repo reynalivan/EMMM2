@@ -61,18 +61,14 @@
     "error_title": "Pemeriksaan identitas perlu perhatian",
     "error_detail": "Pemeriksaan lokal terakhir tidak dapat selesai.",
     "retry": "Coba lagi",
-    "how_to_action": "Cara kerja",
-    "how_to_title": "Cara kerja saran object",
-    "how_to_intro": "Catalog Pack adalah data terpisah. Pack dapat menyediakan nama, alias, artwork, dan target KeyViewer yang didukung tanpa dibundel bersama EMMM.",
-    "how_to_catalog_title": "Tambahkan Catalog Pack",
-    "how_to_catalog_detail": "Pilih rilis GitHub yang direview atau ZIP lokal di Pengaturan. Memasang pack tidak mengubah folder mod, metadata, atau gambar Anda.",
-    "how_to_check_title": "Jalankan pemeriksaan lokal",
-    "how_to_check_detail": "Mulai pemeriksaan di sini, dari preflight Mod Inbox, atau dari aksi object. EMMM hanya membaca data object lokal yang relevan.",
-    "how_to_review_title": "Review sebelum menerapkan",
-    "how_to_review_detail": "Saran tetap opsional. Konfirmasi match high-confidence yang dipilih di Classification Wizard sebelum EMMM mengubah metadata.",
-    "how_to_benefits_title": "Manfaat catalog",
-    "how_to_benefits_matching": "Nama dan alias membantu menemukan mod yang tepat. Gambar Anda tetap sama.",
-    "how_to_benefits_keyviewer": "Temukan mod yang tepat dan gunakan kontrol KeyViewer untuk object yang didukung. Gambar Anda tetap sama.",
+    "how_to_action": "Kenapa tambah katalog?",
+    "how_to_title": "Bantu EMMM memahami game Anda",
+    "how_to_intro": "Upload file ZIP atau tempel link GitHub publik untuk menambahkan katalog. Katalog membantu EMMM mengenali game, mencocokkan mod dengan lebih akurat, dan memberi saran kategori yang lebih baik.",
+    "how_to_benefits_title": "Manfaatnya",
+    "how_to_benefit_matching": "Pencocokan game dan mod yang lebih akurat.",
+    "how_to_benefit_categories": "Kategori yang lebih jelas agar koleksi lebih mudah dijelajahi.",
+    "how_to_benefit_keyviewer": "Kontrol KeyViewer untuk game dan object yang didukung.",
+    "how_to_benefit_safe": "Folder mod dan gambar Anda tetap tidak berubah.",
     "how_to_close": "Tutup"
   },
   "waste": {
@@ -107,6 +103,14 @@
       "key_binding": "Binding tombol",
       "key_toggle": "Toggle tombol"
     },
-    "no_bindings": "Tidak ada pemetaan tombol ditemukan pada mod aktif"
+    "no_bindings": "Tidak ada pemetaan tombol ditemukan pada mod aktif",
+    "search_label": "Cari pemetaan tombol aktif",
+    "search_placeholder": "Cari folder mod, klasifikasi, atau alias",
+    "filter_label": "Filter berdasarkan klasifikasi",
+    "filter_all": "Semua klasifikasi",
+    "filter_unclassified": "Tanpa klasifikasi",
+    "clear_filters": "Hapus filter",
+    "no_matches": "Tidak ada pemetaan tombol yang cocok dengan filter",
+    "alias": "Alias: {{alias}}"
   }
 }

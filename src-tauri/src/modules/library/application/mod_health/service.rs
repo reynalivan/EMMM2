@@ -456,18 +456,14 @@ fn inspect_condition_structure(
                 }
                 *seen_else = true;
             }
-            "endif" => {
-                if condition_stack.pop().is_none() {
-                    issues.push(issue(
-                        ModHealthSeverity::Error,
-                        "condition_order",
-                        "endif has no matching if",
-                        relative_file_path,
-                        Some(&section.name),
-                        Some(field.line),
-                    ));
-                }
-            }
+            "endif" if condition_stack.pop().is_none() => issues.push(issue(
+                ModHealthSeverity::Error,
+                "condition_order",
+                "endif has no matching if",
+                relative_file_path,
+                Some(&section.name),
+                Some(field.line),
+            )),
             _ => {}
         }
     }

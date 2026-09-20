@@ -59,21 +59,14 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
         // import or preset apply must inherit this filter instead of forcing
         // the user to press F5 again. There is no folder mutation to journal.
         config_state.set_runtime_safe_mode(&game_id, target_safe_mode)?;
-        let sync = match crate::modules::system::application::app::post_apply::request_overlay_sync_for_game(
+        let generation = crate::modules::reconciliation::api::enqueue_runtime_sync(
+            app,
             pool_state.inner(),
-            &config_state,
             &game_id,
-            crate::modules::system::application::app::post_apply::OverlaySyncCause::SafeModeChanged,
-        )
-        .await
-        .and_then(
-            crate::modules::system::application::app::post_apply::RuntimeSyncResult::ensure_success,
-        ) {
-            Ok(result) => format!("overlay synchronized ({:?})", result.reload),
-            Err(error) => format!("sync pending: {error}"),
-        };
+            crate::modules::reconciliation::api::RuntimeSyncCause::SafeModeChanged,
+        );
         return Ok(format!(
-            "Safe Mode {} (no managed mods, {sync})",
+            "Safe Mode {} (no managed mods, overlay queued as generation {generation})",
             if target_safe_mode { "on" } else { "off" },
         ));
     };
@@ -114,7 +107,7 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
                 game_id: &game_id,
                 collection_id: &active_collection_id,
                 capture_last_changes: false,
-                mods_path,
+                mods_path: mods_path.clone(),
                 suppressor: watcher_state.suppressor.clone(),
                 ignore_missing: true,
                 settings: apply_settings.clone(),
@@ -139,16 +132,19 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
             ))
         })?;
 
-    drop(mutation_lease);
-    crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+    let generation = crate::modules::reconciliation::api::enqueue_runtime_sync_for_rewrites(
         app,
         pool_state.inner(),
         &game_id,
+        &mods_path,
+        crate::modules::reconciliation::api::RuntimeSyncCause::SafeModeChanged,
+        &apply_result.runtime_path_rewrites,
     )
-    .await?;
+    .await;
+    drop(mutation_lease);
 
     Ok(format!(
-        "Safe Mode {} (enabled: {}, disabled: {}; overlay sync was requested by the committed collection apply)",
+        "Safe Mode {} (enabled: {}, disabled: {}; overlay queued as generation {generation})",
         if target_safe_mode { "on" } else { "off" },
         apply_result.mods_enabled,
         apply_result.mods_disabled,

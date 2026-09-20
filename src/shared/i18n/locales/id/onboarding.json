@@ -65,6 +65,19 @@
     "title": "Mengindeks library Anda",
     "subtitle": "Harap tunggu sementara EMMM memindai folder game.",
     "overall_progress": "Progres keseluruhan",
+    "phase_progress": "Tahap saat ini",
+    "preparation_progress": "Progres persiapan",
+    "folders_complete": "{{completed}} dari {{total}} folder",
+    "files_inspected": "{{count}} file diperiksa",
+    "folders_classified": "{{count}} folder diklasifikasikan",
+    "current_root": "Folder saat ini: {{root}}",
+    "elapsed": "Berlalu {{duration}}",
+    "waiting_for_stage": "Memulai tahap berikutnya...",
+    "preparation": {
+      "metadata": "Membaca metadata file",
+      "classifying": "Mengklasifikasikan folder mod",
+      "rechecking": "Library berubah. Memeriksanya lagi..."
+    },
     "game_progress": "Game {{current}} dari {{total}} · {{game}}",
     "activity": {
       "discovering": "Menyiapkan rencana scan · Tahap {{step}} dari {{total}}",
@@ -77,7 +90,7 @@
     },
     "preparing": "Menyiapkan library…",
     "progress_label": "Progres pengindeksan",
-    "estimating": "Mengestimasi waktu tersisa…",
+    "estimating": "Menghitung estimasi dari kecepatan scan…",
     "estimated_remaining": "Sekitar {{duration}} tersisa",
     "phases": {
       "discovering": "1/4 Mencari Folder",

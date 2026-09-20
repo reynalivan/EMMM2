@@ -347,7 +347,7 @@ impl ExtractionBudget {
     }
 
     pub(super) fn preflight(&self) -> Self {
-        Self::new(self.limits.clone(), self.archive_size)
+        Self::new(self.limits, self.archive_size)
     }
 
     fn check_sizes(&self, file_bytes: u64, total_bytes: u64) -> Result<(), AppError> {

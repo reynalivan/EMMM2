@@ -66,6 +66,8 @@ const demoKeybindingsByGame: Record<string, ActiveKeyBinding[]> = {
     {
       mod_name: 'Nekomata Streetwear',
       folder_path: 'Characters/Nekomata/Streetwear',
+      object_type: 'Character',
+      matched_alias_name: 'Nekomata',
       section_name: 'Costume',
       key: 'F6',
       back: 'F7',
@@ -75,6 +77,8 @@ const demoKeybindingsByGame: Record<string, ActiveKeyBinding[]> = {
     {
       mod_name: 'Minimal HUD',
       folder_path: 'UI/Interface/Minimal HUD',
+      object_type: 'UI',
+      matched_alias_name: null,
       section_name: 'HUD preset',
       key: 'F8',
       back: null,
@@ -84,6 +88,8 @@ const demoKeybindingsByGame: Record<string, ActiveKeyBinding[]> = {
     {
       mod_name: 'Lumina Square Recolor',
       folder_path: 'Environment/Lumina Square/Recolor',
+      object_type: 'Environment',
+      matched_alias_name: 'Lumina Square',
       section_name: 'Lighting',
       key: 'F9',
       back: 'F10',
@@ -95,6 +101,8 @@ const demoKeybindingsByGame: Record<string, ActiveKeyBinding[]> = {
     {
       mod_name: 'Trailblazer Travel Set',
       folder_path: 'Characters/Trailblazer/Travel Set',
+      object_type: 'Character',
+      matched_alias_name: 'Trailblazer',
       section_name: 'Outfit',
       key: 'F5',
       back: null,
@@ -104,6 +112,8 @@ const demoKeybindingsByGame: Record<string, ActiveKeyBinding[]> = {
     {
       mod_name: 'Astral Express Cabin',
       folder_path: 'Environment/Astral Express/Cabin',
+      object_type: 'Environment',
+      matched_alias_name: null,
       section_name: 'Cabin lighting',
       key: 'F11',
       back: 'F12',

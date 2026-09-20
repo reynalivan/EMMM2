@@ -50,4 +50,28 @@ describe('CanonicalObjectCombobox', () => {
 
     expect(onSelect).toHaveBeenCalledWith('raiden-shogun');
   });
+
+  it('offers manual setup as the final keyboard-accessible option', () => {
+    const onSelectManual = vi.fn();
+    render(
+      <CanonicalObjectCombobox
+        emptyLabel="No canonical matches"
+        entries={entries}
+        manualOptionHint="Not in the catalog?"
+        manualOptionLabel="Set type manually"
+        onSelect={vi.fn()}
+        onSelectManual={onSelectManual}
+        selectedEntryKey={null}
+        suggestions={[]}
+      />,
+    );
+
+    const input = screen.getByRole('combobox', { name: 'Canonical object' });
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSelectManual).toHaveBeenCalledOnce();
+  });
 });

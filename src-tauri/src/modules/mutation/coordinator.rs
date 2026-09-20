@@ -176,6 +176,14 @@ impl MutationGuard {
         journal.mark_step_skipped(operation_id, sequence)
     }
 
+    pub fn settle_steps(
+        &self,
+        settlements: &[(u32, crate::modules::mutation::journal::StepSettlement)],
+    ) -> Result<(), AppError> {
+        let (operation_id, journal) = self.durable_parts()?;
+        journal.settle_steps(operation_id, settlements)
+    }
+
     pub fn mark_db_committed(&self) -> Result<(), AppError> {
         let (operation_id, journal) = self.durable_parts()?;
         journal.mark_db_committed(operation_id)

@@ -86,11 +86,13 @@ pub fn validate_paths(
 /// folder is reported per item so the remaining selection can complete, but
 /// containment violations reject the entire request before any filesystem
 /// mutation begins. The configured Mods root itself is never a toggle target.
+pub type ModTogglePathValidation = (Vec<ValidatedPath>, Vec<(String, AppError)>);
+
 pub fn validate_mod_toggle_paths(
     config: &ConfigService,
     game_id: &str,
     candidate_paths: &[String],
-) -> Result<(Vec<ValidatedPath>, Vec<(String, AppError)>), AppError> {
+) -> Result<ModTogglePathValidation, AppError> {
     let canonical_root = canonical_mods_root(config, game_id)?;
     let mut valid = Vec::with_capacity(candidate_paths.len());
     let mut failures = Vec::new();

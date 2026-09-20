@@ -84,8 +84,7 @@ async fn batch_set_boolean_flag(
 
     let mut tx = pool.begin().await?;
     for path_key_batch in path_keys {
-        let placeholders = std::iter::repeat("?")
-            .take(path_key_batch.len())
+        let placeholders = std::iter::repeat_n("?", path_key_batch.len())
             .collect::<Vec<_>>()
             .join(", ");
         let statement = format!(

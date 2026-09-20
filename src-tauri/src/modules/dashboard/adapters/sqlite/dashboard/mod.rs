@@ -54,6 +54,32 @@ pub async fn fetch_duplicate_waste(pool: &SqlitePool) -> Result<i64, sqlx::Error
     Ok(row.0)
 }
 
+/// Fetch enabled mods together with the catalog metadata used by the
+/// Active Key Mapping widget. The mod classification is a denormalized
+/// projection, so fall back to the owning object for older rows.
+pub async fn fetch_enabled_mods_for_keybindings(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Vec<(String, String, Option<String>, Option<String>)>, sqlx::Error> {
+    sqlx::query_as(
+        r#"
+        SELECT
+            m.actual_name,
+            m.folder_path,
+            COALESCE(m.object_type, o.object_type) AS object_type,
+            o.matched_alias_name
+        FROM mods m
+        LEFT JOIN objects o ON o.id = m.object_id
+        WHERE m.game_id = ?
+          AND m.status = 1
+        ORDER BY m.folder_path_key
+        "#,
+    )
+    .bind(game_id)
+    .fetch_all(pool)
+    .await
+}
+
 /// Fetch mod counts grouped by `object_type` for the category distribution chart.
 pub async fn fetch_category_distribution(
     pool: &SqlitePool,

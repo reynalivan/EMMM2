@@ -313,6 +313,12 @@ pub enum AppError {
     #[error("Validation error: {0}")]
     Validation(String),
 
+    /// The bounded in-memory explorer snapshot backing a cursor or symbolic
+    /// selection is no longer available. Frontends may safely reload the
+    /// listing, but must not reinterpret the old selection against new files.
+    #[error("Explorer listing changed; reload the folder listing")]
+    ExplorerSnapshotExpired,
+
     #[error("Archive password required")]
     ArchivePasswordRequired,
 

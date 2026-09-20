@@ -564,15 +564,52 @@ pub(crate) async fn detect_rename_confirmations(
     mods_path: &std::path::Path,
     projection: &DiskProjection,
     watcher_events: &[ModWatchEvent],
+    scope_root_keys: Option<&[String]>,
 ) -> Result<RenameConfirmationDetection, crate::shared::errors::AppError> {
     let mut conn = pool.acquire().await?;
-    let objects = crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(
-        &mut conn, game_id,
-    )
-    .await?;
-    let mods =
-        crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(&mut conn, game_id)
+    let (objects, mods) = if let Some(root_keys) = scope_root_keys {
+        let object_identities = projection
+            .objects
+            .iter()
+            .filter_map(|entry| entry.filesystem_identity.clone())
+            .collect::<Vec<_>>();
+        let mod_identities = projection
+            .mods
+            .iter()
+            .filter_map(|entry| entry.filesystem_identity.clone())
+            .collect::<Vec<_>>();
+        let mods_root = mods_path.to_string_lossy();
+        let mod_root_path_keys = root_keys
+            .iter()
+            .map(|root| crate::shared::path_key::folder_path_key(root, Some(&mods_root)))
+            .collect::<Vec<_>>();
+        let objects =
+            crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile_scope(
+                &mut conn,
+                game_id,
+                root_keys,
+                &object_identities,
+            )
             .await?;
+        let mods = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile_scope(
+            &mut conn,
+            game_id,
+            &mod_root_path_keys,
+            &mod_identities,
+        )
+        .await?;
+        (objects, mods)
+    } else {
+        let objects = crate::modules::catalog::adapters::sqlite::object::get_rows_for_reconcile(
+            &mut conn, game_id,
+        )
+        .await?;
+        let mods = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(
+            &mut conn, game_id,
+        )
+        .await?;
+        (objects, mods)
+    };
     drop(conn);
     let (filtered_projection, filtered_objects, filtered_mods) =
         without_watcher_rename_evidence(mods_path, projection, &objects, &mods, watcher_events);

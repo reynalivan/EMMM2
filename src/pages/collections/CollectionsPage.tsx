@@ -83,16 +83,29 @@ export default function CollectionsPage() {
     setSaveRequest(null);
   }, [gameId]);
 
-  const rows = useMemo<CollectionListRow[]>(() => {
-    return filterCollectionRowsBySafety(
-      buildCollectionWorkspaceRows(
-        collections.data ?? [],
-        runtime.data,
-        t('list.item.current_runtime', 'Current changes'),
-      ),
-      safetyFilter,
+  const allRows = useMemo<CollectionListRow[]>(() => {
+    return buildCollectionWorkspaceRows(
+      collections.data ?? [],
+      runtime.data,
+      t('list.item.current_runtime', 'Current changes'),
     );
-  }, [collections.data, runtime.data, safetyFilter, t]);
+  }, [collections.data, runtime.data, t]);
+
+  const rows = useMemo<CollectionListRow[]>(() => {
+    return filterCollectionRowsBySafety(allRows, safetyFilter);
+  }, [allRows, safetyFilter]);
+
+  const activeRowId = useMemo(() => {
+    const hasCurrentRuntime = allRows.some((row) => row.kind === 'current_runtime');
+    if (runtime.data?.is_dirty && hasCurrentRuntime) {
+      return CURRENT_RUNTIME_ROW_ID;
+    }
+
+    return runtime.data?.active_collection_id ?? null;
+  }, [allRows, runtime.data]);
+
+  const isActiveRowFilteredOut =
+    activeRowId !== null && !rows.some((row) => row.rowId === activeRowId);
 
   const effectiveSource = useMemo<CollectionWorkspaceSource | null>(() => {
     const hasCurrentRuntime = rows.some((row) => row.kind === 'current_runtime');
@@ -111,13 +124,13 @@ export default function CollectionsPage() {
       }
     }
 
+    if (runtime.data?.is_dirty && hasCurrentRuntime) {
+      return { kind: 'current_runtime' };
+    }
+
     const activeCollectionId = runtime.data?.active_collection_id;
     if (activeCollectionId && hasStoredCollection(activeCollectionId)) {
       return { kind: 'stored_collection', collectionId: activeCollectionId };
-    }
-
-    if (runtime.data?.is_dirty && hasCurrentRuntime) {
-      return { kind: 'current_runtime' };
     }
 
     const firstStored = rows.find((row) => row.kind === 'stored_collection');
@@ -311,6 +324,18 @@ export default function CollectionsPage() {
           {/* LEFT: Collection List */}
           <div className="flex min-h-0 flex-col lg:col-span-8">
             <div className="workspace-surface flex flex-1 flex-col overflow-hidden">
+              {isActiveRowFilteredOut && (
+                <div className="flex items-center justify-between gap-3 border-b border-warning/15 bg-warning/[0.06] px-4 py-2 text-xs text-base-content/70">
+                  <span>{t('list.active_filtered')}</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs text-warning"
+                    onClick={() => setSafetyFilter('all')}
+                  >
+                    {t('list.show_active')}
+                  </button>
+                </div>
+              )}
               <div className="card-body relative min-h-75 flex-1 overflow-auto p-0 custom-scrollbar lg:min-h-0">
                 <CollectionList
                   rows={rows}

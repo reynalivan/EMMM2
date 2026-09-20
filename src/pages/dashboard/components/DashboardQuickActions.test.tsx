@@ -27,6 +27,21 @@ describe('DashboardQuickActions', () => {
     expect(setWorkspaceView).toHaveBeenCalledWith('mod-inbox');
   });
 
+  it('keeps the dashboard actions in the shared task order', () => {
+    render(<DashboardQuickActions activeGameId="game-1" setWorkspaceView={vi.fn()} />);
+
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Quick Play',
+      'Mods Manager',
+      'Mod Inbox',
+      'Collections',
+      'Storage Optimizer',
+      'Discover',
+      'Downloads',
+      'Settings',
+    ]);
+  });
+
   it('uses the shared launch action and prevents duplicate clicks while pending', async () => {
     let resolveLaunch!: () => void;
     launchConfiguredGame.mockReturnValueOnce(

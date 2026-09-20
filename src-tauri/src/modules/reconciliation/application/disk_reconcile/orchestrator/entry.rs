@@ -15,6 +15,7 @@ use super::run::{run_refresh_once, RefreshRequest};
 /// safe to discard before it observes disk, mutates the projection, or emits
 /// a reconcile result.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum WatcherReconcileOutcome {
     Applied(DiskReconcileResult),
     Superseded,
@@ -104,6 +105,27 @@ pub async fn reconcile_disk_state(
     reconcile_disk_state_under_locks(context, request, &game_guard, &operation_guard).await
 }
 
+/// Best-effort inactive-game reconciliation. It never waits for either
+/// serialization lock, so foreground work can leave authority conservative
+/// and defer this optimization instead of timing out behind it.
+pub(crate) async fn try_reconcile_disk_state_for_prewarm(
+    context: DiskReconcileContext<'_>,
+    request: DiskReconcileRequest,
+) -> Result<Option<DiskReconcileResult>, AppError> {
+    let game_lock = context.state.lock_for_game(&request.game_id);
+    let Ok(_game_guard) = game_lock.try_lock_owned() else {
+        return Ok(None);
+    };
+    let Some(_operation_guard) = context.operation_lock.try_acquire_for_reconcile() else {
+        return Ok(None);
+    };
+    let operation_lock = context.operation_lock;
+    tokio::select! {
+        result = run_reconcile_with_owned_locks(context, request) => result.map(Some),
+        () = operation_lock.wait_for_foreground_intent() => Ok(None),
+    }
+}
+
 /// Run one reconcile request while the caller keeps both serialization
 /// leases. Source-directory activation uses this entrypoint so changing the
 /// configured root, projecting it, and handing off the watcher are one atomic
@@ -112,6 +134,18 @@ pub(crate) async fn reconcile_disk_state_under_locks(
     context: DiskReconcileContext<'_>,
     request: DiskReconcileRequest,
     _game_guard: &tokio::sync::MutexGuard<'_, ()>,
+    _operation_guard: &crate::platform::fs::operation_lock::OpGuard,
+) -> Result<DiskReconcileResult, AppError> {
+    run_reconcile_with_owned_locks(context, request).await
+}
+
+/// Same lock proof as `reconcile_disk_state_under_locks`, for command flows
+/// that retain an owned per-game guard across preflight and durable journal
+/// acquisition.
+pub(crate) async fn reconcile_disk_state_under_owned_game_lock(
+    context: DiskReconcileContext<'_>,
+    request: DiskReconcileRequest,
+    _game_guard: &tokio::sync::OwnedMutexGuard<()>,
     _operation_guard: &crate::platform::fs::operation_lock::OpGuard,
 ) -> Result<DiskReconcileResult, AppError> {
     run_reconcile_with_owned_locks(context, request).await
@@ -164,6 +198,7 @@ async fn run_reconcile_with_owned_locks(
         force_full,
         watcher_events: request.watcher_events,
         path_hints: request.path_hints,
+        trusted_mutation_scope: request.trusted_mutation_scope,
         defer_overlay_sync: request.defer_overlay_sync,
         precomputed_discovery: request.precomputed_discovery,
     })

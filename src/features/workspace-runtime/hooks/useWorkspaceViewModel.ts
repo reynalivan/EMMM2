@@ -58,6 +58,8 @@ export const workspaceKeys = {
   all: ['workspace', 'mods'] as const,
   structures: ['workspace', 'mods', 'structure'] as const,
   previews: ['workspace', 'mods', 'preview'] as const,
+  explorerPages: (query: import('@/entities/workspace').WorkspaceExplorerQuery | null) =>
+    [...workspaceKeys.all, 'explorer-page', query] as const,
   structure: (
     filter: ObjectFilter,
     selectedObjectFolderPath: string | null,

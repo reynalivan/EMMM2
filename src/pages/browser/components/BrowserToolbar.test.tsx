@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { BrowserToolbar } from './BrowserToolbar';
+import { BrowserToolbar, BrowserToolbarMenu } from './BrowserToolbar';
 
 vi.mock('@/shared/ui/liquid', () => ({
   LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -50,48 +50,46 @@ describe('BrowserToolbar', () => {
     });
   });
 
-  it('uses the controlled menu state before opening a browser overlay', () => {
+  it('keeps the toolbar menu trigger in browser chrome instead of rendering a floating overlay', () => {
     const onMoreMenuOpenChange = vi.fn();
-    const onOpenLibrary = vi.fn();
     render(
-      <BrowserToolbar
-        {...props}
-        isMoreMenuOpen
-        onMoreMenuOpenChange={onMoreMenuOpenChange}
-        onOpenLibrary={onOpenLibrary}
-      />,
+      <BrowserToolbar {...props} isMoreMenuOpen onMoreMenuOpenChange={onMoreMenuOpenChange} />,
     );
 
     expect(screen.getByRole('button', { name: 'Discover browser menu' })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
-    expect(screen.getByTestId('browser-toolbar-menu-overlay')).toHaveClass('fixed');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Bookmarks' }));
-
-    expect(onMoreMenuOpenChange).toHaveBeenCalledWith(false);
-    expect(onOpenLibrary).toHaveBeenCalledWith('bookmarks');
+    expect(screen.queryByTestId('browser-toolbar-menu-overlay')).not.toBeInTheDocument();
   });
 
-  it('opens a new local tab and routes history to its own library tab', () => {
-    const onMoreMenuOpenChange = vi.fn();
-    const onNewTab = vi.fn();
+  it('renders menu actions in the supplied chrome tray and closes before opening a panel', () => {
+    const onClose = vi.fn();
     const onOpenLibrary = vi.fn();
-    render(
-      <BrowserToolbar
-        {...props}
-        isMoreMenuOpen
-        onMoreMenuOpenChange={onMoreMenuOpenChange}
-        onNewTab={onNewTab}
+    const { container } = render(
+      <BrowserToolbarMenu
+        activeTabUrl={props.activeTabUrl}
+        activeZoom={1}
+        adblockEnabled
+        hasActiveWebview
+        onChangeZoom={vi.fn()}
+        onClearCache={vi.fn()}
+        onClearCookiesAndSiteData={vi.fn()}
+        onClose={onClose}
+        onNewTab={vi.fn()}
+        onOpenExternally={vi.fn()}
+        onOpenFind={vi.fn()}
         onOpenLibrary={onOpenLibrary}
+        onToggleAdblock={vi.fn()}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'New Tab' }));
-    expect(onNewTab).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-testid="browser-toolbar-menu"]')).toBeInTheDocument();
+    expect(screen.queryByTestId('browser-toolbar-menu-overlay')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'History' }));
-    expect(onOpenLibrary).toHaveBeenCalledWith('history');
+    fireEvent.click(screen.getByRole('button', { name: 'Bookmarks' }));
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onOpenLibrary).toHaveBeenCalledWith('bookmarks');
   });
 });

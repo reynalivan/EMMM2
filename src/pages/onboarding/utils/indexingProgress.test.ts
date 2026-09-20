@@ -84,4 +84,44 @@ describe('estimatedRemainingMs', () => {
       ),
     ).toBe(1_500);
   });
+
+  it('derives an early estimate from the first measured scan unit', () => {
+    expect(
+      estimatedRemainingMs(
+        {
+          completed: 0,
+          total: 1,
+          currentGame: 'New Game',
+          completedDurationsMs: [],
+        },
+        null,
+        {
+          completed_units: 1,
+          total_units: 4,
+          elapsed_ms: 1_000,
+          eta_ms: null,
+        },
+      ),
+    ).toBe(3_000);
+  });
+
+  it('does not present a partial estimate as the total for later games', () => {
+    expect(
+      estimatedRemainingMs(
+        {
+          completed: 0,
+          total: 5,
+          currentGame: 'New Game',
+          completedDurationsMs: [],
+        },
+        null,
+        {
+          completed_units: 1,
+          total_units: 4,
+          elapsed_ms: 1_000,
+          eta_ms: null,
+        },
+      ),
+    ).toBeNull();
+  });
 });

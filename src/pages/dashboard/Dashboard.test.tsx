@@ -341,6 +341,8 @@ describe('Dashboard - TC-33', () => {
           {
             mod_name: 'Hu Tao Mod',
             folder_path: 'Character/Hu Tao Mod',
+            object_type: 'Character',
+            matched_alias_name: 'Hu Tao',
             section_name: '[Key1]',
             key: 'F1',
             back: 'F2',

@@ -35,6 +35,14 @@ pub struct PreparedBulkToggle {
     enable: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct PreparedToggleStep {
+    pub sequence: u32,
+    pub old_path: PathBuf,
+    pub new_path: PathBuf,
+    pub expected_identity: String,
+}
+
 impl PreparedBulkToggle {
     pub fn resequence(&mut self, start: u32) -> u32 {
         let mut sequence = start;
@@ -63,6 +71,34 @@ impl PreparedBulkToggle {
                 PreparedToggleState::Noop | PreparedToggleState::Invalid(_) => None,
             })
             .collect()
+    }
+
+    pub fn planned_steps_with_identity(&self) -> Vec<PreparedToggleStep> {
+        self.items
+            .iter()
+            .filter_map(|item| match &item.state {
+                PreparedToggleState::Ready { sequence, plan } => Some(PreparedToggleStep {
+                    sequence: *sequence,
+                    old_path: plan.old_path().to_path_buf(),
+                    new_path: plan.new_path().to_path_buf(),
+                    expected_identity: plan.expected_identity().to_string(),
+                }),
+                PreparedToggleState::Noop | PreparedToggleState::Invalid(_) => None,
+            })
+            .collect()
+    }
+
+    pub fn validate_identities(&self) -> Result<(), AppError> {
+        for step in self.planned_steps_with_identity() {
+            let actual = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&step.old_path);
+            if actual.as_deref() != Some(step.expected_identity.as_str()) {
+                return Err(AppError::Io(format!(
+                    "Folder changed while preparing the bulk toggle: {}",
+                    step.old_path.display()
+                )));
+            }
+        }
+        Ok(())
     }
 
     pub fn planned_sequences(&self) -> Vec<u32> {
@@ -187,10 +223,11 @@ pub async fn bulk_toggle(
     paths: Vec<String>,
     enable: bool,
     cancel: &AtomicBool,
+    operation_id: &str,
 ) -> Result<BulkResult, crate::shared::errors::AppError> {
     let prepared_paths = paths.iter().map(PathBuf::from).collect::<Vec<_>>();
     let prepared = prepare_bulk_toggle(&prepared_paths, enable);
-    Ok(execute_prepared_bulk_toggle(app, state, &prepared, cancel).result)
+    Ok(execute_prepared_bulk_toggle(app, state, &prepared, cancel, operation_id, true).result)
 }
 
 pub fn execute_prepared_bulk_toggle(
@@ -198,6 +235,8 @@ pub fn execute_prepared_bulk_toggle(
     state: &WatcherState,
     prepared: &PreparedBulkToggle,
     cancel: &AtomicBool,
+    operation_id: &str,
+    cancellable: bool,
 ) -> BulkToggleExecution {
     // One path-scoped guard across the whole batch covers both the original
     // and destination spelling for every planned rename.
@@ -214,6 +253,8 @@ pub fn execute_prepared_bulk_toggle(
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
+            operation_id: operation_id.to_string(),
+            cancellable,
             label: action_label.to_string(),
             current: 0,
             total,
@@ -242,6 +283,8 @@ pub fn execute_prepared_bulk_toggle(
             let _ = app.emit(
                 "bulk-progress",
                 BulkProgressPayload {
+                    operation_id: operation_id.to_string(),
+                    cancellable,
                     label: action_label.to_string(),
                     current: i + 1,
                     total,
@@ -278,6 +321,8 @@ pub fn execute_prepared_bulk_toggle(
     let _ = app.emit(
         "bulk-progress",
         BulkProgressPayload {
+            operation_id: operation_id.to_string(),
+            cancellable,
             label: if cancelled {
                 "common:bulk_progress.cancelled"
             } else {

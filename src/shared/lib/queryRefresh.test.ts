@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  cancelRuntimeDescriptorQueries,
   publishQueryInvalidations,
   publishRuntimeDescriptor,
   runtimeQueryKeys,
@@ -8,6 +9,7 @@ import type { RuntimeEffectDescriptor } from '../../shared/lib/runtimeEffects';
 
 function createQueryClientMock() {
   return {
+    cancelQueries: vi.fn().mockResolvedValue(undefined),
     invalidateQueries: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -148,6 +150,28 @@ describe('queryRefresh', () => {
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: runtimeQueryKeys.previewDetails,
       refetchType: 'active',
+    });
+  });
+
+  it('cancels every affected query family once before committed refresh work', async () => {
+    const queryClient = createQueryClientMock();
+    const descriptor: RuntimeEffectDescriptor = {
+      rewrites: [],
+      invalidatedPaths: [],
+      thumbnailPaths: [],
+      removedQueryKeys: [],
+      invalidatedQueryKeys: [],
+      refreshEvents: ['folderStructureChanged', 'runtimeStateChanged'],
+    };
+
+    await cancelRuntimeDescriptorQueries(queryClient as never, descriptor);
+
+    expect(queryClient.cancelQueries).toHaveBeenCalledTimes(6);
+    expect(queryClient.cancelQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.workspaceViewModel,
+    });
+    expect(queryClient.cancelQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.collectionRuntime,
     });
   });
 });

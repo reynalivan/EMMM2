@@ -80,7 +80,7 @@ describe('DownloadManagerPanel', () => {
   });
 
   it('renders downloads correctly', () => {
-    render(<DownloadManagerPanel />);
+    render(<DownloadManagerPanel layout="docked" />);
     expect(screen.getByText('mod_pack.zip')).toBeInTheDocument();
     expect(screen.getByText('Ready')).toBeInTheDocument();
     expect(screen.getByText('downloading.rar')).toBeInTheDocument();
@@ -88,7 +88,7 @@ describe('DownloadManagerPanel', () => {
   });
 
   it('does not show any checkboxes', () => {
-    render(<DownloadManagerPanel />);
+    render(<DownloadManagerPanel layout="docked" />);
     const checkboxes = screen.queryAllByRole('checkbox');
     expect(checkboxes).toHaveLength(0);
   });
@@ -121,7 +121,7 @@ describe('DownloadManagerPanel', () => {
       isRefreshing: false,
     } as never);
 
-    render(<DownloadManagerPanel />);
+    render(<DownloadManagerPanel layout="docked" />);
 
     expect(screen.getByText('Queue position: #1')).toBeInTheDocument();
     const progress = screen.getByRole('progressbar');
@@ -147,12 +147,20 @@ describe('DownloadManagerPanel', () => {
       isRefreshing: false,
     } as never);
 
-    render(<DownloadManagerPanel />);
+    render(<DownloadManagerPanel layout="docked" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh downloads' }));
     expect(refreshDownloads).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Download this file again' }));
     expect(retryDownload).toHaveBeenCalledWith('dl-failed');
+  });
+
+  it('renders as a non-modal docked region without viewport positioning', () => {
+    render(<DownloadManagerPanel layout="docked" />);
+
+    const panel = screen.getByRole('complementary', { name: 'Downloads' });
+    expect(panel).not.toHaveClass('fixed');
+    expect(panel).toHaveClass('w-[400px]');
   });
 });

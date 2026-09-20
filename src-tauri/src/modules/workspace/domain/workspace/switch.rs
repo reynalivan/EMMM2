@@ -46,6 +46,7 @@ pub enum WorkspaceSwitchStatus {
 /// can explain the exact prerequisite without guessing from visible nodes.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct WorkspaceParentEnableRequirement {
+    pub confirmation_token: String,
     pub requested_target: WorkspaceParentEnableImpact,
     pub parents: Vec<WorkspaceParentEnableParent>,
     pub will_activate: Vec<WorkspaceParentEnableImpact>,
@@ -84,6 +85,8 @@ pub struct WorkspaceSwitchInput {
     /// boolean avoids a combinatorial set of resolution enum variants.
     #[serde(default)]
     pub enable_disabled_ancestors: bool,
+    #[serde(default)]
+    pub parent_enable_confirmation: Option<String>,
     pub origin_surface: WorkspaceSwitchOriginSurface,
 }
 
@@ -97,4 +100,5 @@ pub struct WorkspaceSwitchResult {
     pub parent_enable_requirement: Option<WorkspaceParentEnableRequirement>,
     pub impact: WorkspaceImpact,
     pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
+    pub runtime_sync_generation: Option<u64>,
 }

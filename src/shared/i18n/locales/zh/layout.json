@@ -5,7 +5,7 @@
     "mod_inbox": "模组收件箱",
     "collections": "收藏集",
     "settings": "设置",
-    "browser": "浏览器",
+    "discover": "发现",
     "downloads": "下载",
     "storage_optimizer": "存储优化器",
     "app_menu_tip": "应用菜单",
@@ -39,7 +39,8 @@
   "game_selector": {
     "select_game": "选择游戏",
     "loading": "加载中...",
-    "add_game": "添加游戏"
+    "add_game": "添加游戏",
+    "retry": "重试"
   },
   "context": {
     "loading": "加载中...",

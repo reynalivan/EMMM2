@@ -1,133 +1,445 @@
-/**
- * useFolderGridBulk — Bulk action handlers extracted from useFolderGrid.
- *
- * Handles: bulk toggle, bulk delete, bulk tag, bulk favorite,
- * bulk safe, bulk pin, bulk move to object.
- */
-
-import { useState, useCallback } from 'react';
-import {
-  useBulkToggle,
-  useBulkDelete,
-  useBulkUpdateInfo,
-  useBulkSafety,
-  useBulkFavorite,
-  useBulkPin,
-} from '@/features/mod-runtime';
+import { useCallback, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useActiveGame } from '@/entities/game';
+import { thumbnailKeys, type MoveStatus } from '@/entities/mod';
 import type { ModFolder } from '@/entities/game-object';
+import type { WorkspaceExplorerQuery, WorkspaceExplorerSelectionModel } from '@/entities/workspace';
+import {
+  WORKSPACE_EXPLORER_BULK_SELECTION_LIMIT,
+  toWorkspaceExplorerSelectionInput,
+  workspaceExplorerSelectionCount,
+} from '@/entities/workspace';
+import type {
+  BulkResult,
+  WorkspaceExplorerBulkAction,
+  WorkspaceExplorerSelectionInput,
+} from '@/shared/api/tauri/bindings.gen';
+import { commands, sparse } from '@/shared/api/tauri/bindings';
+import { formatAppError, isExplorerSnapshotExpired } from '@/shared/lib/appError';
+import {
+  formatBulkCancelledMessage,
+  formatBulkFailureMessage,
+  formatBulkSuccessMessage,
+} from '@/shared/lib/hooks/bulkToastMessages';
+import { toast } from '@/shared/ui/toast';
+import { useAppStore } from '@/app/store';
+import {
+  applyRuntimeEffects,
+  applyRuntimeMutationResult,
+  buildQueryRemovalDescriptor,
+  buildWorkspacePathRewritesDescriptor,
+  normalizeWorkspacePath,
+  publishCollectionReferenceImpact,
+  workspaceKeys,
+} from '@/features/workspace-runtime';
+import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
+import { useTranslation } from 'react-i18next';
 
 interface FolderGridBulkOptions {
-  gridSelection: Set<string>;
+  selection: WorkspaceExplorerSelectionModel;
+  explorerQuery: WorkspaceExplorerQuery | null;
+  listingRevision: string | null;
+  selectionStable?: boolean;
   sortedFolders: ModFolder[];
   clearGridSelection: () => void;
+  removeGridSelectionPaths: (paths: Iterable<string>) => void;
   openMoveDialog: (folder: ModFolder) => void;
 }
 
+interface BulkExecutionSnapshot {
+  gameId: string;
+  selection: WorkspaceExplorerSelectionInput;
+}
+
+interface BulkMoveSnapshot extends BulkExecutionSnapshot {
+  paths: string[];
+}
+
+function createBulkOperationId(kind: 'toggle' | 'delete'): string {
+  return `${kind}-${crypto.randomUUID()}`;
+}
+
+function isActiveGame(gameId: string): boolean {
+  return useAppStore.getState().activeGameId === gameId;
+}
+
+function normalizedPathKey(path: string): string {
+  return normalizeWorkspacePath(path).toLocaleLowerCase('en-US');
+}
+
+function committedMoveSourcePaths(sourcePaths: string[], result: BulkResult): string[] {
+  if (
+    result.cancelled ||
+    result.unprocessed_count > 0 ||
+    result.processed_count !== sourcePaths.length ||
+    result.success.length + result.failures.length !== sourcePaths.length
+  ) {
+    return [];
+  }
+
+  const failedPaths = new Set(result.failures.map((failure) => normalizedPathKey(failure.path)));
+  const committedPaths = sourcePaths.filter((path) => !failedPaths.has(normalizedPathKey(path)));
+  return committedPaths.length === result.success.length ? committedPaths : [];
+}
+
+function showBulkResult(action: WorkspaceExplorerBulkAction, result: BulkResult): void {
+  if (action.kind === 'move_to_object') {
+    return;
+  }
+
+  if (result.success.length > 0) {
+    const successAction =
+      action.kind === 'toggle'
+        ? action.enable
+          ? 'enabled'
+          : 'disabled'
+        : action.kind === 'delete'
+          ? 'deleted'
+          : action.kind === 'set_safety'
+            ? action.safe
+              ? 'marked_safe'
+              : 'marked_unsafe'
+            : action.kind === 'set_favorite'
+              ? action.favorite
+                ? 'favorited'
+                : 'unfavorited'
+              : action.kind === 'set_pin'
+                ? action.pin
+                  ? 'pinned'
+                  : 'unpinned'
+                : 'updated';
+    toast.success(formatBulkSuccessMessage(result.success, successAction));
+  }
+  if (result.failures.length > 0) {
+    const failureAction =
+      action.kind === 'set_safety'
+        ? 'safety'
+        : action.kind === 'set_favorite'
+          ? 'favorite'
+          : action.kind === 'set_pin'
+            ? 'pin'
+            : action.kind === 'update_info'
+              ? 'update'
+              : action.kind;
+    toast.error(formatBulkFailureMessage(result.failures, failureAction));
+  }
+  if (result.cancelled) {
+    toast.info(formatBulkCancelledMessage(result));
+  }
+}
+
 export function useFolderGridBulk({
-  gridSelection,
+  selection,
+  explorerQuery,
+  listingRevision,
+  selectionStable = true,
   sortedFolders,
   clearGridSelection,
+  removeGridSelectionPaths,
   openMoveDialog,
 }: FolderGridBulkOptions) {
+  const { t } = useTranslation(['grid']);
   const { activeGame } = useActiveGame();
   const activeGameId = activeGame?.id;
-  const { mutate: bulkToggle } = useBulkToggle();
-  const { mutate: bulkDelete } = useBulkDelete();
-  const { mutate: bulkUpdateInfo } = useBulkUpdateInfo();
-  const { mutate: bulkSafety } = useBulkSafety();
-  const { mutate: bulkFavorite } = useBulkFavorite();
-  const { mutate: bulkPin } = useBulkPin();
-
+  const queryClient = useQueryClient();
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [bulkMutationPending, setBulkMutationPending] = useState(false);
+  const [bulkMoveSnapshot, setBulkMoveSnapshot] = useState<BulkMoveSnapshot | null>(null);
+  const bulkMutationInFlight = useRef(false);
 
-  // These are spread into every card's props; without useCallback they get a new
-  // identity each render and defeat the React.memo on FolderCard/FolderListRow.
+  const beginBulkMutation = useCallback(() => {
+    if (bulkMutationInFlight.current) {
+      return false;
+    }
+    bulkMutationInFlight.current = true;
+    setBulkMutationPending(true);
+    return true;
+  }, []);
+  const finishBulkMutation = useCallback(() => {
+    bulkMutationInFlight.current = false;
+    setBulkMutationPending(false);
+  }, []);
+
+  const executeBulkAction = useCallback(
+    async (
+      action: WorkspaceExplorerBulkAction,
+      frozenSnapshot?: BulkExecutionSnapshot,
+    ): Promise<BulkResult> => {
+      let snapshot = frozenSnapshot;
+      if (!snapshot) {
+        if (!selectionStable || !activeGameId || !explorerQuery || !listingRevision) {
+          throw new Error('No active explorer snapshot');
+        }
+        snapshot = {
+          gameId: activeGameId,
+          selection: toWorkspaceExplorerSelectionInput(selection, explorerQuery, listingRevision),
+        };
+      }
+      const result = await commands.executeWorkspaceExplorerBulk({
+        selection: snapshot.selection,
+        action,
+      });
+      if (!isActiveGame(snapshot.gameId)) {
+        return result;
+      }
+
+      if (result.path_rewrites.length > 0) {
+        applyRuntimeEffects(
+          queryClient,
+          buildWorkspacePathRewritesDescriptor(result.path_rewrites, []),
+        );
+      }
+      if (action.kind === 'delete' || action.kind === 'move_to_object') {
+        const removedPaths =
+          action.kind === 'move_to_object'
+            ? result.path_rewrites.map((rewrite) => rewrite.old_path)
+            : result.success;
+        applyRuntimeEffects(
+          queryClient,
+          buildQueryRemovalDescriptor(
+            removedPaths.map((path) => thumbnailKeys.folder(path)),
+            [],
+          ),
+        );
+      }
+
+      if (action.kind === 'toggle') {
+        await applyRuntimeMutationResult(queryClient, 'folderSwitch');
+      } else if (action.kind === 'delete') {
+        await applyRuntimeMutationResult(queryClient, [
+          'workspaceStructure',
+          'workspaceRuntime',
+          'dashboardKeybindings',
+        ]);
+      } else if (action.kind === 'set_safety') {
+        await applyRuntimeMutationResult(queryClient, 'safetyClassification');
+      } else if (action.kind === 'move_to_object') {
+        await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
+      } else {
+        await applyRuntimeMutationResult(queryClient, 'folderMetadataPreview');
+      }
+      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
+      notifyCommittedMutationSyncWarning(result);
+      showBulkResult(action, result);
+      return result;
+    },
+    [activeGameId, explorerQuery, listingRevision, queryClient, selection, selectionStable],
+  );
+
+  const runBulkAction = useCallback(
+    (action: WorkspaceExplorerBulkAction, onSuccess?: (result: BulkResult) => void) => {
+      if (!selectionStable) {
+        return;
+      }
+      const selectionCount = workspaceExplorerSelectionCount(selection);
+      if (selectionCount === 0) {
+        return;
+      }
+      if (selectionCount > WORKSPACE_EXPLORER_BULK_SELECTION_LIMIT) {
+        toast.error(
+          t('bulk.selection_limit', {
+            limit: WORKSPACE_EXPLORER_BULK_SELECTION_LIMIT.toLocaleString('en-US'),
+          }),
+        );
+        return;
+      }
+      if (!beginBulkMutation()) {
+        return;
+      }
+      void executeBulkAction(action)
+        .then(onSuccess)
+        .catch(async (error: unknown) => {
+          if (isExplorerSnapshotExpired(error) && explorerQuery) {
+            clearGridSelection();
+            await queryClient.resetQueries({
+              queryKey: workspaceKeys.explorerPages(explorerQuery),
+              exact: true,
+            });
+          }
+          toast.error(formatAppError(error));
+        })
+        .finally(finishBulkMutation);
+    },
+    [
+      beginBulkMutation,
+      clearGridSelection,
+      executeBulkAction,
+      explorerQuery,
+      finishBulkMutation,
+      queryClient,
+      selection,
+      selectionStable,
+      t,
+    ],
+  );
+
   const handleBulkToggle = useCallback(
     (enable: boolean) => {
-      const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGameId) return;
-      bulkToggle({ gameId: activeGameId, paths, enable });
+      runBulkAction({ kind: 'toggle', enable, operation_id: createBulkOperationId('toggle') });
     },
-    [activeGameId, bulkToggle, gridSelection],
+    [runBulkAction],
   );
 
   const handleBulkTagRequest = useCallback(() => {
+    if (!selectionStable) {
+      return;
+    }
     setBulkTagOpen(true);
-  }, []);
+  }, [selectionStable]);
 
-  // Bulk Add Tags — mutation toasts success/failure itself (see useBulkUpdateInfo)
   const handleBulkTagSubmit = useCallback(
     (tags: string[]) => {
-      const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGameId) return;
-      bulkUpdateInfo({ gameId: activeGameId, paths, update: { tags_add: tags } });
+      runBulkAction({ kind: 'update_info', update: sparse({ tags_add: tags }) });
     },
-    [activeGameId, bulkUpdateInfo, gridSelection],
+    [runBulkAction],
   );
 
   const handleBulkDeleteRequest = useCallback(() => {
+    if (!selectionStable) {
+      return;
+    }
     setBulkDeleteConfirm(true);
-  }, []);
+  }, [selectionStable]);
 
   const handleBulkDeleteConfirm = useCallback(() => {
-    const paths = Array.from(gridSelection);
-    if (paths.length === 0 || !activeGameId) return;
-    bulkDelete(
-      { paths, gameId: activeGameId },
-      {
-        onSuccess: () => {
-          setBulkDeleteConfirm(false);
-          clearGridSelection();
-        },
-      },
-    );
-  }, [activeGameId, bulkDelete, clearGridSelection, gridSelection]);
+    runBulkAction({ kind: 'delete', operation_id: createBulkOperationId('delete') }, () => {
+      setBulkDeleteConfirm(false);
+      clearGridSelection();
+    });
+  }, [clearGridSelection, runBulkAction]);
 
-  // Bulk Favorite/Unfavorite — uses proper mutation hook with targeted cache
   const handleBulkFavorite = useCallback(
     (favorite: boolean) => {
-      const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGameId) return;
-      bulkFavorite({ gameId: activeGameId, folderPaths: paths, favorite });
+      runBulkAction({ kind: 'set_favorite', favorite });
     },
-    [activeGameId, bulkFavorite, gridSelection],
+    [runBulkAction],
   );
 
-  // Bulk Safe/Unsafe — uses existing bulk_update_info
   const handleBulkSafe = useCallback(
     (safe: boolean) => {
-      const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGameId) return;
-      bulkSafety({ gameId: activeGameId, paths, safe });
+      runBulkAction({ kind: 'set_safety', safe });
     },
-    [activeGameId, bulkSafety, gridSelection],
+    [runBulkAction],
   );
 
-  // Bulk Pin/Unpin — uses proper mutation hook with targeted cache
   const handleBulkPin = useCallback(
     (pin: boolean) => {
-      const paths = Array.from(gridSelection);
-      if (paths.length === 0 || !activeGameId) return;
-      bulkPin({ gameId: activeGameId, folderPaths: paths, pin });
+      runBulkAction({ kind: 'set_pin', pin });
     },
-    [activeGameId, bulkPin, gridSelection],
+    [runBulkAction],
   );
 
-  // Bulk Move to Object
   const handleBulkMoveToObject = useCallback(() => {
-    const firstSelected = sortedFolders.find((f) => gridSelection.has(f.path));
-    if (firstSelected) {
-      openMoveDialog(firstSelected);
+    if (!selectionStable || !activeGameId || !explorerQuery || !listingRevision) {
+      return;
     }
-  }, [gridSelection, openMoveDialog, sortedFolders]);
+    const selectionCount = workspaceExplorerSelectionCount(selection);
+    if (selectionCount > WORKSPACE_EXPLORER_BULK_SELECTION_LIMIT) {
+      toast.error(
+        t('bulk.selection_limit', {
+          limit: WORKSPACE_EXPLORER_BULK_SELECTION_LIMIT.toLocaleString('en-US'),
+        }),
+      );
+      return;
+    }
+    if (selection.mode !== 'explicit' || selection.paths.size === 0) {
+      toast.error(t('bulk.move_requires_loaded_selection'));
+      return;
+    }
+
+    const foldersByPath = new Map(sortedFolders.map((folder) => [folder.path, folder]));
+    const exactPaths = Array.from(selection.paths);
+    const firstSelected = foldersByPath.get(exactPaths[0]);
+    if (!firstSelected || exactPaths.some((path) => !foldersByPath.has(path))) {
+      toast.error(t('bulk.move_requires_loaded_selection'));
+      return;
+    }
+
+    const selectionInput = toWorkspaceExplorerSelectionInput(
+      selection,
+      explorerQuery,
+      listingRevision,
+    );
+    setBulkMoveSnapshot({
+      gameId: activeGameId,
+      paths: exactPaths,
+      selection: {
+        ...selectionInput,
+        query: { ...selectionInput.query },
+        selection: { mode: 'explicit', paths: [...exactPaths] },
+      },
+    });
+    openMoveDialog(firstSelected);
+  }, [
+    activeGameId,
+    explorerQuery,
+    listingRevision,
+    openMoveDialog,
+    selection,
+    selectionStable,
+    sortedFolders,
+    t,
+  ]);
+
+  const handleBulkMoveSubmit = useCallback(
+    async (targetObjectId: string, status: MoveStatus, targetSubpath: string | null) => {
+      if (!bulkMoveSnapshot) {
+        throw new Error('The exact bulk move selection is unavailable');
+      }
+      if (!isActiveGame(bulkMoveSnapshot.gameId)) {
+        throw new Error(t('bulk.move_requires_loaded_selection'));
+      }
+      if (!beginBulkMutation()) {
+        throw new Error('A bulk operation is already running');
+      }
+      try {
+        const result = await executeBulkAction(
+          {
+            kind: 'move_to_object',
+            target_object_id: targetObjectId,
+            target_subpath: targetSubpath,
+            status,
+          },
+          bulkMoveSnapshot,
+        );
+        const committedPaths = committedMoveSourcePaths(bulkMoveSnapshot.paths, result);
+        if (committedPaths.length > 0) {
+          removeGridSelectionPaths(committedPaths);
+        }
+        if (result.success.length > 0) {
+          toast.success(t('bulk.move_success', { count: result.success.length }));
+        }
+        if (result.failures.length > 0) {
+          toast.error(
+            t('bulk.move_failure', {
+              count: result.failures.length,
+              error: formatAppError(result.failures[0].error),
+            }),
+          );
+        }
+      } finally {
+        finishBulkMutation();
+      }
+    },
+    [
+      beginBulkMutation,
+      bulkMoveSnapshot,
+      executeBulkAction,
+      finishBulkMutation,
+      removeGridSelectionPaths,
+      t,
+    ],
+  );
 
   return {
+    bulkMutationPending,
     bulkTagOpen,
     setBulkTagOpen,
     bulkDeleteConfirm,
     setBulkDeleteConfirm,
+    bulkMovePaths: bulkMoveSnapshot?.paths ?? null,
+    clearBulkMovePaths: () => setBulkMoveSnapshot(null),
     handleBulkToggle,
     handleBulkTagRequest,
     handleBulkTagSubmit,
@@ -137,5 +449,6 @@ export function useFolderGridBulk({
     handleBulkSafe,
     handleBulkPin,
     handleBulkMoveToObject,
+    handleBulkMoveSubmit,
   };
 }

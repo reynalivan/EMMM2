@@ -19,7 +19,7 @@ import {
   WorkspacePageFrame,
 } from '@/shared/ui/components/layout/WorkspacePageFrame';
 import { LiquidSurface } from '@/shared/ui/liquid';
-import { TopBarActionsPortal } from '@/widgets/top-bar';
+import { TopBarActionsPortal } from '@/shared/ui/components/layout/TopBarActionsPortal';
 
 export default function StorageOptimizerPage() {
   const { t } = useTranslation(['scanner']);

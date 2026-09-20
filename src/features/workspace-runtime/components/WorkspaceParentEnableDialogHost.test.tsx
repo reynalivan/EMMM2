@@ -45,6 +45,7 @@ describe('WorkspaceParentEnableDialog', () => {
         onConfirm={onConfirm}
         onClose={vi.fn()}
         requirement={{
+          confirmation_token: 'confirm-1',
           requested_target: { path: 'Mods/DISABLED Group/DISABLED Alice/Blue', name: 'Blue' },
           parents: [
             { path: 'Mods/DISABLED Group', name: 'Group' },

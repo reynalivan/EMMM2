@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 use adblock::lists::{ParseOptions, RuleTypes};
 use adblock::request::Request;
 use adblock::{Engine, FilterSet};
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use futures_util::StreamExt;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager};
@@ -201,7 +201,7 @@ fn build_engine(easylist: String, easyprivacy: String) -> Engine {
         ..Default::default()
     };
     let mut filters = FilterSet::new(false);
-    filters.add_filter_list(easylist, network_only.clone());
+    filters.add_filter_list(easylist, network_only);
     filters.add_filter_list(easyprivacy, network_only);
     Engine::new_with_filter_set(filters)
 }
@@ -532,16 +532,16 @@ mod native_windows {
 
     use tauri::{AppHandle, Emitter, Manager, Url};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_DOM_STORAGE, COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES,
-        COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE, COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
-        COREWEBVIEW2_CONTEXT_MENU_TARGET_KIND_IMAGE, COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
-        COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST, ICoreWebView2_11, ICoreWebView2_13,
-        ICoreWebView2_15, ICoreWebView2Environment9, ICoreWebView2Profile2,
+        ICoreWebView2Environment9, ICoreWebView2Profile2, ICoreWebView2_11, ICoreWebView2_13,
+        ICoreWebView2_15, COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_DOM_STORAGE,
+        COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES, COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE,
+        COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND, COREWEBVIEW2_CONTEXT_MENU_TARGET_KIND_IMAGE,
+        COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG, COREWEBVIEW2_PERMISSION_STATE_DENY,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST,
     };
     use webview2_com::{
         ClearBrowsingDataCompletedHandler, ContextMenuRequestedEventHandler,
@@ -549,10 +549,10 @@ mod native_windows {
         NavigationCompletedEventHandler, PermissionRequestedEventHandler,
         WebResourceRequestedEventHandler,
     };
+    use windows::core::{w, Interface, BOOL, PWSTR};
     use windows::Win32::System::Com::CoTaskMemFree;
-    use windows::core::{BOOL, Interface, PWSTR, w};
 
-    use super::{BrowserAdblockState, BrowserError, decode_base64_text};
+    use super::{decode_base64_text, BrowserAdblockState, BrowserError};
 
     pub(super) fn attach(
         webview: &tauri::Webview,
@@ -924,10 +924,9 @@ mod native_windows {
         }
     }
 
-    fn complete_clear(
-        sender: &Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
-        result: Result<(), String>,
-    ) {
+    type ClearProfileSender = Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>;
+
+    fn complete_clear(sender: &ClearProfileSender, result: Result<(), String>) {
         if let Some(sender) = sender.lock().ok().and_then(|mut sender| sender.take()) {
             let _ = sender.send(result);
         }
@@ -1021,14 +1020,14 @@ mod tests {
     #[test]
     fn source_validation_requires_the_fixed_https_host() {
         assert!(validate_filter_source(&reqwest::Url::parse(EASYLIST_URL).unwrap()).is_ok());
-        assert!(
-            validate_filter_source(&reqwest::Url::parse("http://easylist.to/list.txt").unwrap())
-                .is_err()
-        );
-        assert!(
-            validate_filter_source(&reqwest::Url::parse("https://example.com/list.txt").unwrap())
-                .is_err()
-        );
+        assert!(validate_filter_source(
+            &reqwest::Url::parse("http://easylist.to/list.txt").unwrap()
+        )
+        .is_err());
+        assert!(validate_filter_source(
+            &reqwest::Url::parse("https://example.com/list.txt").unwrap()
+        )
+        .is_err());
     }
 
     #[test]

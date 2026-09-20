@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,11 @@ import { ApplyCollectionActions } from './ApplyCollectionActions';
 import { extractMissingModsPayload, formatAppError } from '../../../shared/lib/appError';
 import type { ApplyResult } from '@/entities/collection';
 import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
+import {
+  buildApplyPreviewDiff,
+  filterPreviewTreeToChanges,
+  type ApplyPreviewChange,
+} from '../applyPreviewDiff';
 
 interface ApplyCollectionModalProps {
   collectionId: string;
@@ -41,8 +46,15 @@ interface StatePanelProps {
   colorClass: string;
   emptyMessage: string;
   treeIdentity: string;
+  nodeChanges?: ReadonlyMap<string, ApplyPreviewChange>;
   t: TFunction;
 }
+
+const CURRENT_CHANGED_STATES: ReadonlySet<ApplyPreviewChange> = new Set(['will_disable']);
+const TARGET_CHANGED_STATES: ReadonlySet<ApplyPreviewChange> = new Set([
+  'will_enable',
+  'excluded_by_safe_mode',
+]);
 
 /** One side of the before/after comparison. Both sides render identically. */
 function StatePanel({
@@ -55,6 +67,7 @@ function StatePanel({
   colorClass,
   emptyMessage,
   treeIdentity,
+  nodeChanges,
   t,
 }: StatePanelProps) {
   const [treeScrollElement, setTreeScrollElement] = useState<HTMLDivElement | null>(null);
@@ -91,6 +104,7 @@ function StatePanel({
           emptyMessage={emptyMessage}
           scrollElement={treeScrollElement}
           treeIdentity={treeIdentity}
+          nodeChanges={nodeChanges}
         />
       </div>
     </div>
@@ -102,11 +116,34 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
   const activeGameId = useAppStore((state) => state.activeGameId);
   const [missingPaths, setMissingPaths] = useState<string[] | null>(null);
   const [result, setResult] = useState<ApplyResult | null>(null);
+  const [previewMode, setPreviewMode] = useState<'full' | 'changes'>('full');
   const applyMutation = useApplyCollection();
   const replaceMutation = useReplaceCollectionWithCurrentState();
   const previewQuery = useApplyCollectionPreview(activeGameId, collectionId);
   const progressQuery = useApplyProgress(activeGameId, applyMutation.isPending);
   const preview = previewQuery.data;
+  const diff = useMemo(() => (preview ? buildApplyPreviewDiff(preview) : null), [preview]);
+  const previewTrees = useMemo(() => {
+    if (!preview || !diff || previewMode === 'full') {
+      return {
+        currentNodes: preview?.current_tree_nodes,
+        targetNodes: preview?.target_tree_nodes,
+      };
+    }
+
+    return {
+      currentNodes: filterPreviewTreeToChanges(
+        preview.current_tree_nodes,
+        diff.currentChanges,
+        CURRENT_CHANGED_STATES,
+      ),
+      targetNodes: filterPreviewTreeToChanges(
+        preview.target_tree_nodes,
+        diff.targetChanges,
+        TARGET_CHANGED_STATES,
+      ),
+    };
+  }, [diff, preview, previewMode]);
 
   const currentStateLabel = preview
     ? preview.current_state_name || t('collections:list.item.current_runtime', 'Current Runtime')
@@ -196,6 +233,69 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
           </div>
         </div>
 
+        {preview && diff && !result && !missingPaths && (
+          <div className="shrink-0 border-b border-base-content/5 bg-base-300/35 px-6 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div
+                className="join"
+                role="tablist"
+                aria-label={t('collections:apply.diff.view_label')}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={previewMode === 'full'}
+                  className={`btn btn-xs join-item ${
+                    previewMode === 'full' ? 'btn-primary' : 'btn-ghost'
+                  }`}
+                  onClick={() => setPreviewMode('full')}
+                >
+                  {t('collections:apply.diff.full_collection')}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={previewMode === 'changes'}
+                  className={`btn btn-xs join-item ${
+                    previewMode === 'changes' ? 'btn-primary' : 'btn-ghost'
+                  }`}
+                  onClick={() => setPreviewMode('changes')}
+                >
+                  {t('collections:apply.diff.changes_only')}
+                </button>
+              </div>
+              {preview.safe_mode_enabled && (
+                <span className="badge badge-sm border-warning/20 bg-warning/10 text-warning/85">
+                  {t('collections:apply.diff.safe_mode_on')}
+                </span>
+              )}
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <SummaryStat
+                label={t('collections:apply.diff.disable_count')}
+                value={diff.disableCount}
+              />
+              <SummaryStat
+                label={t('collections:apply.diff.enable_count')}
+                value={diff.enableCount}
+              />
+              <SummaryStat
+                label={t('collections:apply.diff.unchanged_count')}
+                value={diff.unchangedCount}
+              />
+            </div>
+
+            {diff.excludedBySafeModeCount > 0 && (
+              <div className="mt-3 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-xs text-warning/90">
+                {t('collections:apply.diff.safe_mode_exclusions', {
+                  count: diff.excludedBySafeModeCount,
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex-1 overflow-hidden bg-base-100 flex min-h-[50vh]">
           {previewQuery.isLoading ? (
             <div className="flex h-full w-full flex-col text-base-content/50" aria-busy="true">
@@ -284,10 +384,15 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 title={currentStateLabel}
                 titleClass="text-base-content/85"
                 summary={preview.current_projected_state.summary}
-                nodes={preview.current_tree_nodes}
+                nodes={previewTrees.currentNodes}
                 colorClass="text-error/70"
-                emptyMessage={t('collections:apply.panels.empty_before')}
-                treeIdentity={`before:${collectionId}`}
+                emptyMessage={
+                  previewMode === 'changes'
+                    ? t('collections:apply.diff.empty_disable')
+                    : t('collections:apply.panels.empty_before')
+                }
+                treeIdentity={`before:${collectionId}:${previewMode}`}
+                nodeChanges={diff?.currentChanges}
                 t={t}
               />
 
@@ -303,10 +408,15 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 title={preview.collection_name}
                 titleClass="text-primary"
                 summary={preview.target_projected_state.summary}
-                nodes={preview.target_tree_nodes}
+                nodes={previewTrees.targetNodes}
                 colorClass="text-success/70"
-                emptyMessage={t('collections:apply.panels.empty_after')}
-                treeIdentity={`after:${collectionId}`}
+                emptyMessage={
+                  previewMode === 'changes'
+                    ? t('collections:apply.diff.empty_enable')
+                    : t('collections:apply.panels.empty_after')
+                }
+                treeIdentity={`after:${collectionId}:${previewMode}`}
+                nodeChanges={diff?.targetChanges}
                 t={t}
               />
             </div>

@@ -14,15 +14,19 @@ import { formatBytes } from '@/shared/lib/utils/formatters';
 import { ExternalLink, Pause, Play, RefreshCw, RotateCcw, X } from 'lucide-react';
 import VirtualList from '@/shared/ui/components/ui/VirtualList';
 import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
+import type { BrowserSidePanelLayout } from '../browserSurfacePresentation';
 
 const getDownloadItemKey = (item: BrowserDownloadItem) => item.id;
 
-export function DownloadManagerPanel() {
+interface DownloadManagerPanelProps {
+  layout: BrowserSidePanelLayout;
+}
+
+export function DownloadManagerPanel({ layout }: DownloadManagerPanelProps) {
   const { t } = useTranslation(['browser']);
   const activeGameId = useAppStore((state) => state.activeGameId);
-  const { isDownloadPanelOpen, closeDownloadPanel } = useBrowserStore(
+  const { closeDownloadPanel } = useBrowserStore(
     useShallow((state) => ({
-      isDownloadPanelOpen: state.isDownloadPanelOpen,
       closeDownloadPanel: state.closeDownloadPanel,
     })),
   );
@@ -43,12 +47,12 @@ export function DownloadManagerPanel() {
   const usesVirtualList = downloads.length > 80;
 
   return (
-    <div
+    <aside
       id="download-manager-panel"
+      aria-label={t('downloads.title')}
       className={`
-        fixed top-0 right-0 h-full w-100 z-60 bg-base-200 shadow-2xl
-        transition-transform duration-300 ease-in-out flex flex-col
-        ${isDownloadPanelOpen ? 'translate-x-0' : 'translate-x-full'}
+        flex h-full min-h-0 flex-col border-l border-base-300 bg-base-200 shadow-2xl
+        ${layout === 'docked' ? 'w-[400px] shrink-0' : 'w-full'}
       `}
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-base-300">
@@ -168,7 +172,7 @@ export function DownloadManagerPanel() {
           </div>
         )}
       </div>
-    </div>
+    </aside>
   );
 }
 

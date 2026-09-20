@@ -6,10 +6,9 @@ import { initLogger } from '@/shared/lib/logger';
 import { useAppStore } from '@/app/store';
 import { useSettings } from '@/entities/settings';
 import i18n from '@/shared/i18n/config';
-import { DynamicThemeInjector } from '@/pages/settings/components/theme/DynamicThemeInjector';
-import { useThemeRuntime } from '@/pages/settings/hooks/useThemeRuntime';
+import { DynamicThemeInjector, useThemeRuntime } from '@/pages/settings';
 import type { PipelineTask } from '@/entities/task';
-import { RecoveryDialog } from '@/pages/collections/components/RecoveryDialog';
+import { CollectionContextControls, RecoveryDialog } from '@/pages/collections';
 import { WelcomeScreen } from '@/pages/onboarding';
 import { commands } from '@/shared/api/tauri/bindings';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
@@ -20,15 +19,16 @@ import { DiagnosticsErrorDialog } from '@/shared/ui/components/ui/DiagnosticsErr
 import { CrashRecoveryDialog } from '@/shared/ui/components/ui/CrashRecoveryDialog';
 import { AppShell } from '@/widgets/app-shell';
 import { TopBar } from '@/widgets/top-bar';
-import CollectionContextControls from '@/pages/collections/components/CollectionContextControls';
 import { ExternalChangeHandler } from '@/features/file-watcher';
 import { ImportBatchWizardHost } from '@/features/import-batches';
 import { ObjectClassificationWizardHost } from '@/features/match-wizard';
 import { LaunchBar } from '@/widgets/launch-bar';
-import { DownloadConfirmationHost } from '@/pages/browser/components/DownloadConfirmationHost';
-import FolderConflictManager from '@/widgets/mod-explorer/modals/FolderConflictManager';
-import RenameConfirmationManager from '@/widgets/mod-explorer/modals/RenameConfirmationManager';
-import WorkspaceSourceUnavailableDialog from '@/widgets/mod-explorer/components/WorkspaceSourceUnavailableDialog';
+import { DownloadConfirmationHost } from '@/pages/browser';
+import {
+  FolderConflictManager,
+  RenameConfirmationManager,
+  WorkspaceSourceUnavailableDialog,
+} from '@/widgets/mod-explorer';
 
 const Dashboard = lazy(() => import('@/pages/dashboard/Dashboard'));
 const CollectionsPage = lazy(() => import('@/pages/collections/CollectionsPage'));

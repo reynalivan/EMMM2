@@ -140,13 +140,15 @@ pub async fn prepare_durable_batch(
     let mut steps = Vec::new();
     let mut sequence = 0u32;
     for request in requests {
-        authorize_request(&request, game_id, db)
+        let confidence_score = authorize_request(&request, game_id, db)
             .await
             .map_err(|error| AppError::Validation(error.to_string()))?;
         match &request.action {
             ResolutionAction::KeepA | ResolutionAction::KeepB => {
-                verify_full_folder_match(&request.folder_a, &request.folder_b)
-                    .map_err(|error| AppError::Validation(error.to_string()))?;
+                if confidence_score == 100 {
+                    verify_full_folder_match(&request.folder_a, &request.folder_b)
+                        .map_err(|error| AppError::Validation(error.to_string()))?;
+                }
                 let source = PathBuf::from(if matches!(&request.action, ResolutionAction::KeepA) {
                     &request.folder_b
                 } else {
@@ -357,17 +359,21 @@ async fn resolve_one(
     game_id: &str,
     db: &SqlitePool,
 ) -> Result<(), ScannerError> {
-    authorize_request(request, game_id, db).await?;
+    let confidence_score = authorize_request(request, game_id, db).await?;
 
     match request.action {
         ResolutionAction::KeepA => {
-            verify_full_folder_match(&request.folder_a, &request.folder_b)?;
+            if confidence_score == 100 {
+                verify_full_folder_match(&request.folder_a, &request.folder_b)?;
+            }
             move_folder_to_trash(&request.folder_b)?;
             set_group_status(db, &request.group_id, "resolved").await?;
             Ok(())
         }
         ResolutionAction::KeepB => {
-            verify_full_folder_match(&request.folder_a, &request.folder_b)?;
+            if confidence_score == 100 {
+                verify_full_folder_match(&request.folder_a, &request.folder_b)?;
+            }
             move_folder_to_trash(&request.folder_a)?;
             set_group_status(db, &request.group_id, "resolved").await?;
             Ok(())
@@ -511,7 +517,7 @@ async fn authorize_request(
     request: &ResolutionRequest,
     game_id: &str,
     db: &SqlitePool,
-) -> Result<(), ScannerError> {
+) -> Result<u8, ScannerError> {
     let requested_paths = canonical_request_paths(request)?;
     let group = crate::modules::duplicates::adapters::sqlite::dedup::load_pending_group(
         db,
@@ -531,12 +537,12 @@ async fn authorize_request(
             "Resolution paths are not members of the persisted duplicate group".to_string(),
         ));
     }
-    if !matches!(request.action, ResolutionAction::Ignore) && group.confidence_score != 100 {
+    if matches!(request.action, ResolutionAction::Hardlink) && group.confidence_score != 100 {
         return Err(ScannerError::Validation(
-            "Destructive resolution requires a fully verified exact duplicate group".to_string(),
+            "Hardlink resolution requires a fully verified exact duplicate group".to_string(),
         ));
     }
-    Ok(())
+    Ok(group.confidence_score)
 }
 
 fn canonical_request_paths(

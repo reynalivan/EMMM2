@@ -117,6 +117,7 @@
     "delete_confirm": "Are you sure you want to delete {{count}} mods?",
     "rename_tooltip": "Double-click to rename",
     "open_folder": "Open Folder",
+    "non_exact_warning": "Similarity match only — review before moving the other item(s) to Trash.",
     "columns": {
       "preview": "Preview",
       "name": "Mod Name",
@@ -134,6 +135,8 @@
     "whitelist": "Whitelist",
     "keep_label": "KEEP:",
     "delete_others": "Delete {{count}} other identical item(s)",
+    "delete_others_non_exact": "Move {{count}} other candidate item(s) to Trash",
+    "non_exact_warning": "Warning: this group is not an exact match. Confirm only if you intend to move the other item(s) to Trash.",
     "ignore_label": "IGNORE:",
     "ignore_desc": "Whitelist all {{count}} members",
     "confirm_button": "Confirm & Resolve",

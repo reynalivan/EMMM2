@@ -14,13 +14,22 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
 
 describe('BulkProgressBar', () => {
   it('does not render when inactive', () => {
-    vi.mocked(useBulkProgress).mockReturnValue({ active: false, label: '', current: 0, total: 0 });
+    vi.mocked(useBulkProgress).mockReturnValue({
+      operation_id: '',
+      cancellable: false,
+      active: false,
+      label: '',
+      current: 0,
+      total: 0,
+    });
     const { container } = render(<BulkProgressBar />);
     expect(container.firstChild).toBeNull();
   });
 
   it('renders progress correctly when active', () => {
     vi.mocked(useBulkProgress).mockReturnValue({
+      operation_id: 'toggle-1',
+      cancellable: true,
       active: true,
       label: 'Processing Files',
       current: 5,
@@ -36,6 +45,8 @@ describe('BulkProgressBar', () => {
 
   it('caps displayed current count to total', () => {
     vi.mocked(useBulkProgress).mockReturnValue({
+      operation_id: 'toggle-1',
+      cancellable: true,
       active: true,
       label: 'Processing',
       current: 15,
@@ -49,6 +60,8 @@ describe('BulkProgressBar', () => {
 
   it('cancels the running batch when the cancel button is clicked', () => {
     vi.mocked(useBulkProgress).mockReturnValue({
+      operation_id: 'toggle-1',
+      cancellable: true,
       active: true,
       label: 'Disabling 5000 mods...',
       current: 500,
@@ -59,5 +72,21 @@ describe('BulkProgressBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(commands.bulkCancel).toHaveBeenCalledTimes(1);
+    expect(commands.bulkCancel).toHaveBeenCalledWith('toggle-1');
+  });
+
+  it('does not offer cancellation for an atomic workspace switch', () => {
+    vi.mocked(useBulkProgress).mockReturnValue({
+      operation_id: 'workspace-switch',
+      cancellable: false,
+      active: true,
+      label: 'Enabling parent folders',
+      current: 1,
+      total: 2,
+    });
+
+    render(<BulkProgressBar />);
+
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
   });
 });

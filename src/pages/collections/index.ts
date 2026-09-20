@@ -1,4 +1,3 @@
-export { default as CollectionsPage } from './CollectionsPage';
 export { ApplyCollectionModal } from './components/ApplyCollectionModal';
 export { RecoveryDialog } from './components/RecoveryDialog';
 export { SaveCollectionModal } from './components/SaveCollectionModal';

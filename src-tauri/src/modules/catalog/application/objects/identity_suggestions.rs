@@ -440,7 +440,7 @@ async fn run(
             planned_name: Some(object.name.clone()),
             match_extensions: Vec::new(),
         })
-        .and_then(|inspected| {
+        .map(|inspected| {
             let suggestions = match_canonical_objects_with_prepared_content(
                 &source,
                 &object.name,
@@ -448,10 +448,10 @@ async fn run(
                 &filters,
                 &inspected.content,
             );
-            Ok((
+            (
                 inspected.inspection.fingerprint,
                 suggestions.into_iter().next(),
-            ))
+            )
         });
         match result {
             Ok((fingerprint, suggestion)) => {

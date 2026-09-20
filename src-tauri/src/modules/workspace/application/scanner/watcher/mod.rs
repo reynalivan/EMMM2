@@ -14,6 +14,7 @@ use crate::shared::errors::ScannerError;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -25,6 +26,7 @@ mod suppressor;
 
 pub(crate) use event_filter::{should_keep_event_path, should_keep_structural_event_path};
 pub use events::{ModWatchEvent, WatchEventPayload};
+pub(crate) use suppressor::ExpectedRenameEcho;
 pub use suppressor::{PathSuppressionGuard, SuppressionGuard, WatcherSession, WatcherSuppressor};
 
 /// One debounce window: long enough to stitch a Windows From/To rename pair
@@ -37,6 +39,8 @@ const WATCH_BACKEND_RESCAN_REQUIRED: &str =
     "Watcher backend reported lost events; a full disk reconcile is required";
 
 pub type ModWatcher = Debouncer<RecommendedWatcher, RecommendedCache>;
+pub(crate) type WatchObservation =
+    Arc<dyn Fn(&[std::path::PathBuf], Option<&EventKind>, bool) + Send + Sync>;
 
 pub struct WatchEventReceiver {
     receiver: tokio::sync::mpsc::Receiver<ModWatchEvent>,
@@ -77,6 +81,14 @@ pub struct WatcherState {
     pub watcher: std::sync::Mutex<Option<ModWatcher>>,
     session_generation: AtomicU64,
     current_session: Mutex<Option<WatcherSession>>,
+    inactive_watchers: Mutex<HashMap<String, InactiveWatcher>>,
+}
+
+struct InactiveWatcher {
+    root_key: String,
+    runtime_config_key: Option<String>,
+    session_generation: u64,
+    _watcher: ModWatcher,
 }
 
 impl WatcherState {
@@ -86,6 +98,7 @@ impl WatcherState {
             watcher: std::sync::Mutex::new(None),
             session_generation: AtomicU64::new(0),
             current_session: Mutex::new(None),
+            inactive_watchers: Mutex::new(HashMap::new()),
         }
     }
 
@@ -96,8 +109,16 @@ impl WatcherState {
     }
 
     pub(crate) fn prepare_session(&self, root: &Path) -> WatcherSession {
+        self.prepare_session_with_runtime_config(root, None)
+    }
+
+    pub(crate) fn prepare_session_with_runtime_config(
+        &self,
+        root: &Path,
+        runtime_config_path: Option<&Path>,
+    ) -> WatcherSession {
         let generation = self.session_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        WatcherSession::new(generation, root)
+        WatcherSession::new_with_runtime_config(generation, root, runtime_config_path)
     }
 
     pub(crate) fn publish_session(&self, session: &WatcherSession) {
@@ -118,6 +139,24 @@ impl WatcherState {
         crate::shared::sync::lock(&self.current_session).as_ref() == Some(session)
     }
 
+    pub(crate) fn current_session_for_root(&self, root: &Path) -> Option<WatcherSession> {
+        crate::shared::sync::lock(&self.current_session)
+            .as_ref()
+            .filter(|session| session.covers_root(root))
+            .cloned()
+    }
+
+    pub(crate) fn current_session_for_coverage(
+        &self,
+        root: &Path,
+        runtime_config_path: Option<&Path>,
+    ) -> Option<WatcherSession> {
+        crate::shared::sync::lock(&self.current_session)
+            .as_ref()
+            .filter(|session| session.covers(root, runtime_config_path))
+            .cloned()
+    }
+
     /// Executes a synchronous publication while proving that its watcher
     /// session is still active. The session mutex makes the check and publish
     /// one critical section, so replacement cannot slip between them.
@@ -128,6 +167,95 @@ impl WatcherState {
     ) -> Option<T> {
         let current = crate::shared::sync::lock(&self.current_session);
         (current.as_ref() == Some(session)).then(publish)
+    }
+
+    pub(crate) fn inactive_watcher_session(
+        &self,
+        game_id: &str,
+        root: &Path,
+        runtime_config_path: Option<&Path>,
+    ) -> Option<u64> {
+        let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let runtime_config_key =
+            runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
+        crate::shared::sync::lock(&self.inactive_watchers)
+            .get(game_id)
+            .filter(|watcher| {
+                watcher.root_key == root_key && watcher.runtime_config_key == runtime_config_key
+            })
+            .map(|watcher| watcher.session_generation)
+    }
+
+    pub(crate) fn install_inactive_watcher(
+        &self,
+        game_id: String,
+        root: &Path,
+        runtime_config_path: Option<&Path>,
+        session_generation: u64,
+        watcher: ModWatcher,
+    ) {
+        crate::shared::sync::lock(&self.inactive_watchers).insert(
+            game_id,
+            InactiveWatcher {
+                root_key: crate::shared::path_key::canonical_path_key_for_path(root),
+                runtime_config_key: runtime_config_path
+                    .map(crate::shared::path_key::canonical_path_key_for_path),
+                session_generation,
+                _watcher: watcher,
+            },
+        );
+    }
+
+    pub(crate) fn take_inactive_watcher_for_handoff(
+        &self,
+        game_id: &str,
+        root: &Path,
+        runtime_config_path: Option<&Path>,
+    ) -> Option<(u64, ModWatcher)> {
+        let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let runtime_config_key =
+            runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
+        let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
+        if watchers.get(game_id).is_none_or(|watcher| {
+            watcher.root_key != root_key || watcher.runtime_config_key != runtime_config_key
+        }) {
+            return None;
+        }
+        let watcher = watchers.remove(game_id)?;
+        Some((watcher.session_generation, watcher._watcher))
+    }
+
+    pub(crate) fn discard_inactive_watcher_unless_coverage(
+        &self,
+        game_id: &str,
+        root: &Path,
+        runtime_config_path: Option<&Path>,
+    ) -> bool {
+        let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let runtime_config_key =
+            runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
+        let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
+        let mismatched = watchers.get(game_id).is_some_and(|watcher| {
+            watcher.root_key != root_key || watcher.runtime_config_key != runtime_config_key
+        });
+        if mismatched {
+            watchers.remove(game_id);
+        }
+        mismatched
+    }
+
+    pub(crate) fn remove_inactive_watcher_if_session(
+        &self,
+        game_id: &str,
+        session_generation: u64,
+    ) {
+        let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
+        if watchers
+            .get(game_id)
+            .is_some_and(|watcher| watcher.session_generation == session_generation)
+        {
+            watchers.remove(game_id);
+        }
     }
 }
 
@@ -295,6 +423,22 @@ pub fn watch_mod_directory_with_runtime_config(
     is_suppressed: Arc<WatcherSuppressor>,
     session: WatcherSession,
 ) -> Result<(ModWatcher, WatchEventReceiver), ScannerError> {
+    watch_mod_directory_with_runtime_config_and_observer(
+        path,
+        runtime_config_path,
+        is_suppressed,
+        session,
+        None,
+    )
+}
+
+pub(crate) fn watch_mod_directory_with_runtime_config_and_observer(
+    path: &Path,
+    runtime_config_path: Option<&Path>,
+    is_suppressed: Arc<WatcherSuppressor>,
+    session: WatcherSession,
+    observer: Option<WatchObservation>,
+) -> Result<(ModWatcher, WatchEventReceiver), ScannerError> {
     if !path.exists() || !path.is_dir() {
         return Err(ScannerError::Validation(format!(
             "Watch target does not exist: {}",
@@ -321,6 +465,13 @@ pub fn watch_mod_directory_with_runtime_config(
             match result {
                 Ok(events) => {
                     for debounced in &events {
+                        if let Some(observer) = observer.as_ref() {
+                            observer(
+                                &debounced.event.paths,
+                                Some(&debounced.event.kind),
+                                debounced.event.need_rescan(),
+                            );
+                        }
                         classify_event_with_runtime_config(
                             &debounced.event,
                             &watcher_path,
@@ -332,6 +483,9 @@ pub fn watch_mod_directory_with_runtime_config(
                     }
                 }
                 Err(errors) => {
+                    if let Some(observer) = observer.as_ref() {
+                        observer(&[], None, true);
+                    }
                     for error in errors {
                         send(ModWatchEvent::Error(error.to_string()));
                     }

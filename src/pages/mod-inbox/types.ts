@@ -1,6 +1,5 @@
 export type {
   ModInboxEntry,
-  ModInboxLayout as ModInboxEntryLayout,
   ModInboxSnapshot,
   ProcessedModInboxDestination,
   ProcessedModInboxSource,

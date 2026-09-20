@@ -15,7 +15,7 @@ async function seedRawMod(modsPath: string, object: string, mod: string): Promis
 
 /**
  * Fase 6 — Mesin scan / sync / match. Command-level: disk reconcile discovery,
- * read-only classification preview, watcher lifecycle, duplicate scanner. Asserts the disk →
+ * read-only classification preview, watcher-driven reconciliation, duplicate scanner. Asserts the disk →
  * DB projection and that long-running channel commands complete.
  */
 describe('Fase 6 — Scan / Sync / Match', () => {
@@ -85,16 +85,11 @@ describe('Fase 6 — Scan / Sync / Match', () => {
     expect(await fs.readdir(game.modsPath)).toContain('DISABLED ClassificationObj');
   });
 
-  it('TC-28-01: Watcher start/stop lifecycle and external-change reconcile', async () => {
-    await invokeInApp('start_watcher', { gameId, path: game.modsPath });
-    try {
-      await seedRawMod(game.modsPath, 'WatchObj', 'WatchMod');
-      await reconcile(gameId, 'WatcherBatch');
-      const names = (await getObjects(gameId)).map((o) => o.name);
-      expect(names).toContain('WatchObj');
-    } finally {
-      await invokeInApp('stop_watcher');
-    }
+  it('TC-28-01: Active watcher reconciles an external change', async () => {
+    await seedRawMod(game.modsPath, 'WatchObj', 'WatchMod');
+    await reconcile(gameId, 'WatcherBatch');
+    const names = (await getObjects(gameId)).map((o) => o.name);
+    expect(names).toContain('WatchObj');
   });
 
   it('TC-32-01: Duplicate scanner runs and report/ignored-pairs are queryable', async () => {

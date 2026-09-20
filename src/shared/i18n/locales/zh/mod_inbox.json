@@ -28,13 +28,7 @@
     "resume_review": "继续检查",
     "size_unknown": "大小不可用",
     "empty_title": "收件箱为空",
-    "empty_description": "添加到此处的文件夹和压缩包会自动显示。",
-    "layouts": {
-      "direct_mod": "模组",
-      "folder_pack": "模组包 · {{count}} 个根目录",
-      "wrapper": "嵌套模组",
-      "unknown": "无法识别的结构"
-    }
+    "empty_description": "添加到此处的文件夹和压缩包会自动显示。"
   },
   "processed": {
     "select_all": "选择所有已处理源",

@@ -313,8 +313,8 @@ pub async fn get_retryable_download(
 #[cfg(test)]
 mod tests {
     use super::{
-        NewDownloadRow, find_gamebanana_provenance_for_source_path, insert_download,
-        store_gamebanana_content_hash, update_status,
+        find_gamebanana_provenance_for_source_path, insert_download, store_gamebanana_content_hash,
+        update_status, NewDownloadRow,
     };
 
     #[tokio::test]
@@ -341,18 +341,16 @@ mod tests {
         .await
         .expect("insert browser download");
 
-        assert!(
-            find_gamebanana_provenance_for_source_path(
-                &context.pool,
-                "gimi",
-                source_path,
-                2048,
-                "download-sha",
-            )
-            .await
-            .expect("look up requested download")
-            .is_none()
-        );
+        assert!(find_gamebanana_provenance_for_source_path(
+            &context.pool,
+            "gimi",
+            source_path,
+            2048,
+            "download-sha",
+        )
+        .await
+        .expect("look up requested download")
+        .is_none());
 
         update_status(
             &context.pool,
@@ -370,30 +368,26 @@ mod tests {
             .await
             .expect("store browser download hash");
 
-        assert!(
-            find_gamebanana_provenance_for_source_path(
-                &context.pool,
-                "gimi",
-                source_path,
-                1024,
-                "download-sha",
-            )
-            .await
-            .expect("look up mismatched file")
-            .is_none()
-        );
-        assert!(
-            find_gamebanana_provenance_for_source_path(
-                &context.pool,
-                "gimi",
-                source_path,
-                2048,
-                "wrong-sha",
-            )
-            .await
-            .expect("look up mismatched content")
-            .is_none()
-        );
+        assert!(find_gamebanana_provenance_for_source_path(
+            &context.pool,
+            "gimi",
+            source_path,
+            1024,
+            "download-sha",
+        )
+        .await
+        .expect("look up mismatched file")
+        .is_none());
+        assert!(find_gamebanana_provenance_for_source_path(
+            &context.pool,
+            "gimi",
+            source_path,
+            2048,
+            "wrong-sha",
+        )
+        .await
+        .expect("look up mismatched content")
+        .is_none());
         assert_eq!(
             find_gamebanana_provenance_for_source_path(
                 &context.pool,

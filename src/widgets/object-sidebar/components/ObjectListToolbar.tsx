@@ -3,7 +3,7 @@
  * Category/Sort/Status filtering is fully delegated to FilterPanel.
  */
 
-import { Search, RefreshCw, Plus, ScanSearch, SlidersHorizontal, X, Sparkles } from 'lucide-react';
+import { Search, RefreshCw, Plus, SlidersHorizontal, X, Sparkles } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GameSchema, FilterDef, CategoryDef } from '@/entities/game-object';
@@ -22,8 +22,6 @@ interface ToolbarProps {
   isSyncing: boolean;
   onSync: () => void;
   onCreateNew: () => void;
-  onCheckCatalog?: () => void;
-  isCatalogChecking?: boolean;
   /** Per-category filters for FilterPanel */
   categoryFilters: FilterDef[];
   activeFilters: Record<string, string[]>;
@@ -66,8 +64,6 @@ export default function ObjectListToolbar({
   isSyncing,
   onSync,
   onCreateNew,
-  onCheckCatalog,
-  isCatalogChecking = false,
   categoryFilters,
   activeFilters,
   onFilterChange,
@@ -188,21 +184,6 @@ export default function ObjectListToolbar({
               >
                 <RefreshCw size={16} />
               </button>
-              {onCheckCatalog && (
-                <button
-                  className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
-                  onClick={onCheckCatalog}
-                  title={t('toolbar.catalog_check')}
-                  disabled={isCatalogChecking}
-                >
-                  <ScanSearch
-                    size={16}
-                    className={
-                      isCatalogChecking ? 'animate-pulse motion-reduce:animate-none' : undefined
-                    }
-                  />
-                </button>
-              )}
               <button
                 className="btn btn-sm btn-square btn-ghost text-base-content/50 hover:text-primary"
                 onClick={onCreateNew}

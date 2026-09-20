@@ -21,6 +21,11 @@ export interface IndexingWorkPlan {
   roots: Array<{ root_name: string; work_units: number }>;
 }
 
+type ActiveScanProgress = Pick<
+  DiskReconcileProgress,
+  'completed_units' | 'total_units' | 'elapsed_ms' | 'eta_ms'
+>;
+
 export const INDEXING_STEP_COUNT = 4;
 
 export function calculateOverallIndexingProgress(
@@ -124,6 +129,7 @@ function humanizeFolderName(path: string | null): string | null {
 export function estimatedRemainingMs(
   progress: IndexingProgress,
   activeScanRemainingMs: number | null | undefined = null,
+  activeScanProgress: ActiveScanProgress | null = null,
 ): number | null {
   if (progress.completed >= progress.total) {
     return null;
@@ -134,9 +140,14 @@ export function estimatedRemainingMs(
       progress.completedDurationsMs.length
     : null;
 
-  if (activeScanRemainingMs !== null && activeScanRemainingMs !== undefined) {
+  const measuredActiveScanRemainingMs =
+    activeScanRemainingMs ?? estimateActiveScanRemainingMs(activeScanProgress);
+
+  if (measuredActiveScanRemainingMs !== null && measuredActiveScanRemainingMs !== undefined) {
+    const remainingGames = progress.total - progress.completed;
+    if (average === null && remainingGames > 1) return null;
     const laterGames = Math.max(0, progress.total - progress.completed - 1);
-    return Math.round(activeScanRemainingMs + (average ?? 0) * laterGames);
+    return Math.round(measuredActiveScanRemainingMs + (average ?? 0) * laterGames);
   }
 
   if (average === null) {
@@ -144,6 +155,15 @@ export function estimatedRemainingMs(
   }
 
   return Math.round(average * (progress.total - progress.completed));
+}
+
+function estimateActiveScanRemainingMs(progress: ActiveScanProgress | null): number | null {
+  if (!progress?.total_units || progress.completed_units <= 0) return null;
+  if (progress.eta_ms !== null) return progress.eta_ms;
+  if (progress.completed_units >= progress.total_units || progress.elapsed_ms <= 0) return null;
+
+  const remainingUnits = progress.total_units - progress.completed_units;
+  return Math.round((progress.elapsed_ms * remainingUnits) / progress.completed_units);
 }
 
 export function formatEstimatedDuration(milliseconds: number): string {
