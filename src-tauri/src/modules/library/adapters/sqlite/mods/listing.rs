@@ -560,6 +560,7 @@ pub async fn get_enabled_duplicates(
         .collect())
 }
 
+#[cfg(test)]
 pub async fn get_enabled_mods_names_and_paths(
     pool: &SqlitePool,
     game_id: &str,
