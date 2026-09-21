@@ -197,4 +197,14 @@ describe('DownloadManagerPanel', () => {
       expect(renameDownload).toHaveBeenCalledWith({ id: 'dl-1', filename: 'renamed.zip' });
     });
   });
+
+  it('renders the row action menu in a viewport overlay so scroll containers cannot clip it', () => {
+    render(<DownloadManagerPanel layout="docked" />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Download actions' })[0]);
+
+    const menu = screen.getByRole('menu', { name: 'Download actions' });
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu).toHaveClass('fixed');
+  });
 });

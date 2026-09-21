@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Ellipsis, FilePenLine, FileText, FolderOpen, ListX, Trash2 } from 'lucide-react';
 import type { BrowserDownloadItem } from '../types';
@@ -20,6 +21,14 @@ const terminalStatuses = new Set<BrowserDownloadItem['status']>([
   'imported',
 ]);
 
+const MENU_ANCHOR_GAP_PX = 4;
+const MENU_VIEWPORT_GUTTER_PX = 8;
+
+interface MenuPosition {
+  left: number;
+  top: number;
+}
+
 export function DownloadItemActions({
   item,
   onRemoveFromList,
@@ -29,9 +38,11 @@ export function DownloadItemActions({
   onOpenLocation,
 }: DownloadItemActionsProps) {
   const { t } = useTranslation(['browser', 'common']);
+  const actionRootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [filename, setFilename] = useState(item.filename);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -46,9 +57,10 @@ export function DownloadItemActions({
     if (!menuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
+      const target = event.target as Node;
+      if (actionRootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+
+      setMenuOpen(false);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -77,6 +89,45 @@ export function DownloadItemActions({
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) {
+      setMenuPosition(null);
+      return;
+    }
+
+    const updateMenuPosition = () => {
+      const buttonRect = menuButtonRef.current?.getBoundingClientRect();
+      const menuRect = menuRef.current?.getBoundingClientRect();
+      if (!buttonRect || !menuRect) return;
+
+      const maxLeft = Math.max(
+        MENU_VIEWPORT_GUTTER_PX,
+        window.innerWidth - menuRect.width - MENU_VIEWPORT_GUTTER_PX,
+      );
+      const left = Math.min(
+        Math.max(MENU_VIEWPORT_GUTTER_PX, buttonRect.right - menuRect.width),
+        maxLeft,
+      );
+      const belowTop = buttonRect.bottom + MENU_ANCHOR_GAP_PX;
+      const aboveTop = buttonRect.top - menuRect.height - MENU_ANCHOR_GAP_PX;
+      const top =
+        belowTop + menuRect.height <= window.innerHeight - MENU_VIEWPORT_GUTTER_PX ||
+        aboveTop < MENU_VIEWPORT_GUTTER_PX
+          ? belowTop
+          : aboveTop;
+
+      setMenuPosition({ left, top });
+    };
+
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
     };
   }, [menuOpen]);
 
@@ -124,7 +175,7 @@ export function DownloadItemActions({
   return (
     <>
       {isTerminal && (
-        <div ref={menuRef} className="relative">
+        <div ref={actionRootRef} className="relative">
           <button
             ref={menuButtonRef}
             type="button"
@@ -138,34 +189,42 @@ export function DownloadItemActions({
           >
             <Ellipsis size={16} aria-hidden="true" />
           </button>
-
-          {menuOpen && (
-            <div
-              id={menuId}
-              role="menu"
-              aria-label={t('downloads.actions_menu')}
-              className="absolute right-0 top-full z-30 mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-xl"
-            >
-              {hasLocalFile && renderMenuItem(t('downloads.open_file'), FileText, onOpenFile)}
-              {hasLocalFile &&
-                renderMenuItem(t('downloads.open_in_file_explorer'), FolderOpen, onOpenLocation)}
-              {hasLocalFile &&
-                renderMenuItem(t('downloads.rename'), FilePenLine, () => {
-                  setFilename(item.filename);
-                  setRenameOpen(true);
-                })}
-              {hasLocalFile && <div className="my-1 border-t border-base-300" role="separator" />}
-              {renderMenuItem(t('downloads.remove_from_list'), ListX, onRemoveFromList)}
-              {renderMenuItem(
-                t('downloads.delete_file'),
-                Trash2,
-                () => setDeleteConfirmOpen(true),
-                'text-error hover:text-error',
-              )}
-            </div>
-          )}
         </div>
       )}
+
+      {menuOpen &&
+        createPortal(
+          <div
+            ref={menuRef}
+            id={menuId}
+            role="menu"
+            aria-label={t('downloads.actions_menu')}
+            className="fixed z-50 w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-xl"
+            style={
+              menuPosition
+                ? { left: menuPosition.left, top: menuPosition.top }
+                : { left: 0, top: 0, visibility: 'hidden' }
+            }
+          >
+            {hasLocalFile && renderMenuItem(t('downloads.open_file'), FileText, onOpenFile)}
+            {hasLocalFile &&
+              renderMenuItem(t('downloads.open_in_file_explorer'), FolderOpen, onOpenLocation)}
+            {hasLocalFile &&
+              renderMenuItem(t('downloads.rename'), FilePenLine, () => {
+                setFilename(item.filename);
+                setRenameOpen(true);
+              })}
+            {hasLocalFile && <div className="my-1 border-t border-base-300" role="separator" />}
+            {renderMenuItem(t('downloads.remove_from_list'), ListX, onRemoveFromList)}
+            {renderMenuItem(
+              t('downloads.delete_file'),
+              Trash2,
+              () => setDeleteConfirmOpen(true),
+              'text-error hover:text-error',
+            )}
+          </div>,
+          document.body,
+        )}
 
       {renameOpen && (
         <dialog
