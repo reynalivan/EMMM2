@@ -28,17 +28,8 @@
     "disabled": "已禁用",
     "games": "游戏",
     "configured": "已配置",
-    "storage": "存储",
-    "total_size_desc": "模组总大小",
     "collections": "收藏集",
     "presets_desc": "已保存预设"
-  },
-  "storage_backfill": {
-    "running_title": "正在计算存储大小",
-    "running_progress": "已处理 {{completed}} / {{total}} 个游戏。您可以继续使用 EMMM。",
-    "failed_title": "存储大小计算失败",
-    "failed_message": "部分存储大小无法计算。",
-    "retry": "重试存储扫描"
   },
   "identity_suggestions": {
     "setup_title": "设置目录包",

@@ -1,23 +1,61 @@
-import { useState } from 'react';
-import { Gamepad2, Plus } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { AlertCircle, Gamepad2, Loader2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GAME_OPTIONS, useActiveGame, type GameConfig } from '@/entities/game';
 import { useGameSwitch } from '@/features/workspace-runtime';
 import { useAppStore } from '@/app/store';
 import { LiquidSurface } from '@/shared/ui/liquid';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
+import {
+  useBackgroundIndexingStatus,
+  type BackgroundIndexingStatusState,
+} from '@/pages/onboarding/hooks/useBackgroundIndexingStatus';
 
 interface GameSelectorProps {
   compact?: boolean;
+  backgroundIndexingStatus?: BackgroundIndexingStatusState;
 }
 
-export default function GameSelector({ compact = false }: GameSelectorProps) {
+export default function GameSelector(props: GameSelectorProps) {
+  if (props.backgroundIndexingStatus) {
+    return <GameSelectorContent {...props} backgroundIndexingStatus={props.backgroundIndexingStatus} />;
+  }
+  return <GameSelectorWithOwnBackgroundStatus {...props} />;
+}
+
+function GameSelectorWithOwnBackgroundStatus({ compact = false }: GameSelectorProps) {
+  const backgroundIndexingStatus = useBackgroundIndexingStatus();
+  return <GameSelectorContent compact={compact} backgroundIndexingStatus={backgroundIndexingStatus} />;
+}
+
+function GameSelectorContent({
+  compact = false,
+  backgroundIndexingStatus,
+}: {
+  compact?: boolean;
+  backgroundIndexingStatus: BackgroundIndexingStatusState;
+}) {
   const { t } = useTranslation('layout');
   const { activeGame, games = [], isLoading } = useActiveGame();
   const { switchGame } = useGameSwitch();
   const activeActivation = useAppStore((state) =>
     activeGame?.id ? state.gameActivationByGame?.[activeGame.id] : undefined,
   );
+  const {
+    gamesById: backgroundIndexingByGame,
+    isLoaded: backgroundStatusLoaded,
+    loadError: backgroundStatusLoadError,
+    refresh: refreshBackgroundStatus,
+  } = backgroundIndexingStatus;
   const [isSwitching, setIsSwitching] = useState(false);
+  const [pendingGame, setPendingGame] = useState<GameConfig | null>(null);
+  const indexingDialogRef = useRef<HTMLDialogElement>(null);
+  const dialogTitleId = useId();
+  const dialogDescriptionId = useId();
+  const pendingIndexingStatus = pendingGame
+    ? backgroundIndexingByGame.get(pendingGame.id)
+    : undefined;
+  useDialogSync(indexingDialogRef, pendingGame !== null);
 
   // Derive display info from active game
   const activeLabel = activeGame?.name ?? t('game_selector.select_game');
@@ -27,6 +65,37 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
       .split(' ')
       .map((w: string) => w[0])
       .join('') ?? '-';
+
+  useEffect(() => {
+    if (!pendingGame) return;
+    const isReadyForSwitch =
+      pendingIndexingStatus?.phase === 'Ready' ||
+      (backgroundStatusLoaded && !backgroundStatusLoadError && !pendingIndexingStatus);
+    if (!isReadyForSwitch) return;
+
+    const gameId = pendingGame.id;
+    setPendingGame(null);
+    void handleSwitchGame(gameId);
+  }, [
+    backgroundStatusLoaded,
+    backgroundStatusLoadError,
+    pendingGame,
+    pendingIndexingStatus?.phase,
+    handleSwitchGame,
+  ]);
+
+  const handleGameSelection = (game: GameConfig) => {
+    const backgroundStatus = backgroundIndexingByGame.get(game.id);
+    const canSwitch =
+      backgroundStatus?.phase === 'Ready' ||
+      (backgroundStatusLoaded && !backgroundStatusLoadError && !backgroundStatus);
+    if (!canSwitch) {
+      setPendingGame(game);
+      return;
+    }
+    void handleSwitchGame(game.id);
+  };
+
   if (isLoading || isSwitching) {
     if (compact) {
       return (
@@ -55,7 +124,7 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
     );
   }
 
-  const handleSwitchGame = async (gameId: string) => {
+  async function handleSwitchGame(gameId: string) {
     const retryingActive =
       gameId === activeGame?.id &&
       (activeActivation?.phase === 'failed' || activeActivation?.phase === 'source_unavailable');
@@ -67,7 +136,7 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
     } finally {
       setIsSwitching(false);
     }
-  };
+  }
 
   if (games.length === 0) {
     if (compact) {
@@ -97,8 +166,30 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
     );
   }
 
+  const needsAttention =
+    pendingIndexingStatus?.phase === 'NeedsAttention' || pendingIndexingStatus?.phase === 'Failed';
+  const statusUnavailable = !pendingIndexingStatus && backgroundStatusLoadError;
+  const dialogTitle = needsAttention
+    ? t('game_selector.indexing.attention_title', { game: pendingGame?.name })
+    : statusUnavailable
+      ? t('game_selector.indexing.status_unavailable_title', { game: pendingGame?.name })
+      : t('game_selector.indexing.dialog_title', { game: pendingGame?.name });
+  const dialogDescription = needsAttention
+    ? t('game_selector.indexing.attention_description')
+    : statusUnavailable
+      ? t('game_selector.indexing.status_unavailable_description')
+      : t('game_selector.indexing.dialog_description');
+
+  const openAndRecheckPendingGame = () => {
+    const gameId = pendingGame?.id;
+    if (!gameId) return;
+    setPendingGame(null);
+    void handleSwitchGame(gameId);
+  };
+
   return (
-    <div className="dropdown dropdown-bottom">
+    <>
+      <div className="dropdown dropdown-bottom">
       <button
         type="button"
         className={
@@ -140,7 +231,7 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
             return (
               <li key={game.id}>
                 <button
-                  onClick={() => void handleSwitchGame(game.id)}
+                  onClick={() => handleGameSelection(game)}
                   disabled={isSwitching}
                   className={`hover:bg-base-content/10 ${
                     isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
@@ -160,6 +251,79 @@ export default function GameSelector({ compact = false }: GameSelectorProps) {
           })}
         </ul>
       </LiquidSurface>
-    </div>
+      </div>
+
+      <dialog
+        ref={indexingDialogRef}
+        className="modal"
+        aria-labelledby={dialogTitleId}
+        aria-describedby={dialogDescriptionId}
+        onCancel={(event) => {
+          event.preventDefault();
+          setPendingGame(null);
+        }}
+        onClose={() => setPendingGame(null)}
+      >
+        <div className="modal-box max-w-sm border border-base-content/10 bg-base-100 p-6 shadow-xl">
+          <div className="flex items-start gap-3">
+            {needsAttention || statusUnavailable ? (
+              <AlertCircle
+                size={20}
+                className="mt-0.5 shrink-0 text-warning"
+                aria-hidden="true"
+              />
+            ) : (
+              <Loader2
+                size={20}
+                className="mt-0.5 shrink-0 animate-spin text-primary motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            )}
+            <div className="min-w-0 space-y-2">
+              <h2 id={dialogTitleId} className="text-base font-semibold">
+                {dialogTitle}
+              </h2>
+              <p
+                id={dialogDescriptionId}
+                className="text-sm leading-6 text-base-content/70"
+              >
+                {dialogDescription}
+              </p>
+              <p role="status" aria-live="polite" className="text-xs font-medium text-base-content/60">
+                {statusUnavailable
+                  ? t('game_selector.indexing.status_unavailable')
+                  : t(`game_selector.indexing.phase.${pendingIndexingStatus?.phase ?? 'Queued'}`)}
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end">
+            {needsAttention && (
+              <button type="button" className="btn btn-primary btn-sm" onClick={openAndRecheckPendingGame}>
+                {t('game_selector.indexing.open_and_recheck')}
+              </button>
+            )}
+            {statusUnavailable && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => void refreshBackgroundStatus()}
+              >
+                {t('game_selector.indexing.retry_status')}
+              </button>
+            )}
+            <form method="dialog">
+              <button type="submit" className="btn btn-ghost btn-sm">
+                {t('game_selector.indexing.stay')}
+              </button>
+            </form>
+          </div>
+        </div>
+        <form method="dialog" className="modal-backdrop">
+          <button type="submit" aria-label={t('game_selector.indexing.stay')}>
+            {t('game_selector.indexing.stay')}
+          </button>
+        </form>
+      </dialog>
+    </>
   );
 }

@@ -68,13 +68,12 @@
     "phase_progress": "Tahap saat ini",
     "preparation_progress": "Progres persiapan",
     "folders_complete": "{{completed}} dari {{total}} folder",
-    "files_inspected": "{{count}} file diperiksa",
     "folders_classified": "{{count}} folder diklasifikasikan",
     "current_root": "Folder saat ini: {{root}}",
     "elapsed": "Berlalu {{duration}}",
     "waiting_for_stage": "Memulai tahap berikutnya...",
     "preparation": {
-      "metadata": "Membaca metadata file",
+        "metadata": "Memeriksa struktur folder",
       "classifying": "Mengklasifikasikan folder mod",
       "rechecking": "Library berubah. Memeriksanya lagi..."
     },
@@ -102,6 +101,7 @@
       "starting": "Memulai Mesin..."
     },
     "finishing_up": "Menyelesaikan proses...",
+    "first_game_not_ready": "{{game}} tidak dapat diindeks. Perbaiki masalahnya lalu coba lagi sebelum membuka dasbor.",
     "initializing": "Menginisialisasi workspace...",
     "processing": "Memproses {{game}}"
   }

@@ -28,17 +28,8 @@
     "disabled": "disabled",
     "games": "Games",
     "configured": "Configured",
-    "storage": "Storage",
-    "total_size_desc": "Total mod size",
     "collections": "Collections",
     "presets_desc": "Presets saved"
-  },
-  "storage_backfill": {
-    "running_title": "Calculating storage size",
-    "running_progress": "Processed {{completed}} of {{total}} games. You can continue using EMMM.",
-    "failed_title": "Storage size calculation failed",
-    "failed_message": "Some storage sizes could not be calculated.",
-    "retry": "Retry storage scan"
   },
   "identity_suggestions": {
     "setup_title": "Set up a catalog",

@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import type { DashboardPayload } from './model/dashboard';
 import { useAppStore } from '@/app/store';
 import { useDashboardStats } from './hooks/useDashboardStats';
-import { useStorageSizeBackfill } from './hooks/useStorageSizeBackfill';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 import { useActiveGame } from '@/entities/game';
 import { formatBytes } from '../../shared/lib/utils/formatters';
@@ -11,7 +10,6 @@ import { DashboardActivity } from './components/DashboardActivity';
 import { DashboardCharts } from './components/DashboardCharts';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { DashboardStats } from './components/DashboardStats';
-import { DashboardStorageBackfillStatus } from './components/DashboardStorageBackfillStatus';
 import { DashboardIdentitySuggestions } from './components/DashboardIdentitySuggestions';
 import {
   DashboardEmptyState,
@@ -24,7 +22,6 @@ const EMPTY_STATS = {
   total_mods: 0,
   enabled_mods: 0,
   disabled_mods: 0,
-  total_size_bytes: 0,
   total_collections: 0,
 };
 
@@ -34,8 +31,6 @@ export default function Dashboard() {
   const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const { data, isLoading, isError, refresh } = useDashboardStats();
-  const { status: storageSizeBackfillStatus, retry: retryStorageSizeBackfill } =
-    useStorageSizeBackfill();
   const { activeGame } = useActiveGame();
   const { keybindings, isLoading: keybindingsLoading } = useActiveKeybindings();
 
@@ -86,10 +81,6 @@ export default function Dashboard() {
               setSettingsTab('catalog');
               setWorkspaceView('settings');
             }}
-          />
-          <DashboardStorageBackfillStatus
-            status={storageSizeBackfillStatus}
-            onRetry={retryStorageSizeBackfill}
           />
           <DashboardStats stats={stats} />
 

@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use std::fs::File;
 use std::io::{BufReader, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -17,6 +17,10 @@ pub use crate::modules::browser::domain::browser::BrowserDownloadDto;
 pub use crate::modules::browser::domain::browser::BrowserGameBananaProvenance;
 
 const MAX_GAMEBANANA_PROVENANCE_HASH_BYTES: u64 = 128 * 1024 * 1024;
+const WINDOWS_RESERVED_FILENAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
 
 fn now_stamp() -> String {
     Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string()
@@ -231,7 +235,7 @@ pub async fn delete_download(
     delete_file: bool,
 ) -> Result<(), BrowserError> {
     if delete_file {
-        let path = browser::get_file_path(db, download_id).await.ok().flatten();
+        let path = browser::get_file_path(db, download_id).await?;
 
         if let Some(p) = path {
             crate::platform::fs::recycle_bin::move_path_to_recycle_bin(std::path::Path::new(&p))
@@ -240,6 +244,136 @@ pub async fn delete_download(
     }
 
     Ok(browser::delete_download(db, download_id).await?)
+}
+
+/// Rename a downloaded file and keep the browser history in sync with it.
+pub async fn rename_download(
+    db: &SqlitePool,
+    download_id: &str,
+    requested_filename: &str,
+) -> Result<(), BrowserError> {
+    let filename = validate_download_filename(requested_filename)?;
+    let old_path = browser::get_file_path(db, download_id)
+        .await?
+        .map(PathBuf::from)
+        .ok_or_else(|| BrowserError::Download("This download has no local file".into()))?;
+
+    if !old_path.is_file() {
+        return Err(BrowserError::Download(format!(
+            "The downloaded file is no longer available: {}",
+            old_path.display()
+        )));
+    }
+
+    let parent = old_path.parent().ok_or_else(|| {
+        BrowserError::Download("The downloaded file has no valid parent folder".into())
+    })?;
+    let new_path = parent.join(filename);
+    if new_path != old_path && new_path.exists() {
+        return Err(BrowserError::Download(format!(
+            "A file named '{}' already exists",
+            filename
+        )));
+    }
+
+    let renamed = new_path != old_path;
+    if renamed {
+        std::fs::rename(&old_path, &new_path)?;
+    }
+
+    let new_path_string = new_path.to_string_lossy().into_owned();
+    let metadata_updated =
+        browser::update_file_metadata(db, download_id, filename, &new_path_string).await;
+    match metadata_updated {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            if renamed {
+                rollback_download_rename(&new_path, &old_path)?;
+            }
+            Err(BrowserError::Download(
+                "This download no longer exists".into(),
+            ))
+        }
+        Err(error) => {
+            if renamed {
+                rollback_download_rename(&new_path, &old_path).map_err(|rollback_error| {
+                    BrowserError::Io(format!(
+                        "Could not save the renamed download and could not restore the original file: {rollback_error}"
+                    ))
+                })?;
+            }
+            Err(error.into())
+        }
+    }
+}
+
+/// Open a downloaded file with the Windows file association.
+pub async fn open_download_file(db: &SqlitePool, download_id: &str) -> Result<(), BrowserError> {
+    let path = existing_download_path(db, download_id).await?;
+    crate::platform::process::open_path(&path).map_err(|error| BrowserError::Io(error.to_string()))
+}
+
+/// Reveal a downloaded file in the Windows file manager.
+pub async fn open_download_location(
+    db: &SqlitePool,
+    download_id: &str,
+) -> Result<(), BrowserError> {
+    let path = existing_download_path(db, download_id).await?;
+    crate::platform::process::reveal_in_file_manager(&path)
+        .map_err(|error| BrowserError::Io(error.to_string()))
+}
+
+fn validate_download_filename(requested_filename: &str) -> Result<&str, BrowserError> {
+    let filename = requested_filename.trim();
+    if filename.is_empty() || filename == "." || filename == ".." {
+        return Err(BrowserError::Download("File name must not be empty".into()));
+    }
+    if filename
+        .chars()
+        .any(|character| character.is_control() || "<>:\"/\\|?*".contains(character))
+        || filename.ends_with('.')
+        || filename.ends_with(' ')
+    {
+        return Err(BrowserError::Download(
+            "File name contains characters that are not allowed on Windows".into(),
+        ));
+    }
+
+    let stem = filename.split('.').next().unwrap_or(filename);
+    if WINDOWS_RESERVED_FILENAMES
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(stem))
+    {
+        return Err(BrowserError::Download(
+            "File name is reserved by Windows".into(),
+        ));
+    }
+
+    Ok(filename)
+}
+
+async fn existing_download_path(
+    db: &SqlitePool,
+    download_id: &str,
+) -> Result<PathBuf, BrowserError> {
+    let path = browser::get_file_path(db, download_id)
+        .await?
+        .map(PathBuf::from)
+        .ok_or_else(|| BrowserError::Download("This download has no local file".into()))?;
+    if !path.is_file() {
+        return Err(BrowserError::Download(format!(
+            "The downloaded file is no longer available: {}",
+            path.display()
+        )));
+    }
+    Ok(path)
+}
+
+fn rollback_download_rename(new_path: &Path, old_path: &Path) -> Result<(), std::io::Error> {
+    if new_path.exists() {
+        std::fs::rename(new_path, old_path)?;
+    }
+    Ok(())
 }
 
 /// Cancel a download: abort the in-flight transfer when one is running,

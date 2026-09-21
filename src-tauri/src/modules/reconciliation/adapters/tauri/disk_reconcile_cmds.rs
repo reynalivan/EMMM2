@@ -6,13 +6,14 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
 
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
-use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcileReason, DiskReconcileStatus,
+};
+use crate::modules::system::application::app::post_apply::RuntimeSyncRequest;
 
 #[derive(Default)]
 struct OnboardingSnapshotTelemetryState {
-    metadata_recorded: bool,
     preparation_started_at: Option<Instant>,
-    classification_started_at: Option<Instant>,
 }
 
 fn snapshot_rechecking_progress(
@@ -27,7 +28,6 @@ fn snapshot_rechecking_progress(
         total_games: 0,
         completed_roots: 0,
         total_roots: 0,
-        files_inspected: 0,
         folders_classified: 0,
         current_root: None,
         elapsed_ms: 0,
@@ -48,6 +48,37 @@ fn record_onboarding_telemetry(
             )
             .with_duration(duration),
         ]);
+    }
+}
+
+fn emit_onboarding_background_status(
+    app: &tauri::AppHandle,
+    status: crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundStatus,
+) {
+    if let Err(error) = app.emit("onboarding_indexing:background_status", status) {
+        log::debug!("Could not emit onboarding background indexing status: {error}");
+    }
+}
+
+fn update_onboarding_background_phase(
+    app: &tauri::AppHandle,
+    sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+    session_id: &str,
+    game_id: &str,
+    phase: crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase,
+) -> Result<(), AppError> {
+    let status = sessions.set_background_phase(session_id, game_id, phase)?;
+    emit_onboarding_background_status(app, status);
+    Ok(())
+}
+
+fn background_phase_for_reconcile_status(
+    status: &DiskReconcileStatus,
+) -> crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase{
+    if status.applied() {
+        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Ready
+    } else {
+        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::NeedsAttention
     }
 }
 
@@ -85,6 +116,14 @@ fn should_wait_for_initial_recovery(
     ) && matches!(readiness, InitialRecoveryReadiness::Syncing { .. })
 }
 
+fn manual_reconcile_runtime_request(changed_roots: &[String]) -> RuntimeSyncRequest {
+    if changed_roots.is_empty() {
+        RuntimeSyncRequest::Full
+    } else {
+        crate::modules::reconciliation::api::runtime_sync_request_for_roots(changed_roots)
+    }
+}
+
 fn enqueue_runtime_sync_after_manual_reconcile(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
@@ -98,12 +137,22 @@ fn enqueue_runtime_sync_after_manual_reconcile(
         return;
     }
 
-    crate::modules::reconciliation::api::enqueue_runtime_sync(
-        app,
-        pool,
-        &result.game_id,
-        crate::modules::reconciliation::api::RuntimeSyncCause::Recovery,
-    );
+    let request = manual_reconcile_runtime_request(&result.changed_roots);
+    match request {
+        RuntimeSyncRequest::Full => crate::modules::reconciliation::api::enqueue_runtime_sync(
+            app,
+            pool,
+            &result.game_id,
+            crate::modules::reconciliation::api::RuntimeSyncCause::Recovery,
+        ),
+        request => crate::modules::reconciliation::api::enqueue_runtime_sync_scoped(
+            app,
+            pool,
+            &result.game_id,
+            crate::modules::reconciliation::api::RuntimeSyncCause::Recovery,
+            request,
+        ),
+    };
 }
 
 #[tauri::command]
@@ -187,6 +236,167 @@ pub async fn apply_game_mods_directory(
         );
     }
     Ok(result)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn reconcile_onboarding_indexing_game_with_status(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    game_id: &str,
+    pool: &sqlx::SqlitePool,
+    config: &crate::modules::settings::application::config::ConfigService,
+    watcher: &crate::modules::workspace::application::scanner::watcher::WatcherState,
+    disk_reconcile_state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    operation_lock: &crate::modules::mutation::coordinator::MutationCoordinator,
+    sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    let result = reconcile_onboarding_indexing_game_impl(
+        app,
+        session_id,
+        game_id,
+        pool,
+        config,
+        watcher,
+        disk_reconcile_state,
+        operation_lock,
+        sessions,
+    )
+    .await;
+    let phase = match &result {
+        Ok(result) => background_phase_for_reconcile_status(&result.status),
+        Err(_) => {
+            crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Failed
+        }
+    };
+    if let Err(error) =
+        update_onboarding_background_phase(app, sessions, session_id, game_id, phase)
+    {
+        log::debug!("Could not update onboarding background indexing status: {error}");
+    }
+    result
+}
+
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::too_many_arguments)]
+pub async fn reconcile_onboarding_indexing_game(
+    app: tauri::AppHandle,
+    session_id: String,
+    game_id: String,
+    pool: State<'_, sqlx::SqlitePool>,
+    config: State<'_, crate::modules::settings::application::config::ConfigService>,
+    watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
+    disk_reconcile_state: State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
+    operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
+    sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    reconcile_onboarding_indexing_game_with_status(
+        &app,
+        &session_id,
+        &game_id,
+        pool.inner(),
+        config.inner(),
+        watcher.inner(),
+        disk_reconcile_state.inner(),
+        operation_lock.inner(),
+        sessions.inner(),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn continue_onboarding_indexing_in_background(
+    app: tauri::AppHandle,
+    session_id: String,
+    game_ids: Vec<String>,
+    pool: State<'_, sqlx::SqlitePool>,
+    sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+) -> Result<(), AppError> {
+    sessions.mark_background_started(&session_id, &game_ids)?;
+    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::replace_pending_game_ids(
+        pool.inner(),
+        &game_ids,
+    )
+    .await
+    {
+        let _ = sessions.cancel(&session_id);
+        return Err(error);
+    }
+    let worker_app = app.clone();
+    let worker_sessions = sessions.inner().clone();
+    tokio::spawn(async move {
+        for game_id in game_ids {
+            let pool = worker_app.state::<sqlx::SqlitePool>();
+            let config =
+                worker_app.state::<crate::modules::settings::application::config::ConfigService>();
+            let watcher = worker_app
+                .state::<crate::modules::workspace::application::scanner::watcher::WatcherState>(
+            );
+            let disk_reconcile_state = worker_app.state::<
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+            >();
+            let operation_lock =
+                worker_app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+            match reconcile_onboarding_indexing_game_with_status(
+                &worker_app,
+                &session_id,
+                &game_id,
+                pool.inner(),
+                config.inner(),
+                watcher.inner(),
+                disk_reconcile_state.inner(),
+                operation_lock.inner(),
+                &worker_sessions,
+            )
+            .await
+            {
+                Ok(result) if result.status.applied() => {
+                    let pool = worker_app.state::<sqlx::SqlitePool>();
+                    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::remove_pending_game_id(
+                        pool.inner(),
+                        &game_id,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "Could not clear completed background onboarding game {game_id}: {error}"
+                        );
+                    }
+                }
+                Ok(result) => {
+                    log::warn!(
+                        "Background onboarding indexing needs attention for game {game_id}: {:?}",
+                        result.status
+                    );
+                }
+                Err(error) => {
+                    log::warn!("Background onboarding indexing failed for game {game_id}: {error}");
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_onboarding_indexing_background_status(
+    sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+) -> Result<
+    Vec<crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundStatus>,
+    AppError,
+>{
+    Ok(sessions.background_statuses())
 }
 
 #[tauri::command]
@@ -284,38 +494,6 @@ pub async fn reconcile_disk_state_cmd(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn plan_onboarding_indexing_work(
-    game_ids: Vec<String>,
-    config: State<'_, crate::modules::settings::application::config::ConfigService>,
-) -> Result<
-    Vec<
-        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingWorkPlan,
-    >,
-    AppError,
->{
-    let configured_games = config.get_settings().games;
-    let requested_games = game_ids
-        .iter()
-        .map(|game_id| {
-            configured_games
-                .iter()
-                .find(|game| game.id == *game_id)
-                .cloned()
-                .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' not found")))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    tokio::task::spawn_blocking(move || {
-        crate::modules::reconciliation::application::disk_reconcile::work_plan::plan_onboarding_indexing_work(
-            &requested_games,
-        )
-    })
-    .await
-    .map_err(|error| AppError::Internal(format!("Indexing work planning task failed: {error}")))?
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn begin_onboarding_indexing(
     app: tauri::AppHandle,
     game_ids: Vec<String>,
@@ -337,6 +515,7 @@ pub async fn begin_onboarding_indexing(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let progress_app = app.clone();
+    let progress_sessions = sessions.inner().clone();
     let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
     let telemetry_sink = diagnostics_enabled
         .then(|| {
@@ -353,38 +532,23 @@ pub async fn begin_onboarding_indexing(
     let progress_phase_state = Arc::clone(&phase_state);
     let result = sessions
         .begin_with_progress(requested_games, move |progress| {
+            if let Some(status) = progress_sessions.record_snapshot_progress(&progress) {
+                emit_onboarding_background_status(&progress_app, status);
+            }
             if let Some(sink) = &progress_telemetry_sink {
                 let event = {
                     let mut state = crate::shared::sync::lock(&progress_phase_state);
                     let game_state = state.entry(progress.game_id.clone()).or_default();
                     match progress.phase {
                         crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotPhase::Metadata
-                            if progress.files_inspected == 0 => {
+                            if game_state.preparation_started_at.is_none() => {
                                 game_state.preparation_started_at = Some(Instant::now());
                                 None
                             }
-                        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotPhase::Classifying
-                            if !game_state.metadata_recorded => {
-                                game_state.metadata_recorded = true;
-                                let preparation_duration = game_state
-                                    .preparation_started_at
-                                    .take()
-                                    .map(|started_at| started_at.elapsed())
-                                    .unwrap_or_else(|| Duration::from_millis(progress.elapsed_ms));
-                                game_state.classification_started_at = Some(Instant::now());
-                                Some(
-                                    crate::modules::system::application::telemetry::TelemetryEvent::new(
-                                        crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
-                                        crate::modules::system::application::telemetry::TelemetryOutcome::Success,
-                                        crate::modules::system::application::telemetry::TelemetryErrorCode::None,
-                                    )
-                                    .with_duration(preparation_duration),
-                                )
-                            }
                         crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSnapshotPhase::Ready => {
-                            game_state.classification_started_at.take().map(|started_at| {
+                            game_state.preparation_started_at.take().map(|started_at| {
                                 crate::modules::system::application::telemetry::TelemetryEvent::new(
-                                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingClassification,
+                                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
                                     crate::modules::system::application::telemetry::TelemetryOutcome::Success,
                                     crate::modules::system::application::telemetry::TelemetryErrorCode::None,
                                 )
@@ -405,34 +569,18 @@ pub async fn begin_onboarding_indexing(
         })
         .await;
     if let (Some(sink), Err(error)) = (&telemetry_sink, &result) {
-        let (operation, duration) = {
+        let duration = {
             let state = crate::shared::sync::lock(&phase_state);
-            let classification_started_at = state
-                .values()
-                .filter_map(|game_state| game_state.classification_started_at)
-                .max();
-            let preparation_started_at = state
+            state
                 .values()
                 .filter_map(|game_state| game_state.preparation_started_at)
-                .max();
-            match (classification_started_at, preparation_started_at) {
-                (Some(started_at), _) => (
-                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingClassification,
-                    started_at.elapsed(),
-                ),
-                (None, Some(started_at)) => (
-                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
-                    started_at.elapsed(),
-                ),
-                (None, None) => (
-                    crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
-                    prepare_started_at.elapsed(),
-                ),
-            }
+                .max()
+                .map(|started_at| started_at.elapsed())
+                .unwrap_or_else(|| prepare_started_at.elapsed())
         };
         sink.try_enqueue([
             crate::modules::system::application::telemetry::TelemetryEvent::new(
-                operation,
+                crate::modules::system::application::telemetry::TelemetryOperation::OnboardingPreparation,
                 telemetry_outcome_for_error(error),
                 crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(
                     error,
@@ -444,22 +592,17 @@ pub async fn begin_onboarding_indexing(
     result
 }
 
-#[tauri::command]
-#[specta::specta]
 #[allow(clippy::too_many_arguments)]
-pub async fn reconcile_onboarding_indexing_game(
-    app: tauri::AppHandle,
-    session_id: String,
-    game_id: String,
-    pool: State<'_, sqlx::SqlitePool>,
-    config: State<'_, crate::modules::settings::application::config::ConfigService>,
-    watcher: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
-    disk_reconcile_state: State<
-        '_,
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-    >,
-    operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
-    sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+async fn reconcile_onboarding_indexing_game_impl(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    game_id: &str,
+    pool: &sqlx::SqlitePool,
+    config: &crate::modules::settings::application::config::ConfigService,
+    watcher: &crate::modules::workspace::application::scanner::watcher::WatcherState,
+    disk_reconcile_state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    operation_lock: &crate::modules::mutation::coordinator::MutationCoordinator,
+    sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -479,37 +622,39 @@ pub async fn reconcile_onboarding_indexing_game(
                 .map(|sink| sink.inner().clone())
         })
         .flatten();
-    let snapshot_lease = match sessions.consume(&session_id, &game_id).await? {
-        ConsumedOnboardingSnapshot::Snapshot(lease) => {
-            if let Some(update) = lease.work_plan_update() {
-                app.emit("onboarding_indexing:work_plan", update)?;
-            }
-            Some(lease)
-        }
+    let snapshot_lease = match sessions.consume(session_id, game_id).await? {
+        ConsumedOnboardingSnapshot::Snapshot(lease) => Some(lease),
         ConsumedOnboardingSnapshot::FullFallback => None,
     };
+    update_onboarding_background_phase(
+        app,
+        sessions,
+        session_id,
+        game_id,
+        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Applying,
+    )?;
     let initial_recheck = snapshot_lease.is_none();
     if initial_recheck {
         app.emit(
             "onboarding_indexing:snapshot_progress",
-            snapshot_rechecking_progress(session_id.clone(), game_id.clone()),
+            snapshot_rechecking_progress(session_id.to_string(), game_id.to_string()),
         )?;
     }
     let progress_reporter = std::sync::Arc::new(DiskReconcileProgressReporter::new(
         app.clone(),
-        game_id.clone(),
+        game_id.to_string(),
         DiskReconcileReason::OnboardingCompleted,
     ));
     let context = DiskReconcileContext {
-        pool: pool.inner(),
-        config: config.inner(),
-        state: disk_reconcile_state.inner(),
+        pool,
+        config,
+        state: disk_reconcile_state,
         watcher_suppressor: watcher.suppressor.clone(),
-        operation_lock: operation_lock.inner().inner_lock(),
+        operation_lock: operation_lock.inner_lock(),
         progress_reporter: Some(progress_reporter),
     };
     let mut request = DiskReconcileRequest::manual(
-        game_id.clone(),
+        game_id.to_string(),
         DiskReconcileReason::OnboardingCompleted,
         Vec::new(),
         true,
@@ -563,13 +708,13 @@ pub async fn reconcile_onboarding_indexing_game(
     if changed_during_apply {
         app.emit(
             "onboarding_indexing:snapshot_progress",
-            snapshot_rechecking_progress(session_id, game_id.clone()),
+            snapshot_rechecking_progress(session_id.to_string(), game_id.to_string()),
         )?;
         let recheck_started_at = Instant::now();
         result = match crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
             context,
             DiskReconcileRequest::manual(
-                game_id,
+                game_id.to_string(),
                 DiskReconcileReason::OnboardingCompleted,
                 Vec::new(),
                 true,
@@ -694,9 +839,15 @@ pub async fn resolve_rename_confirmations(
 
 #[cfg(test)]
 mod tests {
-    use super::{checked_resolution_path, should_wait_for_initial_recovery};
+    use super::{
+        background_phase_for_reconcile_status, checked_resolution_path,
+        manual_reconcile_runtime_request, should_wait_for_initial_recovery,
+    };
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
-    use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
+    use crate::modules::reconciliation::application::disk_reconcile::types::{
+        DiskReconcileReason, DiskReconcileStatus, OnboardingIndexingBackgroundPhase,
+    };
+    use crate::modules::system::application::app::post_apply::RuntimeSyncRequest;
 
     #[test]
     fn rename_confirmation_paths_must_be_relative_and_contained() {
@@ -717,5 +868,39 @@ mod tests {
             &DiskReconcileReason::WatcherBatch,
             InitialRecoveryReadiness::Syncing { generation: 1 },
         ));
+    }
+
+    #[test]
+    fn manual_reconcile_keeps_known_roots_scoped_for_runtime() {
+        assert!(matches!(
+            manual_reconcile_runtime_request(&["Character/Mod A".to_string()]),
+            RuntimeSyncRequest::ScopedRoots { .. }
+        ));
+        assert!(matches!(
+            manual_reconcile_runtime_request(&[]),
+            RuntimeSyncRequest::Full
+        ));
+    }
+
+    #[test]
+    fn onboarding_background_ready_requires_an_applied_reconcile_status() {
+        for status in [
+            DiskReconcileStatus::Applied,
+            DiskReconcileStatus::AppliedWithFolderConflicts,
+        ] {
+            assert_eq!(
+                background_phase_for_reconcile_status(&status),
+                OnboardingIndexingBackgroundPhase::Ready
+            );
+        }
+        for status in [
+            DiskReconcileStatus::SourceUnavailable,
+            DiskReconcileStatus::NeedsRenameConfirmation,
+        ] {
+            assert_eq!(
+                background_phase_for_reconcile_status(&status),
+                OnboardingIndexingBackgroundPhase::NeedsAttention
+            );
+        }
     }
 }

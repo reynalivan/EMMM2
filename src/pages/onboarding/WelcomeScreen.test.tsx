@@ -186,6 +186,67 @@ describe('WelcomeScreen (TC-03)', () => {
     });
   });
 
+  it('opens the dashboard after the first game and hands the remaining games to the backend', async () => {
+    (open as ReturnType<typeof vi.fn>).mockResolvedValue('C:\\Launcher');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
+      if (command === 'auto_detect_games') {
+        return Promise.resolve([
+          { id: 'first-game', name: 'First Game' },
+          { id: 'second-game', name: 'Second Game' },
+        ]);
+      }
+      if (command === 'begin_onboarding_indexing') {
+        return Promise.resolve({ session_id: 'session-1' });
+      }
+      if (command === 'reconcile_onboarding_indexing_game') {
+        return Promise.resolve({ status: 'Applied' });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<WelcomeScreen onComplete={mockOnComplete} />);
+    fireEvent.click(screen.getByText('XXMI Auto-Detect'));
+    await screen.findByText('Result Screen: 2 games');
+
+    fireEvent.click(screen.getByText('Result Continue'));
+
+    await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());
+    const invokedCommands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    expect(
+      invokedCommands.filter((command) => command === 'reconcile_onboarding_indexing_game'),
+    ).toHaveLength(1);
+    expect(invokedCommands).toContain('continue_onboarding_indexing_in_background');
+  });
+
+  it('keeps onboarding open when the first game was not applied', async () => {
+    (open as ReturnType<typeof vi.fn>).mockResolvedValue('C:\\Launcher');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
+      if (command === 'auto_detect_games') {
+        return Promise.resolve([{ id: 'first-game', name: 'First Game' }]);
+      }
+      if (command === 'begin_onboarding_indexing') {
+        return Promise.resolve({ session_id: 'session-1' });
+      }
+      if (command === 'reconcile_onboarding_indexing_game') {
+        return Promise.resolve({ status: 'SourceUnavailable' });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<WelcomeScreen onComplete={mockOnComplete} />);
+    fireEvent.click(screen.getByText('XXMI Auto-Detect'));
+    await screen.findByText('Result Screen: 1 games');
+
+    fireEvent.click(screen.getByText('Result Continue'));
+
+    await waitFor(() => {
+      expect(mockOnComplete).not.toHaveBeenCalled();
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'First Game could not be indexed. Fix the issue and try again before opening the dashboard.',
+    );
+  });
+
   it('shows phase-specific preparation progress without fabricating an overall percentage', async () => {
     let progressHandler: ((event: { payload: unknown }) => void) | undefined;
     let snapshotHandler: ((event: { payload: unknown }) => void) | undefined;
@@ -199,15 +260,14 @@ describe('WelcomeScreen (TC-03)', () => {
       return () => undefined;
     });
     let unblock: () => void = () => {};
-    const reconcile = new Promise<void>((resolve) => {
-      unblock = resolve;
+    const reconcile = new Promise<{ status: 'Applied' }>((resolve) => {
+      unblock = () => resolve({ status: 'Applied' });
     });
     (invoke as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({
         session_id: 'session-1',
-        work_plans: [],
       })
       .mockReturnValueOnce(reconcile);
 
@@ -230,7 +290,6 @@ describe('WelcomeScreen (TC-03)', () => {
           total_games: 1,
           completed_roots: 1,
           total_roots: 4,
-          files_inspected: 128,
           folders_classified: 0,
           current_root: 'Alice',
           elapsed_ms: 1_000,
@@ -242,8 +301,7 @@ describe('WelcomeScreen (TC-03)', () => {
       '1',
     );
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '4');
-    expect(screen.getByText('Reading file metadata')).toBeInTheDocument();
-    expect(screen.getByText('128 files inspected')).toBeInTheDocument();
+    expect(screen.getByText('Checking folder structure')).toBeInTheDocument();
     expect(screen.getByText('Current folder: Alice')).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 
@@ -257,7 +315,6 @@ describe('WelcomeScreen (TC-03)', () => {
           total_games: 1,
           completed_roots: 2,
           total_roots: 4,
-          files_inspected: 128,
           folders_classified: 6,
           current_root: 'Bob',
           elapsed_ms: 1_500,
@@ -307,7 +364,6 @@ describe('WelcomeScreen (TC-03)', () => {
           total_games: 0,
           completed_roots: 0,
           total_roots: 0,
-          files_inspected: 0,
           folders_classified: 0,
           current_root: null,
           elapsed_ms: 0,

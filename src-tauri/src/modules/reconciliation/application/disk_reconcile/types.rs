@@ -13,7 +13,6 @@ pub enum DiskReconcileReason {
     ManualRepair,
     GameSwitched,
     InternalMutation,
-    StorageSizeBackfill,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -229,35 +228,39 @@ pub struct GameActivationStatus {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
-pub struct IndexingRootWork {
-    pub root_name: String,
-    pub file_count: u64,
-    pub total_bytes: u64,
-    pub work_units: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
-pub struct OnboardingIndexingWorkPlan {
-    pub game_id: String,
-    pub file_count: u64,
-    pub total_bytes: u64,
-    pub work_units: u64,
-    pub roots: Vec<IndexingRootWork>,
-}
-
 /// Opaque handle for a short-lived onboarding disk snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub struct OnboardingIndexingSession {
     pub session_id: String,
-    pub work_plans: Vec<OnboardingIndexingWorkPlan>,
 }
 
-/// Replaces a game's onboarding work estimate after a scoped rescan.
+/// Lifecycle state for a game that continues onboarding indexing after the
+/// first game has opened the workspace.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
-pub struct OnboardingIndexingWorkPlanUpdate {
+pub enum OnboardingIndexingBackgroundPhase {
+    Queued,
+    Preparing,
+    Prepared,
+    Applying,
+    Ready,
+    NeedsAttention,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct OnboardingIndexingBackgroundGameStatus {
+    pub game_id: String,
+    pub phase: OnboardingIndexingBackgroundPhase,
+}
+
+/// In-memory status for the serial background portion of first-run indexing.
+/// It intentionally contains no filesystem paths or library contents.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct OnboardingIndexingBackgroundStatus {
     pub session_id: String,
-    pub work_plan: OnboardingIndexingWorkPlan,
+    pub completed_games: u64,
+    pub total_games: u64,
+    pub games: Vec<OnboardingIndexingBackgroundGameStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -279,7 +282,6 @@ pub struct OnboardingIndexingSnapshotProgress {
     pub total_games: u64,
     pub completed_roots: u64,
     pub total_roots: u64,
-    pub files_inspected: u64,
     pub folders_classified: u64,
     pub current_root: Option<String>,
     pub elapsed_ms: u64,

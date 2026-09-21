@@ -82,7 +82,7 @@ async fn finalize_runtime_effects(request: RuntimeEffectsRequest<'_>) -> DiskRec
                         DiskReconcileReason::GameSwitched => crate::modules::system::application::app::post_apply::OverlaySyncCause::GameActivated,
                         DiskReconcileReason::WatcherBatch => crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveIniChanged,
                         DiskReconcileReason::InternalMutation => crate::modules::system::application::app::post_apply::OverlaySyncCause::EffectiveModsChanged,
-                        DiskReconcileReason::ModsViewEntered | DiskReconcileReason::WindowRefocused | DiskReconcileReason::StorageSizeBackfill => crate::modules::system::application::app::post_apply::OverlaySyncCause::Recovery,
+                        DiskReconcileReason::ModsViewEntered | DiskReconcileReason::WindowRefocused => crate::modules::system::application::app::post_apply::OverlaySyncCause::Recovery,
                     },
                     overlay_roots: matches!(request.reason, DiskReconcileReason::WatcherBatch)
                         .then_some(request.outcome.changed_roots.as_slice()),

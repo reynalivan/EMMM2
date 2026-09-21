@@ -40,7 +40,30 @@
     "select_game": "选择游戏",
     "loading": "加载中...",
     "add_game": "添加游戏",
-    "retry": "重试"
+    "retry": "重试",
+    "indexing": {
+      "background": "正在索引 {{completed}} / {{total}} 个游戏",
+      "background_attention": "索引需要处理",
+      "dialog_title": "{{game}} 仍在索引中",
+      "dialog_description": "当其模组库准备好后，此游戏会自动打开。您可以继续使用当前游戏。",
+      "attention_title": "{{game}} 需要处理",
+      "attention_description": "索引未能正常完成。请打开此游戏并执行完整检查后再使用其模组库。",
+      "status_unavailable_title": "暂时无法验证 {{game}}",
+      "status_unavailable_description": "无法加载索引状态。请在切换游戏前再次检查。",
+      "status_unavailable": "索引状态不可用",
+      "open_and_recheck": "打开并重新检查",
+      "retry_status": "再次检查",
+      "stay": "留在当前游戏",
+      "phase": {
+        "Queued": "等待开始",
+        "Preparing": "正在准备文件夹",
+        "Prepared": "等待应用模组库",
+        "Applying": "正在应用模组库",
+        "Ready": "已就绪",
+        "NeedsAttention": "索引需要处理",
+        "Failed": "索引需要处理"
+      }
+    }
   },
   "context": {
     "loading": "加载中...",

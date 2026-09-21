@@ -27,14 +27,6 @@ function handled(value: unknown): DemoCommandResult {
   return { handled: true, value };
 }
 
-const EMPTY_BACKFILL_STATUS = {
-  state: 'Idle',
-  total_games: 0,
-  completed_games: 0,
-  current_game_id: null,
-  errors: [],
-} as const;
-
 const demoModHealth: ModHealthReport = {
   support_level: 'supported',
   issues: [],
@@ -656,9 +648,6 @@ export function resolveDemoCommand(name: string, _args: unknown[]): DemoCommandR
       return handled([]);
     case 'dupScanGetReport':
       return handled(demoDupScanReport);
-    case 'startStorageSizeBackfill':
-    case 'getStorageSizeBackfillStatus':
-      return handled(EMPTY_BACKFILL_STATUS);
     case 'browserGetAdblockEnabled':
       return handled(true);
     case 'browserListBookmarks':

@@ -217,7 +217,7 @@ describe('ImportBatchWizard', () => {
     expect(screen.queryByRole('button', { name: 'actions.set_skip' })).not.toBeInTheDocument();
   });
 
-  it('keeps review-gated items out of bulk proceed', async () => {
+  it('applies bulk proceed to review-gated items with a destination', async () => {
     const suggestion = {
       kind: 'existing_object' as const,
       objectId: 'object-ayaka',
@@ -260,7 +260,105 @@ describe('ImportBatchWizard', () => {
     fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
     fireEvent.click(screen.getByRole('button', { name: 'actions.set_proceed' }));
 
-    await waitFor(() => expect(callbacks.onChooseDestination).not.toHaveBeenCalled());
+    await waitFor(() =>
+      expect(callbacks.onChooseDestination).toHaveBeenCalledWith(gated, suggestion, 'confirm'),
+    );
+  });
+
+  it('preselects high-confidence destination suggestions for bulk actions', () => {
+    const suggestion = {
+      kind: 'existing_object' as const,
+      objectId: 'object-robin',
+      canonicalEntryKey: null,
+      folderName: 'Robin',
+      targetPath: 'C:/Mods/Robin/RobinSummertoEdits',
+      confidencePercentage: 82,
+      confidenceTier: 'high' as const,
+      warning: null,
+    };
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({
+            destinationSuggestions: [suggestion],
+            reviewGate: { reasons: [{ code: 'identity_no_match', diagnosticCode: null }] },
+          }),
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.getByRole('checkbox', { name: 'selection.item' })).toBeChecked();
+  });
+
+  it('preselects high-confidence suggestions when analysis completes in the same batch', () => {
+    const callbacks = handlers();
+    const suggestion = {
+      kind: 'existing_object' as const,
+      objectId: 'object-robin',
+      canonicalEntryKey: null,
+      folderName: 'Robin',
+      targetPath: 'C:/Mods/Robin/RobinSummertoEdits',
+      confidencePercentage: 82,
+      confidenceTier: 'high' as const,
+      warning: null,
+    };
+    const initialBatch: ImportBatch = {
+      ...batch(item({ status: 'staged' })),
+      status: 'analyzing',
+    };
+    const { rerender } = render(
+      <ImportBatchWizard
+        batch={initialBatch}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...callbacks}
+      />,
+    );
+
+    rerender(
+      <ImportBatchWizard
+        batch={batch(item({ destinationSuggestions: [suggestion] }))}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...callbacks}
+      />,
+    );
+
+    expect(screen.getByRole('checkbox', { name: 'selection.item' })).toBeChecked();
+  });
+
+  it('applies bulk proceed to an item with a retained manual target', async () => {
+    const manual = item({
+      destinationObjectId: 'object-robin',
+      destinationPath: 'C:/Mods/Robin',
+    });
+    const callbacks = handlers();
+    render(
+      <ImportBatchWizard
+        batch={batch(manual)}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...callbacks}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'actions.set_proceed' }));
+
+    await waitFor(() =>
+      expect(callbacks.onChooseManualTarget).toHaveBeenCalledWith(manual, 'object-robin'),
+    );
   });
 
   it('groups duplicate target warnings under one review detail', () => {
@@ -297,6 +395,81 @@ describe('ImportBatchWizard', () => {
     expect(
       screen.queryByText('review_reasons.target_comparison_incomplete'),
     ).not.toBeInTheDocument();
+  });
+
+  it('does not offer Keep separately for an incomplete target comparison', () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({
+            destinationSuggestions: [
+              {
+                kind: 'existing_object',
+                objectId: 'object-robin',
+                canonicalEntryKey: null,
+                folderName: 'Robin',
+                targetPath: 'C:/Mods/Robin',
+                confidencePercentage: 82,
+                confidenceTier: 'high',
+                warning: null,
+              },
+            ],
+            targetComparison: {
+              outcome: 'incomplete',
+              targetPath: 'C:/Mods/Robin/RobinSummertoEdits',
+              sameFiles: 0,
+              changedFiles: 0,
+              missingFiles: 0,
+              additionalFiles: 0,
+              suggestedSeparateName: 'RobinSummertoEdits (2)',
+              reason: 'target inspection incomplete',
+            },
+          }),
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /actions.keep_separate/ })).not.toBeInTheDocument();
+  });
+
+  it('hides resolved review details once a high-confidence item is ready', () => {
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({
+            status: 'ready',
+            decision: 'reallocate',
+            destinationObjectId: 'object-robin',
+            destinationPath: 'C:/Mods/Robin',
+            destinationSuggestions: [
+              {
+                kind: 'existing_object',
+                objectId: 'object-robin',
+                canonicalEntryKey: null,
+                folderName: 'Robin',
+                targetPath: 'C:/Mods/Robin',
+                confidencePercentage: 82,
+                confidenceTier: 'high',
+                warning: null,
+              },
+            ],
+            reviewGate: { reasons: [{ code: 'identity_no_match', diagnosticCode: null }] },
+          }),
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+
+    expect(screen.queryByText('review.required')).not.toBeInTheDocument();
   });
 
   it('labels an unselected canonical destination as a canonical match', () => {

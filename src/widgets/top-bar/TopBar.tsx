@@ -22,6 +22,7 @@ import { launchConfiguredGame, useActiveGame } from '@/entities/game';
 import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import { toast } from '@/shared/ui/toast';
+import { useBackgroundIndexingStatus } from '@/pages/onboarding/hooks/useBackgroundIndexingStatus';
 import GameSelector from './GameSelector';
 import GlobalActions from './GlobalActions';
 import { SafetyFilterControl } from '@/shared/ui/components/ui/SafetyFilterControl';
@@ -40,6 +41,50 @@ export interface TopBarProps {
   contextControls?: ReactNode;
 }
 
+function OnboardingIndexingIndicator({
+  sessions,
+}: Pick<
+  ReturnType<typeof useBackgroundIndexingStatus>,
+  'sessions'
+>) {
+  const { t } = useTranslation('layout');
+  const session = sessions.find((candidate) =>
+    candidate.games.some((game) => game.phase !== 'Ready'),
+  );
+
+  if (!session) return null;
+
+  const needsAttention = session.games.some(
+    (game) => game.phase === 'NeedsAttention' || game.phase === 'Failed',
+  );
+
+  const label = needsAttention
+    ? t('game_selector.indexing.background_attention')
+    : t('game_selector.indexing.background', {
+        completed: session.completed_games,
+        total: session.total_games,
+      });
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      title={label}
+      className="hidden items-center gap-1.5 rounded-md border border-base-content/15 bg-base-content/5 px-2 py-1 text-[11px] font-medium text-base-content/65 md:flex"
+    >
+      {needsAttention ? (
+        <AlertTriangle size={13} className="text-warning" aria-hidden="true" />
+      ) : (
+        <LoaderCircle
+          size={13}
+          className="animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+      )}
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export default function TopBar({ launchBar, contextControls }: TopBarProps) {
   const { t } = useTranslation(['layout', 'common']);
   const workspaceView = useAppStore((state) => state.workspaceView);
@@ -50,6 +95,7 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
   const setSafetyFilter = useAppStore((state) => state.setSafetyFilter);
   const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const { activeGame } = useActiveGame();
+  const backgroundIndexingStatus = useBackgroundIndexingStatus();
   const runtimeSync = useAppStore((state) =>
     activeGame?.id ? state.runtimeSyncByGame?.[activeGame.id] : undefined,
   );
@@ -356,11 +402,12 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
         ) : (
           <>
             <div className="sm:hidden">
-              <GameSelector compact />
+              <GameSelector compact backgroundIndexingStatus={backgroundIndexingStatus} />
             </div>
             <div className="hidden sm:block">
-              <GameSelector />
+              <GameSelector backgroundIndexingStatus={backgroundIndexingStatus} />
             </div>
+            <OnboardingIndexingIndicator sessions={backgroundIndexingStatus.sessions} />
             {runtimeSync &&
               (runtimeSync.phase === 'queued' ||
                 runtimeSync.phase === 'running' ||
@@ -388,9 +435,11 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
                   ) : (
                     <AlertTriangle size={13} aria-hidden="true" />
                   )}
-                  <span>
+                  <span
+                    className={runtimeSync.phase === 'failed' ? 'max-w-64 truncate' : undefined}
+                  >
                     {runtimeSync.phase === 'failed'
-                      ? t('common:reconcile.runtime_sync_failed')
+                      ? (runtimeSync.message ?? t('common:reconcile.runtime_sync_failed'))
                       : runtimeSync.phase === 'needs_manual_reload'
                         ? t('common:reconcile.manual_reload_short')
                         : t('common:reconcile.runtime_syncing')}

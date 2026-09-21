@@ -650,6 +650,11 @@ mod native_windows {
                         let mut status = Default::default();
                         let _ = args.WebErrorStatus(&mut status);
                         let url = read_uri(|value| sender.Source(value)).unwrap_or_default();
+                        if crate::modules::browser::application::browser::download_handler::is_gamebanana_download_url(&url)
+                            || crate::modules::browser::application::browser::download_handler::has_native_download_for_label(&label_for_navigation)
+                        {
+                            return Ok(());
+                        }
                         let _ = app_for_navigation.emit(
                             "browser:navigation-error",
                             serde_json::json!({

@@ -11,7 +11,7 @@ interface BrowserTabBarProps {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
-  onOpenContextMenu: (tab: BrowserTab) => void;
+  onOpenContextMenu: (tab: BrowserTab, clientX: number) => void;
 }
 
 function TabFavicon({
@@ -52,7 +52,7 @@ export function BrowserTabBar({
   const openContextMenu = (event: MouseEvent<HTMLDivElement>, tab: BrowserTab) => {
     event.preventDefault();
     onSelectTab(tab.id);
-    onOpenContextMenu(tab);
+    onOpenContextMenu(tab, event.clientX);
   };
 
   return (

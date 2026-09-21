@@ -341,30 +341,34 @@ pub async fn reconcile_disk_projection(
             let snapshot_path = mods_path.to_path_buf();
             let snapshot_roots = changed_roots.clone();
             let snapshot_progress = progress_reporter.clone();
-            let mods_root = mods_path.to_string_lossy();
-            let mod_scope_root_keys = changed_roots
-                .iter()
-                .map(|root| crate::shared::path_key::folder_path_key(root, Some(&mods_root)))
-                .collect::<Vec<_>>();
-            let known_mod_keys = if trusted_mutation_scope && requested_scoped {
-                crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_roots(
-                    pool,
-                    game_id,
-                    &mod_scope_root_keys,
-                )
-                .await?
+            let size_scan = if matches!(reason, DiskReconcileReason::OnboardingCompleted) {
+                None
             } else {
-                crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_game(
-                    pool, game_id,
-                )
-                .await?
-            }
-            .into_iter()
-            .collect();
-            let size_scan = if matches!(reason, DiskReconcileReason::StorageSizeBackfill) {
-                DiskSizeScan::full()
-            } else {
-                DiskSizeScan::incremental(mods_path, known_mod_keys, changed_paths)
+                let mods_root = mods_path.to_string_lossy();
+                let mod_scope_root_keys = changed_roots
+                    .iter()
+                    .map(|root| crate::shared::path_key::folder_path_key(root, Some(&mods_root)))
+                    .collect::<Vec<_>>();
+                let known_mod_keys = if trusted_mutation_scope && requested_scoped {
+                    crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_roots(
+                        pool,
+                        game_id,
+                        &mod_scope_root_keys,
+                    )
+                    .await?
+                } else {
+                    crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_game(
+                        pool, game_id,
+                    )
+                    .await?
+                }
+                .into_iter()
+                .collect();
+                Some(DiskSizeScan::incremental(
+                    mods_path,
+                    known_mod_keys,
+                    changed_paths,
+                ))
             };
             let snapshot = tokio::task::spawn_blocking(move || {
                 let on_progress = |progress: DiskSnapshotProgress| {
@@ -381,7 +385,7 @@ pub async fn reconcile_disk_projection(
                     collect_trusted_scoped_disk_discovery_with_progress(
                         &snapshot_path,
                         &snapshot_roots,
-                        Some(&size_scan),
+                        size_scan.as_ref(),
                         Some(&on_progress),
                     )
                 } else {
@@ -389,7 +393,7 @@ pub async fn reconcile_disk_projection(
                         &snapshot_path,
                         &snapshot_roots,
                         requested_scoped,
-                        Some(&size_scan),
+                        size_scan.as_ref(),
                         Some(&on_progress),
                     )
                 }

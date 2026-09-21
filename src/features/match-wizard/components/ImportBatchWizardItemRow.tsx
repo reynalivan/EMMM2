@@ -102,7 +102,8 @@ export function ImportBatchWizardItemRow({
   const targetComparison = item.targetComparison;
   const canKeepSeparate =
     targetComparison !== null &&
-    targetComparison.outcome !== 'already_installed' &&
+    (targetComparison.outcome === 'target_has_additional_files' ||
+      targetComparison.outcome === 'same_name_different_content') &&
     targetComparison.suggestedSeparateName !== null &&
     (topSuggestion !== null || item.destinationObjectId !== null);
   const archiveError = archiveErrorKindFromStoredMessage(item.error);
@@ -158,6 +159,8 @@ export function ImportBatchWizardItemRow({
       t(`diagnostics.${diagnostic.code}`, { defaultValue: diagnostic.recovery }),
     ),
   ]);
+  const reviewNeedsAction =
+    item.decision === 'pending' || item.status === 'failed' || needsRecovery;
 
   const saveName = async () => {
     const next = plannedName.trim();
@@ -290,7 +293,7 @@ export function ImportBatchWizardItemRow({
             </div>
           </div>
         </ImportSourcePreviewCard>
-        {reviewDetails.length > 0 && (
+        {reviewNeedsAction && reviewDetails.length > 0 && (
           <details className="mt-2 text-xs">
             <summary className="cursor-pointer text-warning marker:text-warning">
               <span className={`badge badge-xs ${errorText ? 'badge-error' : 'badge-warning'}`}>

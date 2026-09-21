@@ -65,6 +65,34 @@ const DOWNLOAD_BUFFER_BYTES: usize = 1 << 20;
 /// multi-select from one host.
 static HTTP_CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
 
+/// Identify GameBanana download navigations that should not replace the
+/// visible mod page while WebView2 hands the transfer to its downloader.
+pub fn is_gamebanana_download_url(url: &str) -> bool {
+    let Ok(parsed) = tauri::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    let is_gamebanana_host = host == "gamebanana.com" || host.ends_with(".gamebanana.com");
+    is_gamebanana_host && parsed.path().starts_with("/mods/download/")
+}
+
+/// Return whether the native WebView2 downloader currently owns a GameBanana
+/// request for a browser tab. Download failures can otherwise be reported as
+/// page errors after the native download event has already been accepted.
+pub fn has_native_download_for_label(label: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        native_windows::has_download_for_label(label)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = label;
+        false
+    }
+}
+
 struct ActiveDownload {
     cancel_flag: Arc<AtomicBool>,
     started: Arc<AtomicBool>,
@@ -883,6 +911,7 @@ mod native_windows {
 
     struct ActiveNativeDownload {
         label: String,
+        is_gamebanana: bool,
         operation: NativeCom<ICoreWebView2DownloadOperation>,
     }
 
@@ -897,6 +926,18 @@ mod native_windows {
 
     fn registry() -> &'static Mutex<NativeDownloadRegistry> {
         REGISTRY.get_or_init(|| Mutex::new(NativeDownloadRegistry::default()))
+    }
+
+    pub(super) fn has_download_for_label(label: &str) -> bool {
+        let downloads = lock(registry());
+        downloads
+            .pending
+            .values()
+            .any(|download| download.label == label && download.provenance.is_some())
+            || downloads
+                .active
+                .values()
+                .any(|download| download.label == label && download.is_gamebanana)
     }
 
     pub(super) enum DownloadControl {
@@ -1079,6 +1120,7 @@ mod native_windows {
             request_id.to_string(),
             ActiveNativeDownload {
                 label: pending.label.clone(),
+                is_gamebanana: has_gamebanana_provenance,
                 operation,
             },
         );
@@ -1461,6 +1503,22 @@ mod native_windows {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identifies_only_gamebanana_download_urls() {
+        assert!(is_gamebanana_download_url(
+            "https://gamebanana.com/mods/download/716683#FileInfo_1"
+        ));
+        assert!(is_gamebanana_download_url(
+            "https://cdn.gamebanana.com/mods/download/716683"
+        ));
+        assert!(!is_gamebanana_download_url(
+            "https://gamebanana.com/mods/716683"
+        ));
+        assert!(!is_gamebanana_download_url(
+            "https://not-gamebanana.com/mods/download/716683"
+        ));
+    }
 
     fn register_test_download(id: &str, source_url: &str) -> Arc<AtomicBool> {
         let cancel_flag = Arc::new(AtomicBool::new(false));

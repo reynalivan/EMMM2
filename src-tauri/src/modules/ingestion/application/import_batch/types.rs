@@ -372,6 +372,15 @@ impl ReviewGate {
             diagnostic_code,
         });
     }
+
+    pub fn allows_high_confidence_destination_default(&self) -> bool {
+        self.reasons.iter().all(|reason| {
+            matches!(
+                reason.code,
+                ReviewReasonCode::IdentityNeedsConfirmation | ReviewReasonCode::IdentityNoMatch
+            )
+        })
+    }
 }
 
 impl std::str::FromStr for ImportMatchStatus {

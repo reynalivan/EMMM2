@@ -8,7 +8,7 @@ use std::path::{Path, MAIN_SEPARATOR_STR};
 
 // ── Queries ─────────────────────────────────────────────────────────────────
 
-/// Fetch global overview stats (total/enabled/disabled mods, size, games, collections).
+/// Fetch global overview stats (total/enabled/disabled mods, games, collections).
 pub async fn fetch_global_stats(pool: &SqlitePool) -> Result<DashboardStats, sqlx::Error> {
     let row = sqlx::query(
         r#"
@@ -16,7 +16,6 @@ pub async fn fetch_global_stats(pool: &SqlitePool) -> Result<DashboardStats, sql
             COALESCE(COUNT(*), 0)                                          AS total_mods,
             COALESCE(SUM(CASE WHEN m.status = 1 THEN 1 ELSE 0 END), 0) AS enabled_mods,
             COALESCE(SUM(CASE WHEN m.status = 0 THEN 1 ELSE 0 END), 0) AS disabled_mods,
-            COALESCE(SUM(CASE WHEN m.size_bytes > 0 THEN m.size_bytes ELSE 0 END), 0) AS total_size_bytes,
             (SELECT COUNT(*) FROM games)                                   AS total_games,
             (SELECT COUNT(*) FROM collections)                             AS total_collections
         FROM mods m
@@ -29,7 +28,6 @@ pub async fn fetch_global_stats(pool: &SqlitePool) -> Result<DashboardStats, sql
         total_mods: row.try_get("total_mods")?,
         enabled_mods: row.try_get("enabled_mods")?,
         disabled_mods: row.try_get("disabled_mods")?,
-        total_size_bytes: row.try_get("total_size_bytes")?,
         total_games: row.try_get("total_games")?,
         total_collections: row.try_get("total_collections")?,
     })

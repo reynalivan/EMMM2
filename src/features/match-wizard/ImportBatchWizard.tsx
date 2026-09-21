@@ -76,24 +76,49 @@ function filterMatches(item: ImportItem, filter: ConfidenceFilter): boolean {
   if (filter === 'errors') {
     return (item.error !== null && !needsMetadataRecovery(item)) || item.status === 'failed';
   }
-  return item.error === null && item.confidenceTier === filter;
+  return item.error === null && destinationMatch(item).tier === filter;
 }
 
 function reviewWeight(item: ImportItem): number {
   if (needsMetadataRecovery(item)) return -2;
   if (item.error || item.status === 'failed') return -1;
   if (
-    item.identityMatchStatus === 'needs_review' ||
-    item.reviewGate.reasons.length > 0 ||
-    item.diagnostics.length > 0 ||
-    item.targetComparison !== null
+    isUnresolved(item) &&
+    (item.identityMatchStatus === 'needs_review' ||
+      item.reviewGate.reasons.length > 0 ||
+      item.diagnostics.length > 0 ||
+      item.targetComparison !== null)
   ) {
     return 0;
   }
-  if (item.confidenceTier === 'no_match') return 1;
-  if (item.confidenceTier === 'low') return 2;
-  if (item.confidenceTier === 'medium') return 3;
+  const { tier } = destinationMatch(item);
+  if (tier === 'no_match') return 1;
+  if (tier === 'low') return 2;
+  if (tier === 'medium') return 3;
   return 4;
+}
+
+function destinationMatch(item: ImportItem): {
+  confidencePercentage: number;
+  tier: ImportItem['confidenceTier'];
+} {
+  const destination = item.destinationSuggestions[0];
+  return destination
+    ? { confidencePercentage: destination.confidencePercentage, tier: destination.confidenceTier }
+    : { confidencePercentage: item.confidencePercentage, tier: item.confidenceTier };
+}
+
+function initiallySelectedItemIds(items: ImportItem[]): Set<string> {
+  return new Set(
+    items
+      .filter(
+        (item) =>
+          item.status === 'awaiting_destination' &&
+          item.decision === 'pending' &&
+          item.destinationSuggestions[0]?.confidenceTier === 'high',
+      )
+      .map((item) => item.id),
+  );
 }
 
 export function ImportBatchWizard({
@@ -117,7 +142,11 @@ export function ImportBatchWizard({
   const [filter, setFilter] = useState<ConfidenceFilter>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortMode>('review');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectedBatchId = useRef(batch.id);
+  const hasSeededDefaultSelection = useRef(initiallySelectedItemIds(batch.items).size > 0);
+  const [selected, setSelected] = useState<Set<string>>(() =>
+    initiallySelectedItemIds(batch.items),
+  );
   const listRef = useRef<HTMLDivElement>(null);
   const processing = batch.status === 'draft' || batch.status === 'analyzing';
   const terminal = ['done', 'cancelled'].includes(batch.status);
@@ -143,12 +172,14 @@ export function ImportBatchWizard({
       });
     return [...items].sort((left, right) => {
       if (sort === 'confidence_desc') {
-        return right.confidencePercentage - left.confidencePercentage;
+        return (
+          destinationMatch(right).confidencePercentage - destinationMatch(left).confidencePercentage
+        );
       }
       if (sort === 'name') return left.plannedName.localeCompare(right.plannedName);
       return (
         reviewWeight(left) - reviewWeight(right) ||
-        left.confidencePercentage - right.confidencePercentage
+        destinationMatch(left).confidencePercentage - destinationMatch(right).confidencePercentage
       );
     });
   }, [batch.items, filter, normalizedSearch, sort]);
@@ -180,8 +211,23 @@ export function ImportBatchWizard({
 
   useEffect(() => {
     const currentIds = new Set(batch.items.map((item) => item.id));
-    setSelected((previous) => new Set([...previous].filter((itemId) => currentIds.has(itemId))));
-  }, [batch.items]);
+    setSelected((previous) => {
+      const currentSelection = new Set([...previous].filter((itemId) => currentIds.has(itemId)));
+      if (selectedBatchId.current !== batch.id) {
+        selectedBatchId.current = batch.id;
+        const defaultSelection = initiallySelectedItemIds(batch.items);
+        hasSeededDefaultSelection.current = defaultSelection.size > 0;
+        return defaultSelection;
+      }
+
+      if (hasSeededDefaultSelection.current) return currentSelection;
+      const defaultSelection = initiallySelectedItemIds(batch.items);
+      if (defaultSelection.size === 0) return currentSelection;
+
+      hasSeededDefaultSelection.current = true;
+      return new Set([...currentSelection, ...defaultSelection]);
+    });
+  }, [batch.id, batch.items]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -206,16 +252,22 @@ export function ImportBatchWizard({
   const selectNone = () => setSelected(new Set());
 
   const bulkProceed = async () => {
+    const processedIds = new Set<string>();
     for (const item of batch.items.filter((candidate) => selected.has(candidate.id))) {
-      if (item.status === 'ready' || !['pending', 'skip'].includes(item.decision)) continue;
-      if (item.reviewGate.reasons.length > 0) continue;
-      if (item.canonicalSuggestions[0]?.matchStatus !== 'auto_matched') continue;
+      if (item.status === 'ready' && item.decision !== 'skip') {
+        processedIds.add(item.id);
+        continue;
+      }
       const suggestion = item.destinationSuggestions[0];
       if (suggestion) {
         await onChooseDestination(item, suggestion, destinationDecision(batch, suggestion));
+        processedIds.add(item.id);
+      } else if (item.destinationObjectId) {
+        await onChooseManualTarget(item, item.destinationObjectId);
+        processedIds.add(item.id);
       }
     }
-    selectNone();
+    setSelected((previous) => new Set([...previous].filter((itemId) => !processedIds.has(itemId))));
   };
 
   const bulkSkip = async () => {

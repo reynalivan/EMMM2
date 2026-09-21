@@ -188,12 +188,7 @@ pub(super) async fn apply_disk_mods(
                 false,
                 metadata.is_safe,
                 metadata.safety_source,
-                disk_mod.size_bytes.ok_or_else(|| {
-                    AppError::Internal(format!(
-                        "Storage size missing for newly discovered mod '{}'",
-                        disk_mod.folder_path
-                    ))
-                })?,
+                disk_mod.size_bytes.unwrap_or_default(),
             )
             .await?;
             state.folders_changed = true;

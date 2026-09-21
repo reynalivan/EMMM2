@@ -264,7 +264,7 @@ pub async fn set_import_item_decision_with_target_index(
                 )));
             }
             if input.decision == ImportDecision::KeepSeparate
-                && comparison.outcome != TargetComparisonOutcome::AlreadyInstalled
+                && can_keep_separate(comparison.outcome)
             {
                 let Some(planned_name) = comparison.suggested_separate_name.as_deref() else {
                     return require_item(db, &item.id).await;
@@ -286,6 +286,11 @@ pub async fn set_import_item_decision_with_target_index(
             }
             return require_item(db, &item.id).await;
         }
+    }
+    if input.decision == ImportDecision::KeepSeparate {
+        return Err(AppError::Validation(
+            "Keep separately requires a same-name content conflict".to_string(),
+        ));
     }
     let (confidence, tier) = if input.decision == ImportDecision::Skip {
         (0, super::types::ConfidenceTier::NoMatch)
@@ -625,13 +630,19 @@ pub(crate) async fn inspect_existing_target(
             }));
         }
         Ok(None) => {}
-        Err(error) => {
+        Err(error) if candidate.is_some() => {
             return Ok(Some(incomplete_target_comparison(
                 &parent,
                 &physical_name,
                 candidate.unwrap_or_else(|| parent.join(&physical_name)),
                 format!("Could not verify installed payloads: {error}"),
             )));
+        }
+        Err(error) => {
+            log::warn!(
+                "Skipping installed-payload duplicate verification for '{}' because no same-name target exists: {error}",
+                item.id
+            );
         }
     }
     let Some(candidate) = candidate else {
@@ -694,12 +705,25 @@ pub(crate) async fn inspect_existing_target(
     }))
 }
 
+pub(crate) fn can_keep_separate(outcome: TargetComparisonOutcome) -> bool {
+    matches!(
+        outcome,
+        TargetComparisonOutcome::TargetHasAdditionalFiles
+            | TargetComparisonOutcome::SameNameDifferentContent
+    )
+}
+
 fn incomplete_target_comparison(
     parent: &Path,
     physical_name: &str,
     target_path: PathBuf,
     reason: String,
 ) -> TargetComparison {
+    let suggested_separate_name = if target_path.is_dir() {
+        next_available_name(parent, physical_name).ok()
+    } else {
+        None
+    };
     TargetComparison {
         outcome: TargetComparisonOutcome::Incomplete,
         target_path: target_path.to_string_lossy().into_owned(),
@@ -707,9 +731,7 @@ fn incomplete_target_comparison(
         changed_files: 0,
         missing_files: 0,
         additional_files: 0,
-        // A separate import is safe only when the parent was successfully
-        // enumerated and we can prove the sibling name is unused.
-        suggested_separate_name: next_available_name(parent, physical_name).ok(),
+        suggested_separate_name,
         reason,
     }
 }

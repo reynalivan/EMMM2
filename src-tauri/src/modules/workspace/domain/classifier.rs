@@ -48,10 +48,10 @@ const VARIANT_CONTAINER_MIN_CHILDREN: usize = 3;
 const VARIANT_CONTAINER_MIN_CHILDREN_REFERENCED: usize = 2;
 
 /// One directory pass: the folder's mod ini candidates, child dirs and asset presence.
-struct FolderScan {
+pub(crate) struct FolderScan {
     /// `.ini` files directly inside the folder, `desktop.ini` excluded.
     ini_files: Vec<PathBuf>,
-    child_dirs: Vec<PathBuf>,
+    pub(crate) child_dirs: Vec<PathBuf>,
     has_assets: bool,
 }
 
@@ -160,7 +160,7 @@ fn scan_folder(path: &Path) -> Option<FolderScan> {
     Some(scan)
 }
 
-fn scan_folder_strict(path: &Path) -> Result<FolderScan, ClassificationError> {
+pub(crate) fn scan_folder_strict(path: &Path) -> Result<FolderScan, ClassificationError> {
     let entries = fs::read_dir(path).map_err(|source| ClassificationError::ReadDirectory {
         path: path.to_path_buf(),
         source,
@@ -305,14 +305,19 @@ fn classify_folder_with_mode(
         return Ok((NodeType::ContainerFolder, vec![], vec![]));
     }
 
-    let Some(FolderScan {
-        ini_files,
-        child_dirs,
-        has_assets,
-    }) = scan_folder_for_mode(path, strict)?
-    else {
+    let Some(scan) = scan_folder_for_mode(path, strict)? else {
         return Ok((NodeType::ContainerFolder, vec![], vec![]));
     };
+    classify_folder_from_scan(&scan, strict)
+}
+
+fn classify_folder_from_scan(
+    scan: &FolderScan,
+    strict: bool,
+) -> Result<(NodeType, Vec<String>, Vec<String>), ClassificationError> {
+    let ini_files = &scan.ini_files;
+    let child_dirs = &scan.child_dirs;
+    let has_assets = scan.has_assets;
 
     // Scan ini files for mod sections and referenced subfolders
     let mut has_mod_ini = false;
@@ -320,7 +325,7 @@ fn classify_folder_with_mode(
     let mut warnings: Vec<String> = Vec::new();
     let mut referenced_subs: Vec<String> = Vec::new();
 
-    for ini_path in &ini_files {
+    for ini_path in ini_files {
         let fname = path_file_name_lossy(ini_path).unwrap_or_default();
         let scan = scan_ini_file_for_mode(ini_path, strict)?;
 
@@ -350,7 +355,7 @@ fn classify_folder_with_mode(
     // the check below compares against.
     let child_dirs_with_ini = if has_mod_ini {
         let mut count = 0;
-        for dir in &child_dirs {
+        for dir in child_dirs {
             if has_any_mod_ini_for_mode(dir, strict)? {
                 count += 1;
                 if count == VARIANT_CONTAINER_MIN_CHILDREN {
@@ -420,6 +425,14 @@ pub fn classify_folder_strict(
     path: &Path,
 ) -> Result<(NodeType, Vec<String>, Vec<String>), ClassificationError> {
     classify_folder_with_mode(path, true)
+}
+
+/// Reuses a strict directory pass when a caller also needs the child folders
+/// for a separate operation, such as building a filesystem census.
+pub(crate) fn classify_folder_strict_from_scan(
+    scan: &FolderScan,
+) -> Result<(NodeType, Vec<String>, Vec<String>), ClassificationError> {
+    classify_folder_from_scan(scan, true)
 }
 
 fn has_any_mod_ini_for_mode(path: &Path, strict: bool) -> Result<bool, ClassificationError> {

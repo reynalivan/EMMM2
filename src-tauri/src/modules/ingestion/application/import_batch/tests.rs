@@ -1,6 +1,6 @@
 use super::coordinator::{
-    create_import_batch, rename_import_item_plan, set_import_item_classification,
-    set_import_item_decision,
+    can_keep_separate, create_import_batch, rename_import_item_plan,
+    set_import_item_classification, set_import_item_decision,
 };
 use super::types::{ConfidenceTier, ImportItemStatus};
 use super::types::{
@@ -53,6 +53,20 @@ fn confidence_tiers_follow_the_match_wizard_contract() {
     assert_eq!(ConfidenceTier::from_percentage(15), ConfidenceTier::Low);
     assert_eq!(ConfidenceTier::from_percentage(14), ConfidenceTier::NoMatch);
     assert_eq!(ConfidenceTier::from_percentage(0), ConfidenceTier::NoMatch);
+}
+
+#[test]
+fn only_content_collisions_allow_keep_separate() {
+    assert!(can_keep_separate(
+        TargetComparisonOutcome::TargetHasAdditionalFiles
+    ));
+    assert!(can_keep_separate(
+        TargetComparisonOutcome::SameNameDifferentContent
+    ));
+    assert!(!can_keep_separate(
+        TargetComparisonOutcome::AlreadyInstalled
+    ));
+    assert!(!can_keep_separate(TargetComparisonOutcome::Incomplete));
 }
 
 #[test]

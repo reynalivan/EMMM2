@@ -177,14 +177,13 @@ macro_rules! emmm_collect_commands {
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::apply_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::reconcile_disk_state_cmd,
             crate::modules::reconciliation::adapters::tauri::runtime_sync::retry_runtime_sync,
-            crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::plan_onboarding_indexing_work,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::begin_onboarding_indexing,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::reconcile_onboarding_indexing_game,
+            crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::continue_onboarding_indexing_in_background,
+            crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::get_onboarding_indexing_background_status,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::cancel_onboarding_indexing,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::inspect_game_mods_directory,
             crate::modules::reconciliation::adapters::tauri::disk_reconcile_cmds::resolve_rename_confirmations,
-            crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_storage_size_backfill_status,
-            crate::modules::dashboard::adapters::tauri::dashboard_cmds::start_storage_size_backfill,
             crate::modules::duplicates::adapters::tauri::tauri::dup_scan_start,
             crate::modules::duplicates::adapters::tauri::tauri::dup_scan_cancel,
             crate::modules::duplicates::adapters::tauri::tauri::dup_scan_get_report,
@@ -230,6 +229,9 @@ macro_rules! emmm_collect_commands {
             modules::browser::adapters::tauri::tauri::browser_refresh_download_link,
             modules::browser::adapters::tauri::tauri::browser_open_download_source,
             modules::browser::adapters::tauri::tauri::browser_delete_download,
+            modules::browser::adapters::tauri::tauri::browser_rename_download,
+            modules::browser::adapters::tauri::tauri::browser_open_download_file,
+            modules::browser::adapters::tauri::tauri::browser_open_download_location,
             modules::browser::adapters::tauri::tauri::browser_clear_old_downloads,
         ]
     };
@@ -288,7 +290,6 @@ pub fn run() {
         .manage(crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState::new())
         .manage(crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new())
         .manage(crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore::new())
-        .manage(crate::modules::dashboard::application::storage_backfill::StorageSizeBackfillState::default())
         .manage(crate::modules::browser::application::browser::browser_service::BrowserAdblockState::default())
         .manage(crate::modules::workspace::application::scanner::master_db::CatalogUpdateState::default())
         .manage(crate::modules::workspace::application::scanner::master_db::CatalogImportState::default())

@@ -32,7 +32,11 @@ async fn run_writer(
     changed_roots: &[String],
     force_full: bool,
 ) -> WriterRun {
-    let size_scan = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskSizeScan::full();
+    let size_scan = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskSizeScan::incremental(
+        mods_path,
+        std::collections::HashSet::new(),
+        &[],
+    );
     let scoped = !force_full && !changed_roots.is_empty();
     let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_scoped_disk_discovery_with_progress(
         mods_path,

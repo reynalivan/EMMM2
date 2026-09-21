@@ -16,8 +16,6 @@ pub struct DashboardStats {
     #[specta(type = f64)]
     pub disabled_mods: i64,
     #[specta(type = f64)]
-    pub total_size_bytes: i64,
-    #[specta(type = f64)]
     pub total_games: i64,
     #[specta(type = f64)]
     pub total_collections: i64,

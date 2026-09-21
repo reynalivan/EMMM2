@@ -1,8 +1,9 @@
 use super::staging::stage_import_batch_sources_with_options;
 use super::target_manifest_index::TargetManifestIndexState;
 use super::types::{
-    AnalysisResult, ImportBatch, ImportBatchStatus, ImportContentKind, ImportDecision,
-    ImportItemStatus, ImportPackageShape, SetImportItemDecisionInput, StableCategory,
+    AnalysisResult, ConfidenceTier, ImportBatch, ImportBatchStatus, ImportContentKind,
+    ImportDecision, ImportItemStatus, ImportPackageShape, SetImportItemDecisionInput,
+    StableCategory,
 };
 use crate::modules::catalog::application::match_engine::classification::classify_source_with_content;
 use crate::modules::catalog::application::match_engine::inspection::{
@@ -237,10 +238,12 @@ pub(crate) async fn analyze_import_batch_with_options_and_index(
         }
         let base_review_gate =
             super::coordinator::review_gate_for(&analysis_item, Some(&suggestions.canonical), None);
-        let target_comparison = if base_review_gate.is_empty()
-            && suggestions.canonical.first().is_some_and(|suggestion| {
-                suggestion.match_status == super::types::ImportMatchStatus::AutoMatched
-            }) {
+        let target_comparison = if base_review_gate.allows_high_confidence_destination_default()
+            && suggestions
+                .destinations
+                .first()
+                .is_some_and(|suggestion| suggestion.confidence_tier == ConfidenceTier::High)
+        {
             if let Some(destination) = suggestions.destinations.first() {
                 let input = SetImportItemDecisionInput {
                     item_id: item.id.clone(),

@@ -3,6 +3,7 @@ pub mod disk_snapshot;
 pub mod emit;
 pub mod helpers;
 pub mod identity_conflicts;
+pub mod onboarding_recovery;
 pub mod onboarding_session;
 pub mod orchestrator;
 pub mod path_classifier;
@@ -14,7 +15,6 @@ pub mod rename_healer;
 pub mod source_recovery;
 pub mod types;
 pub mod watcher_batch;
-pub mod work_plan;
 
 #[cfg(test)]
 mod reconcile_tests;

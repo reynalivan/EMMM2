@@ -1,7 +1,16 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
+import type { OnboardingIndexingBackgroundGameStatus } from '@/shared/api/tauri/bindings';
 import GameSelector from './GameSelector';
+
+const mockBackgroundIndexingState = vi.hoisted(() => ({
+  isLoaded: true,
+  loadError: false,
+  sessions: [],
+  gamesById: new Map<string, OnboardingIndexingBackgroundGameStatus>(),
+  refresh: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('@/shared/ui/liquid', () => ({
   LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -51,9 +60,16 @@ vi.mock('@/features/workspace-runtime', () => ({
   }),
 }));
 
+vi.mock('@/pages/onboarding/hooks/useBackgroundIndexingStatus', () => ({
+  useBackgroundIndexingStatus: () => mockBackgroundIndexingState,
+}));
+
 describe('GameSelector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBackgroundIndexingState.isLoaded = true;
+    mockBackgroundIndexingState.loadError = false;
+    mockBackgroundIndexingState.gamesById.clear();
   });
 
   it('combines the app identity with the active game label', () => {
@@ -70,13 +86,13 @@ describe('GameSelector', () => {
     expect(screen.getByText('Star Rail')).toBeInTheDocument();
   });
 
-  it('calls switchGame with UUID when a game is selected', () => {
+  it('calls switchGame with UUID when a game is selected', async () => {
     render(<GameSelector />);
 
     const starRailBtn = screen.getByText('Star Rail');
     fireEvent.click(starRailBtn);
 
-    expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi');
+    await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
   });
 
   it('shows loading while the selected game is indexing', async () => {
@@ -94,5 +110,54 @@ describe('GameSelector', () => {
 
     finishSwitch();
     await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
+  });
+
+  it('waits for background indexing before switching to a queued game', async () => {
+    mockBackgroundIndexingState.gamesById.set('uuid-srmi', {
+      game_id: 'uuid-srmi',
+      phase: 'Preparing',
+    });
+    const { rerender } = render(<GameSelector />);
+
+    fireEvent.click(screen.getByText('Star Rail'));
+    expect(mockSwitchGame).not.toHaveBeenCalled();
+    expect(screen.getByText('Star Rail is still indexing')).toBeInTheDocument();
+
+    mockBackgroundIndexingState.gamesById.set('uuid-srmi', {
+      game_id: 'uuid-srmi',
+      phase: 'Ready',
+    });
+    rerender(<GameSelector />);
+
+    await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
+  });
+
+  it('requires an explicit full recheck when background indexing needs attention', async () => {
+    mockBackgroundIndexingState.gamesById.set('uuid-srmi', {
+      game_id: 'uuid-srmi',
+      phase: 'NeedsAttention',
+    });
+    render(<GameSelector />);
+
+    fireEvent.click(screen.getByText('Star Rail'));
+
+    expect(mockSwitchGame).not.toHaveBeenCalled();
+    expect(screen.getByText('Star Rail needs attention')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Open and recheck'));
+    await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
+  });
+
+  it('does not switch when indexing status cannot be verified', () => {
+    mockBackgroundIndexingState.loadError = true;
+    render(<GameSelector />);
+
+    fireEvent.click(screen.getByText('Star Rail'));
+
+    expect(mockSwitchGame).not.toHaveBeenCalled();
+    expect(screen.getByText('Cannot verify Star Rail yet')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Check again'));
+    expect(mockBackgroundIndexingState.refresh).toHaveBeenCalledOnce();
   });
 });

@@ -1,7 +1,7 @@
 import { DOWNLOAD_STATUS_BADGE } from '../downloadStatusBadge';
 import { getDownloadProgress, getQueuePosition } from '../downloadPresentation';
 import { useDownloads } from '../hooks/useDownloads';
-import { Download, Globe, Inbox, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
+import { Download, Globe, Inbox, RefreshCw, RotateCcw, X } from 'lucide-react';
 import type { DownloadStatus } from '../types';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '@/shared/lib/utils/formatters';
@@ -16,6 +16,7 @@ import { TopBarActionsPortal } from '@/widgets/top-bar';
 import { DownloadRow } from './DownloadManagerPanel';
 import VirtualList from '@/shared/ui/components/ui/VirtualList';
 import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
+import { DownloadItemActions } from './DownloadItemActions';
 
 const getDownloadItemKey = (item: BrowserDownloadItem) => item.id;
 
@@ -31,6 +32,9 @@ export default function DownloadsPage() {
     resumeDownload,
     refreshDownloadLink,
     openDownloadSource,
+    renameDownload,
+    openDownloadFile,
+    openDownloadLocation,
     retryDownload,
     refreshDownloads,
     isLoading,
@@ -96,7 +100,11 @@ export default function DownloadsPage() {
                 <DownloadRow
                   item={item}
                   queuePosition={getQueuePosition(downloads, item.id)}
-                  onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
+                  onRemoveFromList={() => deleteDownload({ id: item.id, deleteFile: false })}
+                  onDeleteFile={() => deleteDownload({ id: item.id, deleteFile: true })}
+                  onRename={(filename) => renameDownload({ id: item.id, filename })}
+                  onOpenFile={() => openDownloadFile(item.id)}
+                  onOpenLocation={() => openDownloadLocation(item.id)}
                   onCancel={() => cancelDownload(item.id)}
                   onPause={() => pauseDownload(item.id)}
                   onResume={() => resumeDownload(item.id)}
@@ -187,19 +195,16 @@ export default function DownloadsPage() {
                               <RotateCcw size={16} /> {t('downloads.retry')}
                             </button>
                           )}
-                          {(item.status === 'finished' ||
-                            item.status === 'failed' ||
-                            item.status === 'canceled' ||
-                            item.status === 'imported') && (
-                            <button
-                              className="btn btn-sm btn-ghost text-error"
-                              onClick={() => deleteDownload({ id: item.id, deleteFile: false })}
-                              title={t('downloads.delete_title')}
-                              aria-label={t('downloads.delete_title')}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
+                          <DownloadItemActions
+                            item={item}
+                            onRemoveFromList={() =>
+                              deleteDownload({ id: item.id, deleteFile: false })
+                            }
+                            onDeleteFile={() => deleteDownload({ id: item.id, deleteFile: true })}
+                            onRename={(filename) => renameDownload({ id: item.id, filename })}
+                            onOpenFile={() => openDownloadFile(item.id)}
+                            onOpenLocation={() => openDownloadLocation(item.id)}
+                          />
                         </div>
                       </td>
                     </tr>

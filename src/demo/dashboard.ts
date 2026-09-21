@@ -6,7 +6,6 @@ export const demoDashboardPayload: DashboardPayload = {
     total_mods: 186,
     enabled_mods: 142,
     disabled_mods: 44,
-    total_size_bytes: 8_640_651_264,
     total_collections: 6,
   },
   duplicate_waste_bytes: 734_003_200,

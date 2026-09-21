@@ -65,13 +65,12 @@
     "phase_progress": "当前阶段",
     "preparation_progress": "准备进度",
     "folders_complete": "{{completed}} / {{total}} 个文件夹",
-    "files_inspected": "已检查 {{count}} 个文件",
     "folders_classified": "已分类 {{count}} 个文件夹",
     "current_root": "当前文件夹：{{root}}",
     "elapsed": "已用时 {{duration}}",
     "waiting_for_stage": "正在启动下一阶段...",
     "preparation": {
-      "metadata": "正在读取文件元数据",
+        "metadata": "正在检查文件夹结构",
       "classifying": "正在分类模组文件夹",
       "rechecking": "资料库已变更，正在重新检查..."
     },
@@ -102,6 +101,7 @@
       "starting": "正在启动引擎..."
     },
     "finishing_up": "即将完成...",
+    "first_game_not_ready": "{{game}} 无法完成索引。请先解决问题并重试，然后再打开仪表板。",
     "initializing": "正在初始化工作区...",
     "processing": "正在处理 {{game}}"
   }

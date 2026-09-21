@@ -1381,17 +1381,15 @@ fn validate_targets_still_available(
                 plan.item.id
             )));
         }
-        if let Some(existing) = target_manifest_index.find_existing_payload_match(
-            &plan.item.batch_id,
-            game_id,
-            mods_root,
-            &current_manifest,
-        )? {
-            return Err(AppError::Validation(format!(
-                "target_changed: an identical payload is now installed at '{}'; refresh this item before committing",
-                existing.display()
-            )));
-        }
+        validate_no_new_installed_duplicate(
+            &plan.item.id,
+            target_manifest_index.find_existing_payload_match(
+                &plan.item.batch_id,
+                game_id,
+                mods_root,
+                &current_manifest,
+            ),
+        )?;
         let Some(parent) = plan.target.parent() else {
             return Err(AppError::Validation(
                 "Import destination has no parent".to_string(),
@@ -1421,6 +1419,26 @@ fn validate_targets_still_available(
         }
     }
     Ok(())
+}
+
+fn validate_no_new_installed_duplicate(
+    item_id: &str,
+    installed_match: Result<Option<PathBuf>, AppError>,
+) -> Result<(), AppError> {
+    match installed_match {
+        Ok(Some(existing)) => Err(AppError::Validation(format!(
+            "target_changed: an identical payload is now installed at '{}'; refresh this item before committing",
+            existing.display()
+        ))),
+        Ok(None) => Ok(()),
+        Err(error) => {
+            log::warn!(
+                "Skipping installed-payload duplicate verification while committing '{}'; exact destination collision checks will still run: {error}",
+                item_id
+            );
+            Ok(())
+        }
+    }
 }
 
 async fn execute_moves(
@@ -1793,5 +1811,34 @@ fn result_label<T, E: std::fmt::Display>(result: Result<T, E>) -> String {
     match result {
         Ok(_) => "ok".to_string(),
         Err(error) => error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_no_new_installed_duplicate;
+    use crate::shared::errors::AppError;
+    use std::path::PathBuf;
+
+    #[test]
+    fn duplicate_scan_failure_does_not_block_a_commit() {
+        assert!(validate_no_new_installed_duplicate(
+            "item-1",
+            Err(AppError::Io("unreadable unrelated target".to_string())),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn newly_installed_identical_payload_blocks_a_commit() {
+        let error = validate_no_new_installed_duplicate(
+            "item-1",
+            Ok(Some(PathBuf::from("C:/Mods/Existing"))),
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("an identical payload is now installed"));
     }
 }

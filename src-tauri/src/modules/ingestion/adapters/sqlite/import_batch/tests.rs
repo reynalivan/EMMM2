@@ -369,6 +369,101 @@ async fn auto_matched_identity_uses_the_default_destination_without_overwriting_
 }
 
 #[tokio::test]
+async fn high_confidence_destination_defaults_to_proceed_when_identity_needs_review() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi-high-destination",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &context.pool,
+        &TestObjectFixture {
+            id: "object-robin",
+            game_id: "gimi-high-destination",
+            name: "Robin",
+            folder_path: "Robin",
+            object_type: "Other",
+        },
+    )
+    .await
+    .unwrap();
+    create_batch(
+        &context.pool,
+        &CreateImportBatchRecord {
+            id: "batch-high-destination".to_string(),
+            game_id: "gimi-high-destination".to_string(),
+            flow: ImportFlow::AutoImport,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            source_archive_path: None,
+        },
+        &[NewImportItemRecord {
+            id: "item-high-destination".to_string(),
+            source_kind: ImportSourceKind::Folder,
+            source_path: "C:/Downloads/RobinSummertoEdits".to_string(),
+            staging_path: Some("C:/Staging/RobinSummertoEdits".to_string()),
+            planned_name: "RobinSummertoEdits".to_string(),
+        }],
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE import_jobs SET status = 'staged' WHERE id = 'item-high-destination'")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    let mut result = analysis_result_for_test();
+    result.canonical_suggestions = Vec::new();
+    result.diagnostics = Vec::new();
+    result.review_gate = ReviewGate {
+        reasons: vec![ReviewReason {
+            code: ReviewReasonCode::IdentityNoMatch,
+            diagnostic_code: None,
+        }],
+    };
+    result.destination_suggestions[0] = DestinationSuggestion {
+        kind: DestinationKind::ExistingObject,
+        object_id: Some("object-robin".to_string()),
+        canonical_entry_key: None,
+        folder_name: "Robin".to_string(),
+        target_path: "C:/Games/Genshin/Mods/Robin".to_string(),
+        confidence_percentage: 82,
+        confidence_tier: ConfidenceTier::High,
+        match_method: DestinationMatchMethod::NameSubstring,
+        warning: None,
+    };
+
+    assert!(
+        apply_analysis_result(&context.pool, "item-high-destination", &result,)
+            .await
+            .unwrap()
+    );
+
+    let batch = get_batch(&context.pool, "batch-high-destination")
+        .await
+        .unwrap()
+        .unwrap();
+    let item = &batch.items[0];
+    assert_eq!(item.status, ImportItemStatus::Ready);
+    assert_eq!(item.decision, ImportDecision::Reallocate);
+    assert_eq!(item.analysis_ack_revision, Some(item.analysis_revision));
+    assert_eq!(item.destination_object_id.as_deref(), Some("object-robin"));
+    assert_eq!(
+        item.destination_path.as_deref(),
+        Some("C:/Games/Genshin/Mods/Robin")
+    );
+}
+
+#[tokio::test]
 async fn needs_review_identity_keeps_destination_unselected() {
     let context = init_test_db().await;
     insert_test_game(

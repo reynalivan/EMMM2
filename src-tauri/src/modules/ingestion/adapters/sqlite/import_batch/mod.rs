@@ -682,14 +682,16 @@ pub(crate) async fn apply_analysis_result(
             .unwrap_or(ImportMatchStatus::NoMatch)
     };
     let default_destination = analysis
-        .canonical_suggestions
+        .destination_suggestions
         .first()
         .filter(|suggestion| {
-            analysis.review_gate.is_empty()
-                && suggestion.match_status
-                    == crate::modules::ingestion::application::import_batch::types::ImportMatchStatus::AutoMatched
+            analysis
+                .review_gate
+                .allows_high_confidence_destination_default()
+                && suggestion.confidence_tier == ConfidenceTier::High
         })
         .and_then(|_| stored_destinations.first().copied());
+    let auto_defaulted = default_destination.is_some();
     let (confidence, tier) = analysis
         .canonical_suggestions
         .first()
@@ -755,7 +757,7 @@ pub(crate) async fn apply_analysis_result(
              review_gate_json = ?, target_comparison_json = ?, content_kind = ?, package_shape = ?,
              match_confidence = ?, confidence_tier = ?, decision = ?,
              identity_match_status = ?, analysis_revision = analysis_revision + 1,
-             analysis_ack_revision = NULL,
+             analysis_ack_revision = CASE WHEN ? THEN analysis_revision + 1 ELSE NULL END,
              match_entry_key = ?, match_alias_name = NULL, match_object_id = ?,
              destination_object_id = ?, destination_path = ?, placed_path = NULL,
              result = NULL, error_msg = NULL, status = ?,
@@ -784,6 +786,7 @@ pub(crate) async fn apply_analysis_result(
     .bind(tier.as_str())
     .bind(decision)
     .bind(identity_match_status.as_str())
+    .bind(auto_defaulted)
     .bind(canonical_entry_key)
     .bind(destination_object_id)
     .bind(destination_object_id)

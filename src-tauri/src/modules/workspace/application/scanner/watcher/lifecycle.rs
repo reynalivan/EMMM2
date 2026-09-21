@@ -36,6 +36,41 @@ fn emit_event(app: &tauri::AppHandle, payload: WatchEventPayload) {
     let _ = app.emit("mod_watch:event", payload);
 }
 
+async fn settle_pending_onboarding_indexing_after_activation(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+) {
+    use crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase;
+
+    let phase = if result.status.applied() {
+        OnboardingIndexingBackgroundPhase::Ready
+    } else {
+        OnboardingIndexingBackgroundPhase::NeedsAttention
+    };
+    let sessions = app.state::<
+        crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+    >();
+    let Some(status) = sessions.set_background_phase_for_game(game_id, phase) else {
+        return;
+    };
+    if let Err(error) = app.emit("onboarding_indexing:background_status", status) {
+        log::debug!("Could not emit activation onboarding indexing status: {error}");
+    }
+    if !result.status.applied() {
+        return;
+    }
+    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::remove_pending_game_id(
+        pool,
+        game_id,
+    )
+    .await
+    {
+        log::warn!("Could not clear completed onboarding game after activation: {error}");
+    }
+}
+
 fn enqueue_runtime_sync_after_watcher_reconcile(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
@@ -757,6 +792,8 @@ async fn process_event_loop(
                         Box::new(result.clone()),
                     ),
                 );
+                settle_pending_onboarding_indexing_after_activation(&app, &pool, &game_id, &result)
+                    .await;
             }
             if !emit_reconcile_result_for_current_session(&app, &session, result.clone()) {
                 return;

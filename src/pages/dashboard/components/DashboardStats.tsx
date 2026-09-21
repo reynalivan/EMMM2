@@ -1,8 +1,7 @@
-import { Box, Gamepad2, HardDrive, Layers } from 'lucide-react';
+import { Box, Gamepad2, Layers } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DashboardStats as DashboardStatsPayload } from '../model/dashboard';
-import { formatBytes } from '../../../shared/lib/utils/formatters';
 
 interface DashboardStatsProps {
   stats: DashboardStatsPayload;
@@ -12,7 +11,7 @@ export function DashboardStats({ stats }: DashboardStatsProps) {
   const { t } = useTranslation(['dashboard']);
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <StatTile
         icon={<Box size={18} />}
         title={t('stats.total_mods')}
@@ -24,12 +23,6 @@ export function DashboardStats({ stats }: DashboardStatsProps) {
         title={t('stats.games')}
         value={stats.total_games.toLocaleString()}
         desc={t('stats.configured')}
-      />
-      <StatTile
-        icon={<HardDrive size={18} />}
-        title={t('stats.storage')}
-        value={formatBytes(stats.total_size_bytes)}
-        desc={t('stats.total_size_desc')}
       />
       <StatTile
         icon={<Layers size={18} />}

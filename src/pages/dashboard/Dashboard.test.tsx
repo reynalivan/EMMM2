@@ -37,10 +37,6 @@ vi.mock('./hooks/useDashboardStats', () => ({
   useDashboardStats: vi.fn(),
 }));
 
-vi.mock('./hooks/useStorageSizeBackfill', () => ({
-  useStorageSizeBackfill: vi.fn(),
-}));
-
 vi.mock('./hooks/useActiveKeybindings', () => ({
   sparse: (value: unknown) => value,
   useActiveKeybindings: vi.fn(),
@@ -63,7 +59,6 @@ vi.mock('@/entities/game', () => ({
 }));
 
 import { useDashboardStats } from './hooks/useDashboardStats';
-import { useStorageSizeBackfill } from './hooks/useStorageSizeBackfill';
 import { useActiveKeybindings } from './hooks/useActiveKeybindings';
 
 const mockFullStats = {
@@ -72,7 +67,6 @@ const mockFullStats = {
     enabled_mods: 30,
     disabled_mods: 12,
     total_games: 2,
-    total_size_bytes: 1073741824, // 1 GB
     total_collections: 3,
   },
   duplicate_waste_bytes: 0,
@@ -106,10 +100,6 @@ describe('Dashboard - TC-33', () => {
       keybindings: [],
       isLoading: false,
       isError: false,
-    });
-    vi.mocked(useStorageSizeBackfill).mockReturnValue({
-      status: null,
-      retry: vi.fn(),
     });
   });
 
@@ -223,11 +213,11 @@ describe('Dashboard - TC-33', () => {
       expect(screen.getByText('2')).toBeInTheDocument();
     });
 
-    it('renders Storage stat tile with formatted bytes', () => {
+    it('does not render a storage-size stat tile', () => {
       render(<Dashboard />);
 
-      expect(screen.getByText('Storage')).toBeInTheDocument();
-      expect(screen.getByText('1 GB')).toBeInTheDocument();
+      expect(screen.queryByText('Storage')).not.toBeInTheDocument();
+      expect(screen.queryByText('1 GB')).not.toBeInTheDocument();
     });
 
     it('renders Collections stat tile', () => {
@@ -268,61 +258,6 @@ describe('Dashboard - TC-33', () => {
       render(<Dashboard />);
 
       expect(screen.queryByText(/duplicate waste detected/i)).not.toBeInTheDocument();
-    });
-  });
-
-  describe('TC-33-005a: Storage Size Backfill', () => {
-    it('shows non-blocking storage calculation progress', () => {
-      vi.mocked(useDashboardStats).mockReturnValue({
-        data: mockFullStats,
-        isLoading: false,
-        isError: false,
-        error: null,
-        refresh: vi.fn(),
-      });
-      vi.mocked(useStorageSizeBackfill).mockReturnValue({
-        status: {
-          state: 'Running',
-          total_games: 3,
-          completed_games: 1,
-          current_game_id: 'g-2',
-          errors: [],
-        },
-        retry: vi.fn(),
-      });
-
-      render(<Dashboard />);
-
-      expect(screen.getByRole('status')).toHaveTextContent('Calculating storage size');
-      expect(screen.getByRole('status')).toHaveTextContent('Processed 1 of 3 games');
-      expect(screen.getByText('42')).toBeInTheDocument();
-    });
-
-    it('offers a retry when storage calculation fails', () => {
-      const retry = vi.fn();
-      vi.mocked(useDashboardStats).mockReturnValue({
-        data: mockFullStats,
-        isLoading: false,
-        isError: false,
-        error: null,
-        refresh: vi.fn(),
-      });
-      vi.mocked(useStorageSizeBackfill).mockReturnValue({
-        status: {
-          state: 'Failed',
-          total_games: 3,
-          completed_games: 1,
-          current_game_id: null,
-          errors: ['The mod directory is unavailable.'],
-        },
-        retry,
-      });
-
-      render(<Dashboard />);
-
-      expect(screen.getByRole('alert')).toHaveTextContent('The mod directory is unavailable.');
-      fireEvent.click(screen.getByRole('button', { name: 'Retry storage scan' }));
-      expect(retry).toHaveBeenCalledTimes(1);
     });
   });
 

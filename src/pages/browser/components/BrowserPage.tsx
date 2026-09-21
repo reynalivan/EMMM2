@@ -29,6 +29,7 @@ import {
   getBrowserSurfacePresentation,
   type BrowserSidePanel,
 } from '../browserSurfacePresentation';
+import { getChromeTrayAnchorOffset } from '../browserChromeTray';
 
 type ConfirmationRequest = {
   message: string;
@@ -39,7 +40,7 @@ type BrowserChromeTray =
   | { kind: 'none' }
   | { kind: 'find' }
   | { kind: 'toolbar-menu' }
-  | { kind: 'tab-context-menu'; tab: BrowserTab };
+  | { kind: 'tab-context-menu'; tab: BrowserTab; anchorLeftPx: number };
 
 const MAX_DECODED_TEXT_CHARS = 750_000;
 
@@ -86,6 +87,7 @@ export function BrowserPage() {
   const sessionRestoreRequest = useRef(0);
 
   // Container that the Webview will be placed over
+  const browserPageRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const browserContentRef = useRef<HTMLDivElement>(null);
   const [browserContentWidth, setBrowserContentWidth] = useState(0);
@@ -803,7 +805,10 @@ export function BrowserPage() {
     ) : null;
 
   return (
-    <div className="flex flex-col h-full relative overflow-hidden bg-base-100/85">
+    <div
+      ref={browserPageRef}
+      className="flex flex-col h-full relative overflow-hidden bg-base-100/85"
+    >
       <TopBarActionsPortal>
         <button
           type="button"
@@ -829,7 +834,18 @@ export function BrowserPage() {
         }}
         onCloseTab={(id) => void handleCloseTab(id)}
         onNewTab={handleNewTab}
-        onOpenContextMenu={(tab) => setChromeTray({ kind: 'tab-context-menu', tab })}
+        onOpenContextMenu={(tab, clientX) => {
+          const surface = browserPageRef.current?.getBoundingClientRect();
+          setChromeTray({
+            kind: 'tab-context-menu',
+            tab,
+            anchorLeftPx: getChromeTrayAnchorOffset({
+              clientX,
+              surfaceLeft: surface?.left ?? 0,
+              surfaceWidth: surface?.width ?? 0,
+            }),
+          });
+        }}
       />
 
       <BrowserToolbar
@@ -854,60 +870,66 @@ export function BrowserPage() {
         <div className="shrink-0 border-b border-base-300 bg-base-200/70 p-2">
           <div className="max-h-[min(24rem,50dvh)] overflow-y-auto">
             {chromeTray.kind === 'find' && (
-              <form
-                className="flex flex-wrap gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleFind();
-                }}
-              >
-                <input
-                  id="browser-find-input"
-                  autoFocus
-                  className="input input-sm input-bordered w-56 max-w-full"
-                  placeholder={t('tabs.find_in_page')}
-                  value={findQuery}
-                  onChange={(event) => setFindQuery(event.target.value)}
-                />
-                <button className="btn btn-primary btn-sm" type="submit">
-                  {t('tabs.find')}
-                </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  type="button"
-                  onClick={() => closeChromeTray()}
+              <div className="flex justify-end">
+                <form
+                  className="flex flex-wrap justify-end gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleFind();
+                  }}
                 >
-                  {t('tabs.close')}
-                </button>
-              </form>
+                  <input
+                    id="browser-find-input"
+                    autoFocus
+                    className="input input-sm input-bordered w-56 max-w-full"
+                    placeholder={t('tabs.find_in_page')}
+                    value={findQuery}
+                    onChange={(event) => setFindQuery(event.target.value)}
+                  />
+                  <button className="btn btn-primary btn-sm" type="submit">
+                    {t('tabs.find')}
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    type="button"
+                    onClick={() => closeChromeTray()}
+                  >
+                    {t('tabs.close')}
+                  </button>
+                </form>
+              </div>
             )}
             {chromeTray.kind === 'toolbar-menu' && (
-              <BrowserToolbarMenu
-                activeTabUrl={activeTab?.isNewTab ? null : (activeTab?.url ?? null)}
-                activeZoom={activeTab?.zoom ?? 1}
-                adblockEnabled={adblockEnabled}
-                hasActiveWebview={Boolean(activeTabId) && !activeTab?.isNewTab}
-                onChangeZoom={(zoom) => void handleChangeZoom(zoom)}
-                onClearCache={() => void handleClearCache()}
-                onClearCookiesAndSiteData={() => void handleClearCookiesAndSiteData()}
-                onClose={() => closeChromeTray()}
-                onNewTab={handleNewTab}
-                onOpenExternally={() => void handleOpenExternally()}
-                onOpenFind={() => setChromeTray({ kind: 'find' })}
-                onOpenLibrary={handleOpenLibrary}
-                onToggleAdblock={() => void handleToggleAdblock()}
-              />
+              <div className="flex justify-end">
+                <BrowserToolbarMenu
+                  activeTabUrl={activeTab?.isNewTab ? null : (activeTab?.url ?? null)}
+                  activeZoom={activeTab?.zoom ?? 1}
+                  adblockEnabled={adblockEnabled}
+                  hasActiveWebview={Boolean(activeTabId) && !activeTab?.isNewTab}
+                  onChangeZoom={(zoom) => void handleChangeZoom(zoom)}
+                  onClearCache={() => void handleClearCache()}
+                  onClearCookiesAndSiteData={() => void handleClearCookiesAndSiteData()}
+                  onClose={() => closeChromeTray()}
+                  onNewTab={handleNewTab}
+                  onOpenExternally={() => void handleOpenExternally()}
+                  onOpenFind={() => setChromeTray({ kind: 'find' })}
+                  onOpenLibrary={handleOpenLibrary}
+                  onToggleAdblock={() => void handleToggleAdblock()}
+                />
+              </div>
             )}
             {chromeTray.kind === 'tab-context-menu' && (
-              <BrowserTabContextMenu
-                tab={chromeTray.tab}
-                canRestoreLastClosedTab={recentlyClosedTabs.length > 0}
-                onClose={() => closeChromeTray()}
-                onCloseTab={(id) => void handleCloseTab(id)}
-                onDuplicateTab={(id) => void handleDuplicateTab(id)}
-                onReloadTab={(id) => void handleReloadTab(id)}
-                onRestoreLastClosedTab={() => void handleRestoreLastClosedTab()}
-              />
+              <div style={{ marginLeft: chromeTray.anchorLeftPx }}>
+                <BrowserTabContextMenu
+                  tab={chromeTray.tab}
+                  canRestoreLastClosedTab={recentlyClosedTabs.length > 0}
+                  onClose={() => closeChromeTray()}
+                  onCloseTab={(id) => void handleCloseTab(id)}
+                  onDuplicateTab={(id) => void handleDuplicateTab(id)}
+                  onReloadTab={(id) => void handleReloadTab(id)}
+                  onRestoreLastClosedTab={() => void handleRestoreLastClosedTab()}
+                />
+              </div>
             )}
           </div>
         </div>

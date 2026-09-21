@@ -38,7 +38,7 @@ describe('BrowserTabBar', () => {
     });
 
     expect(props.onSelectTab).toHaveBeenCalledWith('browser-tab-1');
-    expect(props.onOpenContextMenu).toHaveBeenCalledWith(props.tabs[0]);
+    expect(props.onOpenContextMenu).toHaveBeenCalledWith(props.tabs[0], 24);
     expect(screen.queryByTestId('browser-tab-context-menu')).not.toBeInTheDocument();
   });
 

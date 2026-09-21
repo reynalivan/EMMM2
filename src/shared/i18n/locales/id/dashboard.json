@@ -28,17 +28,8 @@
     "disabled": "nonaktif",
     "games": "Game",
     "configured": "Terkonfigurasi",
-    "storage": "Penyimpanan",
-    "total_size_desc": "Total ukuran mod",
     "collections": "Koleksi",
     "presets_desc": "Preset tersimpan"
-  },
-  "storage_backfill": {
-    "running_title": "Menghitung ukuran penyimpanan",
-    "running_progress": "Memproses {{completed}} dari {{total}} game. Anda dapat terus menggunakan EMMM.",
-    "failed_title": "Penghitungan ukuran penyimpanan gagal",
-    "failed_message": "Sebagian ukuran penyimpanan tidak dapat dihitung.",
-    "retry": "Coba lagi pemindaian penyimpanan"
   },
   "identity_suggestions": {
     "setup_title": "Siapkan katalog",

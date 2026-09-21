@@ -175,7 +175,6 @@ async fn test_stats_accuracy() {
     assert_eq!(stats.total_mods, 5);
     assert_eq!(stats.enabled_mods, 3);
     assert_eq!(stats.disabled_mods, 2);
-    assert_eq!(stats.total_size_bytes, 8000);
     assert_eq!(stats.total_games, 2);
 }
 
@@ -213,7 +212,6 @@ async fn test_dashboard_includes_all_safety_classifications() {
     let stats = dashboard::fetch_global_stats(&pool).await.unwrap();
     assert_eq!(stats.total_mods, 2);
     assert_eq!(stats.enabled_mods, 2);
-    assert_eq!(stats.total_size_bytes, 3000);
 }
 
 // ── NC-13.1-02: Zero Data (Empty DB) ────────────────────────────────────
@@ -226,7 +224,6 @@ async fn test_zero_data_empty_db() {
     assert_eq!(stats.total_mods, 0);
     assert_eq!(stats.enabled_mods, 0);
     assert_eq!(stats.disabled_mods, 0);
-    assert_eq!(stats.total_size_bytes, 0);
     assert_eq!(stats.total_games, 0);
     assert_eq!(stats.total_collections, 0);
 }
@@ -337,32 +334,6 @@ async fn test_game_distribution() {
 
     let genshin = dist.iter().find(|d| d.game_name == "Genshin").unwrap();
     assert_eq!(genshin.count, 2);
-}
-
-// ── EC-13.01: Negative size_bytes clamped ───────────────────────────────
-
-#[tokio::test]
-async fn test_negative_size_clamped() {
-    let pool = setup_pool().await;
-    seed_game(&pool, "g1", "Genshin").await;
-
-    seed_mod(
-        &pool,
-        SeedMod {
-            id: "m1",
-            game_id: "g1",
-            name: "BadMod",
-            size_bytes: -500,
-            ..Default::default()
-        },
-    )
-    .await;
-
-    let stats = dashboard::fetch_global_stats(&pool).await.unwrap();
-    assert_eq!(
-        stats.total_size_bytes, 0,
-        "Negative size should be clamped to 0"
-    );
 }
 
 // ── Recent Mods (LIMIT) ─────────────────────────────────────────────────

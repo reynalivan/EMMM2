@@ -11,12 +11,7 @@
  */
 
 import { commands as gen } from './bindings.gen';
-import type {
-  DiskReconcileReason,
-  GameActivationPhase,
-  OnboardingIndexingWorkPlan,
-  Result,
-} from './bindings.gen';
+import type { DiskReconcileReason, GameActivationPhase, Result } from './bindings.gen';
 import { resolveDemoCommand } from '@/demo/commands';
 
 // Re-export the generated types that callers historically imported from this
@@ -72,8 +67,9 @@ export type {
   ModInboxLayout,
   ModInboxRootState,
   ModInboxSnapshot,
+  OnboardingIndexingBackgroundGameStatus,
+  OnboardingIndexingBackgroundStatus,
   OnboardingIndexingSession,
-  OnboardingIndexingWorkPlan,
   PipelineTask,
   ProcessedModInboxDestination,
   ProcessedModInboxSource,
@@ -142,11 +138,6 @@ export type GameActivationStatus = {
   error: string | null;
 };
 
-export type OnboardingIndexingWorkPlanUpdate = {
-  session_id: string;
-  work_plan: OnboardingIndexingWorkPlan;
-};
-
 export type OnboardingIndexingSnapshotProgress = {
   session_id: string;
   game_id: string;
@@ -155,7 +146,6 @@ export type OnboardingIndexingSnapshotProgress = {
   total_games: number;
   completed_roots: number;
   total_roots: number;
-  files_inspected: number;
   folders_classified: number;
   current_root: string | null;
   elapsed_ms: number;

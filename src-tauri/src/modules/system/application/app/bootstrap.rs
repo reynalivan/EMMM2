@@ -197,6 +197,92 @@ async fn recover_interrupted_transfers(pool: &sqlx::SqlitePool) {
     }
 }
 
+async fn reconcile_startup_game(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    config: &crate::modules::settings::application::config::ConfigService,
+    watcher_state: &crate::modules::workspace::application::scanner::watcher::WatcherState,
+    disk_reconcile_state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    mutation_coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    game_id: &str,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    crate::shared::errors::AppError,
+> {
+    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
+            pool,
+            config,
+            state: disk_reconcile_state,
+            watcher_suppressor: watcher_state.suppressor.clone(),
+            operation_lock: mutation_coordinator.inner_lock(),
+            progress_reporter: Some(std::sync::Arc::new(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
+                    app.clone(),
+                    game_id.to_string(),
+                    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
+                ),
+            )),
+        },
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id.to_string(),
+            crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
+            Vec::new(),
+            true,
+        ),
+    )
+    .await
+}
+
+fn update_resumed_onboarding_background_phase(
+    app: &tauri::AppHandle,
+    sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+    session_id: &str,
+    game_id: &str,
+    phase: crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase,
+) {
+    match sessions.set_background_phase(session_id, game_id, phase) {
+        Ok(status) => {
+            if let Err(error) = app.emit("onboarding_indexing:background_status", status) {
+                log::debug!("Could not emit resumed onboarding indexing status: {error}");
+            }
+        }
+        Err(error) => log::debug!("Could not update resumed onboarding indexing status: {error}"),
+    }
+}
+
+async fn finish_resumed_onboarding_game(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+    session_id: &str,
+    game_id: &str,
+    result: &Result<
+        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+        crate::shared::errors::AppError,
+    >,
+) {
+    use crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase;
+
+    let phase = match result {
+        Ok(result) if result.status.applied() => OnboardingIndexingBackgroundPhase::Ready,
+        Ok(_) => OnboardingIndexingBackgroundPhase::NeedsAttention,
+        Err(_) => OnboardingIndexingBackgroundPhase::Failed,
+    };
+    update_resumed_onboarding_background_phase(app, sessions, session_id, game_id, phase.clone());
+    if !matches!(phase, OnboardingIndexingBackgroundPhase::Ready) {
+        return;
+    }
+    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::remove_pending_game_id(
+        pool,
+        game_id,
+    )
+    .await
+    {
+        log::warn!("Could not clear completed resumed onboarding game {game_id}: {error}");
+    }
+}
+
 /// Purges stale task rows, fails downloads a crash left in flight, then
 /// reconciles the active game's mod folder against the database.
 /// Every step is best-effort and only logs on failure.
@@ -295,6 +381,63 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         }
     });
 
+    let pending_onboarding_game_ids = block_on(async {
+        let pending_game_ids = match crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::load_pending_game_ids(&pool).await {
+            Ok(game_ids) => game_ids,
+            Err(error) => {
+                log::warn!("startup: could not load pending onboarding indexing games: {error}");
+                return Vec::new();
+            }
+        };
+        let configured_game_ids = app
+            .state::<crate::modules::settings::application::config::ConfigService>()
+            .with_settings(|settings| {
+                settings
+                    .games
+                    .iter()
+                    .filter(|game| !game.mod_path.as_os_str().is_empty())
+                    .map(|game| game.id.clone())
+                    .collect::<std::collections::HashSet<_>>()
+            });
+        let valid_game_ids = pending_game_ids
+            .iter()
+            .filter(|game_id| configured_game_ids.contains(*game_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        if valid_game_ids.len() != pending_game_ids.len() {
+            if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::replace_pending_game_ids(
+                &pool,
+                &valid_game_ids,
+            )
+            .await
+            {
+                log::warn!("startup: could not remove stale onboarding indexing games: {error}");
+            }
+        }
+        valid_game_ids
+    });
+    let resumed_onboarding_session_id = if pending_onboarding_game_ids.is_empty() {
+        None
+    } else {
+        let sessions = app.state::<crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>();
+        match sessions.begin_resumed_background(&pending_onboarding_game_ids) {
+            Ok(status) => {
+                if let Err(error) =
+                    app.emit("onboarding_indexing:background_status", status.clone())
+                {
+                    log::debug!("Could not emit resumed onboarding indexing status: {error}");
+                }
+                Some(status.session_id)
+            }
+            Err(error) => {
+                log::warn!(
+                    "startup: could not initialize resumed onboarding indexing status: {error}"
+                );
+                None
+            }
+        }
+    };
+
     let startup_game = app
         .state::<crate::modules::settings::application::config::ConfigService>()
         .with_settings(|settings| settings.active_game().cloned())
@@ -305,11 +448,6 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
     });
 
     spawn(async move {
-        let Some(game) = startup_game else {
-            return;
-        };
-        let recovery_generation = startup_recovery_generation
-            .expect("startup game and recovery generation are created together");
         let config = app.state::<crate::modules::settings::application::config::ConfigService>();
         let watcher_state =
             app.state::<crate::modules::workspace::application::scanner::watcher::WatcherState>();
@@ -317,32 +455,34 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
             app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
         let mutation_coordinator =
             app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+        let sessions = app.state::<crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>();
 
-        let reconcile_result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
-                pool: &pool,
-                config: config.inner(),
-                state: disk_reconcile_state.inner(),
-                watcher_suppressor: watcher_state.suppressor.clone(),
-                operation_lock: mutation_coordinator.inner_lock(),
-                progress_reporter: Some(std::sync::Arc::new(
-                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
-                        app.clone(),
-                        game.id.clone(),
-                        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
-                    ),
-                )),
-            },
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
-                game.id.clone(),
-                crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
-                Vec::new(),
-                true,
-            ),
-        )
-        .await;
-        if config.get_settings().diagnostics.telemetry_enabled {
-            let (outcome, error_code) = match &reconcile_result {
+        if let Some(game) = startup_game.as_ref() {
+            let recovery_generation = startup_recovery_generation
+                .expect("startup game and recovery generation are created together");
+            if let Some(session_id) = resumed_onboarding_session_id.as_deref() {
+                if pending_onboarding_game_ids.contains(&game.id) {
+                    update_resumed_onboarding_background_phase(
+                        &app,
+                        sessions.inner(),
+                        session_id,
+                        &game.id,
+                        crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Applying,
+                    );
+                }
+            }
+            let reconcile_result = reconcile_startup_game(
+                &app,
+                &pool,
+                config.inner(),
+                watcher_state.inner(),
+                disk_reconcile_state.inner(),
+                mutation_coordinator.inner(),
+                &game.id,
+            )
+            .await;
+            if config.get_settings().diagnostics.telemetry_enabled {
+                let (outcome, error_code) = match &reconcile_result {
                 Ok(_) => (
                     crate::modules::system::application::telemetry::TelemetryOutcome::Success,
                     crate::modules::system::application::telemetry::TelemetryErrorCode::None,
@@ -352,11 +492,11 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                     crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(error),
                 ),
             };
-            let telemetry = app
-                .state::<crate::modules::system::application::telemetry::TelemetryStore>()
-                .inner()
-                .clone();
-            let _ = telemetry
+                let telemetry = app
+                    .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+                    .inner()
+                    .clone();
+                let _ = telemetry
                 .record_rollup(
                     env!("CARGO_PKG_VERSION"),
                     crate::modules::system::application::telemetry::TelemetryEvent::new(
@@ -367,8 +507,21 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                     chrono::Utc::now(),
                 )
                 .await;
-        }
-        let recovery_outcome = match reconcile_result {
+            }
+            if let Some(session_id) = resumed_onboarding_session_id.as_deref() {
+                if pending_onboarding_game_ids.contains(&game.id) {
+                    finish_resumed_onboarding_game(
+                        &app,
+                        &pool,
+                        sessions.inner(),
+                        session_id,
+                        &game.id,
+                        &reconcile_result,
+                    )
+                    .await;
+                }
+            }
+            let recovery_outcome = match reconcile_result {
             Ok(result) => {
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(Box::new(
                     result,
@@ -385,20 +538,62 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 )
             }
         };
-        let completed_result = match &recovery_outcome {
+            let completed_result = match &recovery_outcome {
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(result) => {
                 Some((**result).clone())
             }
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(_) => None,
         };
-        disk_reconcile_state.finish_initial_recovery(
-            &game.id,
-            recovery_generation,
-            recovery_outcome,
-        );
-        if let Some(result) = completed_result {
-            if let Err(error) = app.emit("disk_reconcile:result", result) {
-                log::warn!("Could not emit startup disk reconcile result: {error}");
+            disk_reconcile_state.finish_initial_recovery(
+                &game.id,
+                recovery_generation,
+                recovery_outcome,
+            );
+            if let Some(result) = completed_result {
+                if let Err(error) = app.emit("disk_reconcile:result", result) {
+                    log::warn!("Could not emit startup disk reconcile result: {error}");
+                }
+            }
+        }
+
+        let Some(session_id) = resumed_onboarding_session_id.as_deref() else {
+            return;
+        };
+        for game_id in pending_onboarding_game_ids {
+            if startup_game
+                .as_ref()
+                .is_some_and(|startup_game| startup_game.id == game_id)
+            {
+                continue;
+            }
+            update_resumed_onboarding_background_phase(
+                &app,
+                sessions.inner(),
+                session_id,
+                &game_id,
+                crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Applying,
+            );
+            let reconcile_result = reconcile_startup_game(
+                &app,
+                &pool,
+                config.inner(),
+                watcher_state.inner(),
+                disk_reconcile_state.inner(),
+                mutation_coordinator.inner(),
+                &game_id,
+            )
+            .await;
+            finish_resumed_onboarding_game(
+                &app,
+                &pool,
+                sessions.inner(),
+                session_id,
+                &game_id,
+                &reconcile_result,
+            )
+            .await;
+            if let Err(error) = reconcile_result {
+                log::warn!("startup: resumed onboarding indexing failed for {game_id}: {error}");
             }
         }
     });

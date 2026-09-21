@@ -68,13 +68,12 @@
     "phase_progress": "Current stage",
     "preparation_progress": "Preparation progress",
     "folders_complete": "{{completed}} of {{total}} folders",
-    "files_inspected": "{{count}} files inspected",
     "folders_classified": "{{count}} folders classified",
     "current_root": "Current folder: {{root}}",
     "elapsed": "Elapsed {{duration}}",
     "waiting_for_stage": "Starting the next stage...",
     "preparation": {
-      "metadata": "Reading file metadata",
+        "metadata": "Checking folder structure",
       "classifying": "Classifying mod folders",
       "rechecking": "Library changed. Checking it again..."
     },
@@ -102,6 +101,7 @@
       "starting": "Starting Engine..."
     },
     "finishing_up": "Finishing up...",
+    "first_game_not_ready": "{{game}} could not be indexed. Fix the issue and try again before opening the dashboard.",
     "initializing": "Initializing workspace...",
     "processing": "Processing {{game}}"
   }

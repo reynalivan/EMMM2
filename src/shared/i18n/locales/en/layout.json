@@ -44,7 +44,30 @@
     "select_game": "Select Game",
     "loading": "Loading...",
     "add_game": "Add Game",
-    "retry": "Retry"
+    "retry": "Retry",
+    "indexing": {
+      "background": "Indexing {{completed}} of {{total}} games",
+      "background_attention": "Indexing needs attention",
+      "dialog_title": "{{game}} is still indexing",
+      "dialog_description": "This game will open automatically when its library is ready. You can continue using the current game.",
+      "attention_title": "{{game}} needs attention",
+      "attention_description": "Indexing could not finish cleanly. Open this game to run a full check before using its library.",
+      "status_unavailable_title": "Cannot verify {{game}} yet",
+      "status_unavailable_description": "The indexing status could not be loaded. Check it again before switching games.",
+      "status_unavailable": "Indexing status unavailable",
+      "open_and_recheck": "Open and recheck",
+      "retry_status": "Check again",
+      "stay": "Stay on current game",
+      "phase": {
+        "Queued": "Waiting to start",
+        "Preparing": "Preparing folders",
+        "Prepared": "Waiting to apply the library",
+        "Applying": "Applying the library",
+        "Ready": "Ready",
+        "NeedsAttention": "Indexing needs attention",
+        "Failed": "Indexing needs attention"
+      }
+    }
   },
   "context": {
     "loading": "Loading...",

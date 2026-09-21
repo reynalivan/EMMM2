@@ -384,6 +384,15 @@ async fn run_worker(
             },
             Err(error) => (RuntimeSyncPhase::Failed, Some(error.to_string()), false),
         };
+        if phase == RuntimeSyncPhase::Failed {
+            log::error!(
+                "Runtime sync failed game_id={} generation={} cause={} message={}",
+                game_id,
+                job.generation,
+                job.cause,
+                message.as_deref().unwrap_or("unknown runtime failure"),
+            );
+        }
         let authoritative =
             finish_runtime_sync_generation(&state, &game_id, job.generation, staged, settled);
         if authoritative {

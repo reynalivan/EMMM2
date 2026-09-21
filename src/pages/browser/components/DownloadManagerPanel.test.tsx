@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DownloadManagerPanel } from './DownloadManagerPanel';
 import * as useBrowserStoreModule from '@/entities/browser';
@@ -59,6 +59,9 @@ describe('DownloadManagerPanel', () => {
   const cancelDownload = vi.fn();
   const retryDownload = vi.fn();
   const refreshDownloads = vi.fn();
+  const renameDownload = vi.fn().mockResolvedValue(undefined);
+  const openDownloadFile = vi.fn();
+  const openDownloadLocation = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,6 +77,9 @@ describe('DownloadManagerPanel', () => {
       deleteDownload,
       cancelDownload,
       retryDownload,
+      renameDownload,
+      openDownloadFile,
+      openDownloadLocation,
       refreshDownloads,
       isRefreshing: false,
     } as never);
@@ -162,5 +168,33 @@ describe('DownloadManagerPanel', () => {
     const panel = screen.getByRole('complementary', { name: 'Downloads' });
     expect(panel).not.toHaveClass('fixed');
     expect(panel).toHaveClass('w-[400px]');
+  });
+
+  it('keeps file actions behind the row menu and sends delete to the recycle-bin path', async () => {
+    render(<DownloadManagerPanel layout="docked" />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Download actions' })[0]);
+
+    expect(screen.getByRole('menuitem', { name: 'Open file' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Open in File Explorer' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Rename file' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Remove from list' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete file' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete file' }));
+    expect(deleteDownload).toHaveBeenCalledWith({ id: 'dl-1', deleteFile: true });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Download actions' })[0]);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from list' }));
+    expect(deleteDownload).toHaveBeenCalledWith({ id: 'dl-1', deleteFile: false });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Download actions' })[0]);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename file' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'renamed.zip' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+    await waitFor(() => {
+      expect(renameDownload).toHaveBeenCalledWith({ id: 'dl-1', filename: 'renamed.zip' });
+    });
   });
 });

@@ -264,6 +264,26 @@ pub async fn get_file_path(
     Ok(path.flatten())
 }
 
+/// Update the display name and path after a successful filesystem rename.
+pub async fn update_file_metadata(
+    db: &SqlitePool,
+    download_id: &str,
+    filename: &str,
+    file_path: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE browser_downloads
+            SET filename = ?, file_path = ?
+          WHERE id = ?",
+    )
+    .bind(filename)
+    .bind(file_path)
+    .bind(download_id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 /// Delete a single download record.
 pub async fn delete_download(db: &SqlitePool, download_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query!("DELETE FROM browser_downloads WHERE id = ?", download_id)

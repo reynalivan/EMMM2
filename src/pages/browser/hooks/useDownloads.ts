@@ -235,6 +235,23 @@ export function useDownloads(
     onError: () => toast.error(t('downloads.feedback.open_source_failed')),
   });
 
+  const renameMutation = useMutation({
+    mutationFn: ({ id, filename }: { id: string; filename: string }) =>
+      commands.browserRenameDownload(id, filename),
+    onSuccess: async () => publishQueryScopes(queryClient, ['browserDownloads']),
+    onError: () => toast.error(t('downloads.feedback.rename_failed')),
+  });
+
+  const openFileMutation = useMutation({
+    mutationFn: (id: string) => commands.browserOpenDownloadFile(id),
+    onError: () => toast.error(t('downloads.feedback.open_file_failed')),
+  });
+
+  const openLocationMutation = useMutation({
+    mutationFn: (id: string) => commands.browserOpenDownloadLocation(id),
+    onError: () => toast.error(t('downloads.feedback.open_location_failed')),
+  });
+
   const refreshDownloads = async () => {
     const result = await query.refetch();
     if (result.error) {
@@ -252,6 +269,9 @@ export function useDownloads(
     resumeDownload: resumeMutation.mutate,
     refreshDownloadLink: refreshLinkMutation.mutate,
     openDownloadSource: openSourceMutation.mutate,
+    renameDownload: renameMutation.mutateAsync,
+    openDownloadFile: openFileMutation.mutate,
+    openDownloadLocation: openLocationMutation.mutate,
     retryDownload,
     refreshDownloads,
     isLoading: query.isLoading,

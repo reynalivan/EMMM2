@@ -86,7 +86,8 @@ pub async fn open_child_webview(
         move |nav_url: &tauri::Url| {
             let scheme = nav_url.scheme();
             let is_allowed = scheme == "http" || scheme == "https";
-            if is_allowed {
+            let is_download_navigation = crate::modules::browser::application::browser::download_handler::is_gamebanana_download_url(nav_url.as_str());
+            if is_allowed && !is_download_navigation {
                 let _ = app_handle.emit(
                     "browser:url-changed",
                     serde_json::json!({
@@ -108,28 +109,42 @@ pub async fn open_child_webview(
             if let Ok(url) = webview.url() {
                 let label = webview.label().to_string();
                 let url_str = url.to_string();
-                let history_db = history_db_for_load.clone();
-                let history_url = url_str.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) =
-                        super::metadata::record_history(&history_db, &history_url, None, None).await
-                    {
-                        log::debug!("Could not record Discover history: {error}");
-                    }
-                });
-                let _ = webview.app_handle().emit(
-                    "browser:url-changed",
-                    serde_json::json!({
-                        "label": label,
-                        "url": url_str,
-                    }),
-                );
+                let is_download_navigation = crate::modules::browser::application::browser::download_handler::is_gamebanana_download_url(&url_str)
+                    || crate::modules::browser::application::browser::download_handler::has_native_download_for_label(&label);
+                if !is_download_navigation {
+                    let history_db = history_db_for_load.clone();
+                    let history_url = url_str.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(error) = super::metadata::record_history(
+                            &history_db,
+                            &history_url,
+                            None,
+                            None,
+                        )
+                        .await
+                        {
+                            log::debug!("Could not record Discover history: {error}");
+                        }
+                    });
+                    let _ = webview.app_handle().emit(
+                        "browser:url-changed",
+                        serde_json::json!({
+                            "label": label,
+                            "url": url_str,
+                        }),
+                    );
+                }
             }
         }
     })
     .on_document_title_changed(move |webview: tauri::webview::Webview<_>, title| {
         let label = webview.label().to_string();
         let url = webview.url().map(|u| u.to_string()).unwrap_or_default();
+        let is_download_navigation = crate::modules::browser::application::browser::download_handler::is_gamebanana_download_url(&url)
+            || crate::modules::browser::application::browser::download_handler::has_native_download_for_label(&label);
+        if is_download_navigation {
+            return;
+        }
         let history_db = history_db_for_title.clone();
         let history_url = url.clone();
         let history_title = title.clone();

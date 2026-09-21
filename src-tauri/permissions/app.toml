@@ -36,4 +36,7 @@ commands.allow = [
     "browser_retry_download",
     "browser_refresh_download_link",
     "browser_open_download_source",
+    "browser_rename_download",
+    "browser_open_download_file",
+    "browser_open_download_location",
 ]

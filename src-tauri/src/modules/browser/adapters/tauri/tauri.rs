@@ -334,6 +334,37 @@ pub async fn browser_delete_download(
     Ok(download_service::delete_download(db.inner(), &id, delete_file).await?)
 }
 
+/// Rename a downloaded file and update its history entry.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_rename_download(
+    id: String,
+    filename: String,
+    db: State<'_, SqlitePool>,
+) -> Result<(), AppError> {
+    Ok(download_service::rename_download(db.inner(), &id, &filename).await?)
+}
+
+/// Open a downloaded file using its default system application.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_open_download_file(
+    id: String,
+    db: State<'_, SqlitePool>,
+) -> Result<(), AppError> {
+    Ok(download_service::open_download_file(db.inner(), &id).await?)
+}
+
+/// Reveal a downloaded file in the system file manager.
+#[tauri::command]
+#[specta::specta]
+pub async fn browser_open_download_location(
+    id: String,
+    db: State<'_, SqlitePool>,
+) -> Result<(), AppError> {
+    Ok(download_service::open_download_location(db.inner(), &id).await?)
+}
+
 /// Remove old downloads that exceed the configured retention period.
 #[tauri::command]
 #[specta::specta]

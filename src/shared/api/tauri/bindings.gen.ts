@@ -1452,14 +1452,6 @@ async retryRuntimeSync(gameId: string) : Promise<Result<number, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async planOnboardingIndexingWork(gameIds: string[]) : Promise<Result<OnboardingIndexingWorkPlan[], AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("plan_onboarding_indexing_work", { gameIds }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async beginOnboardingIndexing(gameIds: string[]) : Promise<Result<OnboardingIndexingSession, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("begin_onboarding_indexing", { gameIds }) };
@@ -1471,6 +1463,22 @@ async beginOnboardingIndexing(gameIds: string[]) : Promise<Result<OnboardingInde
 async reconcileOnboardingIndexingGame(sessionId: string, gameId: string) : Promise<Result<DiskReconcileResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reconcile_onboarding_indexing_game", { sessionId, gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async continueOnboardingIndexingInBackground(sessionId: string, gameIds: string[]) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("continue_onboarding_indexing_in_background", { sessionId, gameIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getOnboardingIndexingBackgroundStatus() : Promise<Result<OnboardingIndexingBackgroundStatus[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_onboarding_indexing_background_status") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1495,21 +1503,6 @@ async inspectGameModsDirectory(gameId: string, candidatePath: string) : Promise<
 async resolveRenameConfirmations(gameId: string, resolutions: RenameConfirmationResolution[]) : Promise<Result<DiskReconcileResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("resolve_rename_confirmations", { gameId, resolutions }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getStorageSizeBackfillStatus() : Promise<StorageSizeBackfillStatus> {
-    return await TAURI_INVOKE("get_storage_size_backfill_status");
-},
-/**
- * Starts the one-time low-priority size backfill. The command returns before
- * filesystem work begins so the Dashboard remains responsive.
- */
-async startStorageSizeBackfill() : Promise<Result<StorageSizeBackfillStatus, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("start_storage_size_backfill") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1976,6 +1969,39 @@ async browserDeleteDownload(id: string, deleteFile: boolean) : Promise<Result<nu
 }
 },
 /**
+ * Rename a downloaded file and update its history entry.
+ */
+async browserRenameDownload(id: string, filename: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_rename_download", { id, filename }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Open a downloaded file using its default system application.
+ */
+async browserOpenDownloadFile(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_open_download_file", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reveal a downloaded file in the system file manager.
+ */
+async browserOpenDownloadLocation(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("browser_open_download_location", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Remove old downloads that exceed the configured retention period.
  */
 async browserClearOldDownloads() : Promise<Result<number, AppError>> {
@@ -2217,7 +2243,7 @@ export type DashboardPayload = { stats: DashboardStats; duplicate_waste_bytes: n
 /**
  * Global overview statistics for the dashboard tiles.
  */
-export type DashboardStats = { total_mods: number; enabled_mods: number; disabled_mods: number; total_size_bytes: number; total_games: number; total_collections: number }
+export type DashboardStats = { total_mods: number; enabled_mods: number; disabled_mods: number; total_games: number; total_collections: number }
 /**
  * A single DB entry from Master DB.
  */
@@ -2249,7 +2275,7 @@ export type DiskReconcileChangeCounts = { added: number; removed: number; rename
 export type DiskReconcileChangeSummary = { object_changes: DiskReconcileChangeCounts; mod_changes: DiskReconcileChangeCounts; object_sample_names: string[]; mod_sample_names: string[]; has_user_visible_changes: boolean }
 export type DiskReconcilePathKind = "Object" | "Mod"
 export type DiskReconcilePathUpdate = { from: string; to: string; kind: DiskReconcilePathKind }
-export type DiskReconcileReason = "StartupBoot" | "OnboardingCompleted" | "ModsViewEntered" | "WindowRefocused" | "WatcherBatch" | "ManualRepair" | "GameSwitched" | "InternalMutation" | "StorageSizeBackfill"
+export type DiskReconcileReason = "StartupBoot" | "OnboardingCompleted" | "ModsViewEntered" | "WindowRefocused" | "WatcherBatch" | "ManualRepair" | "GameSwitched" | "InternalMutation"
 export type DiskReconcileResult = { game_id: string;
 /**
  * Monotonic per-game revision assigned after this disk observation finishes.
@@ -2435,7 +2461,6 @@ export type ImportSourceKind = "folder" | "archive_root" | "browser_download" | 
 export type ImportSourcePreview = { itemId: string; thumbnailPath: string | null; imageThumbnails: string[]; entries: ImportSourcePreviewEntry[]; folderCount: number; fileCount: number; totalSizeBytes: number; truncated: boolean }
 export type ImportSourcePreviewEntry = { relativePath: string; kind: ImportSourcePreviewEntryKind; depth: number }
 export type ImportSourcePreviewEntryKind = "file" | "folder"
-export type IndexingRootWork = { root_name: string; file_count: number; total_bytes: number; work_units: number }
 export type IniDocument = { file_path: string; raw_lines: string[]; variables: IniVariable[]; key_bindings: KeyBinding[]; had_bom: boolean; encoding: IniEncoding; newline_style: NewlineStyle; line_terminators: LineTerminator[]; source_hash: string; mode: IniReadMode }
 export type IniDocumentEntry = { filename: string; document: IniDocument }
 export type IniEncoding = "Utf8" | "ShiftJis" | "Gbk" | "Utf16Le" | "LossyUtf8"
@@ -2524,11 +2549,21 @@ export type ObjectIdentitySuggestionItem = { objectId: string; objectName: strin
 export type ObjectIdentitySuggestionPage = { items: ObjectIdentitySuggestionItem[]; total: number; nextOffset: number | null }
 export type ObjectIdentitySuggestionStatus = { state: string; catalogId: string | null; catalogVersion: string | null; suggestedCount: number; checkedCount: number; totalCount: number; failedCount: number; hasKeyviewerTargets: boolean; message: string | null }
 export type ObjectSummary = { id: string; name: string; folder_path: string; matched_entry_key: string | null; matched_alias_name: string | null; matched_confidence: number | null; matched_reason: string | null; matched_source: string | null; object_type: string; randomizer_mode: RandomizerMode | null; sub_category: string | null; status: number; metadata: string; tags: string; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; is_pinned: boolean; is_auto_sync: boolean; thumbnail_path: string | null; created_at: string | null; mod_count: number; enabled_count: number; safe_mod_count: number; unsafe_mod_count: number; unclassified_mod_count: number; is_object_disabled: boolean; has_naming_conflict: boolean; active_mod_paths: string | null }
+export type OnboardingIndexingBackgroundGameStatus = { game_id: string; phase: OnboardingIndexingBackgroundPhase }
+/**
+ * Lifecycle state for a game that continues onboarding indexing after the
+ * first game has opened the workspace.
+ */
+export type OnboardingIndexingBackgroundPhase = "Queued" | "Preparing" | "Prepared" | "Applying" | "Ready" | "NeedsAttention" | "Failed"
+/**
+ * In-memory status for the serial background portion of first-run indexing.
+ * It intentionally contains no filesystem paths or library contents.
+ */
+export type OnboardingIndexingBackgroundStatus = { session_id: string; completed_games: number; total_games: number; games: OnboardingIndexingBackgroundGameStatus[] }
 /**
  * Opaque handle for a short-lived onboarding disk snapshot.
  */
-export type OnboardingIndexingSession = { session_id: string; work_plans: OnboardingIndexingWorkPlan[] }
-export type OnboardingIndexingWorkPlan = { game_id: string; file_count: number; total_bytes: number; work_units: number; roots: IndexingRootWork[] }
+export type OnboardingIndexingSession = { session_id: string }
 /**
  * A compact, list-safe summary of a full payload manifest. The detailed file
  * entries remain in SQLite until the detail view requests them.
@@ -2631,8 +2666,6 @@ export type SetImportItemClassificationInput = { itemId: string; category: Stabl
 export type SetImportItemDecisionInput = { itemId: string; decision: ImportDecision; destinationObjectId: string | null; destinationPath: string | null; canonicalEntryKey: string | null; matchedAlias: string | null }
 export type SourceFingerprint = { path: string; modifiedUnixMs: string; sizeBytes: string; fileCount: number }
 export type StableCategory = "Character" | "Weapon" | "UI" | "Other"
-export type StorageSizeBackfillStateKind = "Idle" | "Running" | "Completed" | "Failed"
-export type StorageSizeBackfillStatus = { state: StorageSizeBackfillStateKind; total_games: number; completed_games: number; current_game_id: string | null; errors: string[] }
 /**
  * One custom skin/outfit stored on an object.
  *

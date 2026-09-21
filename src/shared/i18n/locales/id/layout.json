@@ -40,7 +40,30 @@
     "select_game": "Pilih Game",
     "loading": "Memuat...",
     "add_game": "Tambah Game",
-    "retry": "Coba Lagi"
+    "retry": "Coba Lagi",
+    "indexing": {
+      "background": "Mengindeks {{completed}} dari {{total}} game",
+      "background_attention": "Pengindeksan perlu perhatian",
+      "dialog_title": "{{game}} masih diindeks",
+      "dialog_description": "Game ini akan terbuka otomatis saat library siap. Anda dapat tetap menggunakan game saat ini.",
+      "attention_title": "{{game}} perlu perhatian",
+      "attention_description": "Pengindeksan tidak dapat selesai dengan benar. Buka game ini untuk menjalankan pemeriksaan penuh sebelum menggunakan library-nya.",
+      "status_unavailable_title": "Belum bisa memverifikasi {{game}}",
+      "status_unavailable_description": "Status pengindeksan tidak dapat dimuat. Periksa lagi sebelum berpindah game.",
+      "status_unavailable": "Status pengindeksan tidak tersedia",
+      "open_and_recheck": "Buka dan periksa ulang",
+      "retry_status": "Periksa lagi",
+      "stay": "Tetap di game saat ini",
+      "phase": {
+        "Queued": "Menunggu dimulai",
+        "Preparing": "Menyiapkan folder",
+        "Prepared": "Menunggu library diterapkan",
+        "Applying": "Menerapkan library",
+        "Ready": "Siap",
+        "NeedsAttention": "Pengindeksan perlu perhatian",
+        "Failed": "Pengindeksan perlu perhatian"
+      }
+    }
   },
   "context": {
     "loading": "Memuat...",

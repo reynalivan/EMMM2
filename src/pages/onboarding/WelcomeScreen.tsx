@@ -18,6 +18,7 @@ import AnimatedLogo from './components/welcome/AnimatedLogo';
 import { useOnboardingDiskProgress } from './hooks/useOnboardingDiskProgress';
 import { formatEstimatedDuration, type IndexingProgress } from './utils/indexingProgress';
 import type {
+  DiskReconcileStatus,
   DiskReconcilePhase,
   OnboardingIndexingSnapshotProgress,
 } from '../../shared/api/tauri/bindings';
@@ -27,6 +28,10 @@ type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 
 const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
 const RECONCILE_PHASE_COUNT = 4;
+
+function isAppliedReconcileStatus(status: DiskReconcileStatus): boolean {
+  return status === 'Applied' || status === 'AppliedWithFolderConflicts';
+}
 
 function activityTranslationKey(
   phase: DiskReconcilePhase | undefined,
@@ -212,6 +217,7 @@ export default function WelcomeScreen({
 
   const handleFinalize = async (games: GameConfig[]) => {
     let sessionId: string | null = null;
+    let handedOffToBackground = false;
     try {
       setError(null);
       setIsIndexing(true);
@@ -239,35 +245,47 @@ export default function WelcomeScreen({
       indexingSessionRef.current = sessionId;
       setSnapshotProgress(null);
 
-      // Disk Reconcile only. Onboarding must not trigger Deep Match Scanner implicitly.
-      for (const [index, game] of games.entries()) {
-        setIndexingProgress({
-          completed: index,
-          total,
-          currentGame: game.name,
-          completedDurationsMs: [...completedDurationsMs],
-        });
-        const startedAt = performance.now();
-        try {
-          await commands.reconcileOnboardingIndexingGame(sessionId, game.id);
-        } catch (refreshErr) {
-          console.warn(
-            `[onboarding] reconcileDiskState failed for "${game.name}", Disk Reconcile will retry on next entry:`,
-            refreshErr,
-          );
-        }
-        completedDurationsMs.push(performance.now() - startedAt);
-        setIndexingProgress({
-          completed: index + 1,
-          total,
-          currentGame: game.name,
-          completedDurationsMs: [...completedDurationsMs],
-        });
+      const [firstGame, ...backgroundGames] = games;
+      if (!firstGame) {
+        throw new Error('At least one game is required for onboarding indexing');
       }
 
+      // Make the initial game usable before leaving onboarding. The remaining
+      // games retain the same one-at-a-time filesystem worker in the backend.
+      setIndexingProgress({
+        completed: 0,
+        total,
+        currentGame: firstGame.name,
+        completedDurationsMs: [],
+      });
+      const startedAt = performance.now();
+      const firstResult = await commands.reconcileOnboardingIndexingGame(sessionId, firstGame.id);
+      if (!isAppliedReconcileStatus(firstResult.status)) {
+        throw new Error(t('onboarding:indexing.first_game_not_ready', { game: firstGame.name }));
+      }
+      completedDurationsMs.push(performance.now() - startedAt);
+      setIndexingProgress({
+        completed: 1,
+        total,
+        currentGame: firstGame.name,
+        completedDurationsMs: [...completedDurationsMs],
+      });
+
+      if (backgroundGames.length > 0) {
+        await commands.continueOnboardingIndexingInBackground(
+          sessionId,
+          backgroundGames.map((game) => game.id),
+        );
+        handedOffToBackground = true;
+      }
+
+      // The dashboard owns the rest of the user-visible lifecycle. Clearing
+      // this reference avoids cancelling the backend worker during navigation.
+      indexingInFlightRef.current = false;
+      indexingSessionRef.current = null;
       onComplete(games);
     } catch (err) {
-      // Only the save_onboarding_games failure is a hard blocker
+      // The first game must be usable before the dashboard can open.
       setError(formatAppError(err));
       setIsIndexing(false);
       setIndexingProgress(null);
@@ -277,7 +295,7 @@ export default function WelcomeScreen({
       setIsRecheckingSnapshot(false);
       const activeSessionId = sessionId ?? indexingSessionRef.current;
       indexingSessionRef.current = null;
-      if (activeSessionId) {
+      if (activeSessionId && !handedOffToBackground) {
         try {
           await commands.cancelOnboardingIndexing(activeSessionId);
         } catch (cancelError) {
@@ -619,16 +637,13 @@ export default function WelcomeScreen({
               </p>
               {isPreparing && snapshotProgress && (
                 <div className="space-y-1 text-xs text-base-content/65">
-                  <p>
-                    {t('onboarding:indexing.files_inspected', {
-                      count: snapshotProgress.files_inspected,
-                    })}
-                  </p>
-                  <p>
-                    {t('onboarding:indexing.folders_classified', {
-                      count: snapshotProgress.folders_classified,
-                    })}
-                  </p>
+                  {snapshotProgress.phase === 'Classifying' && (
+                    <p>
+                      {t('onboarding:indexing.folders_classified', {
+                        count: snapshotProgress.folders_classified,
+                      })}
+                    </p>
+                  )}
                   {activeRoot && (
                     <p>{t('onboarding:indexing.current_root', { root: activeRoot })}</p>
                   )}
@@ -668,20 +683,28 @@ export default function WelcomeScreen({
 
   if (view === 'result') {
     return (
-      <AutoDetectResult
-        games={detectedGames}
-        onConfirm={() => handleFinalize(detectedGames)}
-        onBack={() => {
-          setDetectedGames([]);
-          setError(null);
-          setView('welcome');
-        }}
-        onAddMore={() => {
-          setError(null);
-          setView('manual');
-        }}
-        onRemoveGame={handleRemoveGame}
-      />
+      <div className="space-y-4">
+        {error && (
+          <div role="alert" className="alert alert-error alert-soft mx-auto max-w-2xl text-sm">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+        <AutoDetectResult
+          games={detectedGames}
+          onConfirm={() => handleFinalize(detectedGames)}
+          onBack={() => {
+            setDetectedGames([]);
+            setError(null);
+            setView('welcome');
+          }}
+          onAddMore={() => {
+            setError(null);
+            setView('manual');
+          }}
+          onRemoveGame={handleRemoveGame}
+        />
+      </div>
     );
   }
 

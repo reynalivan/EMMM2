@@ -24,7 +24,6 @@ describe('useDashboardStats', () => {
         total_mods: 2,
         enabled_mods: 2,
         disabled_mods: 0,
-        total_size_bytes: 100,
         total_games: 1,
         total_collections: 0,
       },

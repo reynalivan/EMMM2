@@ -15,6 +15,7 @@ import { ExternalLink, Pause, Play, RefreshCw, RotateCcw, X } from 'lucide-react
 import VirtualList from '@/shared/ui/components/ui/VirtualList';
 import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
 import type { BrowserSidePanelLayout } from '../browserSurfacePresentation';
+import { DownloadItemActions } from './DownloadItemActions';
 
 const getDownloadItemKey = (item: BrowserDownloadItem) => item.id;
 
@@ -39,6 +40,9 @@ export function DownloadManagerPanel({ layout }: DownloadManagerPanelProps) {
     resumeDownload,
     refreshDownloadLink,
     openDownloadSource,
+    renameDownload,
+    openDownloadFile,
+    openDownloadLocation,
     retryDownload,
     refreshDownloads,
     isLoading,
@@ -143,7 +147,11 @@ export function DownloadManagerPanel({ layout }: DownloadManagerPanelProps) {
               <DownloadRow
                 item={item}
                 queuePosition={getQueuePosition(downloads, item.id)}
-                onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
+                onRemoveFromList={() => deleteDownload({ id: item.id, deleteFile: false })}
+                onDeleteFile={() => deleteDownload({ id: item.id, deleteFile: true })}
+                onRename={(filename) => renameDownload({ id: item.id, filename })}
+                onOpenFile={() => openDownloadFile(item.id)}
+                onOpenLocation={() => openDownloadLocation(item.id)}
                 onCancel={() => cancelDownload(item.id)}
                 onPause={() => pauseDownload(item.id)}
                 onResume={() => resumeDownload(item.id)}
@@ -160,7 +168,11 @@ export function DownloadManagerPanel({ layout }: DownloadManagerPanelProps) {
                 key={item.id}
                 item={item}
                 queuePosition={getQueuePosition(downloads, item.id)}
-                onDelete={(deleteFile) => deleteDownload({ id: item.id, deleteFile })}
+                onRemoveFromList={() => deleteDownload({ id: item.id, deleteFile: false })}
+                onDeleteFile={() => deleteDownload({ id: item.id, deleteFile: true })}
+                onRename={(filename) => renameDownload({ id: item.id, filename })}
+                onOpenFile={() => openDownloadFile(item.id)}
+                onOpenLocation={() => openDownloadLocation(item.id)}
                 onCancel={() => cancelDownload(item.id)}
                 onPause={() => pauseDownload(item.id)}
                 onResume={() => resumeDownload(item.id)}
@@ -179,7 +191,11 @@ export function DownloadManagerPanel({ layout }: DownloadManagerPanelProps) {
 interface RowProps {
   item: BrowserDownloadItem;
   queuePosition: number | null;
-  onDelete: (deleteFile: boolean) => void;
+  onRemoveFromList: () => void;
+  onDeleteFile: () => void;
+  onRename: (filename: string) => Promise<unknown>;
+  onOpenFile: () => void;
+  onOpenLocation: () => void;
   onCancel: () => void;
   onPause: () => void;
   onResume: () => void;
@@ -191,7 +207,11 @@ interface RowProps {
 export function DownloadRow({
   item,
   queuePosition,
-  onDelete,
+  onRemoveFromList,
+  onDeleteFile,
+  onRename,
+  onOpenFile,
+  onOpenLocation,
   onCancel,
   onPause,
   onResume,
@@ -326,19 +346,14 @@ export function DownloadRow({
             <RotateCcw size={14} />
           </button>
         )}
-        {(item.status === 'finished' ||
-          item.status === 'failed' ||
-          item.status === 'canceled' ||
-          item.status === 'imported') && (
-          <button
-            className="btn btn-ghost btn-xs text-error"
-            onClick={() => onDelete(false)}
-            title={t('downloads.delete_title')}
-            aria-label={t('downloads.delete_title')}
-          >
-            {t('downloads.delete')}
-          </button>
-        )}
+        <DownloadItemActions
+          item={item}
+          onRemoveFromList={onRemoveFromList}
+          onDeleteFile={onDeleteFile}
+          onRename={onRename}
+          onOpenFile={onOpenFile}
+          onOpenLocation={onOpenLocation}
+        />
       </div>
     </div>
   );
