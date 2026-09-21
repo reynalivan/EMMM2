@@ -307,6 +307,7 @@
     "viewer_title": "Overlay KeyViewer",
     "auto_reload": "Muat Ulang Otomatis",
     "viewer_desc": "Tampilkan keybind yang terdeteksi. Buka dengan {{key}}.",
+    "preset_status_overlay_beta": "Overlay status preset (Beta) untuk sementara disembunyikan. Panel keybind KeyViewer tetap tersedia.",
     "infrastructure_title": "File runtime",
     "infrastructure_desc": "Dikelola otomatis di .emmm_data/.",
     "runtime": {

@@ -307,6 +307,7 @@
     "viewer_title": "KeyViewer Overlay",
     "auto_reload": "Auto-Reload",
     "viewer_desc": "Shows detected in-game keybinds. Toggle with {{key}}.",
+    "preset_status_overlay_beta": "Preset status overlay (Beta) is hidden for now. KeyViewer keybind panels remain available.",
     "infrastructure_title": "Runtime files",
     "infrastructure_desc": "Managed automatically in .emmm_data/.",
     "runtime": {

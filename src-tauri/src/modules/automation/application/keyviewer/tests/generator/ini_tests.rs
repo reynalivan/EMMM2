@@ -61,15 +61,17 @@ fn keyviewer_ini_renders_before_resetting_detection_flags() {
 }
 
 #[test]
-fn keyviewer_ini_draws_status_and_detected_character_panels_directly() {
+fn keyviewer_ini_hides_preset_status_but_keeps_detected_character_panels() {
     let matches = vec![make_match_result("Albedo", &["aabb1111"])];
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
-    assert!(ini.contains(r"Resource\GIMIv8\Text = ref ResourceEMMM_Status"));
+    assert!(!ini.contains(r"Resource\GIMIv8\Text = ref ResourceEMMM_Status"));
+    assert!(!ini.contains(r"Resource\GIMIv8\TextParams = ref ResourceEMMM_StatusBox"));
     assert!(ini.contains(r"Resource\GIMIv8\Text = ref ResourceEMMM_KeyViewer_000"));
-    assert!(ini.contains(r"Resource\GIMIv8\TextParams = ref ResourceEMMM_StatusBox"));
     assert!(ini.contains(r"run = CommandList\GIMIv8\PrintText"));
     assert!(ini.contains(r"Resource\GIMIv8\TextParams = ref ResourceEMMM_KeyViewerBox_0"));
+    assert!(ini.contains("[KeyEMMMv1_ToggleOverlay]"));
+    assert!(ini.contains("key = F7"));
     assert!(!ini.contains("$emmm_kv_panel_index"));
     assert!(!ini.contains("ShaderFixes\\help.ini"));
 }
@@ -154,7 +156,12 @@ fn keyviewer_ini_uses_the_selected_package_namespace() {
         (GameType::SRMI, "SRMIv1"),
         (GameType::ZZMI, "ZZMIv1"),
     ] {
-        let ini = generate_keyviewer_ini_for_game(&[], "F7", game_type).unwrap();
+        let ini = generate_keyviewer_ini_for_game(
+            &[make_match_result("Albedo", &["aabb1111"])],
+            "F7",
+            game_type,
+        )
+        .unwrap();
         assert!(ini.contains(&format!("Resource\\{namespace}\\Text")));
         assert!(ini.contains(&format!("CommandList\\{namespace}\\PrintText")));
     }

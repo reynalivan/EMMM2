@@ -307,6 +307,7 @@
     "viewer_title": "按键查看器显示层",
     "auto_reload": "自动重载",
     "viewer_desc": "显示检测到的游戏按键。使用 {{key}} 切换。",
+    "preset_status_overlay_beta": "预设状态显示层（测试版）暂时隐藏。KeyViewer 按键面板仍可用。",
     "infrastructure_title": "运行时文件",
     "infrastructure_desc": "在 .emmm_data/ 中自动管理。",
     "runtime": {

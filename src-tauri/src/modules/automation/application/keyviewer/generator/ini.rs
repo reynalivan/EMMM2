@@ -64,9 +64,12 @@ const OVERLAY_TEXT_ALIGNMENT_LEFT: u8 = 0;
 const OVERLAY_VERTICAL_ANCHOR_BOTTOM: u8 = 3;
 const OVERLAY_STATUS_SCALE: f32 = 1.00;
 const OVERLAY_CHARACTER_SCALE: f32 = 0.92;
+// Keep the incomplete preset status banner out of the game viewport. KeyViewer panels remain
+// enabled and are rendered separately below when a matching character is detected.
+const PRESET_STATUS_OVERLAY_ENABLED: bool = false;
 
-/// Bumped when generated text geometry changes so existing overlays are republished.
-pub const KEYVIEWER_LAYOUT_REVISION: u8 = 4;
+/// Bumped when generated overlay output changes so existing overlays are republished.
+pub const KEYVIEWER_LAYOUT_REVISION: u8 = 5;
 
 fn text_box_data(left: f32, top: f32, right: f32, bottom: f32, scale: f32) -> String {
     format!(
@@ -199,10 +202,15 @@ pub fn generate_keyviewer_ini_for_resources(
     lines.extend([
         "[CommandList_EMMMv1_Render]".to_string(),
         "if $emmm_kv_active == 1".to_string(),
-        format!("    Resource\\{text_namespace}\\Text = ref ResourceEMMM_Status"),
-        format!("    Resource\\{text_namespace}\\TextParams = ref ResourceEMMM_StatusBox"),
-        format!("    run = CommandList\\{text_namespace}\\PrintText"),
     ]);
+
+    if PRESET_STATUS_OVERLAY_ENABLED {
+        lines.extend([
+            format!("    Resource\\{text_namespace}\\Text = ref ResourceEMMM_Status"),
+            format!("    Resource\\{text_namespace}\\TextParams = ref ResourceEMMM_StatusBox"),
+            format!("    run = CommandList\\{text_namespace}\\PrintText"),
+        ]);
+    }
 
     for (match_index, _) in matches.iter().enumerate() {
         lines.push(format!("    if {} == 1", detection_variable(match_index)));

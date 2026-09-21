@@ -93,6 +93,16 @@ describe('hotkey conflict detection', () => {
     expect(infrastructureTitle.closest('.alert')).toBeNull();
   });
 
+  it('explains that only the preset status overlay is temporarily hidden', () => {
+    render(createElement(HotkeyTab));
+
+    expect(
+      screen.getByText(
+        'Preset status overlay (Beta) is hidden for now. KeyViewer keybind panels remain available.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('shows only the four supported controls', () => {
     render(createElement(HotkeyTab));
 

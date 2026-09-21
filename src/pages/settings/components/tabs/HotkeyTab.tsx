@@ -251,6 +251,9 @@ export default function HotkeyTab() {
           disabled={isSaving || !draftKeyviewer.enabled}
           onChange={(value) => updateHotkey({ toggle_overlay: value })}
         />
+        <p className="text-xs text-base-content/60">
+          {t('settings:hotkeys.preset_status_overlay_beta')}
+        </p>
         <div className="border-l-2 border-info/40 pl-3 text-xs text-base-content/60">
           <p className="font-medium text-base-content">
             {t('settings:hotkeys.infrastructure_title')}
