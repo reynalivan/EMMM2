@@ -170,7 +170,7 @@
     "scope_other": "Other",
     "scope_unclassified": "Unclassified",
     "scope_required": "Select at least one scope before rolling.",
-    "backup_enabled": "Backup selected mods to new Collection",
+    "backup_enabled": "Backup currently active mods to a new Collection",
     "backup_unavailable": "No active mods are available to back up.",
     "backup_name_placeholder": "Backup Collection name",
     "backup_created": "Backup Collection created: {{name}}",

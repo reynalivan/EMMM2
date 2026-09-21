@@ -170,7 +170,7 @@
     "scope_other": "Lainnya",
     "scope_unclassified": "Belum diklasifikasikan",
     "scope_required": "Pilih setidaknya satu cakupan sebelum roll.",
-    "backup_enabled": "Cadangkan mod aktif ke Koleksi baru",
+    "backup_enabled": "Cadangkan mod yang sedang aktif ke Koleksi baru",
     "backup_unavailable": "Tidak ada mod aktif yang dapat dicadangkan.",
     "backup_name_placeholder": "Nama Koleksi cadangan",
     "backup_created": "Koleksi cadangan dibuat: {{name}}",

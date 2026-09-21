@@ -28,7 +28,7 @@ vi.mock('react-i18next', () => ({
         'randomizer.scope_other': 'Other',
         'randomizer.scope_unclassified': 'Unclassified',
         'randomizer.scope_required': 'Select a scope',
-        'randomizer.backup_enabled': 'Backup selected mods to new Collection',
+        'randomizer.backup_enabled': 'Backup currently active mods to a new Collection',
         'randomizer.backup_unavailable': 'There are no active mods to back up.',
         'randomizer.backup_name_placeholder': 'Collection name',
         'randomizer.backup_created': `Created ${String(vars?.name)}`,
@@ -195,7 +195,7 @@ describe('RandomizerModal', () => {
 
     await rollRandomizer();
     await waitFor(() => expect(screen.getByText('Hu Tao Galaxy Skin')).toBeInTheDocument());
-    expect(screen.getByRole('checkbox', { name: /backup selected mods/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /backup currently active mods/i })).toBeChecked();
     expect(
       screen.getByDisplayValue(/^Backup before shuffle \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/),
     ).toBeEnabled();
@@ -208,7 +208,7 @@ describe('RandomizerModal', () => {
     await rollRandomizer();
     await screen.findByText('Hu Tao Galaxy Skin');
     expect(
-      screen.queryByRole('checkbox', { name: /backup selected mods/i }),
+      screen.queryByRole('checkbox', { name: /backup currently active mods/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Collection name')).not.toBeInTheDocument();
   });

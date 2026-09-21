@@ -170,7 +170,7 @@
     "scope_other": "其他",
     "scope_unclassified": "未分类",
     "scope_required": "请至少选择一个范围后再生成。",
-    "backup_enabled": "将活动 Mod 备份到新收藏集",
+    "backup_enabled": "将当前启用的 Mod 备份到新收藏集",
     "backup_unavailable": "没有可备份的活动 Mod。",
     "backup_name_placeholder": "备份收藏集名称",
     "backup_created": "已创建备份收藏集：{{name}}",
