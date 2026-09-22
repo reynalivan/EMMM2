@@ -2,7 +2,7 @@
 //! Do not add MasterDB matching logic here.
 
 use crate::shared::errors::AppError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -489,11 +489,20 @@ pub async fn reconcile_disk_projection(
                     .map(|entry| entry.folder_path_key.clone())
             })
             .collect::<std::collections::HashSet<_>>();
-        // Conflict groups are the complete read-only overlay for ambiguous
-        // identities. Do not invent one writable DB representative: omitting
-        // every candidate preserves a prior row through the protected-key prune
-        // guards, while an identity with no prior row remains absent from the
-        // runtime projection and collection signature until it is resolved.
+        let mut mod_key_counts = HashMap::<&str, usize>::with_capacity(projection.mods.len());
+        for disk_mod in &projection.mods {
+            *mod_key_counts.entry(&disk_mod.folder_path_key).or_default() += 1;
+        }
+        protected_mod_keys.extend(
+            mod_key_counts
+                .into_iter()
+                .filter_map(|(key, count)| (count > 1).then(|| key.to_string())),
+        );
+        // Ambiguous identities are read-only until resolved. Do not choose a
+        // writable DB representative for a duplicated normalized mod key:
+        // omitting every candidate preserves any prior row through the
+        // protected-key prune guards and avoids inserting the same stable ID
+        // twice during onboarding.
         projection
             .objects
             .retain(|entry| !protected_object_keys.contains(&entry.folder_path_key));
