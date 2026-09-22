@@ -76,11 +76,27 @@ async fn duplicate_resolutions_have_distinct_scoped_rename_plans() {
         origin_surface: WorkspaceSwitchOriginSurface::FolderGrid,
     };
     let normal = prepare_switch(&input, &config, &pool).await.unwrap();
-    assert!(matches!(
-        normal.immediate_result().unwrap().status,
-        WorkspaceSwitchStatus::RequiresDuplicateResolution
-    ));
-    assert!(normal.journal_steps().is_empty());
+    assert!(
+        normal.immediate_result().is_none(),
+        "a duplicate warning must not prevent the requested mod from enabling"
+    );
+    assert_eq!(
+        normal.journal_steps().len(),
+        1,
+        "normal enable must retain its target rename while preserving the duplicate warning"
+    );
+    let PreparedWorkspaceSwitch::Mod(normal) = normal else {
+        panic!("normal duplicate enable must prepare a mod switch");
+    };
+    assert_eq!(
+        normal
+            .duplicates
+            .iter()
+            .map(|duplicate| duplicate.mod_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["red"],
+        "the UI warning must retain the enabled sibling details"
+    );
 
     input.resolution = WorkspaceSwitchResolution::ForceEnable;
     let forced = prepare_switch(&input, &config, &pool).await.unwrap();

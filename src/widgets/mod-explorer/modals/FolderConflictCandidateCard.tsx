@@ -247,8 +247,11 @@ export default function FolderConflictCandidateCard({
           </div>
 
           <div className="flex-1 min-w-0 flex flex-col justify-center min-h-[3rem]">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-sm truncate" title={candidate.folder_name}>
+            <div className="mb-1 flex min-w-0 items-center gap-2">
+              <h3
+                className="min-w-0 flex-1 truncate text-sm font-semibold"
+                title={candidate.folder_name}
+              >
                 {candidate.folder_name}
               </h3>
               <span
@@ -265,7 +268,7 @@ export default function FolderConflictCandidateCard({
               )}
               <button
                 type="button"
-                className="btn btn-ghost btn-xs btn-square ml-auto shrink-0"
+                className="btn btn-ghost btn-xs btn-square ml-1 shrink-0"
                 aria-label={t('conflict_manager.open_folder')}
                 title={t('conflict_manager.open_folder')}
                 disabled={disabled || isOpeningFolder}
@@ -282,6 +285,11 @@ export default function FolderConflictCandidateCard({
                 )}
               </button>
             </div>
+
+            <p className="mb-1 break-all font-mono text-[10px] leading-relaxed text-base-content/50">
+              <span className="sr-only">{t('conflict_manager.full_path')}: </span>
+              {candidate.path}
+            </p>
 
             {detail ? (
               <button

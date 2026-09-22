@@ -13,6 +13,7 @@ interface DuplicateWarningModalProps {
   open: boolean;
   targetName: string;
   duplicates: DuplicateInfo[];
+  requiresResolution?: boolean;
   onForceEnable: (ignoreFuture: boolean) => void;
   onEnableOnlyThis: () => void;
   onCancel: () => void;
@@ -22,6 +23,7 @@ export default function DuplicateWarningModal({
   open,
   targetName,
   duplicates,
+  requiresResolution = true,
   onForceEnable,
   onEnableOnlyThis,
   onCancel,
@@ -36,11 +38,15 @@ export default function DuplicateWarningModal({
 
     if (open && !dialog.open) {
       setIgnoreFuture(false);
-      dialog.showModal();
+      if (requiresResolution) {
+        dialog.showModal();
+      } else {
+        dialog.show();
+      }
     } else if (!open && dialog.open) {
       dialog.close();
     }
-  }, [open]);
+  }, [open, requiresResolution]);
 
   return (
     <dialog ref={dialogRef} className="modal modal-bottom sm:modal-middle" onClose={onCancel}>
@@ -55,7 +61,12 @@ export default function DuplicateWarningModal({
               {t('duplicate_warning.title')}
             </h3>
             <p className="text-sm text-base-content/60 mt-1 leading-relaxed">
-              {t('duplicate_warning.description', { targetName })}
+              {t(
+                requiresResolution
+                  ? 'duplicate_warning.description'
+                  : 'duplicate_warning.enabled_description',
+                { targetName },
+              )}
             </p>
           </div>
         </div>
@@ -78,40 +89,47 @@ export default function DuplicateWarningModal({
         )}
 
         {/* Ignore future warnings for this combination */}
-        <label className="label mt-3 cursor-pointer justify-start gap-2 py-0">
-          <input
-            type="checkbox"
-            className="checkbox checkbox-sm"
-            checked={ignoreFuture}
-            onChange={(e) => setIgnoreFuture(e.target.checked)}
-          />
-          <span className="label-text text-sm text-base-content/70">
-            {t('duplicate_warning.dont_warn_again')}
-          </span>
-        </label>
+        {requiresResolution && (
+          <label className="label mt-3 cursor-pointer justify-start gap-2 py-0">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-sm"
+              checked={ignoreFuture}
+              onChange={(e) => setIgnoreFuture(e.target.checked)}
+            />
+            <span className="label-text text-sm text-base-content/70">
+              {t('duplicate_warning.dont_warn_again')}
+            </span>
+          </label>
+        )}
 
         {/* Actions */}
         <div className="modal-action mt-4 flex-wrap gap-2">
           <button className="btn btn-sm btn-ghost" onClick={onCancel}>
-            {t('common:actions.cancel')}
+            {t(requiresResolution ? 'common:actions.cancel' : 'common:actions.close')}
           </button>
-          <button className="btn btn-sm btn-primary gap-1" onClick={onEnableOnlyThis}>
-            <Zap size={14} />
-            {t('duplicate_warning.enable_only_this')}
-          </button>
-          <button
-            className="btn btn-sm btn-warning btn-outline gap-1"
-            onClick={() => onForceEnable(ignoreFuture)}
-          >
-            {t('duplicate_warning.force_enable')}
-          </button>
+          {requiresResolution && (
+            <>
+              <button className="btn btn-sm btn-primary gap-1" onClick={onEnableOnlyThis}>
+                <Zap size={14} />
+                {t('duplicate_warning.enable_only_this')}
+              </button>
+              <button
+                className="btn btn-sm btn-warning btn-outline gap-1"
+                onClick={() => onForceEnable(ignoreFuture)}
+              >
+                {t('duplicate_warning.force_enable')}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Backdrop */}
-      <form method="dialog" className="modal-backdrop">
-        <button onClick={onCancel}>{t('common:actions.close')}</button>
-      </form>
+      {requiresResolution && (
+        <form method="dialog" className="modal-backdrop">
+          <button onClick={onCancel}>{t('common:actions.close')}</button>
+        </form>
+      )}
     </dialog>
   );
 }

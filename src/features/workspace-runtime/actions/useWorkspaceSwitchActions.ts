@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '@/entities/game';
@@ -38,6 +38,21 @@ function dialogFolder(
   return { id, path, name: name ?? fallbackName };
 }
 
+interface WorkspaceNodeSwitchOptions extends WorkspaceSwitchEffectsOptions {
+  /** Skips transient feedback when a newer toggle intent has superseded this result. */
+  shouldNotifyResult?: () => boolean;
+}
+
+interface LatestNodeToggleIntent {
+  desiredEnabled: boolean;
+  node: WorkspaceNode;
+  surface: WorkspaceSwitchSurface;
+  waiters: Array<{
+    resolve: (path: string | null) => void;
+    reject: (error: unknown) => void;
+  }>;
+}
+
 export function useWorkspaceSwitchActions() {
   const { t } = useTranslation(['common', 'objects']);
   const queryClient = useQueryClient();
@@ -48,6 +63,7 @@ export function useWorkspaceSwitchActions() {
     return activation?.phase !== 'ready';
   });
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
+  const latestNodeToggleIntents = useRef(new Map<string, LatestNodeToggleIntent>());
 
   const markPending = useCallback((key: string, pending: boolean) => {
     setPendingKeys((current) => togglePendingKey(current, key, pending));
@@ -58,7 +74,7 @@ export function useWorkspaceSwitchActions() {
       node: WorkspaceExplorerNode,
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
-      options?: WorkspaceSwitchEffectsOptions,
+      options?: WorkspaceNodeSwitchOptions,
     ) => {
       if (!activeGame?.id || activationBlocksMutations) {
         return null;
@@ -82,6 +98,9 @@ export function useWorkspaceSwitchActions() {
       }
 
       if (result.status === 'requires_parent_enable' && result.parent_enable_requirement) {
+        if (options?.shouldNotifyResult?.() === false) {
+          return null;
+        }
         dispatchWorkspaceRuntimeEvent({
           type: 'DIALOG_OPENED',
           dialog: {
@@ -95,12 +114,16 @@ export function useWorkspaceSwitchActions() {
       }
 
       if (result.status === 'requires_duplicate_resolution') {
+        if (options?.shouldNotifyResult?.() === false) {
+          return null;
+        }
         dispatchWorkspaceRuntimeEvent({
           type: 'DIALOG_OPENED',
           dialog: {
             kind: 'modDuplicateWarning',
             folder: dialogFolder(node.path, node.name, node.id),
             duplicates: result.duplicates,
+            requiresResolution: true,
             enableDisabledAncestors: false,
             parentEnableConfirmation: null,
           },
@@ -117,6 +140,19 @@ export function useWorkspaceSwitchActions() {
         ...options,
         gameId: activeGame.id,
       });
+      if (result.duplicates.length > 0 && options?.shouldNotifyResult?.() !== false) {
+        dispatchWorkspaceRuntimeEvent({
+          type: 'DIALOG_OPENED',
+          dialog: {
+            kind: 'modDuplicateWarning',
+            folder: dialogFolder(nextPath, node.name, node.id),
+            duplicates: result.duplicates,
+            requiresResolution: false,
+            enableDisabledAncestors: false,
+            parentEnableConfirmation: null,
+          },
+        });
+      }
 
       return nextPath;
     },
@@ -128,7 +164,7 @@ export function useWorkspaceSwitchActions() {
       node: WorkspaceObjectNode,
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
-      options?: WorkspaceSwitchEffectsOptions,
+      options?: WorkspaceNodeSwitchOptions,
     ) => {
       // Explicit object enable/disable stays in Workspace Switch.
       // This path must not rely on Disk Reconcile or mod-toggle semantics.
@@ -163,16 +199,34 @@ export function useWorkspaceSwitchActions() {
           ...options,
           gameId,
         });
-        toast.success(
-          t(desiredEnabled ? 'objects:toasts.enabled_one' : 'objects:toasts.disabled_one', {
-            count: 1,
-          }),
-        );
+        if (options?.shouldNotifyResult?.() !== false) {
+          toast.success(
+            t(desiredEnabled ? 'objects:toasts.enabled_one' : 'objects:toasts.disabled_one', {
+              count: 1,
+            }),
+          );
+        }
       }
 
       return nextPath;
     },
     [activeGame, activationBlocksMutations, queryClient, t],
+  );
+
+  const executeNodeEnabled = useCallback(
+    async (
+      node: WorkspaceNode,
+      desiredEnabled: boolean,
+      surface: WorkspaceSwitchSurface,
+      options?: WorkspaceNodeSwitchOptions,
+    ) => {
+      if (isWorkspaceObjectNode(node)) {
+        return setObjectNodeEnabled(node, desiredEnabled, surface, options);
+      }
+
+      return setExplorerNodeEnabled(node, desiredEnabled, surface, options);
+    },
+    [setExplorerNodeEnabled, setObjectNodeEnabled],
   );
 
   const setNodeEnabled = useCallback(
@@ -186,24 +240,79 @@ export function useWorkspaceSwitchActions() {
       markPending(pendingKey, true);
 
       try {
-        if (isWorkspaceObjectNode(node)) {
-          return await setObjectNodeEnabled(node, desiredEnabled, surface, options);
-        }
-
-        return await setExplorerNodeEnabled(node, desiredEnabled, surface, options);
+        return await executeNodeEnabled(node, desiredEnabled, surface, options);
       } finally {
         markPending(pendingKey, false);
       }
     },
-    [markPending, setExplorerNodeEnabled, setObjectNodeEnabled],
+    [executeNodeEnabled, markPending],
   );
 
   const toggleNode = useCallback(
-    async (node: WorkspaceNode, surface: WorkspaceSwitchSurface) => {
-      const desiredEnabled = node.switch_state !== 'enabled';
-      return setNodeEnabled(node, desiredEnabled, surface);
+    (node: WorkspaceNode, surface: WorkspaceSwitchSurface) => {
+      const pendingKey = buildNodePendingKey(node);
+      const existingIntent = latestNodeToggleIntents.current.get(pendingKey);
+      if (existingIntent) {
+        existingIntent.desiredEnabled = !existingIntent.desiredEnabled;
+        existingIntent.node = node;
+        existingIntent.surface = surface;
+        return new Promise<string | null>((resolve, reject) => {
+          existingIntent.waiters.push({ resolve, reject });
+        });
+      }
+
+      const intent: LatestNodeToggleIntent = {
+        desiredEnabled: node.switch_state !== 'enabled',
+        node,
+        surface,
+        waiters: [],
+      };
+      latestNodeToggleIntents.current.set(pendingKey, intent);
+
+      const completion = new Promise<string | null>((resolve, reject) => {
+        intent.waiters.push({ resolve, reject });
+      });
+
+      const runLatestIntent = async () => {
+        try {
+          while (true) {
+            const desiredEnabled = intent.desiredEnabled;
+            const intentNode = intent.node;
+            const nextPath = await executeNodeEnabled(intentNode, desiredEnabled, intent.surface, {
+              shouldNotifyResult: () => {
+                const currentIntent = latestNodeToggleIntents.current.get(pendingKey);
+                return currentIntent === intent && currentIntent.desiredEnabled === desiredEnabled;
+              },
+            });
+
+            if (!nextPath || intent.desiredEnabled === desiredEnabled) {
+              for (const waiter of intent.waiters) {
+                waiter.resolve(nextPath);
+              }
+              return;
+            }
+
+            if (!isWorkspaceObjectNode(intentNode)) {
+              intent.node = { ...intentNode, path: nextPath };
+            }
+          }
+        } catch (error) {
+          for (const waiter of intent.waiters) {
+            waiter.reject(error);
+          }
+        } finally {
+          if (latestNodeToggleIntents.current.get(pendingKey) === intent) {
+            latestNodeToggleIntents.current.delete(pendingKey);
+          }
+          markPending(pendingKey, false);
+        }
+      };
+
+      markPending(pendingKey, true);
+      void runLatestIntent();
+      return completion;
     },
-    [setNodeEnabled],
+    [executeNodeEnabled, markPending],
   );
 
   const setFolderPathEnabled = useCallback(
@@ -253,6 +362,7 @@ export function useWorkspaceSwitchActions() {
               kind: 'modDuplicateWarning',
               folder,
               duplicates: result.duplicates,
+              requiresResolution: true,
               enableDisabledAncestors: false,
               parentEnableConfirmation: null,
             },
@@ -268,6 +378,19 @@ export function useWorkspaceSwitchActions() {
         applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
           gameId: activeGame.id,
         });
+        if (result.duplicates.length > 0) {
+          dispatchWorkspaceRuntimeEvent({
+            type: 'DIALOG_OPENED',
+            dialog: {
+              kind: 'modDuplicateWarning',
+              folder: dialogFolder(nextPath),
+              duplicates: result.duplicates,
+              requiresResolution: false,
+              enableDisabledAncestors: false,
+              parentEnableConfirmation: null,
+            },
+          });
+        }
 
         return nextPath;
       } finally {
@@ -415,6 +538,7 @@ export function useWorkspaceSwitchActions() {
           kind: 'modDuplicateWarning',
           folder: dialogState.folder,
           duplicates: result.duplicates,
+          requiresResolution: true,
           enableDisabledAncestors: true,
           parentEnableConfirmation: dialogState.requirement.confirmation_token,
         },
@@ -429,13 +553,23 @@ export function useWorkspaceSwitchActions() {
       gameId: activeGame.id,
     });
     dispatchWorkspaceRuntimeEvent({ type: 'DIALOG_CLOSED', kind: 'folderEnableParent' });
+    if (result.duplicates.length > 0) {
+      dispatchWorkspaceRuntimeEvent({
+        type: 'DIALOG_OPENED',
+        dialog: {
+          kind: 'modDuplicateWarning',
+          folder: dialogFolder(result.primary_path, dialogState.folder.name, dialogState.folder.id),
+          duplicates: result.duplicates,
+          requiresResolution: false,
+          enableDisabledAncestors: true,
+          parentEnableConfirmation: dialogState.requirement.confirmation_token,
+        },
+      });
+    }
     return result.primary_path;
   }, [activeGame, activationBlocksMutations, queryClient]);
 
-  const isPending = useMemo(
-    () => activationBlocksMutations || Object.keys(pendingKeys).length > 0,
-    [activationBlocksMutations, pendingKeys],
-  );
+  const isPending = activationBlocksMutations;
 
   const isNodePending = useCallback(
     (node: WorkspaceNode | null | undefined) => {

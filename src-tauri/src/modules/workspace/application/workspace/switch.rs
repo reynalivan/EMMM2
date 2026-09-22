@@ -43,6 +43,7 @@ pub struct PreparedModSwitch {
     target_path: String,
     final_target_path: String,
     changed_object_ids: Vec<String>,
+    duplicates: Vec<WorkspaceSwitchDuplicate>,
     batches: Vec<crate::modules::library::application::mods::bulk::PreparedBulkToggle>,
     logical_rewrites: Vec<WorkspacePathRewrite>,
 }
@@ -388,7 +389,7 @@ impl PreparedWorkspaceSwitch {
                     primary_path,
                     changed_folder_paths,
                     changed_object_ids: prepared.changed_object_ids.clone(),
-                    duplicates: Vec::new(),
+                    duplicates: prepared.duplicates.clone(),
                     parent_enable_requirement: None,
                     impact,
                     sync_warning: None,
@@ -559,6 +560,7 @@ pub async fn prepare_switch(
         }
     }
     let mut disable_paths = Vec::new();
+    let mut duplicates = Vec::new();
     if input.desired_enabled && input.resolution != WorkspaceSwitchResolution::ForceEnable {
         let target_rel =
             crate::shared::path_key::relative_to_root(validated_target.original(), &mods_root);
@@ -584,28 +586,11 @@ pub async fn prepare_switch(
                 disable_paths.extend(siblings.into_iter().map(|path| mods_root.join(path)));
             }
         } else {
-            let duplicates = crate::modules::workspace::application::scanner::conflict::get_duplicates_for_mod_service(
+            let detected_duplicates = crate::modules::workspace::application::scanner::conflict::get_duplicates_for_mod_service(
                 pool, &target_rel, &input.game_id,
             ).await?;
-            if !duplicates.is_empty() {
-                return Ok(PreparedWorkspaceSwitch::Immediate(Box::new(
-                    WorkspaceSwitchResult {
-                        status: WorkspaceSwitchStatus::RequiresDuplicateResolution,
-                        primary_path: None,
-                        changed_folder_paths: Vec::new(),
-                        changed_object_ids: resolved_target.changed_object_ids.clone(),
-                        duplicates: map_duplicates(duplicates),
-                        parent_enable_requirement: None,
-                        impact: build_switch_impact(
-                            None,
-                            None,
-                            &[],
-                            &resolved_target.changed_object_ids,
-                        ),
-                        sync_warning: None,
-                        runtime_sync_generation: None,
-                    },
-                )));
+            if !detected_duplicates.is_empty() {
+                duplicates = map_duplicates(detected_duplicates);
             }
         }
     }
@@ -636,6 +621,7 @@ pub async fn prepare_switch(
         target_path: validated_target.to_string_lossy().into_owned(),
         final_target_path: final_target_path.to_string_lossy().into_owned(),
         changed_object_ids: resolved_target.changed_object_ids,
+        duplicates,
         batches,
         logical_rewrites,
     }))
@@ -1030,6 +1016,7 @@ pub async fn prepare_randomized_loadout_switch(
         final_target_path: primary_target.clone(),
         target_path: primary_target,
         changed_object_ids,
+        duplicates: Vec::new(),
         batches,
         logical_rewrites: Vec::new(),
     }))

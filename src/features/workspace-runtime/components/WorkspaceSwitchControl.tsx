@@ -22,32 +22,34 @@ export function WorkspaceSwitchControl({
   ariaLabel,
   onToggle,
 }: WorkspaceSwitchControlProps) {
-  if (isBusy) {
-    return (
-      <span
-        role="status"
-        aria-label={ariaLabel}
-        className={`loading loading-spinner text-primary ${size === 'xs' ? 'loading-xs' : 'loading-sm'}`}
-      />
-    );
-  }
-
   return (
-    <input
-      type="checkbox"
-      aria-label={ariaLabel}
-      className={`toggle workspace-interactive border-base-content/10 bg-base-300 checked:border-primary checked:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ${
-        size === 'xs' ? 'toggle-xs' : 'toggle-sm'
-      }`}
-      checked={policy.checked}
-      disabled={!node || !policy.canToggle || isPending}
-      onChange={() => {
-        if (!node) {
-          return;
-        }
+    <span className="relative inline-flex items-center">
+      <input
+        type="checkbox"
+        aria-label={ariaLabel}
+        aria-busy={isBusy || undefined}
+        className={`toggle workspace-interactive border-base-content/10 bg-base-300 checked:border-primary checked:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ${
+          size === 'xs' ? 'toggle-xs' : 'toggle-sm'
+        }`}
+        checked={policy.checked}
+        disabled={!node || !policy.canToggle || isPending}
+        onChange={() => {
+          if (!node) {
+            return;
+          }
 
-        onToggle(node);
-      }}
-    />
+          onToggle(node);
+        }}
+      />
+      {isBusy && (
+        <span
+          role="status"
+          aria-label={`${ariaLabel} pending`}
+          className={`pointer-events-none absolute inset-0 m-auto loading loading-spinner text-primary ${
+            size === 'xs' ? 'loading-xs' : 'loading-sm'
+          }`}
+        />
+      )}
+    </span>
   );
 }

@@ -30,6 +30,7 @@ export type WorkspaceDialogState =
       kind: 'modDuplicateWarning';
       folder: WorkspaceDuplicateTarget;
       duplicates: DuplicateInfo[];
+      requiresResolution: boolean;
       enableDisabledAncestors: boolean;
       parentEnableConfirmation: string | null;
     }

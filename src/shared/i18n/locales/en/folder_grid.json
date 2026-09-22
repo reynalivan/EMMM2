@@ -137,6 +137,7 @@
   "duplicate_warning": {
     "title": "Possible Duplicate Active Mod",
     "description": "{{targetName}} already has other enabled mods in the same target. Choose how to proceed.",
+    "enabled_description": "{{targetName}} was enabled, but other mods in the same target are also active.",
     "currently_enabled": "Currently Enabled",
     "enable_only_this": "Enable Only This",
     "force_enable": "Force Enable Anyway",

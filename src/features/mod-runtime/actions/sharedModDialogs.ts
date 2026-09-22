@@ -12,6 +12,7 @@ export interface SharedModDialogState {
     open: boolean;
     folder: Pick<ModFolder, 'id' | 'path' | 'name'> | null;
     duplicates: DuplicateInfo[];
+    requiresResolution: boolean;
     enableDisabledAncestors: boolean;
     parentEnableConfirmation: string | null;
   };
@@ -26,6 +27,7 @@ const INITIAL_DIALOG_STATE: SharedModDialogState = {
     open: false,
     folder: null,
     duplicates: [],
+    requiresResolution: true,
     enableDisabledAncestors: false,
     parentEnableConfirmation: null,
   },

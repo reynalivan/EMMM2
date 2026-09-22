@@ -167,4 +167,21 @@ describe('TopBar app menu', () => {
     await waitFor(() => expect(mockRetryRuntimeSync).toHaveBeenCalledWith('game-1'));
     expect(screen.getByTestId('topbar-center')).toBeInTheDocument();
   });
+
+  it('does not expose the internal focus validation message for a manual reload', () => {
+    activeGame = { id: 'game-1' };
+    runtimeSyncByGame = {
+      'game-1': {
+        game_id: 'game-1',
+        generation: 4,
+        phase: 'needs_manual_reload',
+        cause: 'game_activated',
+        message: 'Validation error: NeedsManualReload: active game is not focused',
+      },
+    };
+
+    render(<TopBar />);
+
+    expect(screen.getByRole('status')).toHaveAttribute('title', 'Manual reload required');
+  });
 });

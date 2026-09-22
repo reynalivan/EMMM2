@@ -137,6 +137,7 @@
   "duplicate_warning": {
     "title": "Kemungkinan Mod Aktif Duplikat",
     "description": "{{targetName}} sudah memiliki mod aktif lain pada target yang sama. Pilih cara melanjutkan.",
+    "enabled_description": "{{targetName}} telah diaktifkan, tetapi mod lain pada target yang sama juga aktif.",
     "currently_enabled": "Sedang Aktif",
     "enable_only_this": "Aktifkan Hanya Ini",
     "force_enable": "Paksa Aktifkan",

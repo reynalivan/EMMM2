@@ -4,6 +4,7 @@ import { FaroRoutes } from '@grafana/faro-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { initLogger } from '@/shared/lib/logger';
 import { useAppStore } from '@/app/store';
+import { useActiveGame } from '@/entities/game';
 import { useSettings } from '@/entities/settings';
 import i18n from '@/shared/i18n/config';
 import { DynamicThemeInjector, useThemeRuntime } from '@/pages/settings';
@@ -18,7 +19,7 @@ import { isDemoMode } from '@/shared/lib/appMode';
 import { DiagnosticsErrorDialog } from '@/shared/ui/components/ui/DiagnosticsErrorDialog';
 import { CrashRecoveryDialog } from '@/shared/ui/components/ui/CrashRecoveryDialog';
 import { AppShell } from '@/widgets/app-shell';
-import { TopBar } from '@/widgets/top-bar';
+import { GameIndexingOverlay, TopBar } from '@/widgets/top-bar';
 import { ExternalChangeHandler } from '@/features/file-watcher';
 import { ImportBatchWizardHost } from '@/features/import-batches';
 import { ObjectClassificationWizardHost } from '@/features/match-wizard';
@@ -184,32 +185,51 @@ function DashboardWorkspace() {
   const selectedObjectFolderPath = useAppStore((state) => state.selectedObjectFolderPath);
 
   return (
-    <AppShell
-      workspaceView={workspaceView}
-      selectedObjectFolderPath={selectedObjectFolderPath}
-      topBar={<TopBar launchBar={<LaunchBar />} contextControls={<CollectionContextControls />} />}
-      runtimeHosts={
-        isDemoMode ? undefined : (
-          <>
-            <ExternalChangeHandler />
-            <ImportBatchWizardHost />
-            <ObjectClassificationWizardHost />
-          </>
-        )
-      }
-      dashboard={deferWorkspaceContent(<Dashboard />)}
-      collections={deferWorkspaceContent(<CollectionsPage />)}
-      settings={deferWorkspaceContent(<SettingsPage />)}
-      browser={deferWorkspaceContent(<BrowserPage />)}
-      downloads={deferWorkspaceContent(<DownloadsPage />)}
-      storageOptimizer={deferWorkspaceContent(<StorageOptimizerPage />)}
-      modInbox={deferWorkspaceContent(<ModInboxPage />)}
-      objectList={deferWorkspaceContent(<ObjectList />)}
-      folderGrid={deferWorkspaceContent(<FolderGrid />)}
-      previewPanel={deferWorkspaceContent(<PreviewPanel />)}
-      explorerEmptyState={deferWorkspaceContent(<ExplorerEmptyState />)}
-    />
+    <>
+      <AppShell
+        workspaceView={workspaceView}
+        selectedObjectFolderPath={selectedObjectFolderPath}
+        topBar={<TopBar launchBar={<LaunchBar />} contextControls={<CollectionContextControls />} />}
+        runtimeHosts={
+          isDemoMode ? undefined : (
+            <>
+              <ExternalChangeHandler />
+              <ImportBatchWizardHost />
+              <ObjectClassificationWizardHost />
+            </>
+          )
+        }
+        dashboard={deferWorkspaceContent(<Dashboard />)}
+        collections={deferWorkspaceContent(<CollectionsPage />)}
+        settings={deferWorkspaceContent(<SettingsPage />)}
+        browser={deferWorkspaceContent(<BrowserPage />)}
+        downloads={deferWorkspaceContent(<DownloadsPage />)}
+        storageOptimizer={deferWorkspaceContent(<StorageOptimizerPage />)}
+        modInbox={deferWorkspaceContent(<ModInboxPage />)}
+        objectList={deferWorkspaceContent(<ObjectList />)}
+        folderGrid={deferWorkspaceContent(<FolderGrid />)}
+        previewPanel={deferWorkspaceContent(<PreviewPanel />)}
+        explorerEmptyState={deferWorkspaceContent(<ExplorerEmptyState />)}
+      />
+      <GameActivationIndexingOverlay />
+    </>
   );
+}
+
+function GameActivationIndexingOverlay() {
+  const { activeGame } = useActiveGame();
+  const activation = useAppStore((state) =>
+    activeGame?.id ? state.gameActivationByGame[activeGame.id] : undefined,
+  );
+  const progress = useAppStore((state) =>
+    activeGame?.id ? (state.diskReconcileByGame[activeGame.id]?.progress ?? null) : null,
+  );
+
+  if (!activeGame || activation?.phase !== 'syncing') {
+    return null;
+  }
+
+  return <GameIndexingOverlay gameName={activeGame.name} progress={progress} />;
 }
 
 import { ToastContainer } from '@/shared/ui/toast';

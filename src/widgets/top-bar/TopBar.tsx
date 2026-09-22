@@ -43,10 +43,7 @@ export interface TopBarProps {
 
 function OnboardingIndexingIndicator({
   sessions,
-}: Pick<
-  ReturnType<typeof useBackgroundIndexingStatus>,
-  'sessions'
->) {
+}: Pick<ReturnType<typeof useBackgroundIndexingStatus>, 'sessions'>) {
   const { t } = useTranslation('layout');
   const session = sessions.find((candidate) =>
     candidate.games.some((game) => game.phase !== 'Ready'),
@@ -417,12 +414,12 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
                   role="status"
                   aria-live="polite"
                   title={
-                    runtimeSync.message ??
-                    (runtimeSync.phase === 'failed'
-                      ? t('common:reconcile.runtime_sync_failed')
-                      : runtimeSync.phase === 'needs_manual_reload'
-                        ? t('common:reconcile.manual_reload_short')
-                        : t('common:reconcile.runtime_syncing'))
+                    runtimeSync.phase === 'needs_manual_reload'
+                      ? t('common:reconcile.manual_reload_short')
+                      : (runtimeSync.message ??
+                        (runtimeSync.phase === 'failed'
+                          ? t('common:reconcile.runtime_sync_failed')
+                          : t('common:reconcile.runtime_syncing')))
                   }
                   className={`hidden items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium md:flex ${
                     runtimeSync.phase === 'failed' || runtimeSync.phase === 'needs_manual_reload'

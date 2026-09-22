@@ -217,8 +217,8 @@ impl RuntimeSyncResult {
     }
 
     /// A failed publication needs another event-driven attempt. A manual reload
-    /// request does not: its files are already published and replaying input is
-    /// not safe while the game is unfocused.
+    /// request does not: its files are already published, but the configured
+    /// reload binding could not be resolved or sent.
     pub fn requires_retry(&self) -> bool {
         self.failure.is_some()
     }
@@ -234,10 +234,8 @@ impl RuntimeSyncResult {
         self.failure.clone().or_else(|| match &self.reload {
             RuntimeReloadOutcome::NeedsManualReload { binding, reason } => {
                 let instruction = binding.as_deref().map_or_else(
-                    || "focus the active game and reload its 3DMigoto configuration".to_string(),
-                    |key| {
-                        format!("focus the active game and press {key} to reload its configuration")
-                    },
+                    || "reload the active game's 3DMigoto configuration manually".to_string(),
+                    |key| format!("press {key} in the active game to reload its configuration"),
                 );
                 Some(format!("Manual reload required: {instruction}. {reason}"))
             }

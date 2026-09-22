@@ -50,12 +50,26 @@
       "background_attention": "Indexing needs attention",
       "dialog_title": "{{game}} is still indexing",
       "dialog_description": "This game will open automatically when its library is ready. You can continue using the current game.",
-      "attention_title": "{{game}} needs attention",
-      "attention_description": "Indexing could not finish cleanly. Open this game to run a full check before using its library.",
+      "activation": {
+        "title": "Indexing {{game}}",
+        "description": "Checking this game's library before it opens.",
+        "progress_label": "Indexing progress",
+        "folders_complete": "{{completed}} of {{total}} folders",
+        "preparing": "Preparing the full check",
+        "scanning_root": "Scanning {{root}}",
+        "scanning_without_root": "Scanning mod folders",
+        "current_root": "Current folder: {{root}}",
+        "phase": {
+          "DiscoveringRoots": "Finding mod folders",
+          "Projecting": "Updating library",
+          "Finalizing": "Finishing up",
+          "Completed": "Finishing up",
+          "Failed": "Finishing up"
+        }
+      },
       "status_unavailable_title": "Cannot verify {{game}} yet",
       "status_unavailable_description": "The indexing status could not be loaded. Check it again before switching games.",
       "status_unavailable": "Indexing status unavailable",
-      "open_and_recheck": "Open and recheck",
       "retry_status": "Check again",
       "stay": "Stay on current game",
       "phase": {

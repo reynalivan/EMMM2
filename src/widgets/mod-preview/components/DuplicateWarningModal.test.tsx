@@ -11,6 +11,9 @@ vi.mock('react-i18next', () => ({
       if (key === 'duplicate_warning.description') {
         return `Duplicate warning for ${String(vars?.targetName ?? '')}`;
       }
+      if (key === 'duplicate_warning.enabled_description') {
+        return `Enabled warning for ${String(vars?.targetName ?? '')}`;
+      }
       if (key === 'duplicate_warning.currently_enabled') {
         return 'Currently Enabled';
       }
@@ -38,6 +41,7 @@ vi.mock('react-i18next', () => ({
 // Mock dialog behavior
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = vi.fn();
+  HTMLDialogElement.prototype.show = vi.fn();
   HTMLDialogElement.prototype.close = vi.fn();
 });
 
@@ -91,6 +95,25 @@ describe('DuplicateWarningModal (TC-29 Conflict Detection)', () => {
     // Verify conflicting mods are listed
     expect(screen.getByText('Mod A')).toBeInTheDocument();
     expect(screen.getByText('Mod B')).toBeInTheDocument();
+  });
+
+  it('shows an informational warning without blocking the rest of the workspace', () => {
+    render(
+      <DuplicateWarningModal
+        open={true}
+        targetName="New Target Mod"
+        duplicates={mockDuplicates}
+        requiresResolution={false}
+        onForceEnable={onForceEnableMock}
+        onEnableOnlyThis={onEnableOnlyThisMock}
+        onCancel={onCancelMock}
+      />,
+    );
+
+    expect(HTMLDialogElement.prototype.show).toHaveBeenCalledTimes(1);
+    expect(HTMLDialogElement.prototype.showModal).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Enable Only This/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Force Enable/i)).not.toBeInTheDocument();
   });
 
   // TC-29-003: Resolve duplicate using 'Enable ONLY This'

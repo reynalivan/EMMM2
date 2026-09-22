@@ -263,7 +263,7 @@ pub async fn resolve_folder_name_conflict(
     }
 
     let mut result =
-        match crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
+        match crate::modules::reconciliation::application::disk_reconcile::emit::run_deferred_full_internal_disk_reconcile_under_lease(
             &app,
             pool.inner(),
             &game_id,
@@ -302,6 +302,26 @@ pub async fn resolve_folder_name_conflict(
         };
     mutation_lease.mark_db_committed()?;
     mutation_lease.commit()?;
+    let runtime_changed_paths = rewrites
+        .iter()
+        .map(|rewrite| rewrite.new_path.clone())
+        .collect::<Vec<_>>();
+    let runtime_request =
+        crate::modules::reconciliation::api::runtime_sync_request_for_changed_paths(
+            pool.inner(),
+            &game_id,
+            &canonical_root,
+            &runtime_changed_paths,
+            &result.changed_roots,
+        )
+        .await;
+    crate::modules::reconciliation::api::enqueue_runtime_sync_scoped(
+        &app,
+        pool.inner(),
+        &game_id,
+        crate::modules::reconciliation::api::RuntimeSyncCause::EffectiveModsChanged,
+        runtime_request,
+    );
     result.path_updates.extend(explicit_path_updates);
     Ok(result)
 }
@@ -706,7 +726,7 @@ mod tests {
     }
 
     #[test]
-    fn grouped_rename_keeps_the_mutation_lease_through_reconcile_and_rollback() {
+    fn grouped_rename_defers_runtime_sync_until_after_projection_commit() {
         let source = include_str!("conflict_cmds.rs");
         let start = source
             .find("pub async fn resolve_folder_name_conflict")
@@ -722,15 +742,17 @@ mod tests {
         let lease = command.find("acquire_operation").unwrap();
         let rename = command.find("apply_folder_conflict_rename_plan").unwrap();
         let reconcile = command
-            .find("run_full_internal_disk_reconcile_under_lease")
+            .find("run_deferred_full_internal_disk_reconcile_under_lease")
             .unwrap();
         let rollback = command.rfind("rollback_conflict_rename_plan").unwrap();
         let db_committed = command.find("mark_db_committed").unwrap();
         let commit = command.find("mutation_lease.commit").unwrap();
+        let runtime_enqueue = command.find("enqueue_runtime_sync_scoped").unwrap();
 
         assert!(game_lock < plan && plan < lease && lease < rename);
         assert!(rename < reconcile && reconcile < rollback);
         assert!(reconcile < db_committed && db_committed < commit);
+        assert!(commit < runtime_enqueue);
         assert!(!command.contains("drop(mutation_lease)"));
     }
 }

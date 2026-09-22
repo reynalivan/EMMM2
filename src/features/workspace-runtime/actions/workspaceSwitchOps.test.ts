@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import type { WorkspaceImpact, WorkspaceSwitchResult } from '@/entities/workspace';
+import type {
+  WorkspaceImpact,
+  WorkspaceSwitchInput,
+  WorkspaceSwitchResult,
+} from '@/entities/workspace';
 import {
   applyWorkspaceSwitchEffects,
   buildNodePendingKey,
@@ -114,11 +118,17 @@ describe('workspace switch ops', () => {
   });
 
   describe('node identity', () => {
-    it('keys object nodes by id and folder nodes by path', () => {
+    it('keys object nodes and identified folders by stable ids', () => {
       expect(buildNodePendingKey({ node_kind: 'object', id: 'o1' } as never)).toBe('object:o1');
+      expect(
+        buildNodePendingKey({ node_kind: 'terminal_mod', id: 'm1', path: 'a/b' } as never),
+      ).toBe('folder:m1');
       expect(buildNodePendingKey({ node_kind: 'terminal_mod', path: 'a/b' } as never)).toBe(
         'folder:a/b',
       );
+      expect(
+        buildNodePendingKey({ node_kind: 'terminal_mod', path: 'E:/Mods/DISABLED A' } as never),
+      ).toBe(buildNodePendingKey({ node_kind: 'terminal_mod', path: 'E:/Mods/A' } as never));
     });
 
     it('narrows object nodes', () => {
@@ -167,19 +177,52 @@ describe('workspace switch ops', () => {
   });
 
   describe('executeWorkspaceSwitch', () => {
-    const input = {
+    const input: WorkspaceSwitchInput = {
       game_id: 'game-1',
       target: { kind: 'mod_path', value: 'E:/Mods/A' },
       desired_enabled: true,
       resolution: 'normal',
+      enable_disabled_ancestors: false,
+      parent_enable_confirmation: null,
       origin_surface: 'folder_grid',
-    } as never;
+    };
 
     it('returns the switch result on success', async () => {
       executeWorkspaceSwitchCommand.mockResolvedValue({ primary_path: 'E:/Mods/A' });
 
       await expect(executeWorkspaceSwitch(input)).resolves.toEqual({ primary_path: 'E:/Mods/A' });
       expect(toastError).not.toHaveBeenCalled();
+    });
+
+    it('preserves rapid switch order for the same game', async () => {
+      let completeFirst!: () => void;
+      executeWorkspaceSwitchCommand
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              completeFirst = resolve;
+            }),
+        )
+        .mockResolvedValueOnce({ primary_path: 'E:/Mods/B' });
+
+      const first = executeWorkspaceSwitch(input);
+      const second = executeWorkspaceSwitch({
+        ...input,
+        target: { kind: 'mod_path', value: 'E:/Mods/B' },
+        desired_enabled: false,
+      });
+
+      await vi.waitFor(() => {
+        expect(executeWorkspaceSwitchCommand).toHaveBeenCalledTimes(1);
+      });
+
+      completeFirst();
+      await first;
+
+      await vi.waitFor(() => {
+        expect(executeWorkspaceSwitchCommand).toHaveBeenCalledTimes(2);
+      });
+      await expect(second).resolves.toEqual({ primary_path: 'E:/Mods/B' });
     });
 
     it('reports a rename conflict when reconcile cannot produce a safe review queue', async () => {

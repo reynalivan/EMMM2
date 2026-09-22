@@ -149,11 +149,7 @@ export default function PreviewHeader({
           <WorkspaceSwitchControl
             node={actionFolder}
             policy={switchPolicy}
-            isPending={
-              !canEdit ||
-              actions.isSwitchPending ||
-              (isWorkspaceExplorerNode(actionFolder) && actions.isFolderSwitchPending(actionFolder))
-            }
+            isPending={!canEdit || actions.isSwitchPending}
             isBusy={
               isWorkspaceExplorerNode(actionFolder) && actions.isFolderSwitchPending(actionFolder)
             }

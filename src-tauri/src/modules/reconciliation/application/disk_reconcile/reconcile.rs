@@ -73,6 +73,14 @@ pub struct ReconcileDiskProjectionRequest<'a> {
     >,
 }
 
+/// Reserve SQLite's sole writer slot before projection reads can need an
+/// upgrade, which prevents a concurrent runtime writer from causing SQLITE_BUSY.
+pub(crate) async fn begin_projection_write_transaction(
+    pool: &sqlx::SqlitePool,
+) -> Result<sqlx::Transaction<'static, sqlx::Sqlite>, AppError> {
+    Ok(pool.begin_with("BEGIN IMMEDIATE").await?)
+}
+
 fn should_run_scoped_disk_reconcile(
     reason: &DiskReconcileReason,
     changed_roots: &[String],
@@ -519,7 +527,7 @@ pub async fn reconcile_disk_projection(
         // Pruning remains scoped below, but identity transitions (including
         // cross-root swaps) must be able to see every physical folder.
         let projection = &projection;
-        let mut tx = pool.begin().await?;
+        let mut tx = begin_projection_write_transaction(pool).await?;
 
         if !effective_watcher_events.is_empty() {
             apply_watcher_rename_hints(WatcherRenameHintsApplyRequest {

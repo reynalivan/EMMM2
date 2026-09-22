@@ -132,7 +132,7 @@ describe('GameSelector', () => {
     await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
   });
 
-  it('requires an explicit full recheck when background indexing needs attention', async () => {
+  it('starts a full recheck immediately when background indexing needs attention', async () => {
     mockBackgroundIndexingState.gamesById.set('uuid-srmi', {
       game_id: 'uuid-srmi',
       phase: 'NeedsAttention',
@@ -141,11 +141,8 @@ describe('GameSelector', () => {
 
     fireEvent.click(screen.getByText('Star Rail'));
 
-    expect(mockSwitchGame).not.toHaveBeenCalled();
-    expect(screen.getByText('Star Rail needs attention')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Open and recheck'));
     await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
+    expect(screen.queryByText('Star Rail needs attention')).toBeNull();
   });
 
   it('does not switch when indexing status cannot be verified', () => {

@@ -187,9 +187,12 @@ describe('FolderConflictManager', () => {
     expect(keepActions).toHaveLength(3);
     expect(keepActions[0]).toBeChecked();
     expect(screen.getAllByRole('button', { name: 'Rename' })).toHaveLength(2);
-    expect(screen.getByText('Keep')).toBeInTheDocument();
+    const keepBadge = screen.getByText('Keep');
+    expect(keepBadge).toHaveClass('ml-auto');
+    expect(screen.getByText('C:/Mods/Alice/Blue')).toHaveClass('break-all', 'font-mono');
     const openFolderButtons = screen.getAllByRole('button', { name: 'Open folder' });
     expect(openFolderButtons).toHaveLength(3);
+    expect(openFolderButtons[0]).toHaveClass('ml-1');
     fireEvent.click(openFolderButtons[1]);
     await waitFor(() => {
       expect(openFolderConflictCandidate).toHaveBeenCalledWith(

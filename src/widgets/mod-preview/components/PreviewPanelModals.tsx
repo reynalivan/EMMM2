@@ -15,6 +15,7 @@ interface PreviewPanelModalsProps {
     open: boolean;
     folder: Pick<ModFolder, 'id' | 'path' | 'name'> | null;
     duplicates: DuplicateInfo[];
+    requiresResolution: boolean;
   };
   handleDuplicateForceEnable: (ignoreFuture: boolean) => void;
   handleDuplicateEnableOnly: () => void;
@@ -50,6 +51,7 @@ export default function PreviewPanelModals({
         open={duplicateWarning.open}
         targetName={duplicateWarning.folder?.name ?? ''}
         duplicates={duplicateWarning.duplicates}
+        requiresResolution={duplicateWarning.requiresResolution}
         onForceEnable={handleDuplicateForceEnable}
         onEnableOnlyThis={handleDuplicateEnableOnly}
         onCancel={handleDuplicateCancel}

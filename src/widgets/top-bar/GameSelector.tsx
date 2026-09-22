@@ -68,6 +68,14 @@ function GameSelectorContent({
 
   useEffect(() => {
     if (!pendingGame) return;
+    const requiresFullRecheck =
+      pendingIndexingStatus?.phase === 'NeedsAttention' || pendingIndexingStatus?.phase === 'Failed';
+    if (requiresFullRecheck) {
+      const gameId = pendingGame.id;
+      setPendingGame(null);
+      void handleSwitchGame(gameId);
+      return;
+    }
     const isReadyForSwitch =
       pendingIndexingStatus?.phase === 'Ready' ||
       (backgroundStatusLoaded && !backgroundStatusLoadError && !pendingIndexingStatus);
@@ -86,6 +94,12 @@ function GameSelectorContent({
 
   const handleGameSelection = (game: GameConfig) => {
     const backgroundStatus = backgroundIndexingByGame.get(game.id);
+    const requiresFullRecheck =
+      backgroundStatus?.phase === 'NeedsAttention' || backgroundStatus?.phase === 'Failed';
+    if (requiresFullRecheck) {
+      void handleSwitchGame(game.id);
+      return;
+    }
     const canSwitch =
       backgroundStatus?.phase === 'Ready' ||
       (backgroundStatusLoaded && !backgroundStatusLoadError && !backgroundStatus);
@@ -166,26 +180,13 @@ function GameSelectorContent({
     );
   }
 
-  const needsAttention =
-    pendingIndexingStatus?.phase === 'NeedsAttention' || pendingIndexingStatus?.phase === 'Failed';
   const statusUnavailable = !pendingIndexingStatus && backgroundStatusLoadError;
-  const dialogTitle = needsAttention
-    ? t('game_selector.indexing.attention_title', { game: pendingGame?.name })
-    : statusUnavailable
-      ? t('game_selector.indexing.status_unavailable_title', { game: pendingGame?.name })
-      : t('game_selector.indexing.dialog_title', { game: pendingGame?.name });
-  const dialogDescription = needsAttention
-    ? t('game_selector.indexing.attention_description')
-    : statusUnavailable
-      ? t('game_selector.indexing.status_unavailable_description')
-      : t('game_selector.indexing.dialog_description');
-
-  const openAndRecheckPendingGame = () => {
-    const gameId = pendingGame?.id;
-    if (!gameId) return;
-    setPendingGame(null);
-    void handleSwitchGame(gameId);
-  };
+  const dialogTitle = statusUnavailable
+    ? t('game_selector.indexing.status_unavailable_title', { game: pendingGame?.name })
+    : t('game_selector.indexing.dialog_title', { game: pendingGame?.name });
+  const dialogDescription = statusUnavailable
+    ? t('game_selector.indexing.status_unavailable_description')
+    : t('game_selector.indexing.dialog_description');
 
   return (
     <>
@@ -266,7 +267,7 @@ function GameSelectorContent({
       >
         <div className="modal-box max-w-sm border border-base-content/10 bg-base-100 p-6 shadow-xl">
           <div className="flex items-start gap-3">
-            {needsAttention || statusUnavailable ? (
+            {statusUnavailable ? (
               <AlertCircle
                 size={20}
                 className="mt-0.5 shrink-0 text-warning"
@@ -297,11 +298,6 @@ function GameSelectorContent({
             </div>
           </div>
           <div className="mt-6 flex justify-end">
-            {needsAttention && (
-              <button type="button" className="btn btn-primary btn-sm" onClick={openAndRecheckPendingGame}>
-                {t('game_selector.indexing.open_and_recheck')}
-              </button>
-            )}
             {statusUnavailable && (
               <button
                 type="button"

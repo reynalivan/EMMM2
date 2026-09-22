@@ -46,12 +46,26 @@
       "background_attention": "Pengindeksan perlu perhatian",
       "dialog_title": "{{game}} masih diindeks",
       "dialog_description": "Game ini akan terbuka otomatis saat library siap. Anda dapat tetap menggunakan game saat ini.",
-      "attention_title": "{{game}} perlu perhatian",
-      "attention_description": "Pengindeksan tidak dapat selesai dengan benar. Buka game ini untuk menjalankan pemeriksaan penuh sebelum menggunakan library-nya.",
+      "activation": {
+        "title": "Mengindeks {{game}}",
+        "description": "Memeriksa library game ini sebelum dibuka.",
+        "progress_label": "Progres pengindeksan",
+        "folders_complete": "{{completed}} dari {{total}} folder",
+        "preparing": "Menyiapkan pemeriksaan penuh",
+        "scanning_root": "Memindai {{root}}",
+        "scanning_without_root": "Memindai folder mod",
+        "current_root": "Folder saat ini: {{root}}",
+        "phase": {
+          "DiscoveringRoots": "Mencari folder mod",
+          "Projecting": "Memperbarui library",
+          "Finalizing": "Menyelesaikan proses",
+          "Completed": "Menyelesaikan proses",
+          "Failed": "Menyelesaikan proses"
+        }
+      },
       "status_unavailable_title": "Belum bisa memverifikasi {{game}}",
       "status_unavailable_description": "Status pengindeksan tidak dapat dimuat. Periksa lagi sebelum berpindah game.",
       "status_unavailable": "Status pengindeksan tidak tersedia",
-      "open_and_recheck": "Buka dan periksa ulang",
       "retry_status": "Periksa lagi",
       "stay": "Tetap di game saat ini",
       "phase": {

@@ -3,16 +3,18 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use crate::modules::games::domain::models::GameType;
 use crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileOutcome;
 use crate::modules::reconciliation::application::disk_reconcile::reconcile::{
-    reconcile_disk_projection, ReconcileDiskProjectionRequest,
+    begin_projection_write_transaction, reconcile_disk_projection, ReconcileDiskProjectionRequest,
 };
 use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcileReason, DiskReconcileScanScope, DiskReconcileStatus,
 };
 use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 
 #[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
 struct PersistedModSnapshot {
@@ -125,6 +127,49 @@ async fn runtime_signature(pool: &sqlx::SqlitePool, game_id: &str) -> String {
         .await
         .expect("runtime state should load")
         .current_signature
+}
+
+#[tokio::test]
+async fn projection_write_transaction_waits_for_an_existing_writer() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let pool = SqlitePoolOptions::new()
+        .max_connections(2)
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(temp.path().join("projection-lock.db"))
+                .create_if_missing(true)
+                .journal_mode(SqliteJournalMode::Wal)
+                .busy_timeout(Duration::from_millis(500)),
+        )
+        .await
+        .expect("pool should connect");
+
+    let blocker = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .expect("writer lock should begin");
+    let contending_pool = pool.clone();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let mut contender = tokio::spawn(async move {
+        let _ = started_tx.send(());
+        begin_projection_write_transaction(&contending_pool)
+            .await
+            .map(drop)
+    });
+    started_rx.await.expect("contender should start");
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), &mut contender)
+            .await
+            .is_err(),
+        "a projection transaction must wait for an existing SQLite writer"
+    );
+
+    blocker.commit().await.expect("writer lock should release");
+    contender
+        .await
+        .expect("contender task should finish")
+        .expect("projection transaction should start after the writer releases");
 }
 
 #[tokio::test]
@@ -911,7 +956,7 @@ async fn folder_conflict_quarantines_only_its_paths_while_unrelated_mods_converg
 }
 
 #[tokio::test]
-async fn scoped_conflict_preflight_returns_the_full_game_queue_including_parent_prefixes() {
+async fn scoped_conflict_preflight_ignores_duplicate_names_under_distinct_roots() {
     let db = init_test_db().await;
     let pool = db.pool;
     let temp = tempfile::tempdir().expect("tempdir");
@@ -949,14 +994,14 @@ async fn scoped_conflict_preflight_returns_the_full_game_queue_including_parent_
         outcome.status,
         DiskReconcileStatus::AppliedWithFolderConflicts
     );
-    assert_eq!(outcome.folder_conflicts.len(), 3);
+    assert_eq!(outcome.folder_conflicts.len(), 2);
     assert_eq!(
         outcome
             .folder_conflicts
             .iter()
             .map(|group| group.candidates.len())
             .max(),
-        Some(3)
+        Some(2)
     );
     let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods")
         .fetch_one(&pool)

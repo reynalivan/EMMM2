@@ -13,9 +13,16 @@ import { useFolderGridBulk } from './useFolderGridBulk';
 
 vi.unmock('@tanstack/react-query');
 
-const { buildQueryRemovalDescriptor, executeWorkspaceExplorerBulk } = vi.hoisted(() => ({
+const {
+  applyRuntimeMutationResult,
+  buildQueryRemovalDescriptor,
+  executeWorkspaceExplorerBulk,
+  publishCollectionReferenceImpact,
+} = vi.hoisted(() => ({
+  applyRuntimeMutationResult: vi.fn().mockResolvedValue(undefined),
   buildQueryRemovalDescriptor: vi.fn(() => ({ events: [] })),
   executeWorkspaceExplorerBulk: vi.fn(),
+  publishCollectionReferenceImpact: vi.fn().mockResolvedValue(undefined),
 }));
 const { toastError, toastSuccess } = vi.hoisted(() => ({
   toastError: vi.fn(),
@@ -43,10 +50,10 @@ vi.mock('@/shared/api/tauri/bindings', async (importOriginal) => {
 vi.mock('@/features/workspace-runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/workspace-runtime')>()),
   applyRuntimeEffects: vi.fn(),
-  applyRuntimeMutationResult: vi.fn().mockResolvedValue(undefined),
+  applyRuntimeMutationResult,
   buildQueryRemovalDescriptor,
   buildWorkspacePathRewritesDescriptor: vi.fn(() => ({ events: [] })),
-  publishCollectionReferenceImpact: vi.fn().mockResolvedValue(undefined),
+  publishCollectionReferenceImpact,
 }));
 
 vi.mock('@/shared/ui/toast', () => ({
@@ -200,6 +207,42 @@ describe('useFolderGridBulk', () => {
     );
 
     await act(async () => finish?.(bulkResult));
+  });
+
+  it('releases the bulk control before its background refresh completes', async () => {
+    let finishRefresh!: () => void;
+    applyRuntimeMutationResult.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+    const { result } = renderHook(
+      () =>
+        useFolderGridBulk({
+          selection: { mode: 'explicit', paths: new Set(['C:/Mods/Alice/Blue']) },
+          explorerQuery,
+          listingRevision: 'revision-1',
+          sortedFolders: [],
+          clearGridSelection: vi.fn(),
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    act(() => result.current.handleBulkToggle(true));
+
+    await waitFor(() => {
+      expect(applyRuntimeMutationResult).toHaveBeenCalledWith(
+        expect.any(QueryClient),
+        'folderSwitch',
+      );
+    });
+    try {
+      expect(result.current.bulkMutationPending).toBe(false);
+    } finally {
+      finishRefresh();
+    }
   });
 
   it('refreshes the exact listing and clears selection when its revision expires', async () => {

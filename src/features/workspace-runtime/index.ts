@@ -11,6 +11,7 @@ export * from './actions/workspaceActionPolicy';
 export * from './actions/workspaceSwitchPolicy';
 export {
   applyWorkspaceSwitchEffects,
+  enqueueWorkspaceGameMutation,
   executeWorkspaceObjectBulkSwitch,
 } from './actions/workspaceSwitchOps';
 export * from './components/WorkspaceSwitchControl';

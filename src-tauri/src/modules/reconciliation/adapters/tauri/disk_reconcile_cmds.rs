@@ -658,7 +658,12 @@ async fn reconcile_onboarding_indexing_game_impl(
         DiskReconcileReason::OnboardingCompleted,
         Vec::new(),
         true,
-    );
+    )
+    // The dashboard activates the first game immediately after this projection.
+    // Let that runtime queue do the single full KeyViewer build instead of
+    // publishing once here and immediately rebuilding the same large library.
+    // Background games are likewise published only when they become active.
+    .defer_overlay_sync();
     if let Some(lease) = &snapshot_lease {
         request = request.with_precomputed_discovery(lease.discovery());
     }
@@ -718,7 +723,8 @@ async fn reconcile_onboarding_indexing_game_impl(
                 DiskReconcileReason::OnboardingCompleted,
                 Vec::new(),
                 true,
-            ),
+            )
+            .defer_overlay_sync(),
         )
         .await
         {

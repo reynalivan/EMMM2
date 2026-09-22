@@ -51,6 +51,29 @@ export interface WorkspaceRenameConflictPayload {
   base_name: string;
 }
 
+const workspaceMutationQueues = new Map<string, Promise<void>>();
+
+export function enqueueWorkspaceGameMutation<T>(
+  gameId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = workspaceMutationQueues.get(gameId);
+  const result = previous ? previous.catch(() => undefined).then(operation) : operation();
+  const completion = result.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  workspaceMutationQueues.set(gameId, completion);
+  void completion.then(() => {
+    if (workspaceMutationQueues.get(gameId) === completion) {
+      workspaceMutationQueues.delete(gameId);
+    }
+  });
+
+  return result;
+}
+
 export function isWorkspaceObjectNode(node: WorkspaceNode): node is WorkspaceObjectNode {
   return node.node_kind === 'object';
 }
@@ -77,7 +100,7 @@ export function buildNodePendingKey(node: WorkspaceNode): string {
     return `object:${node.id}`;
   }
 
-  return `folder:${node.path}`;
+  return `folder:${node.id ?? identityPathKey(node.path) ?? node.path}`;
 }
 
 /** Immutable add/remove for the pending-key map backing the switch spinner. */
@@ -111,88 +134,92 @@ export function buildSwitchRefreshDescriptor(
 }
 
 /** Runs the switch command, routing known failures to their dialogs. */
-export async function executeWorkspaceSwitch(
+export function executeWorkspaceSwitch(
   input: WorkspaceSwitchInput,
 ): Promise<WorkspaceSwitchResult | null> {
-  try {
-    const result = await commands.executeWorkspaceSwitch(input);
-    if (isWorkspaceGameCurrent(input.game_id)) {
-      notifyCommittedMutationSyncWarning(result);
-    }
-    return result;
-  } catch (error) {
-    if (!isWorkspaceGameCurrent(input.game_id)) {
-      return null;
-    }
-    const renameConflict = parseRenameConflict(error);
-    if (renameConflict) {
-      const report = await commands
-        .reconcileDiskStateCmd(input.game_id, 'ManualRepair', null, true)
-        .catch(() => null);
+  return enqueueWorkspaceGameMutation(input.game_id, async () => {
+    try {
+      const result = await commands.executeWorkspaceSwitch(input);
+      if (isWorkspaceGameCurrent(input.game_id)) {
+        notifyCommittedMutationSyncWarning(result);
+      }
+      return result;
+    } catch (error) {
       if (!isWorkspaceGameCurrent(input.game_id)) {
         return null;
       }
-      const appStore = useAppStore.getState();
-      const appliedReport = report ? appStore.applyFolderConflictReconcileResult(report) : false;
-      if (report?.status === 'AppliedWithFolderConflicts' && report.folder_conflicts.length > 0) {
-        if (!appliedReport) {
+      const renameConflict = parseRenameConflict(error);
+      if (renameConflict) {
+        const report = await commands
+          .reconcileDiskStateCmd(input.game_id, 'ManualRepair', null, true)
+          .catch(() => null);
+        if (!isWorkspaceGameCurrent(input.game_id)) {
           return null;
         }
-        appStore.setRenameConfirmations(input.game_id, []);
-        openFolderConflictManagerDialog();
-      } else if (
-        report?.status === 'NeedsRenameConfirmation' &&
-        report.rename_confirmations.length > 0
-      ) {
-        if (!appliedReport) {
-          return null;
-        }
-        appStore.setRenameConfirmations(input.game_id, report.rename_confirmations);
-        openRenameConfirmationDialog();
-      } else toast.error(formatAppError(error));
+        const appStore = useAppStore.getState();
+        const appliedReport = report ? appStore.applyFolderConflictReconcileResult(report) : false;
+        if (report?.status === 'AppliedWithFolderConflicts' && report.folder_conflicts.length > 0) {
+          if (!appliedReport) {
+            return null;
+          }
+          appStore.setRenameConfirmations(input.game_id, []);
+          openFolderConflictManagerDialog();
+        } else if (
+          report?.status === 'NeedsRenameConfirmation' &&
+          report.rename_confirmations.length > 0
+        ) {
+          if (!appliedReport) {
+            return null;
+          }
+          appStore.setRenameConfirmations(input.game_id, report.rename_confirmations);
+          openRenameConfirmationDialog();
+        } else toast.error(formatAppError(error));
+        return null;
+      }
+
+      const fileInUse = extractFileInUsePayload(error);
+      if (fileInUse) {
+        openWorkspaceFileInUseDialog({ path: fileInUse.path, processes: fileInUse.processes });
+        return null;
+      }
+
+      toast.error(formatAppError(error));
       return null;
     }
-
-    const fileInUse = extractFileInUsePayload(error);
-    if (fileInUse) {
-      openWorkspaceFileInUseDialog({ path: fileInUse.path, processes: fileInUse.processes });
-      return null;
-    }
-
-    toast.error(formatAppError(error));
-    return null;
-  }
+  });
 }
 
 /** Runs one all-or-nothing object batch through the workspace mutation pipeline. */
-export async function executeWorkspaceObjectBulkSwitch(
+export function executeWorkspaceObjectBulkSwitch(
   gameId: string,
   objectIds: string[],
   desiredEnabled: boolean,
 ): Promise<WorkspaceSwitchResult | null> {
-  try {
-    const result = await commands.executeWorkspaceObjectBulkSwitch(
-      gameId,
-      objectIds,
-      desiredEnabled,
-    );
-    if (isWorkspaceGameCurrent(gameId)) {
-      notifyCommittedMutationSyncWarning(result);
-    }
-    return result;
-  } catch (error) {
-    if (!isWorkspaceGameCurrent(gameId)) {
-      return null;
-    }
-    const fileInUse = extractFileInUsePayload(error);
-    if (fileInUse) {
-      openWorkspaceFileInUseDialog({ path: fileInUse.path, processes: fileInUse.processes });
-      return null;
-    }
+  return enqueueWorkspaceGameMutation(gameId, async () => {
+    try {
+      const result = await commands.executeWorkspaceObjectBulkSwitch(
+        gameId,
+        objectIds,
+        desiredEnabled,
+      );
+      if (isWorkspaceGameCurrent(gameId)) {
+        notifyCommittedMutationSyncWarning(result);
+      }
+      return result;
+    } catch (error) {
+      if (!isWorkspaceGameCurrent(gameId)) {
+        return null;
+      }
+      const fileInUse = extractFileInUsePayload(error);
+      if (fileInUse) {
+        openWorkspaceFileInUseDialog({ path: fileInUse.path, processes: fileInUse.processes });
+        return null;
+      }
 
-    toast.error(formatAppError(error));
-    return null;
-  }
+      toast.error(formatAppError(error));
+      return null;
+    }
+  });
 }
 
 /**

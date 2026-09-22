@@ -28,6 +28,7 @@ import {
   applyRuntimeMutationResult,
   buildQueryRemovalDescriptor,
   buildWorkspacePathRewritesDescriptor,
+  enqueueWorkspaceGameMutation,
   normalizeWorkspacePath,
   publishCollectionReferenceImpact,
   workspaceKeys,
@@ -128,6 +129,12 @@ function showBulkResult(action: WorkspaceExplorerBulkAction, result: BulkResult)
   }
 }
 
+function refreshInBackground(task: Promise<void>, label: string): void {
+  void task.catch((error: unknown) => {
+    console.error(`[FolderGridBulk] ${label} refresh failed:`, error);
+  });
+}
+
 export function useFolderGridBulk({
   selection,
   explorerQuery,
@@ -176,10 +183,15 @@ export function useFolderGridBulk({
           selection: toWorkspaceExplorerSelectionInput(selection, explorerQuery, listingRevision),
         };
       }
-      const result = await commands.executeWorkspaceExplorerBulk({
-        selection: snapshot.selection,
-        action,
-      });
+      const execute = () =>
+        commands.executeWorkspaceExplorerBulk({
+          selection: snapshot.selection,
+          action,
+        });
+      const result =
+        action.kind === 'toggle'
+          ? await enqueueWorkspaceGameMutation(snapshot.gameId, execute)
+          : await execute();
       if (!isActiveGame(snapshot.gameId)) {
         return result;
       }
@@ -205,21 +217,36 @@ export function useFolderGridBulk({
       }
 
       if (action.kind === 'toggle') {
-        await applyRuntimeMutationResult(queryClient, 'folderSwitch');
+        refreshInBackground(applyRuntimeMutationResult(queryClient, 'folderSwitch'), 'workspace');
       } else if (action.kind === 'delete') {
-        await applyRuntimeMutationResult(queryClient, [
-          'workspaceStructure',
-          'workspaceRuntime',
-          'dashboardKeybindings',
-        ]);
+        refreshInBackground(
+          applyRuntimeMutationResult(queryClient, [
+            'workspaceStructure',
+            'workspaceRuntime',
+            'dashboardKeybindings',
+          ]),
+          'workspace',
+        );
       } else if (action.kind === 'set_safety') {
-        await applyRuntimeMutationResult(queryClient, 'safetyClassification');
+        refreshInBackground(
+          applyRuntimeMutationResult(queryClient, 'safetyClassification'),
+          'workspace',
+        );
       } else if (action.kind === 'move_to_object') {
-        await applyRuntimeMutationResult(queryClient, 'workspaceStructure');
+        refreshInBackground(
+          applyRuntimeMutationResult(queryClient, 'workspaceStructure'),
+          'workspace',
+        );
       } else {
-        await applyRuntimeMutationResult(queryClient, 'folderMetadataPreview');
+        refreshInBackground(
+          applyRuntimeMutationResult(queryClient, 'folderMetadataPreview'),
+          'workspace',
+        );
       }
-      await publishCollectionReferenceImpact(queryClient, result.collection_impact);
+      refreshInBackground(
+        publishCollectionReferenceImpact(queryClient, result.collection_impact),
+        'collections',
+      );
       notifyCommittedMutationSyncWarning(result);
       showBulkResult(action, result);
       return result;

@@ -11,18 +11,20 @@ use crate::shared::errors::AppError;
 
 /// Reload INI configuration after publishing generated KeyViewer artifacts.
 /// This intentionally does not claim that 3DMigoto has acknowledged the
-/// reload; it only reports that the key was sent while the game was focused.
+/// reload; it only reports that the configured key was sent.
 pub fn trigger_reload_config(settings: &AppSettings) -> Result<String, AppError> {
+    trigger_reload_config_with_sender(settings, send_reload_key)
+}
+
+fn trigger_reload_config_with_sender(
+    settings: &AppSettings,
+    send: impl FnOnce(&str) -> Result<(), AppError>,
+) -> Result<String, AppError> {
     let Some(active_game) = settings.active_game() else {
         return Err(AppError::Internal("No active game configured".to_string()));
     };
-    if !focus::is_active_game_focused(settings) {
-        return Err(AppError::Validation(
-            "NeedsManualReload: active game is not focused".to_string(),
-        ));
-    }
     let binding = generator::discover_reload_key_for_game(active_game)?.reload_config_key;
-    trigger_binding_while_focused(settings, &binding)?;
+    send(&binding)?;
     Ok(binding)
 }
 
@@ -190,5 +192,58 @@ fn parse_main_key(token: &str) -> Result<Key, AppError> {
         _ => Err(AppError::Internal(format!(
             "Unsupported reload key '{token}'"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trigger_reload_config_with_sender;
+    use crate::modules::games::domain::models::{GameType, LaunchMode};
+    use crate::modules::settings::application::config::{AppSettings, GameConfig};
+
+    fn settings_with_reload_binding(temp_dir: &tempfile::TempDir) -> AppSettings {
+        let package_root = temp_dir.path().join("package");
+        let mods_path = package_root.join("Mods");
+        std::fs::create_dir_all(&mods_path).unwrap();
+        std::fs::write(
+            package_root.join("d3dx.ini"),
+            "[Hunting]\nreload_config = Ctrl+F10\n",
+        )
+        .unwrap();
+
+        AppSettings {
+            games: vec![GameConfig {
+                id: "game".to_string(),
+                name: "Game".to_string(),
+                game_type: GameType::GIMI,
+                instance_path: package_root,
+                mod_path: mods_path,
+                ready_to_move_path: None,
+                launch_mode: LaunchMode::Standalone,
+                game_exe: None,
+                loader_exe: None,
+                xxmi_launcher_exe: None,
+                launch_args: None,
+                warnings: Vec::new(),
+            }],
+            active_game_id: Some("game".to_string()),
+            ..AppSettings::default()
+        }
+    }
+
+    #[test]
+    fn reload_dispatches_the_configured_binding_without_a_focus_check() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let settings = settings_with_reload_binding(&temp_dir);
+        let mut sent_binding = None;
+
+        let binding = trigger_reload_config_with_sender(&settings, |binding| {
+            sent_binding = Some(binding.to_string());
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(binding, "Ctrl+F10");
+        assert_eq!(sent_binding.as_deref(), Some("Ctrl+F10"));
     }
 }

@@ -46,12 +46,26 @@
       "background_attention": "索引需要处理",
       "dialog_title": "{{game}} 仍在索引中",
       "dialog_description": "当其模组库准备好后，此游戏会自动打开。您可以继续使用当前游戏。",
-      "attention_title": "{{game}} 需要处理",
-      "attention_description": "索引未能正常完成。请打开此游戏并执行完整检查后再使用其模组库。",
+      "activation": {
+        "title": "正在索引 {{game}}",
+        "description": "正在检查此游戏的资料库，完成后才会打开。",
+        "progress_label": "索引进度",
+        "folders_complete": "{{completed}} / {{total}} 个文件夹",
+        "preparing": "正在准备完整检查",
+        "scanning_root": "正在扫描 {{root}}",
+        "scanning_without_root": "正在扫描模组文件夹",
+        "current_root": "当前文件夹：{{root}}",
+        "phase": {
+          "DiscoveringRoots": "正在查找模组文件夹",
+          "Projecting": "正在更新资料库",
+          "Finalizing": "即将完成",
+          "Completed": "即将完成",
+          "Failed": "即将完成"
+        }
+      },
       "status_unavailable_title": "暂时无法验证 {{game}}",
       "status_unavailable_description": "无法加载索引状态。请在切换游戏前再次检查。",
       "status_unavailable": "索引状态不可用",
-      "open_and_recheck": "打开并重新检查",
       "retry_status": "再次检查",
       "stay": "留在当前游戏",
       "phase": {

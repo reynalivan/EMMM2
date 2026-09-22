@@ -137,6 +137,7 @@
   "duplicate_warning": {
     "title": "可能存在重复的活动模组",
     "description": "{{targetName}} 在同一目标下已有其他已启用模组。请选择继续方式。",
+    "enabled_description": "{{targetName}} 已启用，但同一目标下的其他模组也处于活动状态。",
     "currently_enabled": "当前已启用",
     "enable_only_this": "仅启用此项",
     "force_enable": "仍然强制启用",
