@@ -39,7 +39,32 @@ const EMPTY_DISK_RECONCILE: DiskReconcileEntry = {
 };
 
 let runtimeStatusListenersReady: Promise<void> | null = null;
+let startupReconcileUnlisten: (() => void) | null = null;
+let startupReconcileHandlerReady = false;
+const startupReconcileGapResultsByGame = new Map<string, DiskReconcileResult[]>();
 let activeGameRequestSequence = 0;
+
+function queueStartupReconcileResult(result: DiskReconcileResult): void {
+  const results = startupReconcileGapResultsByGame.get(result.game_id) ?? [];
+  const existingIndex = results.findIndex(
+    (current) => current.reconcile_revision === result.reconcile_revision,
+  );
+  if (existingIndex >= 0) {
+    results[existingIndex] = result;
+  } else {
+    results.push(result);
+    results.sort((left, right) => left.reconcile_revision - right.reconcile_revision);
+  }
+  startupReconcileGapResultsByGame.set(result.game_id, results);
+}
+
+interface SetActiveGameOptions {
+  /**
+   * The caller already has a screen that will fetch the workspace data. Do
+   * not keep a route transition open just to warm the same query cache.
+   */
+  deferWorkspacePrefetch?: boolean;
+}
 
 const runtimePhaseOrder: Record<RuntimeSyncStatus['phase'], number> = {
   queued: 0,
@@ -88,7 +113,8 @@ export interface GameSlice {
   gameActivationByGame: Record<string, GameActivationStatus>;
 
   initStore: () => Promise<void>;
-  setActiveGameId: (id: string | null) => Promise<void>;
+  takeStartupDiskReconcileResults: (gameId: string) => DiskReconcileResult[];
+  setActiveGameId: (id: string | null, options?: SetActiveGameOptions) => Promise<void>;
   setAutoCloseLauncher: (enabled: boolean) => Promise<void>;
   setDiskReconcileTimestamp: (gameId: string, timestamp: number) => void;
   setDiskReconcileProgress: (gameId: string, progress: DiskReconcileProgress | null) => void;
@@ -99,6 +125,27 @@ export interface GameSlice {
   setRenameConfirmations: (gameId: string, groups: RenameConfirmationGroup[]) => void;
   setRuntimeSyncStatus: (status: RuntimeSyncStatus) => void;
   setGameActivationStatus: (status: GameActivationStatus) => void;
+}
+
+function ensureRuntimeStatusListeners(
+  get: () => Pick<GameSlice, 'setRuntimeSyncStatus' | 'setGameActivationStatus'>,
+): Promise<void> {
+  if (!runtimeStatusListenersReady) {
+    runtimeStatusListenersReady = Promise.all([
+      listen<RuntimeSyncStatus>('runtime_sync:status', (event) => {
+        get().setRuntimeSyncStatus(event.payload);
+      }),
+      listen<GameActivationStatus>('game_activation:status', (event) => {
+        get().setGameActivationStatus(event.payload);
+      }),
+    ])
+      .then(() => undefined)
+      .catch((error) => {
+        runtimeStatusListenersReady = null;
+        throw error;
+      });
+  }
+  return runtimeStatusListenersReady;
 }
 
 export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
@@ -113,41 +160,45 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
   gameActivationByGame: {},
 
   initStore: async () => {
-    if (!runtimeStatusListenersReady) {
-      runtimeStatusListenersReady = Promise.all([
-        listen<RuntimeSyncStatus>('runtime_sync:status', (event) => {
-          get().setRuntimeSyncStatus(event.payload);
-        }),
-        listen<GameActivationStatus>('game_activation:status', (event) => {
-          get().setGameActivationStatus(event.payload);
-        }),
-      ])
-        .then(() => undefined)
-        .catch((error) => {
-          runtimeStatusListenersReady = null;
-          throw error;
-        });
-    }
-    await runtimeStatusListenersReady.catch((error) => {
+    await ensureRuntimeStatusListeners(get).catch((error) => {
       console.error('Failed to register runtime status listeners', error);
     });
     const startupReportsByGame = new Map<string, DiskReconcileResult>();
     let startupInitialized = false;
-    const unlisten = await listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
-      if (startupInitialized) {
-        get().applyFolderConflictReconcileResult(event.payload);
-        return;
-      }
+    if (!startupReconcileHandlerReady) {
+      const unlisten = await listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
+        if (startupReconcileHandlerReady) {
+          return;
+        }
+        if (startupInitialized) {
+          queueStartupReconcileResult(event.payload);
+          return;
+        }
 
-      const current = startupReportsByGame.get(event.payload.game_id);
-      if (!current || event.payload.reconcile_revision > current.reconcile_revision) {
-        startupReportsByGame.set(event.payload.game_id, event.payload);
+        const current = startupReportsByGame.get(event.payload.game_id);
+        if (!current || event.payload.reconcile_revision > current.reconcile_revision) {
+          startupReportsByGame.set(event.payload.game_id, event.payload);
+        }
+      }).catch(() => null);
+      if (unlisten) {
+        if (startupReconcileHandlerReady) {
+          unlisten();
+        } else {
+          startupReconcileUnlisten?.();
+          startupReconcileUnlisten = unlisten;
+        }
       }
-    }).catch(() => null);
+    }
     try {
       const settings = await commands.getSettings();
       const activeGameId = settings.active_game_id;
-      const activation = activeGameId ? await commands.setActiveGame(activeGameId) : null;
+      // `setActiveGameId` may already have activated this game during
+      // onboarding. Repeating the command restarts its recovery watcher and
+      // can make a freshly indexed library scan again.
+      const activation =
+        activeGameId && get().activeGameId !== activeGameId
+          ? await commands.setActiveGame(activeGameId)
+          : null;
       const activeReport = activeGameId ? (startupReportsByGame.get(activeGameId) ?? null) : null;
       const activeReportRevision = activeReport?.reconcile_revision ?? 0;
 
@@ -201,7 +252,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       });
       startupInitialized = true;
       if (activeGameId) {
-        await Promise.all([
+        void Promise.all([
           queryClient.prefetchQuery({
             queryKey: collectionRuntimeKeys.descriptor(activeGameId),
             queryFn: () => commands.getCollectionRuntimeDescriptor(activeGameId),
@@ -210,19 +261,34 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
             queryKey: collectionKeys.list(activeGameId),
             queryFn: () => commands.listCollections(activeGameId),
           }),
-        ]);
+        ]).catch((error: unknown) => {
+          console.error('Failed to warm collection cache during startup', error);
+        });
       }
     } catch (err) {
+      startupInitialized = true;
       console.error('Failed to init store from backend:', err);
       toast.error(formatAppError(err));
-    } finally {
-      unlisten?.();
     }
   },
 
-  setActiveGameId: async (id) => {
+  takeStartupDiskReconcileResults: (gameId) => {
+    startupReconcileHandlerReady = true;
+    startupReconcileUnlisten?.();
+    startupReconcileUnlisten = null;
+    const pending = startupReconcileGapResultsByGame.get(gameId) ?? [];
+    startupReconcileGapResultsByGame.delete(gameId);
+    return pending;
+  },
+
+  setActiveGameId: async (id, options) => {
     const requestSequence = ++activeGameRequestSequence;
     try {
+      // An onboarding activation can reuse a just-completed scan and finish
+      // almost immediately, so subscribe before requesting it.
+      await ensureRuntimeStatusListeners(get).catch((error) => {
+        console.error('Failed to register runtime status listeners', error);
+      });
       // The backend resets the per-game disk recovery gate here. Publish the
       // new active ID only afterwards so no workspace query can race ahead and
       // hydrate from a projection created before external/offline changes.
@@ -265,7 +331,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
         objectSortBy: 'name',
         objectStatusFilter: 'all',
       });
-      if (id) {
+      if (id && !options?.deferWorkspacePrefetch) {
         await Promise.all([
           queryClient.prefetchQuery({
             queryKey: collectionRuntimeKeys.descriptor(id),

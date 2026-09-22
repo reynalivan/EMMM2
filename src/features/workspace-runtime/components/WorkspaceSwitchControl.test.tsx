@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceSwitchControl } from './WorkspaceSwitchControl';
 
 describe('WorkspaceSwitchControl', () => {
-  it('keeps a pending node switch interactive', () => {
+  it('keeps a pending node switch interactive without a spinner', () => {
     const onToggle = vi.fn();
     render(
       <WorkspaceSwitchControl
@@ -20,7 +20,7 @@ describe('WorkspaceSwitchControl', () => {
     const control = screen.getByRole('checkbox', { name: 'Toggle mod' });
     expect(control).toHaveAttribute('aria-busy', 'true');
     expect(control).toBeEnabled();
-    expect(screen.getByRole('status', { name: 'Toggle mod pending' })).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Toggle mod pending' })).not.toBeInTheDocument();
 
     fireEvent.click(control);
     expect(onToggle).toHaveBeenCalledTimes(1);

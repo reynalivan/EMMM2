@@ -186,6 +186,7 @@ const defaultHookReturn = {
   handleDuplicateEnableOnly: vi.fn(),
   handleDuplicateCancel: vi.fn(),
   isFolderSwitchPending: vi.fn(() => false),
+  getFolderPendingDesiredEnabled: vi.fn(() => undefined),
 };
 
 describe('FolderGrid', () => {

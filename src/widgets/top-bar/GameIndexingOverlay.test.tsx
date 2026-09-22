@@ -3,9 +3,7 @@ import type { DiskReconcileProgress } from '@/shared/api/tauri/bindings';
 import { render, screen } from '@/tests/testing/test-utils';
 import { GameIndexingOverlay } from './GameIndexingOverlay';
 
-function makeProgress(
-  overrides: Partial<DiskReconcileProgress> = {},
-): DiskReconcileProgress {
+function makeProgress(overrides: Partial<DiskReconcileProgress> = {}): DiskReconcileProgress {
   return {
     game_id: 'srmi',
     run_id: 'srmi-1',
@@ -25,7 +23,8 @@ describe('GameIndexingOverlay', () => {
     render(<GameIndexingOverlay gameName="Star Rail" progress={makeProgress()} />);
 
     expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByRole('status')).toHaveClass('fixed', 'inset-0');
+    expect(screen.getByRole('status')).toHaveClass('fixed', 'pointer-events-none');
+    expect(screen.getByRole('status')).not.toHaveClass('inset-0');
     expect(screen.getByRole('heading', { name: 'Indexing Star Rail' })).toBeInTheDocument();
     expect(screen.getByText('Scanning Character')).toBeInTheDocument();
     expect(screen.queryByText(/C:\\Games/)).toBeNull();

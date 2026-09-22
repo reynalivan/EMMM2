@@ -79,7 +79,7 @@ function reconcileStep(phase: DiskReconcilePhase | undefined): number {
 export default function WelcomeScreen({
   onComplete,
 }: {
-  onComplete: (games: GameConfig[]) => void;
+  onComplete: (games: GameConfig[]) => void | Promise<void>;
 }) {
   const { t, i18n } = useTranslation(['welcome', 'onboarding']);
   const [view, setView] = useState<Screen>('welcome');
@@ -283,7 +283,7 @@ export default function WelcomeScreen({
       // this reference avoids cancelling the backend worker during navigation.
       indexingInFlightRef.current = false;
       indexingSessionRef.current = null;
-      onComplete(games);
+      await onComplete(games);
     } catch (err) {
       // The first game must be usable before the dashboard can open.
       setError(formatAppError(err));

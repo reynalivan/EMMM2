@@ -109,9 +109,27 @@ describe('useAppStore smoke net', () => {
       expect(toasts[toasts.length - 1]?.message).toContain('startup disk scan failed');
     });
 
+    it('does not restart recovery for an onboarding game already made active', async () => {
+      useAppStore.setState({ activeGameId: 'genshin' });
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') {
+          return Promise.resolve({ active_game_id: 'genshin', auto_close_launcher: false });
+        }
+        if (command === 'get_collection_runtime_descriptor' || command === 'list_collections') {
+          return Promise.resolve(null);
+        }
+        return Promise.reject(new Error(`Unexpected command: ${command}`));
+      });
+
+      await useAppStore.getState().initStore();
+
+      expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('set_active_game', 'genshin');
+    });
+
     it('applies a newer recovery event received while startup queries are pending', async () => {
       let emitReconcile!: (event: { payload: DiskReconcileResult }) => void;
       let releasePrefetch!: () => void;
+      const unlisten = vi.fn();
       const pendingPrefetch = new Promise<void>((resolve) => {
         releasePrefetch = resolve;
       });
@@ -119,7 +137,7 @@ describe('useAppStore smoke net', () => {
         if (event === 'disk_reconcile:result') {
           emitReconcile = handler as unknown as (event: { payload: DiskReconcileResult }) => void;
         }
-        return () => undefined;
+        return unlisten;
       });
       vi.mocked(invoke).mockImplementation((command) => {
         if (command === 'get_settings') {
@@ -140,17 +158,29 @@ describe('useAppStore smoke net', () => {
       });
 
       const initializing = useAppStore.getState().initStore();
+      let initializationCompleted = false;
+      void initializing.then(() => {
+        initializationCompleted = true;
+      });
       try {
         await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
+        await waitFor(() => expect(initializationCompleted).toBe(true));
+        expect(unlisten).not.toHaveBeenCalled();
         emitReconcile({
           payload: diskReconcileResult({ game_id: 'genshin', reconcile_revision: 2 }),
         });
-
-        expect(useAppStore.getState().folderConflictReportsByGame.genshin).toMatchObject({
-          revision: 2,
-          status: 'resolvedExternally',
-          groups: [],
+        emitReconcile({
+          payload: diskReconcileResult({ game_id: 'another-game', reconcile_revision: 1 }),
         });
+
+        expect(useAppStore.getState().folderConflictReportsByGame.genshin?.revision).toBe(1);
+        expect(useAppStore.getState().takeStartupDiskReconcileResults('genshin')).toMatchObject([
+          { reconcile_revision: 2, game_id: 'genshin' },
+        ]);
+        expect(
+          useAppStore.getState().takeStartupDiskReconcileResults('another-game'),
+        ).toMatchObject([{ reconcile_revision: 1, game_id: 'another-game' }]);
+        expect(unlisten).toHaveBeenCalledOnce();
       } finally {
         releasePrefetch();
         await initializing;
@@ -280,6 +310,27 @@ describe('useAppStore smoke net', () => {
       releaseBackend();
       await switching;
       expect(useAppStore.getState().activeGameId).toBe('genshin');
+    });
+
+    it('does not block onboarding handoff on workspace cache warmers', async () => {
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'set_active_game') {
+          return Promise.resolve({ game_id: 'genshin', generation: 1, phase: 'syncing' });
+        }
+        if (command === 'get_settings') {
+          return Promise.resolve({ active_game_id: 'genshin' });
+        }
+        return Promise.reject(new Error(`Unexpected command: ${command}`));
+      });
+
+      await useAppStore.getState().setActiveGameId('genshin', { deferWorkspacePrefetch: true });
+
+      expect(useAppStore.getState().activeGameId).toBe('genshin');
+      expect(vi.mocked(invoke)).not.toHaveBeenCalledWith(
+        'get_collection_runtime_descriptor',
+        expect.anything(),
+      );
+      expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('list_collections', expect.anything());
     });
 
     it('does not let a superseded activation overwrite the latest game or settings cache', async () => {

@@ -394,9 +394,10 @@ describe('workspace switch ops', () => {
       },
     } as unknown as WorkspaceSwitchResult;
 
-    expect(
-      applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', { gameId: 'game-1' }),
-    ).toBeUndefined();
+    const settled = applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+      gameId: 'game-1',
+    });
+    expect(settled).toBeInstanceOf(Promise);
     expect(cancelRuntimeDescriptorQueries).toHaveBeenCalled();
     expect(publishRuntimeDescriptor).not.toHaveBeenCalled();
 
@@ -406,6 +407,7 @@ describe('workspace switch ops', () => {
       expect(publishRuntimeDescriptor).toHaveBeenCalled();
     });
     finishRefresh();
+    await settled;
   });
 
   it('ignores a completed switch after another game became active', async () => {

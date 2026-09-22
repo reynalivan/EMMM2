@@ -537,20 +537,56 @@ export function useDiskReconcileCoordinator(
       return;
     }
 
+    let effectActive = true;
+    let startupResultsDrained = false;
+    const eventsDuringStartupDrain: DiskReconcileResult[] = [];
+    const applyResult = (result: DiskReconcileResult) => {
+      if (applyDiskReconcileResult(result, queryClient, activeGame, workspaceView === 'mods')) {
+        recordReconcileOutcome(result);
+      }
+    };
     const unlistenPromise = listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
       if (event.payload.game_id !== activeGame.id) {
         return;
       }
 
-      if (
-        applyDiskReconcileResult(event.payload, queryClient, activeGame, workspaceView === 'mods')
-      ) {
-        recordReconcileOutcome(event.payload);
+      if (!startupResultsDrained) {
+        eventsDuringStartupDrain.push(event.payload);
+        return;
       }
+      applyResult(event.payload);
     });
+    void unlistenPromise
+      .then((unlisten) => {
+        if (!effectActive) {
+          unlisten();
+          return;
+        }
+        const startupResults = useAppStore
+          .getState()
+          .takeStartupDiskReconcileResults(activeGame.id);
+        const resultsByRevision = new Map<number, DiskReconcileResult>();
+        for (const result of [...startupResults, ...eventsDuringStartupDrain]) {
+          resultsByRevision.set(result.reconcile_revision, result);
+        }
+        startupResultsDrained = true;
+        for (const result of [...resultsByRevision.values()].sort(
+          (left, right) => left.reconcile_revision - right.reconcile_revision,
+        )) {
+          applyResult(result);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to register disk reconcile listener', error);
+      });
 
     return () => {
-      unlistenPromise.then((unlisten) => unlisten());
+      effectActive = false;
+      void unlistenPromise
+        .then((unlisten) => unlisten())
+        .catch((error: unknown) => {
+          console.error('Failed to remove disk reconcile listener', error);
+        });
     };
   }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome, workspaceView]);
 

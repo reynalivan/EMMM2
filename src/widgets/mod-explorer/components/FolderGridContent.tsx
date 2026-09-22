@@ -69,6 +69,7 @@ export default function FolderGridContent({
     ancestorDisabledBy,
     isSwitchPending,
     isFolderSwitchPending,
+    getFolderPendingDesiredEnabled,
     currentFolderPath,
     handleOpenCurrentFolderInExplorer,
   } = model;
@@ -165,11 +166,8 @@ export default function FolderGridContent({
                           hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                           hasFolderNameConflict={protectedByConflict}
                           isLockedByParent={!!ancestorDisabledBy}
-                          isSwitchPending={
-                            folderMutationsDisabled ||
-                            isSwitchPending ||
-                            isFolderSwitchPending(folder)
-                          }
+                          isSwitchPending={folderMutationsDisabled || isSwitchPending}
+                          pendingDesiredEnabled={getFolderPendingDesiredEnabled(folder)}
                           isSwitchBusy={isFolderSwitchPending(folder)}
                           mutationsDisabled={folderMutationsDisabled}
                         />
@@ -223,9 +221,8 @@ export default function FolderGridContent({
                   onSyncWithDb={handleSyncWithDb}
                   hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                   hasFolderNameConflict={protectedByConflict}
-                  isSwitchPending={
-                    folderMutationsDisabled || isSwitchPending || isFolderSwitchPending(folder)
-                  }
+                  isSwitchPending={folderMutationsDisabled || isSwitchPending}
+                  pendingDesiredEnabled={getFolderPendingDesiredEnabled(folder)}
                   isSwitchBusy={isFolderSwitchPending(folder)}
                   mutationsDisabled={folderMutationsDisabled}
                 />

@@ -43,14 +43,27 @@ interface WorkspaceNodeSwitchOptions extends WorkspaceSwitchEffectsOptions {
   shouldNotifyResult?: () => boolean;
 }
 
+interface WorkspaceNodeSwitchOutcome {
+  path: string;
+  settled: Promise<void>;
+}
+
 interface LatestNodeToggleIntent {
   desiredEnabled: boolean;
+  pendingRevision: number;
   node: WorkspaceNode;
   surface: WorkspaceSwitchSurface;
   waiters: Array<{
     resolve: (path: string | null) => void;
     reject: (error: unknown) => void;
   }>;
+}
+
+function withLatestFolderPath(node: WorkspaceNode, latestNode: WorkspaceNode | undefined) {
+  if (isWorkspaceObjectNode(node) || !latestNode || isWorkspaceObjectNode(latestNode)) {
+    return node;
+  }
+  return { ...node, path: latestNode.path };
 }
 
 export function useWorkspaceSwitchActions() {
@@ -63,10 +76,42 @@ export function useWorkspaceSwitchActions() {
     return activation?.phase !== 'ready';
   });
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
+  const [pendingDesiredEnabled, setPendingDesiredEnabled] = useState<Record<string, boolean>>({});
+  const pendingDesiredVersions = useRef(new Map<string, number>());
+  const pendingDesiredVersion = useRef(0);
+  const pendingNodeOverrides = useRef(new Map<string, WorkspaceNode>());
   const latestNodeToggleIntents = useRef(new Map<string, LatestNodeToggleIntent>());
 
   const markPending = useCallback((key: string, pending: boolean) => {
     setPendingKeys((current) => togglePendingKey(current, key, pending));
+  }, []);
+
+  const setPendingDesired = useCallback((key: string, desiredEnabled: boolean) => {
+    const revision = ++pendingDesiredVersion.current;
+    pendingDesiredVersions.current.set(key, revision);
+    setPendingDesiredEnabled((current) => {
+      if (current[key] === desiredEnabled) {
+        return current;
+      }
+      return { ...current, [key]: desiredEnabled };
+    });
+    return revision;
+  }, []);
+
+  const clearPendingDesired = useCallback((key: string, expectedRevision: number) => {
+    if (pendingDesiredVersions.current.get(key) !== expectedRevision) {
+      return;
+    }
+    pendingDesiredVersions.current.delete(key);
+    pendingNodeOverrides.current.delete(key);
+    setPendingDesiredEnabled((current) => {
+      if (!(key in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   }, []);
 
   const setExplorerNodeEnabled = useCallback(
@@ -75,7 +120,7 @@ export function useWorkspaceSwitchActions() {
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
       options?: WorkspaceNodeSwitchOptions,
-    ) => {
+    ): Promise<WorkspaceNodeSwitchOutcome | null> => {
       if (!activeGame?.id || activationBlocksMutations) {
         return null;
       }
@@ -136,7 +181,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
-      applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+      const settled = applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
         ...options,
         gameId: activeGame.id,
       });
@@ -154,7 +199,7 @@ export function useWorkspaceSwitchActions() {
         });
       }
 
-      return nextPath;
+      return { path: nextPath, settled };
     },
     [activeGame, activationBlocksMutations, queryClient],
   );
@@ -165,7 +210,7 @@ export function useWorkspaceSwitchActions() {
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
       options?: WorkspaceNodeSwitchOptions,
-    ) => {
+    ): Promise<WorkspaceNodeSwitchOutcome | null> => {
       // Explicit object enable/disable stays in Workspace Switch.
       // This path must not rely on Disk Reconcile or mod-toggle semantics.
       if (!activeGame) {
@@ -194,8 +239,9 @@ export function useWorkspaceSwitchActions() {
       }
 
       const nextPath = result.primary_path;
+      let settled = Promise.resolve();
       if (result.status !== 'noop') {
-        applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
+        settled = applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
           ...options,
           gameId,
         });
@@ -208,7 +254,7 @@ export function useWorkspaceSwitchActions() {
         }
       }
 
-      return nextPath;
+      return { path: nextPath, settled };
     },
     [activeGame, activationBlocksMutations, queryClient, t],
   );
@@ -219,7 +265,7 @@ export function useWorkspaceSwitchActions() {
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
       options?: WorkspaceNodeSwitchOptions,
-    ) => {
+    ): Promise<WorkspaceNodeSwitchOutcome | null> => {
       if (isWorkspaceObjectNode(node)) {
         return setObjectNodeEnabled(node, desiredEnabled, surface, options);
       }
@@ -238,14 +284,33 @@ export function useWorkspaceSwitchActions() {
     ) => {
       const pendingKey = buildNodePendingKey(node);
       markPending(pendingKey, true);
+      const desiredRevision = setPendingDesired(pendingKey, desiredEnabled);
+      if (!isWorkspaceObjectNode(node)) {
+        pendingNodeOverrides.current.set(pendingKey, node);
+      }
 
+      let clearAfterNativeResult = true;
       try {
-        return await executeNodeEnabled(node, desiredEnabled, surface, options);
-      } finally {
+        const outcome = await executeNodeEnabled(node, desiredEnabled, surface, options);
+        if (!outcome) {
+          return null;
+        }
+        if (!isWorkspaceObjectNode(node)) {
+          pendingNodeOverrides.current.set(pendingKey, { ...node, path: outcome.path });
+        }
+        clearAfterNativeResult = false;
         markPending(pendingKey, false);
+        const clearDesired = () => clearPendingDesired(pendingKey, desiredRevision);
+        void outcome.settled.then(clearDesired, clearDesired);
+        return outcome.path;
+      } finally {
+        if (clearAfterNativeResult) {
+          markPending(pendingKey, false);
+          clearPendingDesired(pendingKey, desiredRevision);
+        }
       }
     },
-    [executeNodeEnabled, markPending],
+    [clearPendingDesired, executeNodeEnabled, markPending, setPendingDesired],
   );
 
   const toggleNode = useCallback(
@@ -254,16 +319,27 @@ export function useWorkspaceSwitchActions() {
       const existingIntent = latestNodeToggleIntents.current.get(pendingKey);
       if (existingIntent) {
         existingIntent.desiredEnabled = !existingIntent.desiredEnabled;
-        existingIntent.node = node;
+        existingIntent.pendingRevision = setPendingDesired(
+          pendingKey,
+          existingIntent.desiredEnabled,
+        );
+        const latestNode = pendingNodeOverrides.current.get(pendingKey);
+        existingIntent.node = withLatestFolderPath(node, latestNode);
         existingIntent.surface = surface;
         return new Promise<string | null>((resolve, reject) => {
           existingIntent.waiters.push({ resolve, reject });
         });
       }
 
+      const desiredEnabled = !(
+        pendingDesiredEnabled[pendingKey] ?? node.switch_state === 'enabled'
+      );
+      const latestNode = pendingNodeOverrides.current.get(pendingKey);
+      const intentNode = withLatestFolderPath(node, latestNode);
       const intent: LatestNodeToggleIntent = {
-        desiredEnabled: node.switch_state !== 'enabled',
-        node,
+        desiredEnabled,
+        pendingRevision: setPendingDesired(pendingKey, desiredEnabled),
+        node: intentNode,
         surface,
         waiters: [],
       };
@@ -274,27 +350,42 @@ export function useWorkspaceSwitchActions() {
       });
 
       const runLatestIntent = async () => {
+        let clearDesiredAfterRefresh = false;
         try {
           while (true) {
             const desiredEnabled = intent.desiredEnabled;
             const intentNode = intent.node;
-            const nextPath = await executeNodeEnabled(intentNode, desiredEnabled, intent.surface, {
+            const outcome = await executeNodeEnabled(intentNode, desiredEnabled, intent.surface, {
               shouldNotifyResult: () => {
                 const currentIntent = latestNodeToggleIntents.current.get(pendingKey);
                 return currentIntent === intent && currentIntent.desiredEnabled === desiredEnabled;
               },
             });
 
-            if (!nextPath || intent.desiredEnabled === desiredEnabled) {
+            if (outcome?.path && !isWorkspaceObjectNode(intentNode)) {
+              intent.node = { ...intentNode, path: outcome.path };
+              pendingNodeOverrides.current.set(pendingKey, intent.node);
+            }
+
+            if (intent.desiredEnabled !== desiredEnabled) {
+              continue;
+            }
+
+            if (!outcome?.path) {
               for (const waiter of intent.waiters) {
-                waiter.resolve(nextPath);
+                waiter.resolve(null);
               }
               return;
             }
 
-            if (!isWorkspaceObjectNode(intentNode)) {
-              intent.node = { ...intentNode, path: nextPath };
+            clearDesiredAfterRefresh = true;
+            const completedRevision = intent.pendingRevision;
+            const clearDesired = () => clearPendingDesired(pendingKey, completedRevision);
+            void outcome.settled.then(clearDesired, clearDesired);
+            for (const waiter of intent.waiters) {
+              waiter.resolve(outcome.path);
             }
+            return;
           }
         } catch (error) {
           for (const waiter of intent.waiters) {
@@ -305,6 +396,9 @@ export function useWorkspaceSwitchActions() {
             latestNodeToggleIntents.current.delete(pendingKey);
           }
           markPending(pendingKey, false);
+          if (!clearDesiredAfterRefresh) {
+            clearPendingDesired(pendingKey, intent.pendingRevision);
+          }
         }
       };
 
@@ -312,7 +406,13 @@ export function useWorkspaceSwitchActions() {
       void runLatestIntent();
       return completion;
     },
-    [executeNodeEnabled, markPending],
+    [
+      clearPendingDesired,
+      executeNodeEnabled,
+      markPending,
+      pendingDesiredEnabled,
+      setPendingDesired,
+    ],
   );
 
   const setFolderPathEnabled = useCallback(
@@ -582,9 +682,20 @@ export function useWorkspaceSwitchActions() {
     [activationBlocksMutations, pendingKeys],
   );
 
+  const getPendingDesiredEnabled = useCallback(
+    (node: WorkspaceNode | null | undefined) => {
+      if (!node) {
+        return undefined;
+      }
+      return pendingDesiredEnabled[buildNodePendingKey(node)];
+    },
+    [pendingDesiredEnabled],
+  );
+
   return {
     isPending,
     isNodePending,
+    getPendingDesiredEnabled,
     toggleNode,
     setNodeEnabled,
     setFolderPathEnabled,

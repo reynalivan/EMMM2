@@ -281,6 +281,7 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     duplicateWarning: state.duplicateWarning,
     isSwitchPending: switchActions.isPending,
     isFolderSwitchPending: switchActions.isNodePending,
+    getPendingDesiredEnabled: switchActions.getPendingDesiredEnabled,
     setDeleteConfirm,
     openMoveDialog: (folder: ModFolder) => openModDialog('modMove', { folder }),
     closeMoveDialog,

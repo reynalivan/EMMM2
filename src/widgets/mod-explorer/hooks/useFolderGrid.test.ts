@@ -206,6 +206,14 @@ describe('useFolderGrid array bounds (TC-14)', () => {
     expect(currentSelection.length).toBe(3);
   });
 
+  it('uses the toggle action instance for folder switch pending state', () => {
+    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+
+    expect(result.current.getFolderPendingDesiredEnabled).toBe(
+      result.current.getPendingDesiredEnabled,
+    );
+  });
+
   it('loads the previous breadcrumb folder with a separate paged query', () => {
     useAppStore.setState({
       currentPath: ['SkinSelectImpact', 'Aglaea'],

@@ -165,11 +165,26 @@ function AppRouter() {
           <WelcomeScreen
             onComplete={async (games) => {
               if (games && games.length > 0) {
-                await useAppStore.getState().setActiveGameId(games[0].id);
+                // The first game was reconciled on the onboarding screen.
+                // Publish it immediately, then let the dashboard hydrate its
+                // own queries. Waiting for those queries leaves onboarding
+                // visible long enough for background game progress to replace
+                // the first game's successful state.
+                await useAppStore.getState().setActiveGameId(games[0].id, {
+                  deferWorkspacePrefetch: true,
+                });
               }
-              await publishQueryScopes(queryClient, ['settings', 'dashboard']);
-              await useAppStore.getState().initStore();
               navigate('/dashboard', { replace: true });
+
+              // These are cache warmers, not navigation prerequisites. Calling
+              // initStore after the active ID is published also avoids a second
+              // set_active_game command for the newly indexed first game.
+              void Promise.all([
+                publishQueryScopes(queryClient, ['settings', 'dashboard']),
+                useAppStore.getState().initStore(),
+              ]).catch((error: unknown) => {
+                console.error('Failed to finish onboarding dashboard hydration', error);
+              });
             }}
           />
         }

@@ -39,6 +39,7 @@ vi.mock('@/app/store', () => {
     setDiskSourceUnavailable: vi.fn(),
     setFolderConflicts: vi.fn(),
     applyFolderConflictReconcileResult: vi.fn(() => true),
+    takeStartupDiskReconcileResults: vi.fn(() => []),
     setRenameConfirmations: vi.fn(),
     setExplorerSubPath: vi.fn(),
     setCurrentPath: vi.fn(),
@@ -709,6 +710,62 @@ describe('useDiskReconcileCoordinator', () => {
     const state = useAppStore.getState();
     state.workspaceView = 'mods';
     state.diskReconcileByGame = {};
+  });
+
+  it('applies reconcile events buffered during startup after registering its listener', async () => {
+    const eventHandlers: Record<string, MockEventHandler> = {};
+    const state = useAppStore.getState();
+    const appliedReconcile = state.applyFolderConflictReconcileResult as ReturnType<typeof vi.fn>;
+    let registerDiskListener!: (unlisten: () => void) => void;
+    const diskListenerReady = new Promise<() => void>((resolve) => {
+      registerDiskListener = resolve;
+    });
+    const startupResults = [
+      createResult({
+        reconcile_revision: 1,
+        reason: 'GameSwitched',
+        path_updates: [{ from: 'A', to: 'B', kind: 'Mod' }],
+      }),
+      createResult({
+        reconcile_revision: 2,
+        reason: 'WatcherBatch',
+        path_updates: [{ from: 'B', to: 'C', kind: 'Mod' }],
+      }),
+    ];
+    const takeStartupResults = state.takeStartupDiskReconcileResults as ReturnType<typeof vi.fn>;
+    takeStartupResults.mockReturnValueOnce(startupResults);
+    (listen as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, callback: MockEventHandler) => {
+        eventHandlers[event] = callback;
+        if (event === 'disk_reconcile:result') {
+          return diskListenerReady;
+        }
+        return Promise.resolve(vi.fn());
+      },
+    );
+    (commands.reconcileDiskStateCmd as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      createResult({ reconcile_revision: 100, reason: 'ModsViewEntered' }),
+    );
+
+    renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
+
+    await waitFor(() => expect(eventHandlers['disk_reconcile:result']).toBeTypeOf('function'));
+    eventHandlers['disk_reconcile:result']({
+      payload: createResult({
+        reconcile_revision: 3,
+        reason: 'WatcherBatch',
+        path_updates: [{ from: 'C', to: 'D', kind: 'Mod' }],
+      }),
+    });
+    registerDiskListener(vi.fn());
+
+    await waitFor(() => expect(takeStartupResults).toHaveBeenCalledWith('game-1'));
+    await waitFor(() => {
+      const appliedRevisions = appliedReconcile.mock.calls
+        .map(([result]) => result.reconcile_revision)
+        .filter((revision) => revision <= 3);
+      expect(appliedRevisions).toEqual([1, 2, 3]);
+    });
   });
 
   it('runs a queued focus refresh after the current reconcile completes', async () => {

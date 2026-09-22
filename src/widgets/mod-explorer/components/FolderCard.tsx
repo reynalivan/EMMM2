@@ -42,7 +42,9 @@ interface FolderCardProps {
   /** True when an ancestor folder in the current path has DISABLED prefix */
   isLockedByParent?: boolean;
   isSwitchPending?: boolean;
-  /** A switch for this folder is in flight (spinner), as opposed to merely disabled. */
+  /** The immediate desired state while a switch transaction is in flight. */
+  pendingDesiredEnabled?: boolean;
+  /** A switch for this folder is in flight; used for accessible busy state only. */
   isSwitchBusy?: boolean;
   mutationsDisabled?: boolean;
 }
@@ -78,6 +80,7 @@ function FolderCardInner({
   hasFolderNameConflict = false,
   isLockedByParent = false,
   isSwitchPending = false,
+  pendingDesiredEnabled,
   isSwitchBusy = false,
   mutationsDisabled = false,
 }: FolderCardProps) {
@@ -114,6 +117,16 @@ function FolderCardInner({
       onBulkMoveToObject,
     },
   });
+  const displayedSwitchPolicy =
+    pendingDesiredEnabled === undefined
+      ? switchPolicy
+      : {
+          ...switchPolicy,
+          checked: pendingDesiredEnabled,
+          label: switchPolicy.blocked
+            ? switchPolicy.label
+            : t(pendingDesiredEnabled ? 'common:status.enabled' : 'common:status.disabled'),
+        };
   const [renameValue, setRenameValue] = useState(folder.name);
 
   const handleToggleClick = useCallback(
@@ -205,7 +218,7 @@ function FolderCardInner({
         `}
         role="gridcell"
         aria-label={t(
-          switchPolicy.checked ? 'card.aria_label_enabled' : 'card.aria_label_disabled',
+          displayedSwitchPolicy.checked ? 'card.aria_label_enabled' : 'card.aria_label_disabled',
           {
             name: folder.name,
           },
@@ -222,7 +235,7 @@ function FolderCardInner({
           isSelected={isSelected}
           isHiddenByMask={false}
           isLockedByParent={isLockedByParent}
-          isSwitchChecked={switchPolicy.checked}
+          isSwitchChecked={displayedSwitchPolicy.checked}
           hasConflict={hasConflict}
           hasNamingConflict={hasNamingConflict}
           primaryWarningText={primaryWarningText}
@@ -242,7 +255,7 @@ function FolderCardInner({
           <h3
             className={`font-medium text-sm truncate leading-tight select-none transition-colors
               ${isActive || isSelected ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'}
-              ${!switchPolicy.checked ? 'line-through text-base-content/70' : ''}`}
+              ${!displayedSwitchPolicy.checked ? 'line-through text-base-content/70' : ''}`}
             title={folder.name}
           >
             {isRenaming ? (
@@ -268,7 +281,7 @@ function FolderCardInner({
             >
               <WorkspaceSwitchControl
                 node={actionFolder}
-                policy={switchPolicy}
+                policy={displayedSwitchPolicy}
                 isPending={isSwitchPending || mutationsDisabled}
                 isBusy={isSwitchBusy}
                 size="xs"
@@ -280,7 +293,7 @@ function FolderCardInner({
               <div className="flex flex-col">
                 <WorkspaceSwitchLabel
                   node={actionFolder}
-                  policy={switchPolicy}
+                  policy={displayedSwitchPolicy}
                   className="text-[10px] font-semibold text-base-content/60 leading-none"
                 />
               </div>

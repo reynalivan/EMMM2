@@ -247,6 +247,37 @@ describe('FolderCard', () => {
     expect(onToggleEnabled).not.toHaveBeenCalled();
   });
 
+  it('shows the latest pending state without disabling or replacing the switch', () => {
+    const onToggleEnabled = vi.fn();
+    const disabledFolder = {
+      ...mockFolder,
+      is_enabled: false,
+      is_effectively_active: false,
+      switch_state: 'disabled' as const,
+    };
+
+    render(
+      <FolderCard
+        folder={disabledFolder}
+        isSelected={false}
+        onNavigate={vi.fn()}
+        toggleSelection={vi.fn()}
+        onToggleEnabled={onToggleEnabled}
+        pendingDesiredEnabled
+        isSwitchBusy
+      />,
+    );
+
+    const switchControl = screen.getAllByRole('checkbox', { hidden: true })[1];
+    expect(switchControl).toBeChecked();
+    expect(switchControl).toBeEnabled();
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    fireEvent.click(switchControl);
+    expect(onToggleEnabled).toHaveBeenCalledWith(disabledFolder);
+  });
+
   it('renders naming conflict warning styles (TC-13)', () => {
     const conflictFolder = { ...mockFolder, conflict_state: 'both' } as WorkspaceExplorerNode;
     render(

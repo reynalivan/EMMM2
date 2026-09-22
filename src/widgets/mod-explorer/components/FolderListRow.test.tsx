@@ -115,6 +115,37 @@ describe('FolderListRow', () => {
     expect(selectionCheckbox.parentElement).toHaveClass('justify-center');
   });
 
+  it('shows an optimistic switch state while keeping the pending row switch interactive', () => {
+    const disabledFolder = {
+      ...dummyFolder,
+      is_enabled: false,
+      is_effectively_active: false,
+      switch_state: 'disabled' as const,
+    };
+    const onToggleEnabled = vi.fn();
+
+    render(
+      <FolderListRow
+        item={disabledFolder}
+        isSelected={false}
+        toggleSelection={vi.fn()}
+        onToggleEnabled={onToggleEnabled}
+        pendingDesiredEnabled
+        isSwitchBusy
+      />,
+    );
+
+    const switchControl = screen.getAllByRole('checkbox', { hidden: true })[1];
+    expect(switchControl).toBeChecked();
+    expect(switchControl).toBeEnabled();
+    expect(switchControl).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    fireEvent.click(switchControl);
+    expect(onToggleEnabled).toHaveBeenCalledWith(disabledFolder);
+  });
+
   it('calls selection correctly on click', () => {
     const toggleSelection = vi.fn();
     const onActivate = vi.fn();

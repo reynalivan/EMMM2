@@ -36,7 +36,9 @@ interface FolderListRowProps {
   hasConflict?: boolean;
   hasFolderNameConflict?: boolean;
   isSwitchPending?: boolean;
-  /** A switch for this folder is in flight (spinner), as opposed to merely disabled. */
+  /** The immediate desired state while a switch transaction is in flight. */
+  pendingDesiredEnabled?: boolean;
+  /** A switch for this folder is in flight; used for accessible busy state only. */
   isSwitchBusy?: boolean;
   mutationsDisabled?: boolean;
 }
@@ -66,6 +68,7 @@ function FolderListRowInner({
   hasConflict = false,
   hasFolderNameConflict = false,
   isSwitchPending = false,
+  pendingDesiredEnabled,
   isSwitchBusy = false,
   mutationsDisabled = false,
 }: FolderListRowProps) {
@@ -99,6 +102,16 @@ function FolderListRowInner({
       onBulkMoveToObject,
     },
   });
+  const displayedSwitchPolicy =
+    pendingDesiredEnabled === undefined
+      ? switchPolicy
+      : {
+          ...switchPolicy,
+          checked: pendingDesiredEnabled,
+          label: switchPolicy.blocked
+            ? switchPolicy.label
+            : t(pendingDesiredEnabled ? 'common:status.enabled' : 'common:status.disabled'),
+        };
   const inactiveReasonText = formatWorkspaceReason(t, item.inactive_reason);
   const contextActions = useModContextMenuActions(item);
   const contextItems = useModContextMenuItems({
@@ -221,8 +234,8 @@ function FolderListRowInner({
           <div
             className={`text-sm font-medium truncate leading-tight flex-1
             ${isActive || isSelected ? 'text-primary' : 'text-base-content/80'}
-            ${!switchPolicy.checked ? 'line-through text-base-content/50' : ''}
-            ${!item.is_effectively_active && switchPolicy.checked ? 'text-base-content/55' : ''}`}
+            ${!displayedSwitchPolicy.checked ? 'line-through text-base-content/50' : ''}
+            ${!item.is_effectively_active && displayedSwitchPolicy.checked ? 'text-base-content/55' : ''}`}
           >
             {item.display_name}
           </div>
@@ -306,7 +319,7 @@ function FolderListRowInner({
             >
               <WorkspaceSwitchControl
                 node={actionItem}
-                policy={switchPolicy}
+                policy={displayedSwitchPolicy}
                 isPending={isSwitchPending || mutationsDisabled}
                 isBusy={isSwitchBusy}
                 size="xs"
@@ -319,10 +332,10 @@ function FolderListRowInner({
               />
               <WorkspaceSwitchLabel
                 node={actionItem}
-                policy={switchPolicy}
+                policy={displayedSwitchPolicy}
                 className="text-[10px] font-semibold text-base-content/40 hidden sm:inline"
               />
-              {inactiveReasonText && !switchPolicy.checked && (
+              {inactiveReasonText && !displayedSwitchPolicy.checked && (
                 <span className="hidden text-[10px] text-warning/70 sm:inline">
                   {inactiveReasonText}
                 </span>

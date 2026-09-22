@@ -16,6 +16,16 @@ use tauri::{Emitter, Manager};
 
 const INACTIVE_PREWARM_BUDGET: std::time::Duration = std::time::Duration::from_millis(250);
 
+fn initial_reconcile_reason(
+    activation: bool,
+) -> crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason {
+    if activation {
+        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::GameSwitched
+    } else {
+        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct WatcherActivation {
     pub activation_generation: u64,
@@ -645,6 +655,7 @@ async fn process_event_loop(
     let watcher_state = app.state::<WatcherState>();
     let mods_root = std::path::Path::new(&mods_path_root);
     let watcher_session = session.generation();
+    let initial_reconcile_reason = initial_reconcile_reason(activation.is_some());
     let catch_up = if activation.is_some() {
         disk_reconcile_state.authority_catch_up(&game_id, mods_root, watcher_session)
     } else {
@@ -694,14 +705,14 @@ async fn process_event_loop(
                     crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                         app.clone(),
                         game_id.clone(),
-                        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
+                        initial_reconcile_reason.clone(),
                     )
                     .for_watcher_session(session.clone()),
                 )),
             },
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
                 game_id.clone(),
-                crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
+                initial_reconcile_reason,
                 recovery_paths,
                 recovery_force_full,
             )
@@ -1101,6 +1112,20 @@ mod tests {
             state.suppressor.clone(),
             session,
         )
+    }
+
+    #[test]
+    fn activation_reuses_a_fresh_authoritative_reconcile() {
+        use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
+
+        assert_eq!(
+            initial_reconcile_reason(true),
+            DiskReconcileReason::GameSwitched
+        );
+        assert_eq!(
+            initial_reconcile_reason(false),
+            DiskReconcileReason::ManualRepair
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

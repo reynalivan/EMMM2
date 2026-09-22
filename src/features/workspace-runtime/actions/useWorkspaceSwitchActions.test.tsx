@@ -1,5 +1,5 @@
 import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '@/app/store';
@@ -54,6 +54,11 @@ function wrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
+function wrapperWithClient(client: QueryClient) {
+  return ({ children }: { children: React.ReactNode }) =>
+    React.createElement(QueryClientProvider, { client }, children);
+}
+
 function openParentDialog(token: string): void {
   useAppStore.setState({
     activeGameId: 'game-1',
@@ -99,6 +104,9 @@ function appliedSwitchResult(primaryPath: string): WorkspaceSwitchResult {
 describe('useWorkspaceSwitchActions parent confirmation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(useQueryClient).mockReturnValue(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    );
     openParentDialog('confirm-1');
   });
 
@@ -211,6 +219,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     await waitFor(() => {
       expect(result.current.isNodePending(firstNode)).toBe(true);
     });
+    expect(result.current.getPendingDesiredEnabled(firstNode)).toBe(true);
     expect(result.current.isPending).toBe(false);
     expect(result.current.isNodePending(secondNode)).toBe(false);
 
@@ -234,6 +243,93 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       });
       await pending;
     });
+  });
+
+  it('shows each latest toggle immediately while the native switch is in flight', async () => {
+    let finishFirst!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch
+      .mockReturnValueOnce(
+        new Promise<WorkspaceSwitchResult>((resolve) => {
+          finishFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/A'));
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/A',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    let firstToggle!: Promise<string | null>;
+    let secondToggle!: Promise<string | null>;
+    act(() => {
+      firstToggle = result.current.toggleNode(node, 'folder_grid');
+    });
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+
+    act(() => {
+      secondToggle = result.current.toggleNode(node, 'folder_grid');
+    });
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishFirst(appliedSwitchResult('E:/Mods/A'));
+      await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2));
+      await Promise.all([firstToggle, secondToggle]);
+    });
+
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.desired_enabled)).toEqual([
+      true,
+      false,
+    ]);
+    expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
+  });
+
+  it('does not wait for cache refresh before accepting a toggle against the new path', async () => {
+    let releaseRefresh!: () => void;
+    const refreshPending = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(refreshPending);
+    vi.mocked(useQueryClient).mockReturnValue(queryClient);
+    executeWorkspaceSwitch
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/A'))
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/DISABLED A',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), {
+      wrapper: wrapperWithClient(queryClient),
+    });
+
+    let firstToggle!: Promise<string | null>;
+    await act(async () => {
+      firstToggle = result.current.toggleNode(node, 'folder_grid');
+      await firstToggle;
+    });
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+
+    let nextToggle!: Promise<string | null>;
+    await act(async () => {
+      nextToggle = result.current.toggleNode(node, 'folder_grid');
+      await nextToggle;
+    });
+
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.target.value)).toEqual([
+      'E:/Mods/DISABLED A',
+      'E:/Mods/A',
+    ]);
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+
+    releaseRefresh();
+    await waitFor(() => expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined());
   });
 
   it('applies only the latest rapid intent for the same mod', async () => {

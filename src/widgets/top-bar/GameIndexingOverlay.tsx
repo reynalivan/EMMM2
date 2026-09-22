@@ -37,32 +37,34 @@ export function GameIndexingOverlay({ gameName, progress }: GameIndexingOverlayP
 
   return (
     <section
-      className="fixed inset-0 z-[calc(var(--workspace-layer-modal)+1)] grid place-items-center bg-base-100 p-6"
+      className="pointer-events-none fixed right-4 top-4 z-[calc(var(--workspace-layer-modal)+1)] w-[min(24rem,calc(100vw-2rem))]"
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="w-full max-w-md space-y-6 text-center">
-        <div className="space-y-3">
+      <div className="space-y-3 rounded-xl border border-base-content/10 bg-base-100/95 p-4 text-left shadow-lg backdrop-blur">
+        <div className="flex items-start gap-3">
           <Loader2
-            className="mx-auto h-8 w-8 animate-spin text-primary motion-reduce:animate-none"
+            className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-primary motion-reduce:animate-none"
             aria-hidden="true"
           />
-          <h1 className="text-2xl font-bold text-base-content">
-            {t('game_selector.indexing.activation.title', { game: gameName })}
-          </h1>
-          <p className="text-sm text-base-content/70">
-            {t('game_selector.indexing.activation.description')}
-          </p>
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-base-content">
+              {t('game_selector.indexing.activation.title', { game: gameName })}
+            </h1>
+            <p className="text-xs text-base-content/70">
+              {t('game_selector.indexing.activation.description')}
+            </p>
+          </div>
         </div>
 
-        <div className="space-y-4 rounded-2xl border border-base-content/10 bg-base-200/50 p-6 text-left shadow-sm">
+        <div className="space-y-2">
           <div className="flex items-baseline justify-between gap-4">
-            <span className="text-sm font-medium text-base-content/70">
+            <span className="text-xs font-medium text-base-content/70">
               {t('game_selector.indexing.activation.progress_label')}
             </span>
             {hasDeterminateProgress && (
-              <span className="text-sm font-semibold text-base-content">
+              <span className="text-xs font-semibold text-base-content">
                 {t('game_selector.indexing.activation.folders_complete', {
                   completed: completedRoots,
                   total: totalRoots,
@@ -86,7 +88,7 @@ export function GameIndexingOverlay({ gameName, progress }: GameIndexingOverlayP
               />
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-sm text-base-content/65">
+            <div className="flex items-center gap-2 text-xs text-base-content/65">
               <Loader2
                 className="h-4 w-4 animate-spin text-primary motion-reduce:animate-none"
                 aria-hidden="true"
@@ -95,9 +97,7 @@ export function GameIndexingOverlay({ gameName, progress }: GameIndexingOverlayP
             </div>
           )}
 
-          {hasDeterminateProgress && (
-            <p className="text-sm text-base-content/70">{activity}</p>
-          )}
+          {hasDeterminateProgress && <p className="text-xs text-base-content/70">{activity}</p>}
           {rootName && progress?.phase !== 'ScanningRoots' && (
             <p className="text-xs text-base-content/60">
               {t('game_selector.indexing.activation.current_root', { root: rootName })}

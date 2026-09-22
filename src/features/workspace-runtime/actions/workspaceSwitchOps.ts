@@ -235,9 +235,9 @@ export function applyWorkspaceSwitchEffects(
   result: WorkspaceSwitchResult,
   fallbackClass: WorkspaceSwitchFallbackClass,
   options: WorkspaceSwitchEffectsOptions = {},
-): void {
+): Promise<void> {
   if (options.gameId && !isWorkspaceGameCurrent(options.gameId)) {
-    return;
+    return Promise.resolve();
   }
 
   const descriptor =
@@ -279,7 +279,7 @@ export function applyWorkspaceSwitchEffects(
     ]);
   };
 
-  void backgroundRefresh().catch((error: unknown) => {
+  return backgroundRefresh().catch((error: unknown) => {
     console.error('[WorkspaceSwitch] Background cache refresh failed:', error);
   });
 }

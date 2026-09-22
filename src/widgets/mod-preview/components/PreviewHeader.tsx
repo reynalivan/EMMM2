@@ -52,6 +52,17 @@ export default function PreviewHeader({
     [canEdit, selectedFolder],
   );
   const switchPolicy = buildWorkspaceSwitchPolicy(t, actionFolder);
+  const pendingDesiredEnabled = actions.getPendingDesiredEnabled(actionFolder);
+  const displayedSwitchPolicy =
+    pendingDesiredEnabled === undefined
+      ? switchPolicy
+      : {
+          ...switchPolicy,
+          checked: pendingDesiredEnabled,
+          label: switchPolicy.blocked
+            ? switchPolicy.label
+            : t(pendingDesiredEnabled ? 'common:status.enabled' : 'common:status.disabled'),
+        };
   const modViewer = useModViewerLaunch(actionFolder);
 
   return (
@@ -148,7 +159,7 @@ export default function PreviewHeader({
         <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-base-content/65 hover:text-base-content">
           <WorkspaceSwitchControl
             node={actionFolder}
-            policy={switchPolicy}
+            policy={displayedSwitchPolicy}
             isPending={!canEdit || actions.isSwitchPending}
             isBusy={
               isWorkspaceExplorerNode(actionFolder) && actions.isFolderSwitchPending(actionFolder)
@@ -161,7 +172,11 @@ export default function PreviewHeader({
               }
             }}
           />
-          <WorkspaceSwitchLabel node={actionFolder} policy={switchPolicy} className="font-medium" />
+          <WorkspaceSwitchLabel
+            node={actionFolder}
+            policy={displayedSwitchPolicy}
+            className="font-medium"
+          />
         </label>
         {resolvedSubtitle && (
           <span className="min-w-0 flex-1 truncate text-base-content/55" title={resolvedSubtitle}>

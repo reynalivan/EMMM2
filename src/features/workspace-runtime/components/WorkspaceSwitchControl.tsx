@@ -6,7 +6,7 @@ interface WorkspaceSwitchControlProps {
   policy: WorkspaceSwitchPolicy;
   /** Disables the control (covers global locks and policy blocks, not just switches). */
   isPending: boolean;
-  /** A switch for THIS node is in flight — show a spinner while the backend round-trip runs. */
+  /** A switch for THIS node is in flight. Kept for accessible busy state only. */
   isBusy?: boolean;
   size: 'xs' | 'sm';
   ariaLabel: string;
@@ -41,15 +41,6 @@ export function WorkspaceSwitchControl({
           onToggle(node);
         }}
       />
-      {isBusy && (
-        <span
-          role="status"
-          aria-label={`${ariaLabel} pending`}
-          className={`pointer-events-none absolute inset-0 m-auto loading loading-spinner text-primary ${
-            size === 'xs' ? 'loading-xs' : 'loading-sm'
-          }`}
-        />
-      )}
     </span>
   );
 }

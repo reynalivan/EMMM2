@@ -137,7 +137,6 @@ export function useFolderGrid() {
 
   const {
     actions,
-    switchActions,
     handleRevealInExplorer,
     currentFolderPath,
     handleOpenCurrentFolderInExplorer,
@@ -274,7 +273,8 @@ export function useFolderGrid() {
     handleImportFiles,
     isPreviewOpen,
     togglePreview,
-    isSwitchPending: switchActions.isPending,
-    isFolderSwitchPending: switchActions.isNodePending,
+    isSwitchPending: actions.isSwitchPending,
+    isFolderSwitchPending: actions.isFolderSwitchPending,
+    getFolderPendingDesiredEnabled: actions.getPendingDesiredEnabled,
   };
 }

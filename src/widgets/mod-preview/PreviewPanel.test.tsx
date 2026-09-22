@@ -36,6 +36,7 @@ const sharedModActionsState = {
   duplicateWarning: { open: false, folder: null, duplicates: [] },
   isSwitchPending: false,
   isFolderSwitchPending: vi.fn(() => false),
+  getPendingDesiredEnabled: vi.fn(() => undefined),
   setDeleteConfirm: vi.fn(),
   openMoveDialog: vi.fn(),
   closeMoveDialog: vi.fn(),
