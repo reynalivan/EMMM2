@@ -34,6 +34,7 @@ vi.mock('@/features/workspace-runtime/@x/mod-runtime', () => ({
   collectionReferenceImpactRefreshEvents: vi.fn(() => []),
   notifyCollectionReferenceImpact: vi.fn(),
   openFileInUseRetryDialog: vi.fn(() => false),
+  nextWorkspaceIntentRevision: vi.fn(() => 123),
 }));
 
 vi.mock('@/shared/lib/queryRefresh', () => ({
@@ -99,6 +100,7 @@ describe('bulk mod mutations', () => {
       ['E:/Mods/DISABLED Blue'],
       true,
       expect.stringMatching(/^toggle-[0-9a-f-]+$/),
+      123,
     );
   });
 

@@ -22,22 +22,6 @@ use crate::shared::errors::AppError;
 #[path = "tests/prepared_switch_tests.rs"]
 mod prepared_switch_tests;
 
-fn map_duplicates(
-    duplicates: Vec<crate::modules::library::domain::mods::DuplicateModInfo>,
-) -> Vec<WorkspaceSwitchDuplicate> {
-    duplicates
-        .into_iter()
-        .map(|duplicate| WorkspaceSwitchDuplicate {
-            mod_id: duplicate.mod_id,
-            object_id: duplicate.object_id,
-            folder_path: duplicate.folder_path,
-            actual_name: duplicate.actual_name,
-            is_variant: duplicate.is_variant,
-            parent_path: duplicate.parent_path,
-        })
-        .collect()
-}
-
 #[derive(Debug, Clone)]
 pub struct PreparedModSwitch {
     target_path: String,
@@ -259,6 +243,7 @@ impl PreparedWorkspaceSwitch {
                     ),
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    disk_revision: None,
                 })
             }
             Self::Objects(prepared_objects) => {
@@ -318,6 +303,7 @@ impl PreparedWorkspaceSwitch {
                     impact,
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    disk_revision: None,
                 })
             }
             Self::Mod(prepared) => {
@@ -394,6 +380,7 @@ impl PreparedWorkspaceSwitch {
                     impact,
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    disk_revision: None,
                 })
             }
         }
@@ -501,6 +488,15 @@ pub async fn prepare_switch(
         ));
     }
 
+    if input.resolution == WorkspaceSwitchResolution::Normal
+        && !input.enable_disabled_ancestors
+        && input.parent_enable_confirmation.is_none()
+    {
+        if let Some(prepared) = prepare_normal_leaf_switch(input, config)? {
+            return Ok(prepared);
+        }
+    }
+
     let resolved_target = resolve_mod_target_path(
         pool,
         &input.game_id,
@@ -555,43 +551,32 @@ pub async fn prepare_switch(
                     ),
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    disk_revision: None,
                 },
             )));
         }
     }
     let mut disable_paths = Vec::new();
-    let mut duplicates = Vec::new();
-    if input.desired_enabled && input.resolution != WorkspaceSwitchResolution::ForceEnable {
-        let target_rel =
-            crate::shared::path_key::relative_to_root(validated_target.original(), &mods_root);
-        if matches!(input.resolution, WorkspaceSwitchResolution::EnableOnlyThis) {
-            for object_id in &resolved_target.changed_object_ids {
-                let siblings = if input.enable_disabled_ancestors {
-                    crate::modules::library::adapters::sqlite::mods::get_object_mod_paths(
-                        pool,
-                        &input.game_id,
-                        object_id,
-                        resolved_target.mod_id.as_deref(),
-                    )
-                    .await?
-                } else {
-                    crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
-                        pool,
-                        object_id,
-                        &input.game_id,
-                        resolved_target.mod_id.as_deref(),
-                    )
-                    .await?
-                };
-                disable_paths.extend(siblings.into_iter().map(|path| mods_root.join(path)));
-            }
-        } else {
-            let detected_duplicates = crate::modules::workspace::application::scanner::conflict::get_duplicates_for_mod_service(
-                pool, &target_rel, &input.game_id,
-            ).await?;
-            if !detected_duplicates.is_empty() {
-                duplicates = map_duplicates(detected_duplicates);
-            }
+    if input.desired_enabled && input.resolution == WorkspaceSwitchResolution::EnableOnlyThis {
+        for object_id in &resolved_target.changed_object_ids {
+            let siblings = if input.enable_disabled_ancestors {
+                crate::modules::library::adapters::sqlite::mods::get_object_mod_paths(
+                    pool,
+                    &input.game_id,
+                    object_id,
+                    resolved_target.mod_id.as_deref(),
+                )
+                .await?
+            } else {
+                crate::modules::library::adapters::sqlite::mods::get_enabled_siblings_paths(
+                    pool,
+                    object_id,
+                    &input.game_id,
+                    resolved_target.mod_id.as_deref(),
+                )
+                .await?
+            };
+            disable_paths.extend(siblings.into_iter().map(|path| mods_root.join(path)));
         }
     }
 
@@ -621,10 +606,106 @@ pub async fn prepare_switch(
         target_path: validated_target.to_string_lossy().into_owned(),
         final_target_path: final_target_path.to_string_lossy().into_owned(),
         changed_object_ids: resolved_target.changed_object_ids,
-        duplicates,
+        duplicates: Vec::new(),
         batches,
         logical_rewrites,
     }))
+}
+
+fn prepare_normal_leaf_switch(
+    input: &WorkspaceSwitchInput,
+    config: &ConfigService,
+) -> Result<Option<PreparedWorkspaceSwitch>, AppError> {
+    let mods_root = config
+        .mods_root_for(&input.game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let requested = Path::new(&input.target.value);
+    let absolute = if requested.is_absolute() {
+        requested.to_path_buf()
+    } else {
+        mods_root.join(requested)
+    };
+    let Some(physical_path) =
+        crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
+            &mods_root,
+            &absolute,
+            input.desired_enabled,
+        )
+    else {
+        return Ok(None);
+    };
+    let validated = crate::platform::fs::guard::validate_path(
+        config,
+        &input.game_id,
+        &physical_path.to_string_lossy(),
+    )?;
+    let mods_root = crate::platform::fs::guard::validate_mods_root(
+        config,
+        &input.game_id,
+        &mods_root.to_string_lossy(),
+    )?;
+    if input.desired_enabled
+        && !crate::modules::workspace::application::scanner::conflict::disabled_ancestor_paths(
+            validated.as_ref(),
+            &mods_root,
+        )
+        .is_empty()
+    {
+        return Ok(None);
+    }
+    let path = validated.as_ref();
+    let (_, mut target_batch, final_target_path, logical_rewrites) =
+        prepare_target_activation_batches(path, input.desired_enabled, &[])?;
+    target_batch.resequence(0);
+    let physical_string = path.to_string_lossy().into_owned();
+    let final_string = final_target_path.to_string_lossy().into_owned();
+    if target_batch.planned_steps().is_empty() {
+        let parent = path
+            .parent()
+            .ok_or_else(|| AppError::Io("Invalid mod path".to_string()))?;
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if let Some(existing) =
+            crate::modules::library::application::mods::core_ops::find_sibling_identity_collision(
+                parent,
+                &name,
+                Some(path),
+            )
+        {
+            let base = crate::modules::workspace::domain::normalizer::normalize_display_name(&name);
+            return Err(
+                crate::modules::library::application::mods::core_ops::rename_conflict_error(
+                    path, &existing, &base,
+                ),
+            );
+        }
+        return Ok(Some(PreparedWorkspaceSwitch::Immediate(Box::new(
+            WorkspaceSwitchResult {
+                status: WorkspaceSwitchStatus::Noop,
+                primary_path: Some(physical_string.clone()),
+                changed_folder_paths: Vec::new(),
+                changed_object_ids: Vec::new(),
+                duplicates: Vec::new(),
+                parent_enable_requirement: None,
+                impact: build_switch_impact(
+                    Some(&physical_string),
+                    Some(&physical_string),
+                    &[],
+                    &[],
+                ),
+                sync_warning: None,
+                runtime_sync_generation: None,
+                disk_revision: None,
+            },
+        ))));
+    }
+    Ok(Some(PreparedWorkspaceSwitch::Mod(PreparedModSwitch {
+        target_path: physical_string,
+        final_target_path: final_string,
+        changed_object_ids: Vec::new(),
+        duplicates: Vec::new(),
+        batches: vec![target_batch],
+        logical_rewrites,
+    })))
 }
 
 fn rebase_path(mut path: PathBuf, rewrites: &[(PathBuf, PathBuf)]) -> PathBuf {

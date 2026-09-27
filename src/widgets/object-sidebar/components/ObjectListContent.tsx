@@ -12,7 +12,30 @@ import { ObjectContextMenu, type ContextMenuTarget } from './ObjectContextMenu';
 import { buildObjectContextMenuTarget } from './ObjectContextMenuTarget';
 import { ContextMenu } from '../../../shared/ui/components/ui/ContextMenu';
 import type { FlatItem } from '../hooks/useObjectListVirtualizer';
-import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime';
+import {
+  buildWorkspaceObjectActionPolicy,
+  maskWorkspaceNodeCapabilities,
+} from '@/features/workspace-runtime';
+import type { WorkspaceObjectNode } from '@/entities/workspace';
+
+function contextTarget(
+  node: WorkspaceObjectNode,
+  mutationsDisabled: boolean,
+  switchDisabled: boolean,
+): ContextMenuTarget {
+  const maskedNode = maskWorkspaceNodeCapabilities(node, mutationsDisabled);
+  const masked = buildObjectContextMenuTarget(maskedNode);
+  const maskedPolicy = buildWorkspaceObjectActionPolicy(maskedNode);
+  const switchPolicy = buildWorkspaceObjectActionPolicy(node);
+  return {
+    ...masked,
+    actionPolicy: {
+      ...maskedPolicy,
+      canEnable: !switchDisabled && switchPolicy.canEnable,
+      canDisable: !switchDisabled && switchPolicy.canDisable,
+    },
+  };
+}
 
 interface ContentProps {
   parentRef: Ref<HTMLDivElement>;
@@ -36,7 +59,9 @@ interface ContentProps {
   isBulkSelected?: (id: string) => boolean;
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
   mutationsDisabled?: boolean;
+  switchDisabled?: boolean;
   isObjectSwitchPending?: (node: import('@/entities/workspace').WorkspaceObjectNode) => boolean;
+  getObjectPendingDesiredEnabled?: (node: WorkspaceObjectNode) => boolean | undefined;
 }
 
 /** Shared props for building ObjectContextMenu */
@@ -90,7 +115,9 @@ export default function ObjectListContent({
   isBulkSelected,
   onToggleBulkSelect,
   mutationsDisabled = false,
+  switchDisabled = false,
   isObjectSwitchPending,
+  getObjectPendingDesiredEnabled,
 }: ContentProps) {
   const ctx = contextMenuProps;
 
@@ -161,9 +188,7 @@ export default function ObjectListContent({
               >
                 <ContextMenu
                   content={renderContextMenu(
-                    buildObjectContextMenuTarget(
-                      maskWorkspaceNodeCapabilities(item.obj, mutationsDisabled),
-                    ),
+                    contextTarget(item.obj, mutationsDisabled, switchDisabled),
                     ctx,
                   )}
                 >
@@ -179,6 +204,7 @@ export default function ObjectListContent({
                     isBulkSelected={isBulkSelected?.(item.obj.id)}
                     onToggleBulkSelect={item.obj.is_registered ? onToggleBulkSelect : undefined}
                     isSwitchPending={isObjectSwitchPending?.(item.obj)}
+                    pendingDesiredEnabled={getObjectPendingDesiredEnabled?.(item.obj)}
                   />
                 </ContextMenu>
               </div>
@@ -196,6 +222,7 @@ export default function ObjectListContent({
         isMobile={isMobile}
         contextMenuProps={ctx}
         mutationsDisabled={mutationsDisabled}
+        switchDisabled={switchDisabled}
       />
     </div>
   );
@@ -211,6 +238,7 @@ interface StickyRowProps {
   isMobile: boolean;
   contextMenuProps: ContextMenuHandlerProps;
   mutationsDisabled: boolean;
+  switchDisabled: boolean;
 }
 
 function StickyRow({
@@ -221,6 +249,7 @@ function StickyRow({
   isMobile,
   contextMenuProps: ctx,
   mutationsDisabled,
+  switchDisabled,
 }: StickyRowProps) {
   if (!stickyPosition || selectedIndex < 0) return null;
 
@@ -242,9 +271,7 @@ function StickyRow({
       <div className="bg-base-100/95 backdrop-blur-md rounded-lg relative">
         <ContextMenu
           content={renderContextMenu(
-            buildObjectContextMenuTarget(
-              maskWorkspaceNodeCapabilities(item.obj, mutationsDisabled),
-            ),
+            contextTarget(item.obj, mutationsDisabled, switchDisabled),
             ctx,
           )}
         >

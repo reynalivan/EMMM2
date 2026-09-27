@@ -5,7 +5,6 @@ fn status_text_uses_the_runtime_safe_state_and_configured_bindings() {
     let fields = StatusFields {
         safe_mode: true,
         preset_name: Some("Maid Pack".to_string()),
-        ..Default::default()
     };
     let text = generate_status_text(
         &fields,

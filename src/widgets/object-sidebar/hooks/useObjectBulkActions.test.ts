@@ -18,6 +18,10 @@ const toastSuccess = vi.fn();
 const toastError = vi.fn();
 const executeWorkspaceObjectBulkSwitch = vi.fn();
 const applyWorkspaceSwitchEffects = vi.fn();
+const setObjectBulkPendingDesired = vi.fn();
+const clearObjectBulkPendingDesired = vi.fn();
+const admitWorkspaceIntentOverride = vi.hoisted(() => vi.fn());
+const activeGameState = vi.hoisted(() => ({ id: 'game-1' }));
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
@@ -42,7 +46,7 @@ vi.mock('@tanstack/react-query', async () => ({
 }));
 
 vi.mock('@/entities/game', () => ({
-  useActiveGame: () => ({ activeGame: { id: 'game-1' } }),
+  useActiveGame: () => ({ activeGame: { id: activeGameState.id } }),
 }));
 
 // Run the wrapped mutation directly: the optimistic patch and its trailing
@@ -55,6 +59,7 @@ vi.mock('@/features/workspace-runtime', async (importOriginal) => ({
   executeWorkspaceObjectBulkSwitch: (...args: unknown[]) =>
     executeWorkspaceObjectBulkSwitch(...args),
   applyWorkspaceSwitchEffects: (...args: unknown[]) => applyWorkspaceSwitchEffects(...args),
+  admitWorkspaceIntentOverride,
   useDeleteObject: () => ({ mutateAsync: vi.fn() }),
 }));
 
@@ -74,6 +79,8 @@ vi.mock('@/features/workspace-runtime/optimistic/descriptorBuilders', () => ({
 
 vi.mock('@/features/workspace-runtime/actions/useWorkspaceSwitchActions', () => ({
   useWorkspaceSwitchActions: () => ({ setNodeEnabled: vi.fn() }),
+  setObjectBulkPendingDesired: (...args: unknown[]) => setObjectBulkPendingDesired(...args),
+  clearObjectBulkPendingDesired: (...args: unknown[]) => clearObjectBulkPendingDesired(...args),
 }));
 
 vi.mock('../utils/runBulkClassifyAndMatch', () => ({
@@ -104,6 +111,8 @@ function setup() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  applyWorkspaceSwitchEffects.mockResolvedValue(undefined);
+  activeGameState.id = 'game-1';
   useAppStore.setState({ activeGameId: 'game-1' });
 });
 
@@ -185,6 +194,34 @@ describe('handleBulkSafe', () => {
 });
 
 describe('object enable batch', () => {
+  it('keeps pending switches isolated when the active game changes', async () => {
+    let finishFirst!: (value: typeof objectSwitchResult) => void;
+    executeWorkspaceObjectBulkSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(objectSwitchResult);
+    const hook = renderHook(() => useObjectBulkActions({ objects }));
+
+    act(() => {
+      void hook.result.current.handleBulkEnable(new Set(['a']));
+    });
+    activeGameState.id = 'game-2';
+    useAppStore.setState({ activeGameId: 'game-2' });
+    hook.rerender();
+    await act(async () => {
+      await hook.result.current.handleBulkDisable(new Set(['b']));
+    });
+
+    expect(executeWorkspaceObjectBulkSwitch.mock.calls).toEqual([
+      ['game-1', ['a'], true, expect.any(Number)],
+      ['game-2', ['b'], false, expect.any(Number)],
+    ]);
+    await act(async () => finishFirst(objectSwitchResult));
+  });
   it('uses one atomic workspace command and one trailing effect publication', async () => {
     executeWorkspaceObjectBulkSwitch.mockResolvedValue(objectSwitchResult);
     applyWorkspaceSwitchEffects.mockResolvedValue(undefined);
@@ -192,7 +229,12 @@ describe('object enable batch', () => {
     await setup().current.handleBulkEnable(new Set(['a', 'b']));
 
     expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledTimes(1);
-    expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledWith('game-1', ['a', 'b'], true);
+    expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledWith(
+      'game-1',
+      ['a', 'b'],
+      true,
+      expect.any(Number),
+    );
     expect(applyWorkspaceSwitchEffects).toHaveBeenCalledTimes(1);
     expect(toastSuccess).toHaveBeenCalledTimes(1);
   });
@@ -212,7 +254,7 @@ describe('object enable batch', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
-  it('suppresses a duplicate submit while the atomic batch is in flight', async () => {
+  it('coalesces same-direction clicks while preserving the latest revision', async () => {
     let complete: ((value: typeof objectSwitchResult) => void) | undefined;
     executeWorkspaceObjectBulkSwitch.mockReturnValue(
       new Promise((resolve) => {
@@ -226,8 +268,14 @@ describe('object enable batch', () => {
     act(() => {
       first = hook.current.handleBulkEnable(new Set(['a', 'b']));
     });
-    await act(async () => {
-      await hook.current.handleBulkEnable(new Set(['a', 'b']));
+    expect(setObjectBulkPendingDesired).toHaveBeenCalledWith(
+      'game-1',
+      ['a', 'b'],
+      true,
+      expect.any(Number),
+    );
+    act(() => {
+      void hook.current.handleBulkEnable(new Set(['a', 'b']));
     });
 
     expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledTimes(1);
@@ -235,5 +283,48 @@ describe('object enable batch', () => {
       complete?.(objectSwitchResult);
       await first;
     });
+    expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledTimes(2);
+    expect(executeWorkspaceObjectBulkSwitch.mock.calls[1][3]).toBeGreaterThan(
+      executeWorkspaceObjectBulkSwitch.mock.calls[0][3],
+    );
+  });
+
+  it('runs the latest opposite direction after an in-flight atomic batch', async () => {
+    let completeFirst!: (value: typeof objectSwitchResult) => void;
+    executeWorkspaceObjectBulkSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise<typeof objectSwitchResult>((resolve) => {
+            completeFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(objectSwitchResult);
+    applyWorkspaceSwitchEffects.mockResolvedValue(undefined);
+    const hook = setup();
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = hook.current.handleBulkEnable(new Set(['a', 'b']));
+      second = hook.current.handleBulkDisable(new Set(['a', 'b']));
+    });
+    expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledTimes(1);
+    expect(admitWorkspaceIntentOverride).toHaveBeenCalledWith(
+      'game-1',
+      [
+        { kind: 'object_id', value: 'a' },
+        { kind: 'object_id', value: 'b' },
+      ],
+      expect.any(Number),
+    );
+
+    await act(async () => {
+      completeFirst(objectSwitchResult);
+      await Promise.all([first, second]);
+    });
+    expect(executeWorkspaceObjectBulkSwitch.mock.calls.map((call) => call[2])).toEqual([
+      true,
+      false,
+    ]);
   });
 });

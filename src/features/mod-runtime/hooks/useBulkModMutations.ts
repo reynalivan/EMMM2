@@ -21,6 +21,7 @@ import {
 import type { ModInfoUpdate } from '@/entities/game-object';
 import { formatAppError } from '../../../shared/lib/appError';
 import { openFileInUseRetryDialog } from '@/features/workspace-runtime/@x/mod-runtime';
+import { nextWorkspaceIntentRevision } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   collectionReferenceImpactRefreshEvents,
   notifyCollectionReferenceImpact,
@@ -55,6 +56,7 @@ export function useBulkToggle() {
         params.paths,
         params.enable,
         createBulkOperationId('toggle'),
+        nextWorkspaceIntentRevision(),
       ),
 
     onSuccess: (result, variables) => {

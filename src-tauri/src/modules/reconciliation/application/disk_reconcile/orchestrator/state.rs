@@ -109,11 +109,17 @@ static ACTIVATION_EPOCH: LazyLock<Arc<std::sync::Mutex<ActivationEpochState>>> =
     LazyLock::new(|| Arc::new(std::sync::Mutex::new(ActivationEpochState::default())));
 
 #[cfg(test)]
-static ACTIVATION_EPOCH_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static ACTIVATION_EPOCH_TEST_LOCK: LazyLock<Arc<tokio::sync::Mutex<()>>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(())));
 
 #[cfg(test)]
-pub(crate) fn activation_epoch_test_guard() -> std::sync::MutexGuard<'static, ()> {
-    lock(&ACTIVATION_EPOCH_TEST_LOCK)
+pub(crate) fn activation_epoch_test_guard() -> tokio::sync::OwnedMutexGuard<()> {
+    Arc::clone(&ACTIVATION_EPOCH_TEST_LOCK).blocking_lock_owned()
+}
+
+#[cfg(test)]
+pub(crate) async fn activation_epoch_test_guard_async() -> tokio::sync::OwnedMutexGuard<()> {
+    Arc::clone(&ACTIVATION_EPOCH_TEST_LOCK).lock_owned().await
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,6 +190,18 @@ enum DiskMutationOperationGuard {
 }
 
 impl DiskMutationLease {
+    pub(crate) fn from_reconcile_guard(
+        game_guard: OwnedMutexGuard<()>,
+        operation_guard: crate::platform::fs::operation_lock::OpGuard,
+    ) -> Self {
+        Self {
+            _game_guard: game_guard,
+            operation_guard: DiskMutationOperationGuard::LockOnly {
+                _guard: operation_guard,
+            },
+        }
+    }
+
     pub(crate) fn from_durable_guard(
         game_guard: OwnedMutexGuard<()>,
         operation_guard: crate::modules::mutation::coordinator::MutationGuard,
@@ -234,6 +252,15 @@ impl DiskMutationLease {
     pub(crate) fn mark_db_committed(&self) -> Result<(), AppError> {
         match &self.operation_guard {
             DiskMutationOperationGuard::Durable(guard) => guard.mark_db_committed(),
+            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
+                "Mutation lease has no durable operation plan".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn mark_disk_committed(&self) -> Result<u64, AppError> {
+        match &self.operation_guard {
+            DiskMutationOperationGuard::Durable(guard) => guard.mark_disk_committed(),
             DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
                 "Mutation lease has no durable operation plan".to_string(),
             )),
@@ -1015,8 +1042,7 @@ impl DiskReconcileState {
 #[cfg(test)]
 mod initial_recovery_tests {
     use super::{
-        activation_epoch_test_guard, DiskReconcileState, InitialRecoveryClaim,
-        InitialRecoveryOutcome, InitialRecoveryReadiness,
+        DiskReconcileState, InitialRecoveryClaim, InitialRecoveryOutcome, InitialRecoveryReadiness,
     };
     use std::sync::Arc;
     use std::time::Duration;
@@ -1103,7 +1129,7 @@ mod initial_recovery_tests {
 
     #[tokio::test]
     async fn concurrent_activations_only_leave_the_latest_generation_authorized() {
-        let _test_guard = activation_epoch_test_guard();
+        let _test_guard = super::activation_epoch_test_guard_async().await;
         let state = Arc::new(DiskReconcileState::new());
         let (first_started_tx, first_started) = tokio::sync::oneshot::channel();
         let (release_first_tx, release_first) = tokio::sync::oneshot::channel();

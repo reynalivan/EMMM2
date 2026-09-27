@@ -8,13 +8,24 @@ import type {
   WorkspaceSwitchInput,
   WorkspaceSwitchResult,
 } from '@/entities/workspace';
-import { useWorkspaceSwitchActions } from './useWorkspaceSwitchActions';
+import {
+  clearFolderBulkPendingDesired,
+  clearObjectBulkPendingDesired,
+  setFolderBulkPendingDesired,
+  setObjectBulkPendingDesired,
+  useWorkspaceSwitchActions,
+} from './useWorkspaceSwitchActions';
+import { recordWorkspaceProjectedRevision } from './workspaceSwitchOps';
 
 const executeWorkspaceSwitch = vi.fn();
+const getWorkspaceSwitchSnapshot = vi.fn();
+const admitWorkspaceSwitchIntent = vi.fn().mockResolvedValue(true);
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitch(...args),
+    getWorkspaceSwitchSnapshot: (...args: unknown[]) => getWorkspaceSwitchSnapshot(...args),
+    admitWorkspaceSwitchIntent: (...args: unknown[]) => admitWorkspaceSwitchIntent(...args),
   },
 }));
 
@@ -98,16 +109,59 @@ function appliedSwitchResult(primaryPath: string): WorkspaceSwitchResult {
     },
     sync_warning: null,
     runtime_sync_generation: null,
+    disk_revision: null,
   };
 }
 
 describe('useWorkspaceSwitchActions parent confirmation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    executeWorkspaceSwitch.mockReset();
+    getWorkspaceSwitchSnapshot.mockResolvedValue({
+      game_id: 'game-1',
+      source_epoch: 'root-a',
+      disk_revision: 42,
+      projected_revision: 0,
+    });
     vi.mocked(useQueryClient).mockReturnValue(
       new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     );
     openParentDialog('confirm-1');
+  });
+
+  it('keeps only the newest object bulk optimistic state', () => {
+    const node = {
+      node_kind: 'object',
+      id: 'obj-1',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    act(() => setObjectBulkPendingDesired('game-1', ['obj-1'], true, 100));
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+    act(() => setObjectBulkPendingDesired('game-1', ['obj-1'], false, 101));
+    act(() => clearObjectBulkPendingDesired('game-1', ['obj-1'], 100));
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+    act(() => clearObjectBulkPendingDesired('game-1', ['obj-1'], 101));
+    expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
+  });
+
+  it('keeps the newest bulk folder state across enabled and disabled path spellings', () => {
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-1',
+      path: 'E:/Mods/Blue',
+      switch_state: 'enabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    act(() => setFolderBulkPendingDesired('game-1', ['E:/Mods/DISABLED Blue'], true, 200));
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+    act(() => setFolderBulkPendingDesired('game-1', ['E:/Mods/Blue'], false, 201));
+    act(() => clearFolderBulkPendingDesired('game-1', ['E:/Mods/DISABLED Blue'], 200));
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+    act(() => clearFolderBulkPendingDesired('game-1', ['E:/Mods/Blue'], 201));
+    expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
   });
 
   it('binds the reviewed token to the confirmed mutation and duplicate continuation', async () => {
@@ -132,11 +186,14 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       await result.current.resolveParentEnable();
     });
 
-    expect(executeWorkspaceSwitch).toHaveBeenCalledWith({
-      ...resumeInput,
-      enable_disabled_ancestors: true,
-      parent_enable_confirmation: 'confirm-1',
-    });
+    expect(executeWorkspaceSwitch).toHaveBeenCalledWith(
+      {
+        ...resumeInput,
+        enable_disabled_ancestors: true,
+        parent_enable_confirmation: 'confirm-1',
+      },
+      expect.any(Number),
+    );
     expect(useAppStore.getState().workspaceDialogState).toMatchObject({
       kind: 'modDuplicateWarning',
       enableDisabledAncestors: true,
@@ -240,6 +297,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
         },
         sync_warning: null,
         runtime_sync_generation: null,
+        disk_revision: null,
       });
       await pending;
     });
@@ -273,7 +331,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       secondToggle = result.current.toggleNode(node, 'folder_grid');
     });
     expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
-    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
 
     await act(async () => {
       finishFirst(appliedSwitchResult('E:/Mods/A'));
@@ -332,13 +390,51 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     await waitFor(() => expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined());
   });
 
+  it('retains the disk receipt overlay until projection and the refreshed query settle', async () => {
+    let releaseRefresh!: () => void;
+    const refreshPending = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(refreshPending);
+    vi.mocked(useQueryClient).mockReturnValue(queryClient);
+    executeWorkspaceSwitch.mockResolvedValue({
+      ...appliedSwitchResult('E:/Mods/A'),
+      disk_revision: 42,
+    });
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/DISABLED A',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), {
+      wrapper: wrapperWithClient(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.setNodeEnabled(node, true, 'folder_grid');
+    });
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+    expect(invalidate).not.toHaveBeenCalled();
+
+    act(() => recordWorkspaceProjectedRevision('game-1', 42));
+    await waitFor(() => expect(invalidate).toHaveBeenCalled());
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+
+    releaseRefresh();
+    await waitFor(() => expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined());
+  });
+
   it('applies only the latest rapid intent for the same mod', async () => {
     let completeFirst!: (value: WorkspaceSwitchResult) => void;
-    executeWorkspaceSwitch.mockReturnValueOnce(
-      new Promise<WorkspaceSwitchResult>((resolve) => {
-        completeFirst = resolve;
-      }),
-    );
+    executeWorkspaceSwitch
+      .mockReturnValueOnce(
+        new Promise<WorkspaceSwitchResult>((resolve) => {
+          completeFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/A'));
     const node = {
       node_kind: 'terminal_mod',
       id: 'mod-a',
@@ -357,9 +453,16 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       third = result.current.toggleNode(node, 'folder_grid');
     });
 
-    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
+    expect(admitWorkspaceSwitchIntent).toHaveBeenCalledTimes(2);
+    expect(admitWorkspaceSwitchIntent).toHaveBeenLastCalledWith(
+      'game-1',
+      [{ kind: 'mod_path', value: 'E:/Mods/DISABLED A' }],
+      expect.any(Number),
+    );
     expect(executeWorkspaceSwitch).toHaveBeenLastCalledWith(
       expect.objectContaining({ desired_enabled: true }),
+      expect.any(Number),
     );
 
     await act(async () => {
@@ -371,7 +474,45 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       ]);
     });
 
-    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1);
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces a thousand alternating clicks into one running and one latest operation', async () => {
+    let completeFirst!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise<WorkspaceSwitchResult>((resolve) => {
+            completeFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/DISABLED A',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    const completions: Array<Promise<string | null>> = [];
+
+    act(() => {
+      for (let click = 0; click < 1_000; click += 1) {
+        completions.push(result.current.toggleNode(node, 'folder_grid'));
+      }
+    });
+    expect(new Set(completions).size).toBe(1);
+    expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      completeFirst(appliedSwitchResult('E:/Mods/A'));
+      await Promise.all(completions);
+    });
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.desired_enabled)).toEqual([
+      true,
+      false,
+    ]);
   });
 
   it('runs the final opposite intent after an in-flight switch completes', async () => {
@@ -400,6 +541,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       second = result.current.toggleNode(node, 'folder_grid');
     });
 
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
     await act(async () => {
       completeFirst(appliedSwitchResult('E:/Mods/A'));
       await waitFor(() => {
@@ -413,6 +555,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
 
     expect(executeWorkspaceSwitch).toHaveBeenLastCalledWith(
       expect.objectContaining({ desired_enabled: false }),
+      expect.any(Number),
     );
   });
 
@@ -443,6 +586,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       second = result.current.toggleNode(node, 'folder_grid');
     });
 
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
     await act(async () => {
       completeFirst({
         ...appliedSwitchResult('E:/Mods/A'),
@@ -494,25 +638,95 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       second = result.current.toggleNode(disabledNode, 'folder_grid');
     });
 
-    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1);
-    expect(executeWorkspaceSwitch).toHaveBeenLastCalledWith(
-      expect.objectContaining({ desired_enabled: false }),
-    );
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2));
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.desired_enabled)).toEqual([
+      false,
+      true,
+    ]);
 
     await act(async () => {
       completeFirst(appliedSwitchResult('E:/Mods/DISABLED A'));
-      await waitFor(() => {
-        expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
-      });
       await expect(Promise.all([first, second])).resolves.toEqual([
         'E:/Mods/DISABLED A',
         'E:/Mods/B',
       ]);
     });
 
-    expect(executeWorkspaceSwitch).toHaveBeenLastCalledWith(
-      expect.objectContaining({ desired_enabled: true }),
-    );
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares the latest same-mod intent across hook instances and explicit set-state', async () => {
+    let completeFirst!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise<WorkspaceSwitchResult>((resolve) => {
+            completeFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/DISABLED A',
+      switch_state: 'disabled',
+    } as never;
+    const grid = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    const preview = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    let first!: Promise<string | null>;
+    let second!: Promise<string | null>;
+    act(() => {
+      first = grid.result.current.toggleNode(node, 'folder_grid');
+      second = preview.result.current.setNodeEnabled(node, false, 'preview');
+    });
+
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
+    expect(grid.result.current.getPendingDesiredEnabled(node)).toBe(false);
+    expect(preview.result.current.getPendingDesiredEnabled(node)).toBe(false);
+
+    await act(async () => {
+      completeFirst(appliedSwitchResult('E:/Mods/A'));
+      await Promise.all([first, second]);
+    });
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.desired_enabled)).toEqual([
+      true,
+      false,
+    ]);
+  });
+
+  it('coalesces folder-path requests across enabled and disabled spellings', async () => {
+    let completeFirst!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise<WorkspaceSwitchResult>((resolve) => {
+            completeFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    let first!: Promise<string | null>;
+    let second!: Promise<string | null>;
+    act(() => {
+      first = result.current.setFolderPathEnabled('E:/Mods/DISABLED A', true);
+      second = result.current.setFolderPathEnabled('E:/Mods/A', false);
+    });
+    await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      completeFirst(appliedSwitchResult('E:/Mods/A'));
+      await Promise.all([first, second]);
+    });
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.target.value)).toEqual([
+      'E:/Mods/DISABLED A',
+      'E:/Mods/A',
+    ]);
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.desired_enabled)).toEqual([
+      true,
+      false,
+    ]);
   });
 
   it('enables a conflicting mod before opening an informational warning', async () => {
@@ -541,6 +755,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       },
       sync_warning: null,
       runtime_sync_generation: null,
+      disk_revision: null,
     } satisfies WorkspaceSwitchResult);
     const node = {
       node_kind: 'terminal_mod',

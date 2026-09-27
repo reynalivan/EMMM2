@@ -93,6 +93,6 @@ tauri-plugin-single-instance = "2"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-native-tls", "sqlite", "migrate", "macros", "json"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_RestartManager"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_RestartManager"] }
 webview2-com = "0.38.2"
 windows = { version = "0.61", features = ["Win32_System_Com"] }

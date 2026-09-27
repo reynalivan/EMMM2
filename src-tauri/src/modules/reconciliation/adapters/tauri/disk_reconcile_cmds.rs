@@ -499,6 +499,7 @@ pub async fn begin_onboarding_indexing(
     game_ids: Vec<String>,
     config: State<'_, crate::modules::settings::application::config::ConfigService>,
     sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
+    operation_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingSession,
     AppError,
@@ -531,7 +532,10 @@ pub async fn begin_onboarding_indexing(
     let progress_telemetry_sink = telemetry_sink.clone();
     let progress_phase_state = Arc::clone(&phase_state);
     let result = sessions
-        .begin_with_progress(requested_games, move |progress| {
+        .begin_with_progress_at_revision(
+            requested_games,
+            operation_lock.current_journal_revision().ok(),
+            move |progress| {
             if let Some(status) = progress_sessions.record_snapshot_progress(&progress) {
                 emit_onboarding_background_status(&progress_app, status);
             }
@@ -566,7 +570,8 @@ pub async fn begin_onboarding_indexing(
             {
                 log::debug!("Could not emit onboarding snapshot progress: {error}");
             }
-        })
+            },
+        )
         .await;
     if let (Some(sink), Err(error)) = (&telemetry_sink, &result) {
         let duration = {
@@ -625,7 +630,13 @@ async fn reconcile_onboarding_indexing_game_impl(
     let snapshot_lease = match sessions.consume(session_id, game_id).await? {
         ConsumedOnboardingSnapshot::Snapshot(lease) => Some(lease),
         ConsumedOnboardingSnapshot::FullFallback => None,
-    };
+    }
+    .filter(|lease| {
+        onboarding_snapshot_revision_is_current(
+            lease.journal_revision(),
+            operation_lock.current_journal_revision(),
+        )
+    });
     update_onboarding_background_phase(
         app,
         sessions,
@@ -668,9 +679,10 @@ async fn reconcile_onboarding_indexing_game_impl(
         request = request.with_precomputed_discovery(lease.discovery());
     }
     let apply_started_at = Instant::now();
-    let mut result = match crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+    let mut result = match reconcile_onboarding_with_foreground_priority(
         context.clone(),
         request,
+        game_id,
     )
     .await
     {
@@ -697,7 +709,9 @@ async fn reconcile_onboarding_indexing_game_impl(
                     crate::modules::system::application::telemetry::TelemetryOperation::OnboardingApply
                 },
                 telemetry_outcome_for_error(&error),
-                crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(&error),
+                crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(
+                    &error,
+                ),
                 apply_started_at.elapsed(),
             );
             return Err(error);
@@ -707,7 +721,13 @@ async fn reconcile_onboarding_indexing_game_impl(
     // The watcher stayed alive until the transaction completed. A late event
     // invalidates the preflight snapshot, so settle with the generic full path.
     let changed_during_apply = match snapshot_lease.as_ref() {
-        Some(lease) => lease.observed_changes_during_apply().await,
+        Some(lease) => {
+            lease.observed_changes_during_apply().await
+                || !onboarding_snapshot_revision_is_current(
+                    lease.journal_revision(),
+                    operation_lock.current_journal_revision(),
+                )
+        }
         None => false,
     };
     if changed_during_apply {
@@ -716,7 +736,7 @@ async fn reconcile_onboarding_indexing_game_impl(
             snapshot_rechecking_progress(session_id.to_string(), game_id.to_string()),
         )?;
         let recheck_started_at = Instant::now();
-        result = match crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+        result = match reconcile_onboarding_with_foreground_priority(
             context,
             DiskReconcileRequest::manual(
                 game_id.to_string(),
@@ -725,6 +745,7 @@ async fn reconcile_onboarding_indexing_game_impl(
                 true,
             )
             .defer_overlay_sync(),
+            game_id,
         )
         .await
         {
@@ -751,6 +772,46 @@ async fn reconcile_onboarding_indexing_game_impl(
         };
     }
     Ok(result)
+}
+
+fn onboarding_snapshot_revision_is_current(
+    captured: Option<u64>,
+    current: Result<u64, AppError>,
+) -> bool {
+    captured
+        .zip(current.ok())
+        .is_some_and(|(captured, current)| captured == current)
+}
+
+async fn reconcile_onboarding_with_foreground_priority(
+    context: crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext<'_>,
+    request: crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest,
+    game_id: &str,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    AppError,
+> {
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
+        try_reconcile_disk_state_for_prewarm, DiskReconcileRequest,
+    };
+
+    let mut request = request;
+    loop {
+        if let Some(result) = try_reconcile_disk_state_for_prewarm(context.clone(), request).await?
+        {
+            return Ok(result);
+        }
+        // A foreground rename invalidates the captured snapshot. Retry from disk
+        // only after the switch releases the short storage lease.
+        request = DiskReconcileRequest::manual(
+            game_id.to_string(),
+            DiskReconcileReason::OnboardingCompleted,
+            Vec::new(),
+            true,
+        )
+        .defer_overlay_sync();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }
 
 #[tauri::command]
@@ -847,13 +908,26 @@ pub async fn resolve_rename_confirmations(
 mod tests {
     use super::{
         background_phase_for_reconcile_status, checked_resolution_path,
-        manual_reconcile_runtime_request, should_wait_for_initial_recovery,
+        manual_reconcile_runtime_request, onboarding_snapshot_revision_is_current,
+        should_wait_for_initial_recovery,
     };
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
     use crate::modules::reconciliation::application::disk_reconcile::types::{
         DiskReconcileReason, DiskReconcileStatus, OnboardingIndexingBackgroundPhase,
     };
     use crate::modules::system::application::app::post_apply::RuntimeSyncRequest;
+    use crate::shared::errors::AppError;
+
+    #[test]
+    fn onboarding_snapshot_requires_an_unchanged_durable_mutation_revision() {
+        assert!(onboarding_snapshot_revision_is_current(Some(7), Ok(7)));
+        assert!(!onboarding_snapshot_revision_is_current(Some(7), Ok(8)));
+        assert!(!onboarding_snapshot_revision_is_current(None, Ok(7)));
+        assert!(!onboarding_snapshot_revision_is_current(
+            Some(7),
+            Err(AppError::Internal("journal unavailable".into())),
+        ));
+    }
 
     #[test]
     fn rename_confirmation_paths_must_be_relative_and_contained() {

@@ -1199,7 +1199,7 @@ mod tests {
     #[test]
     fn sort_is_deterministic_for_equal_primary_values() {
         let query = query(WorkspaceExplorerSortField::SizeBytes);
-        let mut candidates = vec![candidate("bravo", 1, 10), candidate("alpha", 2, 10)];
+        let mut candidates = [candidate("bravo", 1, 10), candidate("alpha", 2, 10)];
         candidates.sort_by(|left, right| compare_candidates(left, right, &query));
 
         assert_eq!(candidates[0].sort_key.name_key, "alpha");

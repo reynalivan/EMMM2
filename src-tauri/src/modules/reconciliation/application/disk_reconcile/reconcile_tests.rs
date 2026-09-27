@@ -963,7 +963,7 @@ async fn scoped_conflict_preflight_ignores_duplicate_names_under_distinct_roots(
     let mods_path = temp.path().join("Mods");
     create_terminal_mod(&mods_path.join("Alice").join("Blue"));
     create_terminal_mod(&mods_path.join("Alice").join("DISABLED Blue"));
-    create_terminal_mod(&mods_path.join("DISABLED Alice").join("Blue"));
+    create_terminal_mod(&mods_path.join("Charlie").join("Blue"));
     create_terminal_mod(&mods_path.join("Bob").join("Red"));
     create_terminal_mod(&mods_path.join("Bob").join("DISABLED Red"));
     let mods_path_string = mods_path.to_string_lossy().to_string();
@@ -995,6 +995,12 @@ async fn scoped_conflict_preflight_ignores_duplicate_names_under_distinct_roots(
         DiskReconcileStatus::AppliedWithFolderConflicts
     );
     assert_eq!(outcome.folder_conflicts.len(), 2);
+    assert!(outcome.folder_conflicts.iter().all(|group| {
+        group
+            .candidates
+            .iter()
+            .all(|candidate| !Path::new(&candidate.path).starts_with(mods_path.join("Charlie")))
+    }));
     assert_eq!(
         outcome
             .folder_conflicts

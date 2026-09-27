@@ -102,6 +102,39 @@ fn batch_step_settlement_persists_once_and_reopens_atomically() {
     assert_eq!(operation.steps[2].status, StepStatus::Applied);
 }
 
+#[cfg(windows)]
+#[test]
+fn disk_commit_survives_global_snapshot_write_failure() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(rename_plan(
+            &temp.path().join("Old"),
+            &temp.path().join("New"),
+        ))
+        .unwrap();
+    journal.mark_applying(&id).unwrap();
+    journal.mark_step_applied(&id, 0).unwrap();
+
+    let snapshot_lock = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&path)
+        .unwrap();
+    let revision = journal.mark_disk_committed(&id).unwrap();
+    assert_eq!(journal.entries()[0].status, OperationStatus::DiskCommitted);
+    assert_eq!(journal.entries()[0].disk_revision, Some(revision));
+
+    drop(snapshot_lock);
+    drop(journal);
+    let reopened = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    assert_eq!(reopened.entries()[0].status, OperationStatus::DiskCommitted);
+    assert_eq!(reopened.entries()[0].disk_revision, Some(revision));
+}
+
 #[test]
 fn invalid_batch_step_settlement_is_atomic() {
     let temp = tempdir().unwrap();
@@ -275,6 +308,160 @@ async fn journal_survives_reopen_with_explicit_commit() {
         DatabaseProjectionStatus::Committed
     );
     assert_eq!(entries[0].steps[0].status, StepStatus::Applied);
+}
+
+#[tokio::test]
+async fn disk_committed_rename_survives_recovery_without_database_projection() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let old_path = game_root.join("Old");
+    let new_path = game_root.join("New");
+    std::fs::create_dir_all(&old_path).unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(rename_plan(&old_path, &new_path))
+        .unwrap();
+    journal.mark_applying(&id).unwrap();
+    std::fs::rename(&old_path, &new_path).unwrap();
+    journal.mark_step_applied(&id, 0).unwrap();
+    let revision = journal.mark_disk_committed(&id).unwrap();
+    drop(journal);
+
+    let reopened = open_journal(&path);
+    recovery_runner(reopened.clone(), &game_root, &temp.path().join("stage"))
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(new_path.exists());
+    assert!(!old_path.exists());
+    let pending = reopened.pending_disk_commits();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, id);
+    assert_eq!(pending[0].disk_revision, Some(revision));
+    assert_eq!(pending[0].status, OperationStatus::DiskCommitted);
+}
+
+#[tokio::test]
+async fn reverse_rename_does_not_invalidate_earlier_pending_disk_commit() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let a = game_root.join("A");
+    let b = game_root.join("B");
+    std::fs::create_dir_all(&a).unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+
+    let first = journal.plan_operation(rename_plan(&a, &b)).unwrap();
+    journal.mark_applying(&first).unwrap();
+    std::fs::rename(&a, &b).unwrap();
+    journal.mark_step_applied(&first, 0).unwrap();
+    let first_revision = journal.mark_disk_committed(&first).unwrap();
+
+    let second = journal.plan_operation(rename_plan(&b, &a)).unwrap();
+    journal.mark_applying(&second).unwrap();
+    std::fs::rename(&b, &a).unwrap();
+    journal.mark_step_applied(&second, 0).unwrap();
+    let second_revision = journal.mark_disk_committed(&second).unwrap();
+    assert!(second_revision > first_revision);
+    drop(journal);
+
+    let reopened = open_journal(&path);
+    recovery_runner(reopened.clone(), &game_root, &temp.path().join("stage"))
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(a.exists());
+    assert!(!b.exists());
+    let pending = reopened.pending_disk_commits();
+    assert_eq!(pending.len(), 2);
+    assert_eq!(pending[0].disk_revision, Some(first_revision));
+    assert_eq!(pending[1].disk_revision, Some(second_revision));
+}
+
+#[tokio::test]
+async fn disk_committed_db_checkpoint_can_finalize_after_a_later_reverse_rename() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let a = game_root.join("A");
+    let b = game_root.join("B");
+    std::fs::create_dir_all(&a).unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+
+    let first = journal.plan_operation(rename_plan(&a, &b)).unwrap();
+    journal.mark_applying(&first).unwrap();
+    std::fs::rename(&a, &b).unwrap();
+    journal.mark_step_applied(&first, 0).unwrap();
+    journal.mark_disk_committed(&first).unwrap();
+
+    let second = journal.plan_operation(rename_plan(&b, &a)).unwrap();
+    journal.mark_applying(&second).unwrap();
+    std::fs::rename(&b, &a).unwrap();
+    journal.mark_step_applied(&second, 0).unwrap();
+    journal.mark_disk_committed(&second).unwrap();
+    journal.mark_db_committed(&first).unwrap();
+    assert_eq!(journal.pending_disk_commits().len(), 2);
+    drop(journal);
+
+    let reopened = open_journal(&path);
+    recovery_runner(reopened.clone(), &game_root, &temp.path().join("stage"))
+        .run_recovery()
+        .await
+        .unwrap();
+    assert_eq!(reopened.entries()[0].status, OperationStatus::Completed);
+    assert_eq!(reopened.pending_disk_commits().len(), 1);
+    assert_eq!(reopened.pending_disk_commits()[0].id, second);
+    assert!(a.exists());
+}
+
+#[tokio::test]
+async fn failed_projection_keeps_disk_commit_pending_and_revisions_survive_pruning() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let a = game_root.join("A");
+    let b = game_root.join("B");
+    std::fs::create_dir_all(&a).unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, 1).unwrap();
+
+    let first = journal.plan_operation(rename_plan(&a, &b)).unwrap();
+    journal.mark_applying(&first).unwrap();
+    std::fs::rename(&a, &b).unwrap();
+    journal.mark_step_applied(&first, 0).unwrap();
+    let first_revision = journal.mark_disk_committed(&first).unwrap();
+    journal
+        .mark_projection_failed(&first, "database temporarily locked")
+        .unwrap();
+    assert!(journal.fail(&first, "do not prune").is_err());
+    drop(journal);
+
+    let reopened = OperationJournal::open(&path, 1).unwrap();
+    recovery_runner(Arc::new(reopened), &game_root, &temp.path().join("stage"))
+        .run_recovery()
+        .await
+        .unwrap();
+    let journal = OperationJournal::open(&path, 1).unwrap();
+    assert_eq!(journal.pending_disk_commits().len(), 1);
+    journal.mark_db_committed(&first).unwrap();
+    journal.complete(&first).unwrap();
+
+    let second = journal.plan_operation(rename_plan(&b, &a)).unwrap();
+    journal.mark_applying(&second).unwrap();
+    std::fs::rename(&b, &a).unwrap();
+    journal.mark_step_applied(&second, 0).unwrap();
+    let second_revision = journal.mark_disk_committed(&second).unwrap();
+    assert!(second_revision > first_revision);
+    drop(journal);
+
+    let reopened = OperationJournal::open(&path, 1).unwrap();
+    assert_eq!(reopened.pending_disk_commits()[0].id, second);
+    assert_eq!(
+        reopened.pending_disk_commits()[0].disk_revision,
+        Some(second_revision)
+    );
 }
 
 #[test]
@@ -459,7 +646,7 @@ fn unversioned_journal_migrates_to_a_versioned_snapshot() {
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
 
     assert_eq!(reopened.entries()[0].id, id);
-    assert_eq!(snapshot["format_version"].as_u64(), Some(1));
+    assert_eq!(snapshot["format_version"].as_u64(), Some(2));
     assert_eq!(snapshot["revision"].as_u64(), Some(1));
     assert_eq!(snapshot["operation_ids"][0].as_str(), Some(id.as_str()));
     assert!(snapshot["checksum"]

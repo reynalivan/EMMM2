@@ -239,7 +239,7 @@ mod tests {
         object_ids: &[String],
     ) -> Result<(), sqlx::Error> {
         let mut tx = conn.begin().await?;
-        refresh_projection_for_object_ids_tx(&mut *tx, "game", object_ids.to_vec()).await?;
+        refresh_projection_for_object_ids_tx(&mut tx, "game", object_ids.to_vec()).await?;
         tx.commit().await
     }
 

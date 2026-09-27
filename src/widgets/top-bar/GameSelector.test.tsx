@@ -58,9 +58,6 @@ vi.mock('@/features/workspace-runtime', () => ({
   useGameSwitch: () => ({
     switchGame: mockSwitchGame,
   }),
-}));
-
-vi.mock('@/pages/onboarding/hooks/useBackgroundIndexingStatus', () => ({
   useBackgroundIndexingStatus: () => mockBackgroundIndexingState,
 }));
 

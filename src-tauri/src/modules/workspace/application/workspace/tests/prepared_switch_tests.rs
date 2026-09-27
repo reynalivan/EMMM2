@@ -9,7 +9,96 @@ use crate::test_utils::{
 };
 
 #[tokio::test]
-async fn duplicate_resolutions_have_distinct_scoped_rename_plans() {
+async fn normal_leaf_toggle_can_prepare_after_database_pool_closes() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Mods");
+    let target = root.join("DISABLED Blue");
+    std::fs::create_dir_all(&target).unwrap();
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "game",
+            name: "Game",
+            game_type: GameType::GIMI,
+            path: temp.path().to_str().unwrap(),
+            mods_path: root.to_str(),
+        },
+    )
+    .await
+    .unwrap();
+    let config = ConfigService::new_for_test_async(pool.clone()).await;
+    pool.close().await;
+    let input = WorkspaceSwitchInput {
+        game_id: "game".into(),
+        target: WorkspaceSwitchTarget {
+            kind: WorkspaceSwitchTargetKind::ModPath,
+            value: target.to_string_lossy().into_owned(),
+        },
+        desired_enabled: true,
+        resolution: WorkspaceSwitchResolution::Normal,
+        enable_disabled_ancestors: false,
+        parent_enable_confirmation: None,
+        origin_surface: WorkspaceSwitchOriginSurface::FolderGrid,
+    };
+
+    let prepared = prepare_switch(&input, &config, &pool).await.unwrap();
+    assert_eq!(prepared.journal_steps().len(), 1);
+    assert_eq!(
+        prepared.journal_steps()[0].1,
+        target.canonicalize().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn normal_leaf_toggle_rejects_only_same_parent_physical_name_collision() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Mods");
+    let target = root.join("Alice/DISABLED Blue");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::create_dir_all(root.join("Bob/Blue")).unwrap();
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "game",
+            name: "Game",
+            game_type: GameType::GIMI,
+            path: temp.path().to_str().unwrap(),
+            mods_path: root.to_str(),
+        },
+    )
+    .await
+    .unwrap();
+    let config = ConfigService::new_for_test_async(pool.clone()).await;
+    let input = WorkspaceSwitchInput {
+        game_id: "game".into(),
+        target: WorkspaceSwitchTarget {
+            kind: WorkspaceSwitchTargetKind::ModPath,
+            value: target.to_string_lossy().into_owned(),
+        },
+        desired_enabled: true,
+        resolution: WorkspaceSwitchResolution::Normal,
+        enable_disabled_ancestors: false,
+        parent_enable_confirmation: None,
+        origin_surface: WorkspaceSwitchOriginSurface::FolderGrid,
+    };
+
+    assert_eq!(
+        prepare_switch(&input, &config, &pool)
+            .await
+            .unwrap()
+            .journal_steps()
+            .len(),
+        1
+    );
+    std::fs::create_dir_all(root.join("Alice/Blue")).unwrap();
+    let error = prepare_switch(&input, &config, &pool).await.unwrap_err();
+    assert!(error.to_string().contains("RenameConflict"), "{error}");
+}
+
+#[tokio::test]
+async fn enabled_sibling_does_not_block_normal_activation_or_exclusive_choice() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("Mods");
@@ -17,6 +106,9 @@ async fn duplicate_resolutions_have_distinct_scoped_rename_plans() {
     let sibling = root.join("Alice/Red");
     std::fs::create_dir_all(&target).unwrap();
     std::fs::create_dir_all(&sibling).unwrap();
+    let shared_override = "[TextureOverrideShared]\nhash = 1234abcd\n";
+    std::fs::write(target.join("mod.ini"), shared_override).unwrap();
+    std::fs::write(sibling.join("mod.ini"), shared_override).unwrap();
     insert_test_game(
         &pool,
         &TestGameFixture {
@@ -78,24 +170,19 @@ async fn duplicate_resolutions_have_distinct_scoped_rename_plans() {
     let normal = prepare_switch(&input, &config, &pool).await.unwrap();
     assert!(
         normal.immediate_result().is_none(),
-        "a duplicate warning must not prevent the requested mod from enabling"
+        "an unrelated enabled sibling must not prevent the requested mod from enabling"
     );
     assert_eq!(
         normal.journal_steps().len(),
         1,
-        "normal enable must retain its target rename while preserving the duplicate warning"
+        "normal enable must retain its target rename"
     );
     let PreparedWorkspaceSwitch::Mod(normal) = normal else {
-        panic!("normal duplicate enable must prepare a mod switch");
+        panic!("normal enable must prepare a mod switch");
     };
-    assert_eq!(
-        normal
-            .duplicates
-            .iter()
-            .map(|duplicate| duplicate.mod_id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["red"],
-        "the UI warning must retain the enabled sibling details"
+    assert!(
+        normal.duplicates.is_empty(),
+        "shared resource hashes and distinct sibling folder names are not folder conflicts"
     );
 
     input.resolution = WorkspaceSwitchResolution::ForceEnable;
@@ -134,7 +221,7 @@ async fn duplicate_resolutions_have_distinct_scoped_rename_plans() {
     assert_eq!(
         ignored_exclusive.journal_steps().len(),
         2,
-        "ignoring a duplicate warning must not change an explicit Enable Only This action"
+        "an ignored object-level overlap must not change an explicit Enable Only This action"
     );
     input.resolution = WorkspaceSwitchResolution::Normal;
     assert!(

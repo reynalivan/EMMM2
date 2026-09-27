@@ -1,4 +1,6 @@
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::modules::mutation::journal::{OperationJournal, OperationPlan};
 use crate::modules::mutation::task_registry::TaskRegistry;
@@ -32,6 +34,94 @@ pub struct MutationCoordinator {
     lock: OperationLock,
     journal: OnceLock<Arc<OperationJournal>>,
     task_registry: Arc<TaskRegistry>,
+    latest_intents: Arc<Mutex<HashMap<IntentKey, u64>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum IntentTarget {
+    ModPath(String),
+    ObjectId(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct IntentKey {
+    game_id: String,
+    target: IntentTarget,
+}
+
+impl IntentKey {
+    fn new(game_id: &str, target: IntentTarget) -> Self {
+        let target = match target {
+            IntentTarget::ModPath(path) => {
+                IntentTarget::ModPath(logical_path_key(Path::new(&path)))
+            }
+            IntentTarget::ObjectId(id) => IntentTarget::ObjectId(id),
+        };
+        Self {
+            game_id: game_id.to_string(),
+            target,
+        }
+    }
+}
+
+fn logical_path_key(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let regular = if let Some(unc) = normalized.strip_prefix("//?/UNC/") {
+        format!("//{unc}")
+    } else if let Some(path) = normalized.strip_prefix("//?/") {
+        path.to_string()
+    } else {
+        normalized
+    };
+    regular
+        .split('/')
+        .map(|part| {
+            let prefix = crate::DISABLED_PREFIX;
+            let base = if part
+                .get(..prefix.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+            {
+                &part[prefix.len()..]
+            } else {
+                part
+            };
+            base.to_lowercase()
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+pub struct IntentAdmission {
+    revision: Option<u64>,
+    keys: Vec<IntentKey>,
+    latest: Arc<Mutex<HashMap<IntentKey, u64>>>,
+}
+
+impl IntentAdmission {
+    pub fn is_current(&self) -> bool {
+        let Some(revision) = self.revision else {
+            return true;
+        };
+        let latest = crate::shared::sync::lock(&self.latest);
+        self.keys
+            .iter()
+            .all(|key| latest.get(key).is_some_and(|latest| *latest <= revision))
+    }
+
+    pub fn is_current_path(&self, game_id: &str, path: &Path) -> bool {
+        let Some(revision) = self.revision else {
+            return true;
+        };
+        let key = IntentKey::new(
+            game_id,
+            IntentTarget::ModPath(path.to_string_lossy().into_owned()),
+        );
+        crate::shared::sync::lock(&self.latest)
+            .get(&key)
+            .is_none_or(|latest| *latest <= revision)
+    }
 }
 
 impl MutationCoordinator {
@@ -40,6 +130,7 @@ impl MutationCoordinator {
             lock: OperationLock::new(),
             journal: OnceLock::new(),
             task_registry: Arc::new(TaskRegistry::new()),
+            latest_intents: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -48,6 +139,7 @@ impl MutationCoordinator {
             lock,
             journal: OnceLock::new(),
             task_registry: Arc::new(TaskRegistry::new()),
+            latest_intents: Arc::new(Mutex::new(HashMap::new())),
         };
         coordinator
             .configure(journal)
@@ -140,6 +232,103 @@ impl MutationCoordinator {
         &self.task_registry
     }
 
+    pub fn admit_intents(
+        &self,
+        game_id: &str,
+        revision: Option<u64>,
+        targets: impl IntoIterator<Item = IntentTarget>,
+    ) -> IntentAdmission {
+        let keys = targets
+            .into_iter()
+            .map(|target| IntentKey::new(game_id, target))
+            .collect::<Vec<_>>();
+        if let Some(revision) = revision {
+            let mut latest = crate::shared::sync::lock(&self.latest_intents);
+            // Keep the high-water mark after a command returns: IPC can deliver
+            // an older request after the newer request has already completed.
+            for key in &keys {
+                latest
+                    .entry(key.clone())
+                    .and_modify(|current| *current = (*current).max(revision))
+                    .or_insert(revision);
+            }
+        }
+        IntentAdmission {
+            revision,
+            keys,
+            latest: self.latest_intents.clone(),
+        }
+    }
+
+    pub fn pending_disk_commits(
+        &self,
+    ) -> Result<Vec<crate::modules::mutation::journal::Operation>, AppError> {
+        Ok(self.journal()?.pending_disk_commits())
+    }
+
+    pub fn latest_toggle_disk_revision(&self, game_id: &str) -> Result<u64, AppError> {
+        Ok(self
+            .journal()?
+            .entries()
+            .into_iter()
+            .filter(|operation| {
+                operation.game_id == game_id
+                    && matches!(operation.kind.as_str(), "workspace-switch" | "bulk-toggle")
+            })
+            .filter_map(|operation| operation.disk_revision)
+            .max()
+            .unwrap_or(0))
+    }
+
+    pub fn current_journal_revision(&self) -> Result<u64, AppError> {
+        self.journal()?.current_revision()
+    }
+
+    pub fn pending_toggle_disk_commit_ids(&self, game_id: &str) -> Result<Vec<String>, AppError> {
+        Ok(self
+            .pending_disk_commits()?
+            .into_iter()
+            .filter(|operation| {
+                operation.game_id == game_id
+                    && matches!(operation.kind.as_str(), "workspace-switch" | "bulk-toggle")
+            })
+            .map(|operation| operation.id)
+            .collect())
+    }
+
+    pub fn complete_disk_projection(&self, operation_ids: &[String]) -> Result<(), AppError> {
+        let journal = self.journal()?;
+        let pending = journal.pending_disk_commits();
+        for operation_id in operation_ids {
+            let operation = pending
+                .iter()
+                .find(|operation| &operation.id == operation_id)
+                .ok_or_else(|| {
+                    AppError::Validation(format!(
+                        "Mutation operation {operation_id} is not pending disk projection"
+                    ))
+                })?;
+            if operation.status == crate::modules::mutation::journal::OperationStatus::DiskCommitted
+            {
+                journal.mark_db_committed(operation_id)?;
+            }
+            journal.complete(operation_id)?;
+        }
+        Ok(())
+    }
+
+    pub fn note_disk_projection_failure(
+        &self,
+        operation_ids: &[String],
+        error: &str,
+    ) -> Result<(), AppError> {
+        let journal = self.journal()?;
+        for operation_id in operation_ids {
+            journal.mark_projection_failed(operation_id, error)?;
+        }
+        Ok(())
+    }
+
     fn journal(&self) -> Result<&Arc<OperationJournal>, AppError> {
         self.journal
             .get()
@@ -182,6 +371,11 @@ impl MutationGuard {
     ) -> Result<(), AppError> {
         let (operation_id, journal) = self.durable_parts()?;
         journal.settle_steps(operation_id, settlements)
+    }
+
+    pub fn mark_disk_committed(&self) -> Result<u64, AppError> {
+        let (operation_id, journal) = self.durable_parts()?;
+        journal.mark_disk_committed(operation_id)
     }
 
     pub fn mark_db_committed(&self) -> Result<(), AppError> {
@@ -251,6 +445,111 @@ impl Drop for MutationGuard {
 #[cfg(test)]
 mod architecture_tests {
     use std::path::{Path, PathBuf};
+
+    use super::{IntentTarget, MutationCoordinator};
+
+    #[test]
+    fn later_folder_intent_supersedes_both_storage_spellings() {
+        let coordinator = MutationCoordinator::unconfigured();
+        let old = coordinator.admit_intents(
+            "game",
+            Some(10),
+            [IntentTarget::ModPath("E:/Mods/DISABLED Alice".into())],
+        );
+        let latest = coordinator.admit_intents(
+            "game",
+            Some(11),
+            [IntentTarget::ModPath("E:/Mods/Alice".into())],
+        );
+        assert!(!old.is_current());
+        assert!(latest.is_current());
+        assert!(!old.is_current_path("game", Path::new("E:/Mods/Alice")));
+        assert!(latest.is_current_path("game", Path::new("E:/Mods/DISABLED Alice")));
+    }
+
+    #[test]
+    fn older_bulk_arriving_after_newer_single_stays_superseded() {
+        let coordinator = MutationCoordinator::unconfigured();
+        let latest = coordinator.admit_intents(
+            "game",
+            Some(30),
+            [IntentTarget::ModPath("E:/Mods/Alice".into())],
+        );
+        drop(latest);
+        let bulk = coordinator.admit_intents(
+            "game",
+            Some(29),
+            [
+                IntentTarget::ModPath("E:/Mods/DISABLED Alice".into()),
+                IntentTarget::ModPath("E:/Mods/Bob".into()),
+            ],
+        );
+        assert!(!bulk.is_current_path("game", Path::new("E:/Mods/Alice")));
+        assert!(bulk.is_current_path("game", Path::new("E:/Mods/Bob")));
+    }
+
+    #[test]
+    fn equal_names_under_different_parents_and_games_remain_distinct() {
+        let coordinator = MutationCoordinator::unconfigured();
+        let first = coordinator.admit_intents(
+            "game-a",
+            Some(1),
+            [IntentTarget::ModPath("E:/Mods/Alice/Skin".into())],
+        );
+        coordinator.admit_intents(
+            "game-a",
+            Some(2),
+            [IntentTarget::ModPath("E:/Mods/Bob/Skin".into())],
+        );
+        coordinator.admit_intents(
+            "game-b",
+            Some(3),
+            [IntentTarget::ModPath("E:/Mods/Alice/Skin".into())],
+        );
+        assert!(first.is_current());
+    }
+
+    #[test]
+    fn object_id_intents_share_one_order_across_single_and_batch() {
+        let coordinator = MutationCoordinator::unconfigured();
+        let batch = coordinator.admit_intents(
+            "game",
+            Some(4),
+            [
+                IntentTarget::ObjectId("alice".into()),
+                IntentTarget::ObjectId("bob".into()),
+            ],
+        );
+        coordinator.admit_intents("game", Some(5), [IntentTarget::ObjectId("bob".into())]);
+        assert!(!batch.is_current());
+    }
+
+    #[test]
+    fn unicode_path_components_do_not_panic_during_key_normalization() {
+        let coordinator = MutationCoordinator::unconfigured();
+        let admission = coordinator.admit_intents(
+            "game",
+            Some(1),
+            [IntentTarget::ModPath("E:/Mods/東京/衣装".into())],
+        );
+        assert!(admission.is_current());
+    }
+
+    #[test]
+    fn extended_length_windows_spelling_shares_the_same_intent_key() {
+        let coordinator = MutationCoordinator::unconfigured();
+        let older = coordinator.admit_intents(
+            "game",
+            Some(1),
+            [IntentTarget::ModPath("E:\\Mods\\DISABLED Blue".into())],
+        );
+        coordinator.admit_intents(
+            "game",
+            Some(2),
+            [IntentTarget::ModPath("\\\\?\\E:\\Mods\\Blue".into())],
+        );
+        assert!(!older.is_current());
+    }
 
     fn rust_files(root: &Path, files: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(root).expect("read source directory") {

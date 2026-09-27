@@ -48,6 +48,19 @@ impl RecoveryRunner {
     }
 
     fn recover_operation(&self, operation: &Operation) -> Result<(), AppError> {
+        if operation.disk_revision.is_some() {
+            return match operation.status {
+                OperationStatus::DiskCommitted => Ok(()),
+                OperationStatus::DbCommitted => {
+                    self.journal.finalize_recovered_commit(&operation.id)
+                }
+                _ => self.mark_repair(
+                    operation,
+                    "Disk-committed operation has an invalid journal status".to_string(),
+                ),
+            };
+        }
+
         let Some(game_root) = self.roots.game_roots.get(&operation.game_id) else {
             return self.mark_repair(
                 operation,

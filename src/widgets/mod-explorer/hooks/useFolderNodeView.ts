@@ -52,7 +52,7 @@ export function useFolderNodeView({
     [node, mutationsDisabled],
   );
   const primaryWarningText = formatWorkspaceWarning(t, node.primary_warning);
-  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, actionNode), [actionNode, t]);
+  const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, node), [node, t]);
 
   // Lazy thumbnail: resolved per-node via separate backend command
   const activeGameId = useAppStore((state) => state.activeGameId);

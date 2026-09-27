@@ -60,6 +60,46 @@ async fn ensure_current_runtime_snapshot_preflight(
     Ok(())
 }
 
+async fn acquire_current_snapshot_guard(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    coordinator: &MutationCoordinator,
+    game_id: &str,
+) -> Result<crate::modules::mutation::coordinator::MutationExemptionGuard, AppError> {
+    for _ in 0..3 {
+        let source_epoch =
+            crate::modules::workspace::adapters::tauri::workspace_cmds::projection_source_epoch(
+                &app.state::<crate::modules::settings::application::config::ConfigService>(),
+                game_id,
+            )?;
+        let pending_before = coordinator.pending_toggle_disk_commit_ids(game_id)?;
+        ensure_current_runtime_snapshot_preflight(app, pool, game_id).await?;
+        let guard = coordinator
+            .acquire_exempt(
+                crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
+            )
+            .await?;
+        let pending_after = coordinator.pending_toggle_disk_commit_ids(game_id)?;
+        if pending_after.iter().all(|id| pending_before.contains(id)) {
+            let projected_revision = coordinator
+                .pending_disk_commits()?
+                .into_iter()
+                .filter(|operation| pending_after.contains(&operation.id))
+                .filter_map(|operation| operation.disk_revision)
+                .max();
+            crate::modules::workspace::adapters::tauri::workspace_cmds::complete_reconciled_toggle_projection(
+                app, pool, coordinator, game_id, &source_epoch, &pending_after, projected_revision,
+            ).await?;
+            return Ok(guard);
+        }
+        drop(guard);
+    }
+    Err(AppError::Io(
+        "Mods changed repeatedly while capturing the collection; retry once switching settles"
+            .to_string(),
+    ))
+}
+
 fn current_runtime_snapshot_conflicts_block(
     conflicts: &[crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup],
     active_paths: &[String],
@@ -134,14 +174,7 @@ pub async fn create_collection(
         None => source_collection_id.is_none(),
     };
     let operation_guard = if captures_current_state {
-        ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
-        Some(
-            op_lock
-                .acquire_exempt(
-                    crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
-                )
-                .await?,
-        )
+        Some(acquire_current_snapshot_guard(&app, pool.inner(), op_lock.inner(), &game_id).await?)
     } else {
         None
     };
@@ -166,12 +199,8 @@ pub async fn save_current_runtime_as_collection(
     game_id: String,
     name: String,
 ) -> Result<CollectionSummary, AppError> {
-    ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
-    let _guard = op_lock
-        .acquire_exempt(
-            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
-        )
-        .await?;
+    let _guard =
+        acquire_current_snapshot_guard(&app, pool.inner(), op_lock.inner(), &game_id).await?;
     Ok(collection::create_collection(
         pool.inner(),
         CreateCollectionInput {
@@ -214,23 +243,56 @@ pub async fn apply_collection(
             })
         })?;
     let mods_path = game.mod_path.clone();
-    let preflight_paths = collection::collection_preflight_scope_paths(
-        pool.inner(),
-        &game_id,
-        &collection_id,
-        &mods_path,
-    )
-    .await?;
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
-        &app,
-        pool.inner(),
-        &game_id,
-        Some(&preflight_paths),
-    )
-    .await?;
-    let mutation_lease = disk_reconcile
-        .acquire_nested_mutation_lease(&game_id, op_lock.inner())
+    let mut mutation_lease = None;
+    for _ in 0..3 {
+        let source_epoch =
+            crate::modules::workspace::adapters::tauri::workspace_cmds::projection_source_epoch(
+                &app.state::<crate::modules::settings::application::config::ConfigService>(),
+                &game_id,
+            )?;
+        let pending_before = op_lock.pending_toggle_disk_commit_ids(&game_id)?;
+        if !pending_before.is_empty() {
+            ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
+        }
+        let preflight_paths = collection::collection_preflight_scope_paths(
+            pool.inner(),
+            &game_id,
+            &collection_id,
+            &mods_path,
+        )
         .await?;
+        crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+            &app,
+            pool.inner(),
+            &game_id,
+            Some(&preflight_paths),
+        )
+        .await?;
+        let lease = disk_reconcile
+            .acquire_nested_mutation_lease(&game_id, op_lock.inner())
+            .await?;
+        let pending_after = op_lock.pending_toggle_disk_commit_ids(&game_id)?;
+        if pending_after.iter().all(|id| pending_before.contains(id)) {
+            let projected_revision = op_lock
+                .pending_disk_commits()?
+                .into_iter()
+                .filter(|operation| pending_after.contains(&operation.id))
+                .filter_map(|operation| operation.disk_revision)
+                .max();
+            crate::modules::workspace::adapters::tauri::workspace_cmds::complete_reconciled_toggle_projection(
+                &app, pool.inner(), op_lock.inner(), &game_id, &source_epoch, &pending_after, projected_revision,
+            ).await?;
+            mutation_lease = Some(lease);
+            break;
+        }
+        drop(lease);
+    }
+    let mutation_lease = mutation_lease.ok_or_else(|| {
+        AppError::Io(
+            "Mods changed repeatedly while applying the collection; retry once switching settles"
+                .to_string(),
+        )
+    })?;
 
     let result = collection::apply_collection_durable(
         collection::ApplyCollectionRequest {
@@ -293,12 +355,8 @@ pub async fn replace_collection_with_current_state(
     game_id: String,
     collection_id: String,
 ) -> Result<CollectionSummary, AppError> {
-    ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
-    let operation_guard = op_lock
-        .acquire_exempt(
-            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
-        )
-        .await?;
+    let operation_guard =
+        acquire_current_snapshot_guard(&app, pool.inner(), op_lock.inner(), &game_id).await?;
     let result =
         collection::replace_collection_with_current_state(pool.inner(), &game_id, &collection_id)
             .await?;
@@ -317,12 +375,8 @@ pub async fn save_collection_changes(
     collection_id: String,
     confirm_remove_missing: bool,
 ) -> Result<CollectionSummary, AppError> {
-    ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
-    let _guard = op_lock
-        .acquire_exempt(
-            crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
-        )
-        .await?;
+    let _guard =
+        acquire_current_snapshot_guard(&app, pool.inner(), op_lock.inner(), &game_id).await?;
     let mods_path = config
         .get_settings()
         .games
@@ -676,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn current_runtime_snapshot_commands_share_scoped_preflight() {
+    fn current_runtime_snapshot_commands_share_projection_barrier() {
         let source = include_str!("tauri.rs");
         for command in [
             "pub async fn create_collection(",
@@ -691,8 +745,8 @@ mod tests {
                 .map(|offset| offset + 1)
                 .unwrap_or(remainder.len());
             assert!(
-                remainder[..end].contains("ensure_current_runtime_snapshot_preflight"),
-                "{command} must scope folder-conflict blocking to active snapshot roots"
+                remainder[..end].contains("acquire_current_snapshot_guard"),
+                "{command} must reconcile pending disk changes before capturing current state"
             );
         }
     }

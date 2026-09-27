@@ -496,7 +496,8 @@ pub async fn reconcile_disk_projection(
         protected_mod_keys.extend(
             mod_key_counts
                 .into_iter()
-                .filter_map(|(key, count)| (count > 1).then(|| key.to_string())),
+                .filter(|(_, count)| *count > 1)
+                .map(|(key, _)| key.to_string()),
         );
         // Ambiguous identities are read-only until resolved. Do not choose a
         // writable DB representative for a duplicated normalized mod key:

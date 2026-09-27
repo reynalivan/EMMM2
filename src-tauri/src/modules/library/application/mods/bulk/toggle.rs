@@ -238,6 +238,44 @@ pub fn execute_prepared_bulk_toggle(
     operation_id: &str,
     cancellable: bool,
 ) -> BulkToggleExecution {
+    execute_prepared_bulk_toggle_with_progress(
+        app,
+        state,
+        prepared,
+        cancel,
+        operation_id,
+        cancellable,
+        true,
+    )
+}
+
+pub fn execute_prepared_bulk_toggle_silent(
+    app: &AppHandle,
+    state: &WatcherState,
+    prepared: &PreparedBulkToggle,
+    cancel: &AtomicBool,
+    operation_id: &str,
+) -> BulkToggleExecution {
+    execute_prepared_bulk_toggle_with_progress(
+        app,
+        state,
+        prepared,
+        cancel,
+        operation_id,
+        true,
+        false,
+    )
+}
+
+fn execute_prepared_bulk_toggle_with_progress(
+    app: &AppHandle,
+    state: &WatcherState,
+    prepared: &PreparedBulkToggle,
+    cancel: &AtomicBool,
+    operation_id: &str,
+    cancellable: bool,
+    emit_progress: bool,
+) -> BulkToggleExecution {
     // One path-scoped guard across the whole batch covers both the original
     // and destination spelling for every planned rename.
     let suppression_paths = prepared.suppression_paths();
@@ -250,17 +288,19 @@ pub fn execute_prepared_bulk_toggle(
         "common:bulk_progress.disabling"
     };
 
-    let _ = app.emit(
-        "bulk-progress",
-        BulkProgressPayload {
-            operation_id: operation_id.to_string(),
-            cancellable,
-            label: action_label.to_string(),
-            current: 0,
-            total,
-            active: true,
-        },
-    );
+    if emit_progress {
+        let _ = app.emit(
+            "bulk-progress",
+            BulkProgressPayload {
+                operation_id: operation_id.to_string(),
+                cancellable,
+                label: action_label.to_string(),
+                current: 0,
+                total,
+                active: true,
+            },
+        );
+    }
 
     let mut success = Vec::new();
     let mut failures = Vec::new();
@@ -279,7 +319,7 @@ pub fn execute_prepared_bulk_toggle(
             break;
         }
 
-        if i % progress_interval == 0 || i == total - 1 {
+        if emit_progress && (i % progress_interval == 0 || i == total - 1) {
             let _ = app.emit(
                 "bulk-progress",
                 BulkProgressPayload {
@@ -318,22 +358,24 @@ pub fn execute_prepared_bulk_toggle(
         processed_count += 1;
     }
 
-    let _ = app.emit(
-        "bulk-progress",
-        BulkProgressPayload {
-            operation_id: operation_id.to_string(),
-            cancellable,
-            label: if cancelled {
-                "common:bulk_progress.cancelled"
-            } else {
-                "common:bulk_progress.done"
-            }
-            .to_string(),
-            current: processed_count,
-            total,
-            active: false,
-        },
-    );
+    if emit_progress {
+        let _ = app.emit(
+            "bulk-progress",
+            BulkProgressPayload {
+                operation_id: operation_id.to_string(),
+                cancellable,
+                label: if cancelled {
+                    "common:bulk_progress.cancelled"
+                } else {
+                    "common:bulk_progress.done"
+                }
+                .to_string(),
+                current: processed_count,
+                total,
+                active: false,
+            },
+        );
+    }
 
     BulkToggleExecution {
         result: BulkResult::with_collection_impact(

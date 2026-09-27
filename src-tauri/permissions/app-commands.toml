@@ -2,6 +2,7 @@
 identifier = "allow-app-commands"
 description = "Allows all standard EMMM application commands"
 commands.allow = [
+    "admit_workspace_switch_intent",
     "add_game_manual",
     "analyze_mod_health",
     "analyze_import_batch",
@@ -125,6 +126,7 @@ commands.allow = [
     "get_workspace_explorer_page",
     "execute_workspace_explorer_bulk",
     "get_workspace_preview",
+    "get_workspace_switch_snapshot",
     "inspect_game_mods_directory",
     "ignore_object_conflict",
 "import_custom_theme",

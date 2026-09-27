@@ -13,6 +13,7 @@ interface BulkActionBarProps {
   onUpdateInfo: () => void;
   onMoveToObject: () => void;
   mutationsDisabled?: boolean;
+  toggleDisabled?: boolean;
 }
 
 export default function BulkActionBar({
@@ -26,6 +27,7 @@ export default function BulkActionBar({
   onUpdateInfo,
   onMoveToObject,
   mutationsDisabled = false,
+  toggleDisabled = mutationsDisabled,
 }: BulkActionBarProps) {
   const { t } = useTranslation(['grid']);
 
@@ -36,6 +38,7 @@ export default function BulkActionBar({
       onClear={onClear}
       onMarkSafe={onMarkSafe}
       mutationsDisabled={mutationsDisabled}
+      toggleDisabled={toggleDisabled}
       labels={{
         clear: t('bulk.clear_selection'),
         count: t('bulk.selected'),

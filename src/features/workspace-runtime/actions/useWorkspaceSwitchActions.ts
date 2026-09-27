@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '@/entities/game';
@@ -11,17 +11,19 @@ import type {
   WorkspaceSwitchInput,
 } from '@/entities/workspace';
 import type { ModFolder } from '@/entities/game-object';
+import { identityPathKey } from '@/shared/lib/pathKey';
 import {
   dispatchWorkspaceRuntimeEvent,
   getWorkspaceRuntimeState,
 } from '../state/workspaceStoreBridge';
 import {
+  admitWorkspaceIntentOverride,
   applyWorkspaceSwitchEffects,
   buildNodePendingKey,
   executeWorkspaceSwitch,
   isWorkspaceGameCurrent,
   isWorkspaceObjectNode,
-  togglePendingKey,
+  nextWorkspaceIntentRevision,
   type WorkspaceSwitchSurface,
   type WorkspaceSwitchEffectsOptions,
 } from './workspaceSwitchOps';
@@ -41,6 +43,7 @@ function dialogFolder(
 interface WorkspaceNodeSwitchOptions extends WorkspaceSwitchEffectsOptions {
   /** Skips transient feedback when a newer toggle intent has superseded this result. */
   shouldNotifyResult?: () => boolean;
+  intentRevision?: number;
 }
 
 interface WorkspaceNodeSwitchOutcome {
@@ -53,10 +56,162 @@ interface LatestNodeToggleIntent {
   pendingRevision: number;
   node: WorkspaceNode;
   surface: WorkspaceSwitchSurface;
-  waiters: Array<{
-    resolve: (path: string | null) => void;
-    reject: (error: unknown) => void;
-  }>;
+  options?: WorkspaceSwitchEffectsOptions;
+  execute: (
+    node: WorkspaceNode,
+    desiredEnabled: boolean,
+    surface: WorkspaceSwitchSurface,
+    options?: WorkspaceNodeSwitchOptions,
+  ) => Promise<WorkspaceNodeSwitchOutcome | null>;
+  completion: Promise<string | null>;
+  resolve: (path: string | null) => void;
+  reject: (error: unknown) => void;
+}
+
+interface LatestFolderPathIntent {
+  path: string;
+  desiredEnabled: boolean;
+  pendingRevision: number;
+  completion: Promise<string | null>;
+  resolve: (path: string | null) => void;
+  reject: (error: unknown) => void;
+}
+
+const pendingKeys = new Set<string>();
+const pendingDesiredEnabled = new Map<string, boolean>();
+const pendingDesiredVersions = new Map<string, number>();
+const pendingNodeOverrides = new Map<string, WorkspaceNode>();
+const latestNodeToggleIntents = new Map<string, LatestNodeToggleIntent>();
+const latestFolderPathIntents = new Map<string, LatestFolderPathIntent>();
+const subscribers = new Set<() => void>();
+let pendingSnapshotVersion = 0;
+
+function publishPendingSnapshot(): void {
+  pendingSnapshotVersion += 1;
+  subscribers.forEach((subscriber) => subscriber());
+}
+
+function subscribePendingSnapshot(subscriber: () => void): () => void {
+  subscribers.add(subscriber);
+  return () => subscribers.delete(subscriber);
+}
+
+function getPendingSnapshotVersion(): number {
+  return pendingSnapshotVersion;
+}
+
+function scopedPendingKey(gameId: string, key: string): string {
+  return `${gameId}:${key}`;
+}
+
+function folderPathPendingKey(gameId: string, path: string): string {
+  return scopedPendingKey(gameId, `folder:${identityPathKey(path) ?? path}`);
+}
+
+function nodePendingKey(gameId: string, node: WorkspaceNode): string {
+  const ownKey = scopedPendingKey(gameId, buildNodePendingKey(node));
+  if (isWorkspaceObjectNode(node)) {
+    return ownKey;
+  }
+  const pathKey = folderPathPendingKey(gameId, node.path);
+  if (
+    latestNodeToggleIntents.has(ownKey) &&
+    (pendingDesiredVersions.get(ownKey) ?? 0) >= (pendingDesiredVersions.get(pathKey) ?? 0)
+  ) {
+    return ownKey;
+  }
+  return pendingDesiredEnabled.has(pathKey) ? pathKey : ownKey;
+}
+
+function markPending(key: string, pending: boolean): void {
+  if (pending) {
+    pendingKeys.add(key);
+  } else {
+    pendingKeys.delete(key);
+  }
+  publishPendingSnapshot();
+}
+
+function setPendingDesired(key: string, desiredEnabled: boolean): number {
+  const revision = nextWorkspaceIntentRevision();
+  pendingDesiredVersions.set(key, revision);
+  pendingDesiredEnabled.set(key, desiredEnabled);
+  publishPendingSnapshot();
+  return revision;
+}
+
+function clearPendingDesired(key: string, expectedRevision: number): void {
+  if (pendingDesiredVersions.get(key) !== expectedRevision) {
+    return;
+  }
+  pendingDesiredVersions.delete(key);
+  pendingNodeOverrides.delete(key);
+  pendingDesiredEnabled.delete(key);
+  publishPendingSnapshot();
+}
+
+export function setObjectBulkPendingDesired(
+  gameId: string,
+  objectIds: Iterable<string>,
+  desiredEnabled: boolean,
+  revision: number,
+): void {
+  let changed = false;
+  for (const objectId of objectIds) {
+    const key = scopedPendingKey(gameId, `object:${objectId}`);
+    pendingDesiredVersions.set(key, revision);
+    pendingDesiredEnabled.set(key, desiredEnabled);
+    changed = true;
+  }
+  if (changed) publishPendingSnapshot();
+}
+
+export function clearObjectBulkPendingDesired(
+  gameId: string,
+  objectIds: Iterable<string>,
+  revision: number,
+): void {
+  let changed = false;
+  for (const objectId of objectIds) {
+    const key = scopedPendingKey(gameId, `object:${objectId}`);
+    if (pendingDesiredVersions.get(key) !== revision) continue;
+    pendingDesiredVersions.delete(key);
+    pendingDesiredEnabled.delete(key);
+    changed = true;
+  }
+  if (changed) publishPendingSnapshot();
+}
+
+export function setFolderBulkPendingDesired(
+  gameId: string,
+  paths: Iterable<string>,
+  desiredEnabled: boolean,
+  revision: number,
+): void {
+  let changed = false;
+  for (const path of paths) {
+    const key = folderPathPendingKey(gameId, path);
+    pendingDesiredVersions.set(key, revision);
+    pendingDesiredEnabled.set(key, desiredEnabled);
+    changed = true;
+  }
+  if (changed) publishPendingSnapshot();
+}
+
+export function clearFolderBulkPendingDesired(
+  gameId: string,
+  paths: Iterable<string>,
+  revision: number,
+): void {
+  let changed = false;
+  for (const path of paths) {
+    const key = folderPathPendingKey(gameId, path);
+    if (pendingDesiredVersions.get(key) !== revision) continue;
+    pendingDesiredVersions.delete(key);
+    pendingDesiredEnabled.delete(key);
+    changed = true;
+  }
+  if (changed) publishPendingSnapshot();
 }
 
 function withLatestFolderPath(node: WorkspaceNode, latestNode: WorkspaceNode | undefined) {
@@ -75,44 +230,11 @@ export function useWorkspaceSwitchActions() {
     const activation = state.gameActivationByGame?.[activeGame.id];
     return activation?.phase !== 'ready';
   });
-  const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
-  const [pendingDesiredEnabled, setPendingDesiredEnabled] = useState<Record<string, boolean>>({});
-  const pendingDesiredVersions = useRef(new Map<string, number>());
-  const pendingDesiredVersion = useRef(0);
-  const pendingNodeOverrides = useRef(new Map<string, WorkspaceNode>());
-  const latestNodeToggleIntents = useRef(new Map<string, LatestNodeToggleIntent>());
-
-  const markPending = useCallback((key: string, pending: boolean) => {
-    setPendingKeys((current) => togglePendingKey(current, key, pending));
-  }, []);
-
-  const setPendingDesired = useCallback((key: string, desiredEnabled: boolean) => {
-    const revision = ++pendingDesiredVersion.current;
-    pendingDesiredVersions.current.set(key, revision);
-    setPendingDesiredEnabled((current) => {
-      if (current[key] === desiredEnabled) {
-        return current;
-      }
-      return { ...current, [key]: desiredEnabled };
-    });
-    return revision;
-  }, []);
-
-  const clearPendingDesired = useCallback((key: string, expectedRevision: number) => {
-    if (pendingDesiredVersions.current.get(key) !== expectedRevision) {
-      return;
-    }
-    pendingDesiredVersions.current.delete(key);
-    pendingNodeOverrides.current.delete(key);
-    setPendingDesiredEnabled((current) => {
-      if (!(key in current)) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }, []);
+  useSyncExternalStore(
+    subscribePendingSnapshot,
+    getPendingSnapshotVersion,
+    getPendingSnapshotVersion,
+  );
 
   const setExplorerNodeEnabled = useCallback(
     async (
@@ -137,7 +259,7 @@ export function useWorkspaceSwitchActions() {
         parent_enable_confirmation: null,
         origin_surface: surface,
       };
-      const result = await executeWorkspaceSwitch(input);
+      const result = await executeWorkspaceSwitch(input, options?.intentRevision);
       if (!result || !isWorkspaceGameCurrent(input.game_id)) {
         return null;
       }
@@ -221,18 +343,21 @@ export function useWorkspaceSwitchActions() {
       }
 
       const gameId = activeGame.id;
-      const result = await executeWorkspaceSwitch({
-        game_id: gameId,
-        target: {
-          kind: 'object_id',
-          value: node.id,
+      const result = await executeWorkspaceSwitch(
+        {
+          game_id: gameId,
+          target: {
+            kind: 'object_id',
+            value: node.id,
+          },
+          desired_enabled: desiredEnabled,
+          resolution: 'normal',
+          enable_disabled_ancestors: false,
+          parent_enable_confirmation: null,
+          origin_surface: surface,
         },
-        desired_enabled: desiredEnabled,
-        resolution: 'normal',
-        enable_disabled_ancestors: false,
-        parent_enable_confirmation: null,
-        origin_surface: surface,
-      });
+        options?.intentRevision,
+      );
 
       if (!result?.primary_path || !isWorkspaceGameCurrent(gameId)) {
         return null;
@@ -275,125 +400,110 @@ export function useWorkspaceSwitchActions() {
     [setExplorerNodeEnabled, setObjectNodeEnabled],
   );
 
-  const setNodeEnabled = useCallback(
-    async (
+  const submitNodeIntent = useCallback(
+    (
       node: WorkspaceNode,
       desiredEnabled: boolean,
       surface: WorkspaceSwitchSurface,
       options?: WorkspaceSwitchEffectsOptions,
-    ) => {
-      const pendingKey = buildNodePendingKey(node);
-      markPending(pendingKey, true);
-      const desiredRevision = setPendingDesired(pendingKey, desiredEnabled);
-      if (!isWorkspaceObjectNode(node)) {
-        pendingNodeOverrides.current.set(pendingKey, node);
+    ): Promise<string | null> => {
+      if (!activeGame?.id || activationBlocksMutations) {
+        return Promise.resolve(null);
       }
-
-      let clearAfterNativeResult = true;
-      try {
-        const outcome = await executeNodeEnabled(node, desiredEnabled, surface, options);
-        if (!outcome) {
-          return null;
-        }
-        if (!isWorkspaceObjectNode(node)) {
-          pendingNodeOverrides.current.set(pendingKey, { ...node, path: outcome.path });
-        }
-        clearAfterNativeResult = false;
-        markPending(pendingKey, false);
-        const clearDesired = () => clearPendingDesired(pendingKey, desiredRevision);
-        void outcome.settled.then(clearDesired, clearDesired);
-        return outcome.path;
-      } finally {
-        if (clearAfterNativeResult) {
-          markPending(pendingKey, false);
-          clearPendingDesired(pendingKey, desiredRevision);
-        }
-      }
-    },
-    [clearPendingDesired, executeNodeEnabled, markPending, setPendingDesired],
-  );
-
-  const toggleNode = useCallback(
-    (node: WorkspaceNode, surface: WorkspaceSwitchSurface) => {
-      const pendingKey = buildNodePendingKey(node);
-      const existingIntent = latestNodeToggleIntents.current.get(pendingKey);
-      if (existingIntent) {
-        existingIntent.desiredEnabled = !existingIntent.desiredEnabled;
-        existingIntent.pendingRevision = setPendingDesired(
-          pendingKey,
-          existingIntent.desiredEnabled,
+      const pendingKey = nodePendingKey(activeGame.id, node);
+      const pathIntent = latestFolderPathIntents.get(pendingKey);
+      if (pathIntent) {
+        pathIntent.desiredEnabled = desiredEnabled;
+        pathIntent.pendingRevision = setPendingDesired(pendingKey, desiredEnabled);
+        admitWorkspaceIntentOverride(
+          activeGame.id,
+          [{ kind: 'mod_path', value: pathIntent.path }],
+          pathIntent.pendingRevision,
         );
-        const latestNode = pendingNodeOverrides.current.get(pendingKey);
-        existingIntent.node = withLatestFolderPath(node, latestNode);
+        return pathIntent.completion;
+      }
+      const existingIntent = latestNodeToggleIntents.get(pendingKey);
+      if (existingIntent) {
+        existingIntent.desiredEnabled = desiredEnabled;
+        existingIntent.pendingRevision = setPendingDesired(pendingKey, desiredEnabled);
+        existingIntent.node = withLatestFolderPath(node, pendingNodeOverrides.get(pendingKey));
         existingIntent.surface = surface;
-        return new Promise<string | null>((resolve, reject) => {
-          existingIntent.waiters.push({ resolve, reject });
-        });
+        existingIntent.options = options;
+        existingIntent.execute = executeNodeEnabled;
+        admitWorkspaceIntentOverride(
+          activeGame.id,
+          [
+            isWorkspaceObjectNode(existingIntent.node)
+              ? { kind: 'object_id', value: existingIntent.node.id }
+              : { kind: 'mod_path', value: existingIntent.node.path },
+          ],
+          existingIntent.pendingRevision,
+        );
+        return existingIntent.completion;
       }
 
-      const desiredEnabled = !(
-        pendingDesiredEnabled[pendingKey] ?? node.switch_state === 'enabled'
-      );
-      const latestNode = pendingNodeOverrides.current.get(pendingKey);
-      const intentNode = withLatestFolderPath(node, latestNode);
+      let resolve!: (path: string | null) => void;
+      let reject!: (error: unknown) => void;
+      const completion = new Promise<string | null>((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+      });
       const intent: LatestNodeToggleIntent = {
         desiredEnabled,
         pendingRevision: setPendingDesired(pendingKey, desiredEnabled),
-        node: intentNode,
+        node: withLatestFolderPath(node, pendingNodeOverrides.get(pendingKey)),
         surface,
-        waiters: [],
+        options,
+        execute: executeNodeEnabled,
+        completion,
+        resolve,
+        reject,
       };
-      latestNodeToggleIntents.current.set(pendingKey, intent);
-
-      const completion = new Promise<string | null>((resolve, reject) => {
-        intent.waiters.push({ resolve, reject });
-      });
+      latestNodeToggleIntents.set(pendingKey, intent);
+      markPending(pendingKey, true);
 
       const runLatestIntent = async () => {
         let clearDesiredAfterRefresh = false;
         try {
           while (true) {
-            const desiredEnabled = intent.desiredEnabled;
+            const requestedEnabled = intent.desiredEnabled;
+            const requestedRevision = intent.pendingRevision;
             const intentNode = intent.node;
-            const outcome = await executeNodeEnabled(intentNode, desiredEnabled, intent.surface, {
-              shouldNotifyResult: () => {
-                const currentIntent = latestNodeToggleIntents.current.get(pendingKey);
-                return currentIntent === intent && currentIntent.desiredEnabled === desiredEnabled;
-              },
+            const outcome = await intent.execute(intentNode, requestedEnabled, intent.surface, {
+              ...intent.options,
+              intentRevision: requestedRevision,
+              shouldNotifyResult: () =>
+                latestNodeToggleIntents.get(pendingKey) === intent &&
+                intent.pendingRevision === requestedRevision,
             });
 
             if (outcome?.path && !isWorkspaceObjectNode(intentNode)) {
               intent.node = { ...intentNode, path: outcome.path };
-              pendingNodeOverrides.current.set(pendingKey, intent.node);
+              pendingNodeOverrides.set(pendingKey, intent.node);
             }
-
-            if (intent.desiredEnabled !== desiredEnabled) {
+            if (
+              intent.desiredEnabled !== requestedEnabled ||
+              intent.pendingRevision !== requestedRevision
+            ) {
               continue;
             }
-
             if (!outcome?.path) {
-              for (const waiter of intent.waiters) {
-                waiter.resolve(null);
-              }
+              intent.resolve(null);
               return;
             }
 
             clearDesiredAfterRefresh = true;
             const completedRevision = intent.pendingRevision;
             const clearDesired = () => clearPendingDesired(pendingKey, completedRevision);
-            void outcome.settled.then(clearDesired, clearDesired);
-            for (const waiter of intent.waiters) {
-              waiter.resolve(outcome.path);
-            }
+            void outcome.settled.then(clearDesired, () => undefined);
+            intent.resolve(outcome.path);
             return;
           }
         } catch (error) {
-          for (const waiter of intent.waiters) {
-            waiter.reject(error);
-          }
+          intent.reject(error);
         } finally {
-          if (latestNodeToggleIntents.current.get(pendingKey) === intent) {
-            latestNodeToggleIntents.current.delete(pendingKey);
+          if (latestNodeToggleIntents.get(pendingKey) === intent) {
+            latestNodeToggleIntents.delete(pendingKey);
           }
           markPending(pendingKey, false);
           if (!clearDesiredAfterRefresh) {
@@ -401,103 +511,178 @@ export function useWorkspaceSwitchActions() {
           }
         }
       };
-
-      markPending(pendingKey, true);
       void runLatestIntent();
       return completion;
     },
-    [
-      clearPendingDesired,
-      executeNodeEnabled,
-      markPending,
-      pendingDesiredEnabled,
-      setPendingDesired,
-    ],
+    [activeGame?.id, activationBlocksMutations, executeNodeEnabled],
+  );
+
+  const setNodeEnabled = submitNodeIntent;
+
+  const toggleNode = useCallback(
+    (node: WorkspaceNode, surface: WorkspaceSwitchSurface) => {
+      if (!activeGame?.id) {
+        return Promise.resolve(null);
+      }
+      const pendingKey = nodePendingKey(activeGame.id, node);
+      const desiredEnabled = !(
+        pendingDesiredEnabled.get(pendingKey) ?? node.switch_state === 'enabled'
+      );
+      return submitNodeIntent(node, desiredEnabled, surface);
+    },
+    [activeGame, submitNodeIntent],
   );
 
   const setFolderPathEnabled = useCallback(
-    async (path: string, desiredEnabled: boolean) => {
+    (path: string, desiredEnabled: boolean): Promise<string | null> => {
       if (!activeGame?.id || activationBlocksMutations) {
-        return null;
+        return Promise.resolve(null);
+      }
+      const gameId = activeGame.id;
+      const identity = identityPathKey(path);
+      for (const [key, nodeIntent] of latestNodeToggleIntents) {
+        if (
+          key.startsWith(`${gameId}:folder:`) &&
+          !isWorkspaceObjectNode(nodeIntent.node) &&
+          identityPathKey(nodeIntent.node.path) === identity
+        ) {
+          return submitNodeIntent(nodeIntent.node, desiredEnabled, 'folder_grid');
+        }
       }
 
-      const pendingKey = `folder:${path}`;
+      const pendingKey = folderPathPendingKey(gameId, path);
+      const existing = latestFolderPathIntents.get(pendingKey);
+      if (existing) {
+        existing.desiredEnabled = desiredEnabled;
+        existing.pendingRevision = setPendingDesired(pendingKey, desiredEnabled);
+        admitWorkspaceIntentOverride(
+          gameId,
+          [{ kind: 'mod_path', value: existing.path }],
+          existing.pendingRevision,
+        );
+        return existing.completion;
+      }
+
+      let resolve!: (path: string | null) => void;
+      let reject!: (error: unknown) => void;
+      const completion = new Promise<string | null>((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+      });
+      const intent: LatestFolderPathIntent = {
+        path,
+        desiredEnabled,
+        pendingRevision: setPendingDesired(pendingKey, desiredEnabled),
+        completion,
+        resolve,
+        reject,
+      };
+      latestFolderPathIntents.set(pendingKey, intent);
       markPending(pendingKey, true);
 
-      try {
-        const input: WorkspaceSwitchInput = {
-          game_id: activeGame.id,
-          target: {
-            kind: 'mod_path',
-            value: path,
-          },
-          desired_enabled: desiredEnabled,
-          resolution: 'normal',
-          enable_disabled_ancestors: false,
-          parent_enable_confirmation: null,
-          origin_surface: 'folder_grid',
-        };
-        const result = await executeWorkspaceSwitch(input);
-        if (!result || !isWorkspaceGameCurrent(input.game_id)) {
-          return null;
-        }
+      const runLatestIntent = async () => {
+        let clearDesiredAfterRefresh = false;
+        try {
+          while (true) {
+            const requestedEnabled = intent.desiredEnabled;
+            const requestedRevision = intent.pendingRevision;
+            const input: WorkspaceSwitchInput = {
+              game_id: gameId,
+              target: { kind: 'mod_path', value: intent.path },
+              desired_enabled: requestedEnabled,
+              resolution: 'normal',
+              enable_disabled_ancestors: false,
+              parent_enable_confirmation: null,
+              origin_surface: 'folder_grid',
+            };
+            const result = await executeWorkspaceSwitch(input, requestedRevision);
+            if (!isWorkspaceGameCurrent(gameId)) {
+              intent.resolve(null);
+              return;
+            }
+            if (result?.primary_path) {
+              intent.path = result.primary_path;
+            }
+            if (
+              intent.desiredEnabled !== requestedEnabled ||
+              intent.pendingRevision !== requestedRevision
+            ) {
+              continue;
+            }
+            if (!result) {
+              intent.resolve(null);
+              return;
+            }
+            if (result.status === 'requires_parent_enable' && result.parent_enable_requirement) {
+              dispatchWorkspaceRuntimeEvent({
+                type: 'DIALOG_OPENED',
+                dialog: {
+                  kind: 'folderEnableParent',
+                  folder: dialogFolder(intent.path),
+                  requirement: result.parent_enable_requirement,
+                  resumeInput: input,
+                },
+              });
+              intent.resolve(null);
+              return;
+            }
+            if (result.status === 'requires_duplicate_resolution') {
+              dispatchWorkspaceRuntimeEvent({
+                type: 'DIALOG_OPENED',
+                dialog: {
+                  kind: 'modDuplicateWarning',
+                  folder: dialogFolder(intent.path),
+                  duplicates: result.duplicates,
+                  requiresResolution: true,
+                  enableDisabledAncestors: false,
+                  parentEnableConfirmation: null,
+                },
+              });
+              intent.resolve(null);
+              return;
+            }
+            if (!result.primary_path) {
+              intent.resolve(null);
+              return;
+            }
 
-        const folder = dialogFolder(path);
-        if (result.status === 'requires_parent_enable' && result.parent_enable_requirement) {
-          dispatchWorkspaceRuntimeEvent({
-            type: 'DIALOG_OPENED',
-            dialog: {
-              kind: 'folderEnableParent',
-              folder,
-              requirement: result.parent_enable_requirement,
-              resumeInput: input,
-            },
-          });
-          return null;
+            clearDesiredAfterRefresh = true;
+            const settled = applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
+              gameId,
+            });
+            const completedRevision = intent.pendingRevision;
+            const clearDesired = () => clearPendingDesired(pendingKey, completedRevision);
+            void settled.then(clearDesired, () => undefined);
+            if (result.duplicates.length > 0 && requestedRevision === intent.pendingRevision) {
+              dispatchWorkspaceRuntimeEvent({
+                type: 'DIALOG_OPENED',
+                dialog: {
+                  kind: 'modDuplicateWarning',
+                  folder: dialogFolder(result.primary_path),
+                  duplicates: result.duplicates,
+                  requiresResolution: false,
+                  enableDisabledAncestors: false,
+                  parentEnableConfirmation: null,
+                },
+              });
+            }
+            intent.resolve(result.primary_path);
+            return;
+          }
+        } catch (error) {
+          intent.reject(error);
+        } finally {
+          latestFolderPathIntents.delete(pendingKey);
+          markPending(pendingKey, false);
+          if (!clearDesiredAfterRefresh) {
+            clearPendingDesired(pendingKey, intent.pendingRevision);
+          }
         }
-        if (result.status === 'requires_duplicate_resolution') {
-          dispatchWorkspaceRuntimeEvent({
-            type: 'DIALOG_OPENED',
-            dialog: {
-              kind: 'modDuplicateWarning',
-              folder,
-              duplicates: result.duplicates,
-              requiresResolution: true,
-              enableDisabledAncestors: false,
-              parentEnableConfirmation: null,
-            },
-          });
-          return null;
-        }
-
-        const nextPath = result?.primary_path;
-        if (!nextPath) {
-          return null;
-        }
-
-        applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
-          gameId: activeGame.id,
-        });
-        if (result.duplicates.length > 0) {
-          dispatchWorkspaceRuntimeEvent({
-            type: 'DIALOG_OPENED',
-            dialog: {
-              kind: 'modDuplicateWarning',
-              folder: dialogFolder(nextPath),
-              duplicates: result.duplicates,
-              requiresResolution: false,
-              enableDisabledAncestors: false,
-              parentEnableConfirmation: null,
-            },
-          });
-        }
-
-        return nextPath;
-      } finally {
-        markPending(pendingKey, false);
-      }
+      };
+      void runLatestIntent();
+      return completion;
     },
-    [activeGame, activationBlocksMutations, markPending, queryClient],
+    [activeGame?.id, activationBlocksMutations, queryClient, submitNodeIntent],
   );
 
   const resolveDuplicateForceEnable = useCallback(
@@ -671,26 +856,22 @@ export function useWorkspaceSwitchActions() {
 
   const isPending = activationBlocksMutations;
 
-  const isNodePending = useCallback(
-    (node: WorkspaceNode | null | undefined) => {
-      if (!node) {
-        return false;
-      }
+  const isNodePending = (node: WorkspaceNode | null | undefined) => {
+    if (!node) {
+      return false;
+    }
+    return (
+      activationBlocksMutations ||
+      (activeGame?.id !== undefined && pendingKeys.has(nodePendingKey(activeGame.id, node)))
+    );
+  };
 
-      return activationBlocksMutations || !!pendingKeys[buildNodePendingKey(node)];
-    },
-    [activationBlocksMutations, pendingKeys],
-  );
-
-  const getPendingDesiredEnabled = useCallback(
-    (node: WorkspaceNode | null | undefined) => {
-      if (!node) {
-        return undefined;
-      }
-      return pendingDesiredEnabled[buildNodePendingKey(node)];
-    },
-    [pendingDesiredEnabled],
-  );
+  const getPendingDesiredEnabled = (node: WorkspaceNode | null | undefined) => {
+    if (!node || !activeGame?.id) {
+      return undefined;
+    }
+    return pendingDesiredEnabled.get(nodePendingKey(activeGame.id, node));
+  };
 
   return {
     isPending,

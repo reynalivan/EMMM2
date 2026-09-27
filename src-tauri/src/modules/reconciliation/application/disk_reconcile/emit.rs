@@ -533,6 +533,69 @@ async fn run_initial_disk_reconcile(
     .await
 }
 
+async fn run_initial_recovery_with_projection(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+) -> Result<DiskReconcileResult, AppError> {
+    use crate::modules::mutation::coordinator::MutationCoordinator;
+    use crate::modules::settings::application::config::ConfigService;
+    use crate::modules::workspace::adapters::tauri::workspace_cmds::{
+        complete_reconciled_toggle_projection, projection_source_epoch, queue_toggle_projection,
+    };
+
+    let coordinator = app.try_state::<MutationCoordinator>().ok_or_else(|| {
+        AppError::Internal("MutationCoordinator missing for initial recovery".to_string())
+    })?;
+    let pending_switches = coordinator
+        .pending_disk_commits()?
+        .into_iter()
+        .filter(|operation| {
+            operation.game_id == game_id
+                && matches!(operation.kind.as_str(), "workspace-switch" | "bulk-toggle")
+        })
+        .collect::<Vec<_>>();
+    let pending_switch_ids = pending_switches
+        .iter()
+        .map(|operation| operation.id.clone())
+        .collect::<Vec<_>>();
+    let projected_revision = pending_switches
+        .iter()
+        .filter_map(|operation| operation.disk_revision)
+        .max();
+    let projection_epoch = if pending_switch_ids.is_empty() {
+        None
+    } else {
+        let config = app.try_state::<ConfigService>().ok_or_else(|| {
+            AppError::Internal("ConfigService missing for initial recovery".to_string())
+        })?;
+        Some(projection_source_epoch(&config, game_id)?)
+    };
+
+    let result = run_initial_disk_reconcile(app, pool, game_id).await?;
+    if result.status.applied() {
+        if let Some(epoch) = projection_epoch {
+            if let Err(error) = complete_reconciled_toggle_projection(
+                app,
+                pool,
+                &coordinator,
+                game_id,
+                &epoch,
+                &pending_switch_ids,
+                projected_revision,
+            )
+            .await
+            {
+                log::error!(
+                    "Could not settle recovered workspace projection for '{game_id}': {error}"
+                );
+                queue_toggle_projection(app.clone(), pool.clone(), game_id.to_string());
+            }
+        }
+    }
+    Ok(result)
+}
+
 /// Single-flight activation/startup recovery. The first caller performs the
 /// full disk scan; concurrent and later readers receive the same terminal
 /// result, including an explicit failure instead of silently reading stale DB
@@ -545,7 +608,7 @@ pub async fn ensure_initial_disk_recovery(
 ) -> InitialRecoveryOutcome {
     match state.claim_initial_recovery(game_id).await {
         InitialRecoveryClaim::Run { generation } => {
-            let outcome = match run_initial_disk_reconcile(app, pool, game_id).await {
+            let outcome = match run_initial_recovery_with_projection(app, pool, game_id).await {
                 Ok(result) => InitialRecoveryOutcome::Completed(Box::new(result)),
                 Err(error) => InitialRecoveryOutcome::Failed(error.to_string()),
             };
@@ -575,10 +638,11 @@ pub fn start_initial_disk_recovery(
             let pool = pool.clone();
             let game_id = game_id.to_string();
             tauri::async_runtime::spawn(async move {
-                let outcome = match run_initial_disk_reconcile(&app, &pool, &game_id).await {
-                    Ok(result) => InitialRecoveryOutcome::Completed(Box::new(result)),
-                    Err(error) => InitialRecoveryOutcome::Failed(error.to_string()),
-                };
+                let outcome =
+                    match run_initial_recovery_with_projection(&app, &pool, &game_id).await {
+                        Ok(result) => InitialRecoveryOutcome::Completed(Box::new(result)),
+                        Err(error) => InitialRecoveryOutcome::Failed(error.to_string()),
+                    };
                 let state = app.state::<DiskReconcileState>();
                 state.finish_initial_recovery(&game_id, generation, outcome.clone());
                 let result = match outcome {

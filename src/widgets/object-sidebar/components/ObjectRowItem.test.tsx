@@ -94,6 +94,23 @@ const baseObject: WorkspaceObjectNode = {
 };
 
 describe('ObjectRowItem', () => {
+  it('shows the optimistic switch state without a loading spinner', () => {
+    render(
+      <ObjectRowItem
+        obj={baseObject}
+        isSelected={false}
+        isMobile={false}
+        onClick={vi.fn()}
+        isSwitchPending
+        pendingDesiredEnabled={false}
+      />,
+    );
+
+    expect(screen.getByText('common:status.disabled')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Albedo/ })).toHaveAttribute('aria-busy', 'true');
+  });
+
   it('renders a combined active and total mod count badge', () => {
     render(
       <ObjectRowItem obj={baseObject} isSelected={false} isMobile={false} onClick={vi.fn()} />,

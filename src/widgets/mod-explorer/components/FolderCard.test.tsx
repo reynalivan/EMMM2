@@ -247,6 +247,26 @@ describe('FolderCard', () => {
     expect(onToggleEnabled).not.toHaveBeenCalled();
   });
 
+  it('keeps the switch clickable while unrelated bulk mutations are locked', () => {
+    const onToggleEnabled = vi.fn();
+    render(
+      <FolderCard
+        folder={mockFolder}
+        isSelected={false}
+        onNavigate={vi.fn()}
+        toggleSelection={vi.fn()}
+        onToggleEnabled={onToggleEnabled}
+        mutationsDisabled
+        switchDisabled={false}
+      />,
+    );
+
+    const switchControl = screen.getAllByRole('checkbox', { hidden: true })[1];
+    expect(switchControl).not.toBeDisabled();
+    fireEvent.click(switchControl);
+    expect(onToggleEnabled).toHaveBeenCalledWith(mockFolder);
+  });
+
   it('shows the latest pending state without disabling or replacing the switch', () => {
     const onToggleEnabled = vi.fn();
     const disabledFolder = {

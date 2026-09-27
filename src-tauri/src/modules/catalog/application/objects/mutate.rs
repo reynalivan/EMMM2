@@ -609,30 +609,6 @@ fn cleanup_created_object_folder(path: &std::path::Path, created_folder: bool) {
     }
 }
 
-#[cfg(test)]
-mod thumbnail_url_tests {
-    use super::validate_remote_thumbnail_url;
-
-    #[test]
-    fn remote_thumbnail_urls_reject_unsafe_origins() {
-        for url in [
-            "file:///C:/thumbnail.png",
-            "http://localhost/thumbnail.png",
-            "http://127.0.0.1/thumbnail.png",
-            "http://192.168.1.5/thumbnail.png",
-            "http://[::1]/thumbnail.png",
-        ] {
-            assert!(validate_remote_thumbnail_url(url).is_err(), "{url}");
-        }
-    }
-
-    #[test]
-    fn remote_thumbnail_urls_allow_public_http_and_https() {
-        assert!(validate_remote_thumbnail_url("https://example.com/thumbnail.png").is_ok());
-        assert!(validate_remote_thumbnail_url("http://example.com/thumbnail.png").is_ok());
-    }
-}
-
 /// Toggle the pinned state of an object.
 pub async fn toggle_pin_object(
     pool: &sqlx::SqlitePool,
@@ -791,4 +767,28 @@ pub async fn delete_object(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod thumbnail_url_tests {
+    use super::validate_remote_thumbnail_url;
+
+    #[test]
+    fn remote_thumbnail_urls_reject_unsafe_origins() {
+        for url in [
+            "file:///C:/thumbnail.png",
+            "http://localhost/thumbnail.png",
+            "http://127.0.0.1/thumbnail.png",
+            "http://192.168.1.5/thumbnail.png",
+            "http://[::1]/thumbnail.png",
+        ] {
+            assert!(validate_remote_thumbnail_url(url).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn remote_thumbnail_urls_allow_public_http_and_https() {
+        assert!(validate_remote_thumbnail_url("https://example.com/thumbnail.png").is_ok());
+        assert!(validate_remote_thumbnail_url("http://example.com/thumbnail.png").is_ok());
+    }
 }

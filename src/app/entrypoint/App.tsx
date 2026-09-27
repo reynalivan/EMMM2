@@ -204,7 +204,9 @@ function DashboardWorkspace() {
       <AppShell
         workspaceView={workspaceView}
         selectedObjectFolderPath={selectedObjectFolderPath}
-        topBar={<TopBar launchBar={<LaunchBar />} contextControls={<CollectionContextControls />} />}
+        topBar={
+          <TopBar launchBar={<LaunchBar />} contextControls={<CollectionContextControls />} />
+        }
         runtimeHosts={
           isDemoMode ? undefined : (
             <>

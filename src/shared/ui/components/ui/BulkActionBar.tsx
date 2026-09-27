@@ -9,6 +9,7 @@ export interface BulkBarAction {
   onClick: () => void;
   className?: string;
   dividerBefore?: boolean;
+  disabled?: boolean;
 }
 
 interface BulkActionBarLabels {
@@ -39,6 +40,7 @@ interface BulkActionBarProps {
   };
   dropdownActions: BulkBarAction[];
   mutationsDisabled?: boolean;
+  toggleDisabled?: boolean;
 }
 
 /**
@@ -56,6 +58,7 @@ export default function BulkActionBar({
   toggleGroup,
   dropdownActions,
   mutationsDisabled = false,
+  toggleDisabled = mutationsDisabled,
 }: BulkActionBarProps) {
   if (count === 0) return null;
 
@@ -129,7 +132,7 @@ export default function BulkActionBar({
         className={circleBtn}
         title={labels.more}
         aria-label={labels.more}
-        disabled={mutationsDisabled}
+        disabled={mutationsDisabled && toggleDisabled}
       >
         <MoreHorizontal size={iconSize} />
       </button>
@@ -160,7 +163,10 @@ export default function BulkActionBar({
                       : ''
                   } ${action.className ?? ''}`}
                   onClick={action.onClick}
-                  disabled={mutationsDisabled}
+                  disabled={
+                    action.disabled ??
+                    (index < (toggleGroup ? 2 : 0) ? toggleDisabled : mutationsDisabled)
+                  }
                 >
                   <action.icon size={itemIconSize} className="opacity-70" />
                   {action.label}
@@ -230,7 +236,7 @@ export default function BulkActionBar({
                 <button
                   className="btn btn-xs join-item btn-ghost h-7 gap-1.5 border-none px-2.5 text-base-content/75 hover:text-success"
                   onClick={() => toggleGroup.onToggle(true)}
-                  disabled={mutationsDisabled}
+                  disabled={toggleDisabled}
                 >
                   <Power size={14} className="mr-1" />
                   {toggleGroup.enableLabel}
@@ -239,7 +245,7 @@ export default function BulkActionBar({
                 <button
                   className="btn btn-xs join-item btn-ghost h-7 gap-1.5 border-none px-2.5 text-base-content/75 hover:text-warning"
                   onClick={() => toggleGroup.onToggle(false)}
-                  disabled={mutationsDisabled}
+                  disabled={toggleDisabled}
                 >
                   <PowerOff size={14} className="mr-1" />
                   {toggleGroup.disableLabel}

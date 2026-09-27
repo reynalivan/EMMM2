@@ -2299,8 +2299,7 @@ fn group_fallback_panels(
         if candidate.keybinds.is_empty() {
             diagnostics.missing_keybinds += 1;
         }
-        let keep = !candidate.sentinels.is_empty() && !candidate.keybinds.is_empty();
-        keep
+        !candidate.sentinels.is_empty() && !candidate.keybinds.is_empty()
     });
 
     let mut parent: Vec<usize> = (0..candidates.len()).collect();
@@ -3919,8 +3918,8 @@ mod tests {
 
         samples.sort_unstable();
         aggregation_samples.sort_unstable();
-        let p50 = samples[(SAMPLE_COUNT * 50 + 99) / 100 - 1];
-        let p95 = samples[(SAMPLE_COUNT * 95 + 99) / 100 - 1];
+        let p50 = samples[(SAMPLE_COUNT * 50).div_ceil(100) - 1];
+        let p95 = samples[(SAMPLE_COUNT * 95).div_ceil(100) - 1];
         let aggregation_p50 = aggregation_samples[3];
         let aggregation_p95 = aggregation_samples[6];
         eprintln!(
@@ -4599,7 +4598,7 @@ mod tests {
         assert_eq!(
             manual.diagnostic_message().as_deref(),
             Some(
-                "Manual reload required: focus the active game and press F10 to reload its configuration. active game is not focused"
+                "Manual reload required: press F10 in the active game to reload its configuration. active game is not focused"
             )
         );
     }

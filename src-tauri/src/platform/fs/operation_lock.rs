@@ -80,6 +80,8 @@ impl OperationLock {
     pub(crate) async fn wait_for_foreground_intent(&self) {
         loop {
             let requested = self.foreground_requested.notified();
+            tokio::pin!(requested);
+            requested.as_mut().enable();
             if self.foreground_waiters.load(Ordering::Acquire) > 0 {
                 return;
             }

@@ -56,6 +56,7 @@ export function useObjectListHandlers({ objects, schema }: HandlerDeps) {
     handleDisableObject: crud.handleDisableObject,
     isSwitchPending: crud.isSwitchPending,
     isObjectSwitchPending: crud.isObjectSwitchPending,
+    getObjectPendingDesiredEnabled: crud.getObjectPendingDesiredEnabled,
     categoryNames: crud.categoryNames,
 
     // Scanning & Sync Handlers

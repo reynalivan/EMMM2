@@ -22,7 +22,7 @@ import { launchConfiguredGame, useActiveGame } from '@/entities/game';
 import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import { toast } from '@/shared/ui/toast';
-import { useBackgroundIndexingStatus } from '@/pages/onboarding/hooks/useBackgroundIndexingStatus';
+import { useBackgroundIndexingStatus } from '@/features/workspace-runtime';
 import GameSelector from './GameSelector';
 import GlobalActions from './GlobalActions';
 import { SafetyFilterControl } from '@/shared/ui/components/ui/SafetyFilterControl';

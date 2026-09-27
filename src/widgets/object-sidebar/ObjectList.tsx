@@ -34,8 +34,8 @@ export default function ObjectList() {
     const activation = store.gameActivationByGame?.[activeGame.id];
     return activation?.phase !== 'ready';
   });
-  const mutationsDisabled =
-    !sourceAvailable || activationBlocksMutations || handlers.isObjectBulkSwitchPending;
+  const switchDisabled = !sourceAvailable || activationBlocksMutations;
+  const mutationsDisabled = switchDisabled || handlers.isObjectBulkSwitchPending;
 
   const {
     activeFilters,
@@ -168,6 +168,7 @@ export default function ObjectList() {
 
   const bulkSelectToolbarProps = useObjectListBulkToolbarProps({
     mutationsDisabled,
+    switchDisabled,
     bulkSelect,
     setBulkTagModal,
     handleBulkDelete,
@@ -262,7 +263,9 @@ export default function ObjectList() {
             isBulkSelected={bulkSelect.isSelected}
             onToggleBulkSelect={bulkSelect.toggleSelection}
             mutationsDisabled={mutationsDisabled}
+            switchDisabled={switchDisabled}
             isObjectSwitchPending={handlers.isObjectSwitchPending}
+            getObjectPendingDesiredEnabled={handlers.getObjectPendingDesiredEnabled}
           />
         )}
       </div>

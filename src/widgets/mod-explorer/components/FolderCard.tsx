@@ -41,12 +41,12 @@ interface FolderCardProps {
   hasFolderNameConflict?: boolean;
   /** True when an ancestor folder in the current path has DISABLED prefix */
   isLockedByParent?: boolean;
-  isSwitchPending?: boolean;
   /** The immediate desired state while a switch transaction is in flight. */
   pendingDesiredEnabled?: boolean;
   /** A switch for this folder is in flight; used for accessible busy state only. */
   isSwitchBusy?: boolean;
   mutationsDisabled?: boolean;
+  switchDisabled?: boolean;
 }
 
 function FolderCardInner({
@@ -79,10 +79,10 @@ function FolderCardInner({
   hasConflict = false,
   hasFolderNameConflict = false,
   isLockedByParent = false,
-  isSwitchPending = false,
   pendingDesiredEnabled,
   isSwitchBusy = false,
   mutationsDisabled = false,
+  switchDisabled = mutationsDisabled,
 }: FolderCardProps) {
   const {
     t,
@@ -132,13 +132,13 @@ function FolderCardInner({
   const handleToggleClick = useCallback(
     (e?: React.MouseEvent | React.ChangeEvent) => {
       e?.stopPropagation();
-      if (mutationsDisabled) {
+      if (switchDisabled) {
         return;
       }
 
       onToggleEnabled?.(folder);
     },
-    [folder, mutationsDisabled, onToggleEnabled],
+    [folder, switchDisabled, onToggleEnabled],
   );
 
   // Sync rename value when folder changes or rename starts
@@ -177,13 +177,13 @@ function FolderCardInner({
             onRename={() => !mutationsDisabled && onRename?.(folder)}
             onDelete={() => !mutationsDisabled && onDelete?.(folder)}
             onToggle={() => {
-              if (!mutationsDisabled) {
+              if (!switchDisabled) {
                 handleToggleClick();
               }
             }}
             onToggleFavorite={() => !mutationsDisabled && onToggleFavorite?.(folder)}
             onEnableOnlyThis={
-              onEnableOnlyThis && !mutationsDisabled ? () => onEnableOnlyThis(folder) : undefined
+              onEnableOnlyThis && !switchDisabled ? () => onEnableOnlyThis(folder) : undefined
             }
             onOpenMoveDialog={mutationsDisabled ? undefined : onOpenMoveDialog}
             onNavigate={hasFolderNameConflict ? undefined : onNavigate}
@@ -280,9 +280,9 @@ function FolderCardInner({
               onClick={(e) => e.stopPropagation()}
             >
               <WorkspaceSwitchControl
-                node={actionFolder}
+                node={folder}
                 policy={displayedSwitchPolicy}
-                isPending={isSwitchPending || mutationsDisabled}
+                isPending={switchDisabled}
                 isBusy={isSwitchBusy}
                 size="xs"
                 ariaLabel={t('common:actions.toggle')}

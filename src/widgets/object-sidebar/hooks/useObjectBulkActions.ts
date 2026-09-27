@@ -14,10 +14,14 @@ import { useActiveGame } from '@/entities/game';
 import { useTranslation } from 'react-i18next';
 import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import {
+  admitWorkspaceIntentOverride,
   buildRuntimeMutationDescriptor,
   applyWorkspaceSwitchEffects,
+  clearObjectBulkPendingDesired,
   executeWorkspaceObjectBulkSwitch,
+  nextWorkspaceIntentRevision,
   runObjectBatchMutation,
+  setObjectBulkPendingDesired,
   type RuntimeMutationClass,
   useDeleteObject,
 } from '@/features/workspace-runtime';
@@ -33,6 +37,11 @@ interface BulkDeps {
 }
 
 type BulkOutcome = { success: number; failed: number };
+
+interface GameSwitchDrain {
+  pendingTargets: Map<string, { enable: boolean; revision: number }>;
+  promise: Promise<void> | null;
+}
 
 /**
  * Walk `ids` and run `op` on each, counting outcomes instead of aborting.
@@ -65,8 +74,9 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
   // The batch owns the single trailing refresh; per-item mutation callbacks
   // must not refetch the list after every successful delete.
   const deleteObjectMutation = useDeleteObject({ publishOnSuccess: false });
-  const bulkSwitchInFlight = useRef(false);
-  const [isBulkSwitchPending, setIsBulkSwitchPending] = useState(false);
+  const switchDrains = useRef(new Map<string, GameSwitchDrain>());
+  const [pendingSwitchGames, setPendingSwitchGames] = useState<Set<string>>(() => new Set());
+  const isBulkSwitchPending = activeGame ? pendingSwitchGames.has(activeGame.id) : false;
 
   const [bulkTagModal, setBulkTagModal] = useState<{
     open: boolean;
@@ -142,50 +152,115 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
   );
 
   const runBulkSwitch = useCallback(
-    async (ids: Set<string>, enable: boolean) => {
-      if (!activeGame || bulkSwitchInFlight.current) {
-        return;
+    (ids: Set<string>, enable: boolean): Promise<void> => {
+      if (!activeGame) {
+        return Promise.resolve();
       }
 
-      bulkSwitchInFlight.current = true;
-      setIsBulkSwitchPending(true);
-      try {
-        const objectIds = objects
-          .filter((candidate) => ids.has(candidate.id))
-          .map((object) => object.id);
-        if (objectIds.length === 0) {
-          return;
-        }
-
-        const result = await executeWorkspaceObjectBulkSwitch(activeGame.id, objectIds, enable);
-        if (!result || useAppStore.getState().activeGameId !== activeGame.id) {
-          return;
-        }
-
-        const changedCount = result.changed_object_ids.length;
-        if (changedCount === 0) {
-          return;
-        }
-        applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
-          gameId: activeGame.id,
-        });
-        const single = changedCount === 1;
-        toast.success(
-          t(
-            enable
-              ? single
-                ? 'objects:toasts.enabled_one'
-                : 'objects:toasts.enabled_other'
-              : single
-                ? 'objects:toasts.disabled_one'
-                : 'objects:toasts.disabled_other',
-            { count: changedCount },
-          ),
+      const objectIds = objects
+        .filter((candidate) => ids.has(candidate.id))
+        .map((object) => object.id);
+      if (objectIds.length === 0) {
+        return Promise.resolve();
+      }
+      const gameId = activeGame.id;
+      const gameDrain = switchDrains.current.get(gameId) ?? {
+        pendingTargets: new Map<string, { enable: boolean; revision: number }>(),
+        promise: null,
+      };
+      switchDrains.current.set(gameId, gameDrain);
+      const revision = nextWorkspaceIntentRevision();
+      setObjectBulkPendingDesired(gameId, objectIds, enable, revision);
+      for (const id of objectIds) {
+        gameDrain.pendingTargets.set(id, { enable, revision });
+      }
+      if (gameDrain.promise) {
+        admitWorkspaceIntentOverride(
+          gameId,
+          objectIds.map((id) => ({ kind: 'object_id', value: id })),
+          revision,
         );
-      } finally {
-        bulkSwitchInFlight.current = false;
-        setIsBulkSwitchPending(false);
+        return gameDrain.promise;
       }
+
+      setPendingSwitchGames((current) => new Set(current).add(gameId));
+      const drain = async () => {
+        try {
+          while (gameDrain.pendingTargets.size > 0) {
+            const next = gameDrain.pendingTargets.values().next().value;
+            if (!next) {
+              break;
+            }
+            const batchIds: string[] = [];
+            for (const [id, desired] of gameDrain.pendingTargets) {
+              if (desired.enable === next.enable && desired.revision === next.revision) {
+                batchIds.push(id);
+                gameDrain.pendingTargets.delete(id);
+              }
+            }
+            let result: Awaited<ReturnType<typeof executeWorkspaceObjectBulkSwitch>>;
+            try {
+              result = await executeWorkspaceObjectBulkSwitch(
+                gameId,
+                batchIds,
+                next.enable,
+                next.revision,
+              );
+            } catch (error) {
+              clearObjectBulkPendingDesired(gameId, batchIds, next.revision);
+              throw error;
+            }
+            if (!result || useAppStore.getState().activeGameId !== gameId) {
+              clearObjectBulkPendingDesired(gameId, batchIds, next.revision);
+              continue;
+            }
+
+            const changedCount = result.changed_object_ids.length;
+            if (changedCount === 0) {
+              clearObjectBulkPendingDesired(gameId, batchIds, next.revision);
+              continue;
+            }
+            const settled = applyWorkspaceSwitchEffects(queryClient, result, 'objectSwitch', {
+              gameId,
+            });
+            const clearDesired = () =>
+              clearObjectBulkPendingDesired(gameId, batchIds, next.revision);
+            void settled.then(clearDesired, () => undefined);
+            const superseded = batchIds.some((id) => gameDrain.pendingTargets.has(id));
+            if (superseded) {
+              continue;
+            }
+            const single = changedCount === 1;
+            toast.success(
+              t(
+                next.enable
+                  ? single
+                    ? 'objects:toasts.enabled_one'
+                    : 'objects:toasts.enabled_other'
+                  : single
+                    ? 'objects:toasts.disabled_one'
+                    : 'objects:toasts.disabled_other',
+                { count: changedCount },
+              ),
+            );
+          }
+        } finally {
+          for (const [id, pending] of gameDrain.pendingTargets) {
+            clearObjectBulkPendingDesired(gameId, [id], pending.revision);
+          }
+          gameDrain.pendingTargets.clear();
+          gameDrain.promise = null;
+          switchDrains.current.delete(gameId);
+          setPendingSwitchGames((current) => {
+            const next = new Set(current);
+            next.delete(gameId);
+            return next;
+          });
+        }
+      };
+      const promise = drain();
+      gameDrain.promise = promise;
+      return promise;
     },
     [activeGame, objects, queryClient, t],
   );

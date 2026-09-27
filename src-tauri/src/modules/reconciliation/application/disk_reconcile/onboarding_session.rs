@@ -50,6 +50,7 @@ struct OnboardingSession {
     games: HashMap<String, PendingGame>,
     cancelled: Arc<AtomicBool>,
     background_started: bool,
+    journal_revision: Option<u64>,
 }
 
 struct PendingGame {
@@ -139,12 +140,7 @@ impl OnboardingSnapshotProgressReporter {
             OnboardingDiscoveryPhase::Metadata => OnboardingIndexingSnapshotPhase::Metadata,
             OnboardingDiscoveryPhase::Classifying => OnboardingIndexingSnapshotPhase::Classifying,
         };
-        let is_phase_start = matches!(progress.phase, OnboardingDiscoveryPhase::Metadata)
-            && progress.completed_roots == 0
-            && progress.folders_classified == 0
-            || matches!(progress.phase, OnboardingDiscoveryPhase::Classifying)
-                && progress.completed_roots == 0
-                && progress.folders_classified == 0;
+        let is_phase_start = progress.completed_roots == 0 && progress.folders_classified == 0;
         let force = is_phase_start || progress.is_terminal;
         self.emit(
             phase,
@@ -243,9 +239,14 @@ pub enum ConsumedOnboardingSnapshot {
 /// full reconcile after the snapshot projection.
 pub struct OnboardingSnapshotLease {
     prepared: PreparedGame,
+    journal_revision: Option<u64>,
 }
 
 impl OnboardingSnapshotLease {
+    pub fn journal_revision(&self) -> Option<u64> {
+        self.journal_revision
+    }
+
     pub fn discovery(&self) -> DiskScopedDiscovery {
         self.prepared.discovery.clone()
     }
@@ -435,6 +436,19 @@ impl OnboardingIndexingSessionStore {
     where
         F: Fn(OnboardingIndexingSnapshotProgress) + Send + Sync + 'static,
     {
+        self.begin_with_progress_at_revision(games, None, on_progress)
+            .await
+    }
+
+    pub async fn begin_with_progress_at_revision<F>(
+        &self,
+        games: Vec<GameConfig>,
+        journal_revision: Option<u64>,
+        on_progress: F,
+    ) -> Result<OnboardingIndexingSession, AppError>
+    where
+        F: Fn(OnboardingIndexingSnapshotProgress) + Send + Sync + 'static,
+    {
         if games.is_empty() {
             return Err(AppError::Validation(
                 "At least one game is required for onboarding indexing".to_string(),
@@ -483,6 +497,7 @@ impl OnboardingIndexingSessionStore {
                 games: pending_games,
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
+                journal_revision,
             },
         );
         drop(sessions);
@@ -535,7 +550,7 @@ impl OnboardingIndexingSessionStore {
         session_id: &str,
         game_id: &str,
     ) -> Result<ConsumedOnboardingSnapshot, AppError> {
-        let prepared = {
+        let (prepared, journal_revision) = {
             let mut sessions = crate::shared::sync::lock(&self.sessions);
             let expired = sessions.get(session_id).is_some_and(|session| {
                 !session.background_started && session.created_at.elapsed() >= SESSION_TTL
@@ -555,10 +570,11 @@ impl OnboardingIndexingSessionStore {
                     "Game '{game_id}' is not available in this onboarding indexing session"
                 ))
             })?;
+            let journal_revision = session.journal_revision;
             if session.games.is_empty() {
                 sessions.remove(session_id);
             }
-            pending.prepared
+            (pending.prepared, journal_revision)
         };
         let mut prepared = prepared.await.map_err(|_| AppError::Cancelled)??;
 
@@ -577,13 +593,19 @@ impl OnboardingIndexingSessionStore {
         }
         if changed_paths.is_empty() {
             return Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
-                OnboardingSnapshotLease { prepared },
+                OnboardingSnapshotLease {
+                    prepared,
+                    journal_revision,
+                },
             )));
         }
 
         refresh_changed_roots(&mut prepared, &changed_paths).await?;
         Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
-            OnboardingSnapshotLease { prepared },
+            OnboardingSnapshotLease {
+                prepared,
+                journal_revision,
+            },
         )))
     }
 
@@ -989,6 +1011,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_carries_the_revision_captured_before_indexing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mods = temp.path().join("Mods");
+        std::fs::create_dir(&mods).expect("mods root");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin_with_progress_at_revision(vec![game_config("game", mods)], Some(7), |_| {})
+            .await
+            .expect("session");
+
+        let consumed = store
+            .consume(&session.session_id, "game")
+            .await
+            .expect("snapshot");
+        match consumed {
+            ConsumedOnboardingSnapshot::Snapshot(lease) => {
+                assert_eq!(lease.journal_revision(), Some(7));
+            }
+            ConsumedOnboardingSnapshot::FullFallback => {
+                panic!("unchanged root should keep snapshot")
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn scheduled_expiration_removes_orphaned_session() {
         let store = OnboardingIndexingSessionStore::new();
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -999,6 +1046,7 @@ mod tests {
                 games: HashMap::new(),
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
+                journal_revision: None,
             },
         );
         store.schedule_expiration(
@@ -1022,6 +1070,7 @@ mod tests {
                 games: HashMap::new(),
                 cancelled: Arc::clone(&cancelled),
                 background_started: true,
+                journal_revision: None,
             },
         );
         crate::shared::sync::lock(&store.background_statuses).insert(

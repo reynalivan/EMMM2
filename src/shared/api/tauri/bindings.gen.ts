@@ -105,9 +105,9 @@ async getWorkspaceExplorerPage(input: WorkspaceExplorerPageInput) : Promise<Resu
     else return { status: "error", error: e  as any };
 }
 },
-async executeWorkspaceExplorerBulk(input: WorkspaceExplorerBulkInput) : Promise<Result<BulkResult, AppError>> {
+async executeWorkspaceExplorerBulk(input: WorkspaceExplorerBulkInput, intentRevision: number | null) : Promise<Result<BulkResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_explorer_bulk", { input }) };
+    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_explorer_bulk", { input, intentRevision }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -121,17 +121,33 @@ async getWorkspacePreview(input: WorkspacePreviewInput) : Promise<Result<Workspa
     else return { status: "error", error: e  as any };
 }
 },
-async executeWorkspaceSwitch(input: WorkspaceSwitchInput) : Promise<Result<WorkspaceSwitchResult, AppError>> {
+async executeWorkspaceSwitch(input: WorkspaceSwitchInput, intentRevision: number | null) : Promise<Result<WorkspaceSwitchResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_switch", { input }) };
+    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_switch", { input, intentRevision }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async executeWorkspaceObjectBulkSwitch(gameId: string, objectIds: string[], desiredEnabled: boolean) : Promise<Result<WorkspaceSwitchResult, AppError>> {
+async getWorkspaceSwitchSnapshot(gameId: string) : Promise<Result<WorkspaceSwitchSnapshot, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_object_bulk_switch", { gameId, objectIds, desiredEnabled }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_workspace_switch_snapshot", { gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async admitWorkspaceSwitchIntent(gameId: string, targets: WorkspaceSwitchTarget[], intentRevision: number) : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("admit_workspace_switch_intent", { gameId, targets, intentRevision }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async executeWorkspaceObjectBulkSwitch(gameId: string, objectIds: string[], desiredEnabled: boolean, intentRevision: number | null) : Promise<Result<WorkspaceSwitchResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_object_bulk_switch", { gameId, objectIds, desiredEnabled, intentRevision }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -587,9 +603,9 @@ async renameModFolder(folderPath: string, newName: string, gameId: string) : Pro
     else return { status: "error", error: e  as any };
 }
 },
-async bulkToggleMods(gameId: string, paths: string[], enable: boolean, operationId: string) : Promise<Result<BulkResult, AppError>> {
+async bulkToggleMods(gameId: string, paths: string[], enable: boolean, operationId: string, intentRevision: number | null) : Promise<Result<BulkResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("bulk_toggle_mods", { gameId, paths, enable, operationId }) };
+    return { status: "ok", data: await TAURI_INVOKE("bulk_toggle_mods", { gameId, paths, enable, operationId, intentRevision }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2096,7 +2112,7 @@ export type BrowserHistoryEntry = { url: string; hostname: string; title: string
 export type BrowserPrivacySummary = { bookmarks: number; history_entries: number; saved_permissions: number }
 export type BrowserSessionTab = { position: number; url: string; title: string; active: boolean }
 export type BulkActionError = { path: string; error: AppError }
-export type BulkResult = { success: string[]; failures: BulkActionError[]; cancelled: boolean; processed_count: number; unprocessed_count: number; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null; runtime_sync_generation: number | null }
+export type BulkResult = { success: string[]; failures: BulkActionError[]; cancelled: boolean; processed_count: number; unprocessed_count: number; collection_impact: CollectionReferenceImpact; path_rewrites: WorkspacePathRewrite[]; sync_warning: CommittedMutationSyncWarning | null; runtime_sync_generation: number | null; disk_revision: number | null }
 export type CanonicalClassificationCatalogEntry = { entryKey: string; name: string; category: StableCategory; metadata: JsonValue; thumbnailPath: string | null; aliases: string[] }
 export type CanonicalSuggestion = { entryKey: string; name: string; matchedAlias: string | null; confidencePercentage: number; confidenceTier: ConfidenceTier; matchStatus?: ImportMatchStatus; evidence: MatchEvidence[] }
 export type CatalogImportPreview = { stagingToken: string; sourceKind: string; sourceLabel: string; sourceUrl: string | null; releaseTag: string | null; review: CatalogPackReview; replacesActivePack: boolean }
@@ -2759,7 +2775,8 @@ enable_disabled_ancestors?: boolean; parent_enable_confirmation?: string | null;
 export type WorkspaceSwitchOriginSurface = "folder_grid" | "preview" | "object_list" | "collections"
 export type WorkspaceSwitchPolicyKey = "mod" | "object" | "blocked"
 export type WorkspaceSwitchResolution = "normal" | "force_enable" | "enable_only_this"
-export type WorkspaceSwitchResult = { status: WorkspaceSwitchStatus; primary_path: string | null; changed_folder_paths: string[]; changed_object_ids: string[]; duplicates: WorkspaceSwitchDuplicate[]; parent_enable_requirement: WorkspaceParentEnableRequirement | null; impact: WorkspaceImpact; sync_warning: CommittedMutationSyncWarning | null; runtime_sync_generation: number | null }
+export type WorkspaceSwitchResult = { status: WorkspaceSwitchStatus; primary_path: string | null; changed_folder_paths: string[]; changed_object_ids: string[]; duplicates: WorkspaceSwitchDuplicate[]; parent_enable_requirement: WorkspaceParentEnableRequirement | null; impact: WorkspaceImpact; sync_warning: CommittedMutationSyncWarning | null; runtime_sync_generation: number | null; disk_revision: number | null }
+export type WorkspaceSwitchSnapshot = { game_id: string; source_epoch: string; disk_revision: number; projected_revision: number }
 export type WorkspaceSwitchState = "enabled" | "disabled" | "effectively_disabled" | "blocked_by_ancestor"
 export type WorkspaceSwitchStatus = "applied" | "requires_duplicate_resolution" | "requires_parent_enable" | "noop"
 export type WorkspaceSwitchTarget = { kind: WorkspaceSwitchTargetKind; value: string }

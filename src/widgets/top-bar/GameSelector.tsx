@@ -1,15 +1,15 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AlertCircle, Gamepad2, Loader2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GAME_OPTIONS, useActiveGame, type GameConfig } from '@/entities/game';
-import { useGameSwitch } from '@/features/workspace-runtime';
+import {
+  useGameSwitch,
+  useBackgroundIndexingStatus,
+  type BackgroundIndexingStatusState,
+} from '@/features/workspace-runtime';
 import { useAppStore } from '@/app/store';
 import { LiquidSurface } from '@/shared/ui/liquid';
 import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
-import {
-  useBackgroundIndexingStatus,
-  type BackgroundIndexingStatusState,
-} from '@/pages/onboarding/hooks/useBackgroundIndexingStatus';
 
 interface GameSelectorProps {
   compact?: boolean;
@@ -18,14 +18,18 @@ interface GameSelectorProps {
 
 export default function GameSelector(props: GameSelectorProps) {
   if (props.backgroundIndexingStatus) {
-    return <GameSelectorContent {...props} backgroundIndexingStatus={props.backgroundIndexingStatus} />;
+    return (
+      <GameSelectorContent {...props} backgroundIndexingStatus={props.backgroundIndexingStatus} />
+    );
   }
   return <GameSelectorWithOwnBackgroundStatus {...props} />;
 }
 
 function GameSelectorWithOwnBackgroundStatus({ compact = false }: GameSelectorProps) {
   const backgroundIndexingStatus = useBackgroundIndexingStatus();
-  return <GameSelectorContent compact={compact} backgroundIndexingStatus={backgroundIndexingStatus} />;
+  return (
+    <GameSelectorContent compact={compact} backgroundIndexingStatus={backgroundIndexingStatus} />
+  );
 }
 
 function GameSelectorContent({
@@ -66,10 +70,28 @@ function GameSelectorContent({
       .map((w: string) => w[0])
       .join('') ?? '-';
 
+  const handleSwitchGame = useCallback(
+    async (gameId: string) => {
+      const retryingActive =
+        gameId === activeGame?.id &&
+        (activeActivation?.phase === 'failed' || activeActivation?.phase === 'source_unavailable');
+      if (isSwitching || (gameId === activeGame?.id && !retryingActive)) return;
+
+      setIsSwitching(true);
+      try {
+        await switchGame(gameId);
+      } finally {
+        setIsSwitching(false);
+      }
+    },
+    [activeActivation?.phase, activeGame?.id, isSwitching, switchGame],
+  );
+
   useEffect(() => {
     if (!pendingGame) return;
     const requiresFullRecheck =
-      pendingIndexingStatus?.phase === 'NeedsAttention' || pendingIndexingStatus?.phase === 'Failed';
+      pendingIndexingStatus?.phase === 'NeedsAttention' ||
+      pendingIndexingStatus?.phase === 'Failed';
     if (requiresFullRecheck) {
       const gameId = pendingGame.id;
       setPendingGame(null);
@@ -88,7 +110,7 @@ function GameSelectorContent({
     backgroundStatusLoaded,
     backgroundStatusLoadError,
     pendingGame,
-    pendingIndexingStatus?.phase,
+    pendingIndexingStatus,
     handleSwitchGame,
   ]);
 
@@ -138,20 +160,6 @@ function GameSelectorContent({
     );
   }
 
-  async function handleSwitchGame(gameId: string) {
-    const retryingActive =
-      gameId === activeGame?.id &&
-      (activeActivation?.phase === 'failed' || activeActivation?.phase === 'source_unavailable');
-    if (isSwitching || (gameId === activeGame?.id && !retryingActive)) return;
-
-    setIsSwitching(true);
-    try {
-      await switchGame(gameId);
-    } finally {
-      setIsSwitching(false);
-    }
-  }
-
   if (games.length === 0) {
     if (compact) {
       return (
@@ -191,67 +199,67 @@ function GameSelectorContent({
   return (
     <>
       <div className="dropdown dropdown-bottom">
-      <button
-        type="button"
-        className={
-          compact
-            ? 'btn btn-ghost btn-sm btn-square text-base-content/75 hover:text-base-content'
-            : 'group flex min-w-36 max-w-52 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-base-content/75 transition-[background-color,color] duration-150 hover:bg-base-content/5 hover:text-base-content md:px-3'
-        }
-        aria-label={t('game_selector.select_game')}
-      >
-        <Gamepad2
-          size={15}
-          className="shrink-0 text-base-content/45 transition-colors group-hover:text-primary"
-        />
-        {!compact && (
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-sm font-bold leading-none tracking-tight text-base-content">
-              {t('app.name')}
+        <button
+          type="button"
+          className={
+            compact
+              ? 'btn btn-ghost btn-sm btn-square text-base-content/75 hover:text-base-content'
+              : 'group flex min-w-36 max-w-52 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-base-content/75 transition-[background-color,color] duration-150 hover:bg-base-content/5 hover:text-base-content md:px-3'
+          }
+          aria-label={t('game_selector.select_game')}
+        >
+          <Gamepad2
+            size={15}
+            className="shrink-0 text-base-content/45 transition-colors group-hover:text-primary"
+          />
+          {!compact && (
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-sm font-bold leading-none tracking-tight text-base-content">
+                {t('app.name')}
+              </span>
+              <span className="mt-0.5 truncate text-[10px] font-medium text-base-content/55 group-hover:text-base-content/75">
+                <span className="hidden sm:inline">{activeLabel}</span>
+                <span className="sm:hidden">{activeShort}</span>
+              </span>
             </span>
-            <span className="mt-0.5 truncate text-[10px] font-medium text-base-content/55 group-hover:text-base-content/75">
-              <span className="hidden sm:inline">{activeLabel}</span>
-              <span className="sm:hidden">{activeShort}</span>
+          )}
+          {!compact && (
+            <span className="text-[10px] opacity-50 transition-opacity group-hover:opacity-100">
+              ▼
             </span>
-          </span>
-        )}
-        {!compact && (
-          <span className="text-[10px] opacity-50 transition-opacity group-hover:opacity-100">
-            ▼
-          </span>
-        )}
-      </button>
-      <LiquidSurface
-        liquidRole="overlay"
-        className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-56 rounded-box shadow-lg"
-      >
-        <ul tabIndex={0} className="menu w-full p-2">
-          {games.map((game: GameConfig) => {
-            const isActive = activeGame?.id === game.id;
+          )}
+        </button>
+        <LiquidSurface
+          liquidRole="overlay"
+          className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-56 rounded-box shadow-lg"
+        >
+          <ul tabIndex={0} className="menu w-full p-2">
+            {games.map((game: GameConfig) => {
+              const isActive = activeGame?.id === game.id;
 
-            return (
-              <li key={game.id}>
-                <button
-                  onClick={() => handleGameSelection(game)}
-                  disabled={isSwitching}
-                  className={`hover:bg-base-content/10 ${
-                    isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
-                  }`}
-                >
-                  <span>{game.name}</span>
-                  {isActive &&
-                    (activeActivation?.phase === 'failed' ||
-                      activeActivation?.phase === 'source_unavailable') && (
-                      <span className="ml-auto text-xs font-medium text-warning">
-                        {t('game_selector.retry')}
-                      </span>
-                    )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </LiquidSurface>
+              return (
+                <li key={game.id}>
+                  <button
+                    onClick={() => handleGameSelection(game)}
+                    disabled={isSwitching}
+                    className={`hover:bg-base-content/10 ${
+                      isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
+                    }`}
+                  >
+                    <span>{game.name}</span>
+                    {isActive &&
+                      (activeActivation?.phase === 'failed' ||
+                        activeActivation?.phase === 'source_unavailable') && (
+                        <span className="ml-auto text-xs font-medium text-warning">
+                          {t('game_selector.retry')}
+                        </span>
+                      )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </LiquidSurface>
       </div>
 
       <dialog
@@ -268,11 +276,7 @@ function GameSelectorContent({
         <div className="modal-box max-w-sm border border-base-content/10 bg-base-100 p-6 shadow-xl">
           <div className="flex items-start gap-3">
             {statusUnavailable ? (
-              <AlertCircle
-                size={20}
-                className="mt-0.5 shrink-0 text-warning"
-                aria-hidden="true"
-              />
+              <AlertCircle size={20} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
             ) : (
               <Loader2
                 size={20}
@@ -284,13 +288,14 @@ function GameSelectorContent({
               <h2 id={dialogTitleId} className="text-base font-semibold">
                 {dialogTitle}
               </h2>
-              <p
-                id={dialogDescriptionId}
-                className="text-sm leading-6 text-base-content/70"
-              >
+              <p id={dialogDescriptionId} className="text-sm leading-6 text-base-content/70">
                 {dialogDescription}
               </p>
-              <p role="status" aria-live="polite" className="text-xs font-medium text-base-content/60">
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-xs font-medium text-base-content/60"
+              >
                 {statusUnavailable
                   ? t('game_selector.indexing.status_unavailable')
                   : t(`game_selector.indexing.phase.${pendingIndexingStatus?.phase ?? 'Queued'}`)}

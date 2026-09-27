@@ -343,6 +343,32 @@ fn sha256_file(path: &Path) -> Result<String, ScannerError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+pub fn status(app: &tauri::AppHandle) -> CatalogPackStatus {
+    let result = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| ScannerError::Io(error.to_string()))
+        .and_then(|dir| CatalogPack::load(&dir))
+        .and_then(|pack| pack.status());
+    match result {
+        Ok(status) => status,
+        Err(error) if error.to_string().contains("not installed") => CatalogPackStatus {
+            state: "not_installed".to_string(),
+            pack_id: None,
+            version: None,
+            message: None,
+            entries: 0,
+        },
+        Err(error) => CatalogPackStatus {
+            state: "invalid".to_string(),
+            pack_id: None,
+            version: None,
+            message: Some(error.to_string()),
+            entries: 0,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{is_avatar_path, is_supported_avatar, CatalogPack};
@@ -443,31 +469,5 @@ mod tests {
         .expect("write manifest");
 
         assert!(CatalogPack::load_from_root(root.path().to_path_buf()).is_err());
-    }
-}
-
-pub fn status(app: &tauri::AppHandle) -> CatalogPackStatus {
-    let result = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| ScannerError::Io(error.to_string()))
-        .and_then(|dir| CatalogPack::load(&dir))
-        .and_then(|pack| pack.status());
-    match result {
-        Ok(status) => status,
-        Err(error) if error.to_string().contains("not installed") => CatalogPackStatus {
-            state: "not_installed".to_string(),
-            pack_id: None,
-            version: None,
-            message: None,
-            entries: 0,
-        },
-        Err(error) => CatalogPackStatus {
-            state: "invalid".to_string(),
-            pack_id: None,
-            version: None,
-            message: Some(error.to_string()),
-            entries: 0,
-        },
     }
 }

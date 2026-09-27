@@ -48,7 +48,9 @@ export function useBackgroundIndexingStatus(): BackgroundIndexingStatusState {
       ({ payload }) => {
         if (!mounted) return;
         setSessions((current) => {
-          const otherSessions = current.filter((session) => session.session_id !== payload.session_id);
+          const otherSessions = current.filter(
+            (session) => session.session_id !== payload.session_id,
+          );
           return [...otherSessions, payload];
         });
         setLoadError(false);

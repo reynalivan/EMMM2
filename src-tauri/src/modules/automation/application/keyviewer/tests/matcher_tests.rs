@@ -60,7 +60,7 @@ fn arlecchino_prefers_position_over_ib_and_face_texture_regardless_of_order() {
         &entries,
         &active(&["a44625da", "e811d2a1", "6895f405"]),
         &HashMap::new(),
-        &MatchConfig::default(),
+        &MatchConfig,
     );
 
     assert_eq!(results.len(), 1);
@@ -87,7 +87,7 @@ fn boss_keeps_all_position_targets_as_one_or_group() {
         &entries,
         &active(&["55c132a8", "725e36bd", "e811d2a1"]),
         &HashMap::new(),
-        &MatchConfig::default(),
+        &MatchConfig,
     );
 
     assert_eq!(results.len(), 1);
@@ -115,7 +115,7 @@ fn face_only_mod_uses_texture_when_no_geometry_hash_is_present() {
         &entries,
         &active(&["a44625da"]),
         &HashMap::new(),
-        &MatchConfig::default(),
+        &MatchConfig,
     );
 
     assert_eq!(results.len(), 1);
@@ -141,7 +141,7 @@ fn index_buffer_without_draw_context_is_not_a_runtime_sentinel() {
         &entries,
         &active(&["e811d2a1"]),
         &HashMap::new(),
-        &MatchConfig::default(),
+        &MatchConfig,
     );
 
     assert!(results.is_empty());
@@ -172,7 +172,7 @@ fn shared_geometry_hash_does_not_choose_an_arbitrary_character_panel() {
         &entries,
         &active(&["shared00"]),
         &HashMap::new(),
-        &MatchConfig::default(),
+        &MatchConfig,
     );
 
     assert!(results.is_empty());
@@ -193,7 +193,7 @@ fn shader_targets_are_never_selected_for_keyviewer() {
         &entries,
         &active(&["12345678abcdef00"]),
         &HashMap::new(),
-        &MatchConfig::default(),
+        &MatchConfig,
     );
 
     assert!(results.is_empty());

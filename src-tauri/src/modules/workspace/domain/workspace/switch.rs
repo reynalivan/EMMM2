@@ -101,4 +101,5 @@ pub struct WorkspaceSwitchResult {
     pub impact: WorkspaceImpact,
     pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
     pub runtime_sync_generation: Option<u64>,
+    pub disk_revision: Option<u64>,
 }

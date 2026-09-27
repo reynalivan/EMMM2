@@ -19,6 +19,7 @@ interface FolderGridContentProps {
   conflictPathSet: Set<string>;
   folderConflictScopes: string[];
   mutationsDisabled: boolean;
+  switchDisabled: boolean;
   onSelectAll: () => void;
 }
 
@@ -28,6 +29,7 @@ export default function FolderGridContent({
   conflictPathSet,
   folderConflictScopes,
   mutationsDisabled,
+  switchDisabled,
   onSelectAll,
 }: FolderGridContentProps) {
   const { t } = useTranslation(['grid']);
@@ -67,7 +69,6 @@ export default function FolderGridContent({
     handleToggleSafeRequest,
     handleSyncWithDb,
     ancestorDisabledBy,
-    isSwitchPending,
     isFolderSwitchPending,
     getFolderPendingDesiredEnabled,
     currentFolderPath,
@@ -166,7 +167,7 @@ export default function FolderGridContent({
                           hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                           hasFolderNameConflict={protectedByConflict}
                           isLockedByParent={!!ancestorDisabledBy}
-                          isSwitchPending={folderMutationsDisabled || isSwitchPending}
+                          switchDisabled={switchDisabled}
                           pendingDesiredEnabled={getFolderPendingDesiredEnabled(folder)}
                           isSwitchBusy={isFolderSwitchPending(folder)}
                           mutationsDisabled={folderMutationsDisabled}
@@ -221,7 +222,7 @@ export default function FolderGridContent({
                   onSyncWithDb={handleSyncWithDb}
                   hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                   hasFolderNameConflict={protectedByConflict}
-                  isSwitchPending={folderMutationsDisabled || isSwitchPending}
+                  switchDisabled={switchDisabled}
                   pendingDesiredEnabled={getFolderPendingDesiredEnabled(folder)}
                   isSwitchBusy={isFolderSwitchPending(folder)}
                   mutationsDisabled={folderMutationsDisabled}

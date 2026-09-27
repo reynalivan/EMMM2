@@ -3,6 +3,8 @@ use std::path::Path;
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::RestartManager::{
     RmEndSession, RmGetList, RmRegisterResources, RmStartSession, RM_PROCESS_INFO,
 };
@@ -60,7 +62,7 @@ fn collect_session_processes(session_handle: u32, path: &Path) -> Vec<String> {
     let mut reboot_reasons = 0;
 
     // First call only sizes the buffer; the out-params carry the count.
-    unsafe {
+    let first_status = unsafe {
         RmGetList(
             session_handle,
             &mut n_proc_info_needed,
@@ -69,39 +71,43 @@ fn collect_session_processes(session_handle: u32, path: &Path) -> Vec<String> {
             &mut reboot_reasons,
         )
     };
-    if n_proc_info_needed == 0 {
+    if !matches!(first_status, 0 | ERROR_MORE_DATA) || n_proc_info_needed == 0 {
         return Vec::new();
     }
 
-    n_proc_info = n_proc_info_needed;
-    let mut proc_info: Vec<RM_PROCESS_INFO> = (0..n_proc_info)
-        .map(|_| unsafe { std::mem::zeroed() })
-        .collect();
-
-    let listed = unsafe {
-        RmGetList(
-            session_handle,
-            &mut n_proc_info_needed,
-            &mut n_proc_info,
-            proc_info.as_mut_ptr(),
-            &mut reboot_reasons,
-        )
-    };
-    if listed != 0 {
-        return Vec::new();
+    for _ in 0..3 {
+        n_proc_info = n_proc_info_needed;
+        let mut proc_info: Vec<RM_PROCESS_INFO> = (0..n_proc_info)
+            .map(|_| unsafe { std::mem::zeroed() })
+            .collect();
+        let listed = unsafe {
+            RmGetList(
+                session_handle,
+                &mut n_proc_info_needed,
+                &mut n_proc_info,
+                proc_info.as_mut_ptr(),
+                &mut reboot_reasons,
+            )
+        };
+        if listed == ERROR_MORE_DATA {
+            continue;
+        }
+        if listed != 0 {
+            return Vec::new();
+        }
+        return proc_info
+            .iter()
+            .take(n_proc_info as usize)
+            .filter_map(|process| {
+                let name = &process.strAppName;
+                let end = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                String::from_utf16(&name[..end])
+                    .ok()
+                    .filter(|value| !value.is_empty())
+            })
+            .collect();
     }
-
-    proc_info
-        .iter()
-        .take(n_proc_info as usize)
-        .filter_map(|process| {
-            let name = &process.strAppName;
-            let end = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-            String::from_utf16(&name[..end])
-                .ok()
-                .filter(|value| !value.is_empty())
-        })
-        .collect()
+    Vec::new()
 }
 
 #[cfg(not(target_os = "windows"))]

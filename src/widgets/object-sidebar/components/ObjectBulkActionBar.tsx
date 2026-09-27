@@ -26,6 +26,7 @@ interface ObjectBulkActionBarProps {
   onMarkSafe: (safe: boolean) => void;
   onClear: () => void;
   mutationsDisabled?: boolean;
+  toggleDisabled?: boolean;
 }
 
 export default function ObjectBulkActionBar({
@@ -41,6 +42,7 @@ export default function ObjectBulkActionBar({
   onMarkSafe,
   onClear,
   mutationsDisabled = false,
+  toggleDisabled = mutationsDisabled,
 }: ObjectBulkActionBarProps) {
   const { t } = useTranslation(['objects']);
 
@@ -51,6 +53,7 @@ export default function ObjectBulkActionBar({
       onClear={onClear}
       onMarkSafe={onMarkSafe}
       mutationsDisabled={mutationsDisabled}
+      toggleDisabled={toggleDisabled}
       labels={{
         clear: t('bulk.clear_selection'),
         count: t('bulk.selected_count', { count }),
@@ -69,9 +72,10 @@ export default function ObjectBulkActionBar({
           icon: Power,
           label: t('bulk.enable'),
           onClick: onEnable,
+          disabled: toggleDisabled,
           dividerBefore: true,
         },
-        { icon: PowerOff, label: t('bulk.disable'), onClick: onDisable },
+        { icon: PowerOff, label: t('bulk.disable'), onClick: onDisable, disabled: toggleDisabled },
         {
           icon: Sparkles,
           label: t('bulk.classify_match'),

@@ -224,6 +224,7 @@ export default function FolderGrid() {
         conflictPathSet={conflictPathSet}
         folderConflictScopes={folderConflictScopes}
         mutationsDisabled={effectiveMutationsDisabled}
+        switchDisabled={mutationsDisabled}
         onSelectAll={selectAllMatching}
       />
 
@@ -280,6 +281,7 @@ export default function FolderGrid() {
         onUpdateInfo={handleBulkTagRequest}
         onMoveToObject={handleBulkMoveToObject}
         mutationsDisabled={effectiveMutationsDisabled}
+        toggleDisabled={mutationsDisabled || isExplorerSearchPending}
       />
 
       {/* Drag Overlay */}

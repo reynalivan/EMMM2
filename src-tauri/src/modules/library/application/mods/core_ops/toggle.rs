@@ -6,9 +6,60 @@ use super::naming::{
     SiblingNameIndex,
 };
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
-use crate::platform::fs::guard::ValidatedPath;
 use crate::shared::errors::AppError;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+const RENAME_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(15),
+    Duration::from_millis(40),
+    Duration::from_millis(80),
+];
+
+#[cfg(windows)]
+fn rename_same_parent_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_WRITE_THROUGH};
+
+    let source_wide = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let destination_wide = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let moved = unsafe {
+        MoveFileExW(
+            source_wide.as_ptr(),
+            destination_wide.as_ptr(),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn rename_same_parent_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::rename(source, destination)
+}
+
+fn is_transient_rename_lock(error: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    {
+        matches!(error.raw_os_error(), Some(32 | 33))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = error;
+        false
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ToggleRenamePlan {
@@ -31,41 +82,73 @@ impl ToggleRenamePlan {
     }
 
     pub fn apply(&self, noun: &str) -> Result<(), AppError> {
-        let actual_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&self.old_path);
-        if actual_identity.as_deref() != Some(self.expected_identity.as_str()) {
-            return Err(AppError::Io(format!(
-                "Folder changed while preparing the rename: {}",
-                self.old_path.display()
-            )));
-        }
-        let parent = self
-            .old_path
-            .parent()
-            .ok_or_else(|| AppError::Io("Invalid path".to_string()))?;
-        let new_name = self
-            .new_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
-        if let Some(existing_path) =
-            find_existing_sibling_case_insensitive(parent, &new_name, &self.old_path)
-        {
-            let old_name = self
-                .old_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
-            let base =
-                crate::modules::workspace::domain::normalizer::normalize_display_name(&old_name);
-            return Err(rename_conflict_error(&self.new_path, &existing_path, &base));
-        }
-        crate::platform::fs::file_utils::rename_cross_drive_fallback(&self.old_path, &self.new_path)
-            .map_err(|error| map_toggle_error(&self.old_path, noun, error))
+        self.rename_checked(&self.old_path, &self.new_path, noun)
     }
 
     pub fn rollback(&self, noun: &str) -> Result<(), AppError> {
-        crate::platform::fs::file_utils::rename_cross_drive_fallback(&self.new_path, &self.old_path)
-            .map_err(|error| map_toggle_error(&self.new_path, noun, error))
+        self.rename_checked(&self.new_path, &self.old_path, noun)
+    }
+
+    fn rename_checked(
+        &self,
+        source: &Path,
+        destination: &Path,
+        noun: &str,
+    ) -> Result<(), AppError> {
+        let parent = source
+            .parent()
+            .ok_or_else(|| AppError::Io("Invalid path".to_string()))?;
+        if destination.parent() != Some(parent) {
+            return Err(AppError::Validation(
+                "Toggle rename must remain in one parent".to_string(),
+            ));
+        }
+        for retry_delay in RENAME_RETRY_DELAYS
+            .iter()
+            .map(Some)
+            .chain(std::iter::once(None))
+        {
+            let actual_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(source);
+            if actual_identity.as_deref() != Some(self.expected_identity.as_str()) {
+                return Err(AppError::Io(format!(
+                    "Folder changed while preparing the rename: {}",
+                    source.display()
+                )));
+            }
+            let destination_name = destination
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
+            if let Some(existing_path) =
+                find_existing_sibling_case_insensitive(parent, &destination_name, source)
+            {
+                let source_name = source.file_name().unwrap_or_default().to_string_lossy();
+                let base = crate::modules::workspace::domain::normalizer::normalize_display_name(
+                    &source_name,
+                );
+                return Err(rename_conflict_error(destination, &existing_path, &base));
+            }
+            match rename_same_parent_no_replace(source, destination) {
+                Ok(()) => return Ok(()),
+                Err(error) if is_transient_rename_lock(&error) && retry_delay.is_some() => {
+                    std::thread::sleep(*retry_delay.expect("retry guard checked above"));
+                }
+                Err(error) => {
+                    if let Some(existing_path) =
+                        find_existing_sibling_case_insensitive(parent, &destination_name, source)
+                    {
+                        let source_name = source.file_name().unwrap_or_default().to_string_lossy();
+                        let base =
+                            crate::modules::workspace::domain::normalizer::normalize_display_name(
+                                &source_name,
+                            );
+                        return Err(rename_conflict_error(destination, &existing_path, &base));
+                    }
+                    return Err(map_toggle_error(source, noun, error));
+                }
+            }
+        }
+        unreachable!("bounded rename attempts always return")
     }
 
     pub fn rebase_paths(&mut self, rewrites: &[(PathBuf, PathBuf)]) {
@@ -135,7 +218,7 @@ pub fn plan_toggle_rename_with_sibling_index(
 /// Map a rename failure to a structured error, surfacing the locking
 /// processes when the folder is busy.
 pub(crate) fn map_toggle_error(src: &Path, noun: &str, error: std::io::Error) -> AppError {
-    if error.kind() == std::io::ErrorKind::PermissionDenied {
+    if is_transient_rename_lock(&error) {
         let processes = crate::platform::fs::locking::get_locking_processes(src);
         if !processes.is_empty() {
             return AppError::FileInUse {
@@ -149,7 +232,10 @@ pub(crate) fn map_toggle_error(src: &Path, noun: &str, error: std::io::Error) ->
         };
     }
 
-    AppError::Io(format!("Failed to rename {noun}: {error}"))
+    AppError::Io(format!(
+        "Failed to rename {noun}: {error} (OS error {:?})",
+        error.raw_os_error()
+    ))
 }
 
 /// Rename `src` to its enabled/disabled form on disk.
@@ -193,82 +279,9 @@ pub async fn toggle_mod_inner(
     Ok(new_path.to_string_lossy().to_string())
 }
 
-/// What a policy-checked toggle changed on disk.
-pub struct ModTogglePolicyOutcome {
-    pub new_absolute_path: String,
-    /// Sibling variants the implicit swap auto-disabled (absolute paths, both
-    /// spellings). They can live under other object roots, so the caller's
-    /// reconcile scope must include them explicitly.
-    pub swapped_paths: Vec<String>,
-}
-
-#[allow(clippy::too_many_arguments)] // Service boundary kept stable to preserve toggle and duplicate-resolution callers.
-pub async fn toggle_mod_inner_service_with_duplicate_policy(
-    pool: &sqlx::SqlitePool,
-    state: &WatcherState,
-    _op_guard: &crate::platform::fs::operation_lock::OpGuard,
-    path: &ValidatedPath,
-    enable: bool,
-    game_id: &str,
-    allow_duplicates: bool,
-) -> Result<ModTogglePolicyOutcome, AppError> {
-    let canonical_path = path;
-
-    let mods_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Failed to fetch game mods path".to_string()))?;
-
-    let base = Path::new(&mods_path);
-    let rel_path = canonical_path
-        .strip_prefix(base)
-        .unwrap_or(canonical_path)
-        .to_string_lossy()
-        .to_string();
-    // AC-29.1: Conflict Detection
-    let mut swapped_paths = Vec::new();
-    if enable && !allow_duplicates {
-        let duplicates: Vec<crate::modules::library::domain::mods::DuplicateModInfo> =
-            crate::modules::workspace::application::scanner::conflict::get_duplicates_for_mod_service(
-                pool, &rel_path, game_id,
-            )
-            .await?;
-
-        if !duplicates.is_empty() {
-            // Implicit Swap: If ALL duplicates are variants, auto-disable them
-            let all_variants = duplicates.iter().all(|d| d.is_variant);
-            if all_variants {
-                for dup in duplicates {
-                    let dup_abs = Path::new(&mods_path)
-                        .join(&dup.folder_path)
-                        .to_string_lossy()
-                        .to_string();
-                    let dup_new = toggle_mod_inner(state, dup_abs.clone(), false).await?;
-                    swapped_paths.push(dup_abs);
-                    swapped_paths.push(dup_new);
-                }
-            } else {
-                // Real conflict -> Signal frontend to show radio resolution modal
-                return Err(AppError::DuplicateConflict(duplicates));
-            }
-        }
-    }
-
-    // Disk is the source of truth: the rename is the whole mutation. The DB
-    // (status, folder_path, projection) converges via the scoped
-    // InternalMutation reconcile the caller runs afterwards — the single
-    // writer of those columns.
-    let new_absolute_path =
-        toggle_mod_inner(state, canonical_path.to_string_lossy().to_string(), enable).await?;
-
-    Ok(ModTogglePolicyOutcome {
-        new_absolute_path,
-        swapped_paths,
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::plan_toggle_rename;
+    use super::{map_toggle_error, plan_toggle_rename};
 
     #[test]
     fn prepared_toggle_rejects_a_replacement_source_identity() {
@@ -311,5 +324,107 @@ mod tests {
         assert!(error.to_string().contains("RenameConflict"));
         assert!(source.exists());
         assert!(target.exists());
+    }
+
+    #[test]
+    fn activation_conflicts_only_with_a_same_parent_folder_name() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let first_parent = temp.path().join("Alice");
+        let second_parent = temp.path().join("Bob");
+        std::fs::create_dir_all(first_parent.join("DISABLED Blue")).expect("first mod");
+        std::fs::create_dir_all(second_parent.join("Blue")).expect("other object mod");
+
+        let first = plan_toggle_rename(&first_parent.join("DISABLED Blue"), true)
+            .expect("same name under another parent is allowed")
+            .expect("rename required");
+        first.apply("mod folder").expect("first enable");
+        assert!(first_parent.join("Blue").is_dir());
+        assert!(second_parent.join("Blue").is_dir());
+
+        std::fs::create_dir(first_parent.join("DISABLED Blue")).expect("colliding mod");
+        let error = plan_toggle_rename(&first_parent.join("DISABLED Blue"), true)
+            .expect_err("same parent destination must conflict");
+        assert!(error.to_string().contains("RenameConflict"));
+    }
+
+    #[test]
+    fn rollback_rejects_a_replacement_destination_identity() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("DISABLED Blue");
+        let target = temp.path().join("Blue");
+        let parked = temp.path().join("parked");
+        std::fs::create_dir(&source).expect("source");
+        let plan = plan_toggle_rename(&source, true)
+            .expect("plan")
+            .expect("rename required");
+        plan.apply("mod folder").expect("apply");
+        std::fs::rename(&target, &parked).expect("park original");
+        std::fs::create_dir(&target).expect("replacement destination");
+
+        let error = plan.rollback("mod folder").expect_err("identity changed");
+        assert!(error.to_string().contains("Folder changed"));
+        assert!(target.exists());
+        assert!(!source.exists());
+        assert!(parked.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn access_denied_is_not_reported_as_path_busy() {
+        let error = map_toggle_error(
+            std::path::Path::new("C:\\Mods\\Blue"),
+            "mod folder",
+            std::io::Error::from_raw_os_error(5),
+        );
+        assert!(!matches!(
+            error,
+            crate::shared::errors::AppError::PathBusy { .. }
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn case_alias_of_source_is_not_a_collision() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("DISABLED Blue");
+        std::fs::create_dir(&source).expect("source");
+        let alias = temp.path().join("disabled blue");
+
+        let plan = plan_toggle_rename(&alias, true)
+            .expect("case alias must not conflict with itself")
+            .expect("rename required");
+        plan.apply("mod folder").expect("apply case-alias rename");
+        assert!(temp.path().join("blue").is_dir());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn transient_directory_sharing_violation_retries_rename() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("DISABLED Blue");
+        std::fs::create_dir(&source).expect("source");
+        let plan = plan_toggle_rename(&source, true)
+            .expect("plan")
+            .expect("rename required");
+        let blocking_handle = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(&source)
+            .expect("open directory without delete sharing");
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            drop(blocking_handle);
+        });
+
+        plan.apply("mod folder")
+            .expect("retry after handle release");
+        release.join().expect("release thread");
+        assert!(temp.path().join("Blue").is_dir());
     }
 }

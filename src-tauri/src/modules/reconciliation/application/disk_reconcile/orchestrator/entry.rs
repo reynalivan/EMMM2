@@ -105,9 +105,8 @@ pub async fn reconcile_disk_state(
     reconcile_disk_state_under_locks(context, request, &game_guard, &operation_guard).await
 }
 
-/// Best-effort inactive-game reconciliation. It never waits for either
-/// serialization lock, so foreground work can leave authority conservative
-/// and defer this optimization instead of timing out behind it.
+/// Best-effort background reconciliation. It never waits for either
+/// serialization lock, so foreground work can retry it after its storage commit.
 pub(crate) async fn try_reconcile_disk_state_for_prewarm(
     context: DiskReconcileContext<'_>,
     request: DiskReconcileRequest,
@@ -121,8 +120,9 @@ pub(crate) async fn try_reconcile_disk_state_for_prewarm(
     };
     let operation_lock = context.operation_lock;
     tokio::select! {
-        result = run_reconcile_with_owned_locks(context, request) => result.map(Some),
+        biased;
         () = operation_lock.wait_for_foreground_intent() => Ok(None),
+        result = run_reconcile_with_owned_locks(context, request) => result.map(Some),
     }
 }
 

@@ -8,6 +8,7 @@ interface BulkTagModalState {
 
 interface UseObjectListBulkToolbarPropsInput {
   mutationsDisabled: boolean;
+  switchDisabled: boolean;
   bulkSelect: ReturnType<typeof useObjectBulkSelect>;
   setBulkTagModal: (state: BulkTagModalState) => void;
   handleBulkDelete: (ids: Set<string>) => Promise<void>;
@@ -21,6 +22,7 @@ interface UseObjectListBulkToolbarPropsInput {
 
 export function useObjectListBulkToolbarProps({
   mutationsDisabled,
+  switchDisabled,
   bulkSelect,
   setBulkTagModal,
   handleBulkDelete,
@@ -34,9 +36,12 @@ export function useObjectListBulkToolbarProps({
   return useMemo(() => {
     // Every bulk action is "skip while disabled, run on the selection, then clear".
     const run =
-      <TArgs extends unknown[]>(action: (ids: Set<string>, ...args: TArgs) => Promise<void>) =>
+      <TArgs extends unknown[]>(
+        action: (ids: Set<string>, ...args: TArgs) => Promise<void>,
+        disabled = mutationsDisabled,
+      ) =>
       (...args: TArgs): void => {
-        if (mutationsDisabled) {
+        if (disabled) {
           return;
         }
 
@@ -53,10 +58,11 @@ export function useObjectListBulkToolbarProps({
       isAnySelected: bulkSelect.isAnySelected,
       selectionCount: bulkSelect.selectionCount,
       mutationsDisabled,
+      toggleDisabled: switchDisabled,
       onDelete: run(handleBulkDelete),
       onPin: run(handleBulkPin),
-      onEnable: run(handleBulkEnable),
-      onDisable: run(handleBulkDisable),
+      onEnable: run(handleBulkEnable, switchDisabled),
+      onDisable: run(handleBulkDisable, switchDisabled),
       onAddTags: openTagModal('add'),
       onRemoveTags: openTagModal('remove'),
       onClassifyMatch: run(handleBulkClassifyAndMatch),
@@ -77,6 +83,7 @@ export function useObjectListBulkToolbarProps({
     handleBulkFavorite,
     handleBulkSafe,
     mutationsDisabled,
+    switchDisabled,
     setBulkTagModal,
   ]);
 }

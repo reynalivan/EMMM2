@@ -27,6 +27,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_explorer_bulk,
             crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_preview,
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_switch,
+            crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_switch_snapshot,
+            crate::modules::workspace::adapters::tauri::workspace_cmds::admit_workspace_switch_intent,
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_object_bulk_switch,
             crate::modules::system::adapters::tauri::app_cmds::get_logs,
             crate::modules::system::adapters::tauri::app_cmds::open_log_folder,

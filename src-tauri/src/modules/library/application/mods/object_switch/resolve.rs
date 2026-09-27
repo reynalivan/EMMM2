@@ -64,26 +64,6 @@ fn index_object_roots(mods_path: &Path) -> HashMap<String, String> {
     indexed
 }
 
-#[cfg(test)]
-mod index_tests {
-    use super::*;
-
-    #[test]
-    fn batch_index_preserves_single_resolver_first_match_on_canonical_collision() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir(temp.path().join("Alice")).expect("enabled folder");
-        std::fs::create_dir(temp.path().join("DISABLED Alice")).expect("disabled folder");
-
-        let single = find_matching_object_root(temp.path(), "Alice").expect("single match");
-        let indexed = index_object_roots(temp.path());
-        let batch = indexed
-            .get(&crate::shared::path_key::canonical_name_key("Alice"))
-            .expect("batch match");
-
-        assert_eq!(batch, &single);
-    }
-}
-
 fn ensure_object_root_containment(
     canonical_mods_root: &Path,
     candidate: &Path,
@@ -249,4 +229,24 @@ pub(super) async fn resolve_object_root_paths(
     }
 
     Ok(resolved)
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    #[test]
+    fn batch_index_preserves_single_resolver_first_match_on_canonical_collision() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp.path().join("Alice")).expect("enabled folder");
+        std::fs::create_dir(temp.path().join("DISABLED Alice")).expect("disabled folder");
+
+        let single = find_matching_object_root(temp.path(), "Alice").expect("single match");
+        let indexed = index_object_roots(temp.path());
+        let batch = indexed
+            .get(&crate::shared::path_key::canonical_name_key("Alice"))
+            .expect("batch match");
+
+        assert_eq!(batch, &single);
+    }
 }

@@ -64,6 +64,7 @@ interface ObjectRowItemProps extends React.HTMLAttributes<HTMLDivElement> {
   onToggleBulkSelect?: (id: string, ctrl: boolean, shift: boolean) => void;
   /** An enable/disable switch for this object is waiting on the backend. */
   isSwitchPending?: boolean;
+  pendingDesiredEnabled?: boolean;
 }
 
 function ObjectRowItemInner({
@@ -77,6 +78,7 @@ function ObjectRowItemInner({
   isBulkSelected = false,
   onToggleBulkSelect,
   isSwitchPending = false,
+  pendingDesiredEnabled,
   ...rest
 }: ObjectRowItemProps) {
   const { t } = useTranslation(['objects', 'common']);
@@ -109,18 +111,30 @@ function ObjectRowItemInner({
 
   const meta = useMemo(() => parseMetadata(obj.metadata), [obj.metadata]);
   const switchPolicy = useMemo(() => buildWorkspaceSwitchPolicy(t, obj), [obj, t]);
+  const displayedSwitchPolicy =
+    pendingDesiredEnabled === undefined
+      ? switchPolicy
+      : {
+          ...switchPolicy,
+          checked: pendingDesiredEnabled,
+          label: t(pendingDesiredEnabled ? 'common:status.enabled' : 'common:status.disabled'),
+        };
 
   const ElementIcon = meta.element ? ELEMENT_ICONS[meta.element] : null;
 
   /** Object disabled is driven only by the physical object folder prefix on disk. */
-  const isDisabled = obj.is_object_disabled;
-  const isInactive = !obj.is_effectively_active && obj.mod_count > 0;
+  const isDisabled =
+    pendingDesiredEnabled === undefined ? obj.is_object_disabled : !pendingDesiredEnabled;
+  const isInactive =
+    (pendingDesiredEnabled === undefined ? !obj.is_effectively_active : !pendingDesiredEnabled) &&
+    obj.mod_count > 0;
 
   return (
     <div
       ref={ref}
       {...rest}
       data-object-id={obj.id}
+      aria-busy={isSwitchPending}
       role="button"
       tabIndex={0}
       className={cn(
@@ -292,16 +306,9 @@ function ObjectRowItemInner({
                 <span className="truncate text-[11px]">{meta.weapon_type}</span>
               </>
             )}
-            {isSwitchPending && (
-              <span
-                role="status"
-                aria-label={t('common:status.loading')}
-                className="loading loading-spinner loading-xs text-primary shrink-0"
-              />
-            )}
             <WorkspaceSwitchLabel
               node={obj}
-              policy={switchPolicy}
+              policy={displayedSwitchPolicy}
               className="truncate text-[11px]"
             />
             {meta.path && !meta.weapon_type && !switchPolicy.label && (

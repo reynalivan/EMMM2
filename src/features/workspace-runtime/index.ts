@@ -10,14 +10,20 @@ export * from './actions/workspaceActionAvailability';
 export * from './actions/workspaceActionPolicy';
 export * from './actions/workspaceSwitchPolicy';
 export {
+  admitWorkspaceIntentOverride,
   applyWorkspaceSwitchEffects,
-  enqueueWorkspaceGameMutation,
   executeWorkspaceObjectBulkSwitch,
+  ensureWorkspaceProjectionListener,
+  nextWorkspaceIntentRevision,
+  parseRenameConflict,
+  showWorkspaceRenameConflictDialog,
+  waitForWorkspaceProjection,
 } from './actions/workspaceSwitchOps';
 export * from './components/WorkspaceSwitchControl';
 export * from './components/WorkspaceSwitchLabel';
 export * from './components/WorkspaceParentEnableDialogHost';
 export * from './hooks/useWorkspaceViewModel';
+export * from './hooks/useBackgroundIndexingStatus';
 export * from './hooks/useWorkspaceExplorerPages';
 export * from './optimistic/applyOptimisticEffects';
 export * from './optimistic/descriptor';

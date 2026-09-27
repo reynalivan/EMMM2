@@ -70,3 +70,32 @@ pub(crate) fn resolve_existing_runtime_variant(
 
     Some(current)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_existing_runtime_variant;
+    use crate::modules::library::application::mods::core_ops::plan_toggle_rename;
+
+    #[test]
+    fn stale_disabled_spelling_follows_one_physical_folder_through_rapid_toggles() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let disabled = root.join("DISABLED Blue");
+        let enabled = root.join("Blue");
+        std::fs::create_dir(&disabled).expect("source");
+
+        for desired_enabled in [true, false, true] {
+            let resolved = resolve_existing_runtime_variant(root, &disabled, desired_enabled)
+                .expect("stale path resolves on disk");
+            let plan = plan_toggle_rename(&resolved, desired_enabled)
+                .expect("a folder must not collide with itself");
+            if let Some(plan) = plan {
+                plan.apply("mod folder").expect("rename");
+            }
+            let physical_count = std::fs::read_dir(root).expect("root").count();
+            assert_eq!(physical_count, 1);
+            assert_eq!(enabled.is_dir(), desired_enabled);
+            assert_eq!(disabled.is_dir(), !desired_enabled);
+        }
+    }
+}

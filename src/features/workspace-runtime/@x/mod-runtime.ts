@@ -2,6 +2,7 @@ export * from '../actions/sharedRuntimeResultMapper';
 export * from '../actions/collectionReferenceImpact';
 export * from '../actions/fileInUseRetry';
 export * from '../actions/useWorkspaceSwitchActions';
+export { nextWorkspaceIntentRevision } from '../actions/workspaceSwitchOps';
 export * from '../optimistic/applyOptimisticEffects';
 export * from '../optimistic/descriptor';
 export * from '../optimistic/descriptorBuilders';

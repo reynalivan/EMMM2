@@ -35,6 +35,7 @@ pub struct BulkResult {
     pub path_rewrites: Vec<WorkspacePathRewrite>,
     pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
     pub runtime_sync_generation: Option<u64>,
+    pub disk_revision: Option<u64>,
 }
 
 impl BulkResult {
@@ -50,6 +51,7 @@ impl BulkResult {
             path_rewrites: Vec::new(),
             sync_warning: None,
             runtime_sync_generation: None,
+            disk_revision: None,
         }
     }
 
@@ -70,6 +72,7 @@ impl BulkResult {
             path_rewrites,
             sync_warning: None,
             runtime_sync_generation: None,
+            disk_revision: None,
         }
     }
 

@@ -281,6 +281,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
     categoryNames,
     isSwitchPending: switchActions.isPending,
     isObjectSwitchPending: switchActions.isNodePending,
+    getObjectPendingDesiredEnabled: switchActions.getPendingDesiredEnabled,
     handleDeleteObject,
     confirmDeleteObject,
     confirmForceDeleteObject,

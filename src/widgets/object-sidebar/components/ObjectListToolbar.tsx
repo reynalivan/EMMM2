@@ -40,6 +40,7 @@ interface ToolbarProps {
     isAnySelected: boolean;
     selectionCount: number;
     mutationsDisabled?: boolean;
+    toggleDisabled?: boolean;
     onDelete: () => void;
     onPin: (pin: boolean) => void;
     onEnable: () => void;

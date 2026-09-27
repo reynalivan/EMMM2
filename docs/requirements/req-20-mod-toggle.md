@@ -1,5 +1,7 @@
 # Epic 20: Mod Toggle Operations
 
+> **[2026-09-27] Kontrak implementasi terbaru:** klik switch menampilkan desired state secara optimistis dan menerima intent berikutnya; intent terbaru untuk target yang sama menang. Command mengakui keberhasilan setelah rename diverifikasi terhadap disk dan dicatat di journal; DB projection, collection runtime, dan KeyViewer menyusul tanpa menahan ACK storage. Hanya benturan nama folder fisik pada parent yang sama yang memblokir rename. Resource hash atau runtime-key overlap tidak memblokir switch. Error filesystem nyata tetap dilaporkan. Angka latensi di bawah adalah target, bukan hasil benchmark native. Deskripsi command yang menunggu Disk Reconcile dan debounce FIFO di bagian historis di bawah telah digantikan oleh kontrak ini. Rincian desain dan batas verifikasi ada di `docs/plans/storage-first-switching/implementation_plan.md` bagian 9.
+
 > **[2026-08-09] Catatan arsitektur:** kolom `disabled_reason` sudah DIHAPUS. Status enabled/disabled kini murni derive dari prefix folder `DISABLED ` via disk reconcile (penulis tunggal `mods.status`/`objects.status`). Referensi `disabled_reason` di dokumen ini historis.
 
 ## 1. Executive Summary

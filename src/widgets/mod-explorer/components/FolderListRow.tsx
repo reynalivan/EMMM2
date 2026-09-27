@@ -35,12 +35,12 @@ interface FolderListRowProps {
   onSyncWithDb?: (folder: ModFolder) => void;
   hasConflict?: boolean;
   hasFolderNameConflict?: boolean;
-  isSwitchPending?: boolean;
   /** The immediate desired state while a switch transaction is in flight. */
   pendingDesiredEnabled?: boolean;
   /** A switch for this folder is in flight; used for accessible busy state only. */
   isSwitchBusy?: boolean;
   mutationsDisabled?: boolean;
+  switchDisabled?: boolean;
 }
 
 function FolderListRowInner({
@@ -67,10 +67,10 @@ function FolderListRowInner({
   onSyncWithDb,
   hasConflict = false,
   hasFolderNameConflict = false,
-  isSwitchPending = false,
   pendingDesiredEnabled,
   isSwitchBusy = false,
   mutationsDisabled = false,
+  switchDisabled = mutationsDisabled,
 }: FolderListRowProps) {
   const {
     t,
@@ -118,10 +118,10 @@ function FolderListRowInner({
     folder: actionItem,
     onRename: () => !mutationsDisabled && onRename?.(item),
     onDelete: () => !mutationsDisabled && onDelete?.(item),
-    onToggleEnabled: () => !mutationsDisabled && onToggleEnabled?.(item),
+    onToggleEnabled: () => !switchDisabled && onToggleEnabled?.(item),
     onToggleFavorite: () => !mutationsDisabled && onToggleFavorite?.(item),
     onEnableOnlyThis:
-      onEnableOnlyThis && !mutationsDisabled ? () => onEnableOnlyThis(item) : undefined,
+      onEnableOnlyThis && !switchDisabled ? () => onEnableOnlyThis(item) : undefined,
     onOpenMoveDialog: mutationsDisabled ? undefined : onOpenMoveDialog,
     onToggleSafe: mutationsDisabled ? undefined : () => onToggleSafe?.(item),
     onSyncWithDb: onSyncWithDb && !mutationsDisabled ? () => onSyncWithDb(item) : undefined,
@@ -318,14 +318,14 @@ function FolderListRowInner({
               onClick={(e) => e.stopPropagation()}
             >
               <WorkspaceSwitchControl
-                node={actionItem}
+                node={item}
                 policy={displayedSwitchPolicy}
-                isPending={isSwitchPending || mutationsDisabled}
+                isPending={switchDisabled}
                 isBusy={isSwitchBusy}
                 size="xs"
                 ariaLabel={t('common:actions.toggle')}
                 onToggle={() => {
-                  if (!mutationsDisabled) {
+                  if (!switchDisabled) {
                     onToggleEnabled?.(item);
                   }
                 }}

@@ -127,14 +127,22 @@ impl SiblingNameIndex {
         let target_identity =
             crate::modules::workspace::domain::normalizer::normalize_display_name(target_name);
         self.entries.iter().find_map(|entry| {
-            if source_path.is_some_and(|source_path| entry.path == source_path) {
-                return None;
-            }
             let exact_collision = entry.name.eq_ignore_ascii_case(target_name);
             let identity_collision = entry
                 .normalized_directory_name
                 .as_deref()
                 .is_some_and(|name| name.eq_ignore_ascii_case(&target_identity));
+            if source_path.is_some_and(|source_path| {
+                entry.path == source_path
+                    || (exact_collision || identity_collision)
+                        && crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(source_path)
+                            .is_some_and(|identity| {
+                                crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&entry.path)
+                                    .as_deref() == Some(identity.as_str())
+                            })
+            }) {
+                return None;
+            }
             (exact_collision || identity_collision).then(|| entry.path.clone())
         })
     }

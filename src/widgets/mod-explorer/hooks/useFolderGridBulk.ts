@@ -24,13 +24,20 @@ import {
 import { toast } from '@/shared/ui/toast';
 import { useAppStore } from '@/app/store';
 import {
+  admitWorkspaceIntentOverride,
   applyRuntimeEffects,
   applyRuntimeMutationResult,
   buildQueryRemovalDescriptor,
   buildWorkspacePathRewritesDescriptor,
-  enqueueWorkspaceGameMutation,
+  clearFolderBulkPendingDesired,
+  ensureWorkspaceProjectionListener,
   normalizeWorkspacePath,
+  nextWorkspaceIntentRevision,
+  parseRenameConflict,
   publishCollectionReferenceImpact,
+  setFolderBulkPendingDesired,
+  showWorkspaceRenameConflictDialog,
+  waitForWorkspaceProjection,
   workspaceKeys,
 } from '@/features/workspace-runtime';
 import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
@@ -50,6 +57,47 @@ interface FolderGridBulkOptions {
 interface BulkExecutionSnapshot {
   gameId: string;
   selection: WorkspaceExplorerSelectionInput;
+  intentRevision?: number;
+}
+
+type ToggleAction = Extract<WorkspaceExplorerBulkAction, { kind: 'toggle' }>;
+
+interface ToggleExecutionSnapshot {
+  action: ToggleAction;
+  execution: BulkExecutionSnapshot;
+  overlayPaths: string[];
+  selectionIdentity: WorkspaceExplorerSelectionModel;
+  listingRevision: string;
+}
+
+function sameToggleSelection(
+  left: ToggleExecutionSnapshot,
+  right: ToggleExecutionSnapshot,
+): boolean {
+  if (
+    left.execution.gameId !== right.execution.gameId ||
+    left.listingRevision !== right.listingRevision
+  ) {
+    return false;
+  }
+  if (left.selectionIdentity === right.selectionIdentity) {
+    return true;
+  }
+  const a = left.execution.selection;
+  const b = right.execution.selection;
+  if (
+    JSON.stringify(a.query) !== JSON.stringify(b.query) ||
+    a.selection.mode !== b.selection.mode
+  ) {
+    return false;
+  }
+  const aPaths = a.selection.mode === 'explicit' ? a.selection.paths : a.selection.excluded_paths;
+  const bPaths = b.selection.mode === 'explicit' ? b.selection.paths : b.selection.excluded_paths;
+  if (aPaths.length !== bPaths.length) {
+    return false;
+  }
+  const bSet = new Set(bPaths);
+  return aPaths.every((path) => bSet.has(path));
 }
 
 interface BulkMoveSnapshot extends BulkExecutionSnapshot {
@@ -111,7 +159,10 @@ function showBulkResult(action: WorkspaceExplorerBulkAction, result: BulkResult)
                 : 'updated';
     toast.success(formatBulkSuccessMessage(result.success, successAction));
   }
-  if (result.failures.length > 0) {
+  const reportableFailures = result.failures.filter(
+    (failure) => action.kind !== 'toggle' || !parseRenameConflict(failure.error),
+  );
+  if (reportableFailures.length > 0) {
     const failureAction =
       action.kind === 'set_safety'
         ? 'safety'
@@ -122,7 +173,7 @@ function showBulkResult(action: WorkspaceExplorerBulkAction, result: BulkResult)
             : action.kind === 'update_info'
               ? 'update'
               : action.kind;
-    toast.error(formatBulkFailureMessage(result.failures, failureAction));
+    toast.error(formatBulkFailureMessage(reportableFailures, failureAction));
   }
   if (result.cancelled) {
     toast.info(formatBulkCancelledMessage(result));
@@ -154,6 +205,8 @@ export function useFolderGridBulk({
   const [bulkMutationPending, setBulkMutationPending] = useState(false);
   const [bulkMoveSnapshot, setBulkMoveSnapshot] = useState<BulkMoveSnapshot | null>(null);
   const bulkMutationInFlight = useRef(false);
+  const runningToggle = useRef<ToggleExecutionSnapshot | null>(null);
+  const pendingToggle = useRef<ToggleExecutionSnapshot | null>(null);
 
   const beginBulkMutation = useCallback(() => {
     if (bulkMutationInFlight.current) {
@@ -172,6 +225,8 @@ export function useFolderGridBulk({
     async (
       action: WorkspaceExplorerBulkAction,
       frozenSnapshot?: BulkExecutionSnapshot,
+      togglePaths?: string[],
+      onToggleSettled?: () => void,
     ): Promise<BulkResult> => {
       let snapshot = frozenSnapshot;
       if (!snapshot) {
@@ -184,15 +239,27 @@ export function useFolderGridBulk({
         };
       }
       const execute = () =>
-        commands.executeWorkspaceExplorerBulk({
-          selection: snapshot.selection,
-          action,
-        });
-      const result =
-        action.kind === 'toggle'
-          ? await enqueueWorkspaceGameMutation(snapshot.gameId, execute)
-          : await execute();
+        action.kind === 'toggle' && togglePaths
+          ? commands.bulkToggleMods(
+              snapshot.gameId,
+              togglePaths,
+              action.enable,
+              action.operation_id,
+              snapshot.intentRevision ?? null,
+            )
+          : commands.executeWorkspaceExplorerBulk(
+              {
+                selection: snapshot.selection,
+                action,
+              },
+              snapshot.intentRevision ?? null,
+            );
+      if (action.kind === 'toggle') {
+        await ensureWorkspaceProjectionListener();
+      }
+      const result = await execute();
       if (!isActiveGame(snapshot.gameId)) {
+        onToggleSettled?.();
         return result;
       }
 
@@ -217,7 +284,12 @@ export function useFolderGridBulk({
       }
 
       if (action.kind === 'toggle') {
-        refreshInBackground(applyRuntimeMutationResult(queryClient, 'folderSwitch'), 'workspace');
+        const refresh = (
+          result.disk_revision === null
+            ? Promise.resolve()
+            : waitForWorkspaceProjection(snapshot.gameId, result.disk_revision)
+        ).then(() => applyRuntimeMutationResult(queryClient, 'folderSwitch'));
+        refreshInBackground(refresh.then(onToggleSettled), 'workspace');
       } else if (action.kind === 'delete') {
         refreshInBackground(
           applyRuntimeMutationResult(queryClient, [
@@ -248,7 +320,17 @@ export function useFolderGridBulk({
         'collections',
       );
       notifyCommittedMutationSyncWarning(result);
-      showBulkResult(action, result);
+      if (action.kind === 'toggle') {
+        const folderCollision = result.failures.find((failure) =>
+          parseRenameConflict(failure.error),
+        );
+        if (folderCollision) {
+          void showWorkspaceRenameConflictDialog(snapshot.gameId, folderCollision.error);
+        }
+      }
+      if (action.kind !== 'toggle' || pendingToggle.current === null) {
+        showBulkResult(action, result);
+      }
       return result;
     },
     [activeGameId, explorerQuery, listingRevision, queryClient, selection, selectionStable],
@@ -271,32 +353,146 @@ export function useFolderGridBulk({
         );
         return;
       }
+      let toggleSnapshot: ToggleExecutionSnapshot | null = null;
+      if (action.kind === 'toggle') {
+        if (!activeGameId || !explorerQuery || !listingRevision) {
+          toast.error(t('common:errors.explorer_snapshot_expired'));
+          return;
+        }
+        const intentRevision = nextWorkspaceIntentRevision();
+        toggleSnapshot = {
+          action,
+          execution: {
+            gameId: activeGameId,
+            selection: toWorkspaceExplorerSelectionInput(selection, explorerQuery, listingRevision),
+            intentRevision,
+          },
+          overlayPaths:
+            selection.mode === 'explicit'
+              ? [...selection.paths]
+              : sortedFolders
+                  .map((folder) => folder.path)
+                  .filter((path) => !selection.excludedPaths.has(path)),
+          selectionIdentity: selection,
+          listingRevision,
+        };
+        if (bulkMutationInFlight.current) {
+          const running = runningToggle.current;
+          if (!running || !sameToggleSelection(running, toggleSnapshot)) {
+            toast.error(t('common:errors.explorer_snapshot_expired'));
+            return;
+          }
+          setFolderBulkPendingDesired(
+            activeGameId,
+            toggleSnapshot.overlayPaths,
+            action.enable,
+            intentRevision,
+          );
+          admitWorkspaceIntentOverride(
+            activeGameId,
+            toggleSnapshot.overlayPaths.map((path) => ({ kind: 'mod_path', value: path })),
+            intentRevision,
+          );
+          pendingToggle.current = toggleSnapshot;
+          return;
+        }
+      }
       if (!beginBulkMutation()) {
         return;
       }
-      void executeBulkAction(action)
-        .then(onSuccess)
-        .catch(async (error: unknown) => {
-          if (isExplorerSnapshotExpired(error) && explorerQuery) {
-            clearGridSelection();
-            await queryClient.resetQueries({
-              queryKey: workspaceKeys.explorerPages(explorerQuery),
-              exact: true,
-            });
+      if (toggleSnapshot) {
+        setFolderBulkPendingDesired(
+          toggleSnapshot.execution.gameId,
+          toggleSnapshot.overlayPaths,
+          toggleSnapshot.action.enable,
+          toggleSnapshot.execution.intentRevision ?? 0,
+        );
+      }
+      const handleError = async (error: unknown) => {
+        if (isExplorerSnapshotExpired(error) && explorerQuery) {
+          clearGridSelection();
+          await queryClient.resetQueries({
+            queryKey: workspaceKeys.explorerPages(explorerQuery),
+            exact: true,
+          });
+        }
+        toast.error(formatAppError(error));
+      };
+      if (toggleSnapshot) {
+        const runToggle = async () => {
+          let next: ToggleExecutionSnapshot | null = toggleSnapshot;
+          let committedPaths: string[] | null = null;
+          while (next) {
+            const current = next;
+            runningToggle.current = current;
+            try {
+              const result = await executeBulkAction(
+                current.action,
+                current.execution,
+                committedPaths ?? undefined,
+                () =>
+                  clearFolderBulkPendingDesired(
+                    current.execution.gameId,
+                    current.overlayPaths,
+                    current.execution.intentRevision ?? 0,
+                  ),
+              );
+              const originalPaths =
+                current.execution.selection.selection.mode === 'explicit'
+                  ? current.execution.selection.selection.paths
+                  : [];
+              const renamedPaths = new Map(
+                result.path_rewrites.map((rewrite) => [rewrite.old_path, rewrite.new_path]),
+              );
+              const continuationPaths = [
+                ...originalPaths.map((path) => renamedPaths.get(path) ?? path),
+                ...result.success,
+                ...result.failures.map((failure) => failure.path),
+              ];
+              committedPaths =
+                continuationPaths.length > 0 ? [...new Set(continuationPaths)] : null;
+            } catch (error) {
+              clearFolderBulkPendingDesired(
+                current.execution.gameId,
+                current.overlayPaths,
+                current.execution.intentRevision ?? 0,
+              );
+              await handleError(error);
+              committedPaths = null;
+            }
+            next = pendingToggle.current;
+            pendingToggle.current = null;
+            if (next && committedPaths === null) {
+              clearFolderBulkPendingDesired(
+                next.execution.gameId,
+                next.overlayPaths,
+                next.execution.intentRevision ?? 0,
+              );
+              toast.error(t('common:errors.explorer_snapshot_expired'));
+              break;
+            }
           }
-          toast.error(formatAppError(error));
-        })
-        .finally(finishBulkMutation);
+        };
+        void runToggle().finally(() => {
+          runningToggle.current = null;
+          finishBulkMutation();
+        });
+        return;
+      }
+      void executeBulkAction(action).then(onSuccess).catch(handleError).finally(finishBulkMutation);
     },
     [
+      activeGameId,
       beginBulkMutation,
       clearGridSelection,
       executeBulkAction,
       explorerQuery,
       finishBulkMutation,
+      listingRevision,
       queryClient,
       selection,
       selectionStable,
+      sortedFolders,
       t,
     ],
   );

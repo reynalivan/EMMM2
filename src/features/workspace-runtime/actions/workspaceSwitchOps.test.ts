@@ -13,9 +13,11 @@ import {
   isWorkspaceObjectNode,
   parseRenameConflict,
   togglePendingKey,
+  waitForWorkspaceProjection,
 } from './workspaceSwitchOps';
 
 const executeWorkspaceSwitchCommand = vi.fn();
+const getWorkspaceSwitchSnapshotCommand = vi.fn();
 const reconcileDiskStateCommand = vi.fn();
 const openFolderConflictManagerDialog = vi.fn();
 const openRenameConfirmationDialog = vi.fn();
@@ -35,6 +37,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     executeWorkspaceSwitch: (...args: unknown[]) => executeWorkspaceSwitchCommand(...args),
+    getWorkspaceSwitchSnapshot: (...args: unknown[]) => getWorkspaceSwitchSnapshotCommand(...args),
     reconcileDiskStateCmd: (...args: unknown[]) => reconcileDiskStateCommand(...args),
   },
 }));
@@ -79,6 +82,12 @@ describe('workspace switch ops', () => {
     vi.clearAllMocks();
     appState.activeGameId = 'game-1';
     reconcileDiskStateCommand.mockResolvedValue(null);
+    getWorkspaceSwitchSnapshotCommand.mockResolvedValue({
+      game_id: 'game-1',
+      source_epoch: 'root-a',
+      disk_revision: 0,
+      projected_revision: 0,
+    });
     publishRuntimeDescriptor.mockResolvedValue(undefined);
   });
 
@@ -194,7 +203,7 @@ describe('workspace switch ops', () => {
       expect(toastError).not.toHaveBeenCalled();
     });
 
-    it('preserves rapid switch order for the same game', async () => {
+    it('submits different targets without a frontend game-wide queue', async () => {
       let completeFirst!: () => void;
       executeWorkspaceSwitchCommand
         .mockImplementationOnce(
@@ -213,16 +222,11 @@ describe('workspace switch ops', () => {
       });
 
       await vi.waitFor(() => {
-        expect(executeWorkspaceSwitchCommand).toHaveBeenCalledTimes(1);
-      });
-
-      completeFirst();
-      await first;
-
-      await vi.waitFor(() => {
         expect(executeWorkspaceSwitchCommand).toHaveBeenCalledTimes(2);
       });
       await expect(second).resolves.toEqual({ primary_path: 'E:/Mods/B' });
+      completeFirst();
+      await first;
     });
 
     it('reports a rename conflict when reconcile cannot produce a safe review queue', async () => {
@@ -348,6 +352,19 @@ describe('workspace switch ops', () => {
     applyWorkspaceSwitchEffects(new QueryClient(), result, 'folderSwitch');
 
     expect(toastInfo).not.toHaveBeenCalled();
+  });
+
+  it('recovers a missed projection event from the durable snapshot', async () => {
+    getWorkspaceSwitchSnapshotCommand.mockResolvedValueOnce({
+      game_id: 'game-1',
+      source_epoch: 'root-a',
+      disk_revision: 42,
+      projected_revision: 42,
+    });
+
+    await waitForWorkspaceProjection('game-1', 42);
+
+    expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledWith('game-1');
   });
 
   it('invalidates the affected health report once across an enable rewrite', async () => {
