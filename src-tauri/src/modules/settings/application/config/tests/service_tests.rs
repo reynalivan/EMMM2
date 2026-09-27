@@ -1,6 +1,7 @@
 use super::*;
 use crate::modules::games::domain::models::GameType;
 use crate::modules::settings::application::config::GameConfig;
+use crate::modules::system::adapters::sqlite::settings;
 use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 
@@ -30,6 +31,41 @@ async fn missing_external_tools_setting_defaults_to_no_mod_viewer_executable() {
         service.get_settings().external_tools.mod_viewer_executable,
         None
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn loading_legacy_hotkey_defaults_migrates_f6_once_and_preserves_custom_bindings() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let legacy = crate::modules::automation::application::hotkeys::HotkeyConfig {
+        next_preset: "Ctrl+F6".to_string(),
+        prev_preset: "Shift+F6".to_string(),
+        toggle_overlay: "Alt+F6".to_string(),
+        ..Default::default()
+    };
+    settings::set_setting(
+        &pool,
+        "hotkeys",
+        &serde_json::to_string(&legacy).expect("legacy hotkeys should serialize"),
+    )
+    .await
+    .expect("legacy hotkeys should persist");
+
+    let service = ConfigService::new_for_test(pool.clone());
+    let hotkeys = service.get_settings().hotkeys;
+    assert_eq!(hotkeys.next_preset, "Ctrl+F5");
+    assert_eq!(hotkeys.prev_preset, "Shift+F5");
+    assert_eq!(hotkeys.toggle_overlay, "Alt+F6");
+
+    settings::set_setting(
+        &pool,
+        "hotkeys",
+        &serde_json::to_string(&legacy).expect("legacy hotkeys should serialize"),
+    )
+    .await
+    .expect("custom hotkeys should persist");
+    let reloaded = ConfigService::new_for_test(pool);
+    assert_eq!(reloaded.get_settings().hotkeys.next_preset, "Ctrl+F6");
+    assert_eq!(reloaded.get_settings().hotkeys.prev_preset, "Shift+F6");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

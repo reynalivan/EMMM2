@@ -237,6 +237,9 @@ impl HotkeyManager {
             return;
         }
 
+        // The Tauri plugin delivers this OS-level shortcut even when EMMM's
+        // window is unfocused or minimized. We deliberately gate on the game
+        // window instead, so typing in another application cannot switch mods.
         if !focus::is_active_game_focused(&settings) {
             return;
         }

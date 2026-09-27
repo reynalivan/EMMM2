@@ -30,9 +30,9 @@ use serde::{Deserialize, Serialize};
 pub enum HotkeyAction {
     /// Apply or remove the per-game Safe Mode filter (default: F5).
     ToggleSafeMode,
-    /// Switch to next Collection preset (default: Ctrl+F6).
+    /// Switch to next Collection preset (default: Ctrl+F5).
     NextPreset,
-    /// Switch to previous Collection preset (default: Shift+F6).
+    /// Switch to previous Collection preset (default: Shift+F5).
     PrevPreset,
     /// Toggle KeyViewer overlay visibility (default: F7).
     ToggleOverlay,
@@ -65,7 +65,7 @@ impl HotkeyAction {
 pub struct HotkeyConfig {
     /// Whether hotkeys are globally enabled.
     pub enabled: bool,
-    /// Key binding strings (e.g. "F6", "Shift+F6").
+    /// Key binding strings (e.g. "F5", "Shift+F5").
     #[serde(default = "default_safe_mode_key")]
     pub safe_mode: String,
     #[serde(default = "default_next_preset_key")]
@@ -81,11 +81,11 @@ fn default_safe_mode_key() -> String {
 }
 
 fn default_next_preset_key() -> String {
-    "Ctrl+F6".to_string()
+    "Ctrl+F5".to_string()
 }
 
 fn default_prev_preset_key() -> String {
-    "Shift+F6".to_string()
+    "Shift+F5".to_string()
 }
 
 fn default_overlay_key() -> String {

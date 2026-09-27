@@ -9,6 +9,20 @@ use super::models::{
 };
 use super::ConfigService;
 
+const HOTKEY_DEFAULTS_VERSION_KEY: &str = "hotkey_defaults_version";
+const HOTKEY_DEFAULTS_VERSION: &str = "2";
+
+fn migrate_legacy_hotkey_defaults(
+    hotkeys: &mut crate::modules::automation::application::hotkeys::HotkeyConfig,
+) {
+    if hotkeys.next_preset == "Ctrl+F6" {
+        hotkeys.next_preset = "Ctrl+F5".to_string();
+    }
+    if hotkeys.prev_preset == "Shift+F6" {
+        hotkeys.prev_preset = "Shift+F5".to_string();
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct PersistedAiConfig {
     #[serde(default)]
@@ -55,10 +69,35 @@ impl ConfigService {
             .and_then(|v| v.parse().ok())
             .unwrap_or(false);
 
-        let hotkeys = kv
+        let persisted_hotkeys = kv
             .get("hotkeys")
-            .and_then(|v| serde_json::from_str(v).ok())
-            .unwrap_or_default();
+            .and_then(|value| serde_json::from_str(value).ok());
+        let mut hotkeys = persisted_hotkeys.clone().unwrap_or_default();
+        if kv.get(HOTKEY_DEFAULTS_VERSION_KEY).map(String::as_str) != Some(HOTKEY_DEFAULTS_VERSION)
+        {
+            if persisted_hotkeys.is_some() {
+                migrate_legacy_hotkey_defaults(&mut hotkeys);
+            }
+            let migration_result = async {
+                let mut tx = pool.begin().await?;
+                if persisted_hotkeys.is_some() {
+                    let hotkeys_json = serde_json::to_string(&hotkeys)?;
+                    settings::set_setting(&mut *tx, "hotkeys", &hotkeys_json).await?;
+                }
+                settings::set_setting(
+                    &mut *tx,
+                    HOTKEY_DEFAULTS_VERSION_KEY,
+                    HOTKEY_DEFAULTS_VERSION,
+                )
+                .await?;
+                tx.commit().await?;
+                Ok::<(), AppError>(())
+            }
+            .await;
+            if let Err(error) = migration_result {
+                log::warn!("Could not persist hotkey F5 default migration: {error}");
+            }
+        }
 
         let keyviewer = kv
             .get("keyviewer")

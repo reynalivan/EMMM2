@@ -13,7 +13,7 @@ fn status_text_uses_the_runtime_safe_state_and_configured_bindings() {
 
     assert_eq!(
         text,
-        "Safe: On [F5] | Preset: Maid Pack [SHIFT+F6] [CTRL+F6]"
+        "Safe: On [F5] | Preset: Maid Pack [SHIFT+F5] [CTRL+F5]"
     );
 }
 
@@ -24,7 +24,7 @@ fn status_text_is_still_informative_without_an_active_preset() {
         &crate::modules::automation::application::hotkeys::HotkeyConfig::default(),
     );
 
-    assert_eq!(text, "Safe: Off [F5] | Preset: None [SHIFT+F6] [CTRL+F6]");
+    assert_eq!(text, "Safe: Off [F5] | Preset: None [SHIFT+F5] [CTRL+F5]");
     assert!(!text.contains("Runtime ready"));
 }
 

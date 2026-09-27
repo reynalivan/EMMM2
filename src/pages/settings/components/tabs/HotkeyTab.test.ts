@@ -17,8 +17,8 @@ const inactiveSettings = {
   hotkeys: {
     enabled: true,
     safe_mode: 'F5',
-    next_preset: 'Ctrl+F6',
-    prev_preset: 'Shift+F6',
+    next_preset: 'Ctrl+F5',
+    prev_preset: 'Shift+F5',
     toggle_overlay: 'F7',
   },
   keyviewer: { enabled: true },
@@ -50,8 +50,8 @@ const translate = ((key: string, values?: Record<string, unknown>) =>
 const defaults: HotkeyConfig = {
   enabled: true,
   safe_mode: 'F5',
-  next_preset: 'Ctrl+F6',
-  prev_preset: 'Shift+F6',
+  next_preset: 'Ctrl+F5',
+  prev_preset: 'Shift+F5',
   toggle_overlay: 'F7',
 };
 

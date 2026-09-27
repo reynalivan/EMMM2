@@ -13,8 +13,8 @@ import { SettingsRow, SettingsSection } from '../SettingsLayout';
 const DEFAULT_HOTKEYS: HotkeyConfig = {
   enabled: true,
   safe_mode: 'F5',
-  next_preset: 'Ctrl+F6',
-  prev_preset: 'Shift+F6',
+  next_preset: 'Ctrl+F5',
+  prev_preset: 'Shift+F5',
   toggle_overlay: 'F7',
 };
 
@@ -206,14 +206,14 @@ export default function HotkeyTab() {
             <KeyBindingRow
               label={t('settings:hotkeys.labels.prev_preset')}
               value={draftHotkeys.prev_preset}
-              defaultValue={DEFAULT_HOTKEYS.prev_preset ?? 'Shift+F6'}
+              defaultValue={DEFAULT_HOTKEYS.prev_preset ?? 'Shift+F5'}
               disabled={isSaving || !draftHotkeys.enabled}
               onChange={(value) => updateHotkey({ prev_preset: value })}
             />
             <KeyBindingRow
               label={t('settings:hotkeys.labels.next_preset')}
               value={draftHotkeys.next_preset}
-              defaultValue={DEFAULT_HOTKEYS.next_preset ?? 'Ctrl+F6'}
+              defaultValue={DEFAULT_HOTKEYS.next_preset ?? 'Ctrl+F5'}
               disabled={isSaving || !draftHotkeys.enabled}
               onChange={(value) => updateHotkey({ next_preset: value })}
             />

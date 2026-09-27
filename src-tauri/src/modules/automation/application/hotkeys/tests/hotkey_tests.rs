@@ -18,8 +18,8 @@ fn hotkey_config_defaults() {
     let config = HotkeyConfig::default();
     assert!(config.enabled);
     assert_eq!(config.safe_mode, "F5");
-    assert_eq!(config.next_preset, "Ctrl+F6");
-    assert_eq!(config.prev_preset, "Shift+F6");
+    assert_eq!(config.next_preset, "Ctrl+F5");
+    assert_eq!(config.prev_preset, "Shift+F5");
     assert_eq!(config.toggle_overlay, "F7");
 }
 
@@ -33,10 +33,10 @@ fn keyviewer_config_defaults() {
 fn get_key_string_maps_correctly() {
     let config = HotkeyConfig::default();
     assert_eq!(get_key_string(&config, HotkeyAction::ToggleSafeMode), "F5");
-    assert_eq!(get_key_string(&config, HotkeyAction::NextPreset), "Ctrl+F6");
+    assert_eq!(get_key_string(&config, HotkeyAction::NextPreset), "Ctrl+F5");
     assert_eq!(
         get_key_string(&config, HotkeyAction::PrevPreset),
-        "Shift+F6"
+        "Shift+F5"
     );
     assert_eq!(get_key_string(&config, HotkeyAction::ToggleOverlay), "F7");
 }
@@ -62,19 +62,19 @@ fn no_conflicts_with_default_config() {
 #[test]
 fn detects_conflict_when_same_key() {
     let config = HotkeyConfig {
-        prev_preset: "Ctrl+F6".to_string(), // Same as next_preset
+        prev_preset: "Ctrl+F5".to_string(), // Same as next_preset
         ..Default::default()
     };
     let conflicts = detect_conflicts(&config);
     assert_eq!(conflicts.len(), 1);
-    assert_eq!(conflicts[0].2, "Ctrl+F6");
+    assert_eq!(conflicts[0].2, "Ctrl+F5");
 }
 
 #[test]
 fn conflict_detection_case_insensitive() {
     let config = HotkeyConfig {
-        next_preset: "ctrl+f6".to_string(),
-        prev_preset: "CTRL+F6".to_string(),
+        next_preset: "ctrl+f5".to_string(),
+        prev_preset: "CTRL+F5".to_string(),
         ..Default::default()
     };
     let conflicts = detect_conflicts(&config);

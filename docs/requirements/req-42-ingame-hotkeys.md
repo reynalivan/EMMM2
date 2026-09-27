@@ -1,9 +1,11 @@
 # Epic 42: In-Game Hotkeys & Live Controls
 
 > **Status kontrak: menggantikan bagian historis di bawah.** Hanya tiga
-> hotkey OS yang didaftarkan: Safe Mode `F5`, Previous Preset `Shift+F6`, dan
-> Next Preset `Ctrl+F6`. `F7` dimiliki 3DMigoto melalui `type = cycle` dan
+> hotkey OS yang didaftarkan: Safe Mode `F5`, Previous Preset `Shift+F5`, dan
+> Next Preset `Ctrl+F5`. `F7` dimiliki 3DMigoto melalui `type = cycle` dan
 > `global persist`; EMMM tidak boleh mendaftarkannya sebagai global shortcut.
+> Binding ini didaftarkan ke OS saat startup; ia tetap terbaca ketika jendela
+> EMMM tidak fokus atau diminimalkan, selama game aktif berada di foreground.
 > Tidak ada variant action, duration, atau opsi focus. Cooldown 500 ms hanya
 > berlaku untuk mutasi Safe/preset. Setelah perubahan INI atau resource, EMMM
 > menemukan binding efektif `reload_config`, memeriksa proses game foreground,
@@ -18,7 +20,7 @@
 > sebagai committed dengan sync tertunda, bukan rollback.
 >
 > Status unified menggunakan snapshot generation immutable dan berbunyi
-> `Safe: On [F5] | Preset: Maid Pack [SHIFT+F6] [CTRL+F6]`. Teks lama di
+> `Safe: On [F5] | Preset: Maid Pack [SHIFT+F5] [CTRL+F5]`. Teks lama di
 > bawah dipertahankan sebagai sejarah audit dan tidak menjadi acceptance
 > criteria implementasi baru.
 
@@ -72,8 +74,8 @@ As a user, I want to switch between my preset Collections in-game without Alt-Ta
 
 | ID        | Type        | Criteria                                                                                                                                                                                                                                                             |
 | --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-42.3.1 | ✅ Positive | Given "Next Preset" (`F6`), when pressed: (1) next preset resolved, (2) `current_preset_id` persists, (3) `enabled_mod_set` recomputed, (4) artifacts regenerated, (5) workspace updated atomically, (6) `reload_fixes` triggered, (7) banner shows `Preset: {name}` |
-| AC-42.3.2 | ✅ Positive | Given "Previous Preset" (`Shift+F6`), then the previous collection is selected with the same pipeline as Next                                                                                                                                                        |
+| AC-42.3.1 | ✅ Positive | Given "Next Preset" (`Ctrl+F5`), when pressed: (1) next preset resolved, (2) `current_preset_id` persists, (3) `enabled_mod_set` recomputed, (4) artifacts regenerated, (5) workspace updated atomically, (6) `reload_fixes` triggered, (7) banner shows `Preset: {name}` |
+| AC-42.3.2 | ✅ Positive | Given "Previous Preset" (`Shift+F5`), then the previous collection is selected with the same pipeline as Next                                                                                                                                                        |
 | AC-42.3.3 | ✅ Positive | Given I'm on the last Collection, pressing "Next Preset" wraps to the first                                                                                                                                                                                          |
 | AC-42.3.4 | ❌ Negative | Given the workspace update or artifact generation fails, then `current_preset_id` is NOT advanced, reload is NOT triggered, `switch_lock` released, toast shows error                                                                                                |
 
@@ -130,7 +132,7 @@ As a system, I want to auto-discover the actual 3DMigoto reload key from `d3dx.i
 ```
 Hotkey Defaults (configurable in HotkeysTab):
   F5          → Toggle Safe Mode
-  F6 / S+F6   → Next / Previous Preset
+  C+F5 / S+F5 → Next / Previous Preset
   F7          → Unified Overlay Toggle (Status + KeyViewer)
 
 Runtime Artifacts (.emmm_data/):

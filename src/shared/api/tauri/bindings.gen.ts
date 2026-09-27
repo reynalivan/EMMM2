@@ -2450,7 +2450,7 @@ export type HotkeyConfig = {
  */
 enabled: boolean;
 /**
- * Key binding strings (e.g. "F6", "Shift+F6").
+ * Key binding strings (e.g. "F5", "Shift+F5").
  */
 safe_mode?: string; next_preset?: string; prev_preset?: string; toggle_overlay?: string }
 export type IgnoredConflict = { id: string; game_id: string; object_id: string; object_name: string | null; mod_ids: string; mod_names?: string[]; created_at: string }

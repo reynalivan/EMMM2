@@ -31,7 +31,7 @@ export interface DemoKeybind {
  * which is the whole point of the scene, so the copy says so.
  */
 export const DEMO_KEYBINDS: DemoKeybind[] = [
-  { keys: 'F6', action: 'demo.action_next_preset' },
+  { keys: 'Ctrl+F5', action: 'demo.action_next_preset' },
   { keys: 'F7', action: 'demo.action_toggle_overlay' },
   { keys: 'F8', action: 'demo.action_next_variant' },
 ];
