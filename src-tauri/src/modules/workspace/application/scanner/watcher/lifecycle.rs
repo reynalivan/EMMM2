@@ -16,6 +16,23 @@ use tauri::{Emitter, Manager};
 
 const INACTIVE_PREWARM_BUDGET: std::time::Duration = std::time::Duration::from_millis(250);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WatcherInstallScope {
+    InactiveOnly,
+    StartupSelected,
+}
+
+fn install_scope_matches_selection(
+    scope: WatcherInstallScope,
+    selected_game_id: Option<&str>,
+    game_id: &str,
+) -> bool {
+    match scope {
+        WatcherInstallScope::InactiveOnly => selected_game_id != Some(game_id),
+        WatcherInstallScope::StartupSelected => selected_game_id == Some(game_id),
+    }
+}
+
 fn initial_reconcile_reason(
     activation: bool,
 ) -> crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason {
@@ -46,7 +63,235 @@ fn emit_event(app: &tauri::AppHandle, payload: WatchEventPayload) {
     let _ = app.emit("mod_watch:event", payload);
 }
 
-async fn settle_pending_onboarding_indexing_after_activation(
+fn no_pending_disk_commit(
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    game_id: &str,
+) -> bool {
+    match coordinator.has_pending_disk_commit_for_game(game_id) {
+        Ok(pending) => !pending,
+        Err(error) => {
+            log::warn!("Could not check pending disk commit for '{game_id}': {error}");
+            false
+        }
+    }
+}
+
+fn clean_cached_activation_result(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    suppressor: &WatcherSuppressor,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    session: &WatcherSession,
+) -> Option<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult>
+{
+    let _game_guard = state.try_game_guard(game_id)?;
+    if !no_pending_disk_commit(coordinator, game_id) || suppressor.pending_repair(session).is_some()
+    {
+        return None;
+    }
+    let result = state.clean_authoritative_result(game_id, mods_root, session.generation())?;
+    suppressor
+        .pending_repair(session)
+        .is_none()
+        .then_some(result)
+}
+
+pub(crate) fn inactive_activation_is_ready(
+    app: &tauri::AppHandle,
+    watcher: &WatcherState,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    runtime_config_path: &std::path::Path,
+) -> bool {
+    let Some(generation) =
+        watcher.inactive_watcher_session(game_id, mods_root, Some(runtime_config_path))
+    else {
+        return false;
+    };
+    let session =
+        WatcherSession::new_with_runtime_config(generation, mods_root, Some(runtime_config_path));
+    let state = app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
+    let coordinator = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+    matches!(
+        state.initial_recovery_readiness(game_id),
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Ready { .. }
+    ) && clean_cached_activation_result(
+        state.inner(), watcher.suppressor.as_ref(), coordinator.inner(),
+        game_id, mods_root, &session,
+    ).is_some()
+}
+
+fn prepare_activation_recovery(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    suppressor: &WatcherSuppressor,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    session: &WatcherSession,
+    activation_generation: u64,
+) -> (
+    WatcherActivation,
+    Option<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult>,
+) {
+    let cached =
+        clean_cached_activation_result(state, suppressor, coordinator, game_id, mods_root, session);
+    if let (Some(result), crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Ready { generation }) =
+        (cached, state.initial_recovery_readiness(game_id))
+    {
+        return (WatcherActivation { activation_generation, recovery_generation: generation }, Some(result));
+    }
+    if !matches!(
+        state.initial_recovery_readiness(game_id),
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Unstarted { .. }
+    ) {
+        state.reset_initial_recovery(game_id);
+    }
+    let recovery_generation = state.mark_initial_recovery_pending(game_id);
+    (
+        WatcherActivation {
+            activation_generation,
+            recovery_generation,
+        },
+        None,
+    )
+}
+
+fn prepare_inactive_authority(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    covered_session: Option<u64>,
+    watcher_session: u64,
+) -> bool {
+    let transferred = covered_session.is_some_and(|covered_session| {
+        state.handoff_authority_session(game_id, mods_root, covered_session, watcher_session)
+    });
+    if !transferred
+        && state
+            .authority_event_generation(game_id, watcher_session)
+            .is_none()
+    {
+        state.begin_authority_session(game_id, mods_root, watcher_session);
+    }
+    transferred
+}
+
+fn initial_watcher_recovery_plan(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    suppressor: &WatcherSuppressor,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    session: &WatcherSession,
+) -> (
+    Option<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult>,
+    Vec<String>,
+    bool,
+    u64,
+) {
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp;
+
+    let watcher_session = session.generation();
+    match state.authority_catch_up(game_id, mods_root, watcher_session) {
+        AuthorityCatchUp::Clean {
+            observed_generation,
+            ..
+        } if state.authority_event_generation(game_id, watcher_session)
+            == Some(observed_generation) =>
+        {
+            let cached = clean_cached_activation_result(
+                state,
+                suppressor,
+                coordinator,
+                game_id,
+                mods_root,
+                session,
+            );
+            let force_full = cached.is_none();
+            (cached, Vec::new(), force_full, observed_generation)
+        }
+        AuthorityCatchUp::Scoped {
+            changed_paths,
+            observed_generation,
+        } => (None, changed_paths, false, observed_generation),
+        AuthorityCatchUp::Full {
+            observed_generation,
+        }
+        | AuthorityCatchUp::Clean {
+            observed_generation,
+            ..
+        } => (None, Vec::new(), true, observed_generation),
+    }
+}
+
+async fn prewarm_without_activation_guard<T>(
+    guard: tokio::sync::MutexGuard<'_, ()>,
+    work: impl std::future::Future<Output = T>,
+) -> T {
+    drop(guard);
+    work.await
+}
+
+struct PrewarmAcceptance<'a> {
+    game_id: &'a str,
+    mods_root: &'a std::path::Path,
+    runtime_config_path: Option<&'a std::path::Path>,
+    watcher_session: u64,
+    observed_generation: u64,
+    result:
+        &'a crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    changed_paths: &'a [String],
+}
+
+async fn accept_prewarm_result(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    watcher: &WatcherState,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    selected_game_id: impl FnOnce() -> Option<String>,
+    acceptance: PrewarmAcceptance<'_>,
+) -> bool {
+    let PrewarmAcceptance {
+        game_id,
+        mods_root,
+        runtime_config_path,
+        watcher_session,
+        observed_generation,
+        result,
+        changed_paths,
+    } = acceptance;
+    let _activation_guard = state.activation_guard().await;
+    let Some(_game_guard) = state.try_game_guard(game_id) else {
+        state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
+        return false;
+    };
+    let session =
+        WatcherSession::new_with_runtime_config(watcher_session, mods_root, runtime_config_path);
+    let active_coverage = selected_game_id().as_deref() == Some(game_id)
+        && watcher
+            .current_session_for_coverage(mods_root, runtime_config_path)
+            .is_some_and(|session| session.generation() == watcher_session);
+    let inactive_coverage =
+        watcher.inactive_watcher_session(game_id, mods_root, runtime_config_path)
+            == Some(watcher_session);
+    let trusted = (active_coverage || inactive_coverage)
+        && no_pending_disk_commit(coordinator, game_id)
+        && watcher.suppressor.pending_repair(&session).is_none()
+        && state.mark_authority_reconciled(
+            game_id,
+            mods_root,
+            watcher_session,
+            observed_generation,
+            result,
+            changed_paths,
+        );
+    if !trusted {
+        state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
+    }
+    trusted
+}
+
+fn settle_pending_onboarding_indexing_after_activation(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     game_id: &str,
@@ -71,14 +316,18 @@ async fn settle_pending_onboarding_indexing_after_activation(
     if !result.status.applied() {
         return;
     }
-    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::remove_pending_game_id(
-        pool,
-        game_id,
-    )
-    .await
-    {
-        log::warn!("Could not clear completed onboarding game after activation: {error}");
-    }
+    let pool = pool.clone();
+    let game_id = game_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::remove_pending_game_id(
+            &pool,
+            &game_id,
+        )
+        .await
+        {
+            log::warn!("Could not clear completed onboarding game after activation: {error}");
+        }
+    });
 }
 
 fn enqueue_runtime_sync_after_watcher_reconcile(
@@ -153,17 +402,53 @@ pub(crate) fn start_inactive_watcher(
     game_id: &str,
     mods_root: &std::path::Path,
     runtime_config_path: Option<&std::path::Path>,
-) -> Result<u64, ScannerError> {
+) -> Result<Option<u64>, ScannerError> {
+    let reconcile_state = app.state::<
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >();
+    let Some(activation_guard) = reconcile_state.try_activation_guard() else {
+        return Ok(None);
+    };
+    start_inactive_watcher_with_activation_guard(
+        app,
+        state,
+        game_id,
+        mods_root,
+        runtime_config_path,
+        &activation_guard,
+        WatcherInstallScope::InactiveOnly,
+    )
+}
+
+pub(crate) fn start_inactive_watcher_with_activation_guard(
+    app: &tauri::AppHandle,
+    state: &WatcherState,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    runtime_config_path: Option<&std::path::Path>,
+    _activation_guard: &tokio::sync::MutexGuard<'_, ()>,
+    scope: WatcherInstallScope,
+) -> Result<Option<u64>, ScannerError> {
+    let reconcile_state = app.state::<
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >();
+    let active_watcher = lock(&state.watcher);
+    if !install_scope_matches_selection(
+        scope,
+        app.state::<crate::modules::settings::application::config::ConfigService>()
+            .get_settings()
+            .active_game_id
+            .as_deref(),
+        game_id,
+    ) {
+        return Ok(None);
+    }
     if let Some(session) = state.inactive_watcher_session(game_id, mods_root, runtime_config_path) {
-        return Ok(session);
+        return Ok(Some(session));
     }
     if state.discard_inactive_watcher_unless_coverage(game_id, mods_root, runtime_config_path) {
-        app.state::<
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-        >()
-        .invalidate_authority(game_id, mods_root);
+        reconcile_state.invalidate_authority(game_id, mods_root);
     }
-    let active_watcher = lock(&state.watcher);
     let covered_session = active_watcher
         .as_ref()
         .and_then(|_| state.current_session_for_coverage(mods_root, runtime_config_path))
@@ -177,7 +462,7 @@ pub(crate) fn start_inactive_watcher(
         session.clone(),
         Some(observer),
     );
-    let (watcher, mut receiver) = match watcher_result {
+    let (watcher, receiver) = match watcher_result {
         Ok(installed) => installed,
         Err(error) => {
             app.state::<
@@ -187,50 +472,23 @@ pub(crate) fn start_inactive_watcher(
             return Err(error);
         }
     };
-    let reconcile_state = app.state::<
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-    >();
     state.install_inactive_watcher(
         game_id.to_string(),
         mods_root,
         runtime_config_path,
-        session.generation(),
+        session.clone(),
         watcher,
+        receiver,
     );
-    let continuity_proven = covered_session.is_some_and(|covered_session| {
-        reconcile_state.handoff_authority_session(
-            game_id,
-            mods_root,
-            covered_session,
-            session.generation(),
-        )
-    });
-    if !continuity_proven {
-        reconcile_state.begin_authority_session(game_id, mods_root, session.generation());
-    }
+    prepare_inactive_authority(
+        reconcile_state.inner(),
+        game_id,
+        mods_root,
+        covered_session,
+        session.generation(),
+    );
     drop(active_watcher);
-    let app_for_close = app.clone();
-    let game_for_close = game_id.to_string();
-    let root_for_close = mods_root.to_path_buf();
-    let session_for_close = session.generation();
-    tokio::spawn(async move {
-        while receiver.recv().await.is_some() {}
-        app_for_close
-            .state::<WatcherState>()
-            .remove_inactive_watcher_if_session(&game_for_close, session_for_close);
-        app_for_close
-            .state::<
-                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-            >()
-            .observe_authority_event(
-                &game_for_close,
-                session_for_close,
-                &root_for_close,
-                &[],
-                true,
-            );
-    });
-    Ok(session.generation())
+    Ok(Some(session.generation()))
 }
 
 fn prewarm_inactive_games(
@@ -273,12 +531,20 @@ fn prewarm_inactive_games(
                 &game.mod_path,
                 Some(&runtime_config_path),
             ) {
-                Ok(session) => session,
+                Ok(Some(session)) => session,
+                Ok(None) => continue,
                 Err(error) => {
                     log::warn!("Could not prewarm watcher for '{}': {error}", game.id);
                     continue;
                 }
             };
+            let Some(activation_guard) = reconcile_state.try_activation_guard() else {
+                continue;
+            };
+            if !reconcile_state.activation_is_current(Some(&active_game_id), activation_generation)
+            {
+                return;
+            }
             let catch_up =
                 reconcile_state.authority_catch_up(&game.id, &game.mod_path, watcher_session);
             let (changed_paths, force_full, observed_generation) = match catch_up {
@@ -298,7 +564,7 @@ fn prewarm_inactive_games(
                 app.state::<crate::modules::settings::application::config::ConfigService>();
             let operation_lock =
                 app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
-            let result = tokio::time::timeout(
+            let result = prewarm_without_activation_guard(activation_guard, tokio::time::timeout(
                 INACTIVE_PREWARM_BUDGET,
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::try_reconcile_disk_state_for_prewarm(
                     crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
@@ -317,21 +583,25 @@ fn prewarm_inactive_games(
                     )
                     .defer_overlay_sync(),
                 ),
-            )
-            .await;
+            )).await;
             match result {
                 Ok(Ok(Some(result))) => {
-                    if !reconcile_state.mark_authority_reconciled(
-                        &game.id,
-                        &game.mod_path,
-                        watcher_session,
-                        observed_generation,
-                        &result,
-                        &changed_paths,
-                    ) {
-                        reconcile_state
-                            .reject_untrusted_reconcile(&game.id, result.reconcile_revision);
-                    }
+                    accept_prewarm_result(
+                        reconcile_state.inner(),
+                        watcher_state.inner(),
+                        operation_lock.inner(),
+                        || config.get_settings().active_game_id,
+                        PrewarmAcceptance {
+                            game_id: &game.id,
+                            mods_root: &game.mod_path,
+                            runtime_config_path: Some(&runtime_config_path),
+                            watcher_session,
+                            observed_generation,
+                            result: &result,
+                            changed_paths: &changed_paths,
+                        },
+                    )
+                    .await;
                 }
                 Ok(Ok(None)) => {
                     log::debug!(
@@ -508,7 +778,7 @@ pub fn start_watcher(
     path: String,
     game_id: String,
 ) -> Result<(), ScannerError> {
-    start_watcher_inner(app, state, pool, path, game_id, None)
+    start_watcher_inner(app, state, pool, path, game_id, None).map(|_| ())
 }
 
 pub fn start_watcher_for_activation(
@@ -517,9 +787,12 @@ pub fn start_watcher_for_activation(
     pool: sqlx::SqlitePool,
     path: String,
     game_id: String,
-    activation: WatcherActivation,
-) -> Result<(), ScannerError> {
-    start_watcher_inner(app, state, pool, path, game_id, Some(activation))
+    activation_generation: u64,
+) -> Result<
+    Option<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult>,
+    ScannerError,
+> {
+    start_watcher_inner(app, state, pool, path, game_id, Some(activation_generation))
 }
 
 fn start_watcher_inner(
@@ -528,8 +801,11 @@ fn start_watcher_inner(
     pool: sqlx::SqlitePool,
     path: String,
     game_id: String,
-    activation: Option<WatcherActivation>,
-) -> Result<(), ScannerError> {
+    activation_generation: Option<u64>,
+) -> Result<
+    Option<crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult>,
+    ScannerError,
+> {
     let path_obj = std::path::Path::new(&path);
     let runtime_config_path = app
         .state::<crate::modules::settings::application::config::ConfigService>()
@@ -551,68 +827,111 @@ fn start_watcher_inner(
 
     log::info!("Starting watcher on: {}", path);
 
-    let replacement = replace_watcher(state, path_obj, runtime_config_path.as_deref(), |session| {
-        let observer =
-            authority_observer(&app, &game_id, path_obj, &session, state.suppressor.clone());
-        crate::modules::workspace::application::scanner::watcher::watch_mod_directory_with_runtime_config_and_observer(
-            path_obj,
-            runtime_config_path.as_deref(),
-            state.suppressor.clone(),
-            session,
-            Some(observer),
-        )
-    });
     let disk_reconcile_state = app.state::<
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >();
-    let (session, rx, covered_active_session) = match replacement {
-        Ok(replacement) => replacement,
-        Err(error) => {
-            let inactive_coverage = state
-                .inactive_watcher_session(&game_id, path_obj, runtime_config_path.as_deref())
-                .is_some_and(|watcher_session| {
-                    disk_reconcile_state
-                        .authority_event_generation(&game_id, watcher_session)
-                        .is_some()
-                });
-            let active_coverage = state
-                .current_session_for_coverage(path_obj, runtime_config_path.as_deref())
-                .is_some_and(|session| {
-                    disk_reconcile_state
-                        .authority_event_generation(&game_id, session.generation())
-                        .is_some()
-                });
-            if !inactive_coverage && !active_coverage {
-                disk_reconcile_state.invalidate_authority(&game_id, path_obj);
-            }
-            return Err(error);
-        }
+    let adopted = {
+        let mut active_watcher = lock(&state.watcher);
+        state
+            .take_inactive_watcher_for_handoff(&game_id, path_obj, runtime_config_path.as_deref())
+            .map(|(session, watcher, receiver)| {
+                state.publish_session(&session);
+                *active_watcher = Some(watcher);
+                (session, receiver)
+            })
     };
-    let inactive_handoff =
-        state.take_inactive_watcher_for_handoff(&game_id, path_obj, runtime_config_path.as_deref());
-    let continuity_proven = inactive_handoff
-        .as_ref()
-        .is_some_and(|(covered_session, _)| {
-            disk_reconcile_state.handoff_authority_session(
-                &game_id,
+    let (session, rx) = if let Some(adopted) = adopted {
+        adopted
+    } else {
+        let replacement = replace_watcher(
+            state,
+            path_obj,
+            runtime_config_path.as_deref(),
+            |session| {
+                let observer = authority_observer(
+                    &app,
+                    &game_id,
+                    path_obj,
+                    &session,
+                    state.suppressor.clone(),
+                );
+                crate::modules::workspace::application::scanner::watcher::watch_mod_directory_with_runtime_config_and_observer(
                 path_obj,
-                *covered_session,
-                session.generation(),
+                runtime_config_path.as_deref(),
+                state.suppressor.clone(),
+                session,
+                Some(observer),
             )
-        })
-        || covered_active_session.is_some_and(|covered_session| {
-            disk_reconcile_state.handoff_authority_session(
-                &game_id,
-                path_obj,
-                covered_session,
-                session.generation(),
-            )
-        });
-    if !continuity_proven {
+            },
+        );
+        let (session, receiver, _) = match replacement {
+            Ok(replacement) => replacement,
+            Err(error) => {
+                let inactive_coverage = state
+                    .inactive_watcher_session(&game_id, path_obj, runtime_config_path.as_deref())
+                    .is_some_and(|watcher_session| {
+                        disk_reconcile_state
+                            .authority_event_generation(&game_id, watcher_session)
+                            .is_some()
+                    });
+                let active_coverage = state
+                    .current_session_for_coverage(path_obj, runtime_config_path.as_deref())
+                    .is_some_and(|session| {
+                        disk_reconcile_state
+                            .authority_event_generation(&game_id, session.generation())
+                            .is_some()
+                    });
+                if !inactive_coverage && !active_coverage {
+                    disk_reconcile_state.invalidate_authority(&game_id, path_obj);
+                }
+                return Err(error);
+            }
+        };
+        let _ = state.take_inactive_watcher_for_handoff(
+            &game_id,
+            path_obj,
+            runtime_config_path.as_deref(),
+        );
         disk_reconcile_state.begin_authority_session(&game_id, path_obj, session.generation());
-    }
-    drop(inactive_handoff);
+        (session, receiver)
+    };
 
+    let activation_result = activation_generation.map(|generation| {
+        let coordinator = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+        prepare_activation_recovery(
+            disk_reconcile_state.inner(),
+            state.suppressor.as_ref(),
+            coordinator.inner(),
+            &game_id,
+            path_obj,
+            &session,
+            generation,
+        )
+    });
+    if let Some((activation, cached)) = &activation_result {
+        use crate::modules::reconciliation::application::disk_reconcile::types::{
+            GameActivationPhase, GameActivationStatus,
+        };
+        let status = GameActivationStatus {
+            game_id: Some(game_id.clone()),
+            generation: activation.activation_generation,
+            phase: if cached.is_some() {
+                GameActivationPhase::Ready
+            } else {
+                GameActivationPhase::Syncing
+            },
+            reconcile_revision: cached.as_ref().map(|result| result.reconcile_revision),
+            runtime_sync_generation: None,
+            error: None,
+        };
+        if let Err(error) = app.emit("game_activation:status", status) {
+            log::warn!("Could not emit game activation status: {error}");
+        }
+    }
+    let reused = activation_result
+        .as_ref()
+        .and_then(|(_, cached)| cached.clone());
+    let activation = activation_result.map(|(activation, _)| activation);
     let app_handle = app.clone();
     let db_pool = pool;
     let mods_path_root = path;
@@ -634,7 +953,7 @@ fn start_watcher_inner(
         .await;
     });
 
-    Ok(())
+    Ok(reused)
 }
 
 async fn process_event_loop(
@@ -653,9 +972,7 @@ async fn process_event_loop(
     if !app.state::<WatcherState>().is_current_session(&session) {
         return;
     }
-    // Activation can inherit continuous coverage from an inactive watcher.
-    // Otherwise the authority plan below treats this session as an event gap
-    // and verifies the whole source before accepting scoped observations.
+    // Startup and activation can both inherit continuous watcher coverage.
     let disk_reconcile_state =
         app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
     let config = app.state::<crate::modules::settings::application::config::ConfigService>();
@@ -664,40 +981,15 @@ async fn process_event_loop(
     let mods_root = std::path::Path::new(&mods_path_root);
     let watcher_session = session.generation();
     let initial_reconcile_reason = initial_reconcile_reason(activation.is_some());
-    let catch_up = if activation.is_some() {
-        disk_reconcile_state.authority_catch_up(&game_id, mods_root, watcher_session)
-    } else {
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Full {
-            observed_generation: disk_reconcile_state
-                .authority_event_generation(&game_id, watcher_session)
-                .unwrap_or(0),
-        }
-    };
     let (cached_result, recovery_changed_paths, recovery_force_full, recovery_generation) =
-        match catch_up {
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
-                observed_generation,
-                ..
-            } if disk_reconcile_state.authority_event_generation(&game_id, watcher_session)
-                == Some(observed_generation) => {
-                let cached = disk_reconcile_state.authoritative_result(&game_id).map(|mut result| {
-                    result.scan_scope = crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileScanScope::None;
-                    result
-                });
-                (cached, Vec::new(), false, observed_generation)
-            }
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Scoped {
-                changed_paths,
-                observed_generation,
-            } => (None, changed_paths, false, observed_generation),
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Full {
-                observed_generation,
-            }
-            | crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
-                observed_generation,
-                ..
-            } => (None, Vec::new(), true, observed_generation),
-        };
+        initial_watcher_recovery_plan(
+            disk_reconcile_state.inner(),
+            suppressor.as_ref(),
+            operation_lock.inner(),
+            &game_id,
+            mods_root,
+            &session,
+        );
     let (onboarding_lease, activation_claim_guard) = if activation.is_some()
         && cached_result.is_none()
     {
@@ -738,10 +1030,16 @@ async fn process_event_loop(
             .authoritative_result(&game_id)
             .map(|result| result.reconcile_revision)
             .unwrap_or(0);
-        if matches!(
+        let background_ready = matches!(
             sessions.wait_for_background_claimed_game(&game_id).await,
             Some(crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Ready)
-        ) && watcher_state.is_current_session(&session)
+        );
+        let acceptance_guard = operation_lock.inner_lock().try_acquire_for_reconcile();
+        if background_ready
+            && acceptance_guard.is_some()
+            && no_pending_disk_commit(operation_lock.inner(), &game_id)
+            && watcher_state.is_current_session(&session)
+            && suppressor.pending_repair(&session).is_none()
             && disk_reconcile_state.authority_event_generation(&game_id, watcher_session)
                 == Some(recovery_generation)
         {
@@ -903,22 +1201,30 @@ async fn process_event_loop(
     } else {
         session_recovery
     };
-    let session_recovery = match session_recovery {
-        Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
-            if activation.is_some()
-                && !matches!(
-                    disk_reconcile_state.authority_catch_up(&game_id, mods_root, watcher_session),
-                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
-                        reconcile_revision,
-                        ..
-                    } if reconcile_revision == result.reconcile_revision
-                ) =>
-        {
-            Err(crate::shared::errors::AppError::Io(
+    let acceptance_guard = if activation.is_some() {
+        Some(operation_lock.inner_lock().acquire_for_reconcile().await)
+    } else {
+        None
+    };
+    let session_recovery = if activation.is_some() {
+        match session_recovery {
+            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
+                if no_pending_disk_commit(operation_lock.inner(), &game_id)
+                    && suppressor.pending_repair(&session).is_none()
+                    && matches!(
+                        disk_reconcile_state.authority_catch_up(&game_id, mods_root, watcher_session),
+                        crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
+                            reconcile_revision,
+                            ..
+                        } if reconcile_revision == result.reconcile_revision
+                    ) => Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)),
+            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(_)) => Err(crate::shared::errors::AppError::Io(
                 "Mods changed while indexing finished; retry to verify the disk state".to_string(),
-            ))
+            )),
+            other => other,
         }
-        other => other,
+    } else {
+        session_recovery
     };
     match session_recovery {
         Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
@@ -931,8 +1237,7 @@ async fn process_event_loop(
                         Box::new(result.clone()),
                     ),
                 );
-                settle_pending_onboarding_indexing_after_activation(&app, &pool, &game_id, &result)
-                    .await;
+                settle_pending_onboarding_indexing_after_activation(&app, &pool, &game_id, &result);
             }
             if !emit_reconcile_result_for_current_session(&app, &session, result.clone()) {
                 return;
@@ -1009,6 +1314,7 @@ async fn process_event_loop(
         }
     }
 
+    drop(acceptance_guard);
     drop(activation_claim_guard);
     loop {
         // The debouncer already batches (one callback per debounce window and
@@ -1193,13 +1499,7 @@ async fn process_event_loop(
     app.state::<
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >()
-    .observe_authority_event(
-        &game_id,
-        watcher_session,
-        mods_root,
-        &[],
-        true,
-    );
+    .end_authority_session(&game_id, watcher_session, mods_root);
     log::info!("Watcher event loop ended for {}", mods_path_root);
 }
 
@@ -1259,6 +1559,450 @@ mod tests {
             initial_reconcile_reason(false),
             DiskReconcileReason::ManualRepair
         );
+    }
+
+    #[test]
+    fn startup_can_install_selected_watcher_but_prewarm_cannot() {
+        assert!(install_scope_matches_selection(
+            WatcherInstallScope::StartupSelected,
+            Some("game-1"),
+            "game-1",
+        ));
+        assert!(!install_scope_matches_selection(
+            WatcherInstallScope::InactiveOnly,
+            Some("game-1"),
+            "game-1",
+        ));
+        assert!(!install_scope_matches_selection(
+            WatcherInstallScope::StartupSelected,
+            Some("game-2"),
+            "game-1",
+        ));
+        assert!(install_scope_matches_selection(
+            WatcherInstallScope::InactiveOnly,
+            Some("game-2"),
+            "game-1",
+        ));
+    }
+
+    #[tokio::test]
+    async fn slow_inactive_prewarm_does_not_block_activation() {
+        let state = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState::new();
+        let guard = state.activation_guard().await;
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let prewarm = tokio::time::timeout(
+            INACTIVE_PREWARM_BUDGET,
+            prewarm_without_activation_guard(guard, async move {
+                started_tx.send(()).expect("activation waiter");
+                std::future::pending::<()>().await;
+            }),
+        );
+        let switch = async {
+            started_rx.await.expect("prewarm should start");
+            tokio::time::timeout(Duration::from_millis(100), state.activation_guard())
+                .await
+                .is_ok()
+        };
+        let (expired, switch_acquired_lease) = tokio::join!(prewarm, switch);
+        assert!(expired.is_err());
+        assert!(switch_acquired_lease);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inactive_watcher_takeover_keeps_a_buffered_debounce_event() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let state = WatcherState::new();
+        let session = state.prepare_session(root);
+        let (watcher, receiver) =
+            build_real_watcher(&state, root, session.clone()).expect("install inactive watcher");
+        state.install_inactive_watcher(
+            "game-1".to_string(),
+            root,
+            None,
+            session,
+            watcher,
+            receiver,
+        );
+
+        let changed = root.join("new-mod.ini");
+        std::fs::write(&changed, "content").expect("write before takeover");
+        let (adopted_session, watcher, mut receiver) = state
+            .take_inactive_watcher_for_handoff("game-1", root, None)
+            .expect("take over inactive watcher");
+        state.publish_session(&adopted_session);
+        *lock(&state.watcher) = Some(watcher);
+        let expected = changed.to_string_lossy().to_string();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                match receiver.recv().await {
+                    Some(ModWatchEvent::Created(path)) if path == expected => break,
+                    Some(_) => continue,
+                    None => panic!("adopted watcher event channel closed"),
+                }
+            }
+        })
+        .await
+        .expect("buffered event should survive takeover");
+    }
+
+    #[tokio::test]
+    async fn clean_active_watcher_survives_inactive_handoff_without_prewarm() {
+        use crate::modules::mutation::coordinator::MutationCoordinator;
+        use crate::modules::mutation::journal::OperationJournal;
+        use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
+            AuthorityCatchUp, DiskReconcileState, InitialRecoveryOutcome, InitialRecoveryReadiness,
+        };
+        use crate::modules::reconciliation::application::disk_reconcile::types::{
+            DiskReconcileReason, DiskReconcileResult, DiskReconcileScanScope, DiskReconcileStatus,
+        };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods root");
+        let watcher = WatcherState::new();
+        let old_session = watcher.begin_session(&root);
+        let (active, _active_receiver) =
+            build_real_watcher(&watcher, &root, old_session.clone()).expect("active watcher");
+        *lock(&watcher.watcher) = Some(active);
+        let state = DiskReconcileState::new();
+        state.begin_authority_session("game-1", &root, old_session.generation());
+        let mut baseline = DiskReconcileResult {
+            game_id: "game-1".to_string(),
+            reconcile_revision: 0,
+            reason: DiskReconcileReason::StartupBoot,
+            status: DiskReconcileStatus::Applied,
+            scan_scope: DiskReconcileScanScope::Full,
+            folder_conflicts: Vec::new(),
+            rename_confirmations: Vec::new(),
+            error_message: None,
+            changed_roots: Vec::new(),
+            objects_changed: false,
+            folders_changed: false,
+            collections_changed: false,
+            runtime_file_changed: false,
+            thumbnail_roots: Vec::new(),
+            cleared_selection_paths: Vec::new(),
+            path_updates: Vec::new(),
+            collection_reference_impact: Default::default(),
+            change_summary: Default::default(),
+            pending_runtime_effects: Default::default(),
+            warnings: Vec::new(),
+        };
+        state.record_result("game-1", &mut baseline);
+        assert!(state.mark_authority_reconciled(
+            "game-1",
+            &root,
+            old_session.generation(),
+            0,
+            &baseline,
+            &[],
+        ));
+        let generation = state.mark_initial_recovery_pending("game-1");
+        state.finish_initial_recovery(
+            "game-1",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(baseline.clone())),
+        );
+        let session = watcher.prepare_session_with_runtime_config(&root, None);
+        let (inactive, receiver) =
+            build_real_watcher(&watcher, &root, session.clone()).expect("inactive watcher");
+        watcher.install_inactive_watcher(
+            "game-1".to_string(),
+            &root,
+            None,
+            session.clone(),
+            inactive,
+            receiver,
+        );
+        assert!(prepare_inactive_authority(
+            &state,
+            "game-1",
+            &root,
+            Some(old_session.generation()),
+            session.generation(),
+        ));
+        assert!(matches!(
+            state.authority_catch_up("game-1", &root, session.generation()),
+            AuthorityCatchUp::Clean { .. }
+        ));
+
+        assert!(
+            tokio::time::timeout(INACTIVE_PREWARM_BUDGET, std::future::pending::<()>())
+                .await
+                .is_err()
+        );
+        watcher.invalidate_session();
+        *lock(&watcher.watcher) = None;
+        let (adopted_session, active, _receiver) = watcher
+            .take_inactive_watcher_for_handoff("game-1", &root, None)
+            .expect("revisit watcher");
+        watcher.publish_session(&adopted_session);
+        *lock(&watcher.watcher) = Some(active);
+        let journal = Arc::new(
+            OperationJournal::open(temp.path().join("journal.json"), 100).expect("journal"),
+        );
+        let coordinator = MutationCoordinator::with_lock(
+            crate::platform::fs::operation_lock::OperationLock::new(),
+            journal,
+        );
+        let (activation, reused) = prepare_activation_recovery(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &root,
+            &adopted_session,
+            7,
+        );
+        assert_eq!(activation.recovery_generation, generation);
+        assert_eq!(
+            reused.expect("clean revisit").scan_scope,
+            DiskReconcileScanScope::None
+        );
+        assert_eq!(
+            state.initial_recovery_readiness("game-1"),
+            InitialRecoveryReadiness::Ready { generation }
+        );
+
+        let mut prewarmed = baseline.clone();
+        state.record_result("game-1", &mut prewarmed);
+        let observed_generation = state
+            .authority_event_generation("game-1", adopted_session.generation())
+            .expect("covered session");
+        let switching = state.activation_guard().await;
+        let acceptance = accept_prewarm_result(
+            &state,
+            &watcher,
+            &coordinator,
+            || Some("game-1".to_string()),
+            PrewarmAcceptance {
+                game_id: "game-1",
+                mods_root: &root,
+                runtime_config_path: None,
+                watcher_session: adopted_session.generation(),
+                observed_generation,
+                result: &prewarmed,
+                changed_paths: &[],
+            },
+        );
+        tokio::pin!(acceptance);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut acceptance)
+                .await
+                .is_err(),
+            "prewarm acceptance must wait for an in-flight switch"
+        );
+        drop(switching);
+        assert!(
+            acceptance.await,
+            "the adopted watcher still proves coverage"
+        );
+        assert!(matches!(
+            state.authority_catch_up("game-1", &root, adopted_session.generation()),
+            AuthorityCatchUp::Clean { reconcile_revision, .. }
+                if reconcile_revision == prewarmed.reconcile_revision
+        ));
+    }
+
+    #[test]
+    fn inactive_handoff_keeps_an_event_seen_by_the_new_watcher() {
+        use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
+            AuthorityCatchUp, DiskReconcileState,
+        };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods root");
+        let state = DiskReconcileState::new();
+        state.begin_authority_session("game", &root, 1);
+        state.observe_authority_event("game", 2, &root, &[root.join("Changed")], false);
+        let observed = state.authority_event_generation("game", 2);
+
+        assert!(!prepare_inactive_authority(
+            &state,
+            "game",
+            &root,
+            Some(1),
+            2
+        ));
+        assert_eq!(state.authority_event_generation("game", 2), observed);
+        assert!(matches!(
+            state.authority_catch_up("game", &root, 2),
+            AuthorityCatchUp::Full { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn cached_activation_ignores_other_game_lock_but_rejects_target_changes() {
+        use crate::modules::mutation::coordinator::MutationCoordinator;
+        use crate::modules::mutation::journal::{OperationJournal, OperationPlan, PlannedStep};
+        use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
+        use crate::modules::reconciliation::application::disk_reconcile::types::{
+            DiskReconcileReason, DiskReconcileResult, DiskReconcileScanScope, DiskReconcileStatus,
+        };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mods_root = temp.path().join("Mods");
+        std::fs::create_dir_all(&mods_root).expect("mods root");
+        let watcher = WatcherState::new();
+        let session = watcher.begin_session(&mods_root);
+        let state = DiskReconcileState::new();
+        state.begin_authority_session("game-1", &mods_root, session.generation());
+        let mut baseline = DiskReconcileResult {
+            game_id: "game-1".to_string(),
+            reconcile_revision: 0,
+            reason: DiskReconcileReason::StartupBoot,
+            status: DiskReconcileStatus::Applied,
+            scan_scope: DiskReconcileScanScope::Full,
+            folder_conflicts: Vec::new(),
+            rename_confirmations: Vec::new(),
+            error_message: None,
+            changed_roots: Vec::new(),
+            objects_changed: false,
+            folders_changed: false,
+            collections_changed: false,
+            runtime_file_changed: false,
+            thumbnail_roots: Vec::new(),
+            cleared_selection_paths: Vec::new(),
+            path_updates: Vec::new(),
+            collection_reference_impact: Default::default(),
+            change_summary: Default::default(),
+            pending_runtime_effects: Default::default(),
+            warnings: Vec::new(),
+        };
+        state.record_result("game-1", &mut baseline);
+        assert!(state.mark_authority_reconciled(
+            "game-1",
+            &mods_root,
+            session.generation(),
+            0,
+            &baseline,
+            &[],
+        ));
+        let journal = Arc::new(
+            OperationJournal::open(temp.path().join("journal.json"), 100).expect("journal"),
+        );
+        let coordinator = MutationCoordinator::with_lock(
+            crate::platform::fs::operation_lock::OperationLock::new(),
+            journal.clone(),
+        );
+        let (startup_cached, changed_paths, force_full, _) = initial_watcher_recovery_plan(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+        );
+        assert!(changed_paths.is_empty());
+        assert!(
+            !force_full,
+            "clean startup handoff must not schedule a second scan"
+        );
+        assert_eq!(
+            startup_cached.expect("clean startup projection").scan_scope,
+            DiskReconcileScanScope::None
+        );
+        let ready_generation = state.mark_initial_recovery_pending("game-1");
+        state.finish_initial_recovery(
+            "game-1",
+            ready_generation,
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
+                Box::new(baseline.clone()),
+            ),
+        );
+        let (activation, reused) = prepare_activation_recovery(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+            7,
+        );
+        assert_eq!(activation.recovery_generation, ready_generation);
+        assert_eq!(
+            reused.expect("clean activation").scan_scope,
+            DiskReconcileScanScope::None
+        );
+        assert!(matches!(
+            state.initial_recovery_readiness("game-1"),
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Ready { generation }
+                if generation == ready_generation
+        ));
+        let cached = || {
+            clean_cached_activation_result(
+                &state,
+                watcher.suppressor.as_ref(),
+                &coordinator,
+                "game-1",
+                &mods_root,
+                &session,
+            )
+        };
+        assert_eq!(
+            cached()
+                .expect("clean startup session should reuse projection")
+                .scan_scope,
+            DiskReconcileScanScope::None
+        );
+
+        let guard = coordinator.inner_lock().acquire().await.expect("lock");
+        assert!(
+            cached().is_some(),
+            "another game's operation must not invalidate this proof"
+        );
+        let (activation, reused) = prepare_activation_recovery(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+            8,
+        );
+        assert_eq!(
+            reused.expect("clean target").scan_scope,
+            DiskReconcileScanScope::None
+        );
+        assert!(matches!(
+            state.initial_recovery_readiness("game-1"),
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Ready { generation }
+                if generation == activation.recovery_generation && generation == ready_generation
+        ));
+        drop(guard);
+
+        let target_lease = state
+            .acquire_ready_mutation_lease("game-1", coordinator.inner_lock())
+            .await
+            .expect("target mutation lease");
+        assert!(
+            cached().is_none(),
+            "target game lock must block cache reuse"
+        );
+        drop(target_lease);
+
+        let old_path = mods_root.join("Old");
+        let new_path = mods_root.join("New");
+        std::fs::create_dir(&old_path).expect("old mod");
+        let id = journal
+            .plan_operation(OperationPlan::new(
+                "workspace-switch",
+                "game-1",
+                vec![PlannedStep::rename(0, old_path.clone(), new_path.clone())],
+            ))
+            .expect("plan");
+        journal.mark_applying(&id).expect("applying");
+        std::fs::rename(&old_path, &new_path).expect("disk rename");
+        journal.mark_step_applied(&id, 0).expect("applied step");
+        journal.mark_disk_committed(&id).expect("disk receipt");
+        assert!(cached().is_none());
+        journal.mark_db_committed(&id).expect("database projection");
+        journal.complete(&id).expect("settled operation");
+
+        watcher.suppressor.mark_blanket_event_dropped(&session);
+        assert!(cached().is_none());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

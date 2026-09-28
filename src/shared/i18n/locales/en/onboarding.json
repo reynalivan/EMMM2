@@ -63,6 +63,7 @@
   },
   "indexing": {
     "title": "Indexing your library",
+    "activating_title": "Preparing your workspace",
     "subtitle": "Please wait while EMMM scans the game folders.",
     "overall_progress": "Overall progress",
     "phase_progress": "Current stage",
@@ -73,12 +74,13 @@
     "elapsed": "Elapsed {{duration}}",
     "waiting_for_stage": "Starting the next stage...",
     "preparation": {
-        "metadata": "Checking folder structure",
+      "metadata": "Checking folder structure",
       "classifying": "Classifying mod folders",
       "rechecking": "Library changed. Checking it again..."
     },
     "game_progress": "Game {{current}} of {{total}} · {{game}}",
     "activity": {
+      "activating_first_game": "Checking game readiness...",
       "discovering": "Preparing scan plan · Step {{step}} of {{total}}",
       "scanning": "Scanning mod folders [{{folder}}] · Step {{step}} of {{total}}",
       "scanning_without_folder": "Scanning mod folders · Step {{step}} of {{total}}",

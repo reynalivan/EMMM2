@@ -6,6 +6,7 @@ use crate::modules::mutation::journal::{
     DatabaseProjectionStatus, MutationStepKind, Operation, OperationJournal, OperationStatus,
     StepStatus,
 };
+use crate::platform::fs::rename::rename_no_replace;
 use crate::shared::errors::AppError;
 
 pub struct RecoveryRoots {
@@ -89,7 +90,17 @@ impl RecoveryRunner {
                 match step.kind {
                     MutationStepKind::Rename | MutationStepKind::Quarantine => {
                         if let Some(stage_path) = step.stage_path.as_deref() {
-                            validate_recovery_path(stage_path, &self.roots.staging_root)?;
+                            if step.kind == MutationStepKind::Rename {
+                                validate_recovery_path(stage_path, game_root)?;
+                                if stage_path.parent() != old_path.parent() {
+                                    return Err(AppError::Security(format!(
+                                        "Staged rename is not beside its source: {}",
+                                        stage_path.display()
+                                    )));
+                                }
+                            } else {
+                                validate_recovery_path(stage_path, &self.roots.staging_root)?;
+                            }
                         }
                         classify_rename(
                             old_path,
@@ -175,16 +186,16 @@ impl RecoveryRunner {
                     step.stage_path.as_deref().expect("validated backup path"),
                 ),
                 (_, DiskStepState::AtSource) => Ok(()),
-                (_, DiskStepState::AtTarget) => std::fs::rename(
+                (_, DiskStepState::AtTarget) => rollback_rename(
                     step.new_path.as_deref().expect("validated new_path"),
                     step.old_path.as_deref().expect("validated old_path"),
-                )
-                .map_err(AppError::from),
-                (_, DiskStepState::AtStage) => std::fs::rename(
+                    step.expected_identity.as_deref(),
+                ),
+                (_, DiskStepState::AtStage) => rollback_rename(
                     step.stage_path.as_deref().expect("classified stage_path"),
                     step.old_path.as_deref().expect("validated old_path"),
-                )
-                .map_err(AppError::from),
+                    step.expected_identity.as_deref(),
+                ),
                 (_, DiskStepState::Ambiguous) => {
                     unreachable!("ambiguous state handled before rollback")
                 }
@@ -227,6 +238,9 @@ fn classify_rename(
     stage_path: Option<&Path>,
     expected_identity: Option<&str>,
 ) -> Result<DiskStepState, AppError> {
+    if stage_path.is_some() && expected_identity.is_none() {
+        return Ok(DiskStepState::Ambiguous);
+    }
     let old_exists = old_path.try_exists()?;
     let new_exists = new_path.try_exists()?;
     let stage_exists = match stage_path {
@@ -239,10 +253,14 @@ fn classify_rename(
     let new_matches = new_exists
         && expected_identity
             .is_none_or(|expected| filesystem_identity(new_path).as_deref() == Some(expected));
+    let stage_matches = stage_exists
+        && expected_identity.is_some_and(|expected| {
+            stage_path.and_then(filesystem_identity).as_deref() == Some(expected)
+        });
     Ok(match (old_exists, new_exists, stage_exists) {
         (true, false, false) if old_matches => DiskStepState::AtSource,
         (false, true, false) if new_matches => DiskStepState::AtTarget,
-        (false, false, true) => DiskStepState::AtStage,
+        (false, false, true) if stage_matches => DiskStepState::AtStage,
         _ => DiskStepState::Ambiguous,
     })
 }
@@ -278,6 +296,37 @@ fn filesystem_identity(path: &Path) -> Option<String> {
     crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(
         path,
     )
+}
+
+fn rollback_rename(
+    source: &Path,
+    destination: &Path,
+    expected_identity: Option<&str>,
+) -> Result<(), AppError> {
+    if let Some(expected_identity) = expected_identity {
+        if filesystem_identity(source).as_deref() != Some(expected_identity) {
+            return Err(AppError::Io(format!(
+                "Recovery source changed before rollback: {}",
+                source.display()
+            )));
+        }
+    }
+    match std::fs::symlink_metadata(destination) {
+        Ok(_) => {
+            return Err(AppError::Io(format!(
+                "Recovery destination is occupied: {}",
+                destination.display()
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(AppError::Io(format!(
+                "Could not inspect recovery destination {}: {error}",
+                destination.display()
+            )))
+        }
+    }
+    rename_no_replace(source, destination).map_err(AppError::from)
 }
 
 fn rollback_hardlink(target: &Path, backup: &Path) -> Result<(), AppError> {
@@ -338,4 +387,84 @@ fn validate_recovery_path(path: &Path, allowed_root: &Path) -> Result<(), AppErr
 
 fn nearest_existing_ancestor(path: &Path) -> Option<&Path> {
     path.ancestors().find(|candidate| candidate.exists())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::mutation::journal::{OperationPlan, PlannedStep};
+
+    fn conflict_recovery(
+        root: &Path,
+        journal: Arc<OperationJournal>,
+    ) -> (RecoveryRunner, PathBuf, PathBuf, PathBuf) {
+        let game_root = root.join("Mods");
+        let staging_root = root.join("staging");
+        let old_path = game_root.join("Alice").join("Blue");
+        let stage_path = game_root.join("Alice").join(".emmm-conflict-stage-0-test");
+        let target_path = game_root.join("Alice").join("Blue One");
+        std::fs::create_dir_all(&old_path).unwrap();
+        std::fs::create_dir_all(&staging_root).unwrap();
+        let expected_identity = filesystem_identity(&old_path).unwrap();
+        journal
+            .plan_operation(OperationPlan::new(
+                "folder-conflict-rename",
+                "game",
+                vec![
+                    PlannedStep::rename(0, old_path.clone(), target_path.clone())
+                        .with_stage_path(stage_path.clone())
+                        .with_expected_identity(Some(expected_identity)),
+                ],
+            ))
+            .unwrap();
+        let runner = RecoveryRunner::new(
+            journal,
+            RecoveryRoots::new(HashMap::from([("game".into(), game_root)]), staging_root),
+        );
+        (runner, old_path, stage_path, target_path)
+    }
+
+    #[tokio::test]
+    async fn conflict_stage_in_game_root_restores_expected_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal =
+            Arc::new(OperationJournal::open(temp.path().join("journal.json"), 16).unwrap());
+        let (runner, old_path, stage_path, target_path) =
+            conflict_recovery(temp.path(), journal.clone());
+        let expected_identity = filesystem_identity(&old_path).unwrap();
+        std::fs::rename(&old_path, &stage_path).unwrap();
+
+        runner.run_recovery().await.unwrap();
+
+        assert_eq!(filesystem_identity(&old_path), Some(expected_identity));
+        assert!(!stage_path.exists());
+        assert!(!target_path.exists());
+        assert_eq!(journal.entries()[0].status, OperationStatus::RolledBack);
+    }
+
+    #[tokio::test]
+    async fn replacement_conflict_stage_is_left_for_manual_repair() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal =
+            Arc::new(OperationJournal::open(temp.path().join("journal.json"), 16).unwrap());
+        let (runner, old_path, stage_path, _) = conflict_recovery(temp.path(), journal.clone());
+        let parked = temp.path().join("parked");
+        std::fs::rename(&old_path, &stage_path).unwrap();
+        std::fs::rename(&stage_path, &parked).unwrap();
+        std::fs::create_dir(&stage_path).unwrap();
+        let replacement_identity = filesystem_identity(&stage_path).unwrap();
+
+        runner.run_recovery().await.unwrap();
+
+        assert!(!old_path.exists());
+        assert_eq!(filesystem_identity(&stage_path), Some(replacement_identity));
+        assert!(parked.exists());
+        let operation = &journal.entries()[0];
+        assert_eq!(operation.status, OperationStatus::FailedNeedsRepair);
+        assert!(operation
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("ambiguous"));
+    }
 }

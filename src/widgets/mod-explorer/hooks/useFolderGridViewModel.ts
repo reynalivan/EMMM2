@@ -65,7 +65,15 @@ export function useFolderGridViewModel({
   const activationFailed =
     activation?.phase === 'failed' || activation?.phase === 'source_unavailable';
   const effectiveRecoveryStatus =
-    activation?.phase === 'syncing' ? 'syncing' : activationFailed ? 'failed' : recoveryStatus;
+    activation?.phase === 'syncing'
+      ? 'syncing'
+      : activationFailed
+        ? 'failed'
+        : activation?.phase === 'ready'
+          ? 'ready'
+          : activeGameId
+            ? 'syncing'
+            : recoveryStatus;
   const workspaceSourceUnavailableMessage =
     sourceUnavailableMessage ?? diskSourceUnavailableMessage ?? activation?.error ?? null;
   const mutationsDisabled =

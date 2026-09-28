@@ -445,6 +445,8 @@ async fn disk_committed_db_checkpoint_can_finalize_after_a_later_reverse_rename(
     journal.mark_disk_committed(&second).unwrap();
     journal.mark_db_committed(&first).unwrap();
     assert_eq!(journal.pending_disk_commits().len(), 2);
+    assert!(journal.has_pending_disk_commit_for_game(GAME_ID));
+    assert!(!journal.has_pending_disk_commit_for_game("another-game"));
     drop(journal);
 
     let reopened = open_journal(&path);
@@ -455,6 +457,7 @@ async fn disk_committed_db_checkpoint_can_finalize_after_a_later_reverse_rename(
     assert_eq!(reopened.entries()[0].status, OperationStatus::Completed);
     assert_eq!(reopened.pending_disk_commits().len(), 1);
     assert_eq!(reopened.pending_disk_commits()[0].id, second);
+    assert!(reopened.has_pending_disk_commit_for_game(GAME_ID));
     assert!(a.exists());
 }
 
@@ -488,6 +491,7 @@ async fn failed_projection_keeps_disk_commit_pending_and_revisions_survive_pruni
     assert_eq!(journal.pending_disk_commits().len(), 1);
     journal.mark_db_committed(&first).unwrap();
     journal.complete(&first).unwrap();
+    assert!(!journal.has_pending_disk_commit_for_game(GAME_ID));
 
     let second = journal.plan_operation(rename_plan(&b, &a)).unwrap();
     journal.mark_applying(&second).unwrap();

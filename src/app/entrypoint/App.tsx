@@ -196,36 +196,38 @@ function AppRouter() {
   );
 }
 
-function DashboardWorkspace() {
+export function DashboardWorkspace() {
   const workspaceView = useAppStore((state) => state.workspaceView);
   const selectedObjectFolderPath = useAppStore((state) => state.selectedObjectFolderPath);
+  const activeGameId = useAppStore((state) => state.activeGameId);
   const requestedGameId = useAppStore((state) => state.requestedGameId);
-  const { activeGame, games } = useActiveGame();
+  const { games } = useActiveGame();
   const backgroundIndexingStatus = useBackgroundIndexingStatus();
   const { switchGame } = useGameSwitch();
-  const selectedGame = games.find((game) => game.id === requestedGameId) ?? activeGame;
+  const selectedGameId = requestedGameId ?? activeGameId;
+  const selectedGame = games.find((game) => game.id === selectedGameId);
   const activation = useAppStore((state) =>
-    selectedGame?.id ? state.gameActivationByGame[selectedGame.id] : undefined,
+    selectedGameId ? state.gameActivationByGame[selectedGameId] : undefined,
   );
   const progress = useAppStore((state) =>
-    selectedGame?.id && requestedGameId === null
-      ? (state.diskReconcileByGame[selectedGame.id]?.progress ?? null)
+    selectedGameId && requestedGameId === null
+      ? (state.diskReconcileByGame[selectedGameId]?.progress ?? null)
       : null,
   );
   const phase = requestedGameId !== null ? 'syncing' : (activation?.phase ?? 'syncing');
   const gameWorkspaceView =
     workspaceView !== 'settings' && workspaceView !== 'browser' && workspaceView !== 'downloads';
   const loadingPage =
-    !isDemoMode && selectedGame && gameWorkspaceView && phase !== 'ready' ? (
+    !isDemoMode && selectedGameId && gameWorkspaceView && phase !== 'ready' ? (
       <GameIndexingOverlay
-        gameName={selectedGame.name}
+        gameName={selectedGame?.name ?? selectedGameId}
         progress={progress}
-        snapshotProgress={backgroundIndexingStatus.snapshotProgressByGame.get(selectedGame.id)}
-        backgroundPhase={backgroundIndexingStatus.gamesById.get(selectedGame.id)?.phase}
+        snapshotProgress={backgroundIndexingStatus.snapshotProgressByGame.get(selectedGameId)}
+        backgroundPhase={backgroundIndexingStatus.gamesById.get(selectedGameId)?.phase}
         phase={phase}
         error={activation?.error}
         onRetry={() => {
-          void switchGame(selectedGame.id).catch((error: unknown) => {
+          void switchGame(selectedGameId).catch((error: unknown) => {
             console.error('Failed to retry game indexing', error);
           });
         }}

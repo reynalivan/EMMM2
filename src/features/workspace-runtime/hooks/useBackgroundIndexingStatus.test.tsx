@@ -92,4 +92,39 @@ describe('useBackgroundIndexingStatus', () => {
     expect(result.current.snapshotProgressByGame.get('game-1')?.completed_roots).toBe(2);
     expect(result.current.snapshotProgressByGame.get('game-2')?.completed_roots).toBe(5);
   });
+
+  it('removes progress when its indexing session is no longer present', async () => {
+    getStatus
+      .mockResolvedValueOnce([
+        {
+          session_id: 'session-1',
+          completed_games: 0,
+          total_games: 1,
+          games: [{ game_id: 'game-1', phase: 'Preparing' }],
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const { result } = renderHook(() => useBackgroundIndexingStatus());
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
+    emit<OnboardingIndexingSnapshotProgress>('onboarding_indexing:snapshot_progress', {
+      session_id: 'session-1',
+      game_id: 'game-1',
+      phase: 'Classifying',
+      completed_games: 0,
+      total_games: 1,
+      completed_roots: 2,
+      total_roots: 10,
+      folders_classified: 20,
+      current_root: null,
+      elapsed_ms: 100,
+    });
+    expect(result.current.snapshotProgressByGame.has('game-1')).toBe(true);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.sessions).toHaveLength(0);
+    expect(result.current.snapshotProgressByGame.has('game-1')).toBe(false);
+  });
 });

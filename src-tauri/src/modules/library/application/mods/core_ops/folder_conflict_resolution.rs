@@ -7,10 +7,13 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use super::naming::validate_folder_base_name;
-use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_disk_identity_census;
+use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
+    collect_disk_identity_census, filesystem_identity,
+};
 use crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census;
 use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
 use crate::modules::workspace::domain::normalizer::is_disabled_folder;
+use crate::platform::fs::rename::rename_no_replace;
 use crate::shared::errors::AppError;
 
 /// One requested new base name for every candidate in a conflict group.
@@ -33,6 +36,7 @@ struct PendingRename {
     old_path: PathBuf,
     stage_path: PathBuf,
     target_path: PathBuf,
+    expected_identity: String,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +49,7 @@ impl FolderConflictRenamePlan {
         self.pending.is_empty()
     }
 
-    pub fn journal_paths(&self) -> Vec<(PathBuf, PathBuf, PathBuf)> {
+    pub fn journal_paths(&self) -> Vec<(PathBuf, PathBuf, PathBuf, String)> {
         self.pending
             .iter()
             .map(|rename| {
@@ -53,6 +57,7 @@ impl FolderConflictRenamePlan {
                     rename.old_path.clone(),
                     rename.stage_path.clone(),
                     rename.target_path.clone(),
+                    rename.expected_identity.clone(),
                 )
             })
             .collect()
@@ -70,7 +75,9 @@ impl FolderConflictRenamePlan {
 
     pub fn is_rolled_back(&self) -> bool {
         self.pending.iter().all(|rename| {
-            rename.old_path.exists() && !rename.stage_path.exists() && !rename.target_path.exists()
+            has_expected_identity(&rename.old_path, &rename.expected_identity)
+                && !rename.stage_path.exists()
+                && !rename.target_path.exists()
         })
     }
 }
@@ -84,6 +91,35 @@ fn path_key(path: &Path) -> String {
     path.to_string_lossy()
         .replace('/', "\\")
         .to_ascii_lowercase()
+}
+
+fn has_expected_identity(path: &Path, expected: &str) -> bool {
+    filesystem_identity(path).as_deref() == Some(expected)
+}
+
+fn require_expected_identity(path: &Path, expected: &str) -> Result<(), AppError> {
+    if has_expected_identity(path, expected) {
+        Ok(())
+    } else {
+        Err(AppError::Io(format!(
+            "Conflict folder changed after planning: {}",
+            path.display()
+        )))
+    }
+}
+
+fn require_free(path: &Path) -> Result<(), AppError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Err(AppError::Io(format!(
+            "Conflict rename destination is not free: {}",
+            path.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(AppError::Io(format!(
+            "Could not inspect conflict destination {}: {error}",
+            path.display()
+        ))),
+    }
 }
 
 fn target_folder_name(old_path: &Path, base_name: &str) -> String {
@@ -145,7 +181,13 @@ fn rollback_pending(pending: &[PendingRename]) -> Result<(), AppError> {
     let mut failures = Vec::new();
     for rename in pending {
         if rename.target_path.exists() && !rename.stage_path.exists() && !rename.old_path.exists() {
-            if let Err(error) = fs::rename(&rename.target_path, &rename.stage_path) {
+            if let Err(error) = require_expected_identity(
+                &rename.target_path,
+                &rename.expected_identity,
+            )
+            .and_then(|_| {
+                rename_no_replace(&rename.target_path, &rename.stage_path).map_err(AppError::from)
+            }) {
                 failures.push(format!(
                     "'{}' to '{}': {error}",
                     rename.target_path.display(),
@@ -156,7 +198,13 @@ fn rollback_pending(pending: &[PendingRename]) -> Result<(), AppError> {
     }
     for rename in pending.iter().rev() {
         if rename.stage_path.exists() && !rename.old_path.exists() {
-            if let Err(error) = fs::rename(&rename.stage_path, &rename.old_path) {
+            if let Err(error) = require_expected_identity(
+                &rename.stage_path,
+                &rename.expected_identity,
+            )
+            .and_then(|_| {
+                rename_no_replace(&rename.stage_path, &rename.old_path).map_err(AppError::from)
+            }) {
                 failures.push(format!(
                     "'{}' to '{}': {error}",
                     rename.stage_path.display(),
@@ -164,7 +212,10 @@ fn rollback_pending(pending: &[PendingRename]) -> Result<(), AppError> {
                 ));
             }
         }
-        if !rename.old_path.exists() || rename.stage_path.exists() {
+        if !has_expected_identity(&rename.old_path, &rename.expected_identity)
+            || rename.stage_path.exists()
+            || rename.target_path.exists()
+        {
             failures.push(format!(
                 "rollback state for '{}' could not be verified",
                 rename.old_path.display()
@@ -179,32 +230,6 @@ fn rollback_pending(pending: &[PendingRename]) -> Result<(), AppError> {
             failures.join("; ")
         )))
     }
-}
-
-/// Best-effort rollback for a terminal reconcile failure. This only covers the
-/// current process; no journal is persisted, so interrupted batches leave their
-/// staging folders for an explicit user repair rather than guessing at a swap.
-pub fn rollback_folder_conflict_renames(
-    suppressor: &Arc<WatcherSuppressor>,
-    rewrites: &[FolderPathRename],
-) -> Result<(), AppError> {
-    let paths = rewrites
-        .iter()
-        .flat_map(|rewrite| [Path::new(&rewrite.old_path), Path::new(&rewrite.new_path)]);
-    let _guard = suppressor.suppress_paths(paths);
-    let pending = rewrites
-        .iter()
-        .enumerate()
-        .map(|(index, rewrite)| PendingRename {
-            old_path: PathBuf::from(&rewrite.old_path),
-            stage_path: PathBuf::from(&rewrite.new_path).with_file_name(format!(
-                ".emmm-conflict-stage-rollback-{index}-{}",
-                uuid::Uuid::new_v4()
-            )),
-            target_path: PathBuf::from(&rewrite.new_path),
-        })
-        .collect::<Vec<_>>();
-    rollback_pending(&pending)
 }
 
 /// Rename one complete current conflict group on disk and return every exact
@@ -301,15 +326,23 @@ pub fn plan_folder_conflict_renames(
     let pending = planned
         .iter()
         .enumerate()
-        .map(|(index, (old_path, target_path))| PendingRename {
-            old_path: old_path.clone(),
-            stage_path: old_path.with_file_name(format!(
-                ".emmm-conflict-stage-{index}-{}",
-                uuid::Uuid::new_v4()
-            )),
-            target_path: target_path.clone(),
+        .map(|(index, (old_path, target_path))| {
+            Ok(PendingRename {
+                old_path: old_path.clone(),
+                stage_path: old_path.with_file_name(format!(
+                    ".emmm-conflict-stage-{index}-{}",
+                    uuid::Uuid::new_v4()
+                )),
+                target_path: target_path.clone(),
+                expected_identity: filesystem_identity(old_path).ok_or_else(|| {
+                    AppError::Io(format!(
+                        "Could not identify conflict source: {}",
+                        old_path.display()
+                    ))
+                })?,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, AppError>>()?;
     Ok(FolderConflictRenamePlan { pending })
 }
 
@@ -324,7 +357,12 @@ pub fn apply_folder_conflict_rename_plan(
     let _guard = suppressor.suppress_paths(suppressed);
 
     for (index, rename) in plan.pending.iter().enumerate() {
-        if let Err(error) = fs::rename(&rename.old_path, &rename.stage_path) {
+        if let Err(error) = require_expected_identity(&rename.old_path, &rename.expected_identity)
+            .and_then(|_| require_free(&rename.stage_path))
+            .and_then(|_| {
+                rename_no_replace(&rename.old_path, &rename.stage_path).map_err(AppError::from)
+            })
+        {
             return match rollback_pending(&plan.pending[..index]) {
                 Ok(()) => Err(AppError::Io(format!(
                     "Failed to stage conflict rename: {error}"
@@ -336,7 +374,12 @@ pub fn apply_folder_conflict_rename_plan(
         }
     }
     for rename in &plan.pending {
-        if let Err(error) = fs::rename(&rename.stage_path, &rename.target_path) {
+        if let Err(error) = require_expected_identity(&rename.stage_path, &rename.expected_identity)
+            .and_then(|_| require_free(&rename.target_path))
+            .and_then(|_| {
+                rename_no_replace(&rename.stage_path, &rename.target_path).map_err(AppError::from)
+            })
+        {
             return match rollback_pending(&plan.pending) {
                 Ok(()) => Err(AppError::Io(format!(
                     "Failed to apply conflict rename: {error}"
@@ -381,6 +424,25 @@ mod tests {
     use super::*;
     use crate::modules::workspace::application::scanner::watcher::WatcherState;
 
+    #[cfg(any(windows, target_os = "linux"))]
+    #[test]
+    fn atomic_rename_preserves_an_occupied_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&destination).unwrap();
+        let destination_identity = filesystem_identity(&destination).unwrap();
+
+        rename_no_replace(&source, &destination).expect_err("destination must not be replaced");
+
+        assert!(source.is_dir());
+        assert_eq!(
+            filesystem_identity(&destination),
+            Some(destination_identity)
+        );
+    }
+
     fn create_terminal_mod(path: &Path) {
         fs::create_dir_all(path).unwrap();
         fs::write(path.join("mod.ini"), "[TextureOverride]\nhash = abc\n").unwrap();
@@ -395,6 +457,123 @@ mod tests {
             &collect_disk_identity_census(root).unwrap(),
         )
         .remove(0)
+    }
+
+    #[test]
+    fn prepared_conflict_rename_rejects_replacement_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let source = root.join("Alice").join("Blue");
+        let other = root.join("Alice").join("DISABLED Blue");
+        create_terminal_mod(&source);
+        create_terminal_mod(&other);
+        let group = conflict_group(root);
+        let plan = plan_folder_conflict_renames(
+            root,
+            "game",
+            &group.group_id,
+            &[
+                FolderConflictRename {
+                    path: source.to_string_lossy().into_owned(),
+                    base_name: "Blue One".into(),
+                },
+                FolderConflictRename {
+                    path: other.to_string_lossy().into_owned(),
+                    base_name: "Blue Two".into(),
+                },
+            ],
+        )
+        .unwrap();
+        for (old_path, _, _, expected_identity) in plan.journal_paths() {
+            assert_eq!(filesystem_identity(&old_path), Some(expected_identity));
+        }
+        let parked = root.join("parked");
+        fs::rename(&source, &parked).unwrap();
+        create_terminal_mod(&source);
+
+        let error = apply_folder_conflict_rename_plan(&WatcherState::new().suppressor, &plan)
+            .expect_err("replacement source must be rejected");
+        assert!(error.to_string().contains("changed"));
+        assert!(source.exists());
+        assert!(parked.exists());
+        assert!(other.exists());
+        assert!(!root.join("Alice").join("Blue One").exists());
+    }
+
+    #[test]
+    fn conflict_rollback_rejects_replacement_target() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let source = root.join("Alice").join("Blue");
+        let other = root.join("Alice").join("DISABLED Blue");
+        create_terminal_mod(&source);
+        create_terminal_mod(&other);
+        let group = conflict_group(root);
+        let plan = plan_folder_conflict_renames(
+            root,
+            "game",
+            &group.group_id,
+            &[
+                FolderConflictRename {
+                    path: source.to_string_lossy().into_owned(),
+                    base_name: "Blue One".into(),
+                },
+                FolderConflictRename {
+                    path: other.to_string_lossy().into_owned(),
+                    base_name: "Blue Two".into(),
+                },
+            ],
+        )
+        .unwrap();
+        let watcher = WatcherState::new();
+        apply_folder_conflict_rename_plan(&watcher.suppressor, &plan).unwrap();
+        let target = root.join("Alice").join("Blue One");
+        let parked = root.join("parked");
+        fs::rename(&target, &parked).unwrap();
+        create_terminal_mod(&target);
+
+        let error = rollback_folder_conflict_rename_plan(&watcher.suppressor, &plan)
+            .expect_err("replacement target must be rejected");
+        assert!(error.to_string().contains("changed"));
+        assert!(target.exists());
+        assert!(parked.exists());
+        assert!(!source.exists());
+    }
+
+    #[test]
+    fn prepared_conflict_rename_rejects_late_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let source = root.join("Alice").join("Blue");
+        let other = root.join("Alice").join("DISABLED Blue");
+        create_terminal_mod(&source);
+        create_terminal_mod(&other);
+        let group = conflict_group(root);
+        let plan = plan_folder_conflict_renames(
+            root,
+            "game",
+            &group.group_id,
+            &[
+                FolderConflictRename {
+                    path: source.to_string_lossy().into_owned(),
+                    base_name: "Blue One".into(),
+                },
+                FolderConflictRename {
+                    path: other.to_string_lossy().into_owned(),
+                    base_name: "Blue Two".into(),
+                },
+            ],
+        )
+        .unwrap();
+        let late_target = root.join("Alice").join("Blue One");
+        create_terminal_mod(&late_target);
+
+        let error = apply_folder_conflict_rename_plan(&WatcherState::new().suppressor, &plan)
+            .expect_err("late destination must be preserved");
+        assert!(error.to_string().contains("not free"));
+        assert!(source.exists());
+        assert!(other.exists());
+        assert!(late_target.join("mod.ini").exists());
     }
 
     #[test]
@@ -576,30 +755,32 @@ mod tests {
     #[test]
     fn rollback_restores_every_renamed_folder() {
         let temp = tempfile::tempdir().unwrap();
-        let old_one = temp.path().join("Blue");
-        let old_two = temp.path().join("DISABLED Blue");
-        let new_one = temp.path().join("Blue One");
-        let new_two = temp.path().join("DISABLED Blue Two");
-        fs::create_dir_all(&old_one).unwrap();
-        fs::create_dir_all(&old_two).unwrap();
-        fs::rename(&old_one, &new_one).unwrap();
-        fs::rename(&old_two, &new_two).unwrap();
-        let watcher = WatcherState::new();
-
-        rollback_folder_conflict_renames(
-            &watcher.suppressor,
+        let old_one = temp.path().join("Alice").join("Blue");
+        let old_two = temp.path().join("Alice").join("DISABLED Blue");
+        let new_one = temp.path().join("Alice").join("Blue One");
+        let new_two = temp.path().join("Alice").join("DISABLED Blue Two");
+        create_terminal_mod(&old_one);
+        create_terminal_mod(&old_two);
+        let group = conflict_group(temp.path());
+        let plan = plan_folder_conflict_renames(
+            temp.path(),
+            "game",
+            &group.group_id,
             &[
-                FolderPathRename {
-                    old_path: old_one.to_string_lossy().to_string(),
-                    new_path: new_one.to_string_lossy().to_string(),
+                FolderConflictRename {
+                    path: old_one.to_string_lossy().into_owned(),
+                    base_name: "Blue One".into(),
                 },
-                FolderPathRename {
-                    old_path: old_two.to_string_lossy().to_string(),
-                    new_path: new_two.to_string_lossy().to_string(),
+                FolderConflictRename {
+                    path: old_two.to_string_lossy().into_owned(),
+                    base_name: "Blue Two".into(),
                 },
             ],
         )
         .unwrap();
+        let watcher = WatcherState::new();
+        apply_folder_conflict_rename_plan(&watcher.suppressor, &plan).unwrap();
+        rollback_folder_conflict_rename_plan(&watcher.suppressor, &plan).unwrap();
 
         assert!(old_one.is_dir());
         assert!(old_two.is_dir());

@@ -28,6 +28,75 @@ fn validate_snapshot_identities(
     Ok(())
 }
 
+fn validate_bulk_toggle_source_bindings(
+    config: &ConfigService,
+    game_id: &str,
+    selected: &[ValidatedPath],
+    expected_identities: Option<&[(String, String)]>,
+) -> Result<(), AppError> {
+    let requested = selected
+        .iter()
+        .map(|path| path.original().to_string())
+        .collect::<Vec<_>>();
+    let (current, stale) =
+        crate::platform::fs::guard::validate_mod_toggle_paths(config, game_id, &requested)?;
+    let changed = !stale.is_empty()
+        || current.len() != selected.len()
+        || current
+            .iter()
+            .zip(selected)
+            .any(|(current, selected)| current.as_ref() != selected.as_ref());
+    if changed {
+        return Err(if expected_identities.is_some() {
+            AppError::ExplorerSnapshotExpired
+        } else {
+            AppError::Io("Bulk toggle source changed while waiting for the mutation lease".into())
+        });
+    }
+    validate_snapshot_identities(expected_identities)
+}
+
+fn verify_bulk_toggle_disk_receipt(
+    steps: &[bulk::PreparedToggleStep],
+    applied_sequences: &[u32],
+) -> Result<(), AppError> {
+    let mut outstanding = applied_sequences.iter().copied().collect::<HashSet<_>>();
+    for step in steps {
+        if !outstanding.remove(&step.sequence) {
+            continue;
+        }
+        let actual = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&step.new_path);
+        if actual.as_deref() != Some(step.expected_identity.as_str()) {
+            return Err(AppError::Io(format!(
+                "Bulk toggle destination changed before disk commit: {}",
+                step.new_path.display()
+            )));
+        }
+        match std::fs::symlink_metadata(&step.old_path) {
+            Ok(_) => {
+                return Err(AppError::Io(format!(
+                    "Bulk toggle source reappeared before disk commit: {}",
+                    step.old_path.display()
+                )));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(AppError::Io(format!(
+                    "Could not inspect bulk toggle source {}: {error}",
+                    step.old_path.display()
+                )));
+            }
+        }
+    }
+    if outstanding.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Internal(format!(
+            "Bulk toggle execution reported unknown step sequences: {outstanding:?}"
+        )))
+    }
+}
+
 async fn acquire_snapshot_game_guard(
     disk_reconcile: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     game_id: &str,
@@ -788,7 +857,14 @@ async fn bulk_toggle_mods_chunk(
         );
         return Ok(result);
     }
-    if let Err(error) = prepared.validate_identities() {
+    if let Err(error) = validate_bulk_toggle_source_bindings(
+        &config,
+        &game_id,
+        &validated,
+        current_identities.as_deref(),
+    )
+    .and_then(|_| prepared.validate_identities())
+    {
         mutation_lease.begin_rollback()?;
         let settlements = planned_sequences
             .iter()
@@ -870,18 +946,30 @@ async fn bulk_toggle_mods_chunk(
         return Ok(result);
     }
 
-    let disk_revision = match mutation_lease.mark_disk_committed() {
+    let disk_revision = match verify_bulk_toggle_disk_receipt(
+        &planned_steps,
+        &execution.applied_sequences,
+    )
+    .and_then(|_| mutation_lease.mark_disk_committed())
+    {
         Ok(revision) => revision,
         Err(error) => {
+            if let Some(evidence) = &expected_echo_evidence {
+                state.suppressor.discard_expected_rename_echoes(evidence);
+            }
             let rollback_started = mutation_lease.begin_rollback();
             if let Err(rollback_error) =
                 bulk::rollback_prepared_bulk_toggle(&state, &prepared, &execution.applied_sequences)
             {
                 let message = format!(
-                    "Bulk disk commit record failed: {error}; filesystem rollback failed: {rollback_error}"
+                    "Bulk disk settlement failed: {error}; filesystem rollback failed: {rollback_error}"
                 );
                 disk_reconcile.invalidate_authority(&game_id, &mods_root);
-                let _ = mutation_lease.fail(message.clone());
+                if let Err(journal_error) = mutation_lease.fail(message.clone()) {
+                    return Err(AppError::Io(format!(
+                        "{message}; could not record failed operation: {journal_error}"
+                    )));
+                }
                 return Err(AppError::Io(message));
             }
             rollback_started?;
@@ -1635,6 +1723,75 @@ async fn bulk_pin_mods_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn bulk_toggle_source_binding_rejects_same_relative_path_in_other_root() {
+        use crate::modules::settings::application::config::GameConfig;
+
+        let pool = crate::test_utils::init_test_db().await.pool;
+        let temp = tempfile::tempdir().unwrap();
+        let first_root = temp.path().join("First");
+        let second_root = temp.path().join("Second");
+        std::fs::create_dir_all(first_root.join("DISABLED Blue")).unwrap();
+        std::fs::create_dir_all(second_root.join("DISABLED Blue")).unwrap();
+        let config = ConfigService::new_for_test_async(pool).await;
+        let mut settings = config.get_settings();
+        let first_game = GameConfig {
+            id: "game-1".into(),
+            name: "Test Game".into(),
+            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            instance_path: first_root.clone(),
+            mod_path: first_root.clone(),
+            ready_to_move_path: None,
+            launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+            game_exe: Some(first_root.join("game.exe")),
+            loader_exe: None,
+            xxmi_launcher_exe: None,
+            launch_args: None,
+            warnings: Vec::new(),
+        };
+        let mut second_game = first_game.clone();
+        second_game.id = "game-2".into();
+        second_game.instance_path = second_root.clone();
+        second_game.mod_path = second_root;
+        settings.games.extend([first_game, second_game]);
+        config.save_settings(settings).unwrap();
+        let (validated, failures) = crate::platform::fs::guard::validate_mod_toggle_paths(
+            &config,
+            "game-1",
+            &["DISABLED Blue".into()],
+        )
+        .unwrap();
+        assert!(failures.is_empty());
+
+        assert!(validate_bulk_toggle_source_bindings(&config, "game-2", &validated, None).is_err());
+        assert!(first_root.join("DISABLED Blue").exists());
+    }
+
+    #[test]
+    fn disk_receipt_rejects_replacement_target_and_recreated_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_path = temp.path().join("DISABLED Blue");
+        let new_path = temp.path().join("Blue");
+        let parked = temp.path().join("parked");
+        std::fs::create_dir(&old_path).unwrap();
+        let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&old_path).unwrap();
+        let steps = vec![bulk::PreparedToggleStep {
+            sequence: 0,
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity,
+        }];
+        std::fs::rename(&old_path, &new_path).unwrap();
+        assert!(verify_bulk_toggle_disk_receipt(&steps, &[0]).is_ok());
+        std::fs::create_dir(&old_path).unwrap();
+        assert!(verify_bulk_toggle_disk_receipt(&steps, &[0]).is_err());
+        std::fs::remove_dir(&old_path).unwrap();
+        std::fs::rename(&new_path, &parked).unwrap();
+        std::fs::create_dir(&new_path).unwrap();
+        assert!(verify_bulk_toggle_disk_receipt(&steps, &[0]).is_err());
+        assert!(parked.exists());
+    }
 
     #[test]
     fn superseded_bulk_items_are_unprocessed_without_claiming_storage_success() {

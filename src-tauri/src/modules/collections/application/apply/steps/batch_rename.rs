@@ -8,11 +8,19 @@ use crate::modules::mutation::application::workspace_mutation::engine::{
 };
 use crate::modules::mutation::journal::PlannedStep;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
+use crate::platform::fs::rename::rename_no_replace;
 use crate::shared::errors::{AppError, CollectionError};
 
 pub(crate) struct PreparedCollectionRenames {
     mod_plans: Vec<RuntimeRenamePlan>,
     object_plans: Vec<ToggleRenamePlan>,
+}
+
+struct AppliedRename {
+    sequence: u32,
+    old_path: std::path::PathBuf,
+    new_path: std::path::PathBuf,
+    expected_identity: String,
 }
 
 pub async fn prepare(ctx: &mut ApplyContext) -> Result<Vec<PlannedStep>, CollectionError> {
@@ -70,25 +78,30 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
         CollectionError::Validation("Collection renames were not prepared".to_string())
     })?;
     let planned_count = prepared.mod_plans.len() + prepared.object_plans.len();
-    let mut applied = Vec::<(u32, std::path::PathBuf, std::path::PathBuf)>::new();
+    let mut applied = Vec::<AppliedRename>::new();
     let mut changed_paths = Vec::with_capacity(planned_count * 2);
 
     for plan in &prepared.mod_plans {
         if let Err(error) = plan.apply() {
-            rollback_applied(ctx, planned_count, &applied);
+            let rollback = rollback_applied(ctx, planned_count, &applied);
             reconcile_after_mutation_failure(ctx, &[]).await;
-            return Err(CollectionError::Io(error.to_string()));
+            return Err(with_rollback_error(
+                CollectionError::Io(error.to_string()),
+                rollback,
+            ));
         }
         let sequence = applied.len() as u32;
-        applied.push((
+        applied.push(AppliedRename {
             sequence,
-            plan.old_path().to_path_buf(),
-            plan.new_path().to_path_buf(),
-        ));
+            old_path: plan.old_path().to_path_buf(),
+            new_path: plan.new_path().to_path_buf(),
+            expected_identity: plan.expected_identity().to_string(),
+        });
         if let Some(guard) = ctx.mutation_guard.as_ref() {
             if let Err(error) = guard.mark_step_applied(sequence) {
-                rollback_applied(ctx, planned_count, &applied);
-                return Err(object_toggle_error(error));
+                let rollback = rollback_applied(ctx, planned_count, &applied);
+                reconcile_after_mutation_failure(ctx, &[]).await;
+                return Err(with_rollback_error(object_toggle_error(error), rollback));
             }
         }
         changed_paths.extend([
@@ -110,20 +123,22 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
 
     for plan in prepared.object_plans {
         if let Err(error) = plan.apply("object folder") {
-            rollback_applied(ctx, planned_count, &applied);
+            let rollback = rollback_applied(ctx, planned_count, &applied);
             reconcile_after_mutation_failure(ctx, &[]).await;
-            return Err(object_toggle_error(error));
+            return Err(with_rollback_error(object_toggle_error(error), rollback));
         }
         let sequence = applied.len() as u32;
-        applied.push((
+        applied.push(AppliedRename {
             sequence,
-            plan.old_path().to_path_buf(),
-            plan.new_path().to_path_buf(),
-        ));
+            old_path: plan.old_path().to_path_buf(),
+            new_path: plan.new_path().to_path_buf(),
+            expected_identity: plan.expected_identity().to_string(),
+        });
         if let Some(guard) = ctx.mutation_guard.as_ref() {
             if let Err(error) = guard.mark_step_applied(sequence) {
-                rollback_applied(ctx, planned_count, &applied);
-                return Err(object_toggle_error(error));
+                let rollback = rollback_applied(ctx, planned_count, &applied);
+                reconcile_after_mutation_failure(ctx, &[]).await;
+                return Err(with_rollback_error(object_toggle_error(error), rollback));
             }
         }
         let original_path = plan.old_path().to_string_lossy().to_string();
@@ -168,19 +183,23 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
                 );
             }
             Ok(outcome) => {
-                rollback_applied(ctx, planned_count, &applied);
+                let rollback = rollback_applied(ctx, planned_count, &applied);
                 reconcile_after_mutation_failure(ctx, &[]).await;
-                return Err(CollectionError::Db(format!(
-                    "Post-rename disk reconcile did not apply: {:?}",
-                    outcome.status
-                )));
+                return Err(with_rollback_error(
+                    CollectionError::Db(format!(
+                        "Post-rename disk reconcile did not apply: {:?}",
+                        outcome.status
+                    )),
+                    rollback,
+                ));
             }
             Err(error) => {
-                rollback_applied(ctx, planned_count, &applied);
+                let rollback = rollback_applied(ctx, planned_count, &applied);
                 reconcile_after_mutation_failure(ctx, &[]).await;
-                return Err(CollectionError::Db(format!(
-                    "Post-rename disk reconcile failed: {error}"
-                )));
+                return Err(with_rollback_error(
+                    CollectionError::Db(format!("Post-rename disk reconcile failed: {error}")),
+                    rollback,
+                ));
             }
         }
     }
@@ -195,33 +214,77 @@ pub async fn rename(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
 fn rollback_applied(
     ctx: &mut ApplyContext,
     planned_count: usize,
-    applied: &[(u32, std::path::PathBuf, std::path::PathBuf)],
-) {
+    applied: &[AppliedRename],
+) -> Result<(), CollectionError> {
     if let Some(guard) = ctx.mutation_guard.as_ref() {
-        if guard.begin_rollback().is_err() {
-            return;
-        }
+        guard.begin_rollback().map_err(object_toggle_error)?;
     }
-    for (_, old_path, new_path) in applied.iter().rev() {
-        if std::fs::rename(new_path, old_path).is_err() {
-            return;
-        }
-    }
+    rollback_renamed_paths(applied)?;
     let Some(guard) = ctx.mutation_guard.as_ref() else {
-        return;
+        ctx.mutation_started = false;
+        ctx.runtime_path_rewrites.clear();
+        return Ok(());
     };
     for sequence in 0..planned_count as u32 {
-        if guard.mark_step_rolled_back(sequence).is_err() {
-            return;
-        }
+        guard
+            .mark_step_rolled_back(sequence)
+            .map_err(object_toggle_error)?;
     }
     if let Some(guard) = ctx.mutation_guard.take() {
-        if guard.finish_rollback().is_err() {
-            return;
-        }
+        guard.finish_rollback().map_err(object_toggle_error)?;
     }
     ctx.mutation_started = false;
     ctx.runtime_path_rewrites.clear();
+    Ok(())
+}
+
+fn rollback_renamed_paths(applied: &[AppliedRename]) -> Result<(), CollectionError> {
+    for rename in applied.iter().rev() {
+        let actual = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&rename.new_path);
+        if actual.as_deref() != Some(rename.expected_identity.as_str()) {
+            return Err(CollectionError::Io(format!(
+                "Rollback folder changed after rename (step {}): {}",
+                rename.sequence,
+                rename.new_path.display()
+            )));
+        }
+        match std::fs::symlink_metadata(&rename.old_path) {
+            Ok(_) => {
+                return Err(CollectionError::Io(format!(
+                    "Rollback destination is occupied (step {}): {}",
+                    rename.sequence,
+                    rename.old_path.display()
+                )));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(CollectionError::Io(format!(
+                    "Could not inspect rollback destination (step {}): {}: {error}",
+                    rename.sequence,
+                    rename.old_path.display()
+                )));
+            }
+        }
+        rename_no_replace(&rename.new_path, &rename.old_path).map_err(|error| {
+            CollectionError::Io(format!(
+                "Rollback rename failed (step {}): {} to {}: {error}",
+                rename.sequence,
+                rename.new_path.display(),
+                rename.old_path.display()
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+fn with_rollback_error(
+    original: CollectionError,
+    rollback: Result<(), CollectionError>,
+) -> CollectionError {
+    match rollback {
+        Ok(()) => original,
+        Err(error) => CollectionError::Io(format!("{original}; rollback failed: {error}")),
+    }
 }
 
 async fn load_object_plans(ctx: &ApplyContext) -> Result<Vec<ToggleRenamePlan>, CollectionError> {
@@ -379,4 +442,97 @@ fn normalized_enabled_key(path: &str, mods_path: Option<&str>) -> String {
         .collect::<Vec<_>>()
         .join("/");
     crate::shared::path_key::folder_path_key(&clean_path, mods_path).to_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{rollback_renamed_paths, AppliedRename};
+    use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity;
+
+    #[cfg(any(windows, target_os = "linux"))]
+    #[test]
+    fn atomic_rollback_rename_preserves_an_occupied_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&destination).unwrap();
+        let destination_identity = filesystem_identity(&destination).unwrap();
+
+        super::rename_no_replace(&source, &destination)
+            .expect_err("destination must not be replaced");
+
+        assert!(source.is_dir());
+        assert_eq!(
+            filesystem_identity(&destination),
+            Some(destination_identity)
+        );
+    }
+
+    #[test]
+    fn rollback_rejects_replacement_renamed_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_path = temp.path().join("DISABLED Blue");
+        let new_path = temp.path().join("Blue");
+        let parked = temp.path().join("parked");
+        std::fs::create_dir(&old_path).unwrap();
+        let expected_identity = filesystem_identity(&old_path).unwrap();
+        std::fs::rename(&old_path, &new_path).unwrap();
+        std::fs::rename(&new_path, &parked).unwrap();
+        std::fs::create_dir(&new_path).unwrap();
+
+        let error = rollback_renamed_paths(&[AppliedRename {
+            sequence: 0,
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity,
+        }])
+        .expect_err("replacement must not be moved");
+        assert!(error.to_string().contains("changed"));
+        assert!(!old_path.exists());
+        assert!(new_path.exists());
+        assert!(parked.exists());
+    }
+
+    #[test]
+    fn rollback_rejects_occupied_original_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_path = temp.path().join("DISABLED Blue");
+        let new_path = temp.path().join("Blue");
+        std::fs::create_dir(&old_path).unwrap();
+        let expected_identity = filesystem_identity(&old_path).unwrap();
+        std::fs::rename(&old_path, &new_path).unwrap();
+        std::fs::create_dir(&old_path).unwrap();
+
+        let error = rollback_renamed_paths(&[AppliedRename {
+            sequence: 0,
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity,
+        }])
+        .expect_err("occupied original must not be replaced");
+        assert!(error.to_string().contains("occupied"));
+        assert!(old_path.exists());
+        assert!(new_path.exists());
+    }
+
+    #[test]
+    fn rollback_restores_matching_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_path = temp.path().join("DISABLED Blue");
+        let new_path = temp.path().join("Blue");
+        std::fs::create_dir(&old_path).unwrap();
+        let expected_identity = filesystem_identity(&old_path).unwrap();
+        std::fs::rename(&old_path, &new_path).unwrap();
+
+        rollback_renamed_paths(&[AppliedRename {
+            sequence: 0,
+            old_path: old_path.clone(),
+            new_path: new_path.clone(),
+            expected_identity: expected_identity.clone(),
+        }])
+        .unwrap();
+        assert_eq!(filesystem_identity(&old_path), Some(expected_identity));
+        assert!(!new_path.exists());
+    }
 }

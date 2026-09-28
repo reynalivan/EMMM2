@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
+import { useAppStore } from '@/app/store';
 import { gameGateway } from './gameGateway';
 
 export function useActiveGame() {
+  const activeGameId = useAppStore((state) => state.activeGameId);
   // ponytail: read the settings query directly rather than useSettings() — that
   // hook also builds 9 mutation objects this caller never touches, and it is
   // mounted from ~34 files.
@@ -15,7 +17,6 @@ export function useActiveGame() {
   });
 
   const games = settings?.games || [];
-  const activeGameId = settings?.active_game_id ?? null;
   const activeGame = games.find((g) => g.id === activeGameId) || null;
 
   return {

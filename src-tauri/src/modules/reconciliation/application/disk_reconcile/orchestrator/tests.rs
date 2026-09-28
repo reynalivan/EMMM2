@@ -39,6 +39,65 @@ fn applied_result(
 }
 
 #[test]
+fn activation_reuses_only_the_current_clean_authoritative_result() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_root).expect("create Mods root");
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, 7);
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state
+        .clean_authoritative_result("game-1", &mods_root, 7)
+        .is_none());
+
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 7, 0, &baseline, &[]));
+    let cached = state
+        .clean_authoritative_result("game-1", &mods_root, 7)
+        .expect("same-session takeover reuses baseline");
+    assert_eq!(cached.reconcile_revision, baseline.reconcile_revision);
+    assert_eq!(cached.scan_scope, DiskReconcileScanScope::None);
+
+    let mut newer_untrusted = applied_result("game-1");
+    state.record_result("game-1", &mut newer_untrusted);
+    assert!(state
+        .clean_authoritative_result("game-1", &mods_root, 7)
+        .is_none());
+
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 7, 0, &newer_untrusted, &[]));
+    state.observe_authority_event(
+        "game-1",
+        7,
+        &mods_root,
+        &[mods_root.join("external.ini")],
+        false,
+    );
+    assert!(state
+        .clean_authoritative_result("game-1", &mods_root, 7)
+        .is_none());
+}
+
+#[test]
+fn older_prewarm_result_cannot_regress_adopted_watcher_authority() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_root = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_root).expect("mods root");
+    let state = DiskReconcileState::new();
+    state.begin_authority_session("game-1", &mods_root, 7);
+    let mut prewarm = applied_result("game-1");
+    state.record_result("game-1", &mut prewarm);
+    let mut activation = applied_result("game-1");
+    state.record_result("game-1", &mut activation);
+    assert!(state.mark_authority_reconciled("game-1", &mods_root, 7, 0, &activation, &[]));
+
+    assert!(!state.mark_authority_reconciled("game-1", &mods_root, 7, 0, &prewarm, &[]));
+    let accepted = state
+        .clean_authoritative_result("game-1", &mods_root, 7)
+        .expect("newer activation proof remains current");
+    assert_eq!(accepted.reconcile_revision, activation.reconcile_revision);
+}
+
+#[test]
 fn authority_token_uses_clean_scoped_and_full_catch_up_without_acknowledging_newer_events() {
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_root = temp.path().join("Mods");
@@ -61,17 +120,16 @@ fn authority_token_uses_clean_scoped_and_full_catch_up_without_acknowledging_new
             ..
         }
     ));
-    assert!(state.handoff_authority_session("game-1", &mods_root, 7, 9));
-    state.begin_authority_session("game-1", &mods_root, 8);
+    state.begin_authority_session("game-1", &mods_root, 6);
     assert!(matches!(
-        state.authority_catch_up("game-1", &mods_root, 9),
+        state.authority_catch_up("game-1", &mods_root, 7),
         AuthorityCatchUp::Clean { .. }
     ));
 
     let alice_ini = mods_root.join("Alice").join("mod.ini");
-    state.observe_authority_event("game-1", 9, &mods_root, &[alice_ini], false);
+    state.observe_authority_event("game-1", 7, &mods_root, &[alice_ini], false);
     assert!(!state.trusted_regional_mutation_allowed("game-1", &mods_root));
-    let observed_generation = match state.authority_catch_up("game-1", &mods_root, 9) {
+    let observed_generation = match state.authority_catch_up("game-1", &mods_root, 7) {
         AuthorityCatchUp::Scoped {
             changed_paths,
             observed_generation,
@@ -87,7 +145,7 @@ fn authority_token_uses_clean_scoped_and_full_catch_up_without_acknowledging_new
 
     state.observe_authority_event(
         "game-1",
-        9,
+        7,
         &mods_root,
         &[mods_root.join("Bob").join("mod.ini")],
         false,
@@ -98,7 +156,7 @@ fn authority_token_uses_clean_scoped_and_full_catch_up_without_acknowledging_new
     assert!(!state.mark_authority_reconciled(
         "game-1",
         &mods_root,
-        9,
+        7,
         observed_generation,
         &scoped,
         &[mods_root.join("Alice").to_string_lossy().into_owned()],
@@ -106,13 +164,13 @@ fn authority_token_uses_clean_scoped_and_full_catch_up_without_acknowledging_new
 
     state.observe_authority_event(
         "game-1",
-        9,
+        7,
         &mods_root,
         &[temp.path().join("d3dx.ini")],
         false,
     );
     assert!(matches!(
-        state.authority_catch_up("game-1", &mods_root, 9),
+        state.authority_catch_up("game-1", &mods_root, 7),
         AuthorityCatchUp::Full { .. }
     ));
 }
@@ -519,7 +577,7 @@ async fn reconcile_disk_state_reports_source_unavailable_for_missing_mods_path()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn internal_preflight_preserves_ready_authority_after_a_second_reconcile() {
+async fn authority_reconcile_preserves_readiness_and_repairs_focus_after_dropped_events() {
     let ctx = init_test_db().await;
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_path = temp.path().join("Mods");
@@ -623,7 +681,7 @@ async fn internal_preflight_preserves_ready_authority_after_a_second_reconcile()
         },
         DiskReconcileRequest::manual(
             "game-1".to_string(),
-            DiskReconcileReason::InternalMutation,
+            DiskReconcileReason::WindowRefocused,
             vec![changed_path.to_string_lossy().into_owned()],
             false,
         ),
@@ -632,6 +690,7 @@ async fn internal_preflight_preserves_ready_authority_after_a_second_reconcile()
     )
     .await
     .expect("dirty watcher catch-up");
+    assert_eq!(repaired.reason, DiskReconcileReason::WindowRefocused);
     assert_eq!(repaired.scan_scope, DiskReconcileScanScope::Full);
     assert!(!watcher.suppressor.has_unrepaired_drops());
     state
@@ -730,7 +789,6 @@ async fn reconcile_disk_state_applies_new_disk_folders_end_to_end() {
         "[TextureOverrideAlice]\nhash = abc\n",
     )
     .expect("ini");
-    std::fs::write(terminal.join("mesh.buf"), "mesh").expect("asset");
     seed_game_row(&ctx.pool, "game-1", &mods_path).await;
     let config = ConfigService::new_for_test(ctx.pool.clone());
     let state = DiskReconcileState::new();
@@ -747,9 +805,9 @@ async fn reconcile_disk_state_applies_new_disk_folders_end_to_end() {
         },
         DiskReconcileRequest::manual(
             "game-1".to_string(),
-            DiskReconcileReason::ManualRepair,
+            DiskReconcileReason::OnboardingCompleted,
             Vec::new(),
-            false,
+            true,
         ),
     )
     .await
@@ -774,6 +832,143 @@ async fn reconcile_disk_state_applies_new_disk_folders_end_to_end() {
         .expect("mod count");
     assert_eq!(object_count, 1);
     assert_eq!(mod_count, 1);
+
+    let persisted_key: String =
+        sqlx::query_scalar("SELECT folder_path_key FROM mods WHERE game_id = ?")
+            .bind("game-1")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("persisted mod key");
+    assert_eq!(
+        persisted_key,
+        crate::shared::path_key::folder_path_key(
+            "Alice/Blue Dress",
+            Some(&mods_path.to_string_lossy())
+        )
+    );
+
+    let repeat = reconcile_disk_state(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: Arc::new(WatcherSuppressor::new(false)),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::ManualRepair,
+            Vec::new(),
+            true,
+        ),
+    )
+    .await
+    .expect("unchanged full reconcile should succeed");
+    assert!(!repeat.objects_changed);
+    assert!(!repeat.folders_changed);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[ignore = "manual isolated 100/1k/10k-folder end-to-end reconcile benchmark"]
+async fn benchmark_onboarding_reconcile_fixtures() {
+    struct TimingLogger;
+    impl log::Log for TimingLogger {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.level() <= log::Level::Info
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            if self.enabled(record.metadata())
+                && record
+                    .args()
+                    .to_string()
+                    .starts_with("disk reconcile timing")
+            {
+                eprintln!("{}", record.args());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+    static TIMING_LOGGER: TimingLogger = TimingLogger;
+    if log::set_logger(&TIMING_LOGGER).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
+    }
+
+    for total_mods in [100_usize, 1_000, 10_000] {
+        let ctx = init_test_db().await;
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mods_path = temp.path().join("Mods");
+        for mod_index in 0..total_mods {
+            let terminal = mods_path
+                .join(format!("Object {:03}", mod_index / 100))
+                .join(format!("Mod {:03}", mod_index % 100));
+            std::fs::create_dir_all(&terminal).expect("mod folder");
+            std::fs::write(
+                terminal.join("mod.ini"),
+                "[TextureOverrideBenchmark]\nhash = abc\n",
+            )
+            .expect("ini");
+        }
+        seed_game_row(&ctx.pool, "game-1", &mods_path).await;
+        let config = ConfigService::new_for_test(ctx.pool.clone());
+        let state = DiskReconcileState::new();
+        let operation_lock = OperationLock::new();
+        let suppressor = Arc::new(WatcherSuppressor::new(false));
+        let context = DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: suppressor,
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        };
+        let started = std::time::Instant::now();
+        let result = reconcile_disk_state(
+            context.clone(),
+            DiskReconcileRequest::manual(
+                "game-1".to_string(),
+                DiskReconcileReason::OnboardingCompleted,
+                Vec::new(),
+                true,
+            )
+            .defer_overlay_sync(),
+        )
+        .await
+        .expect("first reconcile");
+        let first_elapsed = started.elapsed();
+        assert!(result.status.applied());
+        let mod_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
+            .bind("game-1")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("mod count");
+        assert_eq!(mod_count, total_mods as i64);
+
+        let started = std::time::Instant::now();
+        let repeat = reconcile_disk_state(
+            context,
+            DiskReconcileRequest::manual(
+                "game-1".to_string(),
+                DiskReconcileReason::ManualRepair,
+                Vec::new(),
+                true,
+            )
+            .defer_overlay_sync(),
+        )
+        .await
+        .expect("repeat reconcile");
+        assert!(repeat.status.applied());
+        assert!(!repeat.folders_changed);
+        assert!(!repeat.objects_changed);
+        eprintln!(
+            "onboarding_reconcile_{total_mods}: first={first_elapsed:?} repeat_full={:?} repeat_folders_changed={} repeat_objects_changed={}",
+            started.elapsed(),
+            repeat.folders_changed,
+            repeat.objects_changed,
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

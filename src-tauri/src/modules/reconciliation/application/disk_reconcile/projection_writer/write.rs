@@ -191,6 +191,7 @@ async fn prepare_identity_transitions(
     let after_objects = after_object_changes.as_ref().unwrap_or(initial);
     let mod_identities = disk_mod_identities(projection);
     let mut mod_sources = Vec::new();
+    let mods_root = mods_path.to_string_lossy();
     for disk_mod in &projection.mods {
         let Some(identity) = disk_mod.filesystem_identity.as_deref() else {
             continue;
@@ -202,7 +203,9 @@ async fn prepare_identity_transitions(
             game_id,
             &disk_mod.folder_path_key,
         );
-        if source.id == final_id && source.folder_path_key == disk_mod.folder_path_key {
+        let persisted_path_key =
+            crate::shared::path_key::folder_path_key(&disk_mod.folder_path, Some(&mods_root));
+        if source.id == final_id && source.folder_path_key == persisted_path_key {
             continue;
         }
         if let Some(occupant) = after_objects

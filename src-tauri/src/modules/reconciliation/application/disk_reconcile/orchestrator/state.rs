@@ -10,7 +10,7 @@ use std::sync::{Arc, LazyLock};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
 use crate::modules::reconciliation::application::disk_reconcile::types::{
-    DiskReconcileResult, PendingRuntimeEffects,
+    DiskReconcileResult, DiskReconcileScanScope, PendingRuntimeEffects,
 };
 
 #[derive(Debug, Default, Clone)]
@@ -470,6 +470,10 @@ impl DiskReconcileState {
             .clone()
     }
 
+    pub(crate) fn try_game_guard(&self, game_id: &str) -> Option<OwnedMutexGuard<()>> {
+        self.lock_for_game(game_id).try_lock_owned().ok()
+    }
+
     pub(crate) fn stage_runtime_effects(
         &self,
         game_id: &str,
@@ -583,6 +587,10 @@ impl DiskReconcileState {
         self.activation_lock.lock().await
     }
 
+    pub(crate) fn try_activation_guard(&self) -> Option<tokio::sync::MutexGuard<'_, ()>> {
+        self.activation_lock.try_lock().ok()
+    }
+
     pub fn reserve_activation_intent(&self) -> u64 {
         self.activation_intent.fetch_add(1, Ordering::AcqRel) + 1
     }
@@ -678,8 +686,8 @@ impl DiskReconcileState {
         };
     }
 
-    /// Transfers authority only when the old and new watchers were alive at
-    /// the same time and the caller supplies the exact covered session.
+    /// Moves the existing observation to an overlapping watcher without
+    /// acknowledging any events or changing its reconcile revision.
     pub(crate) fn handoff_authority_session(
         &self,
         game_id: &str,
@@ -789,6 +797,10 @@ impl DiskReconcileState {
         let mut authority = lock(&self.authority);
         let state = authority.entry(game_id.to_string()).or_default();
         if watcher_session < state.watcher_session {
+            if state.root_key == root_key {
+                state.event_generation = state.event_generation.saturating_add(1);
+                state.dropped_events = true;
+            }
             return;
         }
         if watcher_session > state.watcher_session || state.root_key != root_key {
@@ -814,6 +826,23 @@ impl DiskReconcileState {
                 // Importer/settings changes sit outside Mods and can alter the
                 // effective runtime roots. A root-only event is equally
                 // ambiguous because it may summarize unknown descendant work.
+                state.dropped_events = true;
+            }
+        }
+    }
+
+    pub(crate) fn end_authority_session(
+        &self,
+        game_id: &str,
+        watcher_session: u64,
+        mods_root: &Path,
+    ) {
+        let mut authority = lock(&self.authority);
+        if let Some(state) = authority.get_mut(game_id) {
+            if state.watcher_session == watcher_session
+                && state.root_key == authority_root_key(mods_root)
+            {
+                state.event_generation = state.event_generation.saturating_add(1);
                 state.dropped_events = true;
             }
         }
@@ -884,6 +913,14 @@ impl DiskReconcileState {
         changed_paths: &[String],
     ) -> bool {
         let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(mods_root);
+        let games = lock(&self.games);
+        if games
+            .get(game_id)
+            .and_then(|game| game.last_result.as_ref())
+            .is_none_or(|latest| latest.reconcile_revision != result.reconcile_revision)
+        {
+            return false;
+        }
         let mut authority = lock(&self.authority);
         let Some(state) = authority.get_mut(game_id) else {
             return false;
@@ -894,6 +931,7 @@ impl DiskReconcileState {
             || root_identity.is_none()
             || state.root_identity != root_identity
             || !result.status.applied()
+            || result.reconcile_revision < state.reconcile_revision
         {
             return false;
         }
@@ -921,6 +959,37 @@ impl DiskReconcileState {
         lock(&self.games)
             .get(game_id)
             .and_then(|state| state.last_result.clone())
+    }
+
+    pub(crate) fn clean_authoritative_result(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        watcher_session: u64,
+    ) -> Option<DiskReconcileResult> {
+        let (reconcile_revision, observed_generation) =
+            match self.authority_catch_up(game_id, mods_root, watcher_session) {
+                AuthorityCatchUp::Clean {
+                    reconcile_revision,
+                    observed_generation,
+                } => (reconcile_revision, observed_generation),
+                AuthorityCatchUp::Scoped { .. } | AuthorityCatchUp::Full { .. } => return None,
+            };
+        let mut result = self.authoritative_result(game_id)?;
+        if !result.status.applied() || result.reconcile_revision != reconcile_revision {
+            return None;
+        }
+        if !matches!(
+            self.authority_catch_up(game_id, mods_root, watcher_session),
+            AuthorityCatchUp::Clean {
+                reconcile_revision: current_revision,
+                observed_generation: current_generation,
+            } if current_revision == reconcile_revision && current_generation == observed_generation
+        ) {
+            return None;
+        }
+        result.scan_scope = DiskReconcileScanScope::None;
+        Some(result)
     }
 
     fn initial_recovery_gate(&self, game_id: &str) -> Arc<InitialRecoveryGate> {
@@ -1121,7 +1190,7 @@ impl DiskReconcileState {
         }
     }
 
-    pub(super) fn record_result(&self, game_id: &str, result: &mut DiskReconcileResult) {
+    pub(crate) fn record_result(&self, game_id: &str, result: &mut DiskReconcileResult) {
         {
             let mut games = lock(&self.games);
             let state = games.entry(game_id.to_string()).or_default();
@@ -1155,8 +1224,8 @@ impl DiskReconcileState {
 #[cfg(test)]
 mod initial_recovery_tests {
     use super::{
-        DiskReconcileState, GameAuthorityState, InitialRecoveryClaim, InitialRecoveryOutcome,
-        InitialRecoveryReadiness,
+        AuthorityCatchUp, DiskReconcileState, GameAuthorityState, InitialRecoveryClaim,
+        InitialRecoveryOutcome, InitialRecoveryReadiness,
     };
     use crate::modules::reconciliation::application::disk_reconcile::types::{
         DiskReconcileReason, DiskReconcileResult, DiskReconcileScanScope, DiskReconcileStatus,
@@ -1473,6 +1542,55 @@ mod initial_recovery_tests {
             state.initial_recovery_readiness("game"),
             InitialRecoveryReadiness::Ready { generation }
         );
+    }
+
+    #[test]
+    fn overlapping_watcher_handoff_keeps_clean_and_dirty_evidence() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods root");
+        let state = DiskReconcileState::new();
+        let old_session = 1;
+        let new_session = 2;
+        state.begin_authority_session("game", &root, old_session);
+        let mut result = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut result);
+        assert!(state.mark_authority_reconciled("game", &root, old_session, 0, &result, &[],));
+
+        assert!(state.handoff_authority_session("game", &root, old_session, new_session));
+        assert!(matches!(
+            state.authority_catch_up("game", &root, new_session),
+            AuthorityCatchUp::Clean { reconcile_revision, .. }
+                if reconcile_revision == result.reconcile_revision
+        ));
+        state.end_authority_session("game", old_session, &root);
+        assert!(matches!(
+            state.authority_catch_up("game", &root, new_session),
+            AuthorityCatchUp::Clean { .. }
+        ));
+        let latest_session = new_session + 1;
+        assert!(state.handoff_authority_session("game", &root, new_session, latest_session));
+        state.end_authority_session("game", new_session, &root);
+        assert!(matches!(
+            state.authority_catch_up("game", &root, latest_session),
+            AuthorityCatchUp::Clean { .. }
+        ));
+        let changed = root.join("Changed");
+        state.observe_authority_event("game", latest_session, &root, &[changed], false);
+        assert!(matches!(
+            state.authority_catch_up("game", &root, latest_session),
+            AuthorityCatchUp::Scoped { .. }
+        ));
+        state.observe_authority_event("game", old_session, &root, &[root.join("Late")], false);
+        assert!(matches!(
+            state.authority_catch_up("game", &root, latest_session),
+            AuthorityCatchUp::Full { .. }
+        ));
+        assert!(!state.handoff_authority_session("game", &root, old_session, latest_session + 1));
+        assert!(matches!(
+            state.authority_catch_up("game", &root, latest_session),
+            AuthorityCatchUp::Full { .. }
+        ));
     }
 
     #[tokio::test]

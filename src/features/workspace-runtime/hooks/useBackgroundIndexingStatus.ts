@@ -148,12 +148,6 @@ export function useBackgroundIndexingStatus(): BackgroundIndexingStatusState {
 
   const snapshotProgressByGame = useMemo(() => {
     const progress = new Map<string, OnboardingIndexingSnapshotProgress>();
-    const gamesWithSession = new Set(gamesById.keys());
-    for (const snapshot of snapshotProgressBySession.values()) {
-      if (!gamesWithSession.has(snapshot.game_id)) {
-        progress.set(snapshot.game_id, snapshot);
-      }
-    }
     for (const session of sessions) {
       for (const game of session.games) {
         const snapshot = snapshotProgressBySession.get(
@@ -167,7 +161,7 @@ export function useBackgroundIndexingStatus(): BackgroundIndexingStatusState {
       }
     }
     return progress;
-  }, [gamesById, sessions, snapshotProgressBySession]);
+  }, [sessions, snapshotProgressBySession]);
 
   return { isLoaded, loadError, sessions, gamesById, snapshotProgressByGame, refresh };
 }

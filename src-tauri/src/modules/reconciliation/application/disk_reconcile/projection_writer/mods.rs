@@ -7,6 +7,7 @@ use crate::modules::reconciliation::application::disk_reconcile::types::DiskReco
 use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id_from_key;
 use crate::shared::errors::AppError;
 use crate::shared::safety_constants::{SAFETY_SOURCE_MANUAL, SAFETY_SOURCE_UNKNOWN};
+use std::collections::HashSet;
 
 use super::index::DbIndex;
 use super::keys::{is_runtime_prefix_transition, runtime_logical_path_key};
@@ -39,12 +40,24 @@ pub(super) async fn apply_disk_mods(
         identity_transitions,
     } = input;
 
+    let referenced_path_keys = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT cm.mod_path_key FROM collection_mods cm
+         JOIN collections c ON c.id = cm.collection_id WHERE c.game_id = ?",
+    )
+    .bind(game_id)
+    .fetch_all(&mut *conn)
+    .await?
+    .into_iter()
+    .flatten()
+    .collect::<HashSet<_>>();
+
     for disk_mod in &projection.mods {
+        let runtime_key = runtime_logical_path_key(&disk_mod.folder_path);
         let existing = index
             .mod_by_filesystem_identity(disk_mod.filesystem_identity.as_deref().unwrap_or_default())
             .or_else(|| index.mod_by_key(&disk_mod.folder_path_key))
             .or_else(|| index.mod_by_path_lower(&disk_mod.folder_path.to_ascii_lowercase()))
-            .or_else(|| index.mod_by_runtime_key(&runtime_logical_path_key(&disk_mod.folder_path)));
+            .or_else(|| index.mod_by_runtime_key(&runtime_key));
         let persisted = existing.map(|row| {
             identity_transitions
                 .original_mods
@@ -195,21 +208,27 @@ pub(super) async fn apply_disk_mods(
             state.change_summary.record_mod_added(&metadata.actual_name);
         }
 
-        crate::modules::collections::adapters::sqlite::rebind_mod_references(
-            &mut *conn,
-            game_id,
-            &disk_mod.folder_path_key,
-            &runtime_logical_path_key(&disk_mod.folder_path),
-            &new_id,
-            object_id,
-        )
-        .await?;
-        crate::modules::library::adapters::sqlite::mods::set_filesystem_identity_tx(
-            &mut *conn,
-            &new_id,
-            disk_mod.filesystem_identity.as_deref(),
-        )
-        .await?;
+        if referenced_path_keys.contains(&disk_mod.folder_path_key)
+            || referenced_path_keys.contains(&runtime_key)
+        {
+            crate::modules::collections::adapters::sqlite::rebind_mod_references(
+                &mut *conn,
+                game_id,
+                &disk_mod.folder_path_key,
+                &runtime_key,
+                &new_id,
+                object_id,
+            )
+            .await?;
+        }
+        if existing.is_none_or(|row| row.filesystem_identity != disk_mod.filesystem_identity) {
+            crate::modules::library::adapters::sqlite::mods::set_filesystem_identity_tx(
+                &mut *conn,
+                &new_id,
+                disk_mod.filesystem_identity.as_deref(),
+            )
+            .await?;
+        }
 
         state.seen_mod_keys.insert(disk_mod.folder_path_key.clone());
     }

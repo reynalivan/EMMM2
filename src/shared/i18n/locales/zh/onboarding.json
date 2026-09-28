@@ -62,6 +62,7 @@
     "subtitle": "正在 XXMI 子文件夹中查找 3DMigoto 实例"
   },
   "indexing": {
+    "activating_title": "正在准备您的工作区",
     "phase_progress": "当前阶段",
     "preparation_progress": "准备进度",
     "folders_complete": "{{completed}} / {{total}} 个文件夹",
@@ -70,7 +71,7 @@
     "elapsed": "已用时 {{duration}}",
     "waiting_for_stage": "正在启动下一阶段...",
     "preparation": {
-        "metadata": "正在检查文件夹结构",
+      "metadata": "正在检查文件夹结构",
       "classifying": "正在分类模组文件夹",
       "rechecking": "资料库已变更，正在重新检查..."
     },
@@ -79,6 +80,7 @@
     "overall_progress": "总体进度",
     "game_progress": "游戏 {{current}} / {{total}} · {{game}}",
     "activity": {
+      "activating_first_game": "正在检查游戏是否就绪...",
       "discovering": "正在准备扫描计划 · 第 {{step}} / {{total}} 步",
       "scanning": "正在扫描模组文件夹 [{{folder}}] · 第 {{step}} / {{total}} 步",
       "scanning_without_folder": "正在扫描模组文件夹 · 第 {{step}} / {{total}} 步",

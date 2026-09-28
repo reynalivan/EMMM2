@@ -232,14 +232,21 @@ async fn reconcile_startup_game(
     };
     let watcher_session = match watcher_session {
         Some(session) => session,
-        None => crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+        None => crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
             app,
             watcher_state,
             game_id,
             &game.mod_path,
             Some(&runtime_config_path),
+            &activation_guard,
+            if background {
+                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly
+            } else {
+                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::StartupSelected
+            },
         )
-        .map_err(crate::shared::errors::AppError::from)?,
+        .map_err(crate::shared::errors::AppError::from)?
+        .ok_or(crate::shared::errors::AppError::Cancelled)?,
     };
     let observed_generation = disk_reconcile_state
         .authority_event_generation(game_id, watcher_session)

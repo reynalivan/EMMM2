@@ -3,6 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useActiveGame } from '@/entities/game';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
+const { state } = vi.hoisted(() => ({
+  state: { activeGameId: null as string | null },
+}));
+
+vi.mock('@/app/store', () => ({
+  useAppStore: (selector: (value: typeof state) => unknown) => selector(state),
+}));
+
 vi.mock('@tanstack/react-query', () => ({
   useQuery: vi.fn(),
 }));
@@ -18,6 +26,7 @@ function mockSettingsQuery(result: { data?: unknown; isLoading?: boolean; error?
 describe('useActiveGame', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    state.activeGameId = null;
   });
 
   it('should return null activeGame when there is no activeGameId', () => {
@@ -30,10 +39,11 @@ describe('useActiveGame', () => {
     expect(result.current.isLoading).toBe(false);
   });
 
-  it('should return the correct active game when found in settings', () => {
+  it('returns the store active game when settings still points to another game', () => {
+    state.activeGameId = 'game-2';
     mockSettingsQuery({
       data: {
-        active_game_id: 'game-2',
+        active_game_id: 'game-1',
         games: [
           { id: 'game-1', name: 'Game 1' },
           { id: 'game-2', name: 'Game 2' },
@@ -48,6 +58,7 @@ describe('useActiveGame', () => {
   });
 
   it('should return null if activeGameId is set but game not found in settings', () => {
+    state.activeGameId = 'game-3';
     mockSettingsQuery({
       data: {
         active_game_id: 'game-3',
@@ -55,6 +66,19 @@ describe('useActiveGame', () => {
           { id: 'game-1', name: 'Game 1' },
           { id: 'game-2', name: 'Game 2' },
         ],
+      },
+    });
+
+    const { result } = renderHook(() => useActiveGame());
+
+    expect(result.current.activeGame).toBeNull();
+  });
+
+  it('does not use a cached active game after the store clears selection', () => {
+    mockSettingsQuery({
+      data: {
+        active_game_id: 'game-1',
+        games: [{ id: 'game-1', name: 'Game 1' }],
       },
     });
 

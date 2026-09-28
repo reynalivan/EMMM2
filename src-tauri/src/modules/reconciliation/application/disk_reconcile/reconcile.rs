@@ -357,21 +357,23 @@ pub async fn reconcile_disk_projection(
                     .iter()
                     .map(|root| crate::shared::path_key::folder_path_key(root, Some(&mods_root)))
                     .collect::<Vec<_>>();
-                let known_mod_keys = if trusted_mutation_scope && requested_scoped {
-                    crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_roots(
+                let known_mod_paths = if trusted_mutation_scope && requested_scoped {
+                    crate::modules::library::adapters::sqlite::mods::get_folder_paths_for_roots(
                         pool,
                         game_id,
                         &mod_scope_root_keys,
                     )
                     .await?
                 } else {
-                    crate::modules::library::adapters::sqlite::mods::get_folder_path_keys_for_game(
+                    crate::modules::library::adapters::sqlite::mods::get_folder_paths_for_game(
                         pool, game_id,
                     )
                     .await?
-                }
-                .into_iter()
-                .collect();
+                };
+                let known_mod_keys = known_mod_paths
+                    .into_iter()
+                    .map(|path| crate::shared::path_key::folder_path_key(&path, None))
+                    .collect();
                 Some(DiskSizeScan::incremental(
                     mods_path,
                     known_mod_keys,

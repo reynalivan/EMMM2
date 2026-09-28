@@ -116,21 +116,21 @@ pub async fn get_rows_for_reconcile_scope(
     Ok(rows)
 }
 
-pub async fn get_folder_path_keys_for_roots(
+pub async fn get_folder_paths_for_roots(
     pool: &SqlitePool,
     game_id: &str,
     root_keys: &[String],
 ) -> Result<Vec<String>, sqlx::Error> {
     const ROOT_CHUNK_SIZE: usize = 250;
-    let mut keys = Vec::new();
+    let mut paths = Vec::new();
     for roots in root_keys.chunks(ROOT_CHUNK_SIZE) {
         let mut query =
-            QueryBuilder::<Sqlite>::new("SELECT folder_path_key FROM mods WHERE game_id = ");
+            QueryBuilder::<Sqlite>::new("SELECT folder_path FROM mods WHERE game_id = ");
         query.push_bind(game_id);
         push_root_key_predicate(&mut query, roots, "folder_path_key");
-        keys.extend(query.build_query_scalar::<String>().fetch_all(pool).await?);
+        paths.extend(query.build_query_scalar::<String>().fetch_all(pool).await?);
     }
-    Ok(keys)
+    Ok(paths)
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -389,18 +389,6 @@ pub async fn get_folder_paths_for_game(
     game_id: &str,
 ) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar("SELECT folder_path FROM mods WHERE game_id = ? ORDER BY folder_path_key")
-        .bind(game_id)
-        .fetch_all(pool)
-        .await
-}
-
-/// Canonical keys for the currently indexed terminal mods in one game.
-/// Used to limit storage metadata walks to newly discovered folders.
-pub async fn get_folder_path_keys_for_game(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT folder_path_key FROM mods WHERE game_id = ?")
         .bind(game_id)
         .fetch_all(pool)
         .await

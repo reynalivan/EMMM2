@@ -86,9 +86,11 @@ pub struct WatcherState {
 
 struct InactiveWatcher {
     root_key: String,
+    root_identity: Option<String>,
     runtime_config_key: Option<String>,
-    session_generation: u64,
-    _watcher: ModWatcher,
+    session: WatcherSession,
+    watcher: ModWatcher,
+    receiver: WatchEventReceiver,
 }
 
 impl WatcherState {
@@ -176,14 +178,18 @@ impl WatcherState {
         runtime_config_path: Option<&Path>,
     ) -> Option<u64> {
         let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
         let runtime_config_key =
             runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
         crate::shared::sync::lock(&self.inactive_watchers)
             .get(game_id)
             .filter(|watcher| {
-                watcher.root_key == root_key && watcher.runtime_config_key == runtime_config_key
+                root_identity.is_some()
+                    && watcher.root_key == root_key
+                    && watcher.root_identity == root_identity
+                    && watcher.runtime_config_key == runtime_config_key
             })
-            .map(|watcher| watcher.session_generation)
+            .map(|watcher| watcher.session.generation())
     }
 
     pub(crate) fn install_inactive_watcher(
@@ -191,17 +197,20 @@ impl WatcherState {
         game_id: String,
         root: &Path,
         runtime_config_path: Option<&Path>,
-        session_generation: u64,
+        session: WatcherSession,
         watcher: ModWatcher,
+        receiver: WatchEventReceiver,
     ) {
         crate::shared::sync::lock(&self.inactive_watchers).insert(
             game_id,
             InactiveWatcher {
                 root_key: crate::shared::path_key::canonical_path_key_for_path(root),
+                root_identity: crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root),
                 runtime_config_key: runtime_config_path
                     .map(crate::shared::path_key::canonical_path_key_for_path),
-                session_generation,
-                _watcher: watcher,
+                session,
+                watcher,
+                receiver,
             },
         );
     }
@@ -211,18 +220,22 @@ impl WatcherState {
         game_id: &str,
         root: &Path,
         runtime_config_path: Option<&Path>,
-    ) -> Option<(u64, ModWatcher)> {
+    ) -> Option<(WatcherSession, ModWatcher, WatchEventReceiver)> {
         let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
         let runtime_config_key =
             runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
         let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
         if watchers.get(game_id).is_none_or(|watcher| {
-            watcher.root_key != root_key || watcher.runtime_config_key != runtime_config_key
+            root_identity.is_none()
+                || watcher.root_key != root_key
+                || watcher.root_identity != root_identity
+                || watcher.runtime_config_key != runtime_config_key
         }) {
             return None;
         }
         let watcher = watchers.remove(game_id)?;
-        Some((watcher.session_generation, watcher._watcher))
+        Some((watcher.session, watcher.watcher, watcher.receiver))
     }
 
     pub(crate) fn discard_inactive_watcher_unless_coverage(
@@ -232,30 +245,20 @@ impl WatcherState {
         runtime_config_path: Option<&Path>,
     ) -> bool {
         let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
         let runtime_config_key =
             runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
         let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
         let mismatched = watchers.get(game_id).is_some_and(|watcher| {
-            watcher.root_key != root_key || watcher.runtime_config_key != runtime_config_key
+            root_identity.is_none()
+                || watcher.root_key != root_key
+                || watcher.root_identity != root_identity
+                || watcher.runtime_config_key != runtime_config_key
         });
         if mismatched {
             watchers.remove(game_id);
         }
         mismatched
-    }
-
-    pub(crate) fn remove_inactive_watcher_if_session(
-        &self,
-        game_id: &str,
-        session_generation: u64,
-    ) {
-        let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
-        if watchers
-            .get(game_id)
-            .is_some_and(|watcher| watcher.session_generation == session_generation)
-        {
-            watchers.remove(game_id);
-        }
     }
 }
 

@@ -225,6 +225,92 @@ describe('applyDiskReconcileResult', () => {
     });
   });
 
+  it('refetches active workspace data when a cached snapshot exposes a missed revision', async () => {
+    const state = useAppStore.getState();
+    state.diskReconcileByGame = {
+      'game-1': { at: 1, pending: false, unavailable: null, progress: null, revision: 3 },
+    };
+
+    applyDiskReconcileResult(
+      createResult({ reason: 'WindowRefocused', reconcile_revision: 5, scan_scope: 'None' }),
+      queryClient as unknown as import('@tanstack/react-query').QueryClient,
+      createActiveGame(),
+    );
+    await Promise.resolve();
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.workspaceViewModel,
+      refetchType: 'active',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: runtimeQueryKeys.collections,
+      refetchType: 'active',
+    });
+  });
+
+  it('invalidates an existing workspace cache when the first local revision jumps ahead', async () => {
+    const client = new QueryClient();
+    const key = workspaceKeys.explorerPages(null);
+    client.setQueryData(key, { stale: true });
+
+    applyDiskReconcileResult(
+      createResult({ reason: 'ModsViewEntered', reconcile_revision: 5, scan_scope: 'None' }),
+      client,
+      createActiveGame(),
+    );
+
+    await waitFor(() => expect(client.getQueryState(key)?.isInvalidated).toBe(true));
+  });
+
+  it('invalidates Dashboard and Collections caches without a workspace cache on first revision', async () => {
+    const client = new QueryClient();
+    client.setQueryData(runtimeQueryKeys.dashboard, { stale: true });
+    client.setQueryData(runtimeQueryKeys.collections, { stale: true });
+
+    applyDiskReconcileResult(
+      createResult({ reason: 'ModsViewEntered', reconcile_revision: 5, scan_scope: 'None' }),
+      client,
+      createActiveGame(),
+    );
+
+    await waitFor(() => {
+      expect(client.getQueryState(runtimeQueryKeys.dashboard)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(runtimeQueryKeys.collections)?.isInvalidated).toBe(true);
+    });
+  });
+
+  it('does not refresh active workspace data for another game snapshot', async () => {
+    const client = new QueryClient();
+    const key = workspaceKeys.explorerPages(null);
+    client.setQueryData(key, { stale: true });
+
+    applyDiskReconcileResult(
+      createResult({ reason: 'ModsViewEntered', reconcile_revision: 5, scan_scope: 'None' }),
+      client,
+      { ...createActiveGame(), id: 'game-2' },
+    );
+    await Promise.resolve();
+
+    expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+  });
+
+  it('keeps same-revision cached snapshots silent', async () => {
+    const state = useAppStore.getState();
+    state.diskReconcileByGame = {
+      'game-1': { at: 1, pending: false, unavailable: null, progress: null, revision: 5 },
+    };
+    vi.mocked(state.applyFolderConflictReconcileResult).mockReturnValueOnce(false);
+
+    applyDiskReconcileResult(
+      createResult({ reason: 'WindowRefocused', reconcile_revision: 5, scan_scope: 'None' }),
+      queryClient as unknown as import('@tanstack/react-query').QueryClient,
+      createActiveGame(),
+    );
+    await Promise.resolve();
+
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+
   it('invalidates only scoped Health reports related to changed disk paths', async () => {
     const client = new QueryClient();
     const aliceReport = modHealthKeys.report('game-1', 'E:/Mods/Alice/Blue');
@@ -734,7 +820,7 @@ describe('useDiskReconcileCoordinator', () => {
     state.gameActivationByGame = {};
   });
 
-  it('does not rescan a just-activated game when opening its mods view', async () => {
+  it('checks authority without pending UI when opening a ready game', async () => {
     const state = useAppStore.getState();
     state.gameActivationByGame = {
       'game-1': {
@@ -746,12 +832,101 @@ describe('useDiskReconcileCoordinator', () => {
         error: null,
       },
     };
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    reconcileDiskState.mockResolvedValueOnce(
+      createResult({ reason: 'ModsViewEntered', reconcile_revision: 4, scan_scope: 'None' }),
+    );
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(commands.reconcileDiskStateCmd).not.toHaveBeenCalled();
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+    expect(reconcileDiskState).toHaveBeenCalledWith('game-1', 'ModsViewEntered', null, false);
+    expect(state.markDiskReconcilePending).not.toHaveBeenCalled();
+  });
+
+  it('uses silent authority checks on focus even after the former TTL expires', async () => {
+    const state = useAppStore.getState();
+    state.gameActivationByGame = {
+      'game-1': {
+        game_id: 'game-1',
+        generation: 1,
+        phase: 'ready',
+        reconcile_revision: 4,
+        runtime_sync_generation: null,
+        error: null,
+      },
+    };
+    const eventHandlers: Record<string, MockEventHandler> = {};
+    (listen as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, callback: MockEventHandler) => {
+        eventHandlers[event] = callback;
+        return Promise.resolve(vi.fn());
+      },
+    );
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    reconcileDiskState
+      .mockResolvedValueOnce(
+        createResult({ reason: 'ModsViewEntered', reconcile_revision: 4, scan_scope: 'None' }),
+      )
+      .mockResolvedValueOnce(
+        createResult({ reason: 'WindowRefocused', reconcile_revision: 4, scan_scope: 'None' }),
+      );
+
+    renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(eventHandlers['tauri://focus']).toBeDefined());
+    now.mockReturnValue(10_000);
+    act(() => eventHandlers['tauri://focus']({ payload: null }));
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
+    expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WindowRefocused', null, false);
+    expect(state.markDiskReconcilePending).not.toHaveBeenCalled();
+    now.mockRestore();
+  });
+
+  it('refetches missed disk changes from an authoritative snapshot after remount', async () => {
+    const state = useAppStore.getState();
+    state.workspaceView = 'settings';
+    state.diskReconcileByGame = {
+      'game-1': { at: 1, pending: false, unavailable: null, progress: null, revision: 3 },
+    };
+    state.gameActivationByGame = {
+      'game-1': {
+        game_id: 'game-1',
+        generation: 1,
+        phase: 'ready',
+        reconcile_revision: 3,
+        runtime_sync_generation: null,
+        error: null,
+      },
+    };
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    const firstMount = renderHook(() =>
+      useDiskReconcileCoordinator(createActiveGame(), queryClient),
+    );
+    firstMount.unmount();
+
+    state.workspaceView = 'mods';
+    reconcileDiskState.mockResolvedValueOnce(
+      createResult({ reason: 'ModsViewEntered', reconcile_revision: 5, scan_scope: 'None' }),
+    );
+    renderHook(() => useDiskReconcileCoordinator(createActiveGame(), queryClient));
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: runtimeQueryKeys.workspaceViewModel,
+        refetchType: 'active',
+      }),
+    );
   });
 
   it('applies reconcile events buffered during startup after registering its listener', async () => {
@@ -810,7 +985,7 @@ describe('useDiskReconcileCoordinator', () => {
     });
   });
 
-  it('runs a queued focus refresh after the current reconcile completes', async () => {
+  it('turns queued focus into a silent check after the current reconcile makes the game clean', async () => {
     const eventHandlers: Record<string, MockEventHandler> = {};
     (listen as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (event: string, callback: MockEventHandler) => {
@@ -824,7 +999,7 @@ describe('useDiskReconcileCoordinator', () => {
     >;
     reconcileDiskState
       .mockReturnValueOnce(firstRefresh.promise)
-      .mockResolvedValueOnce(createResult({ reason: 'WindowRefocused' }));
+      .mockResolvedValueOnce(createResult({ reason: 'WindowRefocused', scan_scope: 'None' }));
 
     renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
 
@@ -843,6 +1018,117 @@ describe('useDiskReconcileCoordinator', () => {
 
     await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
     expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WindowRefocused', null, false);
+  });
+
+  it('repairs watcher overflow reported while a reconcile is in flight', async () => {
+    const eventHandlers: Record<string, MockEventHandler> = {};
+    (listen as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, callback: MockEventHandler) => {
+        eventHandlers[event] = callback;
+        return Promise.resolve(vi.fn());
+      },
+    );
+    const firstRefresh = createDeferred<DiskReconcileResult>();
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    reconcileDiskState
+      .mockReturnValueOnce(firstRefresh.promise)
+      .mockResolvedValueOnce(createResult({ reconcile_revision: 2, reason: 'WatcherBatch' }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      eventHandlers['mod_watch:event']({
+        payload: {
+          type: 'Error',
+          game_id: 'game-1',
+          path: 'E:/Mods/OverflowDuringScan',
+          error: 'overflow',
+        },
+      });
+    });
+
+    await act(async () => {
+      firstRefresh.resolve(createResult({ reason: 'ModsViewEntered' }));
+      await firstRefresh.promise;
+    });
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
+    expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WatcherBatch', null, true);
+    consoleError.mockRestore();
+  });
+
+  it('accepts a full repair event before its duplicate command response', async () => {
+    const eventHandlers: Record<string, MockEventHandler> = {};
+    (listen as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, callback: MockEventHandler) => {
+        eventHandlers[event] = callback;
+        return Promise.resolve(vi.fn());
+      },
+    );
+    const appliedRevisions = new Set<number>();
+    vi.mocked(useAppStore.getState().applyFolderConflictReconcileResult).mockImplementation(
+      (result) => {
+        if (appliedRevisions.has(result.reconcile_revision)) {
+          return false;
+        }
+        appliedRevisions.add(result.reconcile_revision);
+        useAppStore.getState().diskReconcileByGame[result.game_id] = {
+          at: 0,
+          pending: false,
+          unavailable: null,
+          progress: null,
+          revision: result.reconcile_revision,
+        };
+        return true;
+      },
+    );
+    const firstRefresh = createDeferred<DiskReconcileResult>();
+    const repairRefresh = createDeferred<DiskReconcileResult>();
+    const reconcileDiskState = commands.reconcileDiskStateCmd as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    reconcileDiskState
+      .mockReturnValueOnce(firstRefresh.promise)
+      .mockReturnValueOnce(repairRefresh.promise)
+      .mockResolvedValueOnce(
+        createResult({ reconcile_revision: 2, reason: 'WindowRefocused', scan_scope: 'None' }),
+      );
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      eventHandlers['mod_watch:event']({
+        payload: {
+          type: 'Error',
+          game_id: 'game-1',
+          path: 'E:/Mods/RepairEvent',
+          error: 'overflow',
+        },
+      });
+    });
+    await act(async () => {
+      firstRefresh.resolve(createResult({ reason: 'ModsViewEntered' }));
+      await firstRefresh.promise;
+    });
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
+
+    const repaired = createResult({ reconcile_revision: 2, reason: 'WatcherBatch' });
+    act(() => eventHandlers['disk_reconcile:result']({ payload: repaired }));
+    await act(async () => {
+      repairRefresh.resolve(repaired);
+      await repairRefresh.promise;
+    });
+    act(() => eventHandlers['tauri://focus']({ payload: null }));
+
+    await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(3));
+    expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WindowRefocused', null, false);
+    consoleError.mockRestore();
   });
 
   it('finishes A, skips queued B, then reconciles the latest C context', async () => {
@@ -866,7 +1152,7 @@ describe('useDiskReconcileCoordinator', () => {
 
     rerender({ game: gameB });
     rerender({ game: gameC });
-    expect(reconcileDiskState).toHaveBeenCalledTimes(1);
+    expect(reconcileDiskState.mock.calls.map(([gameId]) => gameId)).toEqual(['game-1']);
 
     await act(async () => {
       firstRefresh.resolve(createResult({ reason: 'ModsViewEntered' }));
@@ -904,6 +1190,7 @@ describe('useDiskReconcileCoordinator', () => {
 
     await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(2));
     expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'ModsViewEntered', null, true);
+    expect(useAppStore.getState().applyFolderConflictReconcileResult).toHaveBeenCalledTimes(1);
   });
 
   it('does not start a queued refresh after the coordinator unmounts', async () => {

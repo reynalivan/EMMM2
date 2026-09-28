@@ -763,6 +763,22 @@ impl OperationJournal {
         pending
     }
 
+    pub fn has_pending_disk_commit_for_game(&self, game_id: &str) -> bool {
+        self.state
+            .lock()
+            .expect("mutation journal lock poisoned")
+            .entries
+            .iter()
+            .any(|operation| {
+                operation.game_id == game_id
+                    && operation.disk_revision.is_some()
+                    && matches!(
+                        operation.status,
+                        OperationStatus::DiskCommitted | OperationStatus::DbCommitted
+                    )
+            })
+    }
+
     pub fn current_revision(&self) -> Result<u64, AppError> {
         Ok(self.lock_state()?.revision)
     }

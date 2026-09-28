@@ -88,6 +88,7 @@ export default function WelcomeScreen({
   const [view, setView] = useState<Screen>('welcome');
   const [isScanning, setIsScanning] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [isActivatingFirstGame, setIsActivatingFirstGame] = useState(false);
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
   const [snapshotProgress, setSnapshotProgress] =
     useState<OnboardingIndexingSnapshotProgress | null>(null);
@@ -287,6 +288,7 @@ export default function WelcomeScreen({
       indexingInFlightRef.current = false;
       indexingGameIdRef.current = null;
       indexingSessionRef.current = null;
+      setIsActivatingFirstGame(true);
       await onComplete(games, async () => {
         if (backgroundGames.length === 0) return;
         await commands.continueOnboardingIndexingInBackground(
@@ -299,12 +301,14 @@ export default function WelcomeScreen({
       // The first game must be usable before the dashboard can open.
       setError(formatAppError(err));
       setIsIndexing(false);
+      setIsActivatingFirstGame(false);
       setIndexingProgress(null);
     } finally {
       indexingInFlightRef.current = false;
       indexingGameIdRef.current = null;
       setSnapshotProgress(null);
       setIsRecheckingSnapshot(false);
+      setIsActivatingFirstGame(false);
       const activeSessionId = sessionId ?? indexingSessionRef.current;
       indexingSessionRef.current = null;
       if (activeSessionId && !handedOffToBackground) {
@@ -540,18 +544,26 @@ export default function WelcomeScreen({
     };
     const activeGame = detectedGames[0];
     const activeDiskProgress =
-      diskProgress?.current.game_id === activeGame?.id ? diskProgress : null;
+      !isActivatingFirstGame && diskProgress?.current.game_id === activeGame?.id
+        ? diskProgress
+        : null;
     const isPreparing =
-      snapshotProgress?.phase === 'Metadata' || snapshotProgress?.phase === 'Classifying';
-    const isRechecking = isRecheckingSnapshot || snapshotProgress?.phase === 'Rechecking';
+      !isActivatingFirstGame &&
+      (snapshotProgress?.phase === 'Metadata' || snapshotProgress?.phase === 'Classifying');
+    const isRechecking =
+      !isActivatingFirstGame && (isRecheckingSnapshot || snapshotProgress?.phase === 'Rechecking');
     const snapshotRootProgress = isPreparing ? snapshotProgress : null;
     const diskRootProgress = activeDiskProgress?.current;
-    const totalRoots = snapshotRootProgress
-      ? snapshotRootProgress.total_roots
-      : (diskRootProgress?.total_units ?? 0);
-    const completedRoots = snapshotRootProgress
-      ? snapshotRootProgress.completed_roots
-      : (diskRootProgress?.completed_units ?? 0);
+    const totalRoots = isActivatingFirstGame
+      ? 0
+      : snapshotRootProgress
+        ? snapshotRootProgress.total_roots
+        : (diskRootProgress?.total_units ?? 0);
+    const completedRoots = isActivatingFirstGame
+      ? 0
+      : snapshotRootProgress
+        ? snapshotRootProgress.completed_roots
+        : (diskRootProgress?.completed_units ?? 0);
     const hasDeterminateProgress = totalRoots > 0;
     const progressPercent = hasDeterminateProgress
       ? Math.round((completedRoots / totalRoots) * 100)
@@ -561,17 +573,19 @@ export default function WelcomeScreen({
       snapshotRootProgress?.current_root ?? diskRootProgress?.current_root,
     );
     const activityKey = activityTranslationKey(activeDiskProgress?.current.phase, activeRoot);
-    const activityText = isPreparing
-      ? t(
-          `onboarding:indexing.preparation.${snapshotProgress?.phase === 'Metadata' ? 'metadata' : 'classifying'}`,
-        )
-      : isRechecking
-        ? t('onboarding:indexing.preparation.rechecking')
-        : t(`onboarding:indexing.activity.${activityKey}`, {
-            folder: activeRoot,
-            step: reconcileStep(activeDiskProgress?.current.phase),
-            total: RECONCILE_PHASE_COUNT,
-          });
+    const activityText = isActivatingFirstGame
+      ? t('onboarding:indexing.activity.activating_first_game')
+      : isPreparing
+        ? t(
+            `onboarding:indexing.preparation.${snapshotProgress?.phase === 'Metadata' ? 'metadata' : 'classifying'}`,
+          )
+        : isRechecking
+          ? t('onboarding:indexing.preparation.rechecking')
+          : t(`onboarding:indexing.activity.${activityKey}`, {
+              folder: activeRoot,
+              step: reconcileStep(activeDiskProgress?.current.phase),
+              total: RECONCILE_PHASE_COUNT,
+            });
     const progressLabel = isPreparing
       ? t('onboarding:indexing.preparation_progress')
       : t('onboarding:indexing.phase_progress');
@@ -587,7 +601,11 @@ export default function WelcomeScreen({
               </div>
             </div>
             <h2 className="text-2xl font-bold text-base-content">
-              {t('onboarding:indexing.title')}
+              {t(
+                isActivatingFirstGame
+                  ? 'onboarding:indexing.activating_title'
+                  : 'onboarding:indexing.title',
+              )}
             </h2>
           </div>
 
@@ -658,7 +676,7 @@ export default function WelcomeScreen({
                   </p>
                 </div>
               )}
-              {!hasDeterminateProgress && (
+              {!hasDeterminateProgress && !isActivatingFirstGame && (
                 <p className="text-xs text-base-content/65">
                   {t('onboarding:indexing.waiting_for_stage')}
                 </p>

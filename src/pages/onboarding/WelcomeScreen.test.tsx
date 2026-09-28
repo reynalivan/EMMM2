@@ -221,6 +221,9 @@ describe('WelcomeScreen (TC-03)', () => {
     fireEvent.click(screen.getByText('Result Continue'));
 
     await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());
+    expect(screen.getByRole('heading', { name: 'Preparing your workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Checking game readiness...')).toBeInTheDocument();
+    expect(screen.queryByText(/Finishing indexing/)).not.toBeInTheDocument();
     expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).not.toContain(
       'continue_onboarding_indexing_in_background',
     );

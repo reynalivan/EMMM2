@@ -63,6 +63,7 @@
   },
   "indexing": {
     "title": "Mengindeks library Anda",
+    "activating_title": "Menyiapkan workspace Anda",
     "subtitle": "Harap tunggu sementara EMMM memindai folder game.",
     "overall_progress": "Progres keseluruhan",
     "phase_progress": "Tahap saat ini",
@@ -73,12 +74,13 @@
     "elapsed": "Berlalu {{duration}}",
     "waiting_for_stage": "Memulai tahap berikutnya...",
     "preparation": {
-        "metadata": "Memeriksa struktur folder",
+      "metadata": "Memeriksa struktur folder",
       "classifying": "Mengklasifikasikan folder mod",
       "rechecking": "Library berubah. Memeriksanya lagi..."
     },
     "game_progress": "Game {{current}} dari {{total}} · {{game}}",
     "activity": {
+      "activating_first_game": "Memeriksa kesiapan game...",
       "discovering": "Menyiapkan rencana scan · Tahap {{step}} dari {{total}}",
       "scanning": "Memindai folder mod [{{folder}}] · Tahap {{step}} dari {{total}}",
       "scanning_without_folder": "Memindai folder mod · Tahap {{step}} dari {{total}}",

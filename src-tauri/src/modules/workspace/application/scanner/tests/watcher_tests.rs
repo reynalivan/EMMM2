@@ -2,6 +2,36 @@ use super::*;
 use std::fs;
 use tempfile::TempDir;
 
+#[test]
+fn inactive_watcher_with_changed_root_identity_cannot_be_adopted() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = WatcherState::new();
+    let session = state.prepare_session(dir.path());
+    let (watcher, receiver) =
+        watch_mod_directory(dir.path(), state.suppressor.clone(), session.clone())
+            .expect("watch root");
+    state.install_inactive_watcher(
+        "game-1".to_string(),
+        dir.path(),
+        None,
+        session,
+        watcher,
+        receiver,
+    );
+    crate::shared::sync::lock(&state.inactive_watchers)
+        .get_mut("game-1")
+        .expect("inactive watcher")
+        .root_identity = Some("retired-root-id".to_string());
+
+    assert!(state
+        .inactive_watcher_session("game-1", dir.path(), None)
+        .is_none());
+    assert!(state
+        .take_inactive_watcher_for_handoff("game-1", dir.path(), None)
+        .is_none());
+    assert!(state.discard_inactive_watcher_unless_coverage("game-1", dir.path(), None));
+}
+
 // Covers: TC-2.4-02 — Watcher receives create event
 #[tokio::test]
 async fn test_watcher_detects_file_creation() {

@@ -11,6 +11,7 @@ import {
 } from '../../../shared/api/tauri/bindings';
 import { formatAppError } from '../../../shared/lib/appError';
 import { canonicalPathKey, identityPathKey, pathStartsWith } from '@/shared/lib/pathKey';
+import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import { publishDiskReconcileRefresh } from '../utils/reconcileRefresh';
 import {
   buildDiskReconcilePathRewrites,
@@ -21,6 +22,7 @@ import { maybeShowExternalChangeToast } from '../utils/reconcileToast';
 import { toast } from '@/shared/ui/toast';
 import {
   applyWorkspacePathRewrites,
+  buildRuntimeMutationDescriptor,
   formatCollectionReferenceImpact,
   openRenameConfirmationDialog,
   workspaceKeys,
@@ -30,7 +32,6 @@ import { isDuplicateWatcherError, type WatchErrorPayload } from '../utils/watche
 import { reconcileModViewerExternalReviews } from '@/features/mod-runtime/@x/file-watcher';
 import { joinModPath } from '../utils/pathUtils';
 
-const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
 const AUTO_OPEN_REPORT_MAX_GAMES = 32;
 const RECONCILE_WARNING_DEDUPE_MS = 30_000;
@@ -98,7 +99,6 @@ interface DiskReconcileRefreshContext {
 interface QueuedDiskReconcileRefresh extends DiskReconcileRefreshContext {
   reason: DiskReconcileReason;
   forceFull: boolean;
-  skipSyncCheck: boolean;
 }
 
 function refreshContextFor(
@@ -217,6 +217,7 @@ export function applyDiskReconcileResult(
 ): boolean {
   // Disk Reconcile owns filesystem truth and global runtime refresh for disk-backed changes.
   const appStore = useAppStore.getState();
+  const previousRevision = appStore.diskReconcileByGame[result.game_id]?.revision ?? 0;
   if (!appStore.applyFolderConflictReconcileResult(result)) {
     return false;
   }
@@ -270,6 +271,20 @@ export function applyDiskReconcileResult(
   if (!appliesToActiveGame) {
     return true;
   }
+  if (result.scan_scope === 'None' && result.reconcile_revision > previousRevision) {
+    void publishRuntimeDescriptor(
+      queryClient,
+      buildRuntimeMutationDescriptor([
+        'objectStructure',
+        'folderMetadataPreview',
+        'thumbnailOnly',
+        'collectionsCatalog',
+        'dashboardKeybindings',
+        'conflictsOnly',
+      ]),
+      'active',
+    );
+  }
   if (result.reason === 'StartupBoot') {
     void queryClient.invalidateQueries({
       queryKey: workspaceKeys.all,
@@ -295,7 +310,6 @@ export function useDiskReconcileCoordinator(
   queryClient: QueryClient,
 ) {
   const workspaceView = useAppStore((state) => state.workspaceView);
-  const diskReconcileByGame = useAppStore((state) => state.diskReconcileByGame);
   const gameActivation = useAppStore((state) =>
     activeGame?.id ? state.gameActivationByGame?.[activeGame.id] : undefined,
   );
@@ -305,8 +319,8 @@ export function useDiskReconcileCoordinator(
   const queuedRefreshRef = useRef<QueuedDiskReconcileRefresh | null>(null);
   const lastModsViewSyncKeyRef = useRef<string | null>(null);
   const hydratedModsViewByGameRef = useRef<Record<string, boolean>>({});
-  const activationReadyAtByGameRef = useRef<Record<string, number>>({});
   const requiresFullReconcileByGameRef = useRef<Record<string, boolean>>({});
+  const watcherFailureEpochByGameRef = useRef<Record<string, number>>({});
   const lastWindowBlurAtRef = useRef<number>(0);
   const activeGameRef = useRef<GameConfig | null>(activeGame);
   const workspaceViewRef = useRef(workspaceView);
@@ -326,6 +340,10 @@ export function useDiskReconcileCoordinator(
     const candidate = refreshContextFor(activeGame, contextGenerationRef.current);
     if (!isSameRefreshTarget(previous, candidate)) {
       contextGenerationRef.current += 1;
+      if (previous && candidate && previous.gameId === candidate.gameId) {
+        hydratedModsViewByGameRef.current[previous.gameId] = false;
+        requiresFullReconcileByGameRef.current[previous.gameId] = true;
+      }
     }
     const next = refreshContextFor(activeGame, contextGenerationRef.current);
     activeContextRef.current = next;
@@ -351,8 +369,20 @@ export function useDiskReconcileCoordinator(
   }, []);
 
   const recordReconcileOutcome = useCallback(
-    (result: DiskReconcileResult) => {
+    (result: DiskReconcileResult, startedAtWatcherFailureEpoch?: number) => {
       if (result.status === 'Applied' || result.status === 'AppliedWithFolderConflicts') {
+        const currentFailureEpoch = watcherFailureEpochByGameRef.current[result.game_id] ?? 0;
+        if (
+          (startedAtWatcherFailureEpoch !== undefined &&
+            startedAtWatcherFailureEpoch !== currentFailureEpoch) ||
+          (startedAtWatcherFailureEpoch === undefined &&
+            requiresFullReconcileByGameRef.current[result.game_id])
+        ) {
+          hydratedModsViewByGameRef.current[result.game_id] = false;
+          requiresFullReconcileByGameRef.current[result.game_id] = true;
+          markDiskReconcilePending(result.game_id, true);
+          return;
+        }
         markGameHydrated(result.game_id);
         return;
       }
@@ -360,7 +390,7 @@ export function useDiskReconcileCoordinator(
       hydratedModsViewByGameRef.current[result.game_id] = false;
       requiresFullReconcileByGameRef.current[result.game_id] = true;
     },
-    [markGameHydrated],
+    [markDiskReconcilePending, markGameHydrated],
   );
 
   useEffect(() => {
@@ -370,36 +400,13 @@ export function useDiskReconcileCoordinator(
       gameActivation.reconcile_revision !== null
     ) {
       markGameHydrated(activeGame.id);
-      activationReadyAtByGameRef.current[activeGame.id] = Date.now();
     }
   }, [activeGame?.id, gameActivation?.phase, gameActivation?.reconcile_revision, markGameHydrated]);
 
   const shouldSync = useCallback(
-    (gameId: string, forceFull: boolean) => {
-      if (forceFull) {
-        return true;
-      }
-
-      if (requiresFullReconcileByGameRef.current[gameId]) {
-        return true;
-      }
-
-      if (!hydratedModsViewByGameRef.current[gameId]) {
-        return true;
-      }
-
-      const entry = diskReconcileByGame[gameId];
-      if (entry?.pending) {
-        return true;
-      }
-
-      const lastValidatedAt = Math.max(
-        entry?.at ?? 0,
-        activationReadyAtByGameRef.current[gameId] ?? 0,
-      );
-      return Date.now() - lastValidatedAt > MODS_VIEW_SYNC_TTL_MS;
-    },
-    [diskReconcileByGame],
+    (gameId: string, fullRepairRequired: boolean) =>
+      fullRepairRequired || (useAppStore.getState().diskReconcileByGame[gameId]?.pending ?? false),
+    [],
   );
 
   const runRefresh = useCallback(
@@ -413,7 +420,6 @@ export function useDiskReconcileCoordinator(
         ...context,
         reason,
         forceFull,
-        skipSyncCheck: false,
       };
       if (inFlightRef.current !== null) {
         const queued = queuedRefreshRef.current;
@@ -422,13 +428,8 @@ export function useDiskReconcileCoordinator(
             ? {
                 ...requestedRefresh,
                 forceFull: requestedRefresh.forceFull || queued.forceFull,
-                skipSyncCheck: true,
               }
-            : {
-                ...requestedRefresh,
-                skipSyncCheck: true,
-              };
-        markDiskReconcilePending(context.gameId, true);
+            : requestedRefresh;
         return;
       }
 
@@ -444,15 +445,29 @@ export function useDiskReconcileCoordinator(
           continue;
         }
 
-        if (
-          !currentRefresh.skipSyncCheck &&
-          !shouldSync(currentRefresh.gameId, currentRefresh.forceFull)
-        ) {
-          return;
+        const fullRepairRequired =
+          currentRefresh.forceFull ||
+          (requiresFullReconcileByGameRef.current[currentRefresh.gameId] ?? false) ||
+          !hydratedModsViewByGameRef.current[currentRefresh.gameId];
+        const isViewAuthorityCheck =
+          currentRefresh.reason === 'ModsViewEntered' ||
+          currentRefresh.reason === 'WindowRefocused';
+        const needsSync = shouldSync(currentRefresh.gameId, fullRepairRequired);
+        const silentAuthorityCheck = isViewAuthorityCheck && !needsSync;
+        if (!needsSync && !silentAuthorityCheck) {
+          const queued = queuedRefreshRef.current;
+          queuedRefreshRef.current = null;
+          nextRefresh =
+            queued && isSameRefreshContext(queued, activeContextRef.current) ? queued : null;
+          continue;
         }
 
         inFlightRef.current = currentRefresh;
-        markDiskReconcilePending(currentRefresh.gameId, true);
+        if (!silentAuthorityCheck) {
+          markDiskReconcilePending(currentRefresh.gameId, true);
+        }
+        const startedAtWatcherFailureEpoch =
+          watcherFailureEpochByGameRef.current[currentRefresh.gameId] ?? 0;
 
         try {
           // Disk Reconcile only. This path must never trigger the Deep Match Scanner.
@@ -460,7 +475,7 @@ export function useDiskReconcileCoordinator(
             currentRefresh.gameId,
             currentRefresh.reason,
             null,
-            currentRefresh.forceFull,
+            fullRepairRequired,
           );
           if (!isMountedRef.current) {
             return;
@@ -478,15 +493,29 @@ export function useDiskReconcileCoordinator(
               ? currentGame
               : null;
           if (
-            applyDiskReconcileResult(
+            appliesToActiveContext ||
+            activeContextRef.current?.gameId !== currentRefresh.gameId
+          ) {
+            const applied = applyDiskReconcileResult(
               result,
               queryClient,
               activeGameForResult,
               appliesToActiveContext && workspaceViewRef.current === 'mods',
               result.game_id === currentRefresh.gameId ? currentRefresh.modsPathKey : undefined,
-            )
-          ) {
-            recordReconcileOutcome(result);
+            );
+            if (applied) {
+              recordReconcileOutcome(result, startedAtWatcherFailureEpoch);
+            } else if (
+              !silentAuthorityCheck &&
+              result.reconcile_revision ===
+                useAppStore.getState().diskReconcileByGame[result.game_id]?.revision &&
+              (result.status === 'Applied' || result.status === 'AppliedWithFolderConflicts') &&
+              startedAtWatcherFailureEpoch ===
+                (watcherFailureEpochByGameRef.current[result.game_id] ?? 0)
+            ) {
+              markGameHydrated(result.game_id);
+              markDiskReconcilePending(result.game_id, false);
+            }
           }
         } catch (error) {
           console.error('[DiskReconcile] Refresh failed:', error);
@@ -514,6 +543,7 @@ export function useDiskReconcileCoordinator(
     },
     [
       markDiskReconcilePending,
+      markGameHydrated,
       queryClient,
       recordReconcileOutcome,
       setDiskReconcileProgress,
@@ -560,8 +590,23 @@ export function useDiskReconcileCoordinator(
     let effectActive = true;
     let startupResultsDrained = false;
     const eventsDuringStartupDrain: DiskReconcileResult[] = [];
+    const registeredContext = activeContextRef.current;
     const applyResult = (result: DiskReconcileResult) => {
-      if (applyDiskReconcileResult(result, queryClient, activeGame, workspaceView === 'mods')) {
+      const currentContext = activeContextRef.current;
+      const appliesToActiveContext = isSameRefreshContext(registeredContext, currentContext);
+      if (!appliesToActiveContext && currentContext?.gameId === result.game_id) {
+        return;
+      }
+      const currentGame = appliesToActiveContext ? activeGameRef.current : null;
+      if (
+        applyDiskReconcileResult(
+          result,
+          queryClient,
+          currentGame,
+          appliesToActiveContext && workspaceViewRef.current === 'mods',
+          activeGame.mod_path,
+        )
+      ) {
         recordReconcileOutcome(result);
       }
     };
@@ -608,7 +653,7 @@ export function useDiskReconcileCoordinator(
           console.error('Failed to remove disk reconcile listener', error);
         });
     };
-  }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome, workspaceView]);
+  }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome]);
 
   useEffect(() => {
     if (!activeGame?.id) {
@@ -616,39 +661,57 @@ export function useDiskReconcileCoordinator(
     }
 
     const gameId = activeGame.id;
+    const registeredContext = activeContextRef.current;
     const unlistenPromise = listen<WatchErrorPayload>('mod_watch:event', (event) => {
       if (event.payload.type !== 'Error' || event.payload.game_id !== gameId) {
+        return;
+      }
+      if (
+        activeContextRef.current?.gameId === gameId &&
+        !isSameRefreshContext(registeredContext, activeContextRef.current)
+      ) {
         return;
       }
 
       console.error('[Watcher] error:', event.payload.error, event.payload.path);
       const now = Date.now();
+      watcherFailureEpochByGameRef.current[gameId] =
+        (watcherFailureEpochByGameRef.current[gameId] ?? 0) + 1;
+      requiresFullReconcileByGameRef.current[gameId] = true;
+      markDiskReconcilePending(gameId, true);
+      if (activeContextRef.current?.gameId === gameId) {
+        void runRefresh('WatcherBatch', true);
+      }
       if (isDuplicateWatcherError(event.payload, now)) {
-        markDiskReconcilePending(gameId, true);
         return;
       }
       toast.warning(i18next.t('common:watcher.error', { error: event.payload.error }));
-      // Mark state dirty so the next TTL sync repairs anything missed.
-      markDiskReconcilePending(gameId, true);
     });
 
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [activeGame?.id, markDiskReconcilePending]);
+  }, [activeGame?.id, activeGame?.mod_path, markDiskReconcilePending, runRefresh]);
 
   useEffect(() => {
     if (!activeGame?.id) {
       return;
     }
 
+    const registeredContext = activeContextRef.current;
     const unlistenFocusPromise = listen('tauri://focus', () => {
-      if (workspaceView !== 'mods') {
+      if (
+        workspaceViewRef.current !== 'mods' ||
+        !isSameRefreshContext(registeredContext, activeContextRef.current)
+      ) {
         return;
       }
 
-      const gameId = activeGame.id;
-      const pending = diskReconcileByGame[gameId]?.pending ?? false;
+      const gameId = registeredContext?.gameId;
+      if (!gameId) {
+        return;
+      }
+      const pending = useAppStore.getState().diskReconcileByGame[gameId]?.pending ?? false;
       const requiresFull = requiresFullReconcileByGameRef.current[gameId] ?? false;
       const isHydrated = hydratedModsViewByGameRef.current[gameId] ?? false;
       const lastBlurAt = lastWindowBlurAtRef.current;
@@ -667,5 +730,5 @@ export function useDiskReconcileCoordinator(
       unlistenFocusPromise.then((unlisten) => unlisten());
       unlistenBlurPromise.then((unlisten) => unlisten());
     };
-  }, [activeGame?.id, activeGame, diskReconcileByGame, runRefresh, workspaceView]);
+  }, [activeGame?.id, activeGame?.mod_path, runRefresh]);
 }

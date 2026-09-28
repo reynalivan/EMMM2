@@ -116,6 +116,28 @@ fn should_wait_for_initial_recovery(
     ) && matches!(readiness, InitialRecoveryReadiness::Syncing { .. })
 }
 
+fn clean_focus_snapshot(
+    mut result: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    reason: DiskReconcileReason,
+) -> crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult {
+    result.reason = reason;
+    result.scan_scope =
+        crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileScanScope::None;
+    result.changed_roots.clear();
+    result.objects_changed = false;
+    result.folders_changed = false;
+    result.collections_changed = false;
+    result.runtime_file_changed = false;
+    result.thumbnail_roots.clear();
+    result.cleared_selection_paths.clear();
+    result.path_updates.clear();
+    result.collection_reference_impact = Default::default();
+    result.change_summary = Default::default();
+    result.pending_runtime_effects = Default::default();
+    result.warnings.clear();
+    result
+}
+
 fn manual_reconcile_runtime_request(changed_roots: &[String]) -> RuntimeSyncRequest {
     if changed_roots.is_empty() {
         RuntimeSyncRequest::Full
@@ -490,6 +512,38 @@ pub async fn reconcile_disk_state_cmd(
             ) => Err(AppError::Io(error)),
         };
     }
+    if matches!(
+        &reason,
+        DiskReconcileReason::ModsViewEntered | DiskReconcileReason::WindowRefocused
+    ) && force_full != Some(true)
+        && changed_paths.as_ref().is_none_or(Vec::is_empty)
+        && matches!(
+            disk_reconcile_state.initial_recovery_readiness(&game_id),
+            InitialRecoveryReadiness::Ready { .. }
+        )
+    {
+        if let Some(_guard) = operation_lock.inner_lock().try_acquire_for_reconcile() {
+            if !operation_lock.has_pending_disk_commit_for_game(&game_id)? {
+                if let Some(mods_root) = config.mods_root_for(&game_id) {
+                    if let Some(session) = watcher.current_session_for_root(&mods_root) {
+                        if watcher.suppressor.pending_repair(&session).is_none() {
+                            if let Some(result) = disk_reconcile_state.clean_authoritative_result(
+                                &game_id,
+                                &mods_root,
+                                session.generation(),
+                            ) {
+                                if watcher.is_current_session(&session)
+                                    && watcher.suppressor.pending_repair(&session).is_none()
+                                {
+                                    return Ok(clean_focus_snapshot(result, reason));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     let progress_reporter = std::sync::Arc::new(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
             app.clone(),
@@ -497,7 +551,10 @@ pub async fn reconcile_disk_state_cmd(
             reason.clone(),
         ),
     );
-    let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
+    let mods_root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_with_authority(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool: pool.inner(),
             config: config.inner(),
@@ -513,6 +570,8 @@ pub async fn reconcile_disk_state_cmd(
             force_full.unwrap_or(false),
         )
         .defer_overlay_sync(),
+        watcher.inner(),
+        &mods_root,
     )
     .await;
     if let Ok(reconcile) = &result {
@@ -895,7 +954,7 @@ async fn reconcile_onboarding_indexing_game_impl(
                     &game.mod_path,
                     Some(&runtime_config_path),
                 ) {
-                    Ok(watcher_session) => {
+                    Ok(Some(watcher_session)) => {
                         let observed_generation = disk_reconcile_state
                             .authority_event_generation(game_id, watcher_session)
                             .unwrap_or(0);
@@ -912,6 +971,7 @@ async fn reconcile_onboarding_indexing_game_impl(
                             );
                         }
                     }
+                    Ok(None) => {}
                     Err(error) => {
                         log::warn!("Could not hand off onboarding watcher for {game_id}: {error}");
                     }
@@ -983,18 +1043,21 @@ async fn start_onboarding_recheck_watcher(
                 ))
             })?
     } else {
-        crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+        crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
             app,
             watcher,
             game_id,
             &game.mod_path,
             Some(&runtime_config_path),
+            &_activation_guard,
+            crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly,
         )
         .map_err(|error| {
             AppError::Io(format!(
                 "Could not watch '{game_id}' before indexing: {error}"
             ))
         })?
+        .ok_or(AppError::Cancelled)?
     };
     let observed_generation = disk_reconcile_state
         .authority_event_generation(game_id, watcher_session)
@@ -1139,15 +1202,54 @@ pub async fn resolve_rename_confirmations(
 #[cfg(test)]
 mod tests {
     use super::{
-        background_phase_for_reconcile_status, checked_resolution_path,
+        background_phase_for_reconcile_status, checked_resolution_path, clean_focus_snapshot,
         ensure_onboarding_handoff_if_applied, manual_reconcile_runtime_request,
         persist_pending_background_games, should_wait_for_initial_recovery,
     };
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
     use crate::modules::reconciliation::application::disk_reconcile::types::{
-        DiskReconcileReason, DiskReconcileStatus, OnboardingIndexingBackgroundPhase,
+        DiskReconcileReason, DiskReconcileResult, DiskReconcileScanScope, DiskReconcileStatus,
+        OnboardingIndexingBackgroundPhase,
     };
     use crate::modules::system::application::app::post_apply::RuntimeSyncRequest;
+
+    #[test]
+    fn clean_focus_snapshot_preserves_revision_without_replaying_changes() {
+        let result = DiskReconcileResult {
+            game_id: "game-1".to_string(),
+            reconcile_revision: 7,
+            reason: DiskReconcileReason::WatcherBatch,
+            status: DiskReconcileStatus::Applied,
+            scan_scope: DiskReconcileScanScope::Full,
+            folder_conflicts: vec![],
+            rename_confirmations: vec![],
+            error_message: None,
+            changed_roots: vec!["Alice".to_string()],
+            objects_changed: true,
+            folders_changed: true,
+            collections_changed: true,
+            runtime_file_changed: true,
+            thumbnail_roots: vec!["Alice".to_string()],
+            cleared_selection_paths: vec!["Alice".to_string()],
+            path_updates: vec![],
+            collection_reference_impact: Default::default(),
+            change_summary: Default::default(),
+            pending_runtime_effects: Default::default(),
+            warnings: vec![],
+        };
+        let snapshot = clean_focus_snapshot(result, DiskReconcileReason::WindowRefocused);
+        assert_eq!(snapshot.reconcile_revision, 7);
+        assert_eq!(snapshot.reason, DiskReconcileReason::WindowRefocused);
+        assert_eq!(snapshot.status, DiskReconcileStatus::Applied);
+        assert_eq!(snapshot.scan_scope, DiskReconcileScanScope::None);
+        assert!(snapshot.changed_roots.is_empty());
+        assert!(!snapshot.objects_changed);
+        assert!(!snapshot.folders_changed);
+        assert!(!snapshot.collections_changed);
+        assert!(!snapshot.runtime_file_changed);
+        assert!(snapshot.thumbnail_roots.is_empty());
+        assert!(snapshot.cleared_selection_paths.is_empty());
+    }
     #[test]
     fn rename_confirmation_paths_must_be_relative_and_contained() {
         let root = std::path::Path::new("E:/Mods");

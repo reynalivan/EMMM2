@@ -232,11 +232,12 @@ pub async fn rebind_object_references(
 ) -> Result<(), CollectionError> {
     for table in ["collection_objects", "collection_mods"] {
         let sql = format!(
-            "UPDATE {table} SET object_id = ? WHERE object_ref_key = ? AND EXISTS (SELECT 1 FROM collections c WHERE c.id = {table}.collection_id AND c.game_id = ?)"
+            "UPDATE {table} SET object_id = ? WHERE object_ref_key = ? AND object_id IS NOT ? AND EXISTS (SELECT 1 FROM collections c WHERE c.id = {table}.collection_id AND c.game_id = ?)"
         );
         sqlx::query(&sql)
             .bind(object_id)
             .bind(object_ref_key)
+            .bind(object_id)
             .bind(game_id)
             .execute(&mut *conn)
             .await?;
@@ -256,6 +257,7 @@ pub async fn rebind_mod_references(
         r#"UPDATE collection_mods
            SET mod_id = ?, object_id = ?
            WHERE (mod_path_key = ? OR mod_path_key = ?)
+             AND (mod_id IS NOT ? OR object_id IS NOT ?)
              AND EXISTS (
                  SELECT 1 FROM collections c
                  WHERE c.id = collection_mods.collection_id AND c.game_id = ?
@@ -265,6 +267,8 @@ pub async fn rebind_mod_references(
     .bind(object_id)
     .bind(exact_path_key)
     .bind(logical_path_key)
+    .bind(mod_id)
+    .bind(object_id)
     .bind(game_id)
     .execute(&mut *conn)
     .await?;
@@ -516,4 +520,122 @@ pub async fn get_projection_context(
     .bind(collection_id)
     .fetch_one(&mut *conn)
     .await?)
+}
+
+#[cfg(test)]
+mod rebind_tests {
+    use super::{rebind_mod_references, rebind_object_references};
+    use sqlx::Connection;
+
+    #[tokio::test]
+    async fn unchanged_collection_mod_binding_does_not_write_again() {
+        let mut conn = sqlx::SqliteConnection::connect("sqlite::memory:")
+            .await
+            .expect("in-memory database");
+        sqlx::query("CREATE TABLE collections (id TEXT PRIMARY KEY, game_id TEXT NOT NULL)")
+            .execute(&mut conn)
+            .await
+            .expect("collections table");
+        sqlx::query("CREATE TABLE collection_mods (collection_id TEXT, mod_path_key TEXT, mod_id TEXT, object_id TEXT)")
+            .execute(&mut conn)
+            .await
+            .expect("collection members table");
+        sqlx::query("INSERT INTO collections (id, game_id) VALUES ('collection', 'game')")
+            .execute(&mut conn)
+            .await
+            .expect("collection");
+        sqlx::query("INSERT INTO collection_mods (collection_id, mod_path_key, mod_id, object_id) VALUES ('collection', 'alice/blue', 'mod', 'object')")
+            .execute(&mut conn)
+            .await
+            .expect("member");
+
+        let before: i64 = sqlx::query_scalar("SELECT total_changes()")
+            .fetch_one(&mut conn)
+            .await
+            .expect("change count");
+        rebind_mod_references(
+            &mut conn,
+            "game",
+            "alice/blue",
+            "alice/blue",
+            "mod",
+            "object",
+        )
+        .await
+        .expect("same binding");
+        let unchanged: i64 = sqlx::query_scalar("SELECT total_changes()")
+            .fetch_one(&mut conn)
+            .await
+            .expect("unchanged count");
+        assert_eq!(unchanged, before);
+
+        rebind_mod_references(
+            &mut conn,
+            "game",
+            "alice/blue",
+            "alice/blue",
+            "new-mod",
+            "object",
+        )
+        .await
+        .expect("changed binding");
+        let changed: i64 = sqlx::query_scalar("SELECT total_changes()")
+            .fetch_one(&mut conn)
+            .await
+            .expect("changed count");
+        assert_eq!(changed, before + 1);
+    }
+
+    #[tokio::test]
+    async fn unchanged_collection_object_binding_does_not_write_again() {
+        let mut conn = sqlx::SqliteConnection::connect("sqlite::memory:")
+            .await
+            .expect("in-memory database");
+        sqlx::query("CREATE TABLE collections (id TEXT PRIMARY KEY, game_id TEXT NOT NULL)")
+            .execute(&mut conn)
+            .await
+            .expect("collections table");
+        for table in ["collection_objects", "collection_mods"] {
+            sqlx::query(&format!(
+                "CREATE TABLE {table} (collection_id TEXT, object_ref_key TEXT, object_id TEXT)"
+            ))
+            .execute(&mut conn)
+            .await
+            .expect("member table");
+        }
+        sqlx::query("INSERT INTO collections (id, game_id) VALUES ('collection', 'game')")
+            .execute(&mut conn)
+            .await
+            .expect("collection");
+        for table in ["collection_objects", "collection_mods"] {
+            sqlx::query(&format!(
+                "INSERT INTO {table} (collection_id, object_ref_key, object_id) VALUES ('collection', 'alice', 'object')"
+            ))
+            .execute(&mut conn)
+            .await
+            .expect("member");
+        }
+
+        let before: i64 = sqlx::query_scalar("SELECT total_changes()")
+            .fetch_one(&mut conn)
+            .await
+            .expect("change count");
+        rebind_object_references(&mut conn, "game", "alice", "object")
+            .await
+            .expect("same binding");
+        let unchanged: i64 = sqlx::query_scalar("SELECT total_changes()")
+            .fetch_one(&mut conn)
+            .await
+            .expect("unchanged count");
+        assert_eq!(unchanged, before);
+
+        rebind_object_references(&mut conn, "game", "alice", "new-object")
+            .await
+            .expect("changed binding");
+        let changed: i64 = sqlx::query_scalar("SELECT total_changes()")
+            .fetch_one(&mut conn)
+            .await
+            .expect("changed count");
+        assert_eq!(changed, before + 2);
+    }
 }

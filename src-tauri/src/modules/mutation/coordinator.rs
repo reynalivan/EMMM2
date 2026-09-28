@@ -266,6 +266,10 @@ impl MutationCoordinator {
         Ok(self.journal()?.pending_disk_commits())
     }
 
+    pub fn has_pending_disk_commit_for_game(&self, game_id: &str) -> Result<bool, AppError> {
+        Ok(self.journal()?.has_pending_disk_commit_for_game(game_id))
+    }
+
     pub fn latest_toggle_disk_revision(&self, game_id: &str) -> Result<u64, AppError> {
         Ok(self
             .journal()?
@@ -472,6 +476,35 @@ mod architecture_tests {
         assert!(latest.is_current());
         assert!(!old.is_current_path("game", Path::new("E:/Mods/Alice")));
         assert!(latest.is_current_path("game", Path::new("E:/Mods/DISABLED Alice")));
+    }
+
+    #[test]
+    fn thousand_rapid_intents_keep_only_the_latest_revision_for_one_folder() {
+        let coordinator = MutationCoordinator::unconfigured();
+        let first = coordinator.admit_intents(
+            "game",
+            Some(1),
+            [IntentTarget::ModPath("E:/Mods/DISABLED Alice".into())],
+        );
+        for revision in 2..=1_000 {
+            let path = if revision % 2 == 0 {
+                "E:/Mods/Alice"
+            } else {
+                "E:/Mods/DISABLED Alice"
+            };
+            coordinator.admit_intents("game", Some(revision), [IntentTarget::ModPath(path.into())]);
+        }
+        let latest = coordinator.admit_intents(
+            "game",
+            Some(1_000),
+            [IntentTarget::ModPath("E:/Mods/Alice".into())],
+        );
+        assert!(!first.is_current());
+        assert!(latest.is_current());
+        assert_eq!(
+            crate::shared::sync::lock(&coordinator.latest_intents).len(),
+            1
+        );
     }
 
     #[test]

@@ -267,10 +267,17 @@ pub async fn resolve_folder_name_conflict(
         .journal_paths()
         .into_iter()
         .enumerate()
-        .map(|(sequence, (old_path, stage_path, new_path))| {
-            crate::modules::mutation::api::PlannedStep::rename(sequence as u32, old_path, new_path)
+        .map(
+            |(sequence, (old_path, stage_path, new_path, expected_identity))| {
+                crate::modules::mutation::api::PlannedStep::rename(
+                    sequence as u32,
+                    old_path,
+                    new_path,
+                )
                 .with_stage_path(stage_path)
-        })
+                .with_expected_identity(Some(expected_identity))
+            },
+        )
         .collect();
     let operation_guard = op_lock
         .acquire_operation(crate::modules::mutation::api::OperationPlan::new(

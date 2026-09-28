@@ -780,6 +780,36 @@ fn is_toggle_projection_operation(
         && matches!(operation.kind.as_str(), "workspace-switch" | "bulk-toggle")
 }
 
+fn trusted_projection_paths(
+    pending: &[crate::modules::mutation::journal::Operation],
+) -> Option<Vec<String>> {
+    use crate::modules::mutation::journal::{MutationStepKind, StepStatus};
+
+    let mut paths = Vec::new();
+    for operation in pending {
+        for step in &operation.steps {
+            if step.status == StepStatus::Skipped {
+                if step.kind != MutationStepKind::Rename {
+                    return None;
+                }
+                continue;
+            }
+            if step.kind != MutationStepKind::Rename
+                || step.status != StepStatus::Applied
+                || step.expected_identity.is_none()
+            {
+                return None;
+            }
+            let (Some(old), Some(new)) = (&step.old_path, &step.new_path) else {
+                return None;
+            };
+            paths.push(old.to_string_lossy().into_owned());
+            paths.push(new.to_string_lossy().into_owned());
+        }
+    }
+    (!paths.is_empty()).then_some(paths)
+}
+
 #[derive(Clone, serde::Serialize)]
 struct WorkspaceSwitchProjected {
     game_id: String,
@@ -1078,20 +1108,7 @@ async fn run_workspace_switch_projection(
             .flatten()
             .map(|path| path.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        let scoped_paths = if pending.len() == 1 && pending[0].steps.len() == 1 {
-            pending[0].steps[0]
-                .old_path
-                .as_ref()
-                .zip(pending[0].steps[0].new_path.as_ref())
-                .map(|(old, new)| {
-                    vec![
-                        old.to_string_lossy().into_owned(),
-                        new.to_string_lossy().into_owned(),
-                    ]
-                })
-        } else {
-            None
-        };
+        let scoped_paths = trusted_projection_paths(&pending);
         let projection = tokio::select! {
             biased;
             _ = coordinator.inner_lock().wait_for_foreground_intent() => None,
@@ -1239,6 +1256,82 @@ fn leaf_storage_fast_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::mutation::journal::{
+        DatabaseProjectionStatus, MutationStepKind, Operation, OperationStatus, OperationStep,
+        StepStatus,
+    };
+
+    fn pending_toggle(steps: Vec<OperationStep>) -> Operation {
+        Operation {
+            id: "pending-toggle".to_string(),
+            kind: "workspace-switch".to_string(),
+            game_id: "game-1".to_string(),
+            created_at: String::new(),
+            status: OperationStatus::DiskCommitted,
+            steps,
+            database_projection_status: DatabaseProjectionStatus::NotStarted,
+            last_error: None,
+            disk_revision: Some(1),
+        }
+    }
+
+    fn applied_rename(old: &str, new: &str) -> OperationStep {
+        OperationStep {
+            sequence: 0,
+            kind: MutationStepKind::Rename,
+            old_path: Some(old.into()),
+            new_path: Some(new.into()),
+            stage_path: None,
+            expected_identity: Some("physical-folder".to_string()),
+            status: StepStatus::Applied,
+        }
+    }
+
+    #[test]
+    fn rapid_and_bulk_toggle_projection_uses_complete_union_scope() {
+        let first = pending_toggle(vec![applied_rename("Mods/DISABLED A", "Mods/A")]);
+        let second = pending_toggle(vec![applied_rename("Mods/DISABLED B", "Mods/B")]);
+        assert_eq!(
+            trusted_projection_paths(&[first, second]),
+            Some(vec![
+                "Mods/DISABLED A".to_string(),
+                "Mods/A".to_string(),
+                "Mods/DISABLED B".to_string(),
+                "Mods/B".to_string(),
+            ])
+        );
+
+        let bulk = pending_toggle(vec![
+            applied_rename("Mods/DISABLED A", "Mods/A"),
+            applied_rename("Mods/DISABLED B", "Mods/B"),
+        ]);
+        assert_eq!(trusted_projection_paths(&[bulk]).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn trusted_projection_scope_rejects_unverified_or_missing_rename_steps() {
+        let mut unverified = applied_rename("Mods/DISABLED A", "Mods/A");
+        unverified.expected_identity = None;
+        assert!(trusted_projection_paths(&[pending_toggle(vec![unverified])]).is_none());
+
+        let mut skipped = applied_rename("Mods/DISABLED A", "Mods/A");
+        skipped.status = StepStatus::Skipped;
+        assert!(trusted_projection_paths(&[pending_toggle(vec![skipped])]).is_none());
+
+        let mut skipped = applied_rename("Mods/DISABLED B", "Mods/B");
+        skipped.status = StepStatus::Skipped;
+        assert_eq!(
+            trusted_projection_paths(&[pending_toggle(vec![
+                applied_rename("Mods/DISABLED A", "Mods/A"),
+                skipped,
+            ])]),
+            Some(vec!["Mods/DISABLED A".to_string(), "Mods/A".to_string()])
+        );
+
+        let mut missing_target = applied_rename("Mods/DISABLED A", "Mods/A");
+        missing_target.new_path = None;
+        assert!(trusted_projection_paths(&[pending_toggle(vec![missing_target])]).is_none());
+    }
 
     #[test]
     fn storage_outcome_verifies_the_final_identity_after_chained_renames() {

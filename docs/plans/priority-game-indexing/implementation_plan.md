@@ -1,253 +1,268 @@
-# Implementation Plan: Priority Game Indexing and Core Readiness
+# Implementation Plan: Simplify Indexing and Disk-First Switching
 
 Tanggal: 2026-09-28
 
-Status: implementasi inti berjalan (2026-09-28). Gate mutasi, promosi scan, handoff watcher, loading game terpilih, dan defer runtime sudah masuk; matriks acceptance di bawah tetap dipakai untuk pekerjaan serta verifikasi yang belum terbukti.
+Status: disetujui, implementasi bertahap berjalan; gate P0–P5 belum dinyatakan selesai.
 
-## 1. Goals dan batas scope
+Baseline audit: main pada `c355466`.
 
-1. Onboarding membuka workspace setelah indeks wajib satu game selesai dan tervalidasi; tidak menunggu seluruh game.
-2. Indexing game lain tetap otomatis di background. Memilih game mempromosikan job yang sama dan melanjutkan progres validnya, bukan memulai scan duplikat.
-3. Selama indeks wajib target belum siap, tampilkan loading page pada workspace target dan tolak operasi mod di backend, termasuk hotkey dan bulk.
-4. Setelah core-ready, enable/disable tetap optimistis, last-wins, storage-first. KeyViewer, runtime turunan, atau indexing game lain tidak menjadi syarat penyelesaian switch.
-5. Disk tetap sumber kebenaran. Readiness, progres, identitas, dan hasil worker tidak boleh drift akibat perubahan folder, pergantian game, retry, atau restart.
-6. Gunakan coordinator, watcher authority, mutation journal, dan runtime queue yang sudah ada. Tidak menambah dependency, generic job framework, atau persistent partial-index database pada tahap ini.
+Menggantikan rencana sebelumnya pada path yang sama. Fitur existing yang sudah benar dipertahankan. Checklist adalah pekerjaan/bukti yang perlu diselesaikan, bukan klaim bahwa semua fiturnya belum ada. Perubahan kode parsial dan hasil verifikasi dicatat terpisah di `docs/history/`.
 
-Non-goals: rewrite switch engine, mengubah semantik nama DISABLED, memblokir toggle karena hash overlap, merombak desain aplikasi, menaikkan versi/release, push, atau build installer. Resume parsial setelah process crash bukan janji tahap pertama.
+## 1. Outcome dan scope
+
+Prioritas wajib:
+
+1. Switch memberikan feedback optimistis langsung dan menerima intent terbaru.
+2. Validasi keselamatan minimum, rename folder fisik, verifikasi disk, durable receipt.
+3. Proyeksi DB tertunda diselesaikan melalui recovery journal.
+4. Runtime, collection preview, ancestor read model, KeyViewer, dan UI refresh menyusul.
+
+Identitas, path/ancestor, dan collection membership yang diperlukan menentukan target mutasi tetap authoritative pada preflight. Data keselamatan tidak boleh dipindahkan ke background lalu dibaca dari cache stale.
+
+Goals:
+
+- Onboarding menunggu core game pertama saja; game lain otomatis background.
+- Memilih game belum siap mempromosikan job yang sama dan menampilkan loading workspace.
+- Game ready tidak kembali initial-loading akibat switch sendiri atau optional runtime pending.
+- Satu owner readiness backend, satu jalur request core, satu jalur publication ke UI.
+- Tidak ada self-conflict, stale overwrite, duplicate core job, atau refresh karena TTL tanpa bukti perubahan.
+- Folder disk adalah sumber kebenaran; posisi switch optimistis bukan bukti sukses disk.
+
+Non-goals: rewrite switch engine, generic scheduler/event bus baru, dependency baru, schema migration spekulatif, persistent partial-scan checkpoints, redesign visual, push, atau build installer.
 
 ## 2. Baseline audit
 
-| Area existing                                                                           | Temuan                                                                                                              | Perubahan yang diperlukan                                                                         |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `src/pages/onboarding/WelcomeScreen.tsx`                                                | Menunggu reconcile game pertama, lalu menyerahkan game lain ke background.                                          | Pertahankan first-game gate; sambungkan ke pemilik job yang juga dipakai aktivasi.                |
-| `src-tauri/src/modules/reconciliation/application/disk_reconcile/onboarding_session.rs` | Preparation worker FIFO untuk semua game; snapshot single-use melalui oneshot; cancellation diperiksa antargame.    | Dedup job per game/root, promotion, cooperative yield, dan reuse hasil root valid.                |
-| `src-tauri/src/modules/workspace/application/scanner/watcher/lifecycle.rs`              | Aktivasi memulai `prewarm_inactive_games`, di samping background onboarding.                                        | Jadikan prewarm requester pada scheduler yang sama, bukan pemilik scan terpisah.                  |
-| `src/widgets/top-bar/GameSelector.tsx`                                                  | Menunggu background status; tidak mempromosikan job. Status yang tidak ditemukan mengizinkan aktivasi berikutnya.   | Pemilihan selalu meminta status/job authoritative; tidak menganggap status hilang sebagai ready.  |
-| `.../disk_reconcile/emit.rs`                                                            | Helper gate hanya menolak `Syncing`.                                                                                | Allowlist readiness yang benar-benar siap; reject unknown, unstarted, failed, source unavailable. |
-| `.../disk_reconcile/orchestrator/state.rs`                                              | `Completed(result)` dipetakan ke Ready tanpa memeriksa status result pada mapping tersebut.                         | Readiness mengikuti hasil core yang diterima, bukan sekadar selesainya future.                    |
-| `.../disk_reconcile/disk_snapshot.rs`                                                   | Onboarding sudah melewati per-asset size metadata dan menggabungkan census dengan klasifikasi.                      | Pertahankan; refactor unit kerja tanpa mengembalikan traversal penuh tambahan.                    |
-| `.../reconciliation/adapters/tauri/disk_reconcile_cmds.rs`                              | Onboarding sudah defer runtime/KeyViewer; snapshot dibandingkan dengan journal revision global.                     | Konsistenkan deferred runtime dan gunakan validitas per game/root.                                |
-| `src-tauri/src/modules/system/application/app/bootstrap.rs`                             | Startup memakai jalur reconcile tersendiri dan melanjutkan pending onboarding. Request startup belum defer runtime. | Resume/startup memakai kontrak core yang sama; opsional tidak menahan readiness.                  |
+| Source                                | Temuan                                                                      | Konsekuensi untuk plan                                                                |
+| ------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| WelcomeScreen / App                   | First-game reconcile diikuti setActiveGameId dan waitForGameActivationReady | Trace handoff; jangan hanya mengukur scan                                             |
+| settings_cmds / watcher lifecycle     | Activation reset recovery; watcher dapat reuse authority atau catch-up      | Hilangkan reset yang tidak perlu setelah proof valid; bukan asumsi selalu full rescan |
+| workspace_cmds                        | get_workspace_structure memulai initial recovery                            | Getter harus pure setelah explicit ensure tersedia di semua entry point               |
+| orchestrator/state                    | Readiness bergantung recovery result, revision, dan watcher authority       | Pisahkan core baseline, dirty scopes, dan optional projection                         |
+| useFolderGridViewModel                | Gate menggabungkan activation/recovery/source error/rename report           | Satu ambiguity report dapat mengunci seluruh game                                     |
+| useFileWatcher                        | TTL 5 detik; queued refresh dapat melewati shouldSync                       | Gabungkan kebutuhan refresh berdasarkan watermark                                     |
+| workspaceSwitchOps / reconcileRefresh | Switch projection dan watcher sama-sama publish refresh                     | Satu publication entry point dengan revision dedup                                    |
+| Onboarding reconcile                  | Runtime/KeyViewer sudah defer_overlay_sync                                  | Memindahkan await yang sudah deferred bukan solusi terbukti                           |
+| Progress onboarding                   | Per-game events, empat tahap tidak mencakup seluruh handoff                 | Snapshot dan job-versioned progress                                                   |
 
-Temuan ini adalah audit kode, bukan hasil benchmark. History lama tidak menggantikan perilaku source saat ini.
+Audit sebelumnya menjalankan 43 tes terkait onboarding, watcher, switch control, dan activation wait: lulus. Ini bukan reproduksi native end-to-end. Log lokal yang diperiksa kosong; bottleneck dominan Finishing, gate aktif pada screenshot, dan disk latency aktual belum terbukti. P0 harus mengukurnya sebelum klaim perbaikan performa.
 
 ## 3. Kontrak arsitektur
 
-### 3.1 Satu pemilik job dan satu sumber readiness
+### 3.1 Satu owner, fakta yang tidak dicampur
 
-Refactor session indexing menjadi coordinator domain khusus indexing di modul reconciliation. Tetap gunakan `DiskReconcileState` untuk game authority dan mutation lease. Jangan membuat mutex operasi, readiness map frontend-authoritative, atau event bus baru.
+Perluas DiskReconcileState/coordinator existing, bukan menambah service paralel. Reuse enum/counter existing jika semantiknya sesuai.
 
-- Key job: game ID + identitas/configuration revision Mods root. Nama folder/display name bukan identitas.
-- Satu live core job untuk key yang sama. Request onboarding, startup, selector, dan prewarm bergabung ke job tersebut.
-- Index generation mengidentifikasi pekerjaan core. Activation generation mengidentifikasi game pilihan UI. Berpindah A ke B tidak otomatis membuang progres indeks A yang masih valid.
-- Hasil job A boleh memperbarui status indexing A setelah dipilih B, tetapi tidak boleh mengaktifkan A, menutup loading B, atau menerbitkan runtime A sebagai active game.
-- Gunakan snapshot status saat subscribe/reconnect, lalu event versioned. Event lama tidak boleh menurunkan status/revision yang lebih baru.
+| Fakta            | Makna                                                 | Pengaruh terhadap operasi                                      |
+| ---------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
+| Core proof       | Game + root epoch, accepted baseline, status job      | Belum valid: loading dan reject mutasi biasa                   |
+| Disk authority   | Watcher continuity/watermark, dirty scopes, ambiguity | Revalidate affected scopes; unknown scope dapat memblokir root |
+| Disk commit      | Durable journal/receipt revision                      | Bukti rename, path rewrite, settlement                         |
+| Derived progress | Projected/published revision per consumer             | Non-blocking; tidak mengubah core-ready                        |
+| Active selection | Activation generation                                 | Memilih tampilan, bukan membatalkan core game lain             |
 
-State konseptual core: `NotReady -> Queued -> Scanning -> Finalizing -> Ready`; kegagalan menjadi `Failed` dengan sebab terstruktur dan opsi retry. Pekerjaan yang dipause tetap memiliki fase dan counters, tetapi tidak running. Adaptasikan enum existing; jangan mempertahankan dua enum readiness sebagai dua sumber keputusan independen.
+- Root epoch berubah saat konfigurasi/identitas root berubah. Job generation berbeda dari activation generation.
+- Ready bukan persamaan baseline revision dengan setiap revision runtime terbaru.
+- Ready bukan izin permanen mengabaikan perubahan eksternal: mutation preflight tetap memeriksa authority dan identity.
+- Status/progress membawa game/root/job identity dan monotonic sequence. Jangan menyamakan counters berbeda domain.
+- Subscribe listener dahulu, ambil snapshot, buffer event selama snapshot, lalu merge menurut versi. Remount/reconnect mengambil snapshot lagi.
+- Hasil/terminal event job lama tidak menghapus status job baru.
+- Frontend hanya projection backend dan satu selector eligibility; jangan mempertahankan readiness authority kedua.
 
-`Ready` hanya boleh terbit jika:
+### 3.2 Core indexing dan handoff
 
-1. Target root dan generation masih cocok.
-2. Census, klasifikasi wajib, identitas, dan proyeksi inti lengkap.
-3. DB commit berhasil; hasil reconcile benar-benar applied.
-4. Perubahan disk yang teramati selama scan sudah diproses sampai watermark yang disepakati dan watcher continuity tersedia.
-5. Tidak ada kegagalan recovery/root yang membuat authority tidak dipercaya.
+- Core wajib: root/journal recovery, census, stable identity, path/ancestor, klasifikasi minimum, state enabled dari disk, real folder conflicts, DB baseline applied, dan watcher catch-up.
+- Optional: full keybind harvest, hash/overlap diagnostics, exact size/statistics, thumbnails, runtime/collection preview turunan. Audit dependensi sebelum memindahkan kerja.
+- Watcher mulai sebelum discovery; activation mengadopsi proof dan watcher onboarding yang cocok, tanpa reset/recovery kedua.
+- Perubahan sampai watermark diproses sebelum Ready; perubahan sesudahnya ditangani watcher/preflight. Jangan menunggu disk diam selamanya.
+- AppliedWithFolderConflicts boleh ready dengan blocked scopes. Ambiguity yang cakupannya belum terbukti tetap fail-closed.
+- Getter workspace hanya membaca. Onboarding/startup/activation menggunakan explicit ensure/join/promote yang idempotent.
+- Ready membuka dashboard tanpa menunggu background scan atau enrichment; enqueue background tidak boleh await penyelesaian scan.
+- Cold startup memvalidasi disk dan pending journal; persisted DB bukan trusted-ready flag.
 
-`AppliedWithFolderConflicts` boleh core-ready: konflik folder dilaporkan dan dibatasi pada target terkait, bukan membekukan seluruh game. `SourceUnavailable` dan `NeedsRenameConfirmation` tidak otomatis dianggap ready; sediakan alur pemulihan yang dibatasi scope.
+### 3.3 Switch disk-first, last-wins, dan konflik
 
-### 3.2 Gate mutasi
+Pertahankan executor, OperationLock, mutation journal, receipt, optimistic handling, dan toast aggregator existing.
 
-- Semua entry point mutasi biasa mensyaratkan core-ready game/root yang dituju: single/bulk toggle, object/ancestor switch, rename/move/trash, collection apply/restore, randomizer, metadata writes, import destination commit, serta preset/Safe Mode hotkey.
-- Audit direct service callers selain command Tauri agar hotkey/background import tidak bypass gate.
-- Preflight cepat boleh dilakukan sebelum lock untuk UX, tetapi readiness/generation harus diperiksa kembali setelah memperoleh lease yang melindungi perubahan authority. Ikuti lock ordering existing; jangan menahan mutex status saat await.
-- Error typed, misalnya `GameIndexNotReady`, membawa game dan fase aman untuk UI; tidak memakai generic busy sebagai hasil normal indexing.
-- Tidak antrekan intent mutasi dari loading page untuk dijalankan belakangan. User mengulangi tindakan setelah Ready. Intent yang sedang menunggu lock harus revalidate game/root/generation sebelum menulis disk.
-- Background projection tertunda akibat switch sukses tidak mengembalikan game menjadi initial-indexing. Pertahankan bukti disk/journal dan settlement storage-first existing.
-- Recovery internal, bootstrap journal recovery, dan resolusi konflik terarah memiliki jalur terbatas yang sah saat core belum siap. Jangan membuat deadlock dengan mewajibkan Ready untuk operasi yang justru menghasilkan Ready.
+```text
+latest intent + optimistic UI
+  -> lease/preflight core, root, identity, parent, destination
+  -> journal prepare -> non-overwriting rename -> disk verification
+  -> durable disk receipt -> settle current intent / aggregate toast
+  -> deferred projection -> revision-aware UI/runtime/KeyViewer publication
+```
 
-### 3.3 Pemisahan core dan enrichment
+- Tidak ada debounce sebelum dispatch rename pertama; debounce toast tidak menunda storage.
+- Pending intent per physical identity diganti terbaru. Rename in-flight diselesaikan aman, lalu executor memeriksa intent terbaru.
+- Receipt/error lama tidak menghapus optimism atau rollback hasil intent lebih baru.
+- Parent/child diserialisasi pada scope yang memengaruhi path; disjoint folders tidak menunggu enrichment.
+- Resolve source aktual dari identity/journal, bukan nama UI stale. Periksa source/target/parent/containment lagi setelah lease.
+- Alias target yang merupakan folder sama adalah path reconciliation/no-op, bukan duplicate. Nama sama beda parent sah.
+- Target ditempati entry lain adalah real conflict; rename tidak overwrite walau collision muncul setelah preflight.
+- Hash/resource overlap/runtime keys tidak memblokir toggle.
+- Path busy memakai bounded retry + identity revalidation; setelah batas habis laporkan error dan observed disk state. Tidak ada infinite retry.
+- Ambiguity hanya memblokir subtree/dependents yang terbukti terkait; jika scope tidak diketahui, recovery tetap fail-closed.
+- Conflict-fix revalidate candidate identity dan epoch ketika commit; tidak memakai report stale.
+- Last-wins untuk toggle tidak berarti membatalkan collection/bulk transaction di tengah. Overlap memakai ordering/journal existing; request berikutnya revalidate sesudah transaksi.
+- Bulk mempertahankan rollback/recovery. Jangan menjanjikan atomic multi-folder rename OS.
+- No-op/superseded tidak menghasilkan success toast. Pertahankan ringkasan receipt sah 500 ms, serta discard feedback stale-game.
+- Projection failure sesudah disk commit tidak membatalkan receipt; journal tetap pending. Mutasi berikutnya memakai journal-backed identity/scoped recovery bila DB belum aman dipakai.
 
-| Core wajib                                                          | Enrichment opsional                                      |
-| ------------------------------------------------------------------- | -------------------------------------------------------- |
-| Validasi root dan recovery journal yang relevan                     | Full KeyViewer/keybinding harvest dan publikasi overlay  |
-| Census folder, stable identity, full relative path, parent/ancestor | Hash/overlap diagnostics yang tidak menentukan identitas |
-| Klasifikasi minimum untuk menentukan mod/container                  | Exact storage sizes dan statistik dashboard              |
-| Enabled/disabled dari filesystem                                    | Thumbnail generation dan enrichment tampilan             |
-| Konflik nama folder nyata dan DB projection inti                    | Runtime/collection read model turunan                    |
-| Watcher catch-up dan authority handoff                              | Telemetry aggregation                                    |
+### 3.4 Watcher, scheduling, dan publication
 
-Audit dependensi sebelum memindahkan pekerjaan: collection membership atau metadata yang diperlukan menentukan target mutasi tetap core/on-demand authoritative, bukan membaca cache turunan yang stale. Jika safety classification belum tersedia, tampilkan unknown; jangan menganggap aman. Kegagalan enrichment tidak mengubah core-ready menjadi failed.
+- Semua onboarding/startup/activation/prewarm menjadi requester coordinator existing; satu core job per game/root epoch.
+- Prioritas: ready-game foreground storage, selected core, background core, optional enrichment.
+- Promote bergabung ke job/progress valid. Background concurrency dan snapshot retention bounded.
+- Tambahkan traversal chunk/yield hanya jika trace membuktikan root besar memblokir foreground. Reuse checkpoint lengkap per root; tidak membuat persistent traversal stack.
+- Pertahankan lock ordering. Jangan menahan mutex status saat await atau melepas mutation lease di tengah commit.
+- Expected watcher echoes diakui memakai journal evidence, bukan global suppression window yang membuang external events.
+- Focus/ModsViewEntered memakai continuity/dirty-generation check; healthy+clean tidak traversal.
+- Queued requests digabung dengan union scopes dan latest required revision; sesudah run, recheck watermark sebelum run berikutnya.
+- Full scan hanya untuk initial baseline, root epoch berubah, event loss/unknown scope, recovery yang memerlukannya, atau explicit force-full.
+- Satu publisher committed changes menerima receipt/projection dan watcher results: dedup revision, patch path/selection segera, invalidate affected scopes setelah projection tersedia.
+- No-op tidak broad-invalidate; refetch/result lama tidak menimpa disk receipt terbaru.
+- Optional workers coalesce target revision terbaru dan cek root/generation/activation sebelum publish.
+- Hilangkan competing frontend hydration/full-reconcile maps setelah authoritative status menggantikannya.
 
-## 4. Scheduling, resume, dan anti-drift
+## 4. Work packages
 
-### Prioritas kerja
+Semua checklist dimulai belum diverifikasi untuk revisi ini. Setiap package harus mempunyai regression test sebelum perubahan state/concurrency dan bukti gate setelahnya.
 
-1. Mutasi storage foreground pada game yang sudah Ready.
-2. Core indexing/catch-up game yang dipilih.
-3. Background core indexing game lain.
-4. Enrichment opsional dengan concurrency dan beban I/O terbatas.
+### P0 — Reproduksi, trace, baseline
 
-Urutan ini adalah kebijakan scheduling, bukan penambahan satu global lock besar. Transaksi/journal commit yang sudah berjalan diselesaikan pada batas aman; tidak diputus di tengah. Foreground intent memakai mekanisme coordinator existing untuk meminta background yield.
+Files: workspace_cmds timing, onboarding reconcile, orchestrator/run, watcher/lifecycle, App/WelcomeScreen, fixture/tests existing.
 
-### Unit kerja dan checkpoint
+- [ ] Trace correlation job/mutation, root epoch, revision, gate reason, queue/lock wait, scan, DB apply, handoff, ready, projection.
+- [ ] Ukur click -> optimistic paint, dispatch -> rename mulai, rename -> receipt, receipt -> projection.
+- [ ] Hitung full/scoped scans, refetch, duplicate jobs, retained snapshots, foreground yield latency.
+- [ ] Reproduksi onboarding -> first switch, rapid switch -> refresh, clean focus/re-entry.
+- [ ] Fixture Windows terisolasi: 1/5 games, 100/1.000/10.000 folders, flat/nested/large root, cold/warm.
+- [ ] Tetapkan noise/tolerance sebelum eksperimen. Telemetry mengikuti opt-in; tidak mencatat nama/path/file contents sensitif.
 
-- Mulai dari satu active core scan job, dengan parallelism internal terbatas dan diukur; jangan menjalankan full scan semua game sekaligus.
-- Pecah discovery pada root yang sudah menjadi unit scanner. Simpan hasil root lengkap beserta validity evidence di memori.
-- Tambahkan cooperative checks pada batas traversal/klasifikasi dalam root besar. Saat promotion perlu cepat, hentikan root yang belum lengkap pada batas aman; hanya root tersebut yang perlu diulang jika continuation lebih rumit daripada manfaatnya.
-- Scheduler membaca ulang prioritas setelah yield. Promote game yang sedang running tidak membuat worker baru. Repeated selection bersifat idempotent.
-- Pisahkan mahalnya discovery dari critical section DB commit. Setelah memperoleh lease untuk apply, periksa kembali validity evidence sebelum memakai snapshot.
-- Jangan publish DB partial sebagai baseline lengkap atau menjalankan pruning terhadap library yang belum selesai ditemukan.
-- Batasi retained paused snapshots dan watcher buffers. Budget ditentukan dari baseline fixture; jika terlampaui, evict checkpoint dan tandai perlu recheck secara eksplisit, bukan mempertahankan persentase palsu.
+Gate: blocker punya trace dan regression yang reproduktif; keterbatasan reproduksi native dinyatakan. Tidak stress-test library asli pengguna.
 
-### Validasi perubahan dan handoff
+### P1 — Single readiness owner dan mutation eligibility
 
-- Watcher mulai sebelum discovery. Reuse existing authority, dirty-root tracking, expected-rename echo suppression, dan event-loss handling.
-- Perubahan game A tidak menggugurkan snapshot game B hanya karena journal revision global bertambah. Validitas diikat ke target game/root dan relevant mutation evidence.
-- Root yang dirty di-scan ulang secara scoped. Event yang ambigu/overflow atau watcher continuity putus mengeskalasi recheck dengan alasan tercatat.
-- Finalization memakai watermark/generation, bukan syarat filesystem harus diam selamanya. Event setelah watermark tetap ditangani watcher dan preflight mutasi existing; perubahan sebelum publication tidak boleh hilang.
-- Handoff onboarding ke activation membawa authority hasil core yang sah. Jangan menjalankan full scan lagi hanya karena entry point berganti.
-- Path sama namanya pada parent berbeda tetap identitas berbeda. Enabled/disabled aliases hanya dianggap benturan jika dua entry disk berbeda benar-benar hadir pada scope parent yang sama; jangan memakai snapshot UI lama sebagai bukti konflik.
+Files utama:
 
-### Startup, restart, retry
+- src-tauri/src/modules/reconciliation/application/disk_reconcile/orchestrator/state.rs
+- src-tauri/src/modules/reconciliation/application/disk_reconcile/emit.rs
+- src-tauri/src/modules/workspace/adapters/tauri/workspace_cmds.rs
+- Reconciliation DTO/status adapter dan mutation service callers terkait.
 
-- Pertahankan mutation-journal crash recovery sebelum membuka operasi pengguna.
-- Runtime memory setelah restart berstatus belum terbukti ready. Gunakan DB terakhir sebagai cache, bukan bukti disk masih sama.
-- Resume persisted pending-game list existing menjadi request coordinator. Tidak ada trusted-ready boolean baru atau schema migration wajib.
-- Dahulukan core validation game aktif; game lain tetap background. Progress root process-local tidak dijanjikan survive restart.
-- Retry menggunakan checkpoint yang masih valid; root/config berubah membatalkan generation lama. Source unavailable, permission error, dan scan failure tidak boleh memicu retry loop tanpa batas.
-- Berhenti/TTL/eviction harus membebaskan watcher dan buffer job yang sudah tidak digunakan. Readiness tidak boleh tetap Ready setelah kehilangan authority relevan.
+- [ ] Core proof, dirty authority, dan projection status mempunyai kontrak terpisah pada owner existing.
+- [ ] Semua entry point memakai ensure-core sebelum getter recovery side effect dihapus.
+- [ ] Eligibility backend scoped; recheck root/generation/identity setelah lease.
+- [ ] Audit single/bulk/object toggle, collection apply/restore, conflict fix, rename/move/trash, import commit, hotkey/randomizer, metadata write, direct service callers.
+- [ ] Recovery exceptions narrow dan tidak deadlock.
+- [ ] Snapshot/events versioned; Rust DTO, bindings, registry/permissions bila berubah, demo mocks dan i18n ikut diperbarui.
+- [ ] Hapus competing readiness decisions setelah caller dimigrasikan.
 
-## 5. UX dan kontrak IPC
+Gate: initial/unknown/failed menolak unsafe write; optional pending tidak menolak safe toggle; root berubah saat menunggu lock menolak stale write.
 
-- Onboarding: pilih game awal; jika tidak ada pilihan eksplisit, gunakan game pertama existing. Simpan seluruh konfigurasi lalu tunggu core game awal saja.
-- Game selector: langsung pilih target dan request activation/index priority; jika core belum siap tampilkan loading workspace target berdasarkan job authoritative.
-- Loading: nama game, fase, jumlah root/folder yang sudah diproses, dan keterangan revalidation bila ada. Navigation kembali ke game Ready dan settings tetap bisa digunakan.
-- Tidak ada persentase global buatan ketika denominator belum diketahui. Scan 100% belum berarti core 100%; final validation/commit ditampilkan sebagai fase tersendiri.
-- Saat game sedang background 60% lalu dipilih, UI menampilkan progres job yang sama tanpa reset jika evidence masih valid.
-- Error state menawarkan retry, ganti root, atau pilih game lain. Tidak ada overlay tanpa jalan keluar.
-- Setelah Ready, loading hilang tanpa menunggu KeyViewer. Enrichment memakai status terpisah yang non-blocking.
-- Konsolidasikan frontend status existing melalui satu selector/hook; React store hanya proyeksi backend. Missing status berarti belum diketahui, bukan ready.
-- Utamakan perluasan command/status existing. Jika kontrak berubah: Rust DTO, registry, explicit permission allowlist, Specta generated bindings, mock/demo handlers terkait, dan i18n EN/ID/ZH berubah bersama.
-- `docs/knowledge/tauri-command-registration.md` memuat lokasi generated file lama; gunakan exporter/repository path yang aktual, bukan menambah file binding duplikat.
+### P2 — Onboarding/activation/background satu lifecycle
 
-## 6. Work packages dan acceptance gates
+Files utama: disk_reconcile/onboarding_session.rs, disk_snapshot.rs, reconciliation/adapters/tauri/disk_reconcile_cmds.rs, settings/adapters/tauri/settings_cmds.rs, watcher/lifecycle.rs, system/application/app/bootstrap.rs.
 
-Checklist berikut adalah acceptance gate, bukan klaim bahwa setiap butir sudah lulus. Hasil verifikasi aktual dicatat di history implementasi.
+- [ ] Semua requester memakai ensure/join/promote sama; prewarm tidak menjadi owner scan independen.
+- [ ] Handoff mengadopsi proof + watcher continuity, tanpa unconditional reset.
+- [ ] Background pending-game list tetap recoverable; checkpoint process-local tidak dipercaya setelah restart.
+- [ ] Selection queued/partial/Ready reuse pekerjaan sah; stale activation tidak publish active state.
+- [ ] Defer optional runtime konsisten; audit contention lock/DB, bukan hanya await caller.
+- [ ] Bounded watchers/snapshots; abandoned epoch dibersihkan; partial baseline tidak melakukan pruning.
 
-### P0 — Baseline dan dependency map
+Gate: first core -> dashboard tidak menunggu game kedua; clean handoff tidak scan ulang; promotion tidak duplicate job.
 
-- [ ] Catat timeline onboarding/activation: queue wait, discovery, classification, dirty-root recheck, DB apply, authority handoff, core-ready, enrichment.
-- [ ] Inventarisasi semua mutation callers dan field yang benar-benar wajib core.
-- [ ] Jalankan fixture 1 dan beberapa game, nested/flat, 100/1.000/10.000 folder, termasuk satu root sangat besar; ukur cold/warm terpisah.
-- [ ] Catat jumlah full/scoped scans, duplicate jobs, RSS/retained snapshots, root rescans, dan foreground yield latency.
+### P3 — Watcher dan refresh convergence
 
-Gate: ada baseline repeatable dan tabel caller/gate; jangan mengklaim speedup hanya dari pemindahan await. Telemetry remote mengikuti opt-in existing dan tidak mengirim path/nama/file contents.
+Files utama: watcher/lifecycle.rs, reconciliation orchestrator, src/features/file-watcher/hooks/useFileWatcher.ts, reconcileProgress.ts, reconcileRefresh.ts, src/features/workspace-runtime/actions/workspaceSwitchOps.ts, existing query refresh bus.
 
-### P1 — Core readiness yang fail-closed
+- [ ] TTL traversal diganti continuity/dirty checks.
+- [ ] Queued refresh memakai watermark recheck dan scope union.
+- [ ] Receipt dan watcher result memakai satu publication entry point dengan dedup.
+- [ ] Journal echo acknowledgement tidak kehilangan external changes.
+- [ ] Event/snapshot/refetch/progress terminal tahan reorder.
+- [ ] Listener lifecycle stabil; snapshot menutup registration/remount gap.
+- [ ] Hapus maps/timers/branches refresh lama yang sudah digantikan.
 
-Files utama: `disk_reconcile/orchestrator/state.rs`, `disk_reconcile/emit.rs`, `disk_reconcile/types.rs`, shared errors, mutation command/service callers.
+Gate: clean focus menghasilkan nol scan; internal toggle tidak full-scan/initial-loading; external change tetap converges.
 
-- [ ] Test unknown/unstarted/syncing/failed/source unavailable semuanya menolak mutasi biasa.
-- [ ] Perbaiki mapping terminal result; hanya accepted applied result membuka gate.
-- [ ] Hubungkan readiness ke root/generation dan lease-bound revalidation.
-- [ ] Tutup bypass UI, direct command, hotkey, bulk, collection, dan import commit.
-- [ ] Jaga recovery/conflict-resolution exception tetap narrow; buktikan tidak deadlock.
+### P4 — UI gate tunggal dan disk-first settlement
 
-Gate: tidak ada filesystem mutation biasa sebelum core-ready, termasuk pada race readiness berubah ketika command menunggu lock.
+Files utama:
 
-### P2 — Single-flight indexing dan foreground promotion
+- src/app/store/appStore/gameSlice.ts
+- src/app/entrypoint/App.tsx, waitForGameActivationReady.ts
+- src/pages/onboarding/WelcomeScreen.tsx, hooks/useOnboardingDiskProgress.ts
+- src/widgets/top-bar/GameSelector.tsx
+- src/widgets/mod-explorer/hooks/useFolderGridViewModel.ts, components/FolderGridSyncToast.tsx
+- src/features/workspace-runtime/actions/useWorkspaceSwitchActions.ts
+- FolderCard, WorkspaceSwitchControl, locale resources terkait.
 
-Files utama: `disk_reconcile/onboarding_session.rs`, `disk_reconcile/disk_snapshot.rs`, `disk_reconcile_cmds.rs`; ekstrak module coordinator/chunk state yang kohesif bila tanggung jawab session tidak lagi jelas.
+- [ ] Satu selector authoritative eligibility, tanpa OR beberapa cache readiness.
+- [ ] Safe switch tetap clickable selama optional work; receipt/error stale tidak rollback optimism baru.
+- [ ] Scoped conflict tidak mengunci unrelated nodes; initial indexing tetap melindungi workspace.
+- [ ] Progress scan/commit/catch-up/handoff jujur, tanpa fake percentage.
+- [ ] Ready snapshot membuka dashboard; optional status tidak memakai blocking disk-refresh banner.
+- [ ] Loading tetap menyediakan retry/ganti game/settings, tanpa delayed user mutation setelah ready.
+- [ ] Pertahankan Explorer disabled-path fix, ancestor-effective state, disk-verified aggregated toast.
 
-- [ ] Ganti FIFO preparation ownership dengan job dedup per game/root.
-- [ ] Implementasikan promotion, cooperative yield, root checkpoint validity, dan bounded retention.
-- [ ] Gabungkan subscriber ke job yang sama; snapshot status + monotonic events.
-- [ ] Terapkan per-game/root validity; hilangkan invalidasi karena unrelated global revision.
-- [ ] Jaga complete-baseline semantics pada apply/pruning dan scoped recheck.
+Gate: optional pending tidak membuat Enabled-grey; game switch tidak membawa stale progress/toast.
 
-Gate: memilih game ketiga tidak menunggu seluruh scan game kedua; completed valid roots dipakai ulang; tidak ada dua core workers untuk key yang sama.
+### P5 — Native regression, benchmark, cleanup
 
-### P3 — Satu alur onboarding, activation, background, dan startup
+- [ ] Jalankan matriks bagian 5 dan baseline comparison pada hardware/fixture sama.
+- [ ] Hapus scan owner/gate/polling/branches yang telah digantikan; pertahankan snapshot fallback recovery yang memang diperlukan.
+- [ ] Review lock ordering, journal recovery, stale publication, collision, dan simplifikasi module.
+- [ ] Jalankan typecheck/lint/build, Rust tests/checks, registry/bindings validation sesuai dampak.
+- [ ] Catat hasil nyata di architecture/history; pisahkan baseline failure dari regression.
 
-Files utama: `settings/adapters/tauri/settings_cmds.rs`, watcher `lifecycle.rs`, system `bootstrap.rs`, onboarding recovery persistence, reconciliation adapters.
+Gate: acceptance functional hijau, tidak dual-authority, storage-first tidak regress, dan pengukuran native terdokumentasi.
 
-- [ ] Route seluruh request core melalui coordinator; prewarm tidak lagi memulai scan independen.
-- [ ] First-game onboarding handoff ke activation tidak men-scan ulang baseline yang masih valid.
-- [ ] Preserve inactive watcher continuity untuk game yang sudah diindeks; batasi resource job yang belum selesai.
-- [ ] Resume pending jobs startup dan prioritaskan active game; reject stale activation publications.
-- [ ] Recovery/watcher catch-up selesai sebelum core-ready; dirty event tidak hilang pada pergantian owner.
+Urutan: P0 -> P1 -> P2 -> P3 -> P4 -> P5. Contract dan callers berpindah dalam slice kompatibel. Jangan merilis pure getter tanpa ensure entry points atau menghapus TTL sebelum continuity recovery teruji.
 
-Gate: satu lifecycle core dapat ditelusuri dari awal sampai Ready, termasuk restart dan rapid A -> B -> C -> A.
+## 5. Matriks regresi wajib
 
-### P4 — Loading page dan status integrasi
+| Skenario                                                         | Assertion                                                                                        |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Onboarding 1/5 games                                             | First-game ready membuka dashboard; background tidak menahan; clean handoff tanpa duplicate scan |
+| NotReady/failed/source unavailable                               | UI, IPC, hotkey, bulk, collection tidak write; retry dapat pulih                                 |
+| A -> B -> C -> A; queued/partial/Ready                           | Satu job per epoch, latest selection, reuse valid progress                                       |
+| Getter/focus/remount clean                                       | Tidak memulai recovery/scan; status snapshot tidak kehilangan event                              |
+| 100/1.000 rapid intents satu mod                                 | Final intent sesuai disk, pending bounded, tidak self-conflict                                   |
+| Banyak mods + bulk/collection                                    | Ordering overlap deterministik; final disk/UI/DB converge                                        |
+| Parent/child bersamaan                                           | Path rewrite benar dan effective-disabled mencakup ancestor                                      |
+| Watcher echo + external rename                                   | Echo tidak full-scan; external change tidak hilang                                               |
+| Nama sama beda parent                                            | Identitas berbeda, tanpa duplicate mods.id/false conflict                                        |
+| Real enabled/DISABLED collision muncul sebelum/sesudah preflight | Tidak overwrite; conflict scoped dan berdasarkan disk                                            |
+| Conflict-fix bersamaan indexing/switch                           | Candidate epoch/identity revalidated; stale report ditolak                                       |
+| Busy/permission/DB failure                                       | Bounded retry, error actionable, receipt tidak bohong                                            |
+| Watcher overflow/restart/root berubah                            | Authority revoked sesuai scope; recovery sebelum unsafe write                                    |
+| Runtime/KeyViewer sengaja diblokir                               | Core-ready dan disk receipt selesai; latest output setelah unblock                               |
+| Projection failure setelah rename                                | Journal recovery, disk success tidak di-rollback refetch lama                                    |
+| Event/snapshot/query response reorder                            | Latest revision menang; old terminal tidak menghapus new progress                                |
+| Crash sebelum/sesudah rename/sebelum projection                  | Recovery converges; persisted DB tidak false-ready                                               |
+| Large root/background games                                      | Foreground latency dan memory bounded terukur                                                    |
+| Collection preview/KeyViewer                                     | Hanya effective-enabled, empty-state tetap tersedia, preset overlay independen                   |
+| Rapid/multi toast dan pindah game                                | Hanya receipt sah, tidak spam/stale feedback                                                     |
+| Empty library                                                    | Core dapat ready; bukan infinite loading                                                         |
 
-Files utama: `WelcomeScreen.tsx`, `GameSelector.tsx`, `App.tsx` indexing overlay, `gameSlice.ts`, `useBackgroundIndexingStatus.ts`, workspace switch/query hooks, existing indexing UI, locale resources, IPC bindings.
+Race tests memakai barriers sebelum rename, setelah rename, sebelum DB/publication, dan handoff watcher. Native Windows/NTFS fixture wajib untuk identity, collision, sharing violation, watcher; browser mocks tidak membuktikan semuanya.
 
-- [ ] Tampilkan progress authoritative untuk selected game dan promote request yang idempotent.
-- [ ] Hilangkan ready-by-absence dan competing frontend readiness decisions.
-- [ ] Gunakan loading workspace yang tetap membolehkan pindah game; error/retry flow lengkap.
-- [ ] Backend snapshot + events tahan event reorder, remount, dan response activation terlambat.
-- [ ] Jangan load/render query workspace berat sebelum core-ready kecuali shell/status yang dibutuhkan.
+## 6. Target dan verification
 
-Gate: selected game tidak operasional sebelum core 100%; loading terbuka segera tanpa menunggu scan; game lain yang Ready tetap dapat dipilih.
+Target berikut bukan klaim hasil saat ini:
 
-### P5 — Enrichment tidak memblokir core atau switch
+- Optimistic paint p95 <= 100 ms pada fixture terkontrol; catat main-thread stalls.
+- Nol await optional enrichment pada disk receipt/core-ready critical path.
+- Satu core job per game/root epoch; nol extra scan pada clean handoff.
+- Nol traversal pada healthy clean focus; no-op tidak broad-refetch.
+- Pending work bounded pada 1.000 intents; intermediate stale intents tidak dieksekusi semua.
+- Disk receipt p50/p95/max dan lock wait diukur background off/on. Budget numerik ditetapkan pada P0 sesuai hardware/noise sebelum optimasi.
+- Tidak menjanjikan disk rename instan saat OS/antivirus memegang handle; kegagalan tetap terkontrol.
+- First-game ready tidak menunggu seluruh game; biaya background I/O tetap diukur.
+- Correctness simplification dibuktikan invariant dan penghapusan duplicate ownership; performance-only changes harus mengalahkan baseline noise.
 
-Files utama: `orchestrator/run.rs`, `bootstrap.rs`, reconciliation `runtime_sync.rs`, existing runtime/KeyViewer scheduler dan consumers.
-
-- [ ] Konsistenkan defer runtime pada onboarding/activation/startup.
-- [ ] Queue enrichment setelah core commit, menggunakan existing latest-wins generation.
-- [ ] Pastikan optional reads/work tidak memegang mutation lock selama pekerjaan mahal.
-- [ ] Priority/yield berlaku untuk beban optional yang bersaing dengan storage; jangan membuat core gate menunggu optional worker selesai.
-- [ ] Invalidate/publish derived results berdasarkan revision agar tidak menimpa state setelah toggle.
-
-Gate: fake KeyViewer yang sangat lambat atau gagal tidak menahan core-ready, toggle disk commit, atau pergantian game Ready.
-
-### P6 — Regression, benchmark, dan cleanup
-
-- [ ] Jalankan matriks verifikasi di bawah; perbaiki failures sebelum menandai task selesai.
-- [ ] Bandingkan baseline dan hasil pada fixture/hardware yang sama, terpisah cold/warm.
-- [ ] Hapus owner scan, polling/status fallback, dan branches legacy yang sudah digantikan; tidak meninggalkan dua sistem aktif.
-- [ ] Update architecture docs dan history berdasarkan perubahan serta hasil tes nyata.
-
-Gate: semua acceptance functional hijau, tidak ada regression storage-first, dan laporan performa mencantumkan batas pengukuran. Push/build installer hanya pada permintaan release terpisah.
-
-## 7. Matriks pengujian wajib
-
-| Skenario                                                     | Bukti kelulusan                                                                                                  |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Onboarding beberapa game                                     | Core game awal selesai tanpa menunggu game lain; background tetap berjalan kemudian.                             |
-| Select game queued / partially scanned / Ready               | Promote atau reuse job; tidak duplicate scan; tidak reset progres valid.                                         |
-| Rapid game selection dan repeated same-game clicks           | Latest selection menang; core job valid yang lama boleh lanjut background tanpa stale UI/runtime publication.    |
-| Huge single root                                             | Cooperative priority check tidak menunggu seluruh game/root selesai tanpa batas; commit tidak diputus di tengah. |
-| Semua mutation entry points saat NotReady/Failed             | Tidak ada rename/write; structured error; tidak ada delayed mutation setelah Ready.                              |
-| Gate berubah ketika command menunggu lock                    | Revalidation menolak generation/root lama sebelum disk write.                                                    |
-| Rage toggle setelah Ready, same/different mods, bulk         | Last-wins disk state; tidak muncul self-conflict atau indexing ulang karena runtime tertunda.                    |
-| Background game B + storage switches game A                  | A tidak menunggu scan/enrichment B; snapshot B tidak invalid hanya karena revision global A.                     |
-| External rename/create/delete selama scan/finalize           | Dirty roots diproses; final projection cocok disk; tidak ada orphan/prune dari partial snapshot.                 |
-| Root diganti, watcher overflow/stop, permission/source error | Authority invalid; recheck/failure actionable; tidak false-ready.                                                |
-| Nama sama beda parent; enabled/disabled real collision       | Beda path sah; real collision scoped; hash/key overlap tidak memblokir switch.                                   |
-| Runtime result terlambat setelah toggle                      | Revision/generation lama tidak menimpa current projection/output.                                                |
-| Crash sebelum/sesudah DB commit dan restart pending          | Journal recovery terjaga; cache tidak dipercaya tanpa validasi; pekerjaan tidak stuck Running.                   |
-| DB apply gagal; retry; TTL/cancel/eviction                   | Tidak publish Ready; resource dibersihkan; retry memakai hanya checkpoint valid.                                 |
-| IPC status snapshot/event race dan UI remount                | State terbaru tidak mundur; missing status tidak membuka operasi.                                                |
-| KeyViewer blocked/failure; empty library                     | Core tetap bisa Ready secara benar; optional retry terpisah; empty library bukan forever-loading.                |
-
-## 8. Target performa dan verification commands
-
-Target berikut adalah acceptance target, bukan klaim hasil saat ini:
-
-- Tidak ada await KeyViewer/enrichment dalam critical path core-ready atau toggle disk commit.
-- Tidak ada duplicate core job untuk game/root/generation yang sama.
-- Tanpa perubahan disk, promotion dan onboarding-to-activation handoff tidak mengulang completed roots.
-- Di fixture terkontrol, selection -> loading shell dan optimistic switch feedback ditargetkan p95 <= 100 ms, diukur terpisah dari IPC/disk latency.
-- Promotion dijalankan pada checkpoint aman berikutnya; ukur request-to-yield p95/max. Tidak menjanjikan batas wall-clock ketika OS filesystem call sedang blocking.
-- Waktu core-ready game pertama tidak bertambah proporsional jumlah game terkonfigurasi. Ukur first-game-only versus multiple-games untuk membuktikan background contention terkendali.
-- Performa storage-first dengan background indexing harus dibandingkan kondisi background off. Tentukan tolerance regression dari baseline noise sebelum mengubah scheduler, bukan sesudah melihat hasil.
-
-Validation setelah implementasi: targeted Rust state/concurrency tests, frontend interaction tests, existing storage-first regression suites, command registry test, full library/frontend suites sesuai dampak, typecheck, lint, formatting, dan production frontend build. Native Windows fixture diperlukan untuk filesystem identity/watcher behavior; browser mocks tidak membuktikan race NTFS.
-
-Perintah dasar yang tersedia (jalankan bounded/background bila lama):
+Commands setelah implementasi, bounded sesuai setup:
 
 ```powershell
 rtk pnpm exec tsc --noEmit
@@ -264,15 +279,23 @@ rtk cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
 rtk git diff --check
 ```
 
-Pisahkan baseline failures yang terverifikasi dari failures baru. Jangan menonaktifkan checks atau menandai gate hijau jika belum dijalankan. Export bindings mengikuti setup exporter aktual; review hasil generate dan rerun typecheck setelahnya.
+Jangan bypass checks. Jika pnpm mencoba reinstall/purge saat validation, jangan auto-approve purge; pakai compatible installed runner atau laporkan blocker. Review generated bindings dengan exporter aktual, bukan menambah file duplikat.
 
-## 9. Risiko dan kontrol scope
+## 7. Scope safety dan definition of done
 
-- Strict gate dapat membuka caller yang sebelumnya bergantung pada default permissive: selesaikan inventory/gate tests sebelum UI rollout.
-- Chunking dapat menambah state rumit: simpan hanya complete-root checkpoints; partial root boleh diulang, tidak perlu serialisasi traversal stack lintas restart.
-- Scanning disk aktif tidak pernah menjamin tidak ada external write sesudah Ready: pertahankan identity-validating preflight dan watcher authority, bukan menjanjikan snapshot kekal.
-- Background otomatis tetap punya biaya I/O/RAM. Batasi kerja, yield ke foreground, dan ukur; jangan menyebutnya gratis hanya karena async.
-- Jangan menambah durable schema bila existing recovery list dan in-memory status cukup. Perubahan schema yang terbukti perlu harus diajukan terpisah dengan alasan dan migration plan.
-- Implementasi diselesaikan sebagai satu perubahan perilaku utuh sebelum release; jangan merilis strict gate tanpa bootstrap/activation path yang dapat menghasilkan Ready.
+- Tidak ada schema migration direncanakan; kebutuhan baru diajukan terpisah.
+- Format mutation journal/recovery dipertahankan.
+- Small coherent commits, tanpa dual-engine feature flag permanen.
+- Rollback kode tidak membalik rename pengguna yang sudah committed; recovery memakai disk/journal aktual.
+- Jangan mengorbankan validasi untuk benchmark hijau.
+- Approval implementasi tidak mencakup push/release atau stress-test library asli pengguna.
 
-Definition of done: core-readiness terbukti fail-closed, automatic indexing tetap efektif dan promotable, UI melanjutkan progres yang sah, disk/DB convergent setelah finalization, serta operasi storage-first sesudah Ready tidak menunggu pekerjaan opsional.
+Selesai jika first-game handoff tidak duplikasi indexing, satu readiness authority, disk-first last-wins terverifikasi, watcher tidak kehilangan external changes, konflik nyata aman, optional failure tidak membekukan switch, serta hasil native stress/benchmark tercatat.
+
+## 8. Bukti implementasi lokal (2026-09-28)
+
+- Fixture Windows terisolasi dengan 100/1.000/10.000 mod mengukur reconcile onboarding pertama sekitar 37 ms/212 ms/4,54 s. Reconcile full tanpa perubahan sekitar 25 ms/132 ms/2,98 s; sebelumnya pada fixture 10.000 mod sekitar 13,16 s dan melaporkan perubahan folder palsu. Ini bukan pengukuran latency UI pada library pengguna.
+- Tes no-op membuktikan key relatif snapshot dan key absolut DB tidak lagi memicu identity staging berulang, size traversal opsional, atau UPDATE collection binding yang nilainya sama.
+- Tes watcher nyata dan state terisolasi mencakup takeover clean, event terlambat yang membatalkan proof, startup reuse, prewarm yang tidak menahan activation lock, serta revisit setelah budget prewarm habis. Tes coordinator mencakup 1.000 intent cepat pada satu folder; tes bulk/konflik mencakup identity dan destination collision.
+- Validasi akhir: 1.306 tes Rust lulus (12 benchmark/manual ignored), 1.100 tes frontend lulus (1 skipped), TypeScript, ESLint, architecture lint, Vite build, Cargo check, Cargo Clippy `-D warnings`, Rust format, dan diff check lulus.
+- Validasi otomatis tidak menggantikan pengukuran click-to-paint atau disk receipt p95 di aplikasi terpasang dengan antivirus dan koleksi riil. Target numerik tersebut tetap perlu observasi pada lingkungan pengguna sebelum dinyatakan tercapai.

@@ -326,20 +326,16 @@ pub async fn set_active_game(
         let restored_generation = disk_reconcile_state
             .begin_activation(previous_game.as_ref().map(|game| game.id.clone()));
         if let Some(previous) = &previous_game {
-            disk_reconcile_state.reset_initial_recovery(&previous.id);
-            let recovery_generation =
-                disk_reconcile_state.mark_initial_recovery_pending(&previous.id);
             if let Err(restore_error) = crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher_for_activation(
                 app.clone(),
                 watcher.inner(),
                 pool.inner().clone(),
                 previous.mod_path.to_string_lossy().into_owned(),
                 previous.id.clone(),
-                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherActivation {
-                    activation_generation: restored_generation,
-                    recovery_generation,
-                },
+                restored_generation,
             ) {
+                disk_reconcile_state.reset_initial_recovery(&previous.id);
+                let recovery_generation = disk_reconcile_state.mark_initial_recovery_pending(&previous.id);
                 let message = format!(
                     "Could not restore '{}' after active-game persistence failed: {restore_error}",
                     previous.name
@@ -362,18 +358,33 @@ pub async fn set_active_game(
     {
         let runtime_config_path = previous.instance_path.join("d3dx.ini");
         if previous.mod_path.is_dir() {
-            if let Err(error) = crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+            if let Err(error) = crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
                 &app,
                 watcher.inner(),
                 &previous.id,
                 &previous.mod_path,
                 Some(&runtime_config_path),
+                &_activation_guard,
+                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly,
             ) {
                 log::warn!(
                     "Could not preserve inactive watcher continuity for '{}': {error}",
                     previous.id
                 );
             }
+        }
+    }
+    if let Some(game) = &target_game {
+        let runtime_config_path = game.instance_path.join("d3dx.ini");
+        if !crate::modules::workspace::application::scanner::watcher::lifecycle::inactive_activation_is_ready(
+            &app,
+            watcher.inner(),
+            &game.id,
+            &game.mod_path,
+            &runtime_config_path,
+        ) {
+            disk_reconcile_state.reset_initial_recovery(&game.id);
+            disk_reconcile_state.mark_initial_recovery_pending(&game.id);
         }
     }
     watcher.invalidate_session();
@@ -398,18 +409,6 @@ pub async fn set_active_game(
     let game = target_game.expect("validated Some game id has a game");
     app.state::<crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>()
         .promote_game(&game_id);
-    disk_reconcile_state.reset_initial_recovery(&game_id);
-    let recovery_generation = disk_reconcile_state.mark_initial_recovery_pending(&game_id);
-    let syncing = GameActivationStatus {
-        game_id: Some(game_id.clone()),
-        generation,
-        phase: GameActivationPhase::Syncing,
-        reconcile_revision: None,
-        runtime_sync_generation: None,
-        error: None,
-    };
-    emit_game_activation_status(&app, syncing);
-
     let unavailable = !game.mod_path.exists() || !game.mod_path.is_dir();
     let start_result = if unavailable {
         Err(crate::shared::errors::ScannerError::PathNotFound {
@@ -422,48 +421,54 @@ pub async fn set_active_game(
             pool.inner().clone(),
             game.mod_path.to_string_lossy().into_owned(),
             game_id.clone(),
-            crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherActivation {
-                activation_generation: generation,
-                recovery_generation,
-            },
+            generation,
         )
     };
-    if let Err(error) = start_result {
-        let message = format!("Could not activate '{}': {error}", game.name);
-        disk_reconcile_state.finish_initial_recovery(
+    let reused = match start_result {
+        Ok(reused) => reused,
+        Err(error) => {
+            disk_reconcile_state.reset_initial_recovery(&game_id);
+            let recovery_generation = disk_reconcile_state.mark_initial_recovery_pending(&game_id);
+            let message = format!("Could not activate '{}': {error}", game.name);
+            disk_reconcile_state.finish_initial_recovery(
             &game_id,
             recovery_generation,
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
                 message.clone(),
             ),
         );
-        let phase = if unavailable {
-            GameActivationPhase::SourceUnavailable
-        } else {
-            GameActivationPhase::Failed
-        };
-        emit_game_activation_status(
-            &app,
-            GameActivationStatus {
-                game_id: Some(game_id.clone()),
+            let phase = if unavailable {
+                GameActivationPhase::SourceUnavailable
+            } else {
+                GameActivationPhase::Failed
+            };
+            emit_game_activation_status(
+                &app,
+                GameActivationStatus {
+                    game_id: Some(game_id.clone()),
+                    generation,
+                    phase: phase.clone(),
+                    reconcile_revision: None,
+                    runtime_sync_generation: None,
+                    error: Some(message),
+                },
+            );
+            return Ok(GameActivationResult {
+                game_id: Some(game_id),
                 generation,
-                phase: phase.clone(),
-                reconcile_revision: None,
-                runtime_sync_generation: None,
-                error: Some(message),
-            },
-        );
-        return Ok(GameActivationResult {
-            game_id: Some(game_id),
-            generation,
-            phase,
-        });
-    }
+                phase,
+            });
+        }
+    };
 
     Ok(GameActivationResult {
         game_id: Some(game_id),
         generation,
-        phase: GameActivationPhase::Syncing,
+        phase: if reused.is_some() {
+            GameActivationPhase::Ready
+        } else {
+            GameActivationPhase::Syncing
+        },
     })
 }
 
