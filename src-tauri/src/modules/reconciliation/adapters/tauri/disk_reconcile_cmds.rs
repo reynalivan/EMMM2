@@ -947,12 +947,16 @@ async fn reconcile_onboarding_indexing_game_impl(
                 .find(|game| game.id == game_id);
             if let Some(game) = game.filter(|game| lease.matches_root(&game.mod_path)) {
                 let runtime_config_path = game.instance_path.join("d3dx.ini");
-                match crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+                // Reuse the held activation guard; the unguarded wrapper's
+                // try_lock would always skip this onboarding handoff.
+                match crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
                     app,
                     watcher,
                     game_id,
                     &game.mod_path,
                     Some(&runtime_config_path),
+                    &_activation_guard,
+                    crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly,
                 ) {
                     Ok(Some(watcher_session)) => {
                         let observed_generation = disk_reconcile_state
