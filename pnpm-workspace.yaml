@@ -2,8 +2,8 @@ engineStrict: true
 packageManagerStrict: true
 packageManagerStrictVersion: true
 preferOffline: true
-onlyBuiltDependencies:
-  - '@swc/core'
-  - edgedriver
-  - esbuild
-  - geckodriver
+allowBuilds:
+  '@swc/core': true
+  edgedriver: true
+  esbuild: true
+  geckodriver: true

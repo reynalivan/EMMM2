@@ -12,7 +12,7 @@ Set-Location $repositoryRoot
 
 $minimumNodeMajor = 22
 $maximumNodeMajor = 24
-$requiredPnpmVersion = '10.24.0'
+$requiredPnpmVersion = '11.19.0'
 
 function Require-Command {
     param([Parameter(Mandatory)][string]$Name)

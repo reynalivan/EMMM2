@@ -37,7 +37,7 @@ scripts/         Development and release helpers
 ## Prerequisites
 
 - Node.js 22 through 24
-- Corepack, which provides the pinned pnpm 10.24.0 release
+- Corepack, which provides the pinned pnpm 11.19.0 release
 - Rust stable and Cargo
 - Windows is required for the native desktop workflow
 
