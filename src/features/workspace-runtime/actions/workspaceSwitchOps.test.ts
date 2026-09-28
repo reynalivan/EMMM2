@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
+import { listen } from '@tauri-apps/api/event';
 import type {
   WorkspaceImpact,
   WorkspaceSwitchInput,
@@ -112,20 +113,6 @@ describe('workspace switch ops', () => {
     });
   });
 
-  it('returns a committed switch and presents terminal projection lag', async () => {
-    executeWorkspaceSwitchCommand.mockResolvedValue({
-      status: 'applied',
-      sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
-    });
-
-    await expect(executeWorkspaceSwitch({ game_id: 'game-1' } as never)).resolves.toEqual(
-      expect.objectContaining({ status: 'applied' }),
-    );
-    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
-      expect.objectContaining({ sync_warning: expect.any(Object) }),
-    );
-  });
-
   describe('node identity', () => {
     it('keys object nodes and identified folders by stable ids', () => {
       expect(buildNodePendingKey({ node_kind: 'object', id: 'o1' } as never)).toBe('object:o1');
@@ -195,6 +182,39 @@ describe('workspace switch ops', () => {
       parent_enable_confirmation: null,
       origin_surface: 'folder_grid',
     };
+
+    it('submits the disk switch before projection listener registration completes', async () => {
+      let finishRegistration!: (unlisten: () => void) => void;
+      vi.mocked(listen).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRegistration = resolve;
+          }),
+      );
+      executeWorkspaceSwitchCommand.mockResolvedValue({ primary_path: 'E:/Mods/A' });
+
+      try {
+        const switchPromise = executeWorkspaceSwitch(input);
+        expect(executeWorkspaceSwitchCommand).toHaveBeenCalledTimes(1);
+        await switchPromise;
+      } finally {
+        finishRegistration?.(() => undefined);
+      }
+    });
+
+    it('returns a committed switch and presents terminal projection lag', async () => {
+      executeWorkspaceSwitchCommand.mockResolvedValue({
+        status: 'applied',
+        sync_warning: { kind: 'ReconcileFailed', message: 'projection pending' },
+      });
+
+      await expect(executeWorkspaceSwitch(input)).resolves.toEqual(
+        expect.objectContaining({ status: 'applied' }),
+      );
+      expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(
+        expect.objectContaining({ sync_warning: expect.any(Object) }),
+      );
+    });
 
     it('returns the switch result on success', async () => {
       executeWorkspaceSwitchCommand.mockResolvedValue({ primary_path: 'E:/Mods/A' });

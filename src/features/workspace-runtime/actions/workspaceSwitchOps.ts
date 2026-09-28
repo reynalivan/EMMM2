@@ -265,7 +265,7 @@ export function executeWorkspaceSwitch(
 ): Promise<WorkspaceSwitchResult | null> {
   return (async () => {
     try {
-      await ensureWorkspaceProjectionListener();
+      void ensureWorkspaceProjectionListener();
       const result = await commands.executeWorkspaceSwitch(input, intentRevision);
       if (isWorkspaceGameCurrent(input.game_id)) {
         notifyCommittedMutationSyncWarning(result);
@@ -300,7 +300,7 @@ export function executeWorkspaceObjectBulkSwitch(
 ): Promise<WorkspaceSwitchResult | null> {
   return (async () => {
     try {
-      await ensureWorkspaceProjectionListener();
+      void ensureWorkspaceProjectionListener();
       const result = await commands.executeWorkspaceObjectBulkSwitch(
         gameId,
         objectIds,

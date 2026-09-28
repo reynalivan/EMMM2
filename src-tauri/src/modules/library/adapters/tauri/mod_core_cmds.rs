@@ -209,7 +209,11 @@ pub async fn open_in_explorer(
     game_id: String,
     path: String,
 ) -> Result<(), AppError> {
-    let canonical_path = validate_path(&config, &game_id, &path)?;
+    let mods_root = config.mods_root_for(&game_id).ok_or_else(|| {
+        AppError::Validation(format!("Mods path not configured for game: {game_id}"))
+    })?;
+    let resolved_path = resolve_open_explorer_target(&mods_root, Path::new(&path));
+    let canonical_path = validate_path(&config, &game_id, &resolved_path.to_string_lossy())?;
     ensure_path_can_be_opened(&app, pool.inner(), &game_id, &canonical_path).await?;
     #[cfg(target_os = "windows")]
     {
@@ -223,6 +227,18 @@ pub async fn open_in_explorer(
     Err(AppError::Io(
         "Open in explorer only supported on Windows".to_string(),
     ))
+}
+
+fn resolve_open_explorer_target(mods_root: &Path, requested: &Path) -> PathBuf {
+    let absolute = if requested.is_absolute() {
+        requested.to_path_buf()
+    } else {
+        mods_root.join(requested)
+    };
+    crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
+        mods_root, &absolute, false,
+    )
+    .unwrap_or(absolute)
 }
 
 #[specta::specta]

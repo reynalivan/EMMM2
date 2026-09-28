@@ -84,6 +84,40 @@ fn open_folder_preflight_uses_containment_and_conflict_validation_without_reconc
 }
 
 #[test]
+fn explorer_target_follows_disabled_folder_after_a_disk_toggle() {
+    let tmp = TempDir::new().unwrap();
+    let disabled = tmp.path().join("DISABLED Example");
+    let enabled = tmp.path().join("Example");
+    fs::create_dir(&disabled).unwrap();
+
+    let resolved = resolve_open_explorer_target(tmp.path(), &disabled);
+    assert_eq!(resolved, disabled);
+
+    fs::rename(&disabled, &enabled).unwrap();
+    let resolved = resolve_open_explorer_target(tmp.path(), &disabled);
+    assert_eq!(resolved, enabled);
+
+    fs::rename(&enabled, &disabled).unwrap();
+    let resolved = resolve_open_explorer_target(tmp.path(), &enabled);
+    assert_eq!(resolved, disabled);
+}
+
+#[test]
+fn explorer_target_keeps_exact_folder_when_both_name_variants_exist() {
+    let tmp = TempDir::new().unwrap();
+    let disabled = tmp.path().join("DISABLED Example");
+    let enabled = tmp.path().join("Example");
+    fs::create_dir(&disabled).unwrap();
+    fs::create_dir(&enabled).unwrap();
+
+    assert_eq!(
+        resolve_open_explorer_target(tmp.path(), &disabled),
+        disabled
+    );
+    assert_eq!(resolve_open_explorer_target(tmp.path(), &enabled), enabled);
+}
+
+#[test]
 fn rename_rejects_case_insensitive_duplicate() {
     let tmp = TempDir::new().unwrap();
     let raiden = tmp.path().join("Raiden");

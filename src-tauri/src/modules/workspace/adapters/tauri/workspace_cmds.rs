@@ -23,6 +23,8 @@ use crate::modules::workspace::domain::workspace::{
 };
 use crate::shared::errors::AppError;
 
+const SLOW_WORKSPACE_SWITCH_THRESHOLD: Duration = Duration::from_millis(500);
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_workspace_structure(
@@ -707,6 +709,17 @@ async fn execute_workspace_switch_request(
         execute_elapsed.as_millis(),
         started_at.elapsed().as_millis(),
     );
+    if started_at.elapsed() >= SLOW_WORKSPACE_SWITCH_THRESHOLD {
+        log::info!(
+            "slow workspace switch disk commit preflight_ms={} lock_wait_ms={} prepare_ms={} journal_prepare_ms={} apply_ms={} total_ms={}",
+            preflight_elapsed.as_millis(),
+            lock_wait_elapsed.as_millis(),
+            prepare_elapsed.as_millis(),
+            journal_prepare_elapsed.as_millis(),
+            execute_elapsed.as_millis(),
+            started_at.elapsed().as_millis(),
+        );
+    }
     Ok(result)
 }
 
