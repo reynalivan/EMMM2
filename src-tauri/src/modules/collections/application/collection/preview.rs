@@ -57,7 +57,7 @@ pub async fn preview_apply(
     let current_projected_state =
         projected_state::build_projected_state(&current_mods, &current_objects, mods_path);
     let current_tree_nodes =
-        projected_state::build_preview_tree_from_projected_state(&current_projected_state);
+        projected_state::build_live_active_preview_tree(&current_projected_state);
     let target_state = load_projected_collection_state(pool, &collection, mods_path).await?;
     let target_mods = projected_state::mods_from_projected_state(&collection.id, &target_state);
     let target_objects =

@@ -79,7 +79,8 @@ pub struct RuntimeCollectionMembership {
     pub object_states: Vec<(String, bool)>,
 }
 
-/// Enabled mods of a game. Safety classification never changes collection membership.
+/// Terminal-status enabled rows; callers must also check disabled ancestors.
+/// Safety classification never changes collection membership.
 pub async fn get_live_active_mod_rows(
     pool: &SqlitePool,
     game_id: &str,

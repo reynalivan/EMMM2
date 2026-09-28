@@ -5,7 +5,7 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { HotkeyConfig } from '@/entities/settings';
 import type { KeyViewerRuntimeDiagnostics } from '@/shared/api/tauri/bindings';
 import { detectConflicts } from '../../utils/hotkeyConflicts';
-import { render, screen } from '../../../../tests/testing/test-utils';
+import { fireEvent, render, screen, waitFor, within } from '../../../../tests/testing/test-utils';
 import HotkeyTab from './HotkeyTab';
 
 const mockSaveSettingsAsync = vi.fn();
@@ -49,6 +49,7 @@ const translate = ((key: string, values?: Record<string, unknown>) =>
 
 const defaults: HotkeyConfig = {
   enabled: true,
+  preset_status_overlay_enabled: false,
   safe_mode: 'F5',
   next_preset: 'Ctrl+F5',
   prev_preset: 'Shift+F5',
@@ -58,6 +59,7 @@ const defaults: HotkeyConfig = {
 describe('hotkey conflict detection', () => {
   beforeEach(() => {
     activeGameId = null;
+    mockSaveSettingsAsync.mockClear();
     mockGetReloadKey.mockResolvedValue(null);
   });
 
@@ -93,14 +95,29 @@ describe('hotkey conflict detection', () => {
     expect(infrastructureTitle.closest('.alert')).toBeNull();
   });
 
-  it('explains that only the preset status overlay is temporarily hidden', () => {
+  it('keeps the preset status overlay off by default without changing KeyViewer', async () => {
     render(createElement(HotkeyTab));
 
-    expect(
-      screen.getByText(
-        'Preset status overlay (Beta) is hidden for now. KeyViewer keybind panels remain available.',
-      ),
-    ).toBeInTheDocument();
+    const globalHotkeys = screen.getByRole('region', { name: 'Global hotkeys' });
+    const presetOverlay = within(globalHotkeys).getByRole('checkbox', {
+      name: 'Preset status overlay (Beta)',
+    });
+    const keyviewerOverlay = screen.getByRole('checkbox', { name: 'Enable overlay' });
+    expect(presetOverlay).not.toBeChecked();
+    expect(keyviewerOverlay).toBeChecked();
+
+    fireEvent.click(presetOverlay);
+    expect(presetOverlay).toBeChecked();
+    expect(keyviewerOverlay).toBeChecked();
+    expect(screen.queryByText(/hidden for now/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save controls' }));
+    await waitFor(() => expect(mockSaveSettingsAsync).toHaveBeenCalledOnce());
+    expect(mockSaveSettingsAsync).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({ preset_status_overlay_enabled: true }),
+      { enabled: true },
+    );
   });
 
   it('shows only the four supported controls', () => {

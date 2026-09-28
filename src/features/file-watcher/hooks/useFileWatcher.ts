@@ -305,6 +305,7 @@ export function useDiskReconcileCoordinator(
   const queuedRefreshRef = useRef<QueuedDiskReconcileRefresh | null>(null);
   const lastModsViewSyncKeyRef = useRef<string | null>(null);
   const hydratedModsViewByGameRef = useRef<Record<string, boolean>>({});
+  const activationReadyAtByGameRef = useRef<Record<string, number>>({});
   const requiresFullReconcileByGameRef = useRef<Record<string, boolean>>({});
   const lastWindowBlurAtRef = useRef<number>(0);
   const activeGameRef = useRef<GameConfig | null>(activeGame);
@@ -363,10 +364,15 @@ export function useDiskReconcileCoordinator(
   );
 
   useEffect(() => {
-    if (activeGame?.id && gameActivation?.phase === 'ready') {
+    if (
+      activeGame?.id &&
+      gameActivation?.phase === 'ready' &&
+      gameActivation.reconcile_revision !== null
+    ) {
       markGameHydrated(activeGame.id);
+      activationReadyAtByGameRef.current[activeGame.id] = Date.now();
     }
-  }, [activeGame?.id, gameActivation?.phase, markGameHydrated]);
+  }, [activeGame?.id, gameActivation?.phase, gameActivation?.reconcile_revision, markGameHydrated]);
 
   const shouldSync = useCallback(
     (gameId: string, forceFull: boolean) => {
@@ -387,7 +393,11 @@ export function useDiskReconcileCoordinator(
         return true;
       }
 
-      return Date.now() - (entry?.at ?? 0) > MODS_VIEW_SYNC_TTL_MS;
+      const lastValidatedAt = Math.max(
+        entry?.at ?? 0,
+        activationReadyAtByGameRef.current[gameId] ?? 0,
+      );
+      return Date.now() - lastValidatedAt > MODS_VIEW_SYNC_TTL_MS;
     },
     [diskReconcileByGame],
   );

@@ -52,7 +52,12 @@ pub async fn get_workspace_structure(
         ),
     )
     .await?;
-    workspace.runtime.recovery_status = workspace_recovery_status(recovery_readiness);
+    workspace.runtime.recovery_status = workspace_recovery_status(
+        recovery_readiness,
+        disk_reconcile_state
+            .ensure_core_recovery_allows_preflight(&game_id)
+            .is_ok(),
+    );
     Ok(workspace)
 }
 
@@ -246,12 +251,16 @@ pub async fn get_workspace_preview(
 
 fn workspace_recovery_status(
     readiness: crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness,
+    has_applied_core: bool,
 ) -> crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus {
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
     use crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus;
 
     match readiness {
         InitialRecoveryReadiness::Ready { .. } => WorkspaceRecoveryStatus::Ready,
+        InitialRecoveryReadiness::Failed { .. } if has_applied_core => {
+            WorkspaceRecoveryStatus::Ready
+        }
         InitialRecoveryReadiness::Failed { .. } => WorkspaceRecoveryStatus::Failed,
         InitialRecoveryReadiness::Unstarted { .. } | InitialRecoveryReadiness::Syncing { .. } => {
             WorkspaceRecoveryStatus::Syncing
@@ -415,7 +424,7 @@ async fn execute_workspace_switch_request(
     }
     let mut scope = prepared.mutation_scope(&mods_root)?;
     if scope.renames.is_empty() {
-        disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
+        disk_reconcile_state.ensure_core_recovery_allows_preflight(&game_id)?;
         let _guard = op_lock
             .acquire_exempt(
                 crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
@@ -499,7 +508,7 @@ async fn execute_workspace_switch_request(
             scope = refreshed_scope;
         }
         if scope.renames.is_empty() {
-            disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
+            disk_reconcile_state.ensure_core_recovery_allows_preflight(&game_id)?;
             let _guard = op_lock
             .acquire_exempt(
                 crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
@@ -1288,8 +1297,22 @@ mod tests {
     #[test]
     fn pending_recovery_maps_to_syncing_workspace_runtime() {
         assert_eq!(
-            workspace_recovery_status(InitialRecoveryReadiness::Syncing { generation: 7 }),
+            workspace_recovery_status(InitialRecoveryReadiness::Syncing { generation: 7 }, true),
             crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus::Syncing
+        );
+    }
+
+    #[test]
+    fn completed_index_does_not_lock_workspace_during_repairable_watcher_drift() {
+        use crate::modules::workspace::domain::workspace::WorkspaceRecoveryStatus;
+
+        assert_eq!(
+            workspace_recovery_status(InitialRecoveryReadiness::Failed { generation: 7 }, true),
+            WorkspaceRecoveryStatus::Ready
+        );
+        assert_eq!(
+            workspace_recovery_status(InitialRecoveryReadiness::Failed { generation: 7 }, false),
+            WorkspaceRecoveryStatus::Failed
         );
     }
 

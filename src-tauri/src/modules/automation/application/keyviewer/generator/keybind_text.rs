@@ -12,6 +12,7 @@ const MAX_KEYBIND_LINES: usize = 60;
 const TRUNCATION_MARKER: &str = "... (truncated; see the EMMM preview for the full list)";
 const MAX_HEADING_BYTES: usize = 512;
 const MAX_FOOTER_BYTES: usize = 256;
+const NO_SWITCHER_KEY_MESSAGE: &str = "No switcher key on this mod";
 
 /// A keybinding associated with its source mod name for display in the overlay.
 #[derive(Debug, Clone)]
@@ -27,10 +28,6 @@ pub fn keybind_file_name(index: usize) -> String {
 
 fn keybind_lines(keybind: &KeyBinding, show_section: bool) -> Vec<String> {
     let mut lines = Vec::new();
-    if show_section {
-        lines.push(format!("[{}]", keybind.section_name));
-    }
-
     if let Some(key) = keybind
         .key
         .as_deref()
@@ -54,6 +51,9 @@ fn keybind_lines(keybind: &KeyBinding, show_section: bool) -> Vec<String> {
         .filter(|back| !back.is_empty())
     {
         lines.push(format!("Back: {back}"));
+    }
+    if show_section && !lines.is_empty() {
+        lines.insert(0, format!("[{}]", keybind.section_name));
     }
 
     lines
@@ -121,19 +121,31 @@ pub fn generate_keybind_text(
     );
 
     let source_count = sources.len();
-    let candidates = sources.iter().flat_map(|source| {
-        let mut source_lines = Vec::new();
-        if source_count > 1 {
-            source_lines.push(format!("[Mod: {}]", source.mod_name));
-        }
-
-        let show_section = source.keybinds.len() > 1;
-        for keybind in &source.keybinds {
-            source_lines.extend(keybind_lines(keybind, show_section));
-        }
-
-        source_lines
-    });
+    let candidates = if sources.is_empty() {
+        vec![NO_SWITCHER_KEY_MESSAGE.to_string()]
+    } else {
+        sources
+            .iter()
+            .flat_map(|source| {
+                let show_section = source.keybinds.len() > 1;
+                let mut binding_lines = source
+                    .keybinds
+                    .iter()
+                    .flat_map(|keybind| keybind_lines(keybind, show_section))
+                    .collect::<Vec<_>>();
+                let mut source_lines = Vec::new();
+                if source_count > 1 {
+                    source_lines.push(format!("[Mod: {}]", source.mod_name));
+                }
+                if binding_lines.is_empty() {
+                    source_lines.push(NO_SWITCHER_KEY_MESSAGE.to_string());
+                } else {
+                    source_lines.append(&mut binding_lines);
+                }
+                source_lines
+            })
+            .collect::<Vec<_>>()
+    };
 
     append_with_limits(&mut lines, candidates, &footer);
     lines.push(String::new());

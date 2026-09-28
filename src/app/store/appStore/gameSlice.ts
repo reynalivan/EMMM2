@@ -39,7 +39,8 @@ const EMPTY_DISK_RECONCILE: DiskReconcileEntry = {
   revision: 0,
 };
 
-let runtimeStatusListenersReady: Promise<void> | null = null;
+let runtimeSyncListenerReady: Promise<void> | null = null;
+let gameActivationListenerReady: Promise<void> | null = null;
 let startupReconcileUnlisten: (() => void) | null = null;
 let startupReconcileHandlerReady = false;
 const startupReconcileGapResultsByGame = new Map<string, DiskReconcileResult[]>();
@@ -65,6 +66,8 @@ interface SetActiveGameOptions {
    * not keep a route transition open just to warm the same query cache.
    */
   deferWorkspacePrefetch?: boolean;
+  /** Onboarding must observe activation completion before leaving its gate. */
+  requireActivationStatusListener?: boolean;
 }
 
 const runtimePhaseOrder: Record<RuntimeSyncStatus['phase'], number> = {
@@ -130,25 +133,45 @@ export interface GameSlice {
   setGameActivationStatus: (status: GameActivationStatus) => void;
 }
 
-function ensureRuntimeStatusListeners(
+function ensureRuntimeSyncListener(
   get: () => Pick<GameSlice, 'setRuntimeSyncStatus' | 'setGameActivationStatus'>,
 ): Promise<void> {
-  if (!runtimeStatusListenersReady) {
-    runtimeStatusListenersReady = Promise.all([
-      listen<RuntimeSyncStatus>('runtime_sync:status', (event) => {
-        get().setRuntimeSyncStatus(event.payload);
-      }),
-      listen<GameActivationStatus>('game_activation:status', (event) => {
-        get().setGameActivationStatus(event.payload);
-      }),
-    ])
+  if (!runtimeSyncListenerReady) {
+    runtimeSyncListenerReady = listen<RuntimeSyncStatus>('runtime_sync:status', (event) => {
+      get().setRuntimeSyncStatus(event.payload);
+    })
       .then(() => undefined)
       .catch((error) => {
-        runtimeStatusListenersReady = null;
+        runtimeSyncListenerReady = null;
         throw error;
       });
   }
-  return runtimeStatusListenersReady;
+  return runtimeSyncListenerReady;
+}
+
+function ensureGameActivationListener(
+  get: () => Pick<GameSlice, 'setRuntimeSyncStatus' | 'setGameActivationStatus'>,
+): Promise<void> {
+  if (!gameActivationListenerReady) {
+    gameActivationListenerReady = listen<GameActivationStatus>(
+      'game_activation:status',
+      (event) => {
+        get().setGameActivationStatus(event.payload);
+      },
+    )
+      .then(() => undefined)
+      .catch((error) => {
+        gameActivationListenerReady = null;
+        throw error;
+      });
+  }
+  return gameActivationListenerReady;
+}
+
+function ensureRuntimeStatusListeners(
+  get: () => Pick<GameSlice, 'setRuntimeSyncStatus' | 'setGameActivationStatus'>,
+) {
+  return Promise.allSettled([ensureRuntimeSyncListener(get), ensureGameActivationListener(get)]);
 }
 
 export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
@@ -164,9 +187,13 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
   gameActivationByGame: {},
 
   initStore: async () => {
-    await ensureRuntimeStatusListeners(get).catch((error) => {
-      console.error('Failed to register runtime status listeners', error);
-    });
+    const [runtimeListener, activationListener] = await ensureRuntimeStatusListeners(get);
+    if (runtimeListener.status === 'rejected') {
+      console.error('Failed to register runtime status listener', runtimeListener.reason);
+    }
+    if (activationListener.status === 'rejected') {
+      console.error('Failed to register game activation listener', activationListener.reason);
+    }
     const startupReportsByGame = new Map<string, DiskReconcileResult>();
     let startupInitialized = false;
     if (!startupReconcileHandlerReady) {
@@ -300,9 +327,14 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
     try {
       // An onboarding activation can reuse a just-completed scan and finish
       // almost immediately, so subscribe before requesting it.
-      await ensureRuntimeStatusListeners(get).catch((error) => {
-        console.error('Failed to register runtime status listeners', error);
-      });
+      const [runtimeListener, activationListener] = await ensureRuntimeStatusListeners(get);
+      if (runtimeListener.status === 'rejected') {
+        console.error('Failed to register runtime status listener', runtimeListener.reason);
+      }
+      if (activationListener.status === 'rejected') {
+        if (options?.requireActivationStatusListener) throw activationListener.reason;
+        console.error('Failed to register game activation listener', activationListener.reason);
+      }
       if (requestSequence !== activeGameRequestSequence) {
         return;
       }

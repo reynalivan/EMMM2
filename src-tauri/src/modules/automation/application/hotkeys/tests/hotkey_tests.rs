@@ -21,6 +21,17 @@ fn hotkey_config_defaults() {
     assert_eq!(config.next_preset, "Ctrl+F5");
     assert_eq!(config.prev_preset, "Shift+F5");
     assert_eq!(config.toggle_overlay, "F7");
+    assert!(!config.preset_status_overlay_enabled);
+}
+
+#[test]
+fn legacy_hotkey_config_defaults_preset_status_overlay_to_disabled() {
+    let config: HotkeyConfig = serde_json::from_str(
+        r#"{"enabled":true,"safe_mode":"F5","next_preset":"Ctrl+F5","prev_preset":"Shift+F5","toggle_overlay":"F7"}"#,
+    )
+    .expect("legacy hotkey config should deserialize");
+
+    assert!(!config.preset_status_overlay_enabled);
 }
 
 #[test]

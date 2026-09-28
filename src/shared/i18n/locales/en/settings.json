@@ -289,7 +289,7 @@
     "days": "days"
   },
   "hotkeys": {
-    "os_hotkeys_hint": "Safe Mode and preset bindings are registered by EMMM. The overlay binding below belongs only to 3DMigoto.",
+    "os_hotkeys_hint": "EMMM registers Safe Mode and preset shortcuts. The KeyViewer binding below is handled by 3DMigoto.",
     "title": "Global hotkeys",
     "enabled": "Enabled",
     "desc": "Shortcuts available while the game window is active.",
@@ -307,7 +307,8 @@
     "viewer_title": "KeyViewer Overlay",
     "auto_reload": "Auto-Reload",
     "viewer_desc": "Shows detected in-game keybinds. Toggle with {{key}}.",
-    "preset_status_overlay_beta": "Preset status overlay (Beta) is hidden for now. KeyViewer keybind panels remain available.",
+    "preset_status_overlay_label": "Preset status overlay (Beta)",
+    "preset_status_overlay_desc": "Shows the active preset and Safe Mode status in-game. Off by default; independent of shortcuts and KeyViewer.",
     "infrastructure_title": "Runtime files",
     "infrastructure_desc": "Managed automatically in .emmm_data/.",
     "runtime": {

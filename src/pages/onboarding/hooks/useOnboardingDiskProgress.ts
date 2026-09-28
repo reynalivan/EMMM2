@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import type { DiskReconcileProgress } from '../../../shared/api/tauri/bindings';
-import type { GameConfig } from '@/entities/game';
 
 export interface OnboardingDiskProgress {
   current: DiskReconcileProgress;
@@ -10,7 +9,7 @@ export interface OnboardingDiskProgress {
 
 export function useOnboardingDiskProgress(
   isIndexing: boolean,
-  games: GameConfig[],
+  gameId: string | null,
 ): OnboardingDiskProgress | null {
   const [diskProgress, setDiskProgress] = useState<OnboardingDiskProgress | null>(null);
 
@@ -20,9 +19,8 @@ export function useOnboardingDiskProgress(
       return;
     }
 
-    const gameIds = new Set(games.map((game) => game.id));
     const unlistenPromise = listen<DiskReconcileProgress>('disk_reconcile:progress', (event) => {
-      if (gameIds.has(event.payload.game_id)) {
+      if (event.payload.game_id === gameId) {
         setDiskProgress((previous) => {
           const rootName = event.payload.current_root;
           const completedRoots = rootName
@@ -43,7 +41,7 @@ export function useOnboardingDiskProgress(
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [games, isIndexing]);
+  }, [gameId, isIndexing]);
 
   return diskProgress;
 }

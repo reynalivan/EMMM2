@@ -12,6 +12,7 @@ import { SettingsRow, SettingsSection } from '../SettingsLayout';
 
 const DEFAULT_HOTKEYS: HotkeyConfig = {
   enabled: true,
+  preset_status_overlay_enabled: false,
   safe_mode: 'F5',
   next_preset: 'Ctrl+F5',
   prev_preset: 'Shift+F5',
@@ -218,6 +219,29 @@ export default function HotkeyTab() {
               onChange={(value) => updateHotkey({ next_preset: value })}
             />
           </div>
+          <SettingsRow
+            className="border-t border-base-300/70 pt-3"
+            label={
+              <label htmlFor="preset-status-overlay-enabled" className="cursor-pointer">
+                {t('settings:hotkeys.preset_status_overlay_label')}
+              </label>
+            }
+            description={t('settings:hotkeys.preset_status_overlay_desc')}
+            control={
+              <input
+                id="preset-status-overlay-enabled"
+                type="checkbox"
+                className="toggle toggle-primary toggle-sm"
+                checked={draftHotkeys.preset_status_overlay_enabled}
+                onChange={() =>
+                  updateHotkey({
+                    preset_status_overlay_enabled: !draftHotkeys.preset_status_overlay_enabled,
+                  })
+                }
+                disabled={isSaving}
+              />
+            }
+          />
         </div>
       </SettingsSection>
 
@@ -251,9 +275,6 @@ export default function HotkeyTab() {
           disabled={isSaving || !draftKeyviewer.enabled}
           onChange={(value) => updateHotkey({ toggle_overlay: value })}
         />
-        <p className="text-xs text-base-content/60">
-          {t('settings:hotkeys.preset_status_overlay_beta')}
-        </p>
         <div className="border-l-2 border-info/40 pl-3 text-xs text-base-content/60">
           <p className="font-medium text-base-content">
             {t('settings:hotkeys.infrastructure_title')}

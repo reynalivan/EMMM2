@@ -79,7 +79,10 @@ function reconcileStep(phase: DiskReconcilePhase | undefined): number {
 export default function WelcomeScreen({
   onComplete,
 }: {
-  onComplete: (games: GameConfig[]) => void | Promise<void>;
+  onComplete: (
+    games: GameConfig[],
+    startBackgroundIndexing: () => Promise<void>,
+  ) => void | Promise<void>;
 }) {
   const { t, i18n } = useTranslation(['welcome', 'onboarding']);
   const [view, setView] = useState<Screen>('welcome');
@@ -90,13 +93,14 @@ export default function WelcomeScreen({
     useState<OnboardingIndexingSnapshotProgress | null>(null);
   const [isRecheckingSnapshot, setIsRecheckingSnapshot] = useState(false);
   const indexingSessionRef = useRef<string | null>(null);
+  const indexingGameIdRef = useRef<string | null>(null);
   const indexingInFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
   const [shareDiagnostics, setShareDiagnostics] = useState(true);
   const prefersReduced = usePrefersReducedMotion();
-  const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames);
+  const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames[0]?.id ?? null);
 
   useEffect(() => {
     if (!diskProgress) return;
@@ -119,6 +123,7 @@ export default function WelcomeScreen({
       ({ payload }) => {
         if (!mounted || !indexingInFlightRef.current) return;
         if (indexingSessionRef.current && indexingSessionRef.current !== payload.session_id) return;
+        if (payload.game_id !== indexingGameIdRef.current) return;
         indexingSessionRef.current = payload.session_id;
         setIsRecheckingSnapshot(payload.phase === 'Rechecking');
         setSnapshotProgress(payload);
@@ -139,6 +144,7 @@ export default function WelcomeScreen({
       const sessionId = indexingSessionRef.current;
       indexingInFlightRef.current = false;
       indexingSessionRef.current = null;
+      indexingGameIdRef.current = null;
       if (sessionId) {
         void commands.cancelOnboardingIndexing(sessionId).catch((cancelError) => {
           console.warn(
@@ -224,6 +230,7 @@ export default function WelcomeScreen({
       setSnapshotProgress(null);
       setIsRecheckingSnapshot(false);
       indexingInFlightRef.current = true;
+      indexingGameIdRef.current = games[0]?.id ?? null;
       const total = Math.max(1, games.length);
       const completedDurationsMs: number[] = [];
       setIndexingProgress({
@@ -241,8 +248,9 @@ export default function WelcomeScreen({
       // Save the games to DB — this is mandatory
       await commands.saveOnboardingGames(games);
       const session = await commands.beginOnboardingIndexing(games.map((game) => game.id));
-      sessionId = session.session_id;
-      indexingSessionRef.current = sessionId;
+      const currentSessionId = session.session_id;
+      sessionId = currentSessionId;
+      indexingSessionRef.current = currentSessionId;
       setSnapshotProgress(null);
 
       const [firstGame, ...backgroundGames] = games;
@@ -259,7 +267,10 @@ export default function WelcomeScreen({
         completedDurationsMs: [],
       });
       const startedAt = performance.now();
-      const firstResult = await commands.reconcileOnboardingIndexingGame(sessionId, firstGame.id);
+      const firstResult = await commands.reconcileOnboardingIndexingGame(
+        currentSessionId,
+        firstGame.id,
+      );
       if (!isAppliedReconcileStatus(firstResult.status)) {
         throw new Error(t('onboarding:indexing.first_game_not_ready', { game: firstGame.name }));
       }
@@ -271,19 +282,19 @@ export default function WelcomeScreen({
         completedDurationsMs: [...completedDurationsMs],
       });
 
-      if (backgroundGames.length > 0) {
-        await commands.continueOnboardingIndexingInBackground(
-          sessionId,
-          backgroundGames.map((game) => game.id),
-        );
-        handedOffToBackground = true;
-      }
-
       // The dashboard owns the rest of the user-visible lifecycle. Clearing
       // this reference avoids cancelling the backend worker during navigation.
       indexingInFlightRef.current = false;
+      indexingGameIdRef.current = null;
       indexingSessionRef.current = null;
-      await onComplete(games);
+      await onComplete(games, async () => {
+        if (backgroundGames.length === 0) return;
+        await commands.continueOnboardingIndexingInBackground(
+          currentSessionId,
+          backgroundGames.map((game) => game.id),
+        );
+        handedOffToBackground = true;
+      });
     } catch (err) {
       // The first game must be usable before the dashboard can open.
       setError(formatAppError(err));
@@ -291,6 +302,7 @@ export default function WelcomeScreen({
       setIndexingProgress(null);
     } finally {
       indexingInFlightRef.current = false;
+      indexingGameIdRef.current = null;
       setSnapshotProgress(null);
       setIsRecheckingSnapshot(false);
       const activeSessionId = sessionId ?? indexingSessionRef.current;
@@ -526,14 +538,7 @@ export default function WelcomeScreen({
       currentGame: null,
       completedDurationsMs: [],
     };
-    const snapshotGameIndex = snapshotProgress
-      ? detectedGames.findIndex((game) => game.id === snapshotProgress.game_id)
-      : -1;
-    const activeGameIndex =
-      snapshotGameIndex >= 0
-        ? snapshotGameIndex
-        : Math.min(progress.completed, Math.max(0, progress.total - 1));
-    const activeGame = detectedGames[activeGameIndex];
+    const activeGame = detectedGames[0];
     const activeDiskProgress =
       diskProgress?.current.game_id === activeGame?.id ? diskProgress : null;
     const isPreparing =
@@ -551,7 +556,6 @@ export default function WelcomeScreen({
     const progressPercent = hasDeterminateProgress
       ? Math.round((completedRoots / totalRoots) * 100)
       : null;
-    const gameNumber = activeGameIndex + 1;
     const gameName = activeGame?.name ?? progress.currentGame ?? '';
     const activeRoot = displayRootName(
       snapshotRootProgress?.current_root ?? diskRootProgress?.current_root,
@@ -630,7 +634,7 @@ export default function WelcomeScreen({
             <div className="border-t border-base-content/10 pt-5 text-left space-y-1.5">
               <p className="text-sm font-semibold text-base-content">
                 {t('onboarding:indexing.game_progress', {
-                  current: gameNumber,
+                  current: 1,
                   total: snapshotProgress?.total_games || progress.total,
                   game: gameName,
                 })}

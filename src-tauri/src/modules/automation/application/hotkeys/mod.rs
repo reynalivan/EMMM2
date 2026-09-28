@@ -74,6 +74,9 @@ pub struct HotkeyConfig {
     pub prev_preset: String,
     #[serde(default = "default_overlay_key")]
     pub toggle_overlay: String,
+    /// Whether the preset status banner is rendered in the generated overlay.
+    #[serde(default)]
+    pub preset_status_overlay_enabled: bool,
 }
 
 fn default_safe_mode_key() -> String {
@@ -100,6 +103,7 @@ impl Default for HotkeyConfig {
             next_preset: default_next_preset_key(),
             prev_preset: default_prev_preset_key(),
             toggle_overlay: default_overlay_key(),
+            preset_status_overlay_enabled: false,
         }
     }
 }

@@ -1741,6 +1741,10 @@ fn runtime_input_fingerprint(
         format!("layout={}", generator::KEYVIEWER_LAYOUT_REVISION),
         format!("safe={}", ctx.safe_mode),
         format!("keyviewer={}", ctx.keyviewer_enabled),
+        format!(
+            "preset_status_overlay={}",
+            ctx.hotkeys.preset_status_overlay_enabled
+        ),
         format!("hotkeys={:?}", ctx.hotkeys),
         format!("status={status:?}"),
         format!("catalog_manifest={catalog_manifest_checksum}"),
@@ -2310,7 +2314,7 @@ fn group_fallback_panels(
         if candidate.keybinds.is_empty() {
             diagnostics.missing_keybinds += 1;
         }
-        !candidate.sentinels.is_empty() && !candidate.keybinds.is_empty()
+        !candidate.sentinels.is_empty()
     });
 
     let mut parent: Vec<usize> = (0..candidates.len()).collect();
@@ -2510,7 +2514,7 @@ async fn run_post_apply_tasks_with_options(
     }
     let manifest_file = manifest_path(&emmm_data_dir);
     let _ = generator::recover_atomic_write(&manifest_file)?;
-    if !ctx.keyviewer_enabled {
+    if !ctx.keyviewer_enabled && !ctx.hotkeys.preset_status_overlay_enabled {
         let duplicates =
             duplicate_keyviewer_entrypoints(&runtime_preflight.runtime_include_roots, mods_path);
         if !duplicates.is_empty() {
@@ -2776,7 +2780,7 @@ async fn run_post_apply_tasks_with_options(
     };
     if fallback_diagnostics.missing_sentinels > 0 || fallback_diagnostics.missing_keybinds > 0 {
         log::info!(
-            "[post_apply] KeyViewer fallback excluded mods game={game_id} missing_sentinels={} missing_keybinds={}",
+            "[post_apply] KeyViewer fallback candidates game={game_id} excluded_missing_sentinels={} empty_keybinds={}",
             fallback_diagnostics.missing_sentinels,
             fallback_diagnostics.missing_keybinds,
         );
@@ -2901,25 +2905,31 @@ async fn run_post_apply_tasks_with_options(
     let generation_dir = generations_dir.join(&generation_id);
     let staging_artifacts = generator::create_staging_directory(&generation_dir)?;
     let resource_root = format!("{KEYVIEWER_RESOURCE_ROOT}/{generation_id}");
-    let kv_ini_content = generator::generate_keyviewer_ini_for_resources(
+    let kv_ini_content = generator::generate_keyviewer_ini_for_resources_with_options(
         &matches,
         &ctx.hotkeys.toggle_overlay,
         game_type,
         &resource_root,
+        ctx.keyviewer_enabled,
+        ctx.hotkeys.preset_status_overlay_enabled,
     )?;
     let staging_keybinds = staging_artifacts.join("keybinds").join("active");
     let staging_status = staging_artifacts.join("status");
-    if let Err(write_error) = generator::write_keybind_files(
-        &staging_keybinds,
-        &matches,
-        &sources_per_object,
-        &ctx.hotkeys.toggle_overlay,
-    ) {
-        return Err(cleanup_staging_after_error(&staging_artifacts, write_error));
+    if ctx.keyviewer_enabled {
+        if let Err(write_error) = generator::write_keybind_files(
+            &staging_keybinds,
+            &matches,
+            &sources_per_object,
+            &ctx.hotkeys.toggle_overlay,
+        ) {
+            return Err(cleanup_staging_after_error(&staging_artifacts, write_error));
+        }
     }
 
-    if let Err(error) = generator::write_status_file(&staging_status, &status, &ctx.hotkeys) {
-        return Err(cleanup_staging_after_error(&staging_artifacts, error));
+    if ctx.hotkeys.preset_status_overlay_enabled {
+        if let Err(error) = generator::write_status_file(&staging_status, &status, &ctx.hotkeys) {
+            return Err(cleanup_staging_after_error(&staging_artifacts, error));
+        }
     }
     let manifest = KeyViewerManifest {
         version: KEYVIEWER_MANIFEST_VERSION,
@@ -4277,7 +4287,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_reports_exclusion_counts_without_one_warning_per_mod() {
+    fn fallback_keeps_detectable_mod_without_keybinds() {
         let mut missing_sentinel = fallback_candidate(
             "Character/No Sentinel",
             "a44625da",
@@ -4301,7 +4311,9 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert!(panels.is_empty());
+        assert_eq!(panels.len(), 1);
+        assert_eq!(panels[0].name, "No Keybind");
+        assert!(panels[0].sources[0].keybinds.is_empty());
         assert_eq!(
             diagnostics,
             FallbackDiagnostics {
@@ -4850,12 +4862,17 @@ mod tests {
         .await
         .unwrap();
 
+        let hotkeys = HotkeyConfig {
+            preset_status_overlay_enabled: true,
+            ..HotkeyConfig::default()
+        };
+
         run_post_apply_tasks(PostApplyContext {
             pool: pool.clone(),
             game_id: "game-status-only".to_string(),
             mods_path: mods.clone(),
-            hotkeys: HotkeyConfig::default(),
-            keyviewer_enabled: true,
+            hotkeys: hotkeys.clone(),
+            keyviewer_enabled: false,
             safe_mode: false,
             status_fields: None,
         })
@@ -4865,6 +4882,7 @@ mod tests {
         let entrypoint =
             std::fs::read_to_string(mods.join(".emmm_data").join("KeyViewer.ini")).unwrap();
         assert!(entrypoint.contains("ResourceEMMM_Status"));
+        assert!(!entrypoint.contains("[KeyEMMMv1_ToggleOverlay]"));
         assert!(!entrypoint.contains("[TextureOverride_EMMMv1_"));
         assert!(entrypoint.contains("generations/"));
         assert_eq!(
@@ -4880,8 +4898,8 @@ mod tests {
             pool,
             game_id: "game-status-only".to_string(),
             mods_path: mods.clone(),
-            hotkeys: HotkeyConfig::default(),
-            keyviewer_enabled: true,
+            hotkeys,
+            keyviewer_enabled: false,
             safe_mode: false,
             status_fields: None,
         })
@@ -5046,6 +5064,7 @@ mod tests {
             prev_preset: "Shift+F8".to_string(),
             next_preset: "Ctrl+F8".to_string(),
             toggle_overlay: "F9".to_string(),
+            preset_status_overlay_enabled: true,
             ..HotkeyConfig::default()
         };
 

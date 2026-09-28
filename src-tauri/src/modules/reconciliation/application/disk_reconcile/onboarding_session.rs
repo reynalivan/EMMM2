@@ -54,6 +54,7 @@ impl Default for OnboardingIndexingSessionStore {
 struct OnboardingSession {
     created_at: Instant,
     games: HashMap<String, PendingGame>,
+    background_game_ids: BTreeSet<String>,
     cancelled: Arc<AtomicBool>,
     background_started: bool,
     journal_revision: Option<u64>,
@@ -150,6 +151,7 @@ impl ScanPriority {
 
 struct PendingGame {
     prepared: oneshot::Receiver<Result<PreparedGame, AppError>>,
+    start: Option<oneshot::Sender<()>>,
 }
 
 struct PreparedGame {
@@ -615,13 +617,20 @@ impl OnboardingIndexingSessionStore {
                 "Background onboarding indexing has already started".to_string(),
             ));
         }
-        let pending_games = session.games.keys().collect::<BTreeSet<_>>();
-        if requested_games != pending_games {
+        if requested_games != session.background_game_ids.iter().collect::<BTreeSet<_>>() {
             return Err(AppError::Validation(
-                "Background onboarding games must match the remaining session games".to_string(),
+                "Background onboarding games must match the original background games".to_string(),
             ));
         }
         session.background_started = true;
+        for game in session.games.values_mut() {
+            if let Some(start) = game.start.take() {
+                let _ = start.send(());
+            }
+        }
+        if session.games.is_empty() {
+            sessions.remove(session_id);
+        }
         Ok(())
     }
 
@@ -687,12 +696,25 @@ impl OnboardingIndexingSessionStore {
         let cancelled = Arc::new(AtomicBool::new(false));
         let scan_priority = ScanPriority::new(games.iter().map(|game| game.id.clone()));
         scan_priority.prefer(&games[0].id);
+        let background_game_ids = games.iter().skip(1).map(|game| game.id.clone()).collect();
         let mut pending_games = HashMap::with_capacity(games.len());
         let mut queued_games = Vec::with_capacity(games.len());
-        for game in games {
+        for (index, game) in games.into_iter().enumerate() {
             let (sender, receiver) = oneshot::channel();
-            pending_games.insert(game.id.clone(), PendingGame { prepared: receiver });
-            queued_games.push((game, sender));
+            let (start, wait_for_start) = if index == 0 {
+                (None, None)
+            } else {
+                let (start, wait_for_start) = oneshot::channel();
+                (Some(start), Some(wait_for_start))
+            };
+            pending_games.insert(
+                game.id.clone(),
+                PendingGame {
+                    prepared: receiver,
+                    start,
+                },
+            );
+            queued_games.push((game, sender, wait_for_start));
         }
         self.purge_expired();
         let mut sessions = crate::shared::sync::lock(&self.sessions);
@@ -701,6 +723,7 @@ impl OnboardingIndexingSessionStore {
             OnboardingSession {
                 created_at: Instant::now(),
                 games: pending_games,
+                background_game_ids,
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
                 journal_revision,
@@ -714,13 +737,16 @@ impl OnboardingIndexingSessionStore {
 
         let prepared_games = Arc::new(AtomicU64::new(0));
         let worker_session_id = session_id.clone();
-        for (game, sender) in queued_games {
+        for (game, sender, wait_for_start) in queued_games {
             let cancelled = Arc::clone(&cancelled);
             let scan_priority = Arc::clone(&scan_priority);
             let on_progress = Arc::clone(&on_progress);
             let prepared_games = Arc::clone(&prepared_games);
             let worker_session_id = worker_session_id.clone();
             tokio::spawn(async move {
+                if let Some(wait_for_start) = wait_for_start {
+                    let _ = wait_for_start.await;
+                }
                 let progress_reporter = Arc::new(OnboardingSnapshotProgressReporter::new(
                     worker_session_id,
                     game.id.clone(),
@@ -770,11 +796,7 @@ impl OnboardingIndexingSessionStore {
         session_id: &str,
         game_id: &str,
     ) -> Result<ConsumedOnboardingSnapshot, AppError> {
-        match self.claim(session_id, game_id) {
-            Ok(claimed) => claimed.resolve().await,
-            Err(AppError::Cancelled) => Ok(ConsumedOnboardingSnapshot::FullFallback),
-            Err(error) => Err(error),
-        }
+        self.claim(session_id, game_id, false)?.resolve().await
     }
 
     pub fn claim_for_activation(
@@ -785,9 +807,7 @@ impl OnboardingIndexingSessionStore {
             .iter()
             .find(|(_, session)| session.games.contains_key(game_id))
             .map(|(session_id, _)| session_id.clone())?;
-        let claimed = self.claim(&session_id, game_id).ok()?;
-        crate::shared::sync::lock(&self.activation_claims)
-            .insert((session_id.clone(), game_id.to_string()));
+        let claimed = self.claim(&session_id, game_id, true).ok()?;
         let guard = ActivationClaimGuard {
             session_id,
             game_id: game_id.to_string(),
@@ -857,6 +877,7 @@ impl OnboardingIndexingSessionStore {
         &self,
         session_id: &str,
         game_id: &str,
+        activation: bool,
     ) -> Result<ClaimedOnboardingSnapshot, AppError> {
         let (pending, journal_revision) = {
             let mut sessions = crate::shared::sync::lock(&self.sessions);
@@ -872,15 +893,30 @@ impl OnboardingIndexingSessionStore {
                 return Err(AppError::Cancelled);
             }
             let session = sessions.get_mut(session_id).ok_or_else(|| {
-                AppError::NotFound("Onboarding indexing session was not found".to_string())
+                if self.is_claimed_by_activation(session_id, game_id) {
+                    AppError::Cancelled
+                } else {
+                    AppError::NotFound("Onboarding indexing session was not found".to_string())
+                }
             })?;
-            let pending = session.games.remove(game_id).ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "Game '{game_id}' is not available in this onboarding indexing session"
-                ))
+            let mut pending = session.games.remove(game_id).ok_or_else(|| {
+                if self.is_claimed_by_activation(session_id, game_id) {
+                    AppError::Cancelled
+                } else {
+                    AppError::NotFound(format!(
+                        "Game '{game_id}' is not available in this onboarding indexing session"
+                    ))
+                }
             })?;
+            if activation {
+                crate::shared::sync::lock(&self.activation_claims)
+                    .insert((session_id.to_string(), game_id.to_string()));
+            }
+            if let Some(start) = pending.start.take() {
+                let _ = start.send(());
+            }
             let journal_revision = session.journal_revision;
-            if session.games.is_empty() {
+            if session.games.is_empty() && session.background_started {
                 sessions.remove(session_id);
             }
             (pending, journal_revision)
@@ -1345,6 +1381,87 @@ mod tests {
         assert!(matches!(later, Err(AppError::Io(_))));
     }
 
+    #[tokio::test]
+    async fn background_snapshot_starts_only_after_handoff() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let first = temp.path().join("first");
+        let later = temp.path().join("later");
+        std::fs::create_dir(&first).expect("first root");
+        std::fs::create_dir(&later).expect("later root");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![
+                game_config("first", first),
+                game_config("later", later),
+            ])
+            .await
+            .expect("session");
+
+        store
+            .consume(&session.session_id, "first")
+            .await
+            .expect("first snapshot");
+        assert!(crate::shared::sync::lock(&store.sessions)
+            .get(&session.session_id)
+            .and_then(|session| session.games.get("later"))
+            .is_some_and(|game| game.start.is_some()));
+
+        store
+            .mark_background_started(&session.session_id, &["later".to_string()])
+            .expect("background handoff");
+        assert!(matches!(
+            store.consume(&session.session_id, "later").await,
+            Ok(ConsumedOnboardingSnapshot::Snapshot(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn background_handoff_accepts_a_game_claimed_by_activation() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let first = temp.path().join("first");
+        let selected = temp.path().join("selected");
+        let later = temp.path().join("later");
+        for root in [&first, &selected, &later] {
+            std::fs::create_dir(root).expect("mods root");
+        }
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![
+                game_config("first", first),
+                game_config("selected", selected),
+                game_config("later", later),
+            ])
+            .await
+            .expect("session");
+        store
+            .consume(&session.session_id, "first")
+            .await
+            .expect("first snapshot");
+        let (claimed, claim_guard) = store
+            .claim_for_activation("selected")
+            .expect("activation claim");
+
+        assert!(matches!(
+            store.consume(&session.session_id, "selected").await,
+            Err(AppError::Cancelled)
+        ));
+        store
+            .mark_background_started(
+                &session.session_id,
+                &["selected".to_string(), "later".to_string()],
+            )
+            .expect("handoff retains activation-owned game");
+        assert!(matches!(
+            store.consume(&session.session_id, "later").await,
+            Ok(ConsumedOnboardingSnapshot::Snapshot(_))
+        ));
+        assert!(matches!(
+            claimed.resolve().await,
+            Ok(ConsumedOnboardingSnapshot::Snapshot(_))
+        ));
+        drop(claim_guard);
+    }
+
     #[test]
     fn selected_game_takes_the_next_scan_batch() {
         let priority = ScanPriority::new(["first".to_string(), "second".to_string()]);
@@ -1386,10 +1503,10 @@ mod tests {
             .claim_for_activation("selected")
             .expect("activation should own the pending scan");
         assert!(store.is_claimed_by_activation(&session.session_id, "selected"));
-        assert!(store
-            .consume(&session.session_id, "selected")
-            .await
-            .is_err());
+        assert!(matches!(
+            store.consume(&session.session_id, "selected").await,
+            Err(AppError::Cancelled)
+        ));
         let resolved = tokio::time::timeout(Duration::from_secs(3), claimed.resolve())
             .await
             .expect("selected preparation should finish")
@@ -1478,6 +1595,7 @@ mod tests {
             OnboardingSession {
                 created_at: Instant::now(),
                 games: HashMap::new(),
+                background_game_ids: BTreeSet::new(),
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
                 journal_revision: None,
@@ -1503,6 +1621,7 @@ mod tests {
             OnboardingSession {
                 created_at: Instant::now(),
                 games: HashMap::new(),
+                background_game_ids: BTreeSet::new(),
                 cancelled: Arc::clone(&cancelled),
                 background_started: true,
                 journal_revision: None,

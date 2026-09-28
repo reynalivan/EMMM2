@@ -4,7 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { applyDiskReconcileResult, useDiskReconcileCoordinator } from './useFileWatcher';
 import { isPreviewAffected } from '../utils/reconcileSelection';
-import type { DiskReconcileResult } from '../../../shared/api/tauri/bindings';
+import type { DiskReconcileResult, GameActivationStatus } from '../../../shared/api/tauri/bindings';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { runtimeQueryKeys } from '@/shared/lib/queryRefresh';
 import { GameType, type GameConfig } from '@/entities/game';
@@ -30,6 +30,7 @@ vi.mock('@/app/store', () => {
       string,
       { at: number; pending: boolean; unavailable: string | null; revision: number }
     >,
+    gameActivationByGame: {} as Record<string, GameActivationStatus>,
     folderConflictsByGame: {},
     folderConflictReportsByGame: {},
     renameConfirmationsByGame: {},
@@ -730,6 +731,27 @@ describe('useDiskReconcileCoordinator', () => {
     const state = useAppStore.getState();
     state.workspaceView = 'mods';
     state.diskReconcileByGame = {};
+    state.gameActivationByGame = {};
+  });
+
+  it('does not rescan a just-activated game when opening its mods view', async () => {
+    const state = useAppStore.getState();
+    state.gameActivationByGame = {
+      'game-1': {
+        game_id: 'game-1',
+        generation: 1,
+        phase: 'ready',
+        reconcile_revision: 4,
+        runtime_sync_generation: null,
+        error: null,
+      },
+    };
+    renderHook(() => useDiskReconcileCoordinator(createActiveGame(), new QueryClient()));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(commands.reconcileDiskStateCmd).not.toHaveBeenCalled();
   });
 
   it('applies reconcile events buffered during startup after registering its listener', async () => {

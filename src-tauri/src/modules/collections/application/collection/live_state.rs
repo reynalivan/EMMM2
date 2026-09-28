@@ -58,7 +58,11 @@ pub(crate) async fn load_live_active_projection_state(
     game_id: &str,
 ) -> Result<(Vec<CollectionMod>, Vec<CollectionObject>), CollectionError> {
     let mods_path = load_game_mods_path(pool, game_id).await?;
-    let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id).await?;
+    let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id)
+        .await?
+        .into_iter()
+        .filter(|row| is_mod_effectively_active(&row.mod_path))
+        .collect::<Vec<_>>();
     let object_ids = current_mod_rows
         .iter()
         .map(|row| row.object_id.clone())
@@ -102,6 +106,9 @@ fn build_live_runtime_state(
 
     let mut current_mods = Vec::with_capacity(current_mod_rows.len());
     for row in current_mod_rows {
+        if !is_mod_effectively_active(&row.mod_path) {
+            continue;
+        }
         let mod_id = row.mod_id;
         let mod_path = row.mod_path;
         let mod_path_key = row.mod_path_key;
@@ -240,6 +247,7 @@ pub(crate) async fn live_runtime_matches_collection_tx(
         collection::get_runtime_collection_membership_tx(conn, collection_id).await?;
     let live_mod_paths = live_mods
         .iter()
+        .filter(|member| is_mod_effectively_active(&member.mod_path))
         .map(|member| member.mod_path_key.as_str())
         .collect::<std::collections::HashSet<_>>();
     let collection_mod_paths = collection_members

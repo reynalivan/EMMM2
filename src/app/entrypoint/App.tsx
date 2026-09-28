@@ -163,17 +163,18 @@ function AppRouter() {
         path="/welcome"
         element={
           <WelcomeScreen
-            onComplete={async (games) => {
+            onComplete={async (games, startBackgroundIndexing) => {
               if (games && games.length > 0) {
                 // The first game was reconciled on the onboarding screen.
-                // Publish it immediately, then let the dashboard hydrate its
-                // own queries. Waiting for those queries leaves onboarding
-                // visible long enough for background game progress to replace
-                // the first game's successful state.
+                // Activation must accept that disk proof before the dashboard
+                // exposes its switches; unrelated queries can hydrate later.
                 await useAppStore.getState().setActiveGameId(games[0].id, {
                   deferWorkspacePrefetch: true,
+                  requireActivationStatusListener: true,
                 });
+                await waitForGameActivationReady(games[0].id);
               }
+              await startBackgroundIndexing();
               navigate('/dashboard', { replace: true });
 
               // These are cache warmers, not navigation prerequisites. Calling
@@ -266,6 +267,7 @@ function DashboardWorkspace() {
 }
 
 import { ToastContainer } from '@/shared/ui/toast';
+import { waitForGameActivationReady } from './waitForGameActivationReady';
 import { FileInUseDialog } from '@/features/file-watcher';
 import {
   WorkspaceParentEnableDialogHost,

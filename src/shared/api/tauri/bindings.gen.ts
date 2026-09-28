@@ -2452,7 +2452,11 @@ enabled: boolean;
 /**
  * Key binding strings (e.g. "F5", "Shift+F5").
  */
-safe_mode?: string; next_preset?: string; prev_preset?: string; toggle_overlay?: string }
+safe_mode?: string; next_preset?: string; prev_preset?: string; toggle_overlay?: string;
+/**
+ * Whether the preset status banner is rendered in the generated overlay.
+ */
+preset_status_overlay_enabled?: boolean }
 export type IgnoredConflict = { id: string; game_id: string; object_id: string; object_name: string | null; mod_ids: string; mod_names?: string[]; created_at: string }
 export type ImportBatch = { id: string; gameId: string; flow: ImportFlow; targetMode: TargetMode; targetObjectId: string | null; targetSubpath: string | null; status: ImportBatchStatus; sourceArchivePath: string | null; items: ImportItem[]; createdAt: string; updatedAt: string }
 export type ImportBatchReport = { batchId: string; moved: number; reallocated: number; createdCanonicalFolders: number; skipped: number; collisions: number; metadataPending: number; failed: number }

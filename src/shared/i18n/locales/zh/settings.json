@@ -289,7 +289,7 @@
     "days": "天"
   },
   "hotkeys": {
-    "os_hotkeys_hint": "Safe Mode and preset bindings are registered by EMMM. The overlay binding below belongs only to 3DMigoto.",
+    "os_hotkeys_hint": "EMMM 注册安全模式和预设快捷键。下方的 KeyViewer 按键由 3DMigoto 处理。",
     "title": "全局热键",
     "enabled": "已启用",
     "desc": "游戏窗口激活时可用的快捷键。",
@@ -307,7 +307,8 @@
     "viewer_title": "按键查看器显示层",
     "auto_reload": "自动重载",
     "viewer_desc": "显示检测到的游戏按键。使用 {{key}} 切换。",
-    "preset_status_overlay_beta": "预设状态显示层（测试版）暂时隐藏。KeyViewer 按键面板仍可用。",
+    "preset_status_overlay_label": "预设状态显示层（测试版）",
+    "preset_status_overlay_desc": "在游戏内显示当前预设和安全模式状态。默认关闭，不依赖快捷键或 KeyViewer。",
     "infrastructure_title": "运行时文件",
     "infrastructure_desc": "在 .emmm_data/ 中自动管理。",
     "runtime": {

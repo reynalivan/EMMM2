@@ -53,12 +53,67 @@ fn keybind_text_labels_only_true_toggle_bindings_as_toggle() {
 }
 
 #[test]
-fn keybind_text_does_not_fabricate_an_empty_binding_message() {
+fn keybind_text_shows_empty_state_when_no_mod_has_a_switcher_key() {
     let text = generate_keybind_text("Empty", &[], "F7");
 
     assert!(text.contains("Empty"));
-    assert!(!text.contains("No keybinds found"));
+    assert!(text.contains("No switcher key on this mod"));
     assert!(text.contains("[F7] Toggle Overlay"));
+}
+
+#[test]
+fn keybind_text_shows_empty_state_for_a_mod_without_switcher_keys() {
+    let text = generate_keybind_text(
+        "Character",
+        &[SourceKeyBinding {
+            mod_name: "Keyless mod".to_string(),
+            keybinds: Vec::new(),
+        }],
+        "F7",
+    );
+
+    assert!(text.contains("No switcher key on this mod"));
+    assert!(!text.contains("[Mod: Keyless mod]"));
+}
+
+#[test]
+fn keybind_text_does_not_treat_blank_key_fields_as_a_switcher_key() {
+    let text = generate_keybind_text(
+        "Character",
+        &[SourceKeyBinding {
+            mod_name: "Keyless mod".to_string(),
+            keybinds: vec![
+                make_keybinding("KeyToggle", Some(" "), None),
+                make_keybinding("KeyCycle", None, Some("")),
+            ],
+        }],
+        "F7",
+    );
+
+    assert!(text.contains("No switcher key on this mod"));
+    assert!(!text.contains("[KeyToggle]"));
+    assert!(!text.contains("[KeyCycle]"));
+}
+
+#[test]
+fn keybind_text_labels_a_keyless_mod_alongside_a_mod_with_keys() {
+    let text = generate_keybind_text(
+        "Character",
+        &[
+            SourceKeyBinding {
+                mod_name: "Keyless mod".to_string(),
+                keybinds: Vec::new(),
+            },
+            SourceKeyBinding {
+                mod_name: "Keyed mod".to_string(),
+                keybinds: vec![make_keybinding("KeyToggle", Some("1"), None)],
+            },
+        ],
+        "F7",
+    );
+
+    assert!(text.contains("[Mod: Keyless mod]\nNo switcher key on this mod"));
+    assert!(text.contains("[Mod: Keyed mod]\nKey: 1"));
 }
 
 #[test]

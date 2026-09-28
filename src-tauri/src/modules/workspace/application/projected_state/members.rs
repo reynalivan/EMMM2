@@ -54,6 +54,13 @@ pub fn build_preview_tree_from_projected_state(
         .collect()
 }
 
+pub fn build_live_active_preview_tree(state: &ProjectedCollectionState) -> Vec<PreviewTreeNode> {
+    build_preview_tree_from_projected_state(state)
+        .into_iter()
+        .filter(|object| object.is_effectively_active && !object.children.is_empty())
+        .collect()
+}
+
 pub fn mods_from_projected_state(
     collection_id: &str,
     state: &ProjectedCollectionState,

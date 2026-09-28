@@ -1,5 +1,17 @@
 use super::*;
 
+fn generate_keyviewer_ini_with_status(matches: &[MatchResult], resource_root: &str) -> String {
+    crate::modules::automation::application::keyviewer::generator::generate_keyviewer_ini_for_resources_with_options(
+        matches,
+        "F7",
+        crate::modules::games::domain::models::GameType::GIMI,
+        resource_root,
+        true,
+        true,
+    )
+    .unwrap()
+}
+
 #[test]
 fn keyviewer_ini_contains_stable_namespace_and_persistent_toggle() {
     let ini = generate_keyviewer_ini(&[], "F7", ".emmm_data/keybinds/active");
@@ -77,12 +89,47 @@ fn keyviewer_ini_hides_preset_status_but_keeps_detected_character_panels() {
 }
 
 #[test]
+fn keyviewer_and_preset_status_panels_are_independently_gated() {
+    use crate::modules::automation::application::keyviewer::generator::generate_keyviewer_ini_with_options;
+    use crate::modules::games::domain::models::GameType;
+
+    let matches = [make_match_result("Albedo", &["aabb1111"])];
+    for (keyviewer_enabled, preset_status_overlay_enabled, expect_keyviewer, expect_status) in [
+        (false, false, false, false),
+        (true, false, true, false),
+        (false, true, false, true),
+        (true, true, true, true),
+    ] {
+        let ini = generate_keyviewer_ini_with_options(
+            &matches,
+            "F7",
+            GameType::GIMI,
+            keyviewer_enabled,
+            preset_status_overlay_enabled,
+        )
+        .expect("overlay configuration should generate");
+
+        assert_eq!(
+            ini.contains(r"Resource\GIMIv8\Text = ref ResourceEMMM_KeyViewer_000"),
+            expect_keyviewer
+        );
+        assert_eq!(ini.contains("[KeyEMMMv1_ToggleOverlay]"), expect_keyviewer);
+        assert_eq!(
+            ini.contains(r"Resource\GIMIv8\Text = ref ResourceEMMM_Status"),
+            expect_status
+        );
+        assert!(
+            !ini.contains(
+                "if $emmm_kv_active == 1\n    Resource\\GIMIv8\\Text = ref ResourceEMMM_Status"
+            ),
+            "preset status must not be gated by the KeyViewer toggle"
+        );
+    }
+}
+
+#[test]
 fn keyviewer_ini_uses_compact_native_scale_and_left_alignment() {
-    let ini = generate_keyviewer_ini(
-        &[make_match_result("Albedo", &["aabb1111"])],
-        "F7",
-        ".emmm_data/keybinds/active",
-    );
+    let ini = generate_keyviewer_ini_with_status(&[make_match_result("Albedo", &["aabb1111"])], "");
 
     assert!(ini.contains(
         "data = R32_FLOAT  -0.96 0.36 -0.30 0.24  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.00"
@@ -107,7 +154,7 @@ fn keyviewer_ini_uses_the_same_viewport_geometry_for_every_match() {
 #[test]
 fn keyviewer_ini_uses_one_text_file_per_character() {
     let matches = vec![make_match_result("Albedo", &["aabb1111"])];
-    let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
+    let ini = generate_keyviewer_ini_with_status(&matches, "");
 
     assert!(ini.contains("[ResourceEMMM_KeyViewer_000]"));
     assert!(ini.contains("filename = keybinds/active/character_000.txt"));
@@ -130,16 +177,10 @@ fn keyviewer_ini_allocates_a_panel_for_every_match() {
 
 #[test]
 fn keyviewer_ini_uses_one_stable_resource_directory() {
-    use crate::modules::automation::application::keyviewer::generator::generate_keyviewer_ini_for_resources;
-    use crate::modules::games::domain::models::GameType;
-
-    let ini = generate_keyviewer_ini_for_resources(
+    let ini = generate_keyviewer_ini_with_status(
         &[make_match_result("Albedo", &["aabb1111"])],
-        "F7",
-        GameType::GIMI,
         "generations",
-    )
-    .unwrap();
+    );
 
     assert!(ini.contains("filename = generations/status/runtime_status.txt"));
     assert!(ini.contains("filename = generations/keybinds/active/character_000.txt"));

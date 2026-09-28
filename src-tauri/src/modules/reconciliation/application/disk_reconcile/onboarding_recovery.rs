@@ -8,6 +8,7 @@ use sqlx::SqlitePool;
 use crate::shared::errors::AppError;
 
 const PENDING_GAME_IDS_KEY: &str = "onboarding_pending_index_game_ids";
+const MAX_REMOVE_RETRIES: usize = 8;
 
 pub async fn load_pending_game_ids(pool: &SqlitePool) -> Result<Vec<String>, AppError> {
     let Some(serialized) =
@@ -45,9 +46,36 @@ pub async fn replace_pending_game_ids(
 }
 
 pub async fn remove_pending_game_id(pool: &SqlitePool, game_id: &str) -> Result<(), AppError> {
-    let mut pending_game_ids = load_pending_game_ids(pool).await?;
-    pending_game_ids.retain(|pending_game_id| pending_game_id != game_id);
-    replace_pending_game_ids(pool, &pending_game_ids).await
+    for _ in 0..MAX_REMOVE_RETRIES {
+        let Some(previous) = crate::modules::system::adapters::sqlite::settings::get_setting(
+            pool,
+            PENDING_GAME_IDS_KEY,
+        )
+        .await?
+        else {
+            return Ok(());
+        };
+        let mut pending_game_ids = serde_json::from_str::<Vec<String>>(&previous)?;
+        validate_game_ids(&pending_game_ids)?;
+        let previous_count = pending_game_ids.len();
+        pending_game_ids.retain(|pending_game_id| pending_game_id != game_id);
+        if pending_game_ids.len() == previous_count {
+            return Ok(());
+        }
+        let next = serde_json::to_string(&pending_game_ids)?;
+        let updated = sqlx::query("UPDATE app_settings SET value = ? WHERE key = ? AND value = ?")
+            .bind(next)
+            .bind(PENDING_GAME_IDS_KEY)
+            .bind(previous)
+            .execute(pool)
+            .await?;
+        if updated.rows_affected() == 1 {
+            return Ok(());
+        }
+    }
+    Err(AppError::Io(
+        "Onboarding recovery queue changed repeatedly; retry the update".to_string(),
+    ))
 }
 
 fn validate_game_ids(game_ids: &[String]) -> Result<(), AppError> {
@@ -110,5 +138,39 @@ mod tests {
                 .expect("remaining game should reload"),
             vec!["later".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn concurrent_completed_games_do_not_restore_each_other() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(4)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(temp.path().join("app.db"))
+                    .create_if_missing(true),
+            )
+            .await
+            .expect("test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("migrated database");
+
+        for _ in 0..16 {
+            replace_pending_game_ids(&pool, &["first".to_string(), "second".to_string()])
+                .await
+                .expect("seed pending games");
+            let (first, second) = tokio::join!(
+                remove_pending_game_id(&pool, "first"),
+                remove_pending_game_id(&pool, "second")
+            );
+            first.expect("remove first");
+            second.expect("remove second");
+            assert!(load_pending_game_ids(&pool)
+                .await
+                .expect("remaining pending games")
+                .is_empty());
+        }
     }
 }

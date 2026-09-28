@@ -35,6 +35,16 @@ fn completed_settings_save(
     }
 }
 
+fn hotkey_runtime_inputs_changed(previous: &AppSettings, saved: &AppSettings) -> bool {
+    saved.hotkeys.toggle_overlay != previous.hotkeys.toggle_overlay
+        || saved.hotkeys.safe_mode != previous.hotkeys.safe_mode
+        || saved.hotkeys.next_preset != previous.hotkeys.next_preset
+        || saved.hotkeys.prev_preset != previous.hotkeys.prev_preset
+        || saved.hotkeys.preset_status_overlay_enabled
+            != previous.hotkeys.preset_status_overlay_enabled
+        || saved.keyviewer.enabled != previous.keyviewer.enabled
+}
+
 fn add_runtime_sync_warning(
     current: &mut Option<
         crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning,
@@ -243,13 +253,7 @@ pub async fn save_settings(
         {
             Some(crate::modules::reconciliation::api::RuntimeSyncCause::ImporterRootChanged)
         }
-        (Some(_), Some(_))
-            if saved.hotkeys.toggle_overlay != previous.hotkeys.toggle_overlay
-                || saved.hotkeys.safe_mode != previous.hotkeys.safe_mode
-                || saved.hotkeys.next_preset != previous.hotkeys.next_preset
-                || saved.hotkeys.prev_preset != previous.hotkeys.prev_preset
-                || saved.keyviewer.enabled != previous.keyviewer.enabled =>
-        {
+        (Some(_), Some(_)) if hotkey_runtime_inputs_changed(&previous, &saved) => {
             Some(crate::modules::reconciliation::api::RuntimeSyncCause::SettingsChanged)
         }
         _ => None,
@@ -810,13 +814,23 @@ pub async fn test_ai_connection(
 mod tests {
     use super::{
         build_mod_viewer_command, completed_settings_save, ensure_mod_viewer_supports,
-        record_watcher_start_result, should_pass_disabled_ini, validate_mod_viewer_folder,
-        validate_mods_roots_unchanged,
+        hotkey_runtime_inputs_changed, record_watcher_start_result, should_pass_disabled_ini,
+        validate_mod_viewer_folder, validate_mods_roots_unchanged,
     };
     use crate::modules::games::domain::models::{GameType, LaunchMode};
     use crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile;
     use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
     use crate::modules::settings::application::config::{AppSettings, ConfigService, GameConfig};
+
+    #[test]
+    fn preset_status_overlay_change_requires_runtime_sync() {
+        let previous = AppSettings::default();
+        let mut saved = previous.clone();
+        saved.hotkeys.preset_status_overlay_enabled = true;
+
+        assert!(hotkey_runtime_inputs_changed(&previous, &saved));
+        assert!(!hotkey_runtime_inputs_changed(&previous, &previous));
+    }
 
     #[test]
     fn persisted_settings_remain_success_when_follow_up_reconcile_fails() {

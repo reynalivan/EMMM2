@@ -147,8 +147,7 @@ pub async fn get_collection_runtime_state(
         &current_objects,
         mods_path.as_deref(),
     );
-    let current_tree_nodes =
-        projected_state::build_preview_tree_from_projected_state(&projected_state);
+    let current_tree_nodes = projected_state::build_live_active_preview_tree(&projected_state);
     let current_signature = projected_state::signature_for_projected_state(&projected_state);
     let runtime = collection::runtime::get(pool, game_id).await?;
     let active_collection = match runtime

@@ -187,6 +187,16 @@ describe('WelcomeScreen (TC-03)', () => {
   });
 
   it('opens the dashboard after the first game and hands the remaining games to the backend', async () => {
+    let finishActivation: () => void = () => undefined;
+    const activation = new Promise<void>((resolve) => {
+      finishActivation = resolve;
+    });
+    mockOnComplete.mockImplementationOnce(
+      async (_games: GameConfig[], startBackgroundIndexing: () => Promise<void>) => {
+        await activation;
+        await startBackgroundIndexing();
+      },
+    );
     (open as ReturnType<typeof vi.fn>).mockResolvedValue('C:\\Launcher');
     (invoke as ReturnType<typeof vi.fn>).mockImplementation((command: string) => {
       if (command === 'auto_detect_games') {
@@ -211,11 +221,79 @@ describe('WelcomeScreen (TC-03)', () => {
     fireEvent.click(screen.getByText('Result Continue'));
 
     await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());
+    expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).not.toContain(
+      'continue_onboarding_indexing_in_background',
+    );
+    finishActivation();
+    await waitFor(() =>
+      expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toContain(
+        'continue_onboarding_indexing_in_background',
+      ),
+    );
     const invokedCommands = vi.mocked(invoke).mock.calls.map(([command]) => command);
     expect(
       invokedCommands.filter((command) => command === 'reconcile_onboarding_indexing_game'),
     ).toHaveLength(1);
     expect(invokedCommands).toContain('continue_onboarding_indexing_in_background');
+  });
+
+  it('keeps the blocking progress on game one when another game prepares in background', async () => {
+    let snapshotHandler: ((event: { payload: unknown }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      if (event === 'onboarding_indexing:snapshot_progress') {
+        snapshotHandler = handler as (event: { payload: unknown }) => void;
+      }
+      return () => undefined;
+    });
+    let finishFirstGame: (result: { status: 'Applied' }) => void = () => undefined;
+    const firstGameReconcile = new Promise<{ status: 'Applied' }>((resolve) => {
+      finishFirstGame = resolve;
+    });
+    vi.mocked(open).mockResolvedValue('C:\\Launcher');
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === 'auto_detect_games') {
+        return Promise.resolve([
+          { id: 'first-game', name: 'First Game' },
+          { id: 'second-game', name: 'Second Game' },
+        ]);
+      }
+      if (command === 'begin_onboarding_indexing') {
+        return Promise.resolve({ session_id: 'session-1' });
+      }
+      if (command === 'reconcile_onboarding_indexing_game') {
+        return firstGameReconcile;
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<WelcomeScreen onComplete={mockOnComplete} />);
+    fireEvent.click(screen.getByText('XXMI Auto-Detect'));
+    await screen.findByText('Result Screen: 2 games');
+    fireEvent.click(screen.getByText('Result Continue'));
+    await waitFor(() => expect(snapshotHandler).toBeDefined());
+    act(() => {
+      snapshotHandler?.({
+        payload: {
+          session_id: 'session-1',
+          game_id: 'second-game',
+          phase: 'Classifying',
+          completed_games: 0,
+          total_games: 2,
+          completed_roots: 7,
+          total_roots: 10,
+          folders_classified: 7,
+          current_root: 'Other Game',
+          elapsed_ms: 1_000,
+        },
+      });
+    });
+
+    expect(screen.getByText('Game 1 of 2 · First Game')).toBeInTheDocument();
+    expect(screen.queryByText('Game 2 of 2 · Second Game')).not.toBeInTheDocument();
+    expect(mockOnComplete).not.toHaveBeenCalled();
+
+    finishFirstGame({ status: 'Applied' });
+    await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());
   });
 
   it('keeps onboarding open when the first game was not applied', async () => {

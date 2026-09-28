@@ -168,6 +168,134 @@ async fn runtime_descriptor_excludes_terminal_rows_hidden_by_a_disabled_parent()
 }
 
 #[tokio::test]
+async fn current_runtime_preview_and_saved_state_exclude_disabled_ancestors() {
+    let ctx = init_test_db().await;
+    let mods_root = tempfile::tempdir().expect("create mods root");
+    let mods_path = mods_root.path().to_string_lossy().to_string();
+    for path in [
+        "AINOZ/Blue",
+        "AINOZ/DISABLED Red",
+        "AINOZ/DISABLED Variant/Green",
+        "DISABLED BOB/Yellow",
+    ] {
+        let mod_dir = mods_root.path().join(path);
+        std::fs::create_dir_all(&mod_dir).expect("create mod folder");
+        std::fs::write(mod_dir.join("mod.ini"), "[TextureOverrideTest]\n").expect("write mod file");
+    }
+    insert_test_game(
+        &ctx.pool,
+        &TestGameFixture {
+            id: "game-active-preview",
+            name: "Test Game",
+            game_type: GameType::GIMI,
+            path: "E:/Games/TestGame",
+            mods_path: Some(&mods_path),
+        },
+    )
+    .await
+    .expect("insert game");
+    for (id, name, path) in [
+        ("object-enabled", "AINOZ", "AINOZ"),
+        ("object-disabled", "BOB", "DISABLED BOB"),
+    ] {
+        insert_test_object(
+            &ctx.pool,
+            &TestObjectFixture {
+                id,
+                game_id: "game-active-preview",
+                name,
+                folder_path: path,
+                object_type: "Character",
+            },
+        )
+        .await
+        .expect("insert object");
+    }
+    for (id, object_id, path, status) in [
+        (
+            "mod-blue",
+            "object-enabled",
+            "AINOZ/Blue",
+            ItemStatus::Enabled,
+        ),
+        (
+            "mod-red",
+            "object-enabled",
+            "AINOZ/DISABLED Red",
+            ItemStatus::Disabled,
+        ),
+        (
+            "mod-green",
+            "object-enabled",
+            "AINOZ/DISABLED Variant/Green",
+            ItemStatus::Enabled,
+        ),
+        (
+            "mod-yellow",
+            "object-disabled",
+            "DISABLED BOB/Yellow",
+            ItemStatus::Enabled,
+        ),
+    ] {
+        insert_test_mod(
+            &ctx.pool,
+            &TestModFixture {
+                id,
+                game_id: "game-active-preview",
+                object_id: Some(object_id),
+                actual_name: id,
+                folder_path: path,
+                status,
+                is_safe: true,
+                object_type: Some("Character"),
+                mods_path: Some(&mods_path),
+            },
+        )
+        .await
+        .expect("insert mod");
+    }
+
+    let runtime = get_collection_runtime_state(&ctx.pool, "game-active-preview")
+        .await
+        .expect("load current runtime preview");
+    assert_eq!(runtime.current_mods.len(), 1);
+    assert_eq!(runtime.current_mods[0].mod_path, "AINOZ/Blue");
+    assert_eq!(runtime.projected_state.summary.active_root_count, 1);
+    assert_eq!(runtime.current_tree_nodes.len(), 1);
+    assert_eq!(runtime.current_tree_nodes[0].name, "AINOZ");
+    assert_eq!(runtime.current_tree_nodes[0].children.len(), 1);
+
+    let saved = create_collection(
+        &ctx.pool,
+        CreateCollectionInput {
+            game_id: "game-active-preview".to_string(),
+            name: "Enabled only".to_string(),
+            save_mode: Some(CreateCollectionMode::SaveCurrentState),
+            source_collection_id: None,
+        },
+    )
+    .await
+    .expect("save current state");
+    assert_eq!(saved.mod_count, 1);
+    let apply_preview = crate::modules::collections::application::collection::preview_apply(
+        &ctx.pool,
+        "game-active-preview",
+        &saved.id,
+        Some(&mods_path),
+        false,
+    )
+    .await
+    .expect("preview apply against current runtime");
+    assert_eq!(apply_preview.current_tree_nodes.len(), 1);
+    assert_eq!(apply_preview.current_tree_nodes[0].children.len(), 1);
+    let descriptor = get_collection_runtime_descriptor(&ctx.pool, "game-active-preview")
+        .await
+        .expect("load runtime descriptor");
+    assert_eq!(descriptor.counts.active_mod_count, 1);
+    assert_eq!(descriptor.runtime_status, RuntimeStatus::Clean);
+}
+
+#[tokio::test]
 async fn runtime_state_reads_the_full_runtime() {
     let ctx = init_test_db().await;
 

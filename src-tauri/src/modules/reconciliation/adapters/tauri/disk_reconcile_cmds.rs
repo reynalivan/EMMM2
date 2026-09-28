@@ -267,6 +267,9 @@ async fn reconcile_onboarding_indexing_game_with_status(
         allow_missing_snapshot_fallback,
     )
     .await;
+    if allow_missing_snapshot_fallback && matches!(result, Err(AppError::Cancelled)) {
+        return result;
+    }
     let phase = match &result {
         Ok(result) => background_phase_for_reconcile_status(&result.status),
         Err(_) => {
@@ -326,11 +329,9 @@ pub async fn continue_onboarding_indexing_in_background(
     sessions: State<'_, crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>,
 ) -> Result<(), AppError> {
     sessions.mark_background_started(&session_id, &game_ids)?;
-    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::replace_pending_game_ids(
-        pool.inner(),
-        &game_ids,
-    )
-    .await
+    if let Err(error) =
+        persist_pending_background_games(pool.inner(), sessions.inner(), &session_id, &game_ids)
+            .await
     {
         let _ = sessions.cancel(&session_id);
         return Err(error);
@@ -339,67 +340,93 @@ pub async fn continue_onboarding_indexing_in_background(
     let worker_sessions = sessions.inner().clone();
     tokio::spawn(async move {
         for game_id in game_ids {
-            if worker_sessions.is_claimed_by_activation(&session_id, &game_id) {
+            let mut retried_activation_claim = false;
+            loop {
                 worker_sessions
                     .wait_for_activation_claim(&session_id, &game_id)
                     .await;
-            }
-            if worker_sessions.background_game_is_ready(&session_id, &game_id) {
-                continue;
-            }
-            let pool = worker_app.state::<sqlx::SqlitePool>();
-            let config =
-                worker_app.state::<crate::modules::settings::application::config::ConfigService>();
-            let watcher = worker_app
-                .state::<crate::modules::workspace::application::scanner::watcher::WatcherState>(
-            );
-            let disk_reconcile_state = worker_app.state::<
-                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-            >();
-            let operation_lock =
-                worker_app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
-            match reconcile_onboarding_indexing_game_with_status(
-                &worker_app,
-                &session_id,
-                &game_id,
-                pool.inner(),
-                config.inner(),
-                watcher.inner(),
-                disk_reconcile_state.inner(),
-                operation_lock.inner(),
-                &worker_sessions,
-                true,
-            )
-            .await
-            {
-                Ok(result) if result.status.applied() => {
-                    let pool = worker_app.state::<sqlx::SqlitePool>();
-                    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::remove_pending_game_id(
-                        pool.inner(),
-                        &game_id,
-                    )
-                    .await
-                    {
+                if worker_sessions.background_game_is_ready(&session_id, &game_id) {
+                    break;
+                }
+                let pool = worker_app.state::<sqlx::SqlitePool>();
+                let config = worker_app
+                    .state::<crate::modules::settings::application::config::ConfigService>();
+                let watcher = worker_app.state::<
+                    crate::modules::workspace::application::scanner::watcher::WatcherState,
+                >();
+                let disk_reconcile_state = worker_app.state::<
+                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+                >();
+                let operation_lock = worker_app
+                    .state::<crate::modules::mutation::coordinator::MutationCoordinator>(
+                );
+                match reconcile_onboarding_indexing_game_with_status(
+                    &worker_app,
+                    &session_id,
+                    &game_id,
+                    pool.inner(),
+                    config.inner(),
+                    watcher.inner(),
+                    disk_reconcile_state.inner(),
+                    operation_lock.inner(),
+                    &worker_sessions,
+                    true,
+                )
+                .await
+                {
+                    Ok(result) if result.status.applied() => {
+                        if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::remove_pending_game_id(
+                            pool.inner(),
+                            &game_id,
+                        )
+                        .await
+                        {
+                            log::warn!(
+                                "Could not clear completed background onboarding game {game_id}: {error}"
+                            );
+                        }
+                    }
+                    Ok(result) => {
                         log::warn!(
-                            "Could not clear completed background onboarding game {game_id}: {error}"
+                            "Background onboarding indexing needs attention for game {game_id}: {:?}",
+                            result.status
+                        );
+                    }
+                    Err(AppError::Cancelled) if !retried_activation_claim => {
+                        retried_activation_claim = true;
+                        continue;
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Background onboarding indexing failed for game {game_id}: {error}"
                         );
                     }
                 }
-                Ok(result) => {
-                    log::warn!(
-                        "Background onboarding indexing needs attention for game {game_id}: {:?}",
-                        result.status
-                    );
-                }
-                Err(error) if worker_sessions.is_claimed_by_activation(&session_id, &game_id) => {
-                    log::debug!("Activation owns onboarding indexing for game {game_id}: {error}");
-                }
-                Err(error) => {
-                    log::warn!("Background onboarding indexing failed for game {game_id}: {error}");
-                }
+                break;
             }
         }
     });
+    Ok(())
+}
+
+async fn persist_pending_background_games(
+    pool: &sqlx::SqlitePool,
+    sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+    session_id: &str,
+    game_ids: &[String],
+) -> Result<(), AppError> {
+    use crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::{
+        remove_pending_game_id, replace_pending_game_ids,
+    };
+
+    replace_pending_game_ids(pool, game_ids).await?;
+    // Activation can finish before or during the durable write. Recheck only
+    // after persistence so an already-ready game is never resurrected.
+    for game_id in game_ids {
+        if sessions.background_game_is_ready(session_id, game_id) {
+            remove_pending_game_id(pool, game_id).await?;
+        }
+    }
     Ok(())
 }
 
@@ -645,6 +672,12 @@ async fn reconcile_onboarding_indexing_game_impl(
         .flatten();
     let prepared = match sessions.consume(session_id, game_id).await {
         Ok(prepared) => prepared,
+        Err(AppError::NotFound(_))
+            if allow_missing_snapshot_fallback
+                && sessions.background_game_is_ready(session_id, game_id) =>
+        {
+            return Err(AppError::Cancelled);
+        }
         Err(AppError::NotFound(_)) if allow_missing_snapshot_fallback => {
             ConsumedOnboardingSnapshot::FullFallback
         }
@@ -663,39 +696,11 @@ async fn reconcile_onboarding_indexing_game_impl(
         crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Applying,
     )?;
     let initial_recheck = snapshot_lease.is_none();
-    let pre_scan_watcher = if initial_recheck && allow_missing_snapshot_fallback {
-        let _activation_guard = disk_reconcile_state.activation_guard().await;
-        let settings = config.get_settings();
-        let is_active = settings.active_game_id.as_deref() == Some(game_id);
-        let game = settings
-            .games
-            .into_iter()
-            .find(|game| game.id == game_id)
-            .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' was removed")))?;
-        let runtime_config_path = game.instance_path.join("d3dx.ini");
-        let watcher_session = if is_active {
-            watcher
-                .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
-                .map(|session| session.generation())
-                .ok_or_else(|| {
-                    AppError::Io(format!(
-                    "Active watcher for '{game_id}' is not ready; activation will verify this game"
-                ))
-                })?
-        } else {
-            crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
-                app,
-                watcher,
-                game_id,
-                &game.mod_path,
-                Some(&runtime_config_path),
-            )
-            .map_err(|error| AppError::Io(format!("Could not watch '{game_id}' before indexing: {error}")))?
-        };
-        let observed_generation = disk_reconcile_state
-            .authority_event_generation(game_id, watcher_session)
-            .unwrap_or(0);
-        Some((game.mod_path, watcher_session, observed_generation))
+    let mut pre_scan_watcher = if initial_recheck {
+        Some(
+            start_onboarding_recheck_watcher(app, game_id, config, watcher, disk_reconcile_state)
+                .await?,
+        )
     } else {
         None
     };
@@ -782,6 +787,18 @@ async fn reconcile_onboarding_indexing_game_impl(
         None => false,
     };
     if changed_during_apply {
+        if pre_scan_watcher.is_none() {
+            pre_scan_watcher = Some(
+                start_onboarding_recheck_watcher(
+                    app,
+                    game_id,
+                    config,
+                    watcher,
+                    disk_reconcile_state,
+                )
+                .await?,
+            );
+        }
         app.emit(
             "onboarding_indexing:snapshot_progress",
             snapshot_rechecking_progress(session_id.to_string(), game_id.to_string()),
@@ -858,7 +875,10 @@ async fn reconcile_onboarding_indexing_game_impl(
             }
         }
     }
-    if result.status.applied() && config.get_settings().active_game_id.as_deref() != Some(game_id) {
+    if result.status.applied()
+        && pre_scan_watcher.is_none()
+        && config.get_settings().active_game_id.as_deref() != Some(game_id)
+    {
         background_handoff_trusted = false;
         if let Some(lease) = &snapshot_lease {
             let game = config
@@ -930,14 +950,69 @@ async fn reconcile_onboarding_indexing_game_impl(
             );
         }
     }
-    if allow_missing_snapshot_fallback && result.status.applied() && !background_handoff_trusted {
+    if result.status.applied() && !background_handoff_trusted {
         disk_reconcile_state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
+    }
+    ensure_onboarding_handoff_if_applied(&result.status, background_handoff_trusted)?;
+    Ok(result)
+}
+
+async fn start_onboarding_recheck_watcher(
+    app: &tauri::AppHandle,
+    game_id: &str,
+    config: &crate::modules::settings::application::config::ConfigService,
+    watcher: &crate::modules::workspace::application::scanner::watcher::WatcherState,
+    disk_reconcile_state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+) -> Result<(std::path::PathBuf, u64, u64), AppError> {
+    let _activation_guard = disk_reconcile_state.activation_guard().await;
+    let settings = config.get_settings();
+    let is_active = settings.active_game_id.as_deref() == Some(game_id);
+    let game = settings
+        .games
+        .into_iter()
+        .find(|game| game.id == game_id)
+        .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' was removed")))?;
+    let runtime_config_path = game.instance_path.join("d3dx.ini");
+    let watcher_session = if is_active {
+        watcher
+            .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
+            .map(|session| session.generation())
+            .ok_or_else(|| {
+                AppError::Io(format!(
+                    "Active watcher for '{game_id}' is not ready; activation will verify this game"
+                ))
+            })?
+    } else {
+        crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+            app,
+            watcher,
+            game_id,
+            &game.mod_path,
+            Some(&runtime_config_path),
+        )
+        .map_err(|error| {
+            AppError::Io(format!(
+                "Could not watch '{game_id}' before indexing: {error}"
+            ))
+        })?
+    };
+    let observed_generation = disk_reconcile_state
+        .authority_event_generation(game_id, watcher_session)
+        .unwrap_or(0);
+    Ok((game.mod_path, watcher_session, observed_generation))
+}
+
+fn ensure_onboarding_handoff_if_applied(
+    status: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileStatus,
+    trusted: bool,
+) -> Result<(), AppError> {
+    if status.applied() && !trusted {
         return Err(AppError::Io(
-            "Background indexing lost disk watcher continuity; retrying requires a full verification"
+            "Indexing finished, but disk watcher continuity could not be verified; retry indexing"
                 .to_string(),
         ));
     }
-    Ok(result)
+    Ok(())
 }
 
 async fn reconcile_onboarding_with_foreground_priority(
@@ -1065,7 +1140,8 @@ pub async fn resolve_rename_confirmations(
 mod tests {
     use super::{
         background_phase_for_reconcile_status, checked_resolution_path,
-        manual_reconcile_runtime_request, should_wait_for_initial_recovery,
+        ensure_onboarding_handoff_if_applied, manual_reconcile_runtime_request,
+        persist_pending_background_games, should_wait_for_initial_recovery,
     };
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
     use crate::modules::reconciliation::application::disk_reconcile::types::{
@@ -1125,5 +1201,67 @@ mod tests {
                 OnboardingIndexingBackgroundPhase::NeedsAttention
             );
         }
+    }
+
+    #[test]
+    fn applied_first_game_requires_watcher_handoff_before_onboarding_completes() {
+        assert!(
+            ensure_onboarding_handoff_if_applied(&DiskReconcileStatus::Applied, false).is_err()
+        );
+        assert!(ensure_onboarding_handoff_if_applied(
+            &DiskReconcileStatus::AppliedWithFolderConflicts,
+            false,
+        )
+        .is_err());
+        assert!(ensure_onboarding_handoff_if_applied(&DiskReconcileStatus::Applied, true).is_ok());
+        assert!(ensure_onboarding_handoff_if_applied(
+            &DiskReconcileStatus::SourceUnavailable,
+            false,
+        )
+        .is_ok());
+    }
+
+    #[tokio::test]
+    async fn ready_activation_is_not_resurrected_in_pending_background_games() {
+        use crate::modules::reconciliation::application::disk_reconcile::onboarding_recovery::load_pending_game_ids;
+        use crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore;
+        use crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(temp.path().join("app.db"))
+                    .create_if_missing(true),
+            )
+            .await
+            .expect("test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("migrated database");
+        let sessions = OnboardingIndexingSessionStore::new();
+        let game_ids = vec!["already-ready".to_string(), "later".to_string()];
+        let status = sessions
+            .begin_resumed_background(&game_ids)
+            .expect("background status");
+        sessions
+            .set_background_phase(
+                &status.session_id,
+                "already-ready",
+                OnboardingIndexingBackgroundPhase::Ready,
+            )
+            .expect("activated game is ready");
+
+        persist_pending_background_games(&pool, &sessions, &status.session_id, &game_ids)
+            .await
+            .expect("persist unfinished games");
+        assert_eq!(
+            load_pending_game_ids(&pool)
+                .await
+                .expect("load pending games"),
+            vec!["later".to_string()]
+        );
     }
 }

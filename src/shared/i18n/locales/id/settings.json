@@ -289,7 +289,7 @@
     "days": "hari"
   },
   "hotkeys": {
-    "os_hotkeys_hint": "Binding Safe Mode dan preset didaftarkan oleh EMMM. Binding overlay di bawah hanya milik 3DMigoto.",
+    "os_hotkeys_hint": "EMMM mendaftarkan pintasan Safe Mode dan preset. Binding KeyViewer di bawah ditangani oleh 3DMigoto.",
     "title": "Hotkey Global",
     "enabled": "Diaktifkan",
     "desc": "Pintasan yang aktif saat jendela game digunakan.",
@@ -307,7 +307,8 @@
     "viewer_title": "Overlay KeyViewer",
     "auto_reload": "Muat Ulang Otomatis",
     "viewer_desc": "Tampilkan keybind yang terdeteksi. Buka dengan {{key}}.",
-    "preset_status_overlay_beta": "Overlay status preset (Beta) untuk sementara disembunyikan. Panel keybind KeyViewer tetap tersedia.",
+    "preset_status_overlay_label": "Overlay status preset (Beta)",
+    "preset_status_overlay_desc": "Menampilkan preset aktif dan status Safe Mode di dalam game. Default mati; terpisah dari pintasan dan KeyViewer.",
     "infrastructure_title": "File runtime",
     "infrastructure_desc": "Dikelola otomatis di .emmm_data/.",
     "runtime": {
