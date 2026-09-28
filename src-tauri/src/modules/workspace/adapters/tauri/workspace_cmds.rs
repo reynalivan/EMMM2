@@ -391,7 +391,7 @@ async fn execute_workspace_switch_request(
         return Ok(superseded_switch_result());
     }
     let lock_wait_elapsed = lock_wait_started_at.elapsed();
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_preflight(
         &app,
         &game_id,
     )?;
@@ -415,6 +415,7 @@ async fn execute_workspace_switch_request(
     }
     let mut scope = prepared.mutation_scope(&mods_root)?;
     if scope.renames.is_empty() {
+        disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
         let _guard = op_lock
             .acquire_exempt(
                 crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
@@ -432,7 +433,10 @@ async fn execute_workspace_switch_request(
         return result;
     }
     scope.validate_identities()?;
-    let storage_fast_path = leaf_storage_fast_path(request.is_leaf_toggle(), &scope, &mods_root);
+    let storage_fast_path = leaf_storage_fast_path(request.is_leaf_toggle(), &scope, &mods_root)
+        && disk_reconcile_state
+            .ensure_core_ready_for_mutation(&game_id)
+            .is_ok();
     let preflight_started_at = Instant::now();
     if !storage_fast_path {
         let trusted_preflight_scope = trusted_toggle_scope(&scope, &mods_root)
@@ -495,6 +499,7 @@ async fn execute_workspace_switch_request(
             scope = refreshed_scope;
         }
         if scope.renames.is_empty() {
+            disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
             let _guard = op_lock
             .acquire_exempt(
                 crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
@@ -539,10 +544,12 @@ async fn execute_workspace_switch_request(
         ))
         .await?;
     let journal_prepare_elapsed = journal_started_at.elapsed();
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile_state.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     if !admission.is_current() {
         mutation_lease.begin_rollback()?;
         let settlements = scope
@@ -1084,13 +1091,13 @@ async fn run_workspace_switch_projection(
             continue;
         };
         match projection {
-            Ok(result) => {
-                if let Some(authority) = &trusted_authority {
+            Ok(mut result) => {
+                let authority_accepted = if let Some(authority) = &trusted_authority {
                     state.mark_trusted_internal_mutation_reconciled(
                         authority,
                         &result,
                         &changed_paths,
-                    );
+                    )
                 } else if let Some((mods_root, watcher_session, observed_generation)) =
                     &authority_marker
                 {
@@ -1101,8 +1108,22 @@ async fn run_workspace_switch_projection(
                         *observed_generation,
                         &result,
                         &changed_paths,
+                    )
+                } else {
+                    false
+                };
+                if !authority_accepted {
+                    log::debug!(
+                        "Workspace disk projection for '{game_id}' awaits current watcher authority"
                     );
+                    drop(lease);
+                    retry_delay = (retry_delay * 2).min(Duration::from_secs(5));
+                    continue;
                 }
+                result.warnings.retain(|warning| {
+                    warning.kind
+                        != crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarningKind::AuthorityPending
+                });
                 let checkpoint = checkpoint_current_projection(
                     app,
                     pool,

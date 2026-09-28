@@ -4,18 +4,18 @@
 //! therefore project the captured discovery directly; any uncertain watcher
 //! state falls back to the normal full reconcile path.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Notify};
 use uuid::Uuid;
 
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
-    collect_onboarding_disk_discovery, collect_onboarding_disk_discovery_with_progress,
+    collect_onboarding_disk_discovery_with_progress_and_gate,
     collect_scoped_onboarding_disk_discovery, DiskProjectionError, DiskScopedDiscovery,
     OnboardingDiscoveryPhase, OnboardingDiscoveryProgress,
 };
@@ -34,6 +34,9 @@ const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(250);
 pub struct OnboardingIndexingSessionStore {
     sessions: Arc<Mutex<HashMap<String, OnboardingSession>>>,
     background_statuses: Arc<Mutex<HashMap<String, OnboardingIndexingBackgroundStatus>>>,
+    activation_claims: Arc<Mutex<HashSet<(String, String)>>>,
+    activation_claim_released: Arc<Notify>,
+    background_status_changed: Arc<Notify>,
 }
 
 impl Default for OnboardingIndexingSessionStore {
@@ -41,6 +44,9 @@ impl Default for OnboardingIndexingSessionStore {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             background_statuses: Arc::new(Mutex::new(HashMap::new())),
+            activation_claims: Arc::new(Mutex::new(HashSet::new())),
+            activation_claim_released: Arc::new(Notify::new()),
+            background_status_changed: Arc::new(Notify::new()),
         }
     }
 }
@@ -51,6 +57,95 @@ struct OnboardingSession {
     cancelled: Arc<AtomicBool>,
     background_started: bool,
     journal_revision: Option<u64>,
+    scan_priority: Arc<ScanPriority>,
+}
+
+#[derive(Default)]
+struct ScanPriority {
+    state: Mutex<ScanPriorityState>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct ScanPriorityState {
+    pending: HashSet<String>,
+    preferred: Option<String>,
+    busy: bool,
+    cancelled: bool,
+}
+
+struct ScanPermit {
+    priority: Arc<ScanPriority>,
+}
+
+impl Drop for ScanPermit {
+    fn drop(&mut self) {
+        let mut state = crate::shared::sync::lock(&self.priority.state);
+        state.busy = false;
+        self.priority.wake.notify_all();
+    }
+}
+
+impl ScanPriority {
+    fn new(game_ids: impl IntoIterator<Item = String>) -> Arc<Self> {
+        let pending = game_ids.into_iter().collect::<HashSet<_>>();
+        Arc::new(Self {
+            state: Mutex::new(ScanPriorityState {
+                pending,
+                ..ScanPriorityState::default()
+            }),
+            wake: Condvar::new(),
+        })
+    }
+
+    fn prefer(&self, game_id: &str) {
+        let mut state = crate::shared::sync::lock(&self.state);
+        if state.pending.contains(game_id) {
+            state.preferred = Some(game_id.to_string());
+            self.wake.notify_all();
+        }
+    }
+
+    fn finish(&self, game_id: &str) {
+        let mut state = crate::shared::sync::lock(&self.state);
+        state.pending.remove(game_id);
+        if state.preferred.as_deref() == Some(game_id) {
+            state.preferred = None;
+        }
+        self.wake.notify_all();
+    }
+
+    fn cancel(&self) {
+        let mut state = crate::shared::sync::lock(&self.state);
+        state.cancelled = true;
+        self.wake.notify_all();
+    }
+
+    fn acquire(self: &Arc<Self>, game_id: &str) -> Result<ScanPermit, DiskProjectionError> {
+        let mut state = crate::shared::sync::lock(&self.state);
+        loop {
+            if state.cancelled {
+                return Err(DiskProjectionError::Failed(
+                    "Onboarding indexing was cancelled".to_string(),
+                ));
+            }
+            if !state.busy
+                && state
+                    .preferred
+                    .as_deref()
+                    .is_none_or(|preferred| preferred == game_id)
+            {
+                state.busy = true;
+                return Ok(ScanPermit {
+                    priority: Arc::clone(self),
+                });
+            }
+            state = self
+                .wake
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+    }
 }
 
 struct PendingGame {
@@ -242,9 +337,88 @@ pub struct OnboardingSnapshotLease {
     journal_revision: Option<u64>,
 }
 
+pub struct ClaimedOnboardingSnapshot {
+    pending: PendingGame,
+    journal_revision: Option<u64>,
+}
+
+pub struct ActivationClaimGuard {
+    session_id: String,
+    game_id: String,
+    claims: Arc<Mutex<HashSet<(String, String)>>>,
+    released: Arc<Notify>,
+}
+
+impl Drop for ActivationClaimGuard {
+    fn drop(&mut self) {
+        crate::shared::sync::lock(&self.claims)
+            .remove(&(self.session_id.clone(), self.game_id.clone()));
+        self.released.notify_waiters();
+    }
+}
+
+impl ClaimedOnboardingSnapshot {
+    pub async fn resolve(self) -> Result<ConsumedOnboardingSnapshot, AppError> {
+        let mut prepared = self
+            .pending
+            .prepared
+            .await
+            .map_err(|_| AppError::Cancelled)??;
+        let changed_paths = match prepared.watcher.take_changes() {
+            Ok(paths) => paths,
+            Err(()) => return Ok(ConsumedOnboardingSnapshot::FullFallback),
+        };
+        if paths_contain_unmapped_path(&changed_paths, &prepared.game.mod_path)
+            || paths_include_direct_root_path(
+                &changed_paths,
+                &prepared.game.mod_path,
+                &prepared.discovery,
+            )
+        {
+            return Ok(ConsumedOnboardingSnapshot::FullFallback);
+        }
+        if !changed_paths.is_empty() {
+            refresh_changed_roots(&mut prepared, &changed_paths).await?;
+        }
+        Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
+            OnboardingSnapshotLease {
+                prepared,
+                journal_revision: self.journal_revision,
+            },
+        )))
+    }
+}
+
 impl OnboardingSnapshotLease {
+    pub fn matches_root(&self, root: &Path) -> bool {
+        self.prepared.game.mod_path == root
+    }
+
     pub fn journal_revision(&self) -> Option<u64> {
         self.journal_revision
+    }
+
+    pub fn journal_allows_game_snapshot(
+        &self,
+        coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+        game_id: &str,
+    ) -> bool {
+        let Some(captured) = self.journal_revision else {
+            return false;
+        };
+        let Ok(current) = coordinator.current_journal_revision() else {
+            return false;
+        };
+        if captured == current {
+            return true;
+        }
+        // This watcher observes changes to this root, including committed
+        // mutations. An unrelated game's journal entry must not force this
+        // complete snapshot to be discarded. An unsettled commit for this
+        // game still requires the full recovery path.
+        coordinator
+            .pending_disk_commits()
+            .is_ok_and(|pending| pending.iter().all(|operation| operation.game_id != game_id))
     }
 
     pub fn discovery(&self) -> DiskScopedDiscovery {
@@ -275,6 +449,32 @@ impl OnboardingIndexingSessionStore {
             .collect::<Vec<_>>();
         statuses.sort_by(|left, right| left.session_id.cmp(&right.session_id));
         statuses
+    }
+
+    pub fn promote_game(&self, game_id: &str) {
+        let priorities = crate::shared::sync::lock(&self.sessions)
+            .values()
+            .map(|session| Arc::clone(&session.scan_priority))
+            .collect::<Vec<_>>();
+        for priority in priorities {
+            priority.prefer(game_id);
+        }
+    }
+
+    pub fn has_unfinished_game(&self, game_id: &str) -> bool {
+        crate::shared::sync::lock(&self.background_statuses)
+            .values()
+            .flat_map(|status| status.games.iter())
+            .any(|game| {
+                game.game_id == game_id
+                    && matches!(
+                        game.phase,
+                        OnboardingIndexingBackgroundPhase::Queued
+                            | OnboardingIndexingBackgroundPhase::Preparing
+                            | OnboardingIndexingBackgroundPhase::Prepared
+                            | OnboardingIndexingBackgroundPhase::Applying
+                    )
+            })
     }
 
     /// Register persisted onboarding work resumed after an app restart. The
@@ -357,7 +557,9 @@ impl OnboardingIndexingSessionStore {
             .iter()
             .filter(|game| matches!(game.phase, OnboardingIndexingBackgroundPhase::Ready))
             .count() as u64;
-        Ok(status.clone())
+        let updated = status.clone();
+        self.background_status_changed.notify_waiters();
+        Ok(updated)
     }
 
     /// Update the one in-memory onboarding status that owns `game_id`. This
@@ -382,7 +584,9 @@ impl OnboardingIndexingSessionStore {
             .iter()
             .filter(|game| matches!(game.phase, OnboardingIndexingBackgroundPhase::Ready))
             .count() as u64;
-        Some(status.clone())
+        let updated = status.clone();
+        self.background_status_changed.notify_waiters();
+        Some(updated)
     }
 
     pub fn mark_background_started(
@@ -481,6 +685,8 @@ impl OnboardingIndexingSessionStore {
         let on_progress: Arc<dyn Fn(OnboardingIndexingSnapshotProgress) + Send + Sync> =
             Arc::new(on_progress);
         let cancelled = Arc::new(AtomicBool::new(false));
+        let scan_priority = ScanPriority::new(games.iter().map(|game| game.id.clone()));
+        scan_priority.prefer(&games[0].id);
         let mut pending_games = HashMap::with_capacity(games.len());
         let mut queued_games = Vec::with_capacity(games.len());
         for game in games {
@@ -498,6 +704,7 @@ impl OnboardingIndexingSessionStore {
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
                 journal_revision,
+                scan_priority: Arc::clone(&scan_priority),
             },
         );
         drop(sessions);
@@ -507,20 +714,33 @@ impl OnboardingIndexingSessionStore {
 
         let prepared_games = Arc::new(AtomicU64::new(0));
         let worker_session_id = session_id.clone();
-        tokio::spawn(async move {
-            for (game, sender) in queued_games {
-                if cancelled.load(Ordering::Acquire) {
-                    let _ = sender.send(Err(AppError::Cancelled));
-                    continue;
-                }
+        for (game, sender) in queued_games {
+            let cancelled = Arc::clone(&cancelled);
+            let scan_priority = Arc::clone(&scan_priority);
+            let on_progress = Arc::clone(&on_progress);
+            let prepared_games = Arc::clone(&prepared_games);
+            let worker_session_id = worker_session_id.clone();
+            tokio::spawn(async move {
                 let progress_reporter = Arc::new(OnboardingSnapshotProgressReporter::new(
-                    worker_session_id.clone(),
+                    worker_session_id,
                     game.id.clone(),
-                    Arc::clone(&prepared_games),
+                    prepared_games,
                     total_games,
-                    Arc::clone(&on_progress),
+                    on_progress,
                 ));
-                match prepare_game(game, Arc::clone(&progress_reporter)).await {
+                let game_id = game.id.clone();
+                let preparation = if cancelled.load(Ordering::Acquire) {
+                    Err(AppError::Cancelled)
+                } else {
+                    prepare_game(
+                        game,
+                        Arc::clone(&progress_reporter),
+                        Arc::clone(&scan_priority),
+                    )
+                    .await
+                };
+                scan_priority.finish(&game_id);
+                match preparation {
                     Ok(prepared) => {
                         progress_reporter.emit(
                             OnboardingIndexingSnapshotPhase::Ready,
@@ -536,8 +756,8 @@ impl OnboardingIndexingSessionStore {
                         let _ = sender.send(Err(error));
                     }
                 }
-            }
-        });
+            });
+        }
 
         Ok(OnboardingIndexingSession { session_id })
     }
@@ -550,7 +770,95 @@ impl OnboardingIndexingSessionStore {
         session_id: &str,
         game_id: &str,
     ) -> Result<ConsumedOnboardingSnapshot, AppError> {
-        let (prepared, journal_revision) = {
+        match self.claim(session_id, game_id) {
+            Ok(claimed) => claimed.resolve().await,
+            Err(AppError::Cancelled) => Ok(ConsumedOnboardingSnapshot::FullFallback),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn claim_for_activation(
+        &self,
+        game_id: &str,
+    ) -> Option<(ClaimedOnboardingSnapshot, ActivationClaimGuard)> {
+        let session_id = crate::shared::sync::lock(&self.sessions)
+            .iter()
+            .find(|(_, session)| session.games.contains_key(game_id))
+            .map(|(session_id, _)| session_id.clone())?;
+        let claimed = self.claim(&session_id, game_id).ok()?;
+        crate::shared::sync::lock(&self.activation_claims)
+            .insert((session_id.clone(), game_id.to_string()));
+        let guard = ActivationClaimGuard {
+            session_id,
+            game_id: game_id.to_string(),
+            claims: Arc::clone(&self.activation_claims),
+            released: Arc::clone(&self.activation_claim_released),
+        };
+        Some((claimed, guard))
+    }
+
+    pub fn is_claimed_by_activation(&self, session_id: &str, game_id: &str) -> bool {
+        crate::shared::sync::lock(&self.activation_claims)
+            .contains(&(session_id.to_string(), game_id.to_string()))
+    }
+
+    pub async fn wait_for_activation_claim(&self, session_id: &str, game_id: &str) {
+        loop {
+            let released = self.activation_claim_released.notified();
+            tokio::pin!(released);
+            released.as_mut().enable();
+            if !self.is_claimed_by_activation(session_id, game_id) {
+                return;
+            }
+            released.await;
+        }
+    }
+
+    pub fn background_game_is_ready(&self, session_id: &str, game_id: &str) -> bool {
+        crate::shared::sync::lock(&self.background_statuses)
+            .get(session_id)
+            .is_some_and(|status| {
+                status.games.iter().any(|game| {
+                    game.game_id == game_id
+                        && game.phase == OnboardingIndexingBackgroundPhase::Ready
+                })
+            })
+    }
+
+    /// Returns a terminal phase only when the background worker already owns
+    /// this game's prepared job. A queued job still owned by the session is
+    /// instead claimed directly by activation.
+    pub async fn wait_for_background_claimed_game(
+        &self,
+        game_id: &str,
+    ) -> Option<OnboardingIndexingBackgroundPhase> {
+        loop {
+            let changed = self.background_status_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            let phase = {
+                let statuses = crate::shared::sync::lock(&self.background_statuses);
+                statuses
+                    .values()
+                    .flat_map(|status| &status.games)
+                    .find(|game| game.game_id == game_id)
+                    .map(|game| game.phase.clone())
+            }?;
+            match phase {
+                OnboardingIndexingBackgroundPhase::Ready
+                | OnboardingIndexingBackgroundPhase::NeedsAttention
+                | OnboardingIndexingBackgroundPhase::Failed => return Some(phase),
+                _ => changed.await,
+            }
+        }
+    }
+
+    fn claim(
+        &self,
+        session_id: &str,
+        game_id: &str,
+    ) -> Result<ClaimedOnboardingSnapshot, AppError> {
+        let (pending, journal_revision) = {
             let mut sessions = crate::shared::sync::lock(&self.sessions);
             let expired = sessions.get(session_id).is_some_and(|session| {
                 !session.background_started && session.created_at.elapsed() >= SESSION_TTL
@@ -558,9 +866,10 @@ impl OnboardingIndexingSessionStore {
             if expired {
                 if let Some(session) = sessions.remove(session_id) {
                     session.cancelled.store(true, Ordering::Release);
+                    session.scan_priority.cancel();
                 }
                 crate::shared::sync::lock(&self.background_statuses).remove(session_id);
-                return Ok(ConsumedOnboardingSnapshot::FullFallback);
+                return Err(AppError::Cancelled);
             }
             let session = sessions.get_mut(session_id).ok_or_else(|| {
                 AppError::NotFound("Onboarding indexing session was not found".to_string())
@@ -574,46 +883,21 @@ impl OnboardingIndexingSessionStore {
             if session.games.is_empty() {
                 sessions.remove(session_id);
             }
-            (pending.prepared, journal_revision)
+            (pending, journal_revision)
         };
-        let mut prepared = prepared.await.map_err(|_| AppError::Cancelled)??;
-
-        let changed_paths = match prepared.watcher.take_changes() {
-            Ok(paths) => paths,
-            Err(()) => return Ok(ConsumedOnboardingSnapshot::FullFallback),
-        };
-        if paths_contain_unmapped_path(&changed_paths, &prepared.game.mod_path)
-            || paths_include_direct_root_path(
-                &changed_paths,
-                &prepared.game.mod_path,
-                &prepared.discovery,
-            )
-        {
-            return Ok(ConsumedOnboardingSnapshot::FullFallback);
-        }
-        if changed_paths.is_empty() {
-            return Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
-                OnboardingSnapshotLease {
-                    prepared,
-                    journal_revision,
-                },
-            )));
-        }
-
-        refresh_changed_roots(&mut prepared, &changed_paths).await?;
-        Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
-            OnboardingSnapshotLease {
-                prepared,
-                journal_revision,
-            },
-        )))
+        Ok(ClaimedOnboardingSnapshot {
+            pending,
+            journal_revision,
+        })
     }
 
     pub fn cancel(&self, session_id: &str) -> Result<(), AppError> {
         if let Some(session) = crate::shared::sync::lock(&self.sessions).remove(session_id) {
             session.cancelled.store(true, Ordering::Release);
+            session.scan_priority.cancel();
         }
         crate::shared::sync::lock(&self.background_statuses).remove(session_id);
+        self.background_status_changed.notify_waiters();
         Ok(())
     }
 
@@ -624,6 +908,7 @@ impl OnboardingIndexingSessionStore {
                 !session.background_started && session.created_at.elapsed() >= SESSION_TTL;
             if expired {
                 session.cancelled.store(true, Ordering::Release);
+                session.scan_priority.cancel();
                 expired_session_ids.push(session_id.clone());
             }
             !expired
@@ -647,7 +932,9 @@ impl OnboardingIndexingSessionStore {
                     !session.background_started && session.created_at.elapsed() >= delay
                 });
                 if expired {
-                    sessions.remove(&session_id);
+                    if let Some(session) = sessions.remove(&session_id) {
+                        session.scan_priority.cancel();
+                    }
                 }
                 expired
             };
@@ -662,14 +949,21 @@ impl OnboardingIndexingSessionStore {
 async fn prepare_game(
     game: GameConfig,
     progress_reporter: Arc<OnboardingSnapshotProgressReporter>,
+    scan_priority: Arc<ScanPriority>,
 ) -> Result<PreparedGame, AppError> {
     let watcher = RawOnboardingWatcher::start(&game.mod_path)?;
     let snapshot_game = game.clone();
     let discovery = tokio::task::spawn_blocking(move || {
         let on_progress = |progress| progress_reporter.report_discovery(progress);
-        let onboarding = collect_onboarding_disk_discovery_with_progress(
+        let gate = || {
+            scan_priority
+                .acquire(&snapshot_game.id)
+                .map(|permit| Box::new(permit) as Box<dyn Send>)
+        };
+        let onboarding = collect_onboarding_disk_discovery_with_progress_and_gate(
             &snapshot_game.mod_path,
             Some(&on_progress),
+            Some(&gate),
         )
         .map_err(snapshot_error)?;
         Ok::<_, AppError>(onboarding.discovery)
@@ -736,13 +1030,9 @@ async fn refresh_changed_roots(
         prepared.discovery.census = refreshed.census;
         prepared.discovery.scoped = false;
     } else {
-        // Cross-root ambiguity already promoted discovery to a full scan.
-        let mods_path = prepared.game.mod_path.clone();
-        let full = tokio::task::spawn_blocking(move || {
-            collect_onboarding_disk_discovery(&mods_path).map_err(snapshot_error)
-        })
-        .await??;
-        prepared.discovery = full.discovery;
+        // Scoped discovery already performed a complete scan when cross-root
+        // ambiguity was found. Reuse it rather than walking the disk again.
+        prepared.discovery = refreshed;
     }
 
     Ok(())
@@ -925,6 +1215,51 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn activation_join_waits_for_the_background_projection() {
+        let store = OnboardingIndexingSessionStore::new();
+        crate::shared::sync::lock(&store.background_statuses).insert(
+            "session".to_string(),
+            OnboardingIndexingBackgroundStatus {
+                session_id: "session".to_string(),
+                completed_games: 0,
+                total_games: 1,
+                games: vec![OnboardingIndexingBackgroundGameStatus {
+                    game_id: "selected".to_string(),
+                    phase: OnboardingIndexingBackgroundPhase::Applying,
+                }],
+            },
+        );
+        let waiting = {
+            let store = store.clone();
+            tokio::spawn(async move { store.wait_for_background_claimed_game("selected").await })
+        };
+        let second_waiting = {
+            let store = store.clone();
+            tokio::spawn(async move { store.wait_for_background_claimed_game("selected").await })
+        };
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished());
+        assert!(!second_waiting.is_finished());
+        store
+            .set_background_phase(
+                "session",
+                "selected",
+                OnboardingIndexingBackgroundPhase::Ready,
+            )
+            .expect("background projection should finish");
+        let phase = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("activation join should wake")
+            .expect("join task should succeed");
+        assert_eq!(phase, Some(OnboardingIndexingBackgroundPhase::Ready));
+        let second_phase = tokio::time::timeout(Duration::from_secs(1), second_waiting)
+            .await
+            .expect("all activation joins should wake")
+            .expect("second join task should succeed");
+        assert_eq!(second_phase, Some(OnboardingIndexingBackgroundPhase::Ready));
+    }
+
     #[test]
     fn unmapped_raw_watcher_paths_force_the_safe_fallback() {
         assert!(paths_contain_unmapped_path(
@@ -1010,6 +1345,105 @@ mod tests {
         assert!(matches!(later, Err(AppError::Io(_))));
     }
 
+    #[test]
+    fn selected_game_takes_the_next_scan_batch() {
+        let priority = ScanPriority::new(["first".to_string(), "second".to_string()]);
+        priority.prefer("first");
+        let first_batch = priority.acquire("first").expect("first batch");
+        let second_priority = Arc::clone(&priority);
+        let (sent, received) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let _second_batch = second_priority.acquire("second").expect("second batch");
+            sent.send(()).expect("signal selected game");
+        });
+
+        priority.prefer("second");
+        drop(first_batch);
+        received
+            .recv_timeout(Duration::from_secs(3))
+            .expect("selected game should take the next batch");
+        worker.join().expect("scan worker should finish");
+    }
+
+    #[tokio::test]
+    async fn activation_claims_the_prepared_job_instead_of_preparing_again() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let first = temp.path().join("first");
+        let selected = temp.path().join("selected");
+        std::fs::create_dir(&first).expect("first root");
+        std::fs::create_dir(&selected).expect("selected root");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![
+                game_config("first", first),
+                game_config("selected", selected),
+            ])
+            .await
+            .expect("session");
+
+        store.promote_game("selected");
+        let (claimed, claim_guard) = store
+            .claim_for_activation("selected")
+            .expect("activation should own the pending scan");
+        assert!(store.is_claimed_by_activation(&session.session_id, "selected"));
+        assert!(store
+            .consume(&session.session_id, "selected")
+            .await
+            .is_err());
+        let resolved = tokio::time::timeout(Duration::from_secs(3), claimed.resolve())
+            .await
+            .expect("selected preparation should finish")
+            .expect("selected snapshot");
+        assert!(matches!(resolved, ConsumedOnboardingSnapshot::Snapshot(_)));
+        drop(claim_guard);
+        assert!(!store.is_claimed_by_activation(&session.session_id, "selected"));
+    }
+
+    #[tokio::test]
+    async fn all_background_waiters_resume_when_activation_claim_is_released() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let selected = temp.path().join("selected");
+        std::fs::create_dir(&selected).expect("selected root");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![game_config("selected", selected)])
+            .await
+            .expect("session");
+        let (_, claim_guard) = store
+            .claim_for_activation("selected")
+            .expect("activation claim");
+        let first = {
+            let store = store.clone();
+            let session_id = session.session_id.clone();
+            tokio::spawn(async move {
+                store
+                    .wait_for_activation_claim(&session_id, "selected")
+                    .await;
+            })
+        };
+        let second = {
+            let store = store.clone();
+            let session_id = session.session_id.clone();
+            tokio::spawn(async move {
+                store
+                    .wait_for_activation_claim(&session_id, "selected")
+                    .await;
+            })
+        };
+        tokio::task::yield_now().await;
+        assert!(!first.is_finished());
+        assert!(!second.is_finished());
+        drop(claim_guard);
+        tokio::time::timeout(Duration::from_secs(1), first)
+            .await
+            .expect("first waiter should wake")
+            .expect("first task should succeed");
+        tokio::time::timeout(Duration::from_secs(1), second)
+            .await
+            .expect("second waiter should wake")
+            .expect("second task should succeed");
+    }
+
     #[tokio::test]
     async fn session_carries_the_revision_captured_before_indexing() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -1047,6 +1481,7 @@ mod tests {
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
                 journal_revision: None,
+                scan_priority: ScanPriority::new(Vec::new()),
             },
         );
         store.schedule_expiration(
@@ -1071,6 +1506,7 @@ mod tests {
                 cancelled: Arc::clone(&cancelled),
                 background_started: true,
                 journal_revision: None,
+                scan_priority: ScanPriority::new(Vec::new()),
             },
         );
         crate::shared::sync::lock(&store.background_statuses).insert(

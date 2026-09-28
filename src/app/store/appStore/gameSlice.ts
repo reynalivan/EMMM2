@@ -7,6 +7,7 @@ import { settingsKeys } from '@/entities/settings';
 import { toast } from '@/shared/ui/toast';
 import type { AppSliceCreator } from './sliceTypes';
 import type {
+  AppSettings,
   DiskReconcileResult,
   DiskReconcileProgress,
   DiskReconcileReason,
@@ -102,6 +103,8 @@ export interface FolderConflictReport {
 export interface GameSlice {
   // Global Settings (Persisted in config.json)
   activeGameId: string | null;
+  /** The latest selection while its backend activation request is pending. */
+  requestedGameId: string | null;
   autoCloseLauncher: boolean;
 
   // One entry per game so the three fields can never drift apart.
@@ -150,6 +153,7 @@ function ensureRuntimeStatusListeners(
 
 export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
   activeGameId: null,
+  requestedGameId: null,
   autoCloseLauncher: false,
 
   diskReconcileByGame: {},
@@ -190,7 +194,12 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       }
     }
     try {
+      const initRequestSequence = activeGameRequestSequence;
       const settings = await commands.getSettings();
+      if (initRequestSequence !== activeGameRequestSequence) {
+        startupInitialized = true;
+        return;
+      }
       const activeGameId = settings.active_game_id;
       // `setActiveGameId` may already have activated this game during
       // onboarding. Repeating the command restarts its recovery watcher and
@@ -199,6 +208,10 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
         activeGameId && get().activeGameId !== activeGameId
           ? await commands.setActiveGame(activeGameId)
           : null;
+      if (initRequestSequence !== activeGameRequestSequence) {
+        startupInitialized = true;
+        return;
+      }
       const activeReport = activeGameId ? (startupReportsByGame.get(activeGameId) ?? null) : null;
       const activeReportRevision = activeReport?.reconcile_revision ?? 0;
 
@@ -283,12 +296,16 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
 
   setActiveGameId: async (id, options) => {
     const requestSequence = ++activeGameRequestSequence;
+    set({ requestedGameId: id });
     try {
       // An onboarding activation can reuse a just-completed scan and finish
       // almost immediately, so subscribe before requesting it.
       await ensureRuntimeStatusListeners(get).catch((error) => {
         console.error('Failed to register runtime status listeners', error);
       });
+      if (requestSequence !== activeGameRequestSequence) {
+        return;
+      }
       // The backend resets the per-game disk recovery gate here. Publish the
       // new active ID only afterwards so no workspace query can race ahead and
       // hydrate from a projection created before external/offline changes.
@@ -296,11 +313,9 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       if (requestSequence !== activeGameRequestSequence) {
         return;
       }
-      const settings = await commands.getSettings();
-      if (requestSequence !== activeGameRequestSequence) {
-        return;
-      }
-      queryClient.setQueryData(settingsKeys.all, settings);
+      queryClient.setQueryData<AppSettings | undefined>(settingsKeys.all, (current) =>
+        current ? { ...current, active_game_id: id } : current,
+      );
       if (activation?.game_id) {
         get().setGameActivationStatus({
           game_id: activation.game_id,
@@ -313,6 +328,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       }
       set({
         activeGameId: id,
+        requestedGameId: null,
         // Reset explorer state to prevent stale paths from previous game
         explorerSubPath: undefined,
         currentPath: [],
@@ -347,6 +363,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       if (requestSequence !== activeGameRequestSequence) {
         return;
       }
+      set({ requestedGameId: null });
       console.error('Failed to sync active game to backend', e);
       toast.error(formatAppError(e));
       throw e;

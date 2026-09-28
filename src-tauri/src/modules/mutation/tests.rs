@@ -65,6 +65,47 @@ fn batch_rename_plan(root: &Path, step_count: usize) -> OperationPlan {
 }
 
 #[test]
+fn aborting_an_unapplied_plan_is_terminal_without_repair() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let id = journal
+        .plan_operation(batch_rename_plan(temp.path(), 2))
+        .unwrap();
+
+    journal.abort_unapplied(&id).unwrap();
+    let persisted = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let operation = &persisted.entries()[0];
+    assert_eq!(operation.status, OperationStatus::RolledBack);
+    assert!(operation
+        .steps
+        .iter()
+        .all(|step| step.status == StepStatus::Skipped));
+}
+
+#[tokio::test]
+async fn operation_guard_can_abort_before_any_filesystem_step() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = open_journal(&path);
+    let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+    let guard = coordinator
+        .acquire_operation(batch_rename_plan(temp.path(), 2))
+        .await
+        .unwrap();
+
+    guard.abort_unapplied().unwrap();
+    let persisted = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    let entries = persisted.entries();
+    let operation = &entries[0];
+    assert_eq!(operation.status, OperationStatus::RolledBack);
+    assert!(operation
+        .steps
+        .iter()
+        .all(|step| step.status == StepStatus::Skipped));
+}
+
+#[test]
 fn batch_step_settlement_persists_once_and_reopens_atomically() {
     let temp = tempdir().unwrap();
     let path = temp.path().join("journal.json");

@@ -278,6 +278,7 @@ pub async fn create_object_cmd(
         )
         .await?;
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
     let prepared = crate::modules::catalog::application::objects::mutate::prepare_object_create(
         pool.inner(),
         &input,
@@ -294,10 +295,12 @@ pub async fn create_object_cmd(
         Ok(guard) => guard,
         Err(error) => return Err(error),
     };
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let suppression = watcher
         .suppressor
         .suppress_paths(prepared.suppression_paths());
@@ -440,6 +443,7 @@ pub async fn update_object_cmd(
     let touches_aliases = updates.custom_skins.is_some();
     let game_lock = disk_reconcile_state.game_lock(&game_id);
     let game_guard = game_lock.lock().await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
     crate::modules::catalog::application::objects::mutate::update_object(&pool, &id, &updates)
         .await?;
     drop(game_guard);
@@ -485,6 +489,7 @@ pub async fn delete_object_cmd(
     )
     .await?;
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
     let prepared = crate::modules::catalog::application::objects::mutate::prepare_object_delete(
         pool.inner(),
         &id,
@@ -526,10 +531,12 @@ pub async fn delete_object_cmd(
             vec![prepared.journal_step()],
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let suppression = state
         .suppressor
         .suppress_paths(prepared.suppression_paths());

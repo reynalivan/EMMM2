@@ -388,6 +388,13 @@ impl MutationGuard {
         journal.begin_rollback(operation_id)
     }
 
+    pub fn abort_unapplied(mut self) -> Result<(), AppError> {
+        let (operation_id, journal) = self.durable_parts()?;
+        journal.abort_unapplied(operation_id)?;
+        self.unregister();
+        Ok(())
+    }
+
     pub fn mark_step_rolled_back(&self, sequence: u32) -> Result<(), AppError> {
         let (operation_id, journal) = self.durable_parts()?;
         journal.mark_step_rolled_back(operation_id, sequence)

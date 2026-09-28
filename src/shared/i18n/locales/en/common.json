@@ -125,6 +125,7 @@
     }
   },
   "reconcile": {
+    "authority_pending": "Disk changes were applied, but indexing validation is still pending.",
     "runtime_effects_pending": "Disk changes were applied, but runtime refresh is still pending.",
     "runtime_syncing": "Updating game runtime…",
     "runtime_sync_failed": "Runtime update failed",

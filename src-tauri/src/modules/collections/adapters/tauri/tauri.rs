@@ -1,5 +1,5 @@
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::modules::collections::application::collection;
 use crate::modules::collections::application::runtime as collection_runtime;
@@ -36,6 +36,10 @@ async fn record_collection_operation(
     let _ = telemetry
         .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
         .await;
+}
+
+fn collection_apply_changed_disk(result: &ApplyResult) -> bool {
+    result.mods_enabled + result.mods_disabled > 0 || !result.runtime_path_rewrites.is_empty()
 }
 
 async fn ensure_current_runtime_snapshot_preflight(
@@ -294,7 +298,7 @@ pub async fn apply_collection(
         )
     })?;
 
-    let result = collection::apply_collection_durable(
+    let mut result = collection::apply_collection_durable(
         collection::ApplyCollectionRequest {
             pool: pool.inner(),
             game_id: &game_id,
@@ -309,7 +313,24 @@ pub async fn apply_collection(
     )
     .await;
 
-    if let Ok(applied) = &result {
+    if let Ok(applied) = &mut result {
+        if collection_apply_changed_disk(applied) {
+            let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
+                crate::modules::reconciliation::application::disk_reconcile::emit::run_deferred_full_internal_disk_reconcile_under_lease(
+                    &app,
+                    pool.inner(),
+                    &game_id,
+                    &mutation_lease,
+                )
+                .await,
+            );
+            if let Some(reconcile) = settlement.reconcile {
+                if let Err(error) = app.emit("disk_reconcile:result", &reconcile) {
+                    log::warn!("Could not emit collection disk reconcile result: {error}");
+                }
+            }
+            applied.sync_warning = settlement.sync_warning;
+        }
         crate::modules::reconciliation::api::enqueue_runtime_sync_for_rewrites(
             &app,
             pool.inner(),
@@ -655,9 +676,31 @@ pub async fn resolve_recovery_task(
 
 #[cfg(test)]
 mod tests {
+    use super::collection_apply_changed_disk;
+    use crate::modules::collections::domain::collection::ApplyResult;
     use crate::modules::reconciliation::application::disk_reconcile::types::{
         FolderNameConflictCandidate, FolderNameConflictGroup,
     };
+
+    #[test]
+    fn object_only_collection_rename_requires_terminal_disk_authority() {
+        let result = ApplyResult {
+            mods_enabled: 0,
+            mods_disabled: 0,
+            warnings: Vec::new(),
+            final_state_name: None,
+            partial_apply: false,
+            skipped_missing_paths: Vec::new(),
+            runtime_path_rewrites: vec![
+                crate::modules::workspace::domain::workspace::WorkspacePathRewrite {
+                    old_path: "DISABLED Object".to_string(),
+                    new_path: "Object".to_string(),
+                },
+            ],
+            sync_warning: None,
+        };
+        assert!(collection_apply_changed_disk(&result));
+    }
 
     #[test]
     fn normal_apply_command_has_no_fallible_reconcile_after_service_commit() {

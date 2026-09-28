@@ -638,6 +638,31 @@ impl OperationJournal {
         })
     }
 
+    /// Settle a plan rejected after acquiring its operation lock, before any
+    /// filesystem step starts. No repair is needed because disk is untouched.
+    pub fn abort_unapplied(&self, id: &str) -> Result<(), AppError> {
+        self.mutate_operation(id, |operation| {
+            require_status(
+                operation,
+                &[OperationStatus::Planned, OperationStatus::Applying],
+            )?;
+            if operation
+                .steps
+                .iter()
+                .any(|step| step.status != StepStatus::Planned)
+            {
+                return Err(AppError::Validation(format!(
+                    "Mutation operation {id} has already applied a step"
+                )));
+            }
+            for step in &mut operation.steps {
+                step.status = StepStatus::Skipped;
+            }
+            operation.status = OperationStatus::RolledBack;
+            Ok(())
+        })
+    }
+
     pub fn mark_step_rolled_back(&self, id: &str, sequence: u32) -> Result<(), AppError> {
         self.mutate_operation(id, |operation| {
             require_status(

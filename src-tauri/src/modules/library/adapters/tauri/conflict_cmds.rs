@@ -72,6 +72,38 @@ fn mark_conflict_steps_rolled_back(
     mutation_lease.finish_rollback()
 }
 
+async fn ensure_conflict_mutation_authority(
+    app: &AppHandle,
+    pool: &sqlx::SqlitePool,
+    disk_reconcile: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    coordinator: &MutationCoordinator,
+    game_id: &str,
+    paths: Vec<String>,
+    game_guard: &tokio::sync::OwnedMutexGuard<()>,
+) -> Result<(), AppError> {
+    disk_reconcile.ensure_core_recovery_allows_preflight(game_id)?;
+    if disk_reconcile
+        .ensure_core_ready_for_mutation(game_id)
+        .is_ok()
+    {
+        return Ok(());
+    }
+    let guard = coordinator
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Reconciliation)
+        .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::mutation_preflight_report_under_game_lock(
+        app,
+        pool,
+        game_id,
+        paths,
+        false,
+        game_guard,
+        guard.op_guard(),
+    )
+    .await?;
+    Ok(())
+}
+
 #[specta::specta]
 #[tauri::command]
 pub async fn get_folder_conflict_details(
@@ -171,6 +203,16 @@ pub async fn resolve_folder_name_conflict(
         .canonicalize()
         .map_err(|error| AppError::Security(format!("Invalid mods path: {error}")))?;
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    ensure_conflict_mutation_authority(
+        &app,
+        pool.inner(),
+        disk_reconcile.inner(),
+        op_lock.inner(),
+        &game_id,
+        paths,
+        &game_guard,
+    )
+    .await?;
     let rename_root = canonical_root.clone();
     let rename_game_id = game_id.clone();
     let rename_group_id = group_id.clone();
@@ -237,10 +279,12 @@ pub async fn resolve_folder_name_conflict(
             journal_steps,
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let suppressor = state.suppressor.clone();
     let apply_plan = rename_plan.clone();
     let apply_result = tokio::task::spawn_blocking(move || {
@@ -270,6 +314,9 @@ pub async fn resolve_folder_name_conflict(
             &mutation_lease,
         )
         .await
+        .and_then(
+            crate::modules::reconciliation::application::disk_reconcile::emit::require_applied_reconcile,
+        )
         {
             Ok(result) => result,
             Err(error) => {
@@ -344,6 +391,16 @@ pub async fn trash_folder_conflict_candidate(
         .mods_root_for(&game_id)
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    ensure_conflict_mutation_authority(
+        &app,
+        pool.inner(),
+        disk_reconcile.inner(),
+        op_lock.inner(),
+        &game_id,
+        vec![path.clone()],
+        &game_guard,
+    )
+    .await?;
     let census_root = mods_root;
     let census_game_id = game_id.clone();
     let candidate_path = validated.as_ref().to_path_buf();
@@ -385,10 +442,12 @@ pub async fn trash_folder_conflict_candidate(
             )],
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     if let Err(error) = prepared.execute(&state) {
         mutation_lease.mark_step_rolled_back(0)?;
         mutation_lease.begin_rollback()?;

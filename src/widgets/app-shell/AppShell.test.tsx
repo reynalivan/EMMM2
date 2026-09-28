@@ -41,6 +41,20 @@ describe('AppShell (TC-05)', () => {
     expect(screen.getByTestId('workspace-content')).not.toHaveClass('pt-16');
   });
 
+  it('renders indexing in place of game workspace queries while retaining navigation', () => {
+    render(
+      <AppShell
+        {...slots}
+        workspaceView="mods"
+        loadingPage={<div data-testid="indexing">Indexing</div>}
+      />,
+    );
+    expect(screen.getByTestId('top-bar')).toBeInTheDocument();
+    expect(screen.getByTestId('indexing')).toBeInTheDocument();
+    expect(screen.queryByTestId('resizable')).toBeNull();
+    expect(screen.queryByTestId('object-list')).toBeNull();
+  });
+
   it('renders settings composition', () => {
     render(<AppShell {...slots} workspaceView="settings" />);
     expect(screen.getByTestId('settings')).toBeInTheDocument();

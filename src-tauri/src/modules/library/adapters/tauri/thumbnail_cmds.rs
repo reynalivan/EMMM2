@@ -52,6 +52,7 @@ pub async fn delete_mod_thumbnail(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([path.as_ref()]);
     if let Some(thumb_path) = find_thumbnail(&path) {
         crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&thumb_path)?;

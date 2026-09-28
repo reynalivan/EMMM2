@@ -9,8 +9,8 @@ use crate::shared::errors::AppError;
 use tauri::{Emitter, Manager};
 
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
-    reconcile_disk_state, DiskReconcileContext, DiskReconcileRequest, DiskReconcileState,
-    InitialRecoveryClaim, InitialRecoveryOutcome,
+    DiskReconcileContext, DiskReconcileRequest, DiskReconcileState, InitialRecoveryClaim,
+    InitialRecoveryOutcome,
 };
 use crate::modules::reconciliation::application::disk_reconcile::types::{
     CommittedMutationSyncWarning, CommittedMutationSyncWarningKind, DiskReconcileReason,
@@ -48,11 +48,24 @@ pub fn settle_committed_reconcile(
                 .warnings
                 .iter()
                 .find(|warning| {
-                    warning.kind == super::types::DiskReconcileWarningKind::RuntimeEffectsPending
+                    warning.kind == super::types::DiskReconcileWarningKind::AuthorityPending
                 })
                 .map(|warning| CommittedMutationSyncWarning {
-                    kind: CommittedMutationSyncWarningKind::RuntimeSyncPending,
+                    kind: CommittedMutationSyncWarningKind::ReconcileBlocked,
                     message: warning.message.clone(),
+                })
+                .or_else(|| {
+                    result
+                        .warnings
+                        .iter()
+                        .find(|warning| {
+                            warning.kind
+                                == super::types::DiskReconcileWarningKind::RuntimeEffectsPending
+                        })
+                        .map(|warning| CommittedMutationSyncWarning {
+                            kind: CommittedMutationSyncWarningKind::RuntimeSyncPending,
+                            message: warning.message.clone(),
+                        })
                 });
             CommittedReconcileSettlement {
                 reconcile: Some(result),
@@ -86,15 +99,6 @@ pub fn settle_committed_reconcile(
 
 fn requires_user_resolution(status: &DiskReconcileStatus) -> bool {
     matches!(status, DiskReconcileStatus::NeedsRenameConfirmation)
-}
-
-fn initial_recovery_allows_mutation(
-    readiness: crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness,
-) -> bool {
-    !matches!(
-        readiness,
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Syncing { .. }
-    )
 }
 
 fn comparable_path(path: &str) -> String {
@@ -248,7 +252,10 @@ async fn run_full_internal_disk_reconcile_under_lease_with_runtime(
         request
     };
 
-    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_lease(
+    let mods_root = config
+        .mods_root_for(game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_lease_with_authority(
         DiskReconcileContext {
             pool,
             config: config.inner(),
@@ -264,6 +271,8 @@ async fn run_full_internal_disk_reconcile_under_lease_with_runtime(
             )),
         },
         request,
+        watcher.inner(),
+        &mods_root,
         lease,
     )
     .await
@@ -491,7 +500,10 @@ async fn run_internal_disk_reconcile_with_path_hints_under_lease_options(
         request
     };
 
-    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_lease(
+    let mods_root = config
+        .mods_root_for(game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_lease_with_authority(
         DiskReconcileContext {
             pool,
             config: config.inner(),
@@ -507,6 +519,8 @@ async fn run_internal_disk_reconcile_with_path_hints_under_lease_options(
             )),
         },
         request,
+        watcher.inner(),
+        &mods_root,
         lease,
     )
     .await
@@ -696,7 +710,10 @@ async fn run_internal_disk_reconcile_with_options(
             AppError::Internal("MutationCoordinator missing for disk reconcile".to_string())
         })?;
 
-    let result = reconcile_disk_state(
+    let mods_root = config
+        .mods_root_for(game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_with_authority(
         DiskReconcileContext {
             pool,
             config: config.inner(),
@@ -721,6 +738,8 @@ async fn run_internal_disk_reconcile_with_options(
                 path_hints,
             )
         },
+        watcher.inner(),
+        &mods_root,
     )
     .await?;
     if emit_when_blocked
@@ -795,15 +814,20 @@ pub fn ensure_initial_recovery_allows_mutation(
     app: &tauri::AppHandle,
     game_id: &str,
 ) -> Result<(), AppError> {
-    if let Some(state) = app.try_state::<DiskReconcileState>() {
-        if !initial_recovery_allows_mutation(state.initial_recovery_readiness(game_id)) {
-            return Err(AppError::Io(
-                "Mods are still synchronizing with disk. Try again when sync completes."
-                    .to_string(),
-            ));
-        }
-    }
-    Ok(())
+    let state = app.try_state::<DiskReconcileState>().ok_or_else(|| {
+        AppError::Internal("DiskReconcileState missing for mutation readiness".to_string())
+    })?;
+    state.ensure_core_ready_for_mutation(game_id)
+}
+
+pub fn ensure_initial_recovery_allows_preflight(
+    app: &tauri::AppHandle,
+    game_id: &str,
+) -> Result<(), AppError> {
+    let state = app.try_state::<DiskReconcileState>().ok_or_else(|| {
+        AppError::Internal("DiskReconcileState missing for mutation readiness".to_string())
+    })?;
+    state.ensure_core_recovery_allows_preflight(game_id)
 }
 
 /// Opening a folder never mutates disk or the projection. Validate the target
@@ -867,14 +891,16 @@ pub async fn mutation_preflight_report_for_paths(
     game_id: &str,
     paths: Option<&[String]>,
 ) -> Result<DiskReconcileResult, AppError> {
-    ensure_initial_recovery_allows_mutation(app, game_id)?;
+    ensure_initial_recovery_allows_preflight(app, game_id)?;
     let result = match paths {
         Some(paths) if !paths.is_empty() => {
             run_internal_disk_reconcile(app, pool, game_id, paths.to_vec()).await?
         }
         Some(_) | None => run_full_internal_disk_reconcile(app, pool, game_id).await?,
     };
-    validate_mutation_preflight_result(app, result)
+    let result = validate_mutation_preflight_result(app, result)?;
+    ensure_initial_recovery_allows_mutation(app, game_id)?;
+    Ok(result)
 }
 
 /// Regional preflight for a workspace mutation that already retains its game
@@ -889,7 +915,7 @@ pub async fn mutation_preflight_report_under_game_lock(
     game_guard: &tokio::sync::OwnedMutexGuard<()>,
     operation_guard: &crate::platform::fs::operation_lock::OpGuard,
 ) -> Result<DiskReconcileResult, AppError> {
-    ensure_initial_recovery_allows_mutation(app, game_id)?;
+    ensure_initial_recovery_allows_preflight(app, game_id)?;
     if paths.is_empty() {
         return Err(AppError::Validation(
             "Regional mutation preflight requires affected paths".to_string(),
@@ -919,7 +945,10 @@ pub async fn mutation_preflight_report_under_game_lock(
     } else {
         request
     };
-    let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_owned_game_lock(
+    let mods_root = config
+        .mods_root_for(game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_under_owned_game_lock_with_authority(
         DiskReconcileContext {
             pool,
             config: config.inner(),
@@ -935,11 +964,15 @@ pub async fn mutation_preflight_report_under_game_lock(
             )),
         },
         request,
+        watcher.inner(),
+        &mods_root,
         game_guard,
         operation_guard,
     )
     .await?;
-    validate_mutation_preflight_result(app, result)
+    let result = validate_mutation_preflight_result(app, result)?;
+    ensure_initial_recovery_allows_mutation(app, game_id)?;
+    Ok(result)
 }
 
 fn validate_mutation_preflight_result(
@@ -1037,6 +1070,23 @@ mod committed_mutation_tests {
     }
 
     #[test]
+    fn applied_projection_reports_pending_watcher_authority_without_rollback() {
+        let mut result = result_with_status(DiskReconcileStatus::Applied);
+        result.warnings.push(
+            crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarning {
+                kind: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarningKind::AuthorityPending,
+                message: "Watcher validation is pending".to_string(),
+            },
+        );
+        let settlement = settle_committed_reconcile(Ok(result));
+        assert!(settlement.reconcile.is_some());
+        assert_eq!(
+            settlement.sync_warning.expect("authority warning").kind,
+            CommittedMutationSyncWarningKind::ReconcileBlocked
+        );
+    }
+
+    #[test]
     fn committed_reconcile_failure_becomes_retryable_warning_instead_of_command_error() {
         let settlement = settle_committed_reconcile(Err(AppError::Io(
             "injected projection failure".to_string(),
@@ -1057,14 +1107,6 @@ mod committed_mutation_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
-
-    #[test]
-    fn pending_initial_recovery_rejects_disk_mutations() {
-        assert!(!initial_recovery_allows_mutation(
-            InitialRecoveryReadiness::Syncing { generation: 3 }
-        ));
-    }
 
     #[test]
     fn conflict_scope_blocks_only_its_candidate_and_descendants() {

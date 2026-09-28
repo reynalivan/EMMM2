@@ -2303,7 +2303,7 @@ reconcile_revision: number; reason: DiskReconcileReason; status: DiskReconcileSt
 export type DiskReconcileScanScope = "Full" | "Scoped" | "None"
 export type DiskReconcileStatus = "Applied" | "AppliedWithFolderConflicts" | "SourceUnavailable" | "NeedsRenameConfirmation"
 export type DiskReconcileWarning = { kind: DiskReconcileWarningKind; message: string }
-export type DiskReconcileWarningKind = "RuntimeEffectsPending"
+export type DiskReconcileWarningKind = "RuntimeEffectsPending" | "AuthorityPending"
 /**
  * Streaming event contract for Epic 9 duplicate scan progress.
  */

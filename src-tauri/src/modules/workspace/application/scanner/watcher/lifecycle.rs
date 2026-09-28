@@ -249,6 +249,11 @@ fn prewarm_inactive_games(
             if game.id == active_game_id {
                 continue;
             }
+            if app.state::<crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>()
+                .has_unfinished_game(&game.id)
+            {
+                continue;
+            }
             let reconcile_state = app.state::<
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
             >();
@@ -316,14 +321,17 @@ fn prewarm_inactive_games(
             .await;
             match result {
                 Ok(Ok(Some(result))) => {
-                    reconcile_state.mark_authority_reconciled(
+                    if !reconcile_state.mark_authority_reconciled(
                         &game.id,
                         &game.mod_path,
                         watcher_session,
                         observed_generation,
                         &result,
                         &changed_paths,
-                    );
+                    ) {
+                        reconcile_state
+                            .reject_untrusted_reconcile(&game.id, result.reconcile_revision);
+                    }
                 }
                 Ok(Ok(None)) => {
                     log::debug!(
@@ -690,11 +698,94 @@ async fn process_event_loop(
                 ..
             } => (None, Vec::new(), true, observed_generation),
         };
-    let session_recovery = if let Some(result) = cached_result {
+    let (onboarding_lease, activation_claim_guard) = if activation.is_some()
+        && cached_result.is_none()
+    {
+        let sessions = app.state::<
+            crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+        >();
+        sessions.promote_game(&game_id);
+        if let Some((claimed, guard)) = sessions.claim_for_activation(&game_id) {
+            match claimed.resolve().await {
+                Ok(crate::modules::reconciliation::application::disk_reconcile::onboarding_session::ConsumedOnboardingSnapshot::Snapshot(lease))
+                    if lease.matches_root(mods_root)
+                        && lease.journal_allows_game_snapshot(operation_lock.inner(), &game_id) =>
+                {
+                    (Some(lease), Some(guard))
+                }
+                Ok(_) => (None, Some(guard)),
+                Err(error) => {
+                    log::warn!("Onboarding snapshot for '{game_id}' needs a full recheck: {error}");
+                    (None, Some(guard))
+                }
+            }
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+    let joined_background_result = if activation.is_some()
+        && cached_result.is_none()
+        && onboarding_lease.is_none()
+        && activation_claim_guard.is_none()
+        && recovery_force_full
+    {
+        let sessions = app.state::<
+            crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+        >();
+        let previous_revision = disk_reconcile_state
+            .authoritative_result(&game_id)
+            .map(|result| result.reconcile_revision)
+            .unwrap_or(0);
+        if matches!(
+            sessions.wait_for_background_claimed_game(&game_id).await,
+            Some(crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Ready)
+        ) && watcher_state.is_current_session(&session)
+            && disk_reconcile_state.authority_event_generation(&game_id, watcher_session)
+                == Some(recovery_generation)
+        {
+            disk_reconcile_state.authoritative_result(&game_id).and_then(|mut result| {
+                if result.status.applied() && result.reconcile_revision > previous_revision {
+                    let trusted = disk_reconcile_state.mark_authority_reconciled(
+                        &game_id,
+                        mods_root,
+                        watcher_session,
+                        recovery_generation,
+                        &result,
+                        &[],
+                    );
+                    if trusted {
+                        result.scan_scope = crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileScanScope::None;
+                        Some(result)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let session_recovery = if let Some(result) = cached_result.or(joined_background_result) {
         Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
     } else {
         let recovery_paths = recovery_changed_paths.clone();
-        let outcome = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_for_watcher(
+        let mut request = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+            game_id.clone(),
+            initial_reconcile_reason.clone(),
+            recovery_paths,
+            recovery_force_full,
+        )
+        .defer_overlay_sync();
+        if let Some(lease) = &onboarding_lease {
+            request = request.with_precomputed_discovery(lease.discovery());
+        }
+        let mut outcome = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_for_watcher(
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
                 pool: &pool,
                 config: config.inner(),
@@ -710,17 +801,37 @@ async fn process_event_loop(
                     .for_watcher_session(session.clone()),
                 )),
             },
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
-                game_id.clone(),
-                initial_reconcile_reason,
-                recovery_paths,
-                recovery_force_full,
-            )
-            .defer_overlay_sync(),
+            request,
             watcher_state.inner(),
             session.clone(),
         )
         .await;
+        if matches!(&outcome, Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(_)))
+            && onboarding_lease
+                .as_ref()
+                .is_some_and(|lease| !lease.journal_allows_game_snapshot(operation_lock.inner(), &game_id))
+        {
+            outcome = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_for_watcher(
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
+                    pool: &pool,
+                    config: config.inner(),
+                    state: disk_reconcile_state.inner(),
+                    watcher_suppressor: suppressor.clone(),
+                    operation_lock: operation_lock.inner_lock(),
+                    progress_reporter: None,
+                },
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+                    game_id.clone(),
+                    initial_reconcile_reason,
+                    Vec::new(),
+                    true,
+                )
+                .defer_overlay_sync(),
+                watcher_state.inner(),
+                session.clone(),
+            )
+            .await;
+        }
         if let Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)) = &outcome {
             disk_reconcile_state.mark_authority_reconciled(
                 &game_id,
@@ -791,6 +902,23 @@ async fn process_event_loop(
         }
     } else {
         session_recovery
+    };
+    let session_recovery = match session_recovery {
+        Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
+            if activation.is_some()
+                && !matches!(
+                    disk_reconcile_state.authority_catch_up(&game_id, mods_root, watcher_session),
+                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
+                        reconcile_revision,
+                        ..
+                    } if reconcile_revision == result.reconcile_revision
+                ) =>
+        {
+            Err(crate::shared::errors::AppError::Io(
+                "Mods changed while indexing finished; retry to verify the disk state".to_string(),
+            ))
+        }
+        other => other,
     };
     match session_recovery {
         Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
@@ -881,6 +1009,7 @@ async fn process_event_loop(
         }
     }
 
+    drop(activation_claim_guard);
     loop {
         // The debouncer already batches (one callback per debounce window and
         // it sends its whole batch synchronously), so a recv + drain
@@ -987,14 +1116,18 @@ async fn process_event_loop(
         }
         match result {
             Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)) => {
-                disk_reconcile_state.mark_authority_reconciled(
+                if !disk_reconcile_state.mark_authority_reconciled(
                     &game_id,
                     mods_root,
                     watcher_session,
                     observed_generation,
                     &result,
                     &changed_paths,
-                );
+                ) {
+                    disk_reconcile_state
+                        .reject_untrusted_reconcile(&game_id, result.reconcile_revision);
+                    continue;
+                }
                 // The reconcile future returned before this point, releasing
                 // its game and operation locks. Queue only the runtime work
                 // implied by the committed projection; never await KeyViewer

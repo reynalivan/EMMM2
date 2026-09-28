@@ -90,7 +90,7 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >(app, "DiskReconcileState")?;
     let mutation_lease = disk_reconcile
-        .acquire_mutation_lease(&game_id, mutation_coordinator.inner_lock())
+        .acquire_ready_mutation_lease(&game_id, mutation_coordinator.inner_lock())
         .await?;
 
     // The apply pipeline needs the target eligibility immediately, but the

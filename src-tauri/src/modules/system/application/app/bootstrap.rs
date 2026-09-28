@@ -209,8 +209,43 @@ async fn reconcile_startup_game(
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     crate::shared::errors::AppError,
 > {
-    crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
+        try_reconcile_disk_state_for_prewarm, DiskReconcileRequest,
+    };
+    let activation_guard = disk_reconcile_state.activation_guard().await;
+    let settings = config.get_settings();
+    let background = settings.active_game_id.as_deref() != Some(game_id);
+    let game = settings
+        .games
+        .into_iter()
+        .find(|game| game.id == game_id)
+        .ok_or_else(|| {
+            crate::shared::errors::AppError::NotFound(format!("Game '{game_id}' was removed"))
+        })?;
+    let runtime_config_path = game.instance_path.join("d3dx.ini");
+    let watcher_session = if !background {
+        watcher_state
+            .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
+            .map(|session| session.generation())
+    } else {
+        None
+    };
+    let watcher_session = match watcher_session {
+        Some(session) => session,
+        None => crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+            app,
+            watcher_state,
+            game_id,
+            &game.mod_path,
+            Some(&runtime_config_path),
+        )
+        .map_err(crate::shared::errors::AppError::from)?,
+    };
+    let observed_generation = disk_reconcile_state
+        .authority_event_generation(game_id, watcher_session)
+        .unwrap_or(0);
+    drop(activation_guard);
+    let context = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext {
             pool,
             config,
             state: disk_reconcile_state,
@@ -223,15 +258,95 @@ async fn reconcile_startup_game(
                     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
                 ),
             )),
-        },
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+        };
+    let request = || {
+        DiskReconcileRequest::manual(
             game_id.to_string(),
             crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
             Vec::new(),
             true,
-        ),
-    )
-    .await
+        )
+        .defer_overlay_sync()
+    };
+    let result = if !background {
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(context, request()).await?
+    } else {
+        loop {
+            if let Some(result) =
+                try_reconcile_disk_state_for_prewarm(context.clone(), request()).await?
+            {
+                break result;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    };
+    let _activation_guard = disk_reconcile_state.activation_guard().await;
+    let active_now = config.get_settings().active_game_id.as_deref() == Some(game_id);
+    let active_session_matches = watcher_state
+        .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
+        .is_some_and(|session| session.generation() == watcher_session);
+    let inactive_session_matches =
+        watcher_state.inactive_watcher_session(game_id, &game.mod_path, Some(&runtime_config_path))
+            == Some(watcher_session);
+    let coverage_matches = if active_now {
+        active_session_matches || (!background && inactive_session_matches)
+    } else {
+        inactive_session_matches
+    };
+    if result.status.applied()
+        && (!coverage_matches
+            || !disk_reconcile_state.mark_authority_reconciled(
+                game_id,
+                &game.mod_path,
+                watcher_session,
+                observed_generation,
+                &result,
+                &[],
+            ))
+    {
+        disk_reconcile_state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
+        return Err(crate::shared::errors::AppError::Io(format!(
+            "Disk changed while indexing '{game_id}'; retry to verify it"
+        )));
+    }
+    if result.status.applied() && active_now && !active_session_matches {
+        if let Err(error) =
+            crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
+                app.clone(),
+                watcher_state,
+                pool.clone(),
+                game.mod_path.to_string_lossy().into_owned(),
+                game_id.to_string(),
+            )
+        {
+            disk_reconcile_state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
+            return Err(error.into());
+        }
+    }
+    if result.status.applied() && active_now {
+        let trusted = watcher_state
+            .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
+            .is_some_and(|session| {
+                matches!(
+                    disk_reconcile_state.authority_catch_up(
+                        game_id,
+                        &game.mod_path,
+                        session.generation(),
+                    ),
+                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
+                        reconcile_revision,
+                        ..
+                    } if reconcile_revision == result.reconcile_revision
+                )
+            });
+        if !trusted {
+            disk_reconcile_state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
+            return Err(crate::shared::errors::AppError::Io(format!(
+                "Watcher handoff for '{game_id}' could not be verified; retry indexing"
+            )));
+        }
+    }
+    Ok(result)
 }
 
 fn update_resumed_onboarding_background_phase(

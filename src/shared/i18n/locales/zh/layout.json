@@ -49,12 +49,22 @@
       "activation": {
         "title": "正在索引 {{game}}",
         "description": "正在检查此游戏的资料库，完成后才会打开。",
+        "failed_title": "无法索引 {{game}}",
+        "failed_description": "此游戏资料库尚未就绪。请检查问题后重试，或选择其他游戏。",
+        "source_unavailable_description": "模组文件夹不可用。请检查其位置后重试，或选择其他游戏。",
         "progress_label": "索引进度",
         "folders_complete": "{{completed}} / {{total}} 个文件夹",
+        "folders_classified": "已分类 {{count}} 个文件夹",
         "preparing": "正在准备完整检查",
         "scanning_root": "正在扫描 {{root}}",
         "scanning_without_root": "正在扫描模组文件夹",
         "current_root": "当前文件夹：{{root}}",
+        "snapshot_phase": {
+          "Metadata": "正在读取模组文件夹",
+          "Classifying": "正在分类模组文件夹",
+          "Ready": "正在准备更新资料库",
+          "Rechecking": "正在复查索引期间发生变化的文件夹"
+        },
         "phase": {
           "DiscoveringRoots": "正在查找模组文件夹",
           "Projecting": "正在更新资料库",

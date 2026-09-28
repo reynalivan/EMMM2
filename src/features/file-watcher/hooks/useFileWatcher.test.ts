@@ -678,6 +678,26 @@ describe('applyDiskReconcileResult', () => {
     );
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
+
+  it('reports pending indexing validation after an applied disk mutation', async () => {
+    const { toast } = await import('@/shared/ui/toast');
+    const result = createResult({
+      warnings: [
+        { kind: 'RuntimeEffectsPending', message: 'Runtime refresh pending' },
+        { kind: 'AuthorityPending', message: 'Watcher authority pending' },
+      ],
+    });
+
+    applyDiskReconcileResult(
+      result,
+      queryClient as unknown as import('@tanstack/react-query').QueryClient,
+      createActiveGame(),
+    );
+
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Disk changes were applied, but indexing validation is still pending.',
+    );
+  });
 });
 
 describe('isPreviewAffected', () => {

@@ -35,6 +35,7 @@ async fn acquire_snapshot_game_guard(
 ) -> Result<tokio::sync::OwnedMutexGuard<()>, AppError> {
     let game_guard = disk_reconcile.game_lock(game_id).lock_owned().await;
     validate_snapshot_identities(expected_identities)?;
+    disk_reconcile.ensure_core_ready_for_mutation(game_id)?;
     Ok(game_guard)
 }
 
@@ -639,7 +640,7 @@ async fn bulk_toggle_mods_chunk(
         return Ok(result);
     }
     let lock_wait_elapsed = lock_wait_started_at.elapsed();
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_preflight(
         &app,
         &game_id,
     )?;
@@ -653,6 +654,7 @@ async fn bulk_toggle_mods_chunk(
     let initial_prepared = bulk::prepare_bulk_toggle(&initial_paths, enable);
     let initial_steps = initial_prepared.planned_steps_with_identity();
     if initial_steps.is_empty() {
+        disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
         let _lock = op_lock
             .acquire_exempt(
                 crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata,
@@ -672,7 +674,10 @@ async fn bulk_toggle_mods_chunk(
         return Ok(result);
     }
     let trusted_scope = trusted_bulk_toggle_scope(&initial_steps, &mods_root);
-    let storage_fast_path = trusted_scope;
+    let storage_fast_path = trusted_scope
+        && disk_reconcile
+            .ensure_core_ready_for_mutation(&game_id)
+            .is_ok();
     let preflight_started_at = Instant::now();
     let validated = if storage_fast_path {
         validated
@@ -759,10 +764,12 @@ async fn bulk_toggle_mods_chunk(
         ))
         .await?;
     let journal_elapsed = journal_started_at.elapsed();
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     if validated
         .iter()
         .any(|path| !admission.is_current_path(&game_id, Path::new(path.original())))
@@ -1049,10 +1056,12 @@ async fn bulk_delete_mods_impl(
             journal_steps,
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let mut execution = bulk::execute_prepared_bulk_delete(
         &app,
         &state,
@@ -1137,6 +1146,7 @@ async fn bulk_delete_mods_impl(
             return Err(error);
         }
     };
+    execution.result.sync_warning = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(Ok(reconcile.clone())).sync_warning;
     mutation_lease.mark_db_committed()?;
     mutation_lease.commit()?;
     let generation = crate::modules::reconciliation::api::enqueue_runtime_sync_scoped(
@@ -1155,12 +1165,16 @@ async fn bulk_delete_mods_impl(
         .merge(reconcile.collection_reference_impact);
     if let Err(error) = bulk::finalize_prepared_bulk_delete(&prepared, &execution.applied_sequences)
     {
-        execution.result.sync_warning = Some(
-            crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning {
+        if let Some(warning) = &mut execution.result.sync_warning {
+            warning.message = format!("{}; cleanup pending: {error}", warning.message);
+        } else {
+            execution.result.sync_warning = Some(
+                crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning {
                 kind: crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind::CleanupPending,
                 message: error.to_string(),
-            },
-        );
+                },
+            );
+        }
     }
     Ok(execution.result)
 }

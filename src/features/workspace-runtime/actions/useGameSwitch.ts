@@ -8,7 +8,7 @@ export function useGameSwitch() {
   const queryClient = useQueryClient();
 
   const switchGame = async (gameId: string) => {
-    await setActiveGameId(gameId);
+    await setActiveGameId(gameId, { deferWorkspacePrefetch: true });
     await publishRuntimeDescriptor(
       queryClient,
       buildObjectListRefreshDescriptor({

@@ -17,6 +17,7 @@ export interface AppShellProps {
   selectedObjectFolderPath?: string | null;
   topBar?: ReactNode;
   runtimeHosts?: ReactNode;
+  loadingPage?: ReactNode;
   dashboard?: ReactNode;
   collections?: ReactNode;
   settings?: ReactNode;
@@ -35,6 +36,7 @@ export default function AppShell({
   selectedObjectFolderPath = null,
   topBar,
   runtimeHosts,
+  loadingPage,
   dashboard,
   collections,
   settings,
@@ -47,36 +49,33 @@ export default function AppShell({
   previewPanel,
   explorerEmptyState,
 }: AppShellProps) {
-  const content =
-    workspaceView === 'dashboard' ? (
-      dashboard
-    ) : workspaceView === 'collections' ? (
-      collections
-    ) : workspaceView === 'settings' ? (
-      settings
-    ) : workspaceView === 'browser' ? (
-      <div className="h-full overflow-hidden bg-base-100/85 pt-[var(--workspace-topbar-height)]">
-        {browser}
-      </div>
-    ) : workspaceView === 'downloads' ? (
-      downloads
-    ) : workspaceView === 'storage-optimizer' ? (
-      storageOptimizer
-    ) : workspaceView === 'mod-inbox' ? (
-      modInbox
-    ) : (
-      <ResizableWorkspace
-        leftPanel={objectList}
-        mainPanel={
-          selectedObjectFolderPath ? (
-            <ErrorBoundary>{folderGrid}</ErrorBoundary>
-          ) : (
-            explorerEmptyState
-          )
-        }
-        rightPanel={previewPanel}
-      />
-    );
+  const content = loadingPage ? (
+    loadingPage
+  ) : workspaceView === 'dashboard' ? (
+    dashboard
+  ) : workspaceView === 'collections' ? (
+    collections
+  ) : workspaceView === 'settings' ? (
+    settings
+  ) : workspaceView === 'browser' ? (
+    <div className="h-full overflow-hidden bg-base-100/85 pt-[var(--workspace-topbar-height)]">
+      {browser}
+    </div>
+  ) : workspaceView === 'downloads' ? (
+    downloads
+  ) : workspaceView === 'storage-optimizer' ? (
+    storageOptimizer
+  ) : workspaceView === 'mod-inbox' ? (
+    modInbox
+  ) : (
+    <ResizableWorkspace
+      leftPanel={objectList}
+      mainPanel={
+        selectedObjectFolderPath ? <ErrorBoundary>{folderGrid}</ErrorBoundary> : explorerEmptyState
+      }
+      rightPanel={previewPanel}
+    />
+  );
 
   return (
     <div

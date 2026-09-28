@@ -66,6 +66,7 @@ pub async fn toggle_mod_safe(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let suppression = watcher.suppressor.suppress_paths([folder.as_ref()]);
     metadata::toggle_mod_safe(pool.inner(), &game_id, &folder, safe).await?;
     drop(suppression);
@@ -142,6 +143,7 @@ pub async fn apply_randomized_loadout(
         .game_lock(&input.game_id)
         .lock_owned()
         .await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&input.game_id)?;
     let preview_input = metadata::PreviewRandomizedLoadoutInput {
         game_id: input.game_id.clone(),
         mod_ids: input.mod_ids.clone(),
@@ -261,10 +263,12 @@ pub async fn apply_randomized_loadout(
             journal_steps,
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile_state.inner(),
+        &input.game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let result = match prepared.execute_with_outcome(&app, &watcher) {
         Ok(result) => result,
         Err(
@@ -391,6 +395,7 @@ pub async fn update_mod_info(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = state.suppressor.suppress_paths([path.as_ref()]);
     let previous = match std::fs::read(&info_path) {
         Ok(bytes) => Some(bytes),
@@ -477,6 +482,7 @@ pub async fn set_mod_category(
     .await?;
     let game_lock = disk_reconcile_state.game_lock(&game_id);
     let game_guard = game_lock.lock().await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
     let operation_guard = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
         .await?;
@@ -529,6 +535,7 @@ pub async fn set_object_mods_category(
     .await?;
     let game_lock = disk_reconcile_state.game_lock(&game_id);
     let game_guard = game_lock.lock().await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
     let operation_guard = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
         .await?;
@@ -677,6 +684,7 @@ async fn move_mods_to_object_impl(
         .game_lock(&input.game_id)
         .lock_owned()
         .await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&input.game_id)?;
     if let Some(expected_identities) = expected_identities.as_deref() {
         crate::modules::workspace::application::explorer::listing::validate_workspace_explorer_selection_identities(
             expected_identities,
@@ -721,10 +729,12 @@ async fn move_mods_to_object_impl(
             journal_steps,
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile_state.inner(),
+        &input.game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let organizer =
         match crate::modules::library::application::mods::organizer_move::execute_prepared_move(
             &watcher, &prepared,

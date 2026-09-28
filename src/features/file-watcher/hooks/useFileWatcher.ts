@@ -33,9 +33,9 @@ import { joinModPath } from '../utils/pathUtils';
 const MODS_VIEW_SYNC_TTL_MS = 5_000;
 const WINDOW_REFOCUS_MIN_BLUR_MS = 750;
 const AUTO_OPEN_REPORT_MAX_GAMES = 32;
-const RUNTIME_WARNING_DEDUPE_MS = 30_000;
+const RECONCILE_WARNING_DEDUPE_MS = 30_000;
 const autoOpenedRenameReportByGame = new Map<string, string>();
-const lastRuntimeWarningByGame = new Map<string, { key: string; at: number }>();
+const lastReconcileWarningByGame = new Map<string, { key: string; at: number }>();
 
 function setBoundedMapEntry<K, V>(map: Map<K, V>, key: K, value: V, maxEntries: number) {
   if (map.has(key)) {
@@ -51,31 +51,41 @@ function setBoundedMapEntry<K, V>(map: Map<K, V>, key: K, value: V, maxEntries: 
   map.set(key, value);
 }
 
-function maybeShowRuntimeEffectsWarning(result: DiskReconcileResult) {
-  const warning = result.warnings.find((entry) => entry.kind === 'RuntimeEffectsPending');
+function maybeShowReconcileWarning(result: DiskReconcileResult) {
+  const warning =
+    result.warnings.find((entry) => entry.kind === 'AuthorityPending') ??
+    result.warnings.find((entry) => entry.kind === 'RuntimeEffectsPending');
   if (!warning) {
-    lastRuntimeWarningByGame.delete(result.game_id);
+    lastReconcileWarningByGame.delete(result.game_id);
     return;
   }
 
   const now = Date.now();
   const warningKey = `${warning.kind}:${warning.message}`;
-  const previous = lastRuntimeWarningByGame.get(result.game_id);
-  if (previous?.key === warningKey && now - previous.at < RUNTIME_WARNING_DEDUPE_MS) {
+  const previous = lastReconcileWarningByGame.get(result.game_id);
+  if (previous?.key === warningKey && now - previous.at < RECONCILE_WARNING_DEDUPE_MS) {
     return;
   }
 
   setBoundedMapEntry(
-    lastRuntimeWarningByGame,
+    lastReconcileWarningByGame,
     result.game_id,
     { key: warningKey, at: now },
     AUTO_OPEN_REPORT_MAX_GAMES,
   );
-  const fallback = 'Disk changes were applied, but runtime refresh is still pending.';
+  const authorityPending = warning.kind === 'AuthorityPending';
+  const fallback = authorityPending
+    ? 'Disk changes were applied, but indexing validation is still pending.'
+    : 'Disk changes were applied, but runtime refresh is still pending.';
   toast.warning(
-    i18next.t('common:reconcile.runtime_effects_pending', {
-      defaultValue: fallback,
-    }) || fallback,
+    i18next.t(
+      authorityPending
+        ? 'common:reconcile.authority_pending'
+        : 'common:reconcile.runtime_effects_pending',
+      {
+        defaultValue: fallback,
+      },
+    ) || fallback,
   );
 }
 
@@ -224,7 +234,7 @@ export function applyDiskReconcileResult(
   invalidateAffectedModHealthReports(queryClient, result, modsPathForHealth);
 
   if (appliesToActiveGame) {
-    maybeShowRuntimeEffectsWarning(result);
+    maybeShowReconcileWarning(result);
   }
 
   if (result.status === 'NeedsRenameConfirmation') {

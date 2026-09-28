@@ -162,6 +162,7 @@ pub struct PendingRuntimeEffects {
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub enum DiskReconcileWarningKind {
     RuntimeEffectsPending,
+    AuthorityPending,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]

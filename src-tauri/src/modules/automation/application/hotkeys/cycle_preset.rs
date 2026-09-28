@@ -136,7 +136,7 @@ pub(super) async fn execute_cycle_preset(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >(app, "DiskReconcileState")?;
     let mutation_lease = disk_reconcile
-        .acquire_mutation_lease(game_id, op_lock.inner_lock())
+        .acquire_ready_mutation_lease(game_id, op_lock.inner_lock())
         .await?;
 
     let apply_result =

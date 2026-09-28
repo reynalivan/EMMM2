@@ -105,6 +105,132 @@ pub async fn reconcile_disk_state(
     reconcile_disk_state_under_locks(context, request, &game_guard, &operation_guard).await
 }
 
+/// Internal reconciliation keeps the watcher proof and the projected revision
+/// in one serialization window. A dirty watcher token requires a full pass.
+pub(crate) async fn reconcile_disk_state_with_authority(
+    context: DiskReconcileContext<'_>,
+    request: DiskReconcileRequest,
+    watcher_state: &WatcherState,
+    mods_root: &std::path::Path,
+) -> Result<DiskReconcileResult, AppError> {
+    let game_lock = context.state.lock_for_game(&request.game_id);
+    let _game_guard = game_lock.lock().await;
+    let _operation_guard = context.operation_lock.acquire_for_reconcile().await;
+    run_reconcile_with_authority(context, request, watcher_state, mods_root).await
+}
+
+pub(crate) async fn reconcile_disk_state_under_owned_game_lock_with_authority(
+    context: DiskReconcileContext<'_>,
+    request: DiskReconcileRequest,
+    watcher_state: &WatcherState,
+    mods_root: &std::path::Path,
+    _game_guard: &tokio::sync::OwnedMutexGuard<()>,
+    _operation_guard: &crate::platform::fs::operation_lock::OpGuard,
+) -> Result<DiskReconcileResult, AppError> {
+    run_reconcile_with_authority(context, request, watcher_state, mods_root).await
+}
+
+pub(crate) async fn reconcile_disk_state_under_lease_with_authority(
+    context: DiskReconcileContext<'_>,
+    request: DiskReconcileRequest,
+    watcher_state: &WatcherState,
+    mods_root: &std::path::Path,
+    _lease: &super::state::DiskMutationLease,
+) -> Result<DiskReconcileResult, AppError> {
+    run_reconcile_with_authority(context, request, watcher_state, mods_root).await
+}
+
+async fn run_reconcile_with_authority(
+    context: DiskReconcileContext<'_>,
+    request: DiskReconcileRequest,
+    watcher_state: &WatcherState,
+    mods_root: &std::path::Path,
+) -> Result<DiskReconcileResult, AppError> {
+    let game_id = request.game_id.clone();
+    let reason = request.reason.clone();
+    let defer_overlay_sync = request.defer_overlay_sync;
+    let allow_unproven_initial_pass = matches!(
+        context.state.initial_recovery_readiness(&game_id),
+        super::state::InitialRecoveryReadiness::Unstarted { .. }
+            | super::state::InitialRecoveryReadiness::Syncing { .. }
+    );
+    let mut first_request = Some(request);
+    for attempt in 0..2 {
+        let mut current_request = first_request.take().unwrap_or_else(|| {
+            let full =
+                DiskReconcileRequest::manual(game_id.clone(), reason.clone(), Vec::new(), true);
+            if defer_overlay_sync {
+                full.defer_overlay_sync()
+            } else {
+                full
+            }
+        });
+        let marker = watcher_state
+            .current_session_for_root(mods_root)
+            .and_then(|session| {
+                context
+                    .state
+                    .authority_event_generation(&game_id, session.generation())
+                    .map(|generation| (session, generation))
+            });
+        let repair_evidence = marker
+            .as_ref()
+            .and_then(|(session, _)| context.watcher_suppressor.pending_repair(session));
+        if let Some((session, _)) = &marker {
+            if repair_evidence.is_some()
+                || !matches!(
+                    context
+                        .state
+                        .authority_catch_up(&game_id, mods_root, session.generation()),
+                    super::state::AuthorityCatchUp::Clean { .. }
+                )
+            {
+                current_request.force_full = true;
+                current_request.trusted_mutation_scope = false;
+            }
+        }
+        let changed_paths = current_request.changed_paths.clone();
+        let mut result = run_reconcile_with_owned_locks(context.clone(), current_request).await?;
+        if !result.status.applied() {
+            return Ok(result);
+        }
+        match marker {
+            Some((session, generation)) if watcher_state.is_current_session(&session) => {
+                if context.state.mark_authority_reconciled(
+                    &game_id,
+                    mods_root,
+                    session.generation(),
+                    generation,
+                    &result,
+                    &changed_paths,
+                ) {
+                    if result.scan_scope == DiskReconcileScanScope::Full {
+                        if let Some(evidence) = &repair_evidence {
+                            context.watcher_suppressor.mark_repaired_through(evidence);
+                        }
+                    }
+                    return Ok(result);
+                }
+            }
+            None if allow_unproven_initial_pass => return Ok(result),
+            _ => {}
+        }
+        if attempt == 1 {
+            result.warnings.push(
+                crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarning {
+                    kind: crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarningKind::AuthorityPending,
+                    message: "Disk projection succeeded, but watcher validation is still pending"
+                        .to_string(),
+                },
+            );
+            return Ok(result);
+        }
+    }
+    Err(AppError::Internal(
+        "Disk authority retry ended without a result".to_string(),
+    ))
+}
+
 /// Best-effort background reconciliation. It never waits for either
 /// serialization lock, so foreground work can retry it after its storage commit.
 pub(crate) async fn try_reconcile_disk_state_for_prewarm(
@@ -139,29 +265,6 @@ pub(crate) async fn reconcile_disk_state_under_locks(
     run_reconcile_with_owned_locks(context, request).await
 }
 
-/// Same lock proof as `reconcile_disk_state_under_locks`, for command flows
-/// that retain an owned per-game guard across preflight and durable journal
-/// acquisition.
-pub(crate) async fn reconcile_disk_state_under_owned_game_lock(
-    context: DiskReconcileContext<'_>,
-    request: DiskReconcileRequest,
-    _game_guard: &tokio::sync::OwnedMutexGuard<()>,
-    _operation_guard: &crate::platform::fs::operation_lock::OpGuard,
-) -> Result<DiskReconcileResult, AppError> {
-    run_reconcile_with_owned_locks(context, request).await
-}
-
-/// Run one reconcile while a disk mutation retains its owned game and
-/// operation locks. The lease is an ownership proof; this path must not try to
-/// acquire either lock again.
-pub(crate) async fn reconcile_disk_state_under_lease(
-    context: DiskReconcileContext<'_>,
-    request: DiskReconcileRequest,
-    _lease: &super::state::DiskMutationLease,
-) -> Result<DiskReconcileResult, AppError> {
-    run_reconcile_with_owned_locks(context, request).await
-}
-
 async fn run_reconcile_with_owned_locks(
     context: DiskReconcileContext<'_>,
     request: DiskReconcileRequest,
@@ -171,24 +274,6 @@ async fn run_reconcile_with_owned_locks(
         .as_ref()
         .and_then(|session| context.watcher_suppressor.pending_repair(session));
     let game_id = request.game_id;
-    let may_reuse_activation_scan = request.force_full
-        && request.changed_paths.is_empty()
-        && request.watcher_events.is_empty()
-        && request.path_hints.is_empty()
-        && matches!(
-            request.reason,
-            crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ModsViewEntered
-                | crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::GameSwitched
-        )
-        && !context.watcher_suppressor.has_unrepaired_drops();
-    if may_reuse_activation_scan {
-        if let Some(result) = context
-            .state
-            .recent_applied_result(&game_id, std::time::Duration::from_secs(5))
-        {
-            return Ok(result);
-        }
-    }
     let force_full = request.force_full || repair_evidence.is_some();
     let mut result = run_refresh_once(RefreshRequest {
         context: context.clone(),

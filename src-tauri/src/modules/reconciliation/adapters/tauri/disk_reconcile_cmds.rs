@@ -249,6 +249,7 @@ async fn reconcile_onboarding_indexing_game_with_status(
     disk_reconcile_state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     operation_lock: &crate::modules::mutation::coordinator::MutationCoordinator,
     sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+    allow_missing_snapshot_fallback: bool,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -263,6 +264,7 @@ async fn reconcile_onboarding_indexing_game_with_status(
         disk_reconcile_state,
         operation_lock,
         sessions,
+        allow_missing_snapshot_fallback,
     )
     .await;
     let phase = match &result {
@@ -309,6 +311,7 @@ pub async fn reconcile_onboarding_indexing_game(
         disk_reconcile_state.inner(),
         operation_lock.inner(),
         sessions.inner(),
+        false,
     )
     .await
 }
@@ -336,6 +339,14 @@ pub async fn continue_onboarding_indexing_in_background(
     let worker_sessions = sessions.inner().clone();
     tokio::spawn(async move {
         for game_id in game_ids {
+            if worker_sessions.is_claimed_by_activation(&session_id, &game_id) {
+                worker_sessions
+                    .wait_for_activation_claim(&session_id, &game_id)
+                    .await;
+            }
+            if worker_sessions.background_game_is_ready(&session_id, &game_id) {
+                continue;
+            }
             let pool = worker_app.state::<sqlx::SqlitePool>();
             let config =
                 worker_app.state::<crate::modules::settings::application::config::ConfigService>();
@@ -357,6 +368,7 @@ pub async fn continue_onboarding_indexing_in_background(
                 disk_reconcile_state.inner(),
                 operation_lock.inner(),
                 &worker_sessions,
+                true,
             )
             .await
             {
@@ -378,6 +390,9 @@ pub async fn continue_onboarding_indexing_in_background(
                         "Background onboarding indexing needs attention for game {game_id}: {:?}",
                         result.status
                     );
+                }
+                Err(error) if worker_sessions.is_claimed_by_activation(&session_id, &game_id) => {
+                    log::debug!("Activation owns onboarding indexing for game {game_id}: {error}");
                 }
                 Err(error) => {
                     log::warn!("Background onboarding indexing failed for game {game_id}: {error}");
@@ -608,6 +623,7 @@ async fn reconcile_onboarding_indexing_game_impl(
     disk_reconcile_state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     operation_lock: &crate::modules::mutation::coordinator::MutationCoordinator,
     sessions: &crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore,
+    allow_missing_snapshot_fallback: bool,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -627,16 +643,18 @@ async fn reconcile_onboarding_indexing_game_impl(
                 .map(|sink| sink.inner().clone())
         })
         .flatten();
-    let snapshot_lease = match sessions.consume(session_id, game_id).await? {
+    let prepared = match sessions.consume(session_id, game_id).await {
+        Ok(prepared) => prepared,
+        Err(AppError::NotFound(_)) if allow_missing_snapshot_fallback => {
+            ConsumedOnboardingSnapshot::FullFallback
+        }
+        Err(error) => return Err(error),
+    };
+    let snapshot_lease = match prepared {
         ConsumedOnboardingSnapshot::Snapshot(lease) => Some(lease),
         ConsumedOnboardingSnapshot::FullFallback => None,
     }
-    .filter(|lease| {
-        onboarding_snapshot_revision_is_current(
-            lease.journal_revision(),
-            operation_lock.current_journal_revision(),
-        )
-    });
+    .filter(|lease| lease.journal_allows_game_snapshot(operation_lock, game_id));
     update_onboarding_background_phase(
         app,
         sessions,
@@ -645,6 +663,42 @@ async fn reconcile_onboarding_indexing_game_impl(
         crate::modules::reconciliation::application::disk_reconcile::types::OnboardingIndexingBackgroundPhase::Applying,
     )?;
     let initial_recheck = snapshot_lease.is_none();
+    let pre_scan_watcher = if initial_recheck && allow_missing_snapshot_fallback {
+        let _activation_guard = disk_reconcile_state.activation_guard().await;
+        let settings = config.get_settings();
+        let is_active = settings.active_game_id.as_deref() == Some(game_id);
+        let game = settings
+            .games
+            .into_iter()
+            .find(|game| game.id == game_id)
+            .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' was removed")))?;
+        let runtime_config_path = game.instance_path.join("d3dx.ini");
+        let watcher_session = if is_active {
+            watcher
+                .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
+                .map(|session| session.generation())
+                .ok_or_else(|| {
+                    AppError::Io(format!(
+                    "Active watcher for '{game_id}' is not ready; activation will verify this game"
+                ))
+                })?
+        } else {
+            crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+                app,
+                watcher,
+                game_id,
+                &game.mod_path,
+                Some(&runtime_config_path),
+            )
+            .map_err(|error| AppError::Io(format!("Could not watch '{game_id}' before indexing: {error}")))?
+        };
+        let observed_generation = disk_reconcile_state
+            .authority_event_generation(game_id, watcher_session)
+            .unwrap_or(0);
+        Some((game.mod_path, watcher_session, observed_generation))
+    } else {
+        None
+    };
     if initial_recheck {
         app.emit(
             "onboarding_indexing:snapshot_progress",
@@ -723,10 +777,7 @@ async fn reconcile_onboarding_indexing_game_impl(
     let changed_during_apply = match snapshot_lease.as_ref() {
         Some(lease) => {
             lease.observed_changes_during_apply().await
-                || !onboarding_snapshot_revision_is_current(
-                    lease.journal_revision(),
-                    operation_lock.current_journal_revision(),
-                )
+                || !lease.journal_allows_game_snapshot(operation_lock, game_id)
         }
         None => false,
     };
@@ -771,16 +822,122 @@ async fn reconcile_onboarding_indexing_game_impl(
             }
         };
     }
+    let _activation_guard = disk_reconcile_state.activation_guard().await;
+    let mut background_handoff_trusted = false;
+    if let Some(lease) = snapshot_lease.as_ref().filter(|_| {
+        result.status.applied()
+            && !changed_during_apply
+            && config.get_settings().active_game_id.as_deref() == Some(game_id)
+    }) {
+        if let Some(game) = config
+            .get_settings()
+            .games
+            .into_iter()
+            .find(|game| game.id == game_id)
+        {
+            let runtime_config_path = game.instance_path.join("d3dx.ini");
+            if let Some(session) =
+                watcher.current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
+            {
+                let watcher_session = session.generation();
+                let observed_generation = disk_reconcile_state
+                    .authority_event_generation(game_id, watcher_session)
+                    .unwrap_or(0);
+                if !lease.observed_changes_during_apply().await
+                    && lease.journal_allows_game_snapshot(operation_lock, game_id)
+                {
+                    background_handoff_trusted = disk_reconcile_state.mark_authority_reconciled(
+                        game_id,
+                        &game.mod_path,
+                        watcher_session,
+                        observed_generation,
+                        &result,
+                        &[],
+                    );
+                }
+            }
+        }
+    }
+    if result.status.applied() && config.get_settings().active_game_id.as_deref() != Some(game_id) {
+        background_handoff_trusted = false;
+        if let Some(lease) = &snapshot_lease {
+            let game = config
+                .get_settings()
+                .games
+                .into_iter()
+                .find(|game| game.id == game_id);
+            if let Some(game) = game.filter(|game| lease.matches_root(&game.mod_path)) {
+                let runtime_config_path = game.instance_path.join("d3dx.ini");
+                match crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher(
+                    app,
+                    watcher,
+                    game_id,
+                    &game.mod_path,
+                    Some(&runtime_config_path),
+                ) {
+                    Ok(watcher_session) => {
+                        let observed_generation = disk_reconcile_state
+                            .authority_event_generation(game_id, watcher_session)
+                            .unwrap_or(0);
+                        if !lease.observed_changes_during_apply().await
+                            && lease.journal_allows_game_snapshot(operation_lock, game_id)
+                        {
+                            background_handoff_trusted = disk_reconcile_state.mark_authority_reconciled(
+                                game_id,
+                                &game.mod_path,
+                                watcher_session,
+                                observed_generation,
+                                &result,
+                                &[],
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!("Could not hand off onboarding watcher for {game_id}: {error}");
+                    }
+                }
+            }
+        }
+    }
+    if let Some((mods_root, watcher_session, observed_generation)) = pre_scan_watcher {
+        let settings = config.get_settings();
+        let coverage_matches = settings
+            .games
+            .iter()
+            .find(|game| game.id == game_id && game.mod_path == mods_root)
+            .is_some_and(|game| {
+                let runtime_config_path = game.instance_path.join("d3dx.ini");
+                if settings.active_game_id.as_deref() == Some(game_id) {
+                    watcher
+                        .current_session_for_coverage(&mods_root, Some(&runtime_config_path))
+                        .is_some_and(|session| session.generation() == watcher_session)
+                } else {
+                    watcher.inactive_watcher_session(
+                        game_id,
+                        &mods_root,
+                        Some(&runtime_config_path),
+                    ) == Some(watcher_session)
+                }
+            });
+        if coverage_matches {
+            background_handoff_trusted = disk_reconcile_state.mark_authority_reconciled(
+                game_id,
+                &mods_root,
+                watcher_session,
+                observed_generation,
+                &result,
+                &[],
+            );
+        }
+    }
+    if allow_missing_snapshot_fallback && result.status.applied() && !background_handoff_trusted {
+        disk_reconcile_state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
+        return Err(AppError::Io(
+            "Background indexing lost disk watcher continuity; retrying requires a full verification"
+                .to_string(),
+        ));
+    }
     Ok(result)
-}
-
-fn onboarding_snapshot_revision_is_current(
-    captured: Option<u64>,
-    current: Result<u64, AppError>,
-) -> bool {
-    captured
-        .zip(current.ok())
-        .is_some_and(|(captured, current)| captured == current)
 }
 
 async fn reconcile_onboarding_with_foreground_priority(
@@ -908,27 +1065,13 @@ pub async fn resolve_rename_confirmations(
 mod tests {
     use super::{
         background_phase_for_reconcile_status, checked_resolution_path,
-        manual_reconcile_runtime_request, onboarding_snapshot_revision_is_current,
-        should_wait_for_initial_recovery,
+        manual_reconcile_runtime_request, should_wait_for_initial_recovery,
     };
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness;
     use crate::modules::reconciliation::application::disk_reconcile::types::{
         DiskReconcileReason, DiskReconcileStatus, OnboardingIndexingBackgroundPhase,
     };
     use crate::modules::system::application::app::post_apply::RuntimeSyncRequest;
-    use crate::shared::errors::AppError;
-
-    #[test]
-    fn onboarding_snapshot_requires_an_unchanged_durable_mutation_revision() {
-        assert!(onboarding_snapshot_revision_is_current(Some(7), Ok(7)));
-        assert!(!onboarding_snapshot_revision_is_current(Some(7), Ok(8)));
-        assert!(!onboarding_snapshot_revision_is_current(None, Ok(7)));
-        assert!(!onboarding_snapshot_revision_is_current(
-            Some(7),
-            Err(AppError::Internal("journal unavailable".into())),
-        ));
-    }
-
     #[test]
     fn rename_confirmation_paths_must_be_relative_and_contained() {
         let root = std::path::Path::new("E:/Mods");

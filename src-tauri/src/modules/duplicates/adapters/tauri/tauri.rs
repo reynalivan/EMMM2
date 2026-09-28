@@ -271,6 +271,7 @@ pub async fn dup_resolve_batch(
         .await?;
 
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
     let prepared = crate::modules::duplicates::application::dedup::resolver::prepare_durable_batch(
         requests,
         &game_id,
@@ -297,10 +298,12 @@ pub async fn dup_resolve_batch(
         .await;
     };
     let operation_guard = op_lock.acquire_operation(operation_plan).await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let result = crate::modules::duplicates::application::dedup::resolver::resolve_durable_batch(
         &prepared,
         &game_id,

@@ -80,6 +80,7 @@ pub async fn write_mod_ini(
     let op_guard = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::PreviewFile)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     write_mod_ini_locked_inner(
         op_guard.op_guard(),
@@ -146,6 +147,7 @@ pub async fn save_mod_preview_image(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let saved = save_mod_preview_image_inner(&mod_root, &object_name, &image_data)?;
     drop(lock);
@@ -179,6 +181,7 @@ pub async fn remove_mod_preview_image(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     remove_mod_preview_image_inner(&mod_root, &image_path)?;
     crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate_folder(
@@ -213,6 +216,7 @@ pub async fn clear_mod_preview_images(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let removed = clear_mod_preview_images_inner(&mod_root)?;
     crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate_folder(

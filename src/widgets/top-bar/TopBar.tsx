@@ -399,10 +399,10 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
         ) : (
           <>
             <div className="sm:hidden">
-              <GameSelector compact backgroundIndexingStatus={backgroundIndexingStatus} />
+              <GameSelector compact />
             </div>
             <div className="hidden sm:block">
-              <GameSelector backgroundIndexingStatus={backgroundIndexingStatus} />
+              <GameSelector />
             </div>
             <OnboardingIndexingIndicator sessions={backgroundIndexingStatus.sessions} />
             {runtimeSync &&

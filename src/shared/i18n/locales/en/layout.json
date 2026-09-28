@@ -53,12 +53,22 @@
       "activation": {
         "title": "Indexing {{game}}",
         "description": "Checking this game's library before it opens.",
+        "failed_title": "Could not index {{game}}",
+        "failed_description": "This game's library is not ready. Check the issue and try again, or select another game.",
+        "source_unavailable_description": "The mods folder is unavailable. Check its location and try again, or select another game.",
         "progress_label": "Indexing progress",
         "folders_complete": "{{completed}} of {{total}} folders",
+        "folders_classified": "{{count}} folders classified",
         "preparing": "Preparing the full check",
         "scanning_root": "Scanning {{root}}",
         "scanning_without_root": "Scanning mod folders",
         "current_root": "Current folder: {{root}}",
+        "snapshot_phase": {
+          "Metadata": "Reading mod folders",
+          "Classifying": "Classifying mod folders",
+          "Ready": "Preparing the library update",
+          "Rechecking": "Checking folders changed during indexing"
+        },
         "phase": {
           "DiscoveringRoots": "Finding mod folders",
           "Projecting": "Updating library",

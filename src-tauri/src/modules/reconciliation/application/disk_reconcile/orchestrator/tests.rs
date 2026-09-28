@@ -401,17 +401,6 @@ fn stale_watcher_session_cannot_consume_trusted_echo_evidence() {
 }
 
 #[test]
-fn recent_applied_result_remains_available_for_activation_reuse() {
-    let state = DiskReconcileState::new();
-    let mut result = applied_result("game-1");
-    state.record_result("game-1", &mut result);
-
-    assert!(state
-        .recent_applied_result("game-1", std::time::Duration::from_secs(5))
-        .is_some());
-}
-
-#[test]
 fn recorded_results_receive_monotonic_per_game_revisions() {
     let state = DiskReconcileState::new();
     let mut first = applied_result("game-1");
@@ -527,6 +516,157 @@ async fn reconcile_disk_state_reports_source_unavailable_for_missing_mods_path()
     assert!(!result.objects_changed);
     assert!(!result.folders_changed);
     assert!(!result.collections_changed);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn internal_preflight_preserves_ready_authority_after_a_second_reconcile() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_path).expect("mods root");
+    seed_game_row(&ctx.pool, "game-1", &mods_path).await;
+    let config = ConfigService::new_for_test(ctx.pool.clone());
+    let state = DiskReconcileState::new();
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&mods_path);
+    state.begin_authority_session("game-1", &mods_path, session.generation());
+    let operation_lock = OperationLock::new();
+    let generation = state.mark_initial_recovery_pending("game-1");
+    assert!(state
+        .ensure_core_recovery_allows_preflight("game-1")
+        .is_err());
+
+    let baseline = reconcile_disk_state(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::StartupBoot,
+            Vec::new(),
+            true,
+        ),
+    )
+    .await
+    .expect("initial reconcile");
+    assert!(state.mark_authority_reconciled(
+        "game-1",
+        &mods_path,
+        session.generation(),
+        0,
+        &baseline,
+        &[],
+    ));
+    state.finish_initial_recovery(
+        "game-1",
+        generation,
+        InitialRecoveryOutcome::Completed(Box::new(baseline)),
+    );
+    state
+        .ensure_core_ready_for_mutation("game-1")
+        .expect("ready");
+
+    let result = reconcile_disk_state_with_authority(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::InternalMutation,
+            Vec::new(),
+            true,
+        ),
+        &watcher,
+        &mods_path,
+    )
+    .await
+    .expect("preflight reconcile");
+    assert!(result.status.applied());
+    state
+        .ensure_core_ready_for_mutation("game-1")
+        .expect("applied preflight must remain ready");
+
+    let changed_path = mods_path.join("Alice").join("mod.ini");
+    std::fs::create_dir_all(changed_path.parent().expect("mod parent"))
+        .expect("create external mod");
+    std::fs::write(&changed_path, "[TextureOverride]\nhash = abc\n").expect("write external mod");
+    state.observe_authority_event(
+        "game-1",
+        session.generation(),
+        &mods_path,
+        std::slice::from_ref(&changed_path),
+        false,
+    );
+    watcher.suppressor.mark_blanket_event_dropped(&session);
+    assert!(state.ensure_core_ready_for_mutation("game-1").is_err());
+    state
+        .ensure_core_recovery_allows_preflight("game-1")
+        .expect("dirty watcher can be repaired by preflight");
+    let repaired = reconcile_disk_state_with_authority(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::InternalMutation,
+            vec![changed_path.to_string_lossy().into_owned()],
+            false,
+        ),
+        &watcher,
+        &mods_path,
+    )
+    .await
+    .expect("dirty watcher catch-up");
+    assert_eq!(repaired.scan_scope, DiskReconcileScanScope::Full);
+    assert!(!watcher.suppressor.has_unrepaired_drops());
+    state
+        .ensure_core_ready_for_mutation("game-1")
+        .expect("full catch-up must restore readiness");
+
+    let replacement_root = temp.path().join("Replacement Mods");
+    std::fs::create_dir_all(&replacement_root).expect("replacement root");
+    watcher.begin_session(&replacement_root);
+    let lost_authority = reconcile_disk_state_with_authority(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::InternalMutation,
+            Vec::new(),
+            true,
+        ),
+        &watcher,
+        &mods_path,
+    )
+    .await
+    .expect("disk projection itself succeeded");
+    assert!(lost_authority.status.applied());
+    assert!(lost_authority.warnings.iter().any(|warning| {
+        warning.kind
+            == crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileWarningKind::AuthorityPending
+    }));
+    assert!(state.ensure_core_ready_for_mutation("game-1").is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -1013,9 +1153,7 @@ async fn watcher_reconcile_superseded_while_waiting_for_game_lock_skips_the_scan
         .expect("watcher reconcile should finish after the game lock releases")
         .expect("superseded watcher request is not an error");
     assert!(matches!(outcome, WatcherReconcileOutcome::Superseded));
-    assert!(state
-        .recent_applied_result("game-1", std::time::Duration::from_secs(1))
-        .is_none());
+    assert!(state.authoritative_result("game-1").is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1066,9 +1204,7 @@ async fn watcher_reconcile_superseded_while_waiting_for_operation_lock_skips_the
         .expect("watcher reconcile should finish after the operation lock releases")
         .expect("superseded watcher request is not an error");
     assert!(matches!(outcome, WatcherReconcileOutcome::Superseded));
-    assert!(state
-        .recent_applied_result("game-1", std::time::Duration::from_secs(1))
-        .is_none());
+    assert!(state.authoritative_result("game-1").is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1303,7 +1439,7 @@ async fn reconcile_under_mutation_lease_does_not_reacquire_or_release_either_loc
     let config = ConfigService::new_for_test(ctx.pool.clone());
     let state = DiskReconcileState::new();
     let operation_lock = OperationLock::new();
-    let suppressor = Arc::new(WatcherSuppressor::new(false));
+    let watcher = WatcherState::new();
     let lease = state
         .acquire_mutation_lease("game-lease", &operation_lock)
         .await
@@ -1311,12 +1447,12 @@ async fn reconcile_under_mutation_lease_does_not_reacquire_or_release_either_loc
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        super::entry::reconcile_disk_state_under_lease(
+        super::entry::reconcile_disk_state_under_lease_with_authority(
             DiskReconcileContext {
                 pool: &ctx.pool,
                 config: &config,
                 state: &state,
-                watcher_suppressor: suppressor,
+                watcher_suppressor: watcher.suppressor.clone(),
                 operation_lock: &operation_lock,
                 progress_reporter: None,
             },
@@ -1326,6 +1462,8 @@ async fn reconcile_under_mutation_lease_does_not_reacquire_or_release_either_loc
                 Vec::new(),
                 true,
             ),
+            &watcher,
+            &mods_path,
             &lease,
         ),
     )

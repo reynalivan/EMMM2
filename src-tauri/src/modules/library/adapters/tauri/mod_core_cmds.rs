@@ -112,6 +112,7 @@ pub async fn create_mod_folder(
     .await?;
 
     let game_guard = disk_reconcile_state.game_lock(&game_id).lock_owned().await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
     let prepared = prepare_folder_create(&parent, &folder_name)?;
     prepared.prepare()?;
     let operation_guard = match op_lock
@@ -128,10 +129,18 @@ pub async fn create_mod_folder(
             return Err(error);
         }
     };
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = match crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile_state.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    ) {
+        Ok(lease) => lease,
+        Err(error) => {
+            prepared.rollback()?;
+            return Err(error);
+        }
+    };
     let watcher_guard =
         crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(
             &watcher.suppressor,
@@ -401,6 +410,7 @@ pub async fn rename_mod_folder(
         standardize_prefix(&new_name, !source_name.starts_with(crate::DISABLED_PREFIX));
     let target = folder.with_file_name(target_name);
     let game_guard = disk_reconcile_state.game_lock(&game_id).lock_owned().await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
     let operation_guard = op_lock
         .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
             "rename-mod-folder",
@@ -412,10 +422,12 @@ pub async fn rename_mod_folder(
             )],
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile_state.inner(),
+        &game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let mut result =
         crate::modules::library::application::mods::core_ops::rename_mod_folder_inner_service(
             &config,
@@ -445,12 +457,12 @@ pub async fn rename_mod_folder(
             reconcile.status
         )));
     }
+    result.sync_warning = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(Ok(reconcile.clone())).sync_warning;
     result
         .collection_impact
         .merge(reconcile.collection_reference_impact);
     mutation_lease.mark_db_committed()?;
     mutation_lease.commit()?;
-    result.sync_warning = None;
 
     Ok(result)
 }

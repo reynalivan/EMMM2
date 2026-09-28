@@ -94,7 +94,7 @@ pub async fn disable_object_roots(
         .try_state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
         .ok_or_else(|| AppError::Internal("DiskReconcileState is unavailable".to_string()))?;
     let lease = disk_state
-        .acquire_mutation_lease(game_id, operation_lock.inner_lock())
+        .acquire_ready_mutation_lease(game_id, operation_lock.inner_lock())
         .await?;
     let watcher = app
         .try_state::<crate::modules::workspace::application::scanner::watcher::WatcherState>()

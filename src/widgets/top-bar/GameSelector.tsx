@@ -1,138 +1,44 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { AlertCircle, Gamepad2, Loader2, Plus } from 'lucide-react';
+import { Gamepad2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GAME_OPTIONS, useActiveGame, type GameConfig } from '@/entities/game';
-import {
-  useGameSwitch,
-  useBackgroundIndexingStatus,
-  type BackgroundIndexingStatusState,
-} from '@/features/workspace-runtime';
+import { useGameSwitch } from '@/features/workspace-runtime';
 import { useAppStore } from '@/app/store';
 import { LiquidSurface } from '@/shared/ui/liquid';
-import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 interface GameSelectorProps {
   compact?: boolean;
-  backgroundIndexingStatus?: BackgroundIndexingStatusState;
 }
 
-export default function GameSelector(props: GameSelectorProps) {
-  if (props.backgroundIndexingStatus) {
-    return (
-      <GameSelectorContent {...props} backgroundIndexingStatus={props.backgroundIndexingStatus} />
-    );
-  }
-  return <GameSelectorWithOwnBackgroundStatus {...props} />;
-}
-
-function GameSelectorWithOwnBackgroundStatus({ compact = false }: GameSelectorProps) {
-  const backgroundIndexingStatus = useBackgroundIndexingStatus();
-  return (
-    <GameSelectorContent compact={compact} backgroundIndexingStatus={backgroundIndexingStatus} />
-  );
-}
-
-function GameSelectorContent({
-  compact = false,
-  backgroundIndexingStatus,
-}: {
-  compact?: boolean;
-  backgroundIndexingStatus: BackgroundIndexingStatusState;
-}) {
+export default function GameSelector({ compact = false }: GameSelectorProps) {
   const { t } = useTranslation('layout');
   const { activeGame, games = [], isLoading } = useActiveGame();
-  const { switchGame } = useGameSwitch();
+  const requestedGameId = useAppStore((state) => state.requestedGameId);
   const activeActivation = useAppStore((state) =>
-    activeGame?.id ? state.gameActivationByGame?.[activeGame.id] : undefined,
+    activeGame?.id ? state.gameActivationByGame[activeGame.id] : undefined,
   );
-  const {
-    gamesById: backgroundIndexingByGame,
-    isLoaded: backgroundStatusLoaded,
-    loadError: backgroundStatusLoadError,
-    refresh: refreshBackgroundStatus,
-  } = backgroundIndexingStatus;
-  const [isSwitching, setIsSwitching] = useState(false);
-  const [pendingGame, setPendingGame] = useState<GameConfig | null>(null);
-  const indexingDialogRef = useRef<HTMLDialogElement>(null);
-  const dialogTitleId = useId();
-  const dialogDescriptionId = useId();
-  const pendingIndexingStatus = pendingGame
-    ? backgroundIndexingByGame.get(pendingGame.id)
-    : undefined;
-  useDialogSync(indexingDialogRef, pendingGame !== null);
-
-  // Derive display info from active game
-  const activeLabel = activeGame?.name ?? t('game_selector.select_game');
+  const { switchGame } = useGameSwitch();
+  const selectedGameId = requestedGameId ?? activeGame?.id;
+  const selectedGame = games.find((game) => game.id === selectedGameId) ?? activeGame;
+  const activeLabel = selectedGame?.name ?? t('game_selector.select_game');
   const activeShort =
-    GAME_OPTIONS.find((o) => o.value === (activeGame?.game_type as unknown as string))
+    GAME_OPTIONS.find((option) => option.value === String(selectedGame?.game_type))
       ?.label.split(' (')[0]
       .split(' ')
-      .map((w: string) => w[0])
+      .map((word: string) => word[0])
       .join('') ?? '-';
 
-  const handleSwitchGame = useCallback(
-    async (gameId: string) => {
-      const retryingActive =
-        gameId === activeGame?.id &&
-        (activeActivation?.phase === 'failed' || activeActivation?.phase === 'source_unavailable');
-      if (isSwitching || (gameId === activeGame?.id && !retryingActive)) return;
-
-      setIsSwitching(true);
-      try {
-        await switchGame(gameId);
-      } finally {
-        setIsSwitching(false);
-      }
-    },
-    [activeActivation?.phase, activeGame?.id, isSwitching, switchGame],
-  );
-
-  useEffect(() => {
-    if (!pendingGame) return;
-    const requiresFullRecheck =
-      pendingIndexingStatus?.phase === 'NeedsAttention' ||
-      pendingIndexingStatus?.phase === 'Failed';
-    if (requiresFullRecheck) {
-      const gameId = pendingGame.id;
-      setPendingGame(null);
-      void handleSwitchGame(gameId);
-      return;
-    }
-    const isReadyForSwitch =
-      pendingIndexingStatus?.phase === 'Ready' ||
-      (backgroundStatusLoaded && !backgroundStatusLoadError && !pendingIndexingStatus);
-    if (!isReadyForSwitch) return;
-
-    const gameId = pendingGame.id;
-    setPendingGame(null);
-    void handleSwitchGame(gameId);
-  }, [
-    backgroundStatusLoaded,
-    backgroundStatusLoadError,
-    pendingGame,
-    pendingIndexingStatus,
-    handleSwitchGame,
-  ]);
-
   const handleGameSelection = (game: GameConfig) => {
-    const backgroundStatus = backgroundIndexingByGame.get(game.id);
-    const requiresFullRecheck =
-      backgroundStatus?.phase === 'NeedsAttention' || backgroundStatus?.phase === 'Failed';
-    if (requiresFullRecheck) {
-      void handleSwitchGame(game.id);
-      return;
-    }
-    const canSwitch =
-      backgroundStatus?.phase === 'Ready' ||
-      (backgroundStatusLoaded && !backgroundStatusLoadError && !backgroundStatus);
-    if (!canSwitch) {
-      setPendingGame(game);
-      return;
-    }
-    void handleSwitchGame(game.id);
+    if (requestedGameId === game.id) return;
+    const retryingActive =
+      game.id === activeGame?.id &&
+      (activeActivation?.phase === 'failed' || activeActivation?.phase === 'source_unavailable');
+    if (game.id === activeGame?.id && requestedGameId === null && !retryingActive) return;
+    void switchGame(game.id).catch((error: unknown) => {
+      console.error('Failed to activate selected game', error);
+    });
   };
 
-  if (isLoading || isSwitching) {
+  if (isLoading) {
     if (compact) {
       return (
         <button
@@ -188,143 +94,71 @@ function GameSelectorContent({
     );
   }
 
-  const statusUnavailable = !pendingIndexingStatus && backgroundStatusLoadError;
-  const dialogTitle = statusUnavailable
-    ? t('game_selector.indexing.status_unavailable_title', { game: pendingGame?.name })
-    : t('game_selector.indexing.dialog_title', { game: pendingGame?.name });
-  const dialogDescription = statusUnavailable
-    ? t('game_selector.indexing.status_unavailable_description')
-    : t('game_selector.indexing.dialog_description');
-
   return (
-    <>
-      <div className="dropdown dropdown-bottom">
-        <button
-          type="button"
-          className={
-            compact
-              ? 'btn btn-ghost btn-sm btn-square text-base-content/75 hover:text-base-content'
-              : 'group flex min-w-36 max-w-52 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-base-content/75 transition-[background-color,color] duration-150 hover:bg-base-content/5 hover:text-base-content md:px-3'
-          }
-          aria-label={t('game_selector.select_game')}
-        >
-          <Gamepad2
-            size={15}
-            className="shrink-0 text-base-content/45 transition-colors group-hover:text-primary"
-          />
-          {!compact && (
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-sm font-bold leading-none tracking-tight text-base-content">
-                {t('app.name')}
-              </span>
-              <span className="mt-0.5 truncate text-[10px] font-medium text-base-content/55 group-hover:text-base-content/75">
-                <span className="hidden sm:inline">{activeLabel}</span>
-                <span className="sm:hidden">{activeShort}</span>
-              </span>
-            </span>
-          )}
-          {!compact && (
-            <span className="text-[10px] opacity-50 transition-opacity group-hover:opacity-100">
-              ▼
-            </span>
-          )}
-        </button>
-        <LiquidSurface
-          liquidRole="overlay"
-          className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-56 rounded-box shadow-lg"
-        >
-          <ul tabIndex={0} className="menu w-full p-2">
-            {games.map((game: GameConfig) => {
-              const isActive = activeGame?.id === game.id;
-
-              return (
-                <li key={game.id}>
-                  <button
-                    onClick={() => handleGameSelection(game)}
-                    disabled={isSwitching}
-                    className={`hover:bg-base-content/10 ${
-                      isActive ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
-                    }`}
-                  >
-                    <span>{game.name}</span>
-                    {isActive &&
-                      (activeActivation?.phase === 'failed' ||
-                        activeActivation?.phase === 'source_unavailable') && (
-                        <span className="ml-auto text-xs font-medium text-warning">
-                          {t('game_selector.retry')}
-                        </span>
-                      )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </LiquidSurface>
-      </div>
-
-      <dialog
-        ref={indexingDialogRef}
-        className="modal"
-        aria-labelledby={dialogTitleId}
-        aria-describedby={dialogDescriptionId}
-        onCancel={(event) => {
-          event.preventDefault();
-          setPendingGame(null);
-        }}
-        onClose={() => setPendingGame(null)}
+    <div className="dropdown dropdown-bottom">
+      <button
+        type="button"
+        className={
+          compact
+            ? 'btn btn-ghost btn-sm btn-square text-base-content/75 hover:text-base-content'
+            : 'group flex min-w-36 max-w-52 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-base-content/75 transition-[background-color,color] duration-150 hover:bg-base-content/5 hover:text-base-content md:px-3'
+        }
+        aria-label={t('game_selector.select_game')}
       >
-        <div className="modal-box max-w-sm border border-base-content/10 bg-base-100 p-6 shadow-xl">
-          <div className="flex items-start gap-3">
-            {statusUnavailable ? (
-              <AlertCircle size={20} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
-            ) : (
-              <Loader2
-                size={20}
-                className="mt-0.5 shrink-0 animate-spin text-primary motion-reduce:animate-none"
-                aria-hidden="true"
-              />
-            )}
-            <div className="min-w-0 space-y-2">
-              <h2 id={dialogTitleId} className="text-base font-semibold">
-                {dialogTitle}
-              </h2>
-              <p id={dialogDescriptionId} className="text-sm leading-6 text-base-content/70">
-                {dialogDescription}
-              </p>
-              <p
-                role="status"
-                aria-live="polite"
-                className="text-xs font-medium text-base-content/60"
-              >
-                {statusUnavailable
-                  ? t('game_selector.indexing.status_unavailable')
-                  : t(`game_selector.indexing.phase.${pendingIndexingStatus?.phase ?? 'Queued'}`)}
-              </p>
-            </div>
-          </div>
-          <div className="mt-6 flex justify-end">
-            {statusUnavailable && (
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => void refreshBackgroundStatus()}
-              >
-                {t('game_selector.indexing.retry_status')}
-              </button>
-            )}
-            <form method="dialog">
-              <button type="submit" className="btn btn-ghost btn-sm">
-                {t('game_selector.indexing.stay')}
-              </button>
-            </form>
-          </div>
-        </div>
-        <form method="dialog" className="modal-backdrop">
-          <button type="submit" aria-label={t('game_selector.indexing.stay')}>
-            {t('game_selector.indexing.stay')}
-          </button>
-        </form>
-      </dialog>
-    </>
+        <Gamepad2
+          size={15}
+          className="shrink-0 text-base-content/45 transition-colors group-hover:text-primary"
+        />
+        {!compact && (
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-sm font-bold leading-none tracking-tight text-base-content">
+              {t('app.name')}
+            </span>
+            <span className="mt-0.5 truncate text-[10px] font-medium text-base-content/55 group-hover:text-base-content/75">
+              <span className="hidden sm:inline">{activeLabel}</span>
+              <span className="sm:hidden">{activeShort}</span>
+            </span>
+          </span>
+        )}
+        {!compact && (
+          <span className="text-[10px] opacity-50 transition-opacity group-hover:opacity-100">
+            ▼
+          </span>
+        )}
+      </button>
+      <LiquidSurface
+        liquidRole="overlay"
+        className="dropdown-content z-[var(--workspace-layer-popover)] mt-2 w-56 rounded-box shadow-lg"
+      >
+        <ul tabIndex={0} className="menu w-full p-2">
+          {games.map((game) => {
+            const isSelected = selectedGameId === game.id;
+            const canRetry =
+              game.id === activeGame?.id &&
+              (activeActivation?.phase === 'failed' ||
+                activeActivation?.phase === 'source_unavailable');
+
+            return (
+              <li key={game.id}>
+                <button
+                  type="button"
+                  onClick={() => handleGameSelection(game)}
+                  className={`hover:bg-base-content/10 ${
+                    isSelected ? 'text-primary font-bold bg-primary/10' : 'text-base-content/70'
+                  }`}
+                >
+                  <span>{game.name}</span>
+                  {canRetry && (
+                    <span className="ml-auto text-xs font-medium text-warning">
+                      {t('game_selector.retry')}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </LiquidSurface>
+    </div>
   );
 }

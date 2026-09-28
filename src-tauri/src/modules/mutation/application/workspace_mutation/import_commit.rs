@@ -242,6 +242,7 @@ pub async fn commit_import_batch(
         .game_lock(&batch.game_id)
         .lock_owned()
         .await;
+    disk_reconcile_state.ensure_core_ready_for_mutation(&batch.game_id)?;
     let operation_guard = operation_lock
         .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
             "import-commit",
@@ -259,10 +260,12 @@ pub async fn commit_import_batch(
                 .collect(),
         ))
         .await?;
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+        disk_reconcile_state.inner(),
+        &batch.game_id,
         game_guard,
         operation_guard,
-    );
+    )?;
     let target_manifest_index = app
         .try_state::<crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>()
         .ok_or_else(|| AppError::Internal("TargetManifestIndexState is unavailable".to_string()))?;

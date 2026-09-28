@@ -5,7 +5,7 @@ use crate::shared::errors::AppError;
 use secrecy::ExposeSecret;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 fn emit_game_activation_status(
     app: &tauri::AppHandle,
@@ -115,8 +115,10 @@ pub async fn get_settings(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
 ) -> Result<AppSettings, AppError> {
-    let _activation_guard = disk_reconcile_state.activation_guard().await;
-    let settings = state.get_settings();
+    let settings = {
+        let _activation_guard = disk_reconcile_state.activation_guard().await;
+        state.get_settings()
+    };
     if let Some(game) = settings
         .active_game()
         .filter(|game| !game.mod_path.as_os_str().is_empty())
@@ -148,6 +150,9 @@ pub async fn get_settings(
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
                 error,
             ) => {
+                if state.get_settings().active_game_id.as_deref() != Some(game.id.as_str()) {
+                    return Ok(state.get_settings());
+                }
                 return Err(AppError::Io(format!(
                     "Disk recovery failed before settings hydration: {error}"
                 )));
@@ -294,7 +299,11 @@ pub async fn set_active_game(
         GameActivationPhase, GameActivationResult, GameActivationStatus,
     };
 
+    let intent = disk_reconcile_state.reserve_activation_intent();
     let _activation_guard = disk_reconcile_state.activation_guard().await;
+    if !disk_reconcile_state.activation_intent_is_current(intent) {
+        return Err(AppError::Cancelled);
+    }
     let settings_snapshot = state.get_settings();
     let previous_game = settings_snapshot.active_game().cloned();
     let target_game = game_id
@@ -383,6 +392,8 @@ pub async fn set_active_game(
         });
     };
     let game = target_game.expect("validated Some game id has a game");
+    app.state::<crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingIndexingSessionStore>()
+        .promote_game(&game_id);
     disk_reconcile_state.reset_initial_recovery(&game_id);
     let recovery_generation = disk_reconcile_state.mark_initial_recovery_pending(&game_id);
     let syncing = GameActivationStatus {

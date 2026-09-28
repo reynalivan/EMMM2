@@ -451,15 +451,30 @@ fn parse_include_recursive_roots(config: &str) -> Vec<String> {
     roots
 }
 
-fn has_ini_assignment(content: &str, expected_key: &str, expected_value: &str) -> bool {
-    content.lines().any(|raw_line| {
-        let line = strip_ini_comment(raw_line);
-        let Some((key, value)) = line.split_once('=') else {
-            return false;
-        };
-        key.trim().eq_ignore_ascii_case(expected_key)
-            && value.trim().eq_ignore_ascii_case(expected_value)
+fn ascii_ini_assignments(content: &[u8]) -> impl Iterator<Item = (&[u8], &[u8])> {
+    content.split(|byte| *byte == b'\n').filter_map(|raw_line| {
+        let line = raw_line
+            .split(|byte| *byte == b';' || *byte == b'#')
+            .next()?
+            .trim_ascii();
+        let separator = line.iter().position(|byte| *byte == b'=')?;
+        Some((
+            line[..separator].trim_ascii(),
+            line[separator + 1..].trim_ascii(),
+        ))
     })
+}
+
+fn has_ini_assignment(content: &[u8], expected_key: &[u8], expected_value: &[u8]) -> bool {
+    ascii_ini_assignments(content).any(|(key, value)| {
+        key.eq_ignore_ascii_case(expected_key) && value.eq_ignore_ascii_case(expected_value)
+    })
+}
+
+fn contains_ascii_case_insensitive(content: &[u8], expected: &[u8]) -> bool {
+    content
+        .windows(expected.len())
+        .any(|window| window.eq_ignore_ascii_case(expected))
 }
 
 fn canonical_or_original(path: &Path) -> PathBuf {
@@ -690,29 +705,25 @@ fn read_runtime_preflight_uncached(
                     .to_string(),
             ));
         }
-        let content = std::fs::read_to_string(entry.path()).map_err(|error| {
+        let content = std::fs::read(entry.path()).map_err(|error| {
             AppError::Io(format!(
                 "Could not read importer configuration {}: {error}",
                 entry.path().display()
             ))
         })?;
-        let lower = content.to_ascii_lowercase();
-        if has_ini_assignment(&content, "namespace", expected_namespace)
-            && lower.contains("resourcetext")
-            && lower.contains("resourcetextparams")
-            && lower.contains("commandlistprinttext")
+        if has_ini_assignment(&content, b"namespace", expected_namespace.as_bytes())
+            && contains_ascii_case_insensitive(&content, b"resourcetext")
+            && contains_ascii_case_insensitive(&content, b"resourcetextparams")
+            && contains_ascii_case_insensitive(&content, b"commandlistprinttext")
         {
             renderer_available = true;
         }
-        for line in lower.lines() {
-            let line = strip_ini_comment(line);
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            if key.trim().eq_ignore_ascii_case("checktextureoverride") {
-                let slot = value.trim().to_ascii_lowercase();
-                if !slot.is_empty() {
-                    callback_slots.insert(slot);
+        for (key, value) in ascii_ini_assignments(&content) {
+            if key.eq_ignore_ascii_case(b"checktextureoverride") {
+                if let Ok(slot) = std::str::from_utf8(value) {
+                    if !slot.is_empty() {
+                        callback_slots.insert(slot.to_ascii_lowercase());
+                    }
                 }
             }
         }
@@ -5303,6 +5314,41 @@ mod tests {
         assert!(preflight.renderer_available);
         assert!(preflight.callback_slots.contains("vb0"));
         assert!(preflight.callback_slots.contains("ps-t1"));
+    }
+
+    #[test]
+    fn preflight_reads_ascii_directives_from_non_utf8_importer_ini() {
+        let temp = TempDir::new().unwrap();
+        let mods = temp.path().join("Mods");
+        let core = temp.path().join("Core");
+        std::fs::create_dir_all(&mods).unwrap();
+        std::fs::create_dir_all(&core).unwrap();
+        std::fs::write(
+            temp.path().join("d3dx.ini"),
+            "[Include]\ninclude_recursive = Mods\n",
+        )
+        .unwrap();
+        std::fs::write(
+            core.join("renderer.ini"),
+            "namespace = GIMIv8\nResourceText = null\nResourceTextParams = null\n[CommandListPrintText]\nchecktextureoverride = vb0\n",
+        )
+        .unwrap();
+        let user_ini = temp.path().join("d3dx_user.ini");
+        let user_bytes =
+            b"$\\mods\\rosaria\\imp\xEDa\\merged.ini\\swapvar = 1\nchecktextureoverride = ps-t1\n";
+        std::fs::write(&user_ini, user_bytes).unwrap();
+
+        let preflight = read_runtime_preflight(
+            temp.path(),
+            &mods,
+            crate::modules::games::domain::models::GameType::GIMI,
+        )
+        .unwrap();
+
+        assert!(preflight.renderer_available);
+        assert!(preflight.callback_slots.contains("vb0"));
+        assert!(preflight.callback_slots.contains("ps-t1"));
+        assert_eq!(std::fs::read(user_ini).unwrap(), user_bytes);
     }
 
     #[test]

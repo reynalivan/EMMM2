@@ -49,12 +49,22 @@
       "activation": {
         "title": "Mengindeks {{game}}",
         "description": "Memeriksa library game ini sebelum dibuka.",
+        "failed_title": "Gagal mengindeks {{game}}",
+        "failed_description": "Library game ini belum siap. Periksa masalahnya lalu coba lagi, atau pilih game lain.",
+        "source_unavailable_description": "Folder mod tidak tersedia. Periksa lokasinya lalu coba lagi, atau pilih game lain.",
         "progress_label": "Progres pengindeksan",
         "folders_complete": "{{completed}} dari {{total}} folder",
+        "folders_classified": "{{count}} folder diklasifikasi",
         "preparing": "Menyiapkan pemeriksaan penuh",
         "scanning_root": "Memindai {{root}}",
         "scanning_without_root": "Memindai folder mod",
         "current_root": "Folder saat ini: {{root}}",
+        "snapshot_phase": {
+          "Metadata": "Membaca folder mod",
+          "Classifying": "Mengklasifikasi folder mod",
+          "Ready": "Menyiapkan pembaruan library",
+          "Rechecking": "Memeriksa folder yang berubah saat pengindeksan"
+        },
         "phase": {
           "DiscoveringRoots": "Mencari folder mod",
           "Projecting": "Memperbarui library",

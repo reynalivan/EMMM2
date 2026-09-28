@@ -26,6 +26,7 @@ pub async fn update_mod_thumbnail(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([folder.as_ref()]);
     let abs_path = metadata::update_mod_thumbnail(&folder, &source_path)?;
     drop(lock);
@@ -55,6 +56,7 @@ pub async fn paste_thumbnail(
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([folder.as_ref()]);
     let saved_path =
         paste_thumbnail_inner(&config, game_id.clone(), folder_path, image_data).await?;

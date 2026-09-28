@@ -1,16 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
-import type { OnboardingIndexingBackgroundGameStatus } from '@/shared/api/tauri/bindings';
+import { useAppStore } from '@/app/store';
 import GameSelector from './GameSelector';
-
-const mockBackgroundIndexingState = vi.hoisted(() => ({
-  isLoaded: true,
-  loadError: false,
-  sessions: [],
-  gamesById: new Map<string, OnboardingIndexingBackgroundGameStatus>(),
-  refresh: vi.fn().mockResolvedValue(undefined),
-}));
 
 vi.mock('@/shared/ui/liquid', () => ({
   LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -58,15 +50,13 @@ vi.mock('@/features/workspace-runtime', () => ({
   useGameSwitch: () => ({
     switchGame: mockSwitchGame,
   }),
-  useBackgroundIndexingStatus: () => mockBackgroundIndexingState,
 }));
 
 describe('GameSelector', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockBackgroundIndexingState.isLoaded = true;
-    mockBackgroundIndexingState.loadError = false;
-    mockBackgroundIndexingState.gamesById.clear();
+    mockSwitchGame.mockReset();
+    mockSwitchGame.mockResolvedValue(undefined);
+    useAppStore.setState({ requestedGameId: null, gameActivationByGame: {} });
   });
 
   it('combines the app identity with the active game label', () => {
@@ -92,66 +82,40 @@ describe('GameSelector', () => {
     await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
   });
 
-  it('shows loading while the selected game is indexing', async () => {
-    let finishSwitch: () => void = () => undefined;
-    mockSwitchGame.mockReturnValue(
-      new Promise<void>((resolve) => {
-        finishSwitch = resolve;
-      }),
-    );
-
+  it('starts activation immediately even when background indexing is still running', async () => {
     render(<GameSelector />);
     fireEvent.click(screen.getByText('Star Rail'));
-
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
-
-    finishSwitch();
-    await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
-  });
-
-  it('waits for background indexing before switching to a queued game', async () => {
-    mockBackgroundIndexingState.gamesById.set('uuid-srmi', {
-      game_id: 'uuid-srmi',
-      phase: 'Preparing',
-    });
-    const { rerender } = render(<GameSelector />);
-
-    fireEvent.click(screen.getByText('Star Rail'));
-    expect(mockSwitchGame).not.toHaveBeenCalled();
-    expect(screen.getByText('Star Rail is still indexing')).toBeInTheDocument();
-
-    mockBackgroundIndexingState.gamesById.set('uuid-srmi', {
-      game_id: 'uuid-srmi',
-      phase: 'Ready',
-    });
-    rerender(<GameSelector />);
-
     await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('starts a full recheck immediately when background indexing needs attention', async () => {
-    mockBackgroundIndexingState.gamesById.set('uuid-srmi', {
-      game_id: 'uuid-srmi',
-      phase: 'NeedsAttention',
+  it('allows the latest selection while a previous activation is pending', async () => {
+    mockSwitchGame.mockImplementation((gameId: string) => {
+      useAppStore.setState({ requestedGameId: gameId });
+      return new Promise<void>(() => undefined);
     });
     render(<GameSelector />);
-
     fireEvent.click(screen.getByText('Star Rail'));
-
-    await waitFor(() => expect(mockSwitchGame).toHaveBeenCalledWith('uuid-srmi'));
-    expect(screen.queryByText('Star Rail needs attention')).toBeNull();
+    const gimiLabels = screen.getAllByText('GIMI');
+    fireEvent.click(gimiLabels[gimiLabels.length - 1]);
+    expect(mockSwitchGame.mock.calls.map(([gameId]) => gameId)).toEqual(['uuid-srmi', 'uuid-gimi']);
   });
 
-  it('does not switch when indexing status cannot be verified', () => {
-    mockBackgroundIndexingState.loadError = true;
+  it('retries activation for an active game that failed indexing', async () => {
+    useAppStore.setState({
+      gameActivationByGame: {
+        'uuid-gimi': {
+          game_id: 'uuid-gimi',
+          generation: 1,
+          phase: 'failed',
+          reconcile_revision: null,
+          runtime_sync_generation: null,
+          error: 'Indexing failed',
+        },
+      },
+    });
     render(<GameSelector />);
-
-    fireEvent.click(screen.getByText('Star Rail'));
-
-    expect(mockSwitchGame).not.toHaveBeenCalled();
-    expect(screen.getByText('Cannot verify Star Rail yet')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Check again'));
-    expect(mockBackgroundIndexingState.refresh).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByText('Retry'));
+    expect(mockSwitchGame).toHaveBeenCalledWith('uuid-gimi');
   });
 });

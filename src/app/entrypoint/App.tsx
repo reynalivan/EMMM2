@@ -198,6 +198,38 @@ function AppRouter() {
 function DashboardWorkspace() {
   const workspaceView = useAppStore((state) => state.workspaceView);
   const selectedObjectFolderPath = useAppStore((state) => state.selectedObjectFolderPath);
+  const requestedGameId = useAppStore((state) => state.requestedGameId);
+  const { activeGame, games } = useActiveGame();
+  const backgroundIndexingStatus = useBackgroundIndexingStatus();
+  const { switchGame } = useGameSwitch();
+  const selectedGame = games.find((game) => game.id === requestedGameId) ?? activeGame;
+  const activation = useAppStore((state) =>
+    selectedGame?.id ? state.gameActivationByGame[selectedGame.id] : undefined,
+  );
+  const progress = useAppStore((state) =>
+    selectedGame?.id && requestedGameId === null
+      ? (state.diskReconcileByGame[selectedGame.id]?.progress ?? null)
+      : null,
+  );
+  const phase = requestedGameId !== null ? 'syncing' : (activation?.phase ?? 'syncing');
+  const gameWorkspaceView =
+    workspaceView !== 'settings' && workspaceView !== 'browser' && workspaceView !== 'downloads';
+  const loadingPage =
+    !isDemoMode && selectedGame && gameWorkspaceView && phase !== 'ready' ? (
+      <GameIndexingOverlay
+        gameName={selectedGame.name}
+        progress={progress}
+        snapshotProgress={backgroundIndexingStatus.snapshotProgressByGame.get(selectedGame.id)}
+        backgroundPhase={backgroundIndexingStatus.gamesById.get(selectedGame.id)?.phase}
+        phase={phase}
+        error={activation?.error}
+        onRetry={() => {
+          void switchGame(selectedGame.id).catch((error: unknown) => {
+            console.error('Failed to retry game indexing', error);
+          });
+        }}
+      />
+    ) : undefined;
 
   return (
     <>
@@ -216,6 +248,7 @@ function DashboardWorkspace() {
             </>
           )
         }
+        loadingPage={loadingPage}
         dashboard={deferWorkspaceContent(<Dashboard />)}
         collections={deferWorkspaceContent(<CollectionsPage />)}
         settings={deferWorkspaceContent(<SettingsPage />)}
@@ -228,30 +261,17 @@ function DashboardWorkspace() {
         previewPanel={deferWorkspaceContent(<PreviewPanel />)}
         explorerEmptyState={deferWorkspaceContent(<ExplorerEmptyState />)}
       />
-      <GameActivationIndexingOverlay />
     </>
   );
 }
 
-function GameActivationIndexingOverlay() {
-  const { activeGame } = useActiveGame();
-  const activation = useAppStore((state) =>
-    activeGame?.id ? state.gameActivationByGame[activeGame.id] : undefined,
-  );
-  const progress = useAppStore((state) =>
-    activeGame?.id ? (state.diskReconcileByGame[activeGame.id]?.progress ?? null) : null,
-  );
-
-  if (!activeGame || activation?.phase !== 'syncing') {
-    return null;
-  }
-
-  return <GameIndexingOverlay gameName={activeGame.name} progress={progress} />;
-}
-
 import { ToastContainer } from '@/shared/ui/toast';
 import { FileInUseDialog } from '@/features/file-watcher';
-import { WorkspaceParentEnableDialogHost } from '@/features/workspace-runtime';
+import {
+  WorkspaceParentEnableDialogHost,
+  useBackgroundIndexingStatus,
+  useGameSwitch,
+} from '@/features/workspace-runtime';
 
 export default function App() {
   useThemeRuntime();

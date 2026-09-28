@@ -805,6 +805,17 @@ pub fn collect_onboarding_disk_discovery_with_progress(
     mods_path: &Path,
     progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<OnboardingDiskDiscovery> {
+    collect_onboarding_disk_discovery_with_progress_and_gate(mods_path, progress, None)
+}
+
+/// The gate is held only while a small batch of roots is classified. This
+/// lets another game's foreground scan take over without discarding roots
+/// that were already completed.
+pub fn collect_onboarding_disk_discovery_with_progress_and_gate(
+    mods_path: &Path,
+    progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
+    gate: Option<&(dyn Fn() -> DiskProjectionResult<Box<dyn Send>> + Send + Sync)>,
+) -> DiskProjectionResult<OnboardingDiskDiscovery> {
     if !mods_path.exists() || !mods_path.is_dir() {
         return Err(DiskProjectionError::SourceUnavailable(format!(
             "Disk Reconcile mods path is unavailable: {}",
@@ -837,25 +848,33 @@ pub fn collect_onboarding_disk_discovery_with_progress(
 
     let completed_roots = AtomicUsize::new(0);
     let classified_directories = AtomicUsize::new(0);
-    let roots = top_level_paths
-        .par_iter()
-        .map(|root_path| {
-            let root =
-                collect_onboarding_root_discovery(mods_path, root_path, &classified_directories)?;
-            let completed = completed_roots.fetch_add(1, Ordering::Relaxed) + 1;
-            if let Some(progress) = progress {
-                progress(OnboardingDiscoveryProgress {
-                    phase: OnboardingDiscoveryPhase::Classifying,
-                    completed_roots: completed,
-                    total_roots,
-                    folders_classified: classified_directories.load(Ordering::Relaxed),
-                    current_root: Some(runtime_dir_name(root_path)),
-                    is_terminal: completed == total_roots,
-                });
-            }
-            Ok(root)
-        })
-        .collect::<DiskProjectionResult<Vec<_>>>()?;
+    let mut roots = Vec::with_capacity(total_roots);
+    for batch in top_level_paths.chunks(8) {
+        let _permit = gate.map(|acquire| acquire()).transpose()?;
+        let scanned = batch
+            .par_iter()
+            .map(|root_path| {
+                let root = collect_onboarding_root_discovery(
+                    mods_path,
+                    root_path,
+                    &classified_directories,
+                )?;
+                let completed = completed_roots.fetch_add(1, Ordering::Relaxed) + 1;
+                if let Some(progress) = progress {
+                    progress(OnboardingDiscoveryProgress {
+                        phase: OnboardingDiscoveryPhase::Classifying,
+                        completed_roots: completed,
+                        total_roots,
+                        folders_classified: classified_directories.load(Ordering::Relaxed),
+                        current_root: Some(runtime_dir_name(root_path)),
+                        is_terminal: completed == total_roots,
+                    });
+                }
+                Ok(root)
+            })
+            .collect::<DiskProjectionResult<Vec<_>>>()?;
+        roots.extend(scanned);
+    }
 
     let mut census_entries = Vec::new();
     let mut projection = DiskProjection::default();

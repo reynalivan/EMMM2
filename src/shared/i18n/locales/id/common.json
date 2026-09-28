@@ -125,6 +125,7 @@
     }
   },
   "reconcile": {
+    "authority_pending": "Perubahan disk sudah diterapkan, tetapi validasi indexing masih tertunda.",
     "runtime_effects_pending": "Perubahan disk sudah diterapkan, tetapi pembaruan runtime masih tertunda.",
     "runtime_syncing": "Memperbarui runtime game…",
     "runtime_sync_failed": "Pembaruan runtime gagal",
