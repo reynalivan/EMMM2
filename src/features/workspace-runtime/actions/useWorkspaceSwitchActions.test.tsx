@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '@/app/store';
+import { toast } from '@/shared/ui/toast';
 import type {
   WorkspaceParentEnableRequirement,
   WorkspaceSwitchInput,
@@ -20,6 +21,7 @@ import { recordWorkspaceProjectedRevision } from './workspaceSwitchOps';
 const executeWorkspaceSwitch = vi.fn();
 const getWorkspaceSwitchSnapshot = vi.fn();
 const admitWorkspaceSwitchIntent = vi.fn().mockResolvedValue(true);
+const successToast = vi.spyOn(toast, 'success').mockReturnValue('toast-id');
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {
@@ -220,6 +222,37 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     });
   });
 
+  it('shows success after a confirmed parent enable has a disk receipt', async () => {
+    executeWorkspaceSwitch.mockResolvedValue({
+      ...appliedSwitchResult('E:/Mods/Group/Alice'),
+      disk_revision: 0,
+    });
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    await act(async () => {
+      await result.current.resolveParentEnable();
+    });
+
+    await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Enabled: Alice'));
+  });
+
+  it.each(['resolveDuplicateForceEnable', 'resolveDuplicateEnableOnly'] as const)(
+    'shows success after %s commits the folder to disk',
+    async (action) => {
+      executeWorkspaceSwitch.mockResolvedValue({
+        ...appliedSwitchResult('E:/Mods/A'),
+        disk_revision: 0,
+      });
+      const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+      await act(async () => {
+        await result.current[action]({ path: 'E:/Mods/DISABLED A' });
+      });
+
+      await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Enabled: A'));
+    },
+  );
+
   it('does not reopen an old game dialog after a rapid game switch', async () => {
     let complete: ((value: Partial<WorkspaceSwitchResult>) => void) | undefined;
     executeWorkspaceSwitch.mockReturnValue(
@@ -301,6 +334,69 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       });
       await pending;
     });
+  });
+
+  it('shows folder success only after the backend returns a disk receipt', async () => {
+    let complete!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch.mockReturnValue(
+      new Promise<WorkspaceSwitchResult>((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/DISABLED A',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    let switching!: Promise<string | null>;
+    act(() => {
+      switching = result.current.setNodeEnabled(node, true, 'folder_grid');
+    });
+    expect(successToast).not.toHaveBeenCalled();
+
+    await act(async () => {
+      complete({ ...appliedSwitchResult('E:/Mods/A'), disk_revision: 0 });
+      await switching;
+    });
+    await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Enabled: A'));
+  });
+
+  it('does not show folder success for a no-op without a disk rename', async () => {
+    executeWorkspaceSwitch.mockResolvedValue({
+      ...appliedSwitchResult('E:/Mods/A'),
+      status: 'noop',
+    });
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/A',
+      switch_state: 'enabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    await act(async () => {
+      await result.current.setNodeEnabled(node, true, 'folder_grid');
+    });
+    expect(successToast).not.toHaveBeenCalled();
+  });
+
+  it('does not show folder success without a verified disk revision', async () => {
+    executeWorkspaceSwitch.mockResolvedValue(appliedSwitchResult('E:/Mods/A'));
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'mod-a',
+      path: 'E:/Mods/DISABLED A',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    await act(async () => {
+      await result.current.setNodeEnabled(node, true, 'folder_grid');
+    });
+    expect(successToast).not.toHaveBeenCalled();
   });
 
   it('shows each latest toggle immediately while the native switch is in flight', async () => {
@@ -434,7 +530,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
           completeFirst = resolve;
         }),
       )
-      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/A'));
+      .mockResolvedValueOnce({ ...appliedSwitchResult('E:/Mods/A'), disk_revision: 0 });
     const node = {
       node_kind: 'terminal_mod',
       id: 'mod-a',
@@ -466,7 +562,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     );
 
     await act(async () => {
-      completeFirst(appliedSwitchResult('E:/Mods/A'));
+      completeFirst({ ...appliedSwitchResult('E:/Mods/A'), disk_revision: 0 });
       await expect(Promise.all([first, second, third])).resolves.toEqual([
         'E:/Mods/A',
         'E:/Mods/A',
@@ -475,6 +571,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     });
 
     expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Enabled: A'));
   });
 
   it('coalesces a thousand alternating clicks into one running and one latest operation', async () => {
@@ -524,7 +621,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
             completeFirst = resolve;
           }),
       )
-      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+      .mockResolvedValueOnce({ ...appliedSwitchResult('E:/Mods/DISABLED A'), disk_revision: 0 });
     const node = {
       node_kind: 'terminal_mod',
       id: 'mod-a',
@@ -543,7 +640,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
 
     await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
     await act(async () => {
-      completeFirst(appliedSwitchResult('E:/Mods/A'));
+      completeFirst({ ...appliedSwitchResult('E:/Mods/A'), disk_revision: 0 });
       await waitFor(() => {
         expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
       });
@@ -557,6 +654,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       expect.objectContaining({ desired_enabled: false }),
       expect.any(Number),
     );
+    await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Disabled: A'));
   });
 
   it('does not show a duplicate notice for a superseded enable intent', async () => {
@@ -704,7 +802,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
             completeFirst = resolve;
           }),
       )
-      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+      .mockResolvedValueOnce({ ...appliedSwitchResult('E:/Mods/DISABLED A'), disk_revision: 0 });
     const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
 
     let first!: Promise<string | null>;
@@ -716,7 +814,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
 
     await act(async () => {
-      completeFirst(appliedSwitchResult('E:/Mods/A'));
+      completeFirst({ ...appliedSwitchResult('E:/Mods/A'), disk_revision: 0 });
       await Promise.all([first, second]);
     });
     expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.target.value)).toEqual([
@@ -727,6 +825,42 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       true,
       false,
     ]);
+    await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Disabled: A'));
+  });
+
+  it('summarizes rapid disk-verified switches without one toast per commit', async () => {
+    executeWorkspaceSwitch
+      .mockResolvedValueOnce({ ...appliedSwitchResult('E:/Mods/A'), disk_revision: 1 })
+      .mockResolvedValueOnce({ ...appliedSwitchResult('E:/Mods/B'), disk_revision: 2 })
+      .mockResolvedValueOnce({ ...appliedSwitchResult('E:/Mods/DISABLED A'), disk_revision: 3 });
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    await act(async () => {
+      await result.current.setFolderPathEnabled('E:/Mods/DISABLED A', true);
+      await result.current.setFolderPathEnabled('E:/Mods/DISABLED B', true);
+      await result.current.setFolderPathEnabled('E:/Mods/A', false);
+    });
+
+    expect(successToast).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(successToast).toHaveBeenCalledExactlyOnceWith('Updated: A, B');
+    });
+  });
+
+  it('does not show a delayed switch success after changing games', async () => {
+    executeWorkspaceSwitch.mockResolvedValue({
+      ...appliedSwitchResult('E:/Mods/A'),
+      disk_revision: 1,
+    });
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+    await act(async () => {
+      await result.current.setFolderPathEnabled('E:/Mods/DISABLED A', true);
+    });
+    useAppStore.setState({ activeGameId: 'game-2' });
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(successToast).not.toHaveBeenCalled();
   });
 
   it('enables a conflicting mod before opening an informational warning', async () => {

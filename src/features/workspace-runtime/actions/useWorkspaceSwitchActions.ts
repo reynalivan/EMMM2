@@ -9,9 +9,11 @@ import type {
   WorkspaceNode,
   WorkspaceObjectNode,
   WorkspaceSwitchInput,
+  WorkspaceSwitchResult,
 } from '@/entities/workspace';
 import type { ModFolder } from '@/entities/game-object';
 import { identityPathKey } from '@/shared/lib/pathKey';
+import { formatBulkSuccessMessage } from '@/shared/lib/hooks/bulkToastMessages';
 import {
   dispatchWorkspaceRuntimeEvent,
   getWorkspaceRuntimeState,
@@ -38,6 +40,65 @@ function dialogFolder(
   const segments = path.replace(/\\/g, '/').split('/').filter(Boolean);
   const fallbackName = segments[segments.length - 1] ?? path;
   return { id, path, name: name ?? fallbackName };
+}
+
+const FOLDER_SUCCESS_TOAST_SETTLE_MS = 500;
+
+interface PendingFolderSuccessToast {
+  gameId: string;
+  changes: Map<string, { path: string; enabled: boolean }>;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+let pendingFolderSuccessToast: PendingFolderSuccessToast | null = null;
+
+function showFolderDiskCommitToast(
+  gameId: string,
+  result: WorkspaceSwitchResult,
+  enabled: boolean,
+  notify = true,
+) {
+  if (
+    !notify ||
+    result.status !== 'applied' ||
+    typeof result.disk_revision !== 'number' ||
+    !result.primary_path
+  ) {
+    return;
+  }
+
+  if (pendingFolderSuccessToast && pendingFolderSuccessToast.gameId !== gameId) {
+    clearTimeout(pendingFolderSuccessToast.timer);
+    pendingFolderSuccessToast = null;
+  }
+  const changes =
+    pendingFolderSuccessToast?.changes ?? new Map<string, { path: string; enabled: boolean }>();
+  changes.set(identityPathKey(result.primary_path) ?? result.primary_path, {
+    path: result.primary_path,
+    enabled,
+  });
+  if (pendingFolderSuccessToast) {
+    clearTimeout(pendingFolderSuccessToast.timer);
+  }
+  const timer = setTimeout(() => {
+    if (pendingFolderSuccessToast?.timer !== timer) return;
+    pendingFolderSuccessToast = null;
+    if (!isWorkspaceGameCurrent(gameId)) return;
+
+    const committed = [...changes.values()];
+    const action = committed.every((change) => change.enabled)
+      ? 'enabled'
+      : committed.every((change) => !change.enabled)
+        ? 'disabled'
+        : 'updated';
+    toast.success(
+      formatBulkSuccessMessage(
+        committed.map((change) => change.path),
+        action,
+      ),
+    );
+  }, FOLDER_SUCCESS_TOAST_SETTLE_MS);
+  pendingFolderSuccessToast = { gameId, changes, timer };
 }
 
 interface WorkspaceNodeSwitchOptions extends WorkspaceSwitchEffectsOptions {
@@ -303,11 +364,13 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
+      const shouldNotifyResult = options?.shouldNotifyResult?.() !== false;
+      showFolderDiskCommitToast(activeGame.id, result, desiredEnabled, shouldNotifyResult);
       const settled = applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
         ...options,
         gameId: activeGame.id,
       });
-      if (result.duplicates.length > 0 && options?.shouldNotifyResult?.() !== false) {
+      if (result.duplicates.length > 0 && shouldNotifyResult) {
         dispatchWorkspaceRuntimeEvent({
           type: 'DIALOG_OPENED',
           dialog: {
@@ -647,6 +710,7 @@ export function useWorkspaceSwitchActions() {
             }
 
             clearDesiredAfterRefresh = true;
+            showFolderDiskCommitToast(gameId, result, requestedEnabled);
             const settled = applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
               gameId,
             });
@@ -727,6 +791,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
+      showFolderDiskCommitToast(activeGame.id, result, true);
       applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
         gameId: activeGame.id,
       });
@@ -778,6 +843,7 @@ export function useWorkspaceSwitchActions() {
         return null;
       }
 
+      showFolderDiskCommitToast(activeGame.id, result, true);
       applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
         gameId: activeGame.id,
       });
@@ -834,6 +900,7 @@ export function useWorkspaceSwitchActions() {
       return null;
     }
 
+    showFolderDiskCommitToast(activeGame.id, result, true);
     applyWorkspaceSwitchEffects(queryClient, result, 'folderSwitch', {
       gameId: activeGame.id,
     });
