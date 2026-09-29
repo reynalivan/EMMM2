@@ -174,6 +174,7 @@ pub struct DiskReconcileRequest {
     /// change publishes only after its replacement watcher is active.
     pub(super) defer_overlay_sync: bool,
     pub(super) precomputed_discovery: Option<DiskScopedDiscovery>,
+    pub(super) initial_recovery_generation: Option<u64>,
 }
 
 fn watcher_path_root_key(mods_path: &Path, changed_path: &str) -> Option<String> {
@@ -284,6 +285,7 @@ impl DiskReconcileRequest {
             trusted_mutation_scope: false,
             defer_overlay_sync: false,
             precomputed_discovery: None,
+            initial_recovery_generation: None,
         }
     }
 
@@ -304,6 +306,7 @@ impl DiskReconcileRequest {
             trusted_mutation_scope: false,
             defer_overlay_sync: false,
             precomputed_discovery: None,
+            initial_recovery_generation: None,
         }
     }
 
@@ -330,6 +333,7 @@ impl DiskReconcileRequest {
             // returned and released both mutation leases.
             defer_overlay_sync: true,
             precomputed_discovery: None,
+            initial_recovery_generation: None,
         }
     }
 
@@ -347,11 +351,17 @@ impl DiskReconcileRequest {
             trusted_mutation_scope: false,
             defer_overlay_sync: false,
             precomputed_discovery: None,
+            initial_recovery_generation: None,
         }
     }
 
     pub(crate) fn for_watcher_session(mut self, session: WatcherSession) -> Self {
         self.watcher_session = Some(session);
+        self
+    }
+
+    pub(crate) fn for_initial_recovery(mut self, generation: u64) -> Self {
+        self.initial_recovery_generation = Some(generation);
         self
     }
 

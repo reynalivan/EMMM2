@@ -299,3 +299,10 @@ Selesai jika first-game handoff tidak duplikasi indexing, satu readiness authori
 - Tes watcher nyata dan state terisolasi mencakup takeover clean, event terlambat yang membatalkan proof, startup reuse, prewarm yang tidak menahan activation lock, serta revisit setelah budget prewarm habis. Tes coordinator mencakup 1.000 intent cepat pada satu folder; tes bulk/konflik mencakup identity dan destination collision.
 - Validasi akhir: 1.306 tes Rust lulus (12 benchmark/manual ignored), 1.100 tes frontend lulus (1 skipped), TypeScript, ESLint, architecture lint, Vite build, Cargo check, Cargo Clippy `-D warnings`, Rust format, dan diff check lulus.
 - Validasi otomatis tidak menggantikan pengukuran click-to-paint atau disk receipt p95 di aplikasi terpasang dengan antivirus dan koleksi riil. Target numerik tersebut tetap perlu observasi pada lingkungan pengguna sebelum dinyatakan tercapai.
+
+## 9. Follow-up watcher drift dan first-action readiness (2026-09-29)
+
+- Core index yang telah berhasil diverifikasi saat onboarding tetap menjadi izin untuk menjalankan preflight repair. Hasil watcher berikutnya yang `SourceUnavailable` atau belum punya bukti authority tidak boleh menghapus izin repair; rename tetap menunggu hasil disk terbaru yang applied dan watcher bersih.
+- Event rename yang hanya membawa satu path harus mengantrekan rekonsiliasi konservatif. Observer tidak boleh menandai authority kotor tanpa ada pekerjaan yang dapat menuntaskannya.
+- Setelah reconcile watcher ditolak karena generasi berubah, sumber sementara tidak tersedia, atau error, loop harus mengejar kondisi disk terbaru tanpa menunggu rename lain dan tanpa retry tak terbatas yang memonopoli game lock.
+- Tes regresi memisahkan tiga batas: onboarding selesai → toggle pertama, event rename satu-path → batch watcher, dan hasil watcher ditolak → eventual catch-up. Tes memastikan disk tetap sumber kebenaran dan tidak ada rename oleh app ketika authority belum bersih.

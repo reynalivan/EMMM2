@@ -116,6 +116,14 @@ pub(crate) async fn reconcile_disk_state_with_authority(
     let game_lock = context.state.lock_for_game(&request.game_id);
     let _game_guard = game_lock.lock().await;
     let _operation_guard = context.operation_lock.acquire_for_reconcile().await;
+    if let Some(generation) = request.initial_recovery_generation {
+        if !context
+            .state
+            .initial_recovery_generation_is_pending(&request.game_id, generation)
+        {
+            return Err(AppError::Cancelled);
+        }
+    }
     run_reconcile_with_authority(context, request, watcher_state, mods_root).await
 }
 

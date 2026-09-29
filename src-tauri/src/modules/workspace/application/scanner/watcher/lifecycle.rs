@@ -76,6 +76,41 @@ fn no_pending_disk_commit(
     }
 }
 
+fn activation_result_is_accepted(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    suppressor: &WatcherSuppressor,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    session: &WatcherSession,
+    result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+) -> bool {
+    no_pending_disk_commit(coordinator, game_id)
+        && suppressor.pending_repair(session).is_none()
+        && watcher_result_is_current_authority(
+            state,
+            game_id,
+            mods_root,
+            session.generation(),
+            result,
+        )
+}
+
+fn activation_publication_allowed(
+    result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    validate_ready: impl FnOnce() -> bool,
+) -> bool {
+    !result.status.applied() || validate_ready()
+}
+
+fn initial_activation_waits_for_barrier(
+    activation: bool,
+    authority_pending: bool,
+    result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+) -> bool {
+    activation && authority_pending && result.status.applied()
+}
+
 fn clean_cached_activation_result(
     state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     suppressor: &WatcherSuppressor,
@@ -91,10 +126,39 @@ fn clean_cached_activation_result(
         return None;
     }
     let result = state.clean_authoritative_result(game_id, mods_root, session.generation())?;
-    suppressor
-        .pending_repair(session)
-        .is_none()
-        .then_some(result)
+    activation_result_is_accepted(
+        state,
+        suppressor,
+        coordinator,
+        game_id,
+        mods_root,
+        session,
+        &result,
+    )
+    .then_some(result)
+}
+
+fn try_clean_activation_recovery_result(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    suppressor: &WatcherSuppressor,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    session: &WatcherSession,
+) -> Option<(
+    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    crate::platform::fs::operation_lock::OpGuard,
+)> {
+    let operation_guard = coordinator.inner_lock().try_acquire_for_reconcile()?;
+    let result = clean_cached_activation_result(
+        state,
+        suppressor,
+        coordinator,
+        game_id,
+        mods_root,
+        session,
+    )?;
+    Some((result, operation_guard))
 }
 
 pub(crate) fn inactive_activation_is_ready(
@@ -223,6 +287,98 @@ fn initial_watcher_recovery_plan(
             ..
         } => (None, Vec::new(), true, observed_generation),
     }
+}
+
+#[derive(Debug)]
+struct WatcherCatchUpPlan {
+    changed_paths: Vec<String>,
+    force_full: bool,
+    observed_generation: u64,
+}
+
+/// Reconcile work still required after a watcher result could not become the
+/// authority. The plan reads the current authority generation, rather than
+/// replaying stale batch paths, so a slow rename cannot strand disk changes.
+fn pending_watcher_catch_up_plan(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    watcher_session: u64,
+) -> Option<WatcherCatchUpPlan> {
+    use crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp;
+
+    match state.authority_catch_up(game_id, mods_root, watcher_session) {
+        AuthorityCatchUp::Clean {
+            reconcile_revision,
+            observed_generation,
+        } => state
+            .authoritative_result(game_id)
+            .filter(|result| {
+                result.status.applied() && result.reconcile_revision == reconcile_revision
+            })
+            .is_none()
+            .then_some(WatcherCatchUpPlan {
+                changed_paths: Vec::new(),
+                force_full: true,
+                observed_generation,
+            }),
+        AuthorityCatchUp::Scoped {
+            changed_paths,
+            observed_generation,
+        } => Some(WatcherCatchUpPlan {
+            changed_paths,
+            force_full: false,
+            observed_generation,
+        }),
+        AuthorityCatchUp::Full {
+            observed_generation,
+        } => Some(WatcherCatchUpPlan {
+            changed_paths: Vec::new(),
+            force_full: true,
+            observed_generation,
+        }),
+    }
+}
+
+fn pending_activation_catch_up_plan(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    suppressor: &WatcherSuppressor,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    session: &WatcherSession,
+) -> Option<WatcherCatchUpPlan> {
+    if suppressor.pending_repair(session).is_some() {
+        return Some(WatcherCatchUpPlan {
+            changed_paths: Vec::new(),
+            force_full: true,
+            observed_generation: state
+                .authority_event_generation(game_id, session.generation())
+                .unwrap_or(0),
+        });
+    }
+    pending_watcher_catch_up_plan(state, game_id, mods_root, session.generation())
+}
+
+fn watcher_result_is_current_authority(
+    state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    game_id: &str,
+    mods_root: &std::path::Path,
+    watcher_session: u64,
+    result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+) -> bool {
+    result.status.applied()
+        && matches!(
+            state.authority_catch_up(game_id, mods_root, watcher_session),
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
+                reconcile_revision,
+                ..
+            } if reconcile_revision == result.reconcile_revision
+        )
+}
+
+fn authority_catch_up_backoff(retry_round: u32) -> std::time::Duration {
+    let seconds = (1_u64 << retry_round.min(5)).min(30);
+    std::time::Duration::from_secs(seconds)
 }
 
 async fn prewarm_without_activation_guard<T>(
@@ -652,24 +808,17 @@ fn enqueue_telemetry(
     }
 }
 
-fn publish_activation_result(
+fn emit_activation_result_with_current_authority(
     app: &tauri::AppHandle,
     game_id: &str,
     activation: WatcherActivation,
     result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    authority: crate::modules::reconciliation::application::disk_reconcile::orchestrator::ActivationAuthority,
 ) {
     use crate::modules::reconciliation::application::disk_reconcile::types::{
         DiskReconcileStatus, GameActivationPhase, GameActivationStatus,
     };
 
-    let state = app.state::<
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-    >();
-    let Some(authority) =
-        state.activation_authority_for_generation(game_id, activation.activation_generation)
-    else {
-        return;
-    };
     let phase = match result.status {
         DiskReconcileStatus::Applied | DiskReconcileStatus::AppliedWithFolderConflicts => {
             GameActivationPhase::Ready
@@ -678,32 +827,91 @@ fn publish_activation_result(
         DiskReconcileStatus::NeedsRenameConfirmation => GameActivationPhase::Failed,
     };
     let is_ready = matches!(phase, GameActivationPhase::Ready);
-    let runtime_authority = authority.clone();
-    let _ = authority.with_current(|| {
-        let runtime_sync_generation = is_ready.then(|| {
-            crate::modules::reconciliation::api::enqueue_runtime_sync_with_authority(
-                app,
-                app.state::<sqlx::SqlitePool>().inner(),
-                game_id,
-                crate::modules::reconciliation::api::RuntimeSyncCause::GameActivated,
-                runtime_authority,
-            )
-        });
-        let status = GameActivationStatus {
-            game_id: Some(game_id.to_string()),
-            generation: activation.activation_generation,
-            phase,
-            reconcile_revision: Some(result.reconcile_revision),
-            runtime_sync_generation,
-            error: result.error_message.clone(),
-        };
-        if let Err(error) = app.emit("game_activation:status", status) {
-            log::warn!("Could not emit game activation status: {error}");
-        }
-        if is_ready {
-            prewarm_inactive_games(app, game_id, activation.activation_generation);
-        }
+    let runtime_sync_generation = is_ready.then(|| {
+        crate::modules::reconciliation::api::enqueue_runtime_sync_with_authority(
+            app,
+            app.state::<sqlx::SqlitePool>().inner(),
+            game_id,
+            crate::modules::reconciliation::api::RuntimeSyncCause::GameActivated,
+            authority,
+        )
     });
+    let status = GameActivationStatus {
+        game_id: Some(game_id.to_string()),
+        generation: activation.activation_generation,
+        phase,
+        reconcile_revision: Some(result.reconcile_revision),
+        runtime_sync_generation,
+        error: result.error_message.clone(),
+    };
+    if let Err(error) = app.emit("game_activation:status", status) {
+        log::warn!("Could not emit game activation status: {error}");
+    }
+    if is_ready {
+        prewarm_inactive_games(app, game_id, activation.activation_generation);
+    }
+}
+
+enum RecoveredActivationPublication {
+    Published,
+    Retry,
+    Superseded,
+}
+
+fn publish_activation_outcome(
+    app: &tauri::AppHandle,
+    game_id: &str,
+    session: &WatcherSession,
+    suppressor: &WatcherSuppressor,
+    mods_root: &std::path::Path,
+    activation: WatcherActivation,
+    result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+) -> RecoveredActivationPublication {
+    if !app.state::<WatcherState>().is_current_session(session) {
+        return RecoveredActivationPublication::Superseded;
+    }
+    let state = app.state::<
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >();
+    let Some(authority) =
+        state.activation_authority_for_generation(game_id, activation.activation_generation)
+    else {
+        return RecoveredActivationPublication::Superseded;
+    };
+    let coordinator = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+    let pool = app.state::<sqlx::SqlitePool>();
+    authority.with_current(|| {
+        let validate_ready = || activation_result_is_accepted(
+            state.inner(),
+            suppressor,
+            coordinator.inner(),
+            game_id,
+            mods_root,
+            session,
+            result,
+        );
+        if !activation_publication_allowed(result, validate_ready) {
+            return RecoveredActivationPublication::Retry;
+        }
+        if !emit_reconcile_result_for_current_session(app, session, result.clone()) {
+            return RecoveredActivationPublication::Superseded;
+        }
+        if !activation_publication_allowed(result, validate_ready) {
+            return RecoveredActivationPublication::Retry;
+        }
+        state.finish_initial_recovery(
+            game_id,
+            activation.recovery_generation,
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
+                Box::new(result.clone()),
+            ),
+        );
+        settle_pending_onboarding_indexing_after_activation(app, pool.inner(), game_id, result);
+        emit_activation_result_with_current_authority(
+            app, game_id, activation, result, authority.clone(),
+        );
+        RecoveredActivationPublication::Published
+    }).unwrap_or(RecoveredActivationPublication::Superseded)
 }
 
 fn emit_activation_failure(
@@ -1206,44 +1414,44 @@ async fn process_event_loop(
     } else {
         None
     };
-    let session_recovery = if activation.is_some() {
-        match session_recovery {
-            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
-                if no_pending_disk_commit(operation_lock.inner(), &game_id)
-                    && suppressor.pending_repair(&session).is_none()
-                    && matches!(
-                        disk_reconcile_state.authority_catch_up(&game_id, mods_root, watcher_session),
-                        crate::modules::reconciliation::application::disk_reconcile::orchestrator::AuthorityCatchUp::Clean {
-                            reconcile_revision,
-                            ..
-                        } if reconcile_revision == result.reconcile_revision
-                    ) => Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)),
-            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(_)) => Err(crate::shared::errors::AppError::Io(
-                "Mods changed while indexing finished; retry to verify the disk state".to_string(),
-            )),
-            other => other,
-        }
-    } else {
-        session_recovery
-    };
+    let initial_recovery_failed = session_recovery.is_err();
+    let mut initial_authority_pending = !matches!(
+        &session_recovery,
+        Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
+            if activation_result_is_accepted(
+                disk_reconcile_state.inner(),
+                suppressor.as_ref(),
+                operation_lock.inner(),
+                &game_id,
+                mods_root,
+                &session,
+                result,
+            )
+    );
     match session_recovery {
         Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result))
             if app.state::<WatcherState>().is_current_session(&session) => {
-            if let Some(activation) = activation {
-                disk_reconcile_state.finish_initial_recovery(
+            if initial_activation_waits_for_barrier(activation.is_some(), initial_authority_pending, &result) {
+                log::debug!("Activation is waiting for the current disk and watcher authority barriers");
+            } else if let Some(activation) = activation {
+                match publish_activation_outcome(
+                    &app,
                     &game_id,
-                    activation.recovery_generation,
-                    crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
-                        Box::new(result.clone()),
-                    ),
-                );
-                settle_pending_onboarding_indexing_after_activation(&app, &pool, &game_id, &result);
-            }
-            if !emit_reconcile_result_for_current_session(&app, &session, result.clone()) {
+                    &session,
+                    suppressor.as_ref(),
+                    mods_root,
+                    activation,
+                    &result,
+                ) {
+                    RecoveredActivationPublication::Published => {}
+                    RecoveredActivationPublication::Retry => {
+                        initial_authority_pending = true;
+                        log::debug!("Activation authority changed before Ready; scheduling catch-up");
+                    }
+                    RecoveredActivationPublication::Superseded => return,
+                }
+            } else if !emit_reconcile_result_for_current_session(&app, &session, result.clone()) {
                 return;
-            }
-            if let Some(activation) = activation {
-                publish_activation_result(&app, &game_id, activation, &result);
             }
             enqueue_telemetry(
                 &app,
@@ -1316,55 +1524,192 @@ async fn process_event_loop(
 
     drop(acceptance_guard);
     drop(activation_claim_guard);
+    // A rejected projection means the disk may have changed after its input
+    // snapshot. Retry from the authority's *current* dirty set. Back off after
+    // an immediate pair, so an unavailable source cannot spin or block a
+    // foreground disk-first switch.
+    const MAX_CONSECUTIVE_AUTHORITY_CATCH_UPS: usize = 2;
+    let mut pending_catch_up = initial_authority_pending
+        .then(|| {
+            pending_activation_catch_up_plan(
+                disk_reconcile_state.inner(),
+                suppressor.as_ref(),
+                &game_id,
+                mods_root,
+                &session,
+            )
+        })
+        .flatten();
+    if initial_recovery_failed && pending_catch_up.is_none() {
+        pending_catch_up = Some(WatcherCatchUpPlan {
+            changed_paths: Vec::new(),
+            force_full: true,
+            observed_generation: disk_reconcile_state
+                .authority_event_generation(&game_id, watcher_session)
+                .unwrap_or(0),
+        });
+    }
+    let mut retry_after =
+        (activation.is_some() && initial_authority_pending && pending_catch_up.is_none())
+            .then(|| tokio::time::Instant::now() + authority_catch_up_backoff(0));
+    let mut consecutive_catch_ups = 0;
+    let mut authority_retry_round = 0;
+    let mut activation_recovery_pending = activation.is_some() && initial_authority_pending;
     loop {
-        // The debouncer already batches (one callback per debounce window and
-        // it sends its whole batch synchronously), so a recv + drain
-        // reassembles it without extra timers here.
-        let mut batch = Vec::new();
-        let Some(first_event) = rx.recv().await else {
-            break;
-        };
-        if !app.state::<WatcherState>().is_current_session(&session) {
-            break;
-        }
-        batch.push(first_event);
-        while let Ok(event) = rx.try_recv() {
-            batch.push(event);
-        }
-
-        log::debug!("Watcher flushing batched events: {}", batch.len());
-
-        // notify emits errors on Windows ReadDirectoryChangesW buffer overflow
-        // during mass renames — events were LOST, so a scoped reconcile of the
-        // known paths is not enough. Fall back to a full pass.
-        let events_lost = batch
-            .iter()
-            .any(|event| matches!(event, ModWatchEvent::Error(_)));
-        if events_lost {
-            enqueue_telemetry(
-                &app,
-                [
-                    crate::modules::system::application::telemetry::TelemetryEvent::new(
-                        crate::modules::system::application::telemetry::TelemetryOperation::Watcher,
-                        crate::modules::system::application::telemetry::TelemetryOutcome::Overflow,
-                        crate::modules::system::application::telemetry::TelemetryErrorCode::None,
-                    ),
-                ],
-            );
-        }
-        for event in &batch {
-            if let ModWatchEvent::Error(error) = event {
-                log::warn!("Watcher error for {}: {}", mods_path_root, error);
-            }
-        }
-
-        let changed_paths =
-            crate::modules::reconciliation::application::disk_reconcile::watcher_batch::collect_changed_paths(&batch);
         let disk_reconcile_state =
             app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
-        let observed_generation = disk_reconcile_state
-            .authority_event_generation(&game_id, watcher_session)
-            .unwrap_or(0);
+        let (batch, changed_paths, events_lost, force_full, observed_generation, is_retry) =
+            if let Some(plan) = pending_catch_up.take() {
+                log::debug!("Watcher retrying disk authority catch-up");
+                (
+                    Vec::new(),
+                    plan.changed_paths,
+                    false,
+                    plan.force_full,
+                    plan.observed_generation,
+                    true,
+                )
+            } else {
+                // The debouncer already batches (one callback per debounce window and
+                // it sends its whole batch synchronously), so a recv + drain
+                // reassembles it without extra timers here.
+                let first_event = if let Some(retry_at) = retry_after.take() {
+                    tokio::select! {
+                        event = rx.recv() => {
+                            let Some(event) = event else {
+                                break;
+                            };
+                            event
+                        }
+                        () = tokio::time::sleep_until(retry_at) => {
+                            if !app.state::<WatcherState>().is_current_session(&session) {
+                                break;
+                            }
+                            if let Some(plan) = pending_activation_catch_up_plan(
+                                disk_reconcile_state.inner(),
+                                suppressor.as_ref(),
+                                &game_id,
+                                mods_root,
+                                &session,
+                            ) {
+                                consecutive_catch_ups = 0;
+                                pending_catch_up = Some(plan);
+                            } else if activation_recovery_pending {
+                                let coordinator = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+                                let recovered = activation.filter(|activation| {
+                                    disk_reconcile_state.activation_is_current(
+                                        Some(&game_id),
+                                        activation.activation_generation,
+                                    )
+                                }).and_then(|activation| {
+                                    try_clean_activation_recovery_result(
+                                        disk_reconcile_state.inner(),
+                                        suppressor.as_ref(),
+                                        coordinator.inner(),
+                                        &game_id,
+                                        mods_root,
+                                        &session,
+                                    ).map(|(result, guard)| (activation, result, guard))
+                                });
+                                if let Some((activation, result, _guard)) = recovered {
+                                    match publish_activation_outcome(
+                                        &app,
+                                        &game_id,
+                                        &session,
+                                        suppressor.as_ref(),
+                                        mods_root,
+                                        activation,
+                                        &result,
+                                    ) {
+                                        RecoveredActivationPublication::Published => {
+                                            activation_recovery_pending = false;
+                                        }
+                                        RecoveredActivationPublication::Retry => {
+                                            if let Some(plan) = pending_activation_catch_up_plan(
+                                                disk_reconcile_state.inner(),
+                                                suppressor.as_ref(),
+                                                &game_id,
+                                                mods_root,
+                                                &session,
+                                            ) {
+                                                pending_catch_up = Some(plan);
+                                            } else {
+                                                retry_after = Some(
+                                                    tokio::time::Instant::now()
+                                                        + authority_catch_up_backoff(authority_retry_round),
+                                                );
+                                                authority_retry_round = authority_retry_round.saturating_add(1);
+                                            }
+                                        }
+                                        RecoveredActivationPublication::Superseded => break,
+                                    }
+                                } else {
+                                    retry_after = Some(
+                                        tokio::time::Instant::now()
+                                            + authority_catch_up_backoff(authority_retry_round),
+                                    );
+                                    authority_retry_round = authority_retry_round.saturating_add(1);
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                } else {
+                    let Some(event) = rx.recv().await else {
+                        break;
+                    };
+                    event
+                };
+                if !app.state::<WatcherState>().is_current_session(&session) {
+                    break;
+                }
+                let mut batch = vec![first_event];
+                while let Ok(event) = rx.try_recv() {
+                    batch.push(event);
+                }
+
+                log::debug!("Watcher flushing batched events: {}", batch.len());
+                consecutive_catch_ups = 0;
+                authority_retry_round = 0;
+
+                // notify emits errors on Windows ReadDirectoryChangesW buffer overflow
+                // during mass renames — events were LOST, so a scoped reconcile of the
+                // known paths is not enough. Fall back to a full pass.
+                let events_lost = batch
+                    .iter()
+                    .any(|event| matches!(event, ModWatchEvent::Error(_)));
+                if events_lost {
+                    enqueue_telemetry(
+                        &app,
+                        [
+                            crate::modules::system::application::telemetry::TelemetryEvent::new(
+                                crate::modules::system::application::telemetry::TelemetryOperation::Watcher,
+                                crate::modules::system::application::telemetry::TelemetryOutcome::Overflow,
+                                crate::modules::system::application::telemetry::TelemetryErrorCode::None,
+                            ),
+                        ],
+                    );
+                }
+                for event in &batch {
+                    if let ModWatchEvent::Error(error) = event {
+                        log::warn!("Watcher error for {}: {}", mods_path_root, error);
+                    }
+                }
+
+                let changed_paths =
+                    crate::modules::reconciliation::application::disk_reconcile::watcher_batch::collect_changed_paths(&batch);
+                let observed_generation = disk_reconcile_state
+                    .authority_event_generation(&game_id, watcher_session)
+                    .unwrap_or(0);
+                (
+                    batch,
+                    changed_paths,
+                    events_lost,
+                    false,
+                    observed_generation,
+                    false,
+                )
+            };
         let config = app.state::<crate::modules::settings::application::config::ConfigService>();
         let operation_lock =
             app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
@@ -1378,7 +1723,7 @@ async fn process_event_loop(
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileProgressReporter::new(
                     app.clone(),
                     game_id.clone(),
-                    if events_lost {
+                    if events_lost || force_full {
                         crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair
                     } else {
                         crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::WatcherBatch
@@ -1390,7 +1735,31 @@ async fn process_event_loop(
 
         // Disk Reconcile only. Watcher must never invoke the Deep Match Scanner pipeline.
         let watcher_state = app.state::<WatcherState>();
-        let result = if events_lost {
+        let result = if is_retry {
+            match crate::modules::reconciliation::application::disk_reconcile::orchestrator::try_reconcile_disk_state_for_prewarm(
+                context,
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+                    game_id.clone(),
+                    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
+                    changed_paths.clone(),
+                    force_full,
+                )
+                .defer_overlay_sync()
+                .for_watcher_session(session.clone()),
+            )
+            .await {
+                Ok(Some(result)) => Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)),
+                Ok(None) => {
+                    retry_after = Some(
+                        tokio::time::Instant::now()
+                            + authority_catch_up_backoff(authority_retry_round),
+                    );
+                    authority_retry_round = authority_retry_round.saturating_add(1);
+                    continue;
+                }
+                Err(error) => Err(error),
+            }
+        } else if events_lost || force_full {
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_for_watcher(
                 context,
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
@@ -1432,21 +1801,116 @@ async fn process_event_loop(
                 ) {
                     disk_reconcile_state
                         .reject_untrusted_reconcile(&game_id, result.reconcile_revision);
+                    if consecutive_catch_ups < MAX_CONSECUTIVE_AUTHORITY_CATCH_UPS {
+                        if let Some(plan) = pending_watcher_catch_up_plan(
+                            disk_reconcile_state.inner(),
+                            &game_id,
+                            mods_root,
+                            watcher_session,
+                        ) {
+                            consecutive_catch_ups += 1;
+                            pending_catch_up = Some(plan);
+                            continue;
+                        }
+                    }
+                    let error = "Watcher reconcile could not establish current disk authority; retrying from the current filesystem state";
+                    log::error!("{error} for {mods_path_root}");
+                    emit_event(
+                        &app,
+                        WatchEventPayload::Error {
+                            game_id: game_id.clone(),
+                            error: error.to_string(),
+                            path: Some(mods_path_root.clone()),
+                        },
+                    );
+                    if pending_watcher_catch_up_plan(
+                        disk_reconcile_state.inner(),
+                        &game_id,
+                        mods_root,
+                        watcher_session,
+                    )
+                    .is_some()
+                    {
+                        retry_after = Some(
+                            tokio::time::Instant::now()
+                                + authority_catch_up_backoff(authority_retry_round),
+                        );
+                        authority_retry_round = authority_retry_round.saturating_add(1);
+                    }
                     continue;
                 }
-                // The reconcile future returned before this point, releasing
-                // its game and operation locks. Queue only the runtime work
-                // implied by the committed projection; never await KeyViewer
-                // from the watcher loop.
-                enqueue_runtime_sync_after_watcher_reconcile(
-                    &app,
-                    &pool,
-                    &game_id,
-                    events_lost,
-                    &result,
-                );
-                if !emit_reconcile_result_for_current_session(&app, &session, result) {
-                    break;
+                let recovering_activation = activation_recovery_pending
+                    && activation.is_some_and(|activation| {
+                        disk_reconcile_state.activation_is_current(
+                            Some(&game_id),
+                            activation.activation_generation,
+                        )
+                    });
+                if recovering_activation {
+                    let coordinator = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+                    if let Some((accepted, _guard)) = try_clean_activation_recovery_result(
+                        disk_reconcile_state.inner(),
+                        suppressor.as_ref(),
+                        coordinator.inner(),
+                        &game_id,
+                        mods_root,
+                        &session,
+                    ) {
+                        match publish_activation_outcome(
+                            &app,
+                            &game_id,
+                            &session,
+                            suppressor.as_ref(),
+                            mods_root,
+                            activation.expect("current activation"),
+                            &accepted,
+                        ) {
+                            RecoveredActivationPublication::Published => {
+                                activation_recovery_pending = false;
+                            }
+                            RecoveredActivationPublication::Retry => {
+                                if let Some(plan) = pending_activation_catch_up_plan(
+                                    disk_reconcile_state.inner(),
+                                    suppressor.as_ref(),
+                                    &game_id,
+                                    mods_root,
+                                    &session,
+                                ) {
+                                    pending_catch_up = Some(plan);
+                                } else {
+                                    retry_after = Some(
+                                        tokio::time::Instant::now()
+                                            + authority_catch_up_backoff(authority_retry_round),
+                                    );
+                                    authority_retry_round = authority_retry_round.saturating_add(1);
+                                }
+                                continue;
+                            }
+                            RecoveredActivationPublication::Superseded => break,
+                        }
+                    } else {
+                        retry_after = Some(
+                            tokio::time::Instant::now()
+                                + authority_catch_up_backoff(authority_retry_round),
+                        );
+                        authority_retry_round = authority_retry_round.saturating_add(1);
+                        continue;
+                    }
+                } else {
+                    // The reconcile future returned before this point, releasing
+                    // its game and operation locks. Queue only the runtime work
+                    // implied by the committed projection; never await KeyViewer
+                    // from the watcher loop.
+                    enqueue_runtime_sync_after_watcher_reconcile(
+                        &app,
+                        &pool,
+                        &game_id,
+                        events_lost || force_full,
+                        &result,
+                    );
+                    if !emit_reconcile_result_for_current_session(&app, &session, result.clone()) {
+                        break;
+                    }
                 }
                 enqueue_telemetry(
                     &app,
@@ -1492,6 +1956,30 @@ async fn process_event_loop(
                         ),
                     ],
                 );
+                if consecutive_catch_ups < MAX_CONSECUTIVE_AUTHORITY_CATCH_UPS {
+                    if let Some(plan) = pending_watcher_catch_up_plan(
+                        disk_reconcile_state.inner(),
+                        &game_id,
+                        mods_root,
+                        watcher_session,
+                    ) {
+                        consecutive_catch_ups += 1;
+                        pending_catch_up = Some(plan);
+                    }
+                } else if pending_watcher_catch_up_plan(
+                    disk_reconcile_state.inner(),
+                    &game_id,
+                    mods_root,
+                    watcher_session,
+                )
+                .is_some()
+                {
+                    retry_after = Some(
+                        tokio::time::Instant::now()
+                            + authority_catch_up_backoff(authority_retry_round),
+                    );
+                    authority_retry_round = authority_retry_round.saturating_add(1);
+                }
             }
         }
     }
@@ -1833,6 +2321,104 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn rejected_watcher_projection_plans_current_authority_catch_up() {
+        use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods root");
+        let state = DiskReconcileState::new();
+        state.begin_authority_session("game", &root, 7);
+        state.observe_authority_event("game", 7, &root, &[root.join("Renamed")], false);
+
+        let plan = pending_watcher_catch_up_plan(&state, "game", &root, 7)
+            .expect("dirty authority must be retried without a new notify event");
+
+        assert!(plan.force_full);
+        assert!(plan.changed_paths.is_empty());
+        assert_eq!(
+            Some(plan.observed_generation),
+            state.authority_event_generation("game", 7)
+        );
+    }
+
+    #[test]
+    fn initial_dirty_authority_seeds_catch_up_without_notify_event() {
+        use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods root");
+        let state = DiskReconcileState::new();
+        state.begin_authority_session("game", &root, 7);
+
+        let plan = pending_watcher_catch_up_plan(&state, "game", &root, 7)
+            .expect("initial dirty authority must schedule a disk catch-up");
+
+        assert!(plan.force_full);
+        assert!(plan.changed_paths.is_empty());
+    }
+
+    #[test]
+    fn clean_authority_retries_after_source_becomes_unavailable() {
+        use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
+        use crate::modules::reconciliation::application::disk_reconcile::types::{
+            DiskReconcileReason, DiskReconcileResult, DiskReconcileScanScope, DiskReconcileStatus,
+        };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods root");
+        let state = DiskReconcileState::new();
+        state.begin_authority_session("game", &root, 7);
+        let mut baseline = DiskReconcileResult {
+            game_id: "game".to_string(),
+            reconcile_revision: 0,
+            reason: DiskReconcileReason::StartupBoot,
+            status: DiskReconcileStatus::Applied,
+            scan_scope: DiskReconcileScanScope::Full,
+            folder_conflicts: Vec::new(),
+            rename_confirmations: Vec::new(),
+            error_message: None,
+            changed_roots: Vec::new(),
+            objects_changed: false,
+            folders_changed: false,
+            collections_changed: false,
+            runtime_file_changed: false,
+            thumbnail_roots: Vec::new(),
+            cleared_selection_paths: Vec::new(),
+            path_updates: Vec::new(),
+            collection_reference_impact: Default::default(),
+            change_summary: Default::default(),
+            pending_runtime_effects: Default::default(),
+            warnings: Vec::new(),
+        };
+        state.record_result("game", &mut baseline);
+        assert!(state.mark_authority_reconciled("game", &root, 7, 0, &baseline, &[],));
+
+        let mut unavailable = baseline.clone();
+        unavailable.status = DiskReconcileStatus::SourceUnavailable;
+        state.record_result("game", &mut unavailable);
+
+        let plan = pending_watcher_catch_up_plan(&state, "game", &root, 7)
+            .expect("source unavailable must retry despite a clean watcher token");
+        assert!(plan.force_full);
+        assert!(plan.changed_paths.is_empty());
+    }
+
+    #[test]
+    fn authority_catch_up_backoff_caps_scan_pressure() {
+        assert_eq!(authority_catch_up_backoff(0), Duration::from_secs(1));
+        assert_eq!(authority_catch_up_backoff(1), Duration::from_secs(2));
+        assert_eq!(authority_catch_up_backoff(2), Duration::from_secs(4));
+        assert_eq!(authority_catch_up_backoff(5), Duration::from_secs(30));
+        assert_eq!(
+            authority_catch_up_backoff(u32::MAX),
+            Duration::from_secs(30)
+        );
+    }
+
     #[tokio::test]
     async fn cached_activation_ignores_other_game_lock_but_rejects_target_changes() {
         use crate::modules::mutation::coordinator::MutationCoordinator;
@@ -1947,8 +2533,45 @@ mod tests {
                 .scan_scope,
             DiskReconcileScanScope::None
         );
+        assert!(activation_result_is_accepted(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+            &baseline,
+        ));
+        assert!(initial_activation_waits_for_barrier(true, true, &baseline));
+        let mut unavailable = baseline.clone();
+        unavailable.status = DiskReconcileStatus::SourceUnavailable;
+        assert!(
+            !initial_activation_waits_for_barrier(true, true, &unavailable),
+            "a genuinely unavailable source must still publish its diagnostic status"
+        );
+        assert!(try_clean_activation_recovery_result(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+        )
+        .is_some());
 
         let guard = coordinator.inner_lock().acquire().await.expect("lock");
+        assert!(
+            try_clean_activation_recovery_result(
+                &state,
+                watcher.suppressor.as_ref(),
+                &coordinator,
+                "game-1",
+                &mods_root,
+                &session,
+            )
+            .is_none(),
+            "background readiness polling must yield to a foreground operation"
+        );
         assert!(
             cached().is_some(),
             "another game's operation must not invalidate this proof"
@@ -1998,11 +2621,136 @@ mod tests {
         journal.mark_step_applied(&id, 0).expect("applied step");
         journal.mark_disk_committed(&id).expect("disk receipt");
         assert!(cached().is_none());
+        assert!(
+            try_clean_activation_recovery_result(
+                &state,
+                watcher.suppressor.as_ref(),
+                &coordinator,
+                "game-1",
+                &mods_root,
+                &session,
+            )
+            .is_none(),
+            "retry must not report Ready while disk commit is pending"
+        );
+        assert!(!activation_result_is_accepted(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+            &baseline,
+        ));
+        assert!(
+            pending_watcher_catch_up_plan(&state, "game-1", &mods_root, session.generation(),)
+                .is_none(),
+            "pending commit must recheck the barrier without another disk scan"
+        );
         journal.mark_db_committed(&id).expect("database projection");
         journal.complete(&id).expect("settled operation");
+        assert!(
+            try_clean_activation_recovery_result(
+                &state,
+                watcher.suppressor.as_ref(),
+                &coordinator,
+                "game-1",
+                &mods_root,
+                &session,
+            )
+            .is_some(),
+            "a clean settled result can recover without a second scan"
+        );
+        let (stale_candidate, _guard) = try_clean_activation_recovery_result(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+        )
+        .expect("candidate before a new watcher event");
+        state.observe_authority_event(
+            "game-1",
+            session.generation(),
+            &mods_root,
+            &[mods_root.join("External")],
+            false,
+        );
+        let recovery_generation = state.mark_initial_recovery_pending("game-1");
+        assert!(!activation_publication_allowed(&stale_candidate, || {
+            activation_result_is_accepted(
+                &state,
+                watcher.suppressor.as_ref(),
+                &coordinator,
+                "game-1",
+                &mods_root,
+                &session,
+                &stale_candidate,
+            )
+        }));
+        assert!(
+            matches!(
+                state.initial_recovery_readiness("game-1"),
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryReadiness::Syncing { generation }
+                    if generation == recovery_generation
+            ),
+            "rejected publication must not finish the recovery gate"
+        );
+        assert!(
+            !activation_result_is_accepted(
+                &state,
+                watcher.suppressor.as_ref(),
+                &coordinator,
+                "game-1",
+                &mods_root,
+                &session,
+                &stale_candidate,
+            ),
+            "a watcher event between candidate read and publication must prevent Ready"
+        );
+        assert!(pending_activation_catch_up_plan(
+            &state,
+            watcher.suppressor.as_ref(),
+            "game-1",
+            &mods_root,
+            &session,
+        )
+        .is_some());
+        drop(_guard);
 
         watcher.suppressor.mark_blanket_event_dropped(&session);
         assert!(cached().is_none());
+        let repair_plan = pending_activation_catch_up_plan(
+            &state,
+            watcher.suppressor.as_ref(),
+            "game-1",
+            &mods_root,
+            &session,
+        )
+        .expect("dropped watcher events require a full repair scan");
+        assert!(repair_plan.force_full);
+        assert!(
+            try_clean_activation_recovery_result(
+                &state,
+                watcher.suppressor.as_ref(),
+                &coordinator,
+                "game-1",
+                &mods_root,
+                &session,
+            )
+            .is_none(),
+            "retry must not report Ready while suppressor repair is pending"
+        );
+        assert!(!activation_result_is_accepted(
+            &state,
+            watcher.suppressor.as_ref(),
+            &coordinator,
+            "game-1",
+            &mods_root,
+            &session,
+            &baseline,
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

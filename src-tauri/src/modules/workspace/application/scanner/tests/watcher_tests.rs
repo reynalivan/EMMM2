@@ -289,6 +289,46 @@ fn test_watcher_keeps_deep_directory_events_but_filters_deep_asset_noise() {
 }
 
 #[test]
+fn single_path_ambiguous_rename_requests_full_reconcile() {
+    use notify::event::{ModifyKind, RenameMode};
+
+    let root = Path::new(r"E:\\Mods");
+    let renamed = root.join("Alice");
+    let state = WatcherState::new();
+    let session = state.begin_session(root);
+    let emitted = std::cell::RefCell::new(Vec::new());
+    let rename = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any))).add_path(renamed);
+
+    classify_event(&rename, root, &state.suppressor, &session, &|event| {
+        emitted.borrow_mut().push(event);
+    });
+
+    assert!(matches!(
+        emitted.into_inner().as_slice(),
+        [ModWatchEvent::Error(message)] if message.contains("full disk reconcile")
+    ));
+}
+
+#[test]
+fn suppressed_single_path_ambiguous_rename_is_not_forwarded() {
+    use notify::event::{ModifyKind, RenameMode};
+
+    let root = Path::new(r"E:\\Mods");
+    let renamed = root.join("Alice");
+    let state = WatcherState::new();
+    let session = state.begin_session(root);
+    let _guard = state.suppressor.suppress_paths([renamed.as_path()]);
+    let emitted = std::cell::RefCell::new(Vec::new());
+    let rename = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any))).add_path(renamed);
+
+    classify_event(&rename, root, &state.suppressor, &session, &|event| {
+        emitted.borrow_mut().push(event);
+    });
+
+    assert!(emitted.into_inner().is_empty());
+}
+
+#[test]
 fn backend_rescan_flag_requests_full_reconcile() {
     let root = Path::new(r"E:\Mods");
     let state = WatcherState::new();

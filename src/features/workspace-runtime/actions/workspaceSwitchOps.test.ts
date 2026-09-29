@@ -13,6 +13,7 @@ import {
   executeWorkspaceSwitch,
   isWorkspaceObjectNode,
   parseRenameConflict,
+  recordWorkspaceProjectedRevision,
   togglePendingKey,
   waitForWorkspaceProjection,
 } from './workspaceSwitchOps';
@@ -385,6 +386,69 @@ describe('workspace switch ops', () => {
     await waitForWorkspaceProjection('game-1', 42);
 
     expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledWith('game-1');
+  });
+
+  it('retries a transient projection snapshot error without losing the disk receipt', async () => {
+    getWorkspaceSwitchSnapshotCommand
+      .mockRejectedValueOnce(new Error('database busy'))
+      .mockResolvedValueOnce({
+        game_id: 'game-1',
+        source_epoch: 'root-a',
+        disk_revision: 100_000,
+        projected_revision: 100_000,
+      });
+
+    await expect(waitForWorkspaceProjection('game-1', 100_000)).resolves.toBeUndefined();
+    expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the disk receipt until the database actually catches up', async () => {
+    vi.useFakeTimers();
+    try {
+      const waiting = waitForWorkspaceProjection('game-1', 9_000_000);
+      await vi.advanceTimersByTimeAsync(11_000);
+      let settled = false;
+      void waiting.then(() => {
+        settled = true;
+      });
+      expect(settled).toBe(false);
+      recordWorkspaceProjectedRevision('game-1', 9_000_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(waiting).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rechecks a stalled native snapshot without discarding the disk receipt', async () => {
+    vi.useFakeTimers();
+    try {
+      getWorkspaceSwitchSnapshotCommand
+        .mockImplementationOnce(() => new Promise(() => undefined))
+        .mockResolvedValue({
+          game_id: 'game-1',
+          source_epoch: 'root-a',
+          disk_revision: 9_000_001,
+          projected_revision: 9_000_001,
+        });
+      const waiting = waitForWorkspaceProjection('game-1', 9_000_001);
+      await vi.advanceTimersByTimeAsync(3_000);
+      await expect(waiting).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops a background projection wait after switching games', async () => {
+    vi.useFakeTimers();
+    try {
+      const waiting = waitForWorkspaceProjection('game-1', 9_000_002);
+      appState.activeGameId = 'game-2';
+      await vi.advanceTimersByTimeAsync(3_000);
+      await expect(waiting).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('invalidates the affected health report once across an enable rewrite', async () => {

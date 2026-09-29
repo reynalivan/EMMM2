@@ -577,6 +577,49 @@ async fn reconcile_disk_state_reports_source_unavailable_for_missing_mods_path()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn superseded_initial_recovery_exits_before_scanning_or_recording_result() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    std::fs::create_dir_all(&mods_path).expect("mods root");
+    seed_game_row(&ctx.pool, "game-1", &mods_path).await;
+    let config = ConfigService::new_for_test(ctx.pool.clone());
+    let state = DiskReconcileState::new();
+    let watcher = WatcherState::new();
+    let operation_lock = OperationLock::new();
+    let stale_generation = state.mark_initial_recovery_pending("game-1");
+    let onboarding_generation = state.mark_initial_recovery_pending("game-1");
+
+    let result = reconcile_disk_state_with_authority(
+        DiskReconcileContext {
+            pool: &ctx.pool,
+            config: &config,
+            state: &state,
+            watcher_suppressor: watcher.suppressor.clone(),
+            operation_lock: &operation_lock,
+            progress_reporter: None,
+        },
+        DiskReconcileRequest::manual(
+            "game-1".to_string(),
+            DiskReconcileReason::StartupBoot,
+            Vec::new(),
+            true,
+        )
+        .for_initial_recovery(stale_generation),
+        &watcher,
+        &mods_path,
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(crate::shared::errors::AppError::Cancelled)
+    ));
+    assert!(state.initial_recovery_generation_is_pending("game-1", onboarding_generation));
+    assert!(state.authoritative_result("game-1").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn authority_reconcile_preserves_readiness_and_repairs_focus_after_dropped_events() {
     let ctx = init_test_db().await;
     let temp = tempfile::tempdir().expect("tempdir");

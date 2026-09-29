@@ -20,16 +20,16 @@ export function waitForGameActivationReady(gameId: string): Promise<void> {
       const status = useAppStore.getState().gameActivationByGame[gameId];
       if (status?.phase === 'ready' && status.reconcile_revision !== null) {
         finish();
-      } else if (status?.phase === 'failed' || status?.phase === 'source_unavailable') {
-        finish(new Error(status.error ?? `Could not activate game '${gameId}'`));
       }
     };
 
     unsubscribe = useAppStore.subscribe(check);
-    const timeoutId = setTimeout(
-      () => finish(new Error(`Timed out waiting for game '${gameId}' to finish activation`)),
-      ACTIVATION_TIMEOUT_MS,
-    );
+    const timeoutId = setTimeout(() => {
+      const status = useAppStore.getState().gameActivationByGame[gameId];
+      finish(
+        new Error(status?.error ?? `Timed out waiting for game '${gameId}' to finish activation`),
+      );
+    }, ACTIVATION_TIMEOUT_MS);
     check();
   });
 }

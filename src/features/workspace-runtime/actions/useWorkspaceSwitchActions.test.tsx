@@ -522,6 +522,41 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     await waitFor(() => expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined());
   });
 
+  it('keeps the disk receipt overlay until a delayed projection is verified', async () => {
+    vi.useFakeTimers();
+    try {
+      executeWorkspaceSwitch.mockResolvedValue({
+        ...appliedSwitchResult('E:/Mods/A'),
+        disk_revision: 1_000_000,
+      });
+      const node = {
+        node_kind: 'terminal_mod',
+        id: 'mod-a',
+        path: 'E:/Mods/DISABLED A',
+        switch_state: 'disabled',
+      } as never;
+      const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+
+      await act(async () => {
+        await result.current.setNodeEnabled(node, true, 'folder_grid');
+      });
+      expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(11_000);
+      });
+      expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+
+      await act(async () => {
+        recordWorkspaceProjectedRevision('game-1', 1_000_000);
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('applies only the latest rapid intent for the same mod', async () => {
     let completeFirst!: (value: WorkspaceSwitchResult) => void;
     executeWorkspaceSwitch

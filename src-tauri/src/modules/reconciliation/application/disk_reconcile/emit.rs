@@ -163,6 +163,7 @@ pub async fn run_internal_disk_reconcile(
         false,
         true,
         Vec::new(),
+        None,
     )
     .await
 }
@@ -184,6 +185,7 @@ pub async fn run_full_internal_disk_reconcile(
         true,
         false,
         Vec::new(),
+        None,
     )
     .await
 }
@@ -530,6 +532,7 @@ async fn run_initial_disk_reconcile(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     game_id: &str,
+    generation: u64,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -543,6 +546,7 @@ async fn run_initial_disk_reconcile(
         true,
         false,
         Vec::new(),
+        Some(generation),
     )
     .await
 }
@@ -551,6 +555,7 @@ async fn run_initial_recovery_with_projection(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     game_id: &str,
+    generation: u64,
 ) -> Result<DiskReconcileResult, AppError> {
     use crate::modules::mutation::coordinator::MutationCoordinator;
     use crate::modules::settings::application::config::ConfigService;
@@ -586,7 +591,7 @@ async fn run_initial_recovery_with_projection(
         Some(projection_source_epoch(&config, game_id)?)
     };
 
-    let result = run_initial_disk_reconcile(app, pool, game_id).await?;
+    let result = run_initial_disk_reconcile(app, pool, game_id, generation).await?;
     if result.status.applied() {
         if let Some(epoch) = projection_epoch {
             if let Err(error) = complete_reconciled_toggle_projection(
@@ -620,16 +625,24 @@ pub async fn ensure_initial_disk_recovery(
     state: &DiskReconcileState,
     game_id: &str,
 ) -> InitialRecoveryOutcome {
-    match state.claim_initial_recovery(game_id).await {
-        InitialRecoveryClaim::Run { generation } => {
-            let outcome = match run_initial_recovery_with_projection(app, pool, game_id).await {
-                Ok(result) => InitialRecoveryOutcome::Completed(Box::new(result)),
-                Err(error) => InitialRecoveryOutcome::Failed(error.to_string()),
-            };
-            state.finish_initial_recovery(game_id, generation, outcome.clone());
-            outcome
+    loop {
+        match state.claim_initial_recovery(game_id).await {
+            InitialRecoveryClaim::Run { generation } => {
+                let outcome = match run_initial_recovery_with_projection(
+                    app, pool, game_id, generation,
+                )
+                .await
+                {
+                    Ok(result) => InitialRecoveryOutcome::Completed(Box::new(result)),
+                    Err(AppError::Cancelled) => continue,
+                    Err(error) => InitialRecoveryOutcome::Failed(error.to_string()),
+                };
+                if state.finish_initial_recovery(game_id, generation, outcome.clone()) {
+                    return outcome;
+                }
+            }
+            InitialRecoveryClaim::Finished(outcome) => return outcome,
         }
-        InitialRecoveryClaim::Finished(outcome) => outcome,
     }
 }
 
@@ -653,12 +666,17 @@ pub fn start_initial_disk_recovery(
             let game_id = game_id.to_string();
             tauri::async_runtime::spawn(async move {
                 let outcome =
-                    match run_initial_recovery_with_projection(&app, &pool, &game_id).await {
+                    match run_initial_recovery_with_projection(&app, &pool, &game_id, generation)
+                        .await
+                    {
                         Ok(result) => InitialRecoveryOutcome::Completed(Box::new(result)),
+                        Err(AppError::Cancelled) => return,
                         Err(error) => InitialRecoveryOutcome::Failed(error.to_string()),
                     };
                 let state = app.state::<DiskReconcileState>();
-                state.finish_initial_recovery(&game_id, generation, outcome.clone());
+                if !state.finish_initial_recovery(&game_id, generation, outcome.clone()) {
+                    return;
+                }
                 let result = match outcome {
                     InitialRecoveryOutcome::Completed(result) => *result,
                     InitialRecoveryOutcome::Failed(error) => {
@@ -689,6 +707,7 @@ async fn run_internal_disk_reconcile_with_options(
     force_full: bool,
     emit_when_blocked: bool,
     path_hints: Vec<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcilePathHint>,
+    initial_recovery_generation: Option<u64>,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -713,6 +732,26 @@ async fn run_internal_disk_reconcile_with_options(
     let mods_root = config
         .mods_root_for(game_id)
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let request = if path_hints.is_empty() {
+        DiskReconcileRequest::manual(
+            game_id.to_string(),
+            reason.clone(),
+            changed_paths,
+            force_full,
+        )
+    } else {
+        DiskReconcileRequest::manual_with_path_hints(
+            game_id.to_string(),
+            reason.clone(),
+            changed_paths,
+            path_hints,
+        )
+    };
+    let request = if let Some(generation) = initial_recovery_generation {
+        request.for_initial_recovery(generation)
+    } else {
+        request
+    };
     let result = crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_with_authority(
         DiskReconcileContext {
             pool,
@@ -728,16 +767,7 @@ async fn run_internal_disk_reconcile_with_options(
                 ),
             )),
         },
-        if path_hints.is_empty() {
-            DiskReconcileRequest::manual(game_id.to_string(), reason, changed_paths, force_full)
-        } else {
-            DiskReconcileRequest::manual_with_path_hints(
-                game_id.to_string(),
-                reason,
-                changed_paths,
-                path_hints,
-            )
-        },
+        request,
         watcher.inner(),
         &mods_root,
     )
@@ -781,6 +811,7 @@ pub async fn run_internal_disk_reconcile_with_path_hints(
                 },
             )
             .collect(),
+        None,
     )
     .await
 }

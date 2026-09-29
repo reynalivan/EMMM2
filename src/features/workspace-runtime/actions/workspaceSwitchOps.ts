@@ -71,6 +71,7 @@ export function admitWorkspaceIntentOverride(
 const projectedRevisionByGame = new Map<string, number>();
 const projectionWaiters = new Map<string, Set<{ revision: number; resolve: () => void }>>();
 let projectionListenerReady: Promise<boolean> | null = null;
+const SNAPSHOT_WAIT_MS = 2_000;
 
 interface WorkspaceSwitchProjectedEvent {
   game_id: string;
@@ -115,31 +116,48 @@ export function ensureWorkspaceProjectionListener(): Promise<boolean> {
 }
 
 export async function waitForWorkspaceProjection(gameId: string, revision: number): Promise<void> {
-  await ensureWorkspaceProjectionListener();
+  void ensureWorkspaceProjectionListener();
   let retryMs = 250;
   while (true) {
-    const snapshot = await commands.getWorkspaceSwitchSnapshot(gameId);
-    if (snapshot.projected_revision >= revision) {
-      recordWorkspaceProjectedRevision(gameId, snapshot.projected_revision);
-      return;
+    if (!isWorkspaceGameCurrent(gameId)) return;
+    let timeoutId: number | undefined;
+    try {
+      const snapshot = await Promise.race([
+        commands.getWorkspaceSwitchSnapshot(gameId),
+        new Promise<null>((resolve) => {
+          timeoutId = window.setTimeout(() => resolve(null), SNAPSHOT_WAIT_MS);
+        }),
+      ]);
+      if (snapshot?.projected_revision !== undefined && snapshot.projected_revision >= revision) {
+        recordWorkspaceProjectedRevision(gameId, snapshot.projected_revision);
+        return;
+      }
+    } catch (error) {
+      console.warn('[WorkspaceSwitch] Projection snapshot unavailable; retrying', error);
+    } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     }
     if ((projectedRevisionByGame.get(gameId) ?? 0) >= revision) {
       return;
     }
     await new Promise<void>((resolve) => {
-      const waiter = { revision, resolve };
       const waiters = projectionWaiters.get(gameId) ?? new Set();
+      const waiter = {
+        revision,
+        resolve: () => {
+          window.clearTimeout(timerId);
+          waiters.delete(waiter);
+          if (waiters.size === 0 && projectionWaiters.get(gameId) === waiters) {
+            projectionWaiters.delete(gameId);
+          }
+          resolve();
+        },
+      };
       waiters.add(waiter);
       projectionWaiters.set(gameId, waiters);
-      window.setTimeout(() => {
-        waiters.delete(waiter);
-        if (waiters.size === 0 && projectionWaiters.get(gameId) === waiters) {
-          projectionWaiters.delete(gameId);
-        }
-        resolve();
-      }, retryMs);
+      const timerId = window.setTimeout(waiter.resolve, retryMs);
     });
-    retryMs = Math.min(retryMs * 2, 2_000);
+    retryMs = Math.min(retryMs * 2, 30_000);
   }
 }
 

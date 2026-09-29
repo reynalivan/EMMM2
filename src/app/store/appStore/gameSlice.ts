@@ -560,14 +560,24 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       const current = state.gameActivationByGame[status.game_id];
       const currentPhaseOrder = current ? activationPhaseOrder[current.phase] : -1;
       const nextPhaseOrder = activationPhaseOrder[status.phase];
+      const currentRevision = current?.reconcile_revision ?? null;
+      const nextRevision = status.reconcile_revision;
+      const newerRevision =
+        nextRevision !== null && (currentRevision === null || nextRevision > currentRevision);
+      const olderRevision =
+        currentRevision !== null && (nextRevision === null || nextRevision < currentRevision);
+      const sameGenerationOutdated =
+        olderRevision ||
+        (!newerRevision &&
+          (currentPhaseOrder > nextPhaseOrder ||
+            (currentPhaseOrder === nextPhaseOrder &&
+              current !== undefined &&
+              activationStatusInformationScore(current) >=
+                activationStatusInformationScore(status))));
       if (
         current &&
         (current.generation > status.generation ||
-          (current.generation === status.generation &&
-            (currentPhaseOrder > nextPhaseOrder ||
-              (currentPhaseOrder === nextPhaseOrder &&
-                activationStatusInformationScore(current) >=
-                  activationStatusInformationScore(status)))))
+          (current.generation === status.generation && sameGenerationOutdated))
       ) {
         return {};
       }

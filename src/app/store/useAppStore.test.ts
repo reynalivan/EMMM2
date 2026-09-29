@@ -648,6 +648,39 @@ describe('useAppStore smoke net', () => {
       expect(useAppStore.getState().gameActivationByGame.g2.error).toBe('Detailed watcher failure');
     });
 
+    it('accepts a verified recovery for the same activation generation', () => {
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 11,
+        phase: 'source_unavailable',
+        reconcile_revision: 20,
+        runtime_sync_generation: null,
+        error: 'Watcher catch-up pending',
+      });
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 11,
+        phase: 'ready',
+        reconcile_revision: 21,
+        runtime_sync_generation: 5,
+        error: null,
+      });
+      expect(useAppStore.getState().gameActivationByGame.g1).toMatchObject({
+        phase: 'ready',
+        reconcile_revision: 21,
+      });
+
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'g1',
+        generation: 11,
+        phase: 'source_unavailable',
+        reconcile_revision: 20,
+        runtime_sync_generation: null,
+        error: 'Stale watcher failure',
+      });
+      expect(useAppStore.getState().gameActivationByGame.g1.phase).toBe('ready');
+    });
+
     it('timestamp write clears pending and unavailable flags for that game', () => {
       useAppStore.getState().markDiskReconcilePending('g1', true);
       useAppStore.getState().setDiskSourceUnavailable('g1', 'gone');

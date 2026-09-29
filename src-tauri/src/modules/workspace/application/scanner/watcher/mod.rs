@@ -363,6 +363,19 @@ fn classify_event_with_runtime_config(
                 }
             }
         }
+        // A one-path `Any` rename is ambiguous: notify could not stitch its
+        // counterpart, so treating it as a no-op would leave authority dirty
+        // while lifecycle waits forever for another filesystem event. Request
+        // a full reconcile unless this path is intentionally suppressed.
+        EventKind::Modify(ModifyKind::Name(RenameMode::Any)) => {
+            if event.paths.iter().any(|path| {
+                keep_structural_side(path, watcher_path, runtime_config_path, suppressor)
+            }) {
+                send(ModWatchEvent::Error(
+                    WATCH_BACKEND_RESCAN_REQUIRED.to_string(),
+                ));
+            }
+        }
         EventKind::Modify(ModifyKind::Name(_)) => {}
 
         EventKind::Create(_) => {

@@ -1002,7 +1002,7 @@ impl DiskReconcileState {
 
     pub fn initial_recovery_readiness(&self, game_id: &str) -> InitialRecoveryReadiness {
         let gate = self.initial_recovery_gate(game_id);
-        let (generation, result_revision, applied) = {
+        let (generation, core_revision, core_applied) = {
             let state = lock(&gate.state);
             match &state.status {
                 InitialRecoveryStatus::Unstarted => {
@@ -1027,21 +1027,20 @@ impl DiskReconcileState {
                 ),
             }
         };
-        let current_result_matches = lock(&self.games)
+        let current_result_revision = lock(&self.games)
             .get(game_id)
             .and_then(|state| state.last_result.as_ref())
-            .is_some_and(|result| {
-                result.reconcile_revision == result_revision && result.status.applied()
-            });
+            .filter(|result| result.status.applied() && result.reconcile_revision >= core_revision)
+            .map(|result| result.reconcile_revision);
         // A projection is not safe for mutations until watcher continuity has
         // accepted that exact revision. record_result runs before this proof.
         let authority_matches = lock(&self.authority).get(game_id).is_some_and(|state| {
             state.trusted
                 && !state.dropped_events
                 && state.dirty_roots.is_empty()
-                && state.reconcile_revision == result_revision
+                && Some(state.reconcile_revision) == current_result_revision
         });
-        if applied && current_result_matches && authority_matches {
+        if core_applied && current_result_revision.is_some() && authority_matches {
             InitialRecoveryReadiness::Ready { generation }
         } else {
             InitialRecoveryReadiness::Failed { generation }
@@ -1072,13 +1071,13 @@ impl DiskReconcileState {
             }
             _ => None,
         };
-        let current_result_matches = lock(&self.games)
+        let current_result_exists = lock(&self.games)
             .get(game_id)
             .and_then(|game| game.last_result.as_ref())
             .is_some_and(|result| {
-                result.status.applied() && Some(result.reconcile_revision) == completed_revision
+                completed_revision.is_some_and(|revision| result.reconcile_revision >= revision)
             });
-        if completed_revision.is_some() && current_result_matches {
+        if completed_revision.is_some() && current_result_exists {
             Ok(())
         } else {
             Err(AppError::Io(
@@ -1153,7 +1152,7 @@ impl DiskReconcileState {
         game_id: &str,
         generation: u64,
         outcome: InitialRecoveryOutcome,
-    ) {
+    ) -> bool {
         let gate = lock(&self.initial_recovery).get(game_id).cloned();
         if let Some(gate) = gate {
             let finished = {
@@ -1170,13 +1169,80 @@ impl DiskReconcileState {
             if finished {
                 gate.notify.notify_waiters();
             }
+            finished
+        } else {
+            false
         }
+    }
+
+    pub(crate) fn initial_recovery_generation_is_pending(
+        &self,
+        game_id: &str,
+        generation: u64,
+    ) -> bool {
+        let gate = self.initial_recovery_gate(game_id);
+        let recovery = lock(&gate.state);
+        recovery.generation == generation
+            && matches!(recovery.status, InitialRecoveryStatus::Pending)
+    }
+
+    pub(crate) fn complete_verified_onboarding_recovery(
+        &self,
+        game_id: &str,
+        generation: u64,
+        result: &DiskReconcileResult,
+    ) -> bool {
+        if result.game_id != game_id || !result.status.applied() {
+            return false;
+        }
+        let games = lock(&self.games);
+        if games
+            .get(game_id)
+            .and_then(|game| game.last_result.as_ref())
+            .is_none_or(|latest| {
+                latest.reconcile_revision != result.reconcile_revision || !latest.status.applied()
+            })
+        {
+            return false;
+        }
+        let authority = lock(&self.authority);
+        if authority.get(game_id).is_none_or(|state| {
+            !state.trusted
+                || state.dropped_events
+                || !state.dirty_roots.is_empty()
+                || state.reconcile_revision != result.reconcile_revision
+        }) {
+            return false;
+        }
+        let gate = self.initial_recovery_gate(game_id);
+        let mut recovery = lock(&gate.state);
+        if recovery.generation != generation {
+            return false;
+        }
+        if matches!(
+            &recovery.status,
+            InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(current))
+                if current.reconcile_revision == result.reconcile_revision
+        ) {
+            return true;
+        }
+        if !matches!(recovery.status, InitialRecoveryStatus::Pending) {
+            return false;
+        }
+        recovery.status = InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(
+            Box::new(result.clone()),
+        ));
+        drop(recovery);
+        gate.notify.notify_waiters();
+        true
     }
 
     pub async fn claim_initial_recovery(&self, game_id: &str) -> InitialRecoveryClaim {
         loop {
             let gate = self.initial_recovery_gate(game_id);
             let notified = gate.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             match self.start_initial_recovery(game_id) {
                 InitialRecoveryStart::Run { generation } => {
                     return InitialRecoveryClaim::Run { generation };
@@ -1199,13 +1265,20 @@ impl DiskReconcileState {
             state.last_result = Some(result.clone());
         }
 
-        // Once activation recovery has reached a terminal state, every later
-        // successful reconcile becomes its newest disk-authoritative result.
-        // Pending startup/workspace claims retain generation ownership.
+        // The first applied core index remains the preflight entitlement even
+        // if a later watcher pass cannot read the source. Latest disk truth and
+        // watcher authority are checked separately for mutation readiness.
         if let Some(gate) = lock(&self.initial_recovery).get(game_id).cloned() {
             let updated = {
                 let mut recovery = lock(&gate.state);
-                if matches!(recovery.status, InitialRecoveryStatus::Finished(_)) {
+                let can_upgrade_core = match &recovery.status {
+                    InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Failed(_)) => true,
+                    InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(
+                        previous,
+                    )) => !previous.status.applied(),
+                    _ => false,
+                };
+                if result.status.applied() && can_upgrade_core {
                     recovery.status = InitialRecoveryStatus::Finished(
                         InitialRecoveryOutcome::Completed(Box::new(result.clone())),
                     );
@@ -1328,6 +1401,142 @@ mod initial_recovery_tests {
                 ..GameAuthorityState::default()
             },
         );
+    }
+
+    #[test]
+    fn verified_onboarding_result_opens_mutation_gate_without_another_scan() {
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending("game");
+        let mut result = recovery_result(DiskReconcileStatus::Applied);
+        result.reason = DiskReconcileReason::OnboardingCompleted;
+        state.record_result("game", &mut result);
+        trust_result(&state, &result);
+
+        assert!(state.complete_verified_onboarding_recovery("game", generation, &result));
+        assert!(state.ensure_core_ready_for_mutation("game").is_ok());
+        assert!(state.ensure_core_recovery_allows_preflight("game").is_ok());
+    }
+
+    #[test]
+    fn verified_onboarding_result_supersedes_an_older_pending_recovery() {
+        let state = DiskReconcileState::new();
+        let stale_generation = state.mark_initial_recovery_pending("game");
+        let onboarding_generation = state.mark_initial_recovery_pending("game");
+        assert!(!state.initial_recovery_generation_is_pending("game", stale_generation));
+        assert!(state.initial_recovery_generation_is_pending("game", onboarding_generation));
+        let mut result = recovery_result(DiskReconcileStatus::Applied);
+        result.reason = DiskReconcileReason::OnboardingCompleted;
+        state.record_result("game", &mut result);
+        trust_result(&state, &result);
+
+        assert!(state.complete_verified_onboarding_recovery(
+            "game",
+            onboarding_generation,
+            &result
+        ));
+        assert!(!state.initial_recovery_generation_is_pending("game", onboarding_generation));
+        assert!(!state.finish_initial_recovery(
+            "game",
+            stale_generation,
+            InitialRecoveryOutcome::Failed("stale recovery".to_string()),
+        ));
+        assert!(state.ensure_core_ready_for_mutation("game").is_ok());
+    }
+
+    #[test]
+    fn running_recovery_cannot_finish_after_onboarding_takes_ownership() {
+        let state = DiskReconcileState::new();
+        let stale_generation = state.mark_initial_recovery_pending("game");
+        let onboarding_generation = state.mark_initial_recovery_pending("game");
+        let mut stale_result = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut stale_result);
+        assert!(!state.finish_initial_recovery(
+            "game",
+            stale_generation,
+            InitialRecoveryOutcome::Completed(Box::new(stale_result)),
+        ));
+        assert!(state.initial_recovery_generation_is_pending("game", onboarding_generation));
+
+        let mut onboarding_result = recovery_result(DiskReconcileStatus::Applied);
+        onboarding_result.reason = DiskReconcileReason::OnboardingCompleted;
+        state.record_result("game", &mut onboarding_result);
+        trust_result(&state, &onboarding_result);
+        assert!(state.complete_verified_onboarding_recovery(
+            "game",
+            onboarding_generation,
+            &onboarding_result,
+        ));
+        assert!(state.ensure_core_ready_for_mutation("game").is_ok());
+    }
+
+    #[test]
+    fn later_unavailable_watcher_result_keeps_core_repair_preflight_open() {
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending("game");
+        let mut initial = recovery_result(DiskReconcileStatus::Applied);
+        initial.reason = DiskReconcileReason::OnboardingCompleted;
+        state.record_result("game", &mut initial);
+        trust_result(&state, &initial);
+        assert!(state.complete_verified_onboarding_recovery("game", generation, &initial));
+
+        let mut unavailable = recovery_result(DiskReconcileStatus::SourceUnavailable);
+        state.record_result("game", &mut unavailable);
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
+        state
+            .ensure_core_recovery_allows_preflight("game")
+            .expect("a later watcher failure must not erase successful core indexing");
+
+        let mut repaired = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut repaired);
+        trust_result(&state, &repaired);
+        assert!(state.ensure_core_ready_for_mutation("game").is_ok());
+    }
+
+    #[test]
+    fn later_untrusted_watcher_result_blocks_rename_but_allows_repair() {
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending("game");
+        let mut initial = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut initial);
+        trust_result(&state, &initial);
+        state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(initial)),
+        );
+
+        let mut untrusted = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut untrusted);
+        state.reject_untrusted_reconcile("game", untrusted.reconcile_revision);
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
+        assert!(state.ensure_core_recovery_allows_preflight("game").is_ok());
+
+        trust_result(&state, &untrusted);
+        assert!(state.ensure_core_ready_for_mutation("game").is_ok());
+    }
+
+    #[test]
+    fn onboarding_cannot_open_mutation_gate_for_stale_or_dirty_authority() {
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending("game");
+        let mut result = recovery_result(DiskReconcileStatus::Applied);
+        result.reason = DiskReconcileReason::OnboardingCompleted;
+        state.record_result("game", &mut result);
+        assert!(!state.complete_verified_onboarding_recovery("game", generation, &result));
+
+        trust_result(&state, &result);
+        crate::shared::sync::lock(&state.authority)
+            .get_mut("game")
+            .expect("trusted game")
+            .dirty_roots
+            .insert(std::path::PathBuf::from("changed"));
+        assert!(!state.complete_verified_onboarding_recovery("game", generation, &result));
+
+        trust_result(&state, &result);
+        let mut newer = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut newer);
+        assert!(!state.complete_verified_onboarding_recovery("game", generation, &result));
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
     }
 
     #[test]

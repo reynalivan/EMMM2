@@ -82,6 +82,63 @@ fn background_phase_for_reconcile_status(
     }
 }
 
+struct OnboardingRecoveryGuard<'a> {
+    state: &'a crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    game_id: &'a str,
+    generation: u64,
+    completed: bool,
+}
+
+impl<'a> OnboardingRecoveryGuard<'a> {
+    fn new(
+        state: &'a crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+        game_id: &'a str,
+    ) -> Self {
+        Self {
+            state,
+            game_id,
+            generation: state.mark_initial_recovery_pending(game_id),
+            completed: false,
+        }
+    }
+
+    fn complete_verified(
+        &mut self,
+        result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    ) -> bool {
+        self.completed =
+            self.state
+                .complete_verified_onboarding_recovery(self.game_id, self.generation, result);
+        self.completed
+    }
+
+    fn complete_unapplied(
+        &mut self,
+        result: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
+    ) {
+        self.state.finish_initial_recovery(
+            self.game_id,
+            self.generation,
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(Box::new(result.clone())),
+        );
+        self.completed = true;
+    }
+}
+
+impl Drop for OnboardingRecoveryGuard<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.state.finish_initial_recovery(
+                self.game_id,
+                self.generation,
+                crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
+                    "Onboarding indexing did not complete".to_string(),
+                ),
+            );
+        }
+    }
+}
+
 fn telemetry_outcome_for_error(
     error: &AppError,
 ) -> crate::modules::system::application::telemetry::TelemetryOutcome {
@@ -747,6 +804,7 @@ async fn reconcile_onboarding_indexing_game_impl(
         ConsumedOnboardingSnapshot::FullFallback => None,
     }
     .filter(|lease| lease.journal_allows_game_snapshot(operation_lock, game_id));
+    let mut recovery_guard = OnboardingRecoveryGuard::new(disk_reconcile_state, game_id);
     update_onboarding_background_phase(
         app,
         sessions,
@@ -1014,10 +1072,16 @@ async fn reconcile_onboarding_indexing_game_impl(
             );
         }
     }
+    if background_handoff_trusted {
+        background_handoff_trusted = recovery_guard.complete_verified(&result);
+    }
     if result.status.applied() && !background_handoff_trusted {
         disk_reconcile_state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
     }
     ensure_onboarding_handoff_if_applied(&result.status, background_handoff_trusted)?;
+    if !result.status.applied() {
+        recovery_guard.complete_unapplied(&result);
+    }
     Ok(result)
 }
 
