@@ -22,6 +22,38 @@ use crate::shared::errors::AppError;
 #[path = "tests/prepared_switch_tests.rs"]
 mod prepared_switch_tests;
 
+/// Carry listing ownership across prefix renames without accepting a replacement at that path.
+pub(crate) fn resolve_expected_switch_path(
+    root: &Path,
+    requested: &Path,
+    expected_identity: Option<&str>,
+) -> Result<PathBuf, AppError> {
+    let Some(expected) = expected_identity else {
+        return Ok(requested.to_path_buf());
+    };
+    if let Some(actual) = crate::platform::fs::file_utils::filesystem_identity(requested) {
+        return if actual == expected {
+            Ok(requested.to_path_buf())
+        } else {
+            Err(AppError::ExplorerSnapshotExpired)
+        };
+    }
+    for enabled in [true, false] {
+        if let Some(resolved) =
+            crate::modules::library::api::mods::core_ops::resolve_existing_runtime_variant(
+                root, requested, enabled,
+            )
+        {
+            if crate::platform::fs::file_utils::filesystem_identity(&resolved).as_deref()
+                == Some(expected)
+            {
+                return Ok(resolved);
+            }
+        }
+    }
+    Err(AppError::ExplorerSnapshotExpired)
+}
+
 #[derive(Debug, Clone)]
 pub struct PreparedModSwitch {
     target_path: String,
@@ -115,6 +147,23 @@ impl From<AppError> for PreparedWorkspaceExecutionError {
 }
 
 impl PreparedWorkspaceSwitch {
+    pub(crate) fn set_mod_namespace_proof(
+        &mut self,
+        proof: std::sync::Arc<crate::platform::fs::file_utils::FilesystemNamespaceProof>,
+    ) {
+        if let Self::Mod(prepared) = self {
+            for batch in &mut prepared.batches {
+                batch.set_namespace_proof(std::sync::Arc::clone(&proof));
+            }
+        }
+    }
+    pub(crate) fn resolved_mod_path(&self) -> Option<&str> {
+        match self {
+            Self::Mod(prepared) => Some(&prepared.target_path),
+            Self::Immediate(result) => result.primary_path.as_deref(),
+            Self::Object(_) | Self::Objects(_) => None,
+        }
+    }
     pub fn journal_steps(&self) -> Vec<(u32, PathBuf, PathBuf)> {
         match self {
             Self::Immediate(_) => Vec::new(),
@@ -243,6 +292,7 @@ impl PreparedWorkspaceSwitch {
                     ),
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    source_epoch: None,
                     disk_revision: None,
                 })
             }
@@ -303,6 +353,7 @@ impl PreparedWorkspaceSwitch {
                     impact,
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    source_epoch: None,
                     disk_revision: None,
                 })
             }
@@ -380,6 +431,7 @@ impl PreparedWorkspaceSwitch {
                     impact,
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    source_epoch: None,
                     disk_revision: None,
                 })
             }
@@ -551,6 +603,7 @@ pub async fn prepare_switch(
                     ),
                     sync_warning: None,
                     runtime_sync_generation: None,
+                    source_epoch: None,
                     disk_revision: None,
                 },
             )));
@@ -694,6 +747,7 @@ fn prepare_normal_leaf_switch(
                 ),
                 sync_warning: None,
                 runtime_sync_generation: None,
+                source_epoch: None,
                 disk_revision: None,
             },
         ))));

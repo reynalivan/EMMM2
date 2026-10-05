@@ -9,11 +9,19 @@ import {
 } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
-import { createObject, reconcile, getObjects, findObject } from '../support/data.js';
+import {
+  createObject,
+  reconcile,
+  getObjects,
+  findObject,
+  waitForProjectionCheckpoint,
+} from '../support/data.js';
 
 interface BulkResult {
   success: string[];
   failures: { path: string; error: unknown }[];
+  disk_revision: number | null;
+  source_epoch?: string | null;
 }
 
 /**
@@ -45,18 +53,26 @@ describe('Fase 3 — Core Mod Operations (data-safety)', () => {
       gameId,
       paths: [path.join(objDir, 'SkinA')],
       enable: false,
+      operationId: 'phase3-toggle-off',
+      intentRevision: 1,
+      expectedIdentities: null,
     });
     expect(off.failures.length).toBe(0);
     expect(await listDir(objDir)).toContain('DISABLED SkinA');
+    await waitForProjectionCheckpoint(gameId, off);
     expect((await findObject(gameId, 'TogObj'))!.enabled_count).toBe(0);
 
     const on = await invokeInApp<BulkResult>('bulk_toggle_mods', {
       gameId,
       paths: [path.join(objDir, 'DISABLED SkinA')],
       enable: true,
+      operationId: 'phase3-toggle-on',
+      intentRevision: 2,
+      expectedIdentities: null,
     });
     expect(on.failures.length).toBe(0);
     expect(await listDir(objDir)).toContain('SkinA');
+    await waitForProjectionCheckpoint(gameId, on);
     expect((await findObject(gameId, 'TogObj'))!.enabled_count).toBe(1);
   });
 

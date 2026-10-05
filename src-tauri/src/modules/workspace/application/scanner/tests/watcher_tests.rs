@@ -2,6 +2,151 @@ use super::*;
 use std::fs;
 use tempfile::TempDir;
 
+#[cfg(target_os = "windows")]
+#[path = "native_watcher_stress.rs"]
+mod native_stress;
+
+#[test]
+fn verified_rename_echo_is_not_delivered_but_pending_and_replacement_events_are() {
+    let dir = TempDir::new().unwrap();
+    let old = dir.path().join("Skin");
+    let new = dir.path().join("DISABLED Skin");
+    fs::create_dir(&old).unwrap();
+    let state = WatcherState::new();
+    let session = state.begin_session(dir.path());
+    let evidence = state.suppressor.expect_rename_echoes(
+        "game",
+        &session,
+        [ExpectedRenameEcho {
+            expected_identity: crate::platform::fs::file_utils::filesystem_identity(&old).unwrap(),
+            old_path: old.clone(),
+            new_path: new.clone(),
+        }],
+    );
+    fs::rename(&old, &new).unwrap();
+    let event = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+        .add_path(old)
+        .add_path(new.clone());
+    let delivered = std::sync::Mutex::new(Vec::new());
+    let send = |event| delivered.lock().unwrap().push(event);
+    classify_event(&event, dir.path(), &state.suppressor, &session, &send);
+    assert_eq!(delivered.lock().unwrap().len(), 1);
+    delivered.lock().unwrap().clear();
+
+    assert!(state.suppressor.commit_expected_rename_echoes(&evidence));
+    assert!(state.suppressor.observe_expected_rename_echo(
+        "game",
+        &session,
+        &event.kind,
+        &event.paths,
+        Arc::new(|_, _| panic!("committed echo should not need repair")),
+    ));
+    classify_event(&event, dir.path(), &state.suppressor, &session, &send);
+    assert!(delivered.lock().unwrap().is_empty());
+    assert!(state.suppressor.observe_expected_rename_echo(
+        "game",
+        &session,
+        &event.kind,
+        &event.paths,
+        Arc::new(|_, _| panic!("verified duplicate should not need repair")),
+    ));
+    classify_event(&event, dir.path(), &state.suppressor, &session, &send);
+    assert!(delivered.lock().unwrap().is_empty());
+
+    assert!(!state.suppressor.observe_expected_rename_echo(
+        "foreign-game",
+        &session,
+        &event.kind,
+        &event.paths,
+        Arc::new(|_, _| panic!("foreign observer must not consume this receipt")),
+    ));
+    fs::rename(&new, dir.path().join("OriginalIdentity")).unwrap();
+    fs::create_dir(&new).unwrap();
+    assert!(!state.suppressor.observe_expected_rename_echo(
+        "game",
+        &session,
+        &event.kind,
+        &event.paths,
+        Arc::new(|_, _| panic!("replacement must not match the receipt")),
+    ));
+    classify_event(&event, dir.path(), &state.suppressor, &session, &send);
+    assert_eq!(delivered.lock().unwrap().len(), 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn event_filter_accepts_raw_and_verbatim_namespace_without_accepting_foreign_roots() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("Mods");
+    fs::create_dir(&root).unwrap();
+    let verbatim_root = fs::canonicalize(&root).unwrap();
+    let raw_path = root.join("Character.v2/Skin.v1");
+    assert!(should_keep_structural_event_path(&raw_path, &verbatim_root));
+    assert!(should_keep_event_path(&raw_path, &verbatim_root));
+    assert!(!should_keep_event_path(
+        &root.join(".emmm_data/cache.json"),
+        &verbatim_root
+    ));
+    assert!(!should_keep_structural_event_path(
+        &dir.path().join("Other/Skin"),
+        &verbatim_root
+    ));
+
+    let config = dir.path().join("d3dx.ini");
+    fs::write(&config, "[Main]").unwrap();
+    assert!(is_runtime_config_path(
+        &config,
+        Some(&fs::canonicalize(&config).unwrap())
+    ));
+    assert!(!is_runtime_config_path(
+        &dir.path().join("other.ini"),
+        Some(&config)
+    ));
+}
+
+#[test]
+fn inactive_watcher_does_not_adopt_a_disabled_alias_runtime_config() {
+    let dir = TempDir::new().expect("tempdir");
+    let config = dir.path().join("importer.ini");
+    let other_config = dir.path().join("DISABLED importer.ini");
+    fs::write(&config, "[Loader]").expect("runtime config");
+    fs::write(&other_config, "[Loader]").expect("distinct runtime config");
+    let state = WatcherState::new();
+    let session = state.prepare_session_with_runtime_config(dir.path(), Some(&config));
+    let generation = session.generation();
+    let (watcher, receiver) = watch_mod_directory_with_runtime_config(
+        dir.path(),
+        Some(&config),
+        state.suppressor.clone(),
+        session.clone(),
+    )
+    .expect("watch root and config");
+    state.install_inactive_watcher(
+        "game".to_string(),
+        dir.path(),
+        Some(&config),
+        session,
+        watcher,
+        receiver,
+    );
+
+    assert_eq!(
+        state.inactive_watcher_session("game", dir.path(), Some(&config)),
+        Some(generation)
+    );
+    assert!(state
+        .inactive_watcher_session("game", dir.path(), Some(&other_config))
+        .is_none());
+    assert!(state
+        .take_inactive_watcher_for_handoff("game", dir.path(), Some(&other_config))
+        .is_none());
+    assert!(state.discard_inactive_watcher_unless_coverage(
+        "game",
+        dir.path(),
+        Some(&other_config)
+    ));
+}
+
 #[test]
 fn inactive_watcher_with_changed_root_identity_cannot_be_adopted() {
     let dir = TempDir::new().expect("tempdir");

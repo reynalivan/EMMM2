@@ -36,6 +36,12 @@ pub struct BulkResult {
     pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
     pub runtime_sync_generation: Option<u64>,
     pub disk_revision: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub source_epoch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub expected_identities: Option<Vec<(String, String)>>,
 }
 
 impl BulkResult {
@@ -52,6 +58,8 @@ impl BulkResult {
             sync_warning: None,
             runtime_sync_generation: None,
             disk_revision: None,
+            source_epoch: None,
+            expected_identities: None,
         }
     }
 
@@ -73,6 +81,8 @@ impl BulkResult {
             sync_warning: None,
             runtime_sync_generation: None,
             disk_revision: None,
+            source_epoch: None,
+            expected_identities: None,
         }
     }
 

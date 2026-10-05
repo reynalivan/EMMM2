@@ -191,18 +191,37 @@ pub async fn resolve_folder_name_conflict(
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
 > {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::FolderConflictFix,
+    )?;
     let paths = renames
         .iter()
         .map(|rename| rename.path.clone())
         .collect::<Vec<_>>();
-    crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
+    let validated = crate::platform::fs::guard::validate_paths(&config, &game_id, &paths)?;
+    let source_proofs = validated
+        .iter()
+        .map(|path| crate::platform::fs::file_utils::FilesystemIdentityProof::capture(path))
+        .collect::<Result<Vec<_>, _>>()?;
     let mods_root = config
         .mods_root_for(&game_id)
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
     let canonical_root = mods_root
         .canonicalize()
         .map_err(|error| AppError::Security(format!("Invalid mods path: {error}")))?;
+    let root_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&canonical_root)?;
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    root_proof.validate(&canonical_root)?;
+    for (path, proof) in validated.iter().zip(&source_proofs) {
+        proof.validate(path)?;
+    }
+    root_proof.validate(
+        &config
+            .mods_root_for(&game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
     ensure_conflict_mutation_authority(
         &app,
         pool.inner(),
@@ -280,11 +299,14 @@ pub async fn resolve_folder_name_conflict(
         )
         .collect();
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "folder-conflict-rename",
-            game_id.clone(),
-            journal_steps,
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "folder-conflict-rename",
+                game_id.clone(),
+                journal_steps,
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile.inner(),
@@ -294,6 +316,25 @@ pub async fn resolve_folder_name_conflict(
     )?;
     let suppressor = state.suppressor.clone();
     let apply_plan = rename_plan.clone();
+    if let Err(error) = root_proof
+        .validate(&canonical_root)
+        .and_then(|()| {
+            root_proof.validate(
+                &config
+                    .mods_root_for(&game_id)
+                    .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+            )
+        })
+        .and_then(|()| {
+            validated
+                .iter()
+                .zip(&source_proofs)
+                .try_for_each(|(path, proof)| proof.validate(path))
+        })
+    {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     let apply_result = tokio::task::spawn_blocking(move || {
         crate::modules::library::application::mods::core_ops::apply_folder_conflict_rename_plan(
             &suppressor,
@@ -393,11 +434,25 @@ pub async fn trash_folder_conflict_candidate(
     game_id: String,
     path: String,
 ) -> Result<FolderConflictMutationResult, AppError> {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::FolderConflictFix,
+    )?;
     let validated = validate_path(&config, &game_id, &path)?;
+    let source_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&validated)?;
     let mods_root = config
         .mods_root_for(&game_id)
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&mods_root)?;
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    root_proof.validate(&mods_root)?;
+    root_proof.validate(
+        &config
+            .mods_root_for(&game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
+    source_proof.validate(&validated)?;
     ensure_conflict_mutation_authority(
         &app,
         pool.inner(),
@@ -408,7 +463,7 @@ pub async fn trash_folder_conflict_candidate(
         &game_guard,
     )
     .await?;
-    let census_root = mods_root;
+    let census_root = mods_root.clone();
     let census_game_id = game_id.clone();
     let candidate_path = validated.as_ref().to_path_buf();
     let census_candidate_path = candidate_path.clone();
@@ -439,15 +494,19 @@ pub async fn trash_folder_conflict_candidate(
     let prepared =
         crate::modules::library::application::mods::trash::prepare_trash_move(&candidate_path)?;
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "trash-folder-conflict-candidate",
-            game_id.clone(),
-            vec![crate::modules::mutation::api::PlannedStep::rename(
-                0,
-                prepared.source().to_path_buf(),
-                prepared.quarantine().to_path_buf(),
-            )],
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "trash-folder-conflict-candidate",
+                game_id.clone(),
+                vec![crate::modules::mutation::api::PlannedStep::rename(
+                    0,
+                    prepared.source().to_path_buf(),
+                    prepared.quarantine().to_path_buf(),
+                )
+                .with_expected_identity(Some(source_proof.identity().to_string()))],
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile.inner(),
@@ -455,6 +514,18 @@ pub async fn trash_folder_conflict_candidate(
         game_guard,
         operation_guard,
     )?;
+    if let Err(error) = root_proof
+        .validate(
+            &config
+                .mods_root_for(&game_id)
+                .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+        )
+        .and_then(|()| root_proof.validate(&mods_root))
+        .and_then(|()| source_proof.validate(&validated))
+    {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     if let Err(error) = prepared.execute(&state) {
         mutation_lease.mark_step_rolled_back(0)?;
         mutation_lease.begin_rollback()?;
@@ -804,6 +875,8 @@ mod tests {
         let command = &source[start..end];
 
         let game_lock = command.find("game_lock").unwrap();
+        let admission = command.find("admit_immutable_mutation").unwrap();
+        assert!(admission < game_lock);
         let plan = command.find("plan_folder_conflict_renames").unwrap();
         let lease = command.find("acquire_operation").unwrap();
         let rename = command.find("apply_folder_conflict_rename_plan").unwrap();
@@ -820,5 +893,16 @@ mod tests {
         assert!(reconcile < db_committed && db_committed < commit);
         assert!(commit < runtime_enqueue);
         assert!(!command.contains("drop(mutation_lease)"));
+    }
+
+    #[test]
+    fn conflict_trash_admission_precedes_waiting_for_storage_locks() {
+        let source = include_str!("conflict_cmds.rs");
+        let command = &source[source
+            .find("pub async fn trash_folder_conflict_candidate")
+            .unwrap()..];
+        assert!(
+            command.find("admit_immutable_mutation").unwrap() < command.find("game_lock").unwrap()
+        );
     }
 }

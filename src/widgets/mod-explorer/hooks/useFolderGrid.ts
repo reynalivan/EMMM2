@@ -149,6 +149,8 @@ export function useFolderGrid() {
     openEnableParentDialog,
     handleToggleEnabledGuarded,
   } = useFolderGridActions({
+    selfIdentity: rawResponse?.self_identity,
+    ancestorDisabledIdentity: rawResponse?.ancestor_disabled_identity,
     activeGame,
     explorerSubPath,
     ancestorDisabledPath,

@@ -409,7 +409,16 @@ pub async fn rename_mod_folder(
     new_name: String,
     game_id: String,
 ) -> Result<RenameResult, AppError> {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::StructuralMutation,
+    )?;
     let folder = validate_path(&config, &game_id, &folder_path)?;
+    let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&folder)?;
+    let root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
     let preflight_paths = [folder.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
@@ -426,17 +435,28 @@ pub async fn rename_mod_folder(
         standardize_prefix(&new_name, !source_name.starts_with(crate::DISABLED_PREFIX));
     let target = folder.with_file_name(target_name);
     let game_guard = disk_reconcile_state.game_lock(&game_id).lock_owned().await;
+    root_proof.validate(&root)?;
+    root_proof.validate(
+        &config
+            .mods_root_for(&game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
+    source_proof.validate(&folder)?;
     disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "rename-mod-folder",
-            game_id.clone(),
-            vec![crate::modules::mutation::api::PlannedStep::rename(
-                0,
-                folder.to_path_buf(),
-                target.clone(),
-            )],
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "rename-mod-folder",
+                game_id.clone(),
+                vec![crate::modules::mutation::api::PlannedStep::rename(
+                    0,
+                    folder.to_path_buf(),
+                    target.clone(),
+                )
+                .with_expected_identity(Some(source_proof.identity().to_string()))],
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile_state.inner(),
@@ -444,6 +464,18 @@ pub async fn rename_mod_folder(
         game_guard,
         operation_guard,
     )?;
+    if let Err(error) = root_proof
+        .validate(
+            &config
+                .mods_root_for(&game_id)
+                .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+        )
+        .and_then(|()| root_proof.validate(&root))
+        .and_then(|()| source_proof.validate(&folder))
+    {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     let mut result =
         crate::modules::library::application::mods::core_ops::rename_mod_folder_inner_service(
             &config,

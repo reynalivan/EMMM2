@@ -7,7 +7,10 @@ import type {
 } from '@/entities/workspace';
 
 export type WorkspaceMobilePane = 'sidebar' | 'grid' | 'details';
-export type WorkspaceDuplicateTarget = Pick<ModFolder, 'id' | 'path' | 'name'>;
+export type WorkspaceDuplicateTarget = Pick<
+  ModFolder,
+  'id' | 'path' | 'name' | 'filesystem_identity'
+>;
 
 export interface WorkspaceFileInUseDialogData {
   path: string;

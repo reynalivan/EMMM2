@@ -53,6 +53,27 @@ async fn seed_game_object_mod(
     )
     .await
     .expect("mod seed");
+    let source = mods_path.join(mod_folder_path);
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("mod.ini"),
+        "[TextureOverrideAlice]\nhash = abc\n",
+    )
+    .unwrap();
+    sqlx::query("UPDATE mods SET filesystem_identity = ? WHERE id = 'mod-old'")
+        .bind(crate::platform::fs::file_utils::filesystem_identity(
+            &source,
+        ))
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE objects SET filesystem_identity = ? WHERE id = 'obj-alice'")
+        .bind(crate::platform::fs::file_utils::filesystem_identity(
+            &mods_path.join("Alice"),
+        ))
+        .execute(pool)
+        .await
+        .unwrap();
     mods_path_string
 }
 
@@ -94,6 +115,11 @@ async fn mod_rename_hint_rewrites_row_identity_and_path() {
     let mods_path = temp.path().join("Mods");
     std::fs::create_dir_all(&mods_path).expect("mods root");
     seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Old Mod").await;
+    std::fs::rename(
+        mods_path.join("Alice/Old Mod"),
+        mods_path.join("Alice/New Mod"),
+    )
+    .unwrap();
 
     let events = vec![ModWatchEvent::Renamed {
         from: mods_path
@@ -137,13 +163,15 @@ async fn nested_mod_rename_hint_rewrites_row_identity_at_any_depth() {
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_path = temp.path().join("Mods");
     let new_path = mods_path.join("Alice").join("Variants").join("New Mod");
-    std::fs::create_dir_all(&new_path).expect("nested destination");
+    let old_path = mods_path.join("Alice/Variants/Old Mod");
+    std::fs::create_dir_all(&old_path).expect("nested source");
     std::fs::write(
-        new_path.join("mod.ini"),
+        old_path.join("mod.ini"),
         "[TextureOverrideAlice]\nhash = abc\n",
     )
     .expect("nested ini");
     seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Variants/Old Mod").await;
+    std::fs::rename(&old_path, &new_path).unwrap();
 
     let events = vec![ModWatchEvent::Renamed {
         from: mods_path
@@ -182,13 +210,15 @@ async fn container_rename_hint_rewrites_every_terminal_child_by_suffix() {
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_path = temp.path().join("Mods");
     let new_path = mods_path.join("Alice").join("Looks").join("Blue");
-    std::fs::create_dir_all(&new_path).expect("renamed container destination");
+    let old_path = mods_path.join("Alice/Variants/Blue");
+    std::fs::create_dir_all(&old_path).expect("container source");
     std::fs::write(
-        new_path.join("mod.ini"),
+        old_path.join("mod.ini"),
         "[TextureOverrideAlice]\nhash = abc\n",
     )
     .expect("terminal ini");
     seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Variants/Blue").await;
+    std::fs::rename(mods_path.join("Alice/Variants"), new_path.parent().unwrap()).unwrap();
 
     let events = vec![ModWatchEvent::Renamed {
         from: mods_path
@@ -231,6 +261,8 @@ async fn object_rename_hint_updates_object_status_and_child_mod_paths() {
     std::fs::create_dir_all(&mods_path).expect("mods root");
     seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Blue").await;
 
+    std::fs::rename(mods_path.join("Alice"), mods_path.join("DISABLED Alice")).unwrap();
+
     let events = vec![ModWatchEvent::Renamed {
         from: mods_path.join("Alice").to_string_lossy().to_string(),
         to: mods_path
@@ -255,7 +287,10 @@ async fn object_rename_hint_updates_object_status_and_child_mod_paths() {
             .fetch_one(&ctx.pool)
             .await
             .expect("mod row");
-    assert_eq!(mod_folder_path, "DISABLED Alice/Blue");
+    assert_eq!(
+        Path::new(&mod_folder_path),
+        Path::new("DISABLED Alice/Blue")
+    );
 
     assert_eq!(run.path_updates.len(), 1);
     assert_eq!(run.path_updates[0].kind, DiskReconcilePathKind::Object);
@@ -269,13 +304,15 @@ async fn parent_and_child_hints_apply_parent_once_without_duplicate_object() {
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_path = temp.path().join("Mods");
     let destination = mods_path.join("Alicia").join("Blue");
-    std::fs::create_dir_all(&destination).expect("destination");
+    let source = mods_path.join("Alice/Blue");
+    std::fs::create_dir_all(&source).expect("source");
     std::fs::write(
-        destination.join("mod.ini"),
+        source.join("mod.ini"),
         "[TextureOverrideAlice]\nhash = abc\n",
     )
     .expect("ini");
     seed_game_object_mod(&ctx.pool, &mods_path, "Alice/Blue").await;
+    std::fs::rename(mods_path.join("Alice"), mods_path.join("Alicia")).unwrap();
     let events = vec![
         ModWatchEvent::Renamed {
             from: mods_path.join("Alice").to_string_lossy().to_string(),
@@ -304,7 +341,10 @@ async fn parent_and_child_hints_apply_parent_once_without_duplicate_object() {
             .await
             .expect("mods");
     assert_eq!(objects, vec!["Alicia"]);
-    assert_eq!(mods, vec!["Alicia/Blue"]);
+    assert_eq!(
+        mods.into_iter().map(PathBuf::from).collect::<Vec<_>>(),
+        vec![PathBuf::from("Alicia/Blue")]
+    );
     assert_eq!(run.path_updates.len(), 1);
     assert_eq!(run.path_updates[0].kind, DiskReconcilePathKind::Object);
 }

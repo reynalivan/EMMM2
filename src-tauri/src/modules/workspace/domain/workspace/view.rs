@@ -182,6 +182,8 @@ pub struct WorkspaceExplorer {
     pub self_type_chip: Option<WorkspaceTypeChip>,
     pub self_is_mod: bool,
     pub self_is_enabled: bool,
+    #[specta(optional)]
+    pub self_identity: Option<String>,
     pub self_is_effectively_active: bool,
     pub self_owner_object_id: Option<String>,
     pub self_owner_object_folder_path: Option<String>,
@@ -190,6 +192,8 @@ pub struct WorkspaceExplorer {
     pub conflicts: Vec<crate::modules::workspace::application::explorer::types::ConflictGroup>,
     pub ancestor_disabled_by: Option<String>,
     pub ancestor_disabled_path: Option<String>,
+    #[specta(optional)]
+    pub ancestor_disabled_identity: Option<String>,
     pub inactive_reason: Option<WorkspaceReason>,
 }
 

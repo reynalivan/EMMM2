@@ -127,6 +127,7 @@
   "reconcile": {
     "authority_pending": "Disk changes were applied, but indexing validation is still pending.",
     "runtime_effects_pending": "Disk changes were applied, but runtime refresh is still pending.",
+    "workspace_switch_needs_repair": "Changes were applied on disk, but workspace synchronization needs repair.",
     "runtime_syncing": "Updating game runtime…",
     "runtime_sync_failed": "Runtime update failed",
     "manual_reload_short": "Manual reload required",

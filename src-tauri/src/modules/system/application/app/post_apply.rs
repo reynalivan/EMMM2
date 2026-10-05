@@ -1467,7 +1467,21 @@ fn request_sync_revision_with_request(
         });
     state.revision = state.revision.saturating_add(1);
     state.pending = Some(match state.pending.take() {
-        Some(pending) => pending.merge_pending(request),
+        Some(pending) => {
+            if matches!(
+                (&pending, &request),
+                (
+                    RuntimeSyncRequest::Scoped { .. },
+                    RuntimeSyncRequest::ScopedRoots { .. }
+                ) | (
+                    RuntimeSyncRequest::ScopedRoots { .. },
+                    RuntimeSyncRequest::Scoped { .. }
+                )
+            ) {
+                log::debug!("RuntimeScope game_id={game_id} publication_revision={} reason=mixed_mod_and_subtree outcome=full", state.revision);
+            }
+            pending.merge_pending(request)
+        }
         None => request,
     });
     Ok(state.revision)

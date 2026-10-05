@@ -28,14 +28,6 @@ async fn object_absolute_path(
         .to_string())
 }
 
-fn restore_info_json(path: &std::path::Path, previous: Option<&[u8]>) -> Result<(), AppError> {
-    match previous {
-        Some(bytes) => crate::platform::fs::atomic_file::atomic_write(path, bytes),
-        None if path.exists() => std::fs::remove_file(path).map_err(AppError::from),
-        None => Ok(()),
-    }
-}
-
 #[specta::specta]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri boundary: injected states plus the mutation payload.
@@ -59,6 +51,11 @@ pub async fn toggle_mod_safe(
         .clone();
     let started_at = std::time::Instant::now();
     let folder = validate_path(&config, &game_id, &folder_path)?;
+    let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&folder)?;
+    let root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
         &game_id,
@@ -67,6 +64,14 @@ pub async fn toggle_mod_safe(
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata)
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
+    root_proof.validate(
+        &config
+            .mods_root_for(&game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
+    source_proof.validate(&folder)?;
+    root_proof.validate(&root)?;
+    validate_path(&config, &game_id, &folder.to_string_lossy())?;
     let suppression = watcher.suppressor.suppress_paths([folder.as_ref()]);
     metadata::toggle_mod_safe(pool.inner(), &game_id, &folder, safe).await?;
     drop(suppression);
@@ -132,6 +137,14 @@ pub async fn apply_randomized_loadout(
     op_lock: tauri::State<'_, MutationCoordinator>,
     input: metadata::ApplyRandomizedLoadoutInput,
 ) -> Result<metadata::ApplyRandomizedLoadoutResult, AppError> {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &input.game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::RandomizerApply,
+    )?;
+    let root = config
+        .mods_root_for(&input.game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
     let preflight = crate::modules::reconciliation::application::disk_reconcile::emit::mutation_preflight_report_for_paths(
         &app,
         pool.inner(),
@@ -144,6 +157,12 @@ pub async fn apply_randomized_loadout(
         .lock_owned()
         .await;
     disk_reconcile_state.ensure_core_ready_for_mutation(&input.game_id)?;
+    root_proof.validate(&root)?;
+    root_proof.validate(
+        &config
+            .mods_root_for(&input.game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
     let preview_input = metadata::PreviewRandomizedLoadoutInput {
         game_id: input.game_id.clone(),
         mod_ids: input.mod_ids.clone(),
@@ -223,9 +242,14 @@ pub async fn apply_randomized_loadout(
     let journal_steps = planned_renames
         .into_iter()
         .map(|(sequence, old_path, new_path)| {
-            crate::modules::mutation::api::PlannedStep::rename(sequence, old_path, new_path)
+            let identity =
+                crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&old_path)?;
+            Ok(
+                crate::modules::mutation::api::PlannedStep::rename(sequence, old_path, new_path)
+                    .with_expected_identity(Some(identity.identity().to_string())),
+            )
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, AppError>>()?;
     if journal_steps.is_empty() {
         let _guard = op_lock
             .acquire_exempt(
@@ -257,11 +281,14 @@ pub async fn apply_randomized_loadout(
     }
 
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "randomized-loadout",
-            input.game_id.clone(),
-            journal_steps,
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "randomized-loadout",
+                input.game_id.clone(),
+                journal_steps,
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile_state.inner(),
@@ -269,6 +296,16 @@ pub async fn apply_randomized_loadout(
         game_guard,
         operation_guard,
     )?;
+    if let Err(error) = root_proof.validate(&root).and_then(|()| {
+        root_proof.validate(
+            &config
+                .mods_root_for(&input.game_id)
+                .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+        )
+    }) {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     let result = match prepared.execute_with_outcome(&app, &watcher) {
         Ok(result) => result,
         Err(
@@ -386,6 +423,11 @@ pub async fn update_mod_info(
         ));
     }
     let path = validate_path(&config, &game_id, &folder_path)?;
+    let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&path)?;
+    let root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
         &game_id,
@@ -397,11 +439,14 @@ pub async fn update_mod_info(
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = state.suppressor.suppress_paths([path.as_ref()]);
-    let previous = match std::fs::read(&info_path) {
-        Ok(bytes) => Some(bytes),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error.into()),
-    };
+    root_proof.validate(
+        &config
+            .mods_root_for(&game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
+    source_proof.validate(&path)?;
+    root_proof.validate(&root)?;
+    validate_path(&config, &game_id, &path.to_string_lossy())?;
     let info = info_json::update_info_json(&path, &update)?;
     drop(guard);
     drop(lock);
@@ -423,33 +468,9 @@ pub async fn update_mod_info(
         Err(error) => Some(error),
     };
     if let Some(failure) = failure {
-        let rollback_lock = op_lock
-            .acquire_exempt(
-                crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata,
-            )
-            .await?;
-        let rollback_guard = state.suppressor.suppress_paths([path.as_ref()]);
-        let rollback = restore_info_json(&info_path, previous.as_deref());
-        drop(rollback_guard);
-        drop(rollback_lock);
-        let repair = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
-            &app,
-            pool.inner(),
-            &game_id,
-        )
-        .await;
-        return match (rollback, repair) {
-            (Ok(()), Ok(_)) => Err(failure),
-            (rollback, repair) => Err(AppError::Io(format!(
-                "{failure}; rollback result: {}; recovery reconcile result: {}",
-                rollback
-                    .err()
-                    .map_or_else(|| "ok".to_string(), |error| error.to_string()),
-                repair
-                    .err()
-                    .map_or_else(|| "ok".to_string(), |error| error.to_string())
-            ))),
-        };
+        return Err(AppError::Io(format!(
+            "Metadata was saved on disk, but synchronization is pending: {failure}. Refresh to retry synchronization; do not repeat the edit."
+        )));
     }
 
     Ok(info)
@@ -665,8 +686,20 @@ async fn move_mods_to_object_impl(
     input: MoveModsToObjectInput,
     expected_identities: Option<Vec<(String, String)>>,
 ) -> Result<crate::modules::library::application::mods::bulk::BulkResult, AppError> {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &input.game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::StructuralMutation,
+    )?;
     let folders =
         crate::platform::fs::guard::validate_paths(&config, &input.game_id, &input.folder_paths)?;
+    let source_proofs = folders
+        .iter()
+        .map(|folder| crate::platform::fs::file_utils::FilesystemIdentityProof::capture(folder))
+        .collect::<Result<Vec<_>, _>>()?;
+    let root = config
+        .mods_root_for(&input.game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
     let mut preflight_paths = folders
         .iter()
         .map(|path| path.to_string_lossy().to_string())
@@ -685,6 +718,15 @@ async fn move_mods_to_object_impl(
         .lock_owned()
         .await;
     disk_reconcile_state.ensure_core_ready_for_mutation(&input.game_id)?;
+    root_proof.validate(&root)?;
+    root_proof.validate(
+        &config
+            .mods_root_for(&input.game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
+    for (folder, proof) in folders.iter().zip(&source_proofs) {
+        proof.validate(folder)?;
+    }
     if let Some(expected_identities) = expected_identities.as_deref() {
         crate::modules::workspace::application::explorer::listing::validate_workspace_explorer_selection_identities(
             expected_identities,
@@ -702,13 +744,7 @@ async fn move_mods_to_object_impl(
             },
         )
         .await?;
-    let journal_steps = prepared
-        .journal_steps()
-        .into_iter()
-        .map(|(sequence, old_path, new_path)| {
-            crate::modules::mutation::api::PlannedStep::rename(sequence, old_path, new_path)
-        })
-        .collect::<Vec<_>>();
+    let journal_steps = prepared.durable_journal_steps();
     if journal_steps.is_empty() {
         let _guard = op_lock
             .acquire_exempt(
@@ -723,11 +759,14 @@ async fn move_mods_to_object_impl(
         );
     }
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "organizer-move",
-            input.game_id.clone(),
-            journal_steps,
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "organizer-move",
+                input.game_id.clone(),
+                journal_steps,
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile_state.inner(),
@@ -735,12 +774,33 @@ async fn move_mods_to_object_impl(
         game_guard,
         operation_guard,
     )?;
+    if let Err(error) = root_proof.validate(&root).and_then(|()| {
+        root_proof
+            .validate(
+                &config
+                    .mods_root_for(&input.game_id)
+                    .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+            )
+            .and_then(|()| {
+                folders
+                    .iter()
+                    .zip(&source_proofs)
+                    .try_for_each(|(path, proof)| proof.validate(path))
+            })
+    }) {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     let organizer =
         match crate::modules::library::application::mods::organizer_move::execute_prepared_move(
             &watcher, &prepared,
         ) {
             Ok(outcome) => outcome,
             Err(error) => {
+                if !prepared.is_rolled_back() {
+                    mutation_lease.fail(error.to_string())?;
+                    return Err(error);
+                }
                 for (sequence, _, _) in prepared.journal_steps() {
                     mutation_lease.mark_step_rolled_back(sequence)?;
                 }

@@ -370,6 +370,15 @@ impl DiskReconcileRequest {
         self
     }
 
+    pub(in crate::modules::reconciliation::application::disk_reconcile) fn with_internal_rename_events(
+        mut self,
+        events: Vec<ModWatchEvent>,
+    ) -> Self {
+        debug_assert!(matches!(self.reason, DiskReconcileReason::InternalMutation));
+        self.watcher_events = events;
+        self
+    }
+
     pub(in crate::modules::reconciliation::application::disk_reconcile) fn trust_durable_mutation_scope(
         mut self,
     ) -> Self {

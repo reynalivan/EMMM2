@@ -10,6 +10,7 @@ import { listen } from '@tauri-apps/api/event';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { extractFileInUsePayload, formatAppError } from '../../../shared/lib/appError';
 import { toast } from '@/shared/ui/toast';
+import i18next from '@/shared/lib/i18n';
 import { useAppStore } from '@/app/store';
 import type {
   WorkspaceImpact,
@@ -35,14 +36,23 @@ import {
 } from '../state/workspaceDialogs';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 import { modHealthKeys } from '@/entities/mod';
-import { identityPathKey } from '@/shared/lib/pathKey';
+import { canonicalPathKey, identityPathKey } from '@/shared/lib/pathKey';
+import {
+  WorkspaceProjectionTracker,
+  WorkspaceProjectionNeedsRepairError,
+  WorkspaceRootEpochChangedError,
+} from './workspaceProjectionTracker';
+import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from '@/shared/lib/runtimeEffects';
 
 export type WorkspaceSwitchSurface = 'folder_grid' | 'preview' | 'object_list' | 'collections';
 
 export type WorkspaceSwitchFallbackClass = 'folderSwitch' | 'objectSwitch';
 export interface WorkspaceSwitchEffectsOptions {
   publish?: boolean;
+  replayPathRewrites?: boolean;
   gameId?: string;
+  onSyncError?: (error: unknown) => void;
+  shouldNotifySyncError?: () => boolean;
 }
 
 export interface WorkspaceRenameConflictPayload {
@@ -68,41 +78,38 @@ export function admitWorkspaceIntentOverride(
     console.error('[WorkspaceSwitch] Could not admit latest intent:', error);
   });
 }
-const projectedRevisionByGame = new Map<string, number>();
-const projectionWaiters = new Map<string, Set<{ revision: number; resolve: () => void }>>();
+const projectionTracker = new WorkspaceProjectionTracker(
+  (gameId) => commands.getWorkspaceSwitchSnapshot(gameId),
+  (gameId) => isWorkspaceGameCurrent(gameId),
+);
+export const subscribeWorkspaceRootEpoch = projectionTracker.onEpochChange.bind(projectionTracker);
+export const primeWorkspaceRootEpoch = projectionTracker.prime.bind(projectionTracker);
+export const invalidateWorkspaceRootEpoch = projectionTracker.invalidate.bind(projectionTracker);
 let projectionListenerReady: Promise<boolean> | null = null;
-const SNAPSHOT_WAIT_MS = 2_000;
 
 interface WorkspaceSwitchProjectedEvent {
   game_id: string;
   disk_revision: number;
+  source_epoch?: string;
 }
 
-export function recordWorkspaceProjectedRevision(gameId: string, revision: number): void {
-  if (!gameId || !Number.isSafeInteger(revision) || revision < 0) {
-    return;
-  }
-  projectedRevisionByGame.set(gameId, Math.max(projectedRevisionByGame.get(gameId) ?? 0, revision));
-  const waiters = projectionWaiters.get(gameId);
-  if (!waiters) {
-    return;
-  }
-  for (const waiter of waiters) {
-    if (waiter.revision <= revision) {
-      waiters.delete(waiter);
-      waiter.resolve();
-    }
-  }
-  if (waiters.size === 0) {
-    projectionWaiters.delete(gameId);
-  }
+export function recordWorkspaceProjectedRevision(
+  gameId: string,
+  revision: number,
+  sourceEpoch?: string,
+): void {
+  projectionTracker.record(gameId, revision, sourceEpoch);
 }
 
 export function ensureWorkspaceProjectionListener(): Promise<boolean> {
   projectionListenerReady ??= listen<WorkspaceSwitchProjectedEvent>(
     'workspace_switch:projected',
     ({ payload }) => {
-      recordWorkspaceProjectedRevision(payload.game_id, payload.disk_revision);
+      recordWorkspaceProjectedRevision(
+        payload.game_id,
+        payload.disk_revision,
+        payload.source_epoch,
+      );
     },
   ).then(
     () => true,
@@ -115,50 +122,13 @@ export function ensureWorkspaceProjectionListener(): Promise<boolean> {
   return projectionListenerReady;
 }
 
-export async function waitForWorkspaceProjection(gameId: string, revision: number): Promise<void> {
+export function waitForWorkspaceProjection(
+  gameId: string,
+  revision: number,
+  sourceEpoch?: string,
+): Promise<void> {
   void ensureWorkspaceProjectionListener();
-  let retryMs = 250;
-  while (true) {
-    if (!isWorkspaceGameCurrent(gameId)) return;
-    let timeoutId: number | undefined;
-    try {
-      const snapshot = await Promise.race([
-        commands.getWorkspaceSwitchSnapshot(gameId),
-        new Promise<null>((resolve) => {
-          timeoutId = window.setTimeout(() => resolve(null), SNAPSHOT_WAIT_MS);
-        }),
-      ]);
-      if (snapshot?.projected_revision !== undefined && snapshot.projected_revision >= revision) {
-        recordWorkspaceProjectedRevision(gameId, snapshot.projected_revision);
-        return;
-      }
-    } catch (error) {
-      console.warn('[WorkspaceSwitch] Projection snapshot unavailable; retrying', error);
-    } finally {
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    }
-    if ((projectedRevisionByGame.get(gameId) ?? 0) >= revision) {
-      return;
-    }
-    await new Promise<void>((resolve) => {
-      const waiters = projectionWaiters.get(gameId) ?? new Set();
-      const waiter = {
-        revision,
-        resolve: () => {
-          window.clearTimeout(timerId);
-          waiters.delete(waiter);
-          if (waiters.size === 0 && projectionWaiters.get(gameId) === waiters) {
-            projectionWaiters.delete(gameId);
-          }
-          resolve();
-        },
-      };
-      waiters.add(waiter);
-      projectionWaiters.set(gameId, waiters);
-      const timerId = window.setTimeout(waiter.resolve, retryMs);
-    });
-    retryMs = Math.min(retryMs * 2, 30_000);
-  }
+  return projectionTracker.wait(gameId, revision, sourceEpoch);
 }
 
 export function isWorkspaceObjectNode(node: WorkspaceNode): node is WorkspaceObjectNode {
@@ -238,12 +208,308 @@ export function isWorkspaceGameCurrent(gameId: string): boolean {
   return useAppStore.getState().activeGameId === gameId;
 }
 
+interface SwitchRefreshRequest {
+  gameId?: string;
+  sourceEpoch?: string;
+  diskRevision: number | null;
+  descriptor: RuntimeEffectDescriptor | null;
+  affectedPaths: string[];
+  onSyncError?: (error: unknown) => void;
+  shouldNotifySyncError?: () => boolean;
+  callbackKey?: string;
+  afterEpochVerification?: () => void;
+}
+
+type SwitchCancellationResult = { ok: true } | { ok: false; error: unknown };
+
+interface PendingSwitchRefresh {
+  sourceEpoch?: string;
+  diskRevision: number | null;
+  version: number;
+  events: Set<RuntimeRefreshEvent>;
+  healthKeys: Map<string, readonly unknown[]>;
+  errorCallbacks: Map<string, { onError?: (error: unknown) => void; shouldNotify?: () => boolean }>;
+  verifiedEffects: Map<string, { order: number; apply: () => void }>;
+  cancellation: Promise<SwitchCancellationResult>;
+  completion: Promise<void>;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  wake?: () => void;
+}
+
+const pendingSwitchRefreshes = new WeakMap<QueryClient, Map<string, PendingSwitchRefresh>>();
+const runningSwitchRefreshes = new WeakMap<QueryClient, Map<string, Promise<void>>>();
+const SYNC_REPAIR_WARNING_DEDUPE_MS = 30_000;
+const SYNC_REPAIR_WARNING_DURATION_MS = 7_000;
+const MAX_RECENT_SYNC_REPAIR_WARNINGS = 64;
+const recentSyncRepairWarnings = new Map<string, number>();
+
+function showWorkspaceSwitchRepairWarning(gameKey: string, sourceEpoch?: string): void {
+  const key = JSON.stringify([gameKey, sourceEpoch]);
+  const now = Date.now();
+  const lastShownAt = recentSyncRepairWarnings.get(key);
+  if (lastShownAt !== undefined && now - lastShownAt < SYNC_REPAIR_WARNING_DEDUPE_MS) return;
+  if (
+    recentSyncRepairWarnings.size >= MAX_RECENT_SYNC_REPAIR_WARNINGS &&
+    !recentSyncRepairWarnings.has(key)
+  ) {
+    const oldestKey = recentSyncRepairWarnings.keys().next().value;
+    if (oldestKey !== undefined) recentSyncRepairWarnings.delete(oldestKey);
+  }
+  recentSyncRepairWarnings.delete(key);
+  recentSyncRepairWarnings.set(key, now);
+  toast.warning(
+    i18next.t('common:reconcile.workspace_switch_needs_repair'),
+    SYNC_REPAIR_WARNING_DURATION_MS,
+  );
+}
+
+/** Shared revision barrier and union refresh: a failed burst owns one retry timer. */
+export function scheduleWorkspaceSwitchRefresh(
+  queryClient: QueryClient,
+  request: SwitchRefreshRequest,
+): Promise<void> {
+  const gameKey = request.gameId ?? '';
+  if (request.gameId && !isWorkspaceGameCurrent(request.gameId)) return Promise.resolve();
+  const pendingByGame =
+    pendingSwitchRefreshes.get(queryClient) ?? new Map<string, PendingSwitchRefresh>();
+  pendingSwitchRefreshes.set(queryClient, pendingByGame);
+  let pending = pendingByGame.get(gameKey);
+  if (pending && pending.sourceEpoch !== request.sourceEpoch) {
+    pending.reject(new WorkspaceRootEpochChangedError());
+    pendingByGame.delete(gameKey);
+    pending.wake?.();
+    pending = undefined;
+  }
+  const isNew = !pending;
+  if (!pending) {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const completion = new Promise<void>((onResolve, onReject) => {
+      resolve = onResolve;
+      reject = onReject;
+    });
+    pending = {
+      sourceEpoch: request.sourceEpoch,
+      diskRevision: request.diskRevision,
+      version: 0,
+      events: new Set(),
+      healthKeys: new Map(),
+      errorCallbacks: new Map(),
+      verifiedEffects: new Map(),
+      cancellation: Promise.resolve({ ok: true }),
+      completion,
+      resolve,
+      reject,
+    };
+    pendingByGame.set(gameKey, pending);
+  }
+  pending.version += 1;
+  if (request.diskRevision !== null)
+    pending.diskRevision = Math.max(pending.diskRevision ?? 0, request.diskRevision);
+  for (const event of request.descriptor?.refreshEvents ?? []) pending.events.add(event);
+  const newHealthKeys = request.gameId
+    ? request.affectedPaths.map((path) => modHealthKeys.report(request.gameId!, path))
+    : [];
+  for (const key of newHealthKeys) pending.healthKeys.set(JSON.stringify(key), key);
+  {
+    // Replacing the same scope's callback keeps rage-click failure bookkeeping bounded.
+    const scopeKey =
+      request.callbackKey ??
+      request.affectedPaths
+        .map((path) => canonicalPathKey(path) ?? path)
+        .sort()
+        .join('|');
+    pending.errorCallbacks.set(scopeKey, {
+      onError: request.onSyncError,
+      shouldNotify: request.shouldNotifySyncError,
+    });
+  }
+  if (request.afterEpochVerification) {
+    pending.verifiedEffects.set(request.callbackKey ?? '', {
+      order: request.diskRevision ?? pending.version,
+      apply: request.afterEpochVerification,
+    });
+  }
+  const cancellation = captureSwitchCancellation(
+    Promise.all([
+      request.descriptor
+        ? cancelRuntimeDescriptorQueries(queryClient, request.descriptor)
+        : Promise.resolve(),
+      ...newHealthKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })),
+    ]),
+  );
+  pending.cancellation = Promise.all([pending.cancellation, cancellation]).then(
+    ([prior, latest]) => (prior.ok ? latest : prior),
+  );
+  if (isNew) {
+    const owner = pending;
+    queueMicrotask(() => {
+      void drainWorkspaceSwitchRefresh(queryClient, request.gameId, pendingByGame, gameKey, owner);
+    });
+  }
+  return pending.completion;
+}
+
+// Keep a cancellation failure explicit without an unhandled rejection during retry backoff.
+function captureSwitchCancellation(promise: Promise<unknown>): Promise<SwitchCancellationResult> {
+  return promise.then(
+    () => ({ ok: true }),
+    (error: unknown) => ({ ok: false, error }),
+  );
+}
+
+async function drainWorkspaceSwitchRefresh(
+  queryClient: QueryClient,
+  gameId: string | undefined,
+  pendingByGame: Map<string, PendingSwitchRefresh>,
+  gameKey: string,
+  pending: PendingSwitchRefresh,
+): Promise<void> {
+  let retryMs = 250;
+  let retryCancellation = false;
+  const retry = async (error: unknown) => {
+    for (const callback of pending.errorCallbacks.values()) callback.onError?.(error);
+    console.warn('[WorkspaceSwitch] Shared refresh pending; retrying:', error);
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, retryMs);
+      pending.wake = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    pending.wake = undefined;
+    retryMs = Math.min(retryMs * 2, 30_000);
+  };
+  try {
+    while (pendingByGame.get(gameKey) === pending) {
+      if (gameId && !isWorkspaceGameCurrent(gameId)) {
+        pending.resolve();
+        return;
+      }
+      try {
+        if (retryCancellation) {
+          pending.cancellation = captureSwitchCancellation(
+            Promise.all([
+              pending.events.size
+                ? cancelRuntimeDescriptorQueries(
+                    queryClient,
+                    buildRefreshDescriptor([...pending.events]),
+                  )
+                : Promise.resolve(),
+              ...[...pending.healthKeys.values()].map((queryKey) =>
+                queryClient.cancelQueries({ queryKey }),
+              ),
+            ]),
+          );
+        }
+        try {
+          const cancellation = await pending.cancellation;
+          if (!cancellation.ok) throw cancellation.error;
+          retryCancellation = false;
+        } catch (error) {
+          retryCancellation = true;
+          throw error;
+        }
+        const version = pending.version;
+        if (gameId && pending.sourceEpoch !== undefined) {
+          await projectionTracker.verifyEpoch(gameId, pending.sourceEpoch);
+        }
+        if (pendingByGame.get(gameKey) !== pending) return;
+        if (gameId && !isWorkspaceGameCurrent(gameId)) {
+          pending.resolve();
+          return;
+        }
+        for (const effect of [...pending.verifiedEffects.values()].sort(
+          (left, right) => left.order - right.order,
+        ))
+          effect.apply();
+        pending.verifiedEffects.clear();
+        if (gameId && pending.diskRevision !== null) {
+          await waitForWorkspaceProjection(gameId, pending.diskRevision, pending.sourceEpoch);
+        }
+        if (pendingByGame.get(gameKey) !== pending) return;
+        if (gameId && !isWorkspaceGameCurrent(gameId)) {
+          pending.resolve();
+          return;
+        }
+        const runningByGame =
+          runningSwitchRefreshes.get(queryClient) ?? new Map<string, Promise<void>>();
+        runningSwitchRefreshes.set(queryClient, runningByGame);
+        await runningByGame.get(gameKey)?.catch(() => undefined);
+        if (pendingByGame.get(gameKey) !== pending) return;
+        if (gameId && !isWorkspaceGameCurrent(gameId)) {
+          pending.resolve();
+          return;
+        }
+        const refresh = Promise.all([
+          ...[...pending.healthKeys.values()].map((queryKey) =>
+            queryClient.invalidateQueries({ queryKey, refetchType: 'active' }),
+          ),
+          pending.events.size
+            ? publishRuntimeDescriptor(
+                queryClient,
+                buildRefreshDescriptor([...pending.events]),
+                'active',
+              )
+            : Promise.resolve(),
+        ]).then(() => undefined);
+        runningByGame.set(gameKey, refresh);
+        try {
+          await refresh;
+          if (gameId && !isWorkspaceGameCurrent(gameId)) {
+            pending.resolve();
+            return;
+          }
+          if (version === pending.version) {
+            pending.resolve();
+            return;
+          }
+          retryMs = 250;
+        } finally {
+          if (runningByGame.get(gameKey) === refresh) runningByGame.delete(gameKey);
+        }
+      } catch (error) {
+        if (
+          error instanceof WorkspaceRootEpochChangedError ||
+          error instanceof WorkspaceProjectionNeedsRepairError
+        )
+          throw error;
+        if (pendingByGame.get(gameKey) !== pending) return;
+        if (gameId && !isWorkspaceGameCurrent(gameId)) {
+          pending.resolve();
+          return;
+        }
+        await retry(error);
+      }
+    }
+  } catch (error) {
+    if (
+      error instanceof WorkspaceProjectionNeedsRepairError &&
+      pendingByGame.get(gameKey) === pending &&
+      (!gameId || isWorkspaceGameCurrent(gameId))
+    ) {
+      for (const callback of pending.errorCallbacks.values()) callback.onError?.(error);
+      if (
+        pending.diskRevision !== null &&
+        [...pending.errorCallbacks.values()].some((callback) => callback.shouldNotify?.() !== false)
+      ) {
+        showWorkspaceSwitchRepairWarning(gameKey, pending.sourceEpoch);
+      }
+    }
+    pending.reject(error);
+  } finally {
+    if (pendingByGame.get(gameKey) === pending) pendingByGame.delete(gameKey);
+  }
+}
+
 export function buildNodePendingKey(node: WorkspaceNode): string {
   if (isWorkspaceObjectNode(node)) {
     return `object:${node.id}`;
   }
 
-  return `folder:${node.id ?? identityPathKey(node.path) ?? node.path}`;
+  if (node.filesystem_identity) return `folder:physical:${node.filesystem_identity}`;
+  return `folder:${node.id ?? canonicalPathKey(node.path) ?? node.path}`;
 }
 
 /** Immutable add/remove for the pending-key map backing the switch spinner. */
@@ -350,8 +616,9 @@ export function executeWorkspaceObjectBulkSwitch(
  * path rewrites, then publish the refresh scopes.
  *
  * The rewrite list is the backend's own account of what moved — empty for a
- * no-op — so it replays unconditionally. Thumbnails are identity-keyed and
- * survive a toggle, so nothing is dropped here.
+ * no-op — so the initial receipt replays it unconditionally. Reactivation
+ * skips these historical rewrites and refreshes the current state instead.
+ * Thumbnails are identity-keyed and survive a toggle, so nothing is dropped here.
  */
 export function applyWorkspaceSwitchEffects(
   queryClient: QueryClient,
@@ -362,6 +629,11 @@ export function applyWorkspaceSwitchEffects(
   if (options.gameId && !isWorkspaceGameCurrent(options.gameId)) {
     return Promise.resolve();
   }
+  if (result.status === 'noop') return Promise.resolve();
+  const sourceEpoch =
+    'source_epoch' in result && typeof result.source_epoch === 'string'
+      ? result.source_epoch
+      : undefined;
 
   const descriptor =
     options.publish === false ? null : buildSwitchRefreshDescriptor(result.impact, fallbackClass);
@@ -374,44 +646,26 @@ export function applyWorkspaceSwitchEffects(
     seen.add(key);
     return true;
   });
-  const healthKeys = options.gameId
-    ? affectedPaths.map((path) => modHealthKeys.report(options.gameId!, path))
-    : [];
-  const cancellation = Promise.all([
-    descriptor ? cancelRuntimeDescriptorQueries(queryClient, descriptor) : Promise.resolve(),
-    ...healthKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })),
-  ]);
 
-  applyRuntimeEffects(
-    queryClient,
-    buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
-  );
+  const applyPathRewrites = () =>
+    applyRuntimeEffects(
+      queryClient,
+      buildWorkspacePathRewritesDescriptor(result.impact.rewrites, []),
+    );
+  const deferPathRewrites =
+    options.gameId && !projectionTracker.acceptsEpoch(options.gameId, sourceEpoch);
+  if (options.replayPathRewrites !== false && !deferPathRewrites) applyPathRewrites();
 
-  const backgroundRefresh = async () => {
-    await cancellation;
-
-    const diskRevision =
-      'disk_revision' in result && typeof result.disk_revision === 'number'
-        ? result.disk_revision
-        : null;
-    if (options.gameId && diskRevision !== null) {
-      await waitForWorkspaceProjection(options.gameId, diskRevision);
-    }
-
-    if (options.gameId && !isWorkspaceGameCurrent(options.gameId)) {
-      return;
-    }
-
-    await Promise.all([
-      ...healthKeys.map((queryKey) =>
-        queryClient.invalidateQueries({ queryKey, refetchType: 'active' }),
-      ),
-      descriptor ? publishRuntimeDescriptor(queryClient, descriptor, 'active') : Promise.resolve(),
-    ]);
-  };
-
-  return backgroundRefresh().catch((error: unknown) => {
-    console.error('[WorkspaceSwitch] Background cache refresh failed:', error);
-    throw error;
+  return scheduleWorkspaceSwitchRefresh(queryClient, {
+    gameId: options.gameId,
+    sourceEpoch,
+    diskRevision: typeof result.disk_revision === 'number' ? result.disk_revision : null,
+    descriptor,
+    affectedPaths,
+    onSyncError: options.onSyncError,
+    shouldNotifySyncError: options.shouldNotifySyncError,
+    callbackKey: canonicalPathKey(result.primary_path) ?? undefined,
+    afterEpochVerification:
+      options.replayPathRewrites !== false && deferPathRewrites ? applyPathRewrites : undefined,
   });
 }

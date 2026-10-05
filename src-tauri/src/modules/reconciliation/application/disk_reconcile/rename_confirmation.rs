@@ -379,10 +379,51 @@ fn detect_rename_confirmations_with_protection_from_rows(
     }
 }
 
-fn path_is_covered(path: &str, evidence_root: &str) -> bool {
-    path.eq_ignore_ascii_case(evidence_root)
-        || crate::shared::path_key::strip_path_prefix_preserve_display(path, evidence_root, None)
-            .is_some()
+struct RenameEvidenceCoverage {
+    raw_paths: HashSet<String>,
+    component_paths: HashSet<Vec<String>>,
+}
+
+impl RenameEvidenceCoverage {
+    fn new<'a>(roots: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut coverage = Self {
+            raw_paths: HashSet::new(),
+            component_paths: HashSet::new(),
+        };
+        for root in roots {
+            coverage.raw_paths.insert(root.to_ascii_lowercase());
+            let components = Self::components(root);
+            if !components.is_empty() {
+                coverage.component_paths.insert(components);
+            }
+        }
+        coverage
+    }
+
+    fn components(path: &str) -> Vec<String> {
+        // Match strip_path_prefix_preserve_display's component normalization,
+        // including its lexical treatment of Windows namespaces.
+        let normalized: std::path::PathBuf = std::path::Path::new(path).components().collect();
+        normalized
+            .components()
+            .map(|component| {
+                crate::shared::path_key::canonical_name_key(
+                    &component.as_os_str().to_string_lossy(),
+                )
+            })
+            .collect()
+    }
+
+    fn covers(&self, path: &str) -> bool {
+        if self.raw_paths.is_empty() {
+            return false;
+        }
+        if self.raw_paths.contains(&path.to_ascii_lowercase()) {
+            return true;
+        }
+        let components = Self::components(path);
+        (1..=components.len()).any(|depth| self.component_paths.contains(&components[..depth]))
+    }
 }
 
 fn without_watcher_rename_evidence(
@@ -402,67 +443,47 @@ fn without_watcher_rename_evidence(
         .cloned()
         .collect::<Vec<_>>();
     let hints = collect_rename_hints(mods_path, &actual_rename_events);
-    let object_from = hints
-        .object_renames
-        .iter()
-        .map(|(from, _)| from)
-        .collect::<Vec<_>>();
-    let object_to = hints
-        .object_renames
-        .iter()
-        .map(|(_, to)| to)
-        .collect::<Vec<_>>();
-    let mod_from = hints
-        .mod_renames
-        .iter()
-        .map(|(from, _)| from)
-        .collect::<Vec<_>>();
-    let mod_to = hints
-        .mod_renames
-        .iter()
-        .map(|(_, to)| to)
-        .collect::<Vec<_>>();
+    let object_from =
+        RenameEvidenceCoverage::new(hints.object_renames.iter().map(|(from, _)| from.as_str()));
+    let object_to =
+        RenameEvidenceCoverage::new(hints.object_renames.iter().map(|(_, to)| to.as_str()));
+    let mod_from = RenameEvidenceCoverage::new(
+        hints
+            .object_renames
+            .iter()
+            .chain(hints.mod_renames.iter())
+            .map(|(from, _)| from.as_str()),
+    );
+    let mod_to = RenameEvidenceCoverage::new(
+        hints
+            .object_renames
+            .iter()
+            .chain(hints.mod_renames.iter())
+            .map(|(_, to)| to.as_str()),
+    );
 
     let filtered_projection = DiskProjection {
         objects: projection
             .objects
             .iter()
-            .filter(|entry| {
-                !object_to
-                    .iter()
-                    .any(|root| path_is_covered(&entry.folder_path, root))
-            })
+            .filter(|entry| !object_to.covers(&entry.folder_path))
             .cloned()
             .collect(),
         mods: projection
             .mods
             .iter()
-            .filter(|entry| {
-                !object_to
-                    .iter()
-                    .chain(mod_to.iter())
-                    .any(|root| path_is_covered(&entry.folder_path, root))
-            })
+            .filter(|entry| !mod_to.covers(&entry.folder_path))
             .cloned()
             .collect(),
     };
     let filtered_objects = objects
         .iter()
-        .filter(|entry| {
-            !object_from
-                .iter()
-                .any(|root| path_is_covered(&entry.folder_path, root))
-        })
+        .filter(|entry| !object_from.covers(&entry.folder_path))
         .cloned()
         .collect();
     let filtered_mods = mods
         .iter()
-        .filter(|entry| {
-            !object_from
-                .iter()
-                .chain(mod_from.iter())
-                .any(|root| path_is_covered(&entry.folder_path, root))
-        })
+        .filter(|entry| !mod_from.covers(&entry.folder_path))
         .cloned()
         .collect();
 
@@ -640,6 +661,136 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn rename_evidence_coverage_preserves_prefix_and_namespace_semantics() {
+        let roots = [
+            "Alice/Blue",
+            "Alice/Container",
+            "DISABLED DISABLED Bob/Nested",
+            " Native. /Child ",
+            "",
+            ".",
+            r"C:\Mods\Alice",
+            r"\\?\C:\Mods\Alice",
+            r"\\Server\Share\Alice",
+            r"\\?\UNC\Server\Share\Alice",
+        ];
+        let paths = [
+            "Alice/Blue",
+            "alice/DISABLED_BLUE/Child",
+            "Alice/Blueberry",
+            "Alice/Container/Blue",
+            "Alice/ContainerSuffix/Blue",
+            "Bob/DISABLED Nested/Child",
+            " Native. /Child /Leaf",
+            "Native/Child/Leaf",
+            "",
+            ".",
+            "./Alice/Blue",
+            r"c:\mods\alice\Child",
+            r"\\?\C:\Mods\Alice\Child",
+            r"\\Server\Share\Alice\Child",
+            r"\\?\UNC\Server\Share\Alice\Child",
+            "C:/Mods/Alice/Child",
+        ];
+        for root in roots {
+            let coverage = RenameEvidenceCoverage::new([root]);
+            for path in paths {
+                let expected = path.eq_ignore_ascii_case(root)
+                    || crate::shared::path_key::strip_path_prefix_preserve_display(
+                        path, root, None,
+                    )
+                    .is_some();
+                assert_eq!(
+                    coverage.covers(path),
+                    expected,
+                    "path={path:?}, root={root:?}"
+                );
+            }
+        }
+        let coverage = RenameEvidenceCoverage::new(roots);
+        for path in paths {
+            let expected = roots.iter().any(|root| {
+                path.eq_ignore_ascii_case(root)
+                    || crate::shared::path_key::strip_path_prefix_preserve_display(path, root, None)
+                        .is_some()
+            });
+            assert_eq!(coverage.covers(path), expected, "path={path:?}");
+        }
+    }
+
+    #[test]
+    fn rename_evidence_filters_nested_hints_and_preserves_unrelated_protection() {
+        let projection = DiskProjection {
+            objects: vec![disk_object("NewObject", None), disk_object("Alice", None)],
+            mods: vec![
+                disk_mod("NewObject/Nested/Blue", None),
+                disk_mod("Alice/DISABLED Container/Nested/Blue", None),
+                disk_mod("Alice/ContainerSuffix/Blue", None),
+                disk_mod("Alice/Unproven New", None),
+            ],
+        };
+        let objects = [object("OldObject", None), object("Alice", None)];
+        let mods = [
+            db_mod("OldObject/Nested/Blue", None),
+            db_mod("Alice/Container/Nested/Blue", None),
+            db_mod("Alice/ContainerSuffix/Blue", None),
+            db_mod("Alice/Unproven Old", None),
+        ];
+        let root = std::path::Path::new("E:/Mods");
+        let events = [
+            ("OldObject", "NewObject"),
+            ("Alice/Container", "Alice/DISABLED Container"),
+            ("Alice/Container/Nested", "Alice/DISABLED Container/Nested"),
+        ]
+        .map(|(from, to)| ModWatchEvent::Renamed {
+            from: root.join(from).to_string_lossy().into_owned(),
+            to: root.join(to).to_string_lossy().into_owned(),
+        });
+        let (filtered_projection, filtered_objects, filtered_mods) =
+            without_watcher_rename_evidence(root, &projection, &objects, &mods, &events);
+        assert_eq!(filtered_projection.objects.len(), 1);
+        assert_eq!(filtered_projection.objects[0].folder_path, "Alice");
+        assert_eq!(filtered_objects.len(), 1);
+        assert_eq!(filtered_objects[0].folder_path, "Alice");
+        assert_eq!(
+            filtered_projection
+                .mods
+                .iter()
+                .map(|row| row.folder_path.as_str())
+                .collect::<Vec<_>>(),
+            ["Alice/ContainerSuffix/Blue", "Alice/Unproven New"]
+        );
+        assert_eq!(
+            filtered_mods
+                .iter()
+                .map(|row| row.folder_path.as_str())
+                .collect::<Vec<_>>(),
+            ["Alice/ContainerSuffix/Blue", "Alice/Unproven Old"]
+        );
+        let detection = detect_rename_confirmations_with_protection_from_rows(
+            "game",
+            &filtered_projection,
+            &filtered_objects,
+            &filtered_mods,
+        );
+        assert_eq!(detection.groups.len(), 1);
+        assert_eq!(detection.groups[0].previous_paths, ["Alice/Unproven Old"]);
+        assert_eq!(detection.groups[0].current_paths, ["Alice/Unproven New"]);
+        assert!(detection
+            .protected_mod_keys
+            .contains(&crate::shared::path_key::folder_path_key(
+                "Alice/Unproven Old",
+                None
+            )));
+        assert!(detection
+            .protected_mod_keys
+            .contains(&crate::shared::path_key::folder_path_key(
+                "Alice/Unproven New",
+                None
+            )));
+    }
 
     fn object(path: &str, identity: Option<&str>) -> ReconcileObjectRow {
         ReconcileObjectRow {

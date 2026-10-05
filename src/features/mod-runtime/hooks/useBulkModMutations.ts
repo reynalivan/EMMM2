@@ -57,6 +57,7 @@ export function useBulkToggle() {
         params.enable,
         createBulkOperationId('toggle'),
         nextWorkspaceIntentRevision(),
+        null,
       ),
 
     onSuccess: (result, variables) => {

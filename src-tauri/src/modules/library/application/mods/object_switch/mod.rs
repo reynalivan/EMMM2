@@ -5,6 +5,7 @@
 mod resolve;
 mod toggle;
 
+pub(crate) use resolve::resolve_object_root_paths;
 pub use toggle::*;
 
 #[cfg(test)]

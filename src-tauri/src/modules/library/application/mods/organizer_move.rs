@@ -1,6 +1,8 @@
 use crate::modules::library::application::mods::core_ops::standardize_prefix;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::file_utils::FilesystemIdentityProof;
 use crate::platform::fs::guard::ValidatedPath;
+use crate::platform::fs::rename::rename_no_replace;
 use crate::shared::errors::AppError;
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -29,6 +31,7 @@ pub struct OrganizerMoveOutcome {
 
 #[derive(Debug, Clone)]
 struct PreparedOrganizerRename {
+    source_proof: FilesystemIdentityProof,
     old_path: PathBuf,
     new_path: PathBuf,
     old_rel: String,
@@ -38,6 +41,8 @@ struct PreparedOrganizerRename {
 
 #[derive(Debug, Clone)]
 pub struct PreparedOrganizerMove {
+    target_anchor: PathBuf,
+    target_proof: FilesystemIdentityProof,
     renames: Vec<PreparedOrganizerRename>,
     primary_results: Vec<String>,
     target_base_path: PathBuf,
@@ -45,6 +50,25 @@ pub struct PreparedOrganizerMove {
 }
 
 impl PreparedOrganizerMove {
+    pub fn is_rolled_back(&self) -> bool {
+        self.renames
+            .iter()
+            .all(|rename| rename.source_proof.validate(&rename.old_path).is_ok())
+    }
+    pub fn durable_journal_steps(&self) -> Vec<crate::modules::mutation::api::PlannedStep> {
+        self.renames
+            .iter()
+            .enumerate()
+            .map(|(sequence, rename)| {
+                crate::modules::mutation::api::PlannedStep::rename(
+                    sequence as u32,
+                    rename.old_path.clone(),
+                    rename.new_path.clone(),
+                )
+                .with_expected_identity(Some(rename.source_proof.identity().to_string()))
+            })
+            .collect()
+    }
     pub fn journal_steps(&self) -> Vec<(u32, PathBuf, PathBuf)> {
         self.renames
             .iter()
@@ -103,6 +127,7 @@ pub async fn prepare_move_mods_to_object(
 
     for folder in params.folder_paths {
         let current_path = folder.to_path_buf();
+        let source_proof = FilesystemIdentityProof::capture(&current_path)?;
         let folder_name = current_path
             .file_name()
             .and_then(|value| value.to_str())
@@ -134,6 +159,7 @@ pub async fn prepare_move_mods_to_object(
             }
             seen_sources.insert(current_path.clone());
             renames.push(PreparedOrganizerRename {
+                source_proof,
                 old_path: current_path,
                 new_path,
                 old_rel,
@@ -170,6 +196,7 @@ pub async fn prepare_move_mods_to_object(
                     continue;
                 }
                 renames.push(PreparedOrganizerRename {
+                    source_proof: FilesystemIdentityProof::capture(&sibling_path)?,
                     old_rel: sibling_rel.into_stored(),
                     new_rel: relative_mod_path(&disabled_path, base_path),
                     old_path: sibling_path,
@@ -180,7 +207,14 @@ pub async fn prepare_move_mods_to_object(
         }
     }
 
+    let target_anchor = target_base_path
+        .ancestors()
+        .find(|path| path.is_dir())
+        .ok_or_else(|| AppError::NotFound("Organizer destination root is unavailable".into()))?
+        .to_path_buf();
     Ok(PreparedOrganizerMove {
+        target_proof: FilesystemIdentityProof::capture(&target_anchor)?,
+        target_anchor,
         renames,
         primary_results,
         target_base_path,
@@ -192,6 +226,7 @@ pub fn execute_prepared_move(
     watcher: &WatcherState,
     prepared: &PreparedOrganizerMove,
 ) -> Result<OrganizerMoveOutcome, AppError> {
+    prepared.target_proof.validate(&prepared.target_anchor)?;
     let suppression_paths = prepared
         .renames
         .iter()
@@ -204,10 +239,21 @@ pub fn execute_prepared_move(
     }
     let mut applied: Vec<&PreparedOrganizerRename> = Vec::new();
     for rename in &prepared.renames {
-        if let Err(error) = std::fs::rename(&rename.old_path, &rename.new_path) {
+        let outcome = rename
+            .source_proof
+            .validate(&rename.old_path)
+            .and_then(|()| {
+                rename_no_replace(&rename.old_path, &rename.new_path).map_err(AppError::from)
+            });
+        if let Err(error) = outcome {
             for applied_rename in applied.iter().rev() {
-                if let Err(rollback_error) =
-                    std::fs::rename(&applied_rename.new_path, &applied_rename.old_path)
+                if let Err(rollback_error) = applied_rename
+                    .source_proof
+                    .validate(&applied_rename.new_path)
+                    .and_then(|()| {
+                        rename_no_replace(&applied_rename.new_path, &applied_rename.old_path)
+                            .map_err(AppError::from)
+                    })
                 {
                     return Err(AppError::Io(format!(
                         "Organizer move failed: {error}; rollback failed: {rollback_error}"
@@ -262,8 +308,14 @@ pub fn rollback_prepared_move(
     let _suppression = watcher.suppressor.suppress_paths(suppression_paths);
     let mut failures = Vec::new();
     for rename in prepared.renames.iter().rev() {
-        if rename.new_path.exists() && !rename.old_path.exists() {
-            if let Err(error) = std::fs::rename(&rename.new_path, &rename.old_path) {
+        if rename.new_path.exists() {
+            if let Err(error) = rename
+                .source_proof
+                .validate(&rename.new_path)
+                .and_then(|()| {
+                    rename_no_replace(&rename.new_path, &rename.old_path).map_err(AppError::from)
+                })
+            {
                 failures.push(format!(
                     "{} -> {}: {error}",
                     rename.new_path.display(),
@@ -298,85 +350,8 @@ pub async fn move_mods_to_object_service(
         });
     }
 
-    let game_mod_path =
-        crate::modules::games::adapters::sqlite::game::get_mod_path(pool, params.game_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Game not found".to_string()))?;
-    let target_obj = crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(
-        pool,
-        params.target_object_id,
-    )
-    .await?
-    .ok_or_else(|| AppError::NotFound("Target object not found".to_string()))?;
-
-    if target_obj.game_id != params.game_id {
-        return Err(AppError::Validation(format!(
-            "Target object '{}' belongs to game '{}', but requested move is for game '{}'",
-            params.target_object_id, target_obj.game_id, params.game_id
-        )));
-    }
-
-    let base_path = Path::new(&game_mod_path);
-    let target_obj_path = base_path.join(&target_obj.folder_path);
-    let (target_base_path, target_base_requires_creation) =
-        resolve_target_base_path(&target_obj_path, params.target_subpath)?;
-
-    // Sources move under the target root: register each source plus the
-    // target base so the paired From/To events are both covered.
-    let _guard = watcher.suppressor.suppress_paths(
-        params
-            .folder_paths
-            .iter()
-            .map(|path| path.as_ref().to_path_buf())
-            .chain(std::iter::once(target_base_path.clone())),
-    );
-    if target_base_requires_creation && !target_base_path.exists() {
-        std::fs::create_dir_all(&target_base_path)
-            .map_err(|error| AppError::Io(error.to_string()))?;
-    }
-    let mut success = Vec::new();
-    let mut failures = Vec::new();
-    let mut path_hints = Vec::new();
-    let mut path_rewrites = Vec::new();
-
-    for folder_path in params.folder_paths {
-        match move_one_mod_to_object(
-            pool,
-            params.game_id,
-            folder_path,
-            params.target_object_id,
-            params.status,
-            base_path,
-            &target_obj_path,
-            &target_base_path,
-        )
-        .await
-        {
-            Ok(result) => {
-                success.push(result.new_rel.clone());
-                path_hints.extend(result.path_hints);
-                path_rewrites.extend(result.path_rewrites);
-            }
-            Err(error) => failures.push(
-                crate::modules::library::application::mods::bulk::BulkActionError {
-                    path: folder_path.original().to_string(),
-                    error,
-                },
-            ),
-        }
-    }
-
-    Ok(OrganizerMoveOutcome {
-        result:
-            crate::modules::library::application::mods::bulk::BulkResult::with_collection_impact(
-                success,
-                failures,
-                crate::modules::collections::domain::collection::CollectionReferenceImpact::default(
-                ),
-                path_rewrites,
-            ),
-        path_hints,
-    })
+    let prepared = prepare_move_mods_to_object(pool, params).await?;
+    execute_prepared_move(watcher, &prepared)
 }
 
 fn resolve_target_base_path(
@@ -431,91 +406,6 @@ fn relative_mod_path(path: &Path, mods_root: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .to_string()
-}
-
-struct MoveOneResult {
-    new_rel: String,
-    path_hints: Vec<OrganizerMovePathHint>,
-    path_rewrites: Vec<crate::modules::workspace::domain::workspace::WorkspacePathRewrite>,
-}
-
-#[allow(clippy::too_many_arguments)] // Internal move receives validated batch context and target paths.
-async fn move_one_mod_to_object(
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    folder: &ValidatedPath,
-    target_object_id: &str,
-    status: Option<&str>,
-    base_path: &Path,
-    target_obj_path: &Path,
-    target_base_path: &Path,
-) -> Result<MoveOneResult, AppError> {
-    let current_path = folder.to_path_buf();
-    let mod_folder_name = current_path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-
-    let mut new_mod_folder_name = mod_folder_name.clone();
-    if status == Some("disabled") {
-        new_mod_folder_name = standardize_prefix(&mod_folder_name, false);
-    }
-    if status == Some("only-enable") {
-        new_mod_folder_name = standardize_prefix(&mod_folder_name, true);
-    }
-
-    let new_path = target_base_path.join(&new_mod_folder_name);
-    let old_rel = relative_mod_path(&current_path, base_path);
-    let new_rel = relative_mod_path(&new_path, base_path);
-    let target_mod_id =
-        crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path(
-            pool, &old_rel, game_id,
-        )
-        .await?
-        .map(|(id, _, _)| id);
-
-    if current_path != new_path {
-        if new_path.exists() {
-            return Err(AppError::Validation(format!(
-                "Destination already exists: {}",
-                new_path.to_string_lossy()
-            )));
-        }
-        std::fs::rename(&current_path, &new_path)
-            .map_err(|error| AppError::Io(error.to_string()))?;
-    }
-
-    let mut path_hints = vec![OrganizerMovePathHint {
-        old_path: old_rel.clone(),
-        new_path: new_rel.clone(),
-        target_object_id: target_object_id.to_string(),
-    }];
-    let path_rewrites = vec![
-        crate::modules::workspace::domain::workspace::WorkspacePathRewrite {
-            old_path: old_rel.clone(),
-            new_path: new_rel.clone(),
-        },
-    ];
-
-    if status == Some("only-enable") {
-        crate::modules::library::application::mods::organizer_duplicates::disable_target_duplicates(
-            pool,
-            game_id,
-            target_object_id,
-            target_mod_id.as_deref(),
-            base_path,
-            target_obj_path,
-            &mut path_hints,
-        )
-        .await?;
-    }
-
-    Ok(MoveOneResult {
-        new_rel,
-        path_hints,
-        path_rewrites,
-    })
 }
 
 #[cfg(test)]

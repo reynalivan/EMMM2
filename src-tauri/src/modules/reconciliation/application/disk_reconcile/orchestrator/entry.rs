@@ -3,9 +3,7 @@
 use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcileResult, DiskReconcileScanScope,
 };
-use crate::modules::workspace::application::scanner::watcher::{
-    ModWatchEvent, WatcherSession, WatcherState,
-};
+use crate::modules::workspace::application::scanner::watcher::{WatcherSession, WatcherState};
 use crate::shared::errors::AppError;
 
 use super::request::{DiskReconcileContext, DiskReconcileRequest};
@@ -70,26 +68,6 @@ pub(crate) async fn reconcile_disk_state_for_watcher(
         &watcher_session,
         result,
     ))
-}
-
-/// Disk Reconcile watcher batches must stay disk-only.
-/// Watcher must never invoke the Deep Match Scanner pipeline.
-pub(crate) async fn reconcile_disk_state_from_watcher_batch(
-    context: DiskReconcileContext<'_>,
-    game_id: String,
-    mods_path: &std::path::Path,
-    changed_paths: Vec<String>,
-    watcher_events: &[ModWatchEvent],
-    watcher_state: &WatcherState,
-    watcher_session: WatcherSession,
-) -> Result<WatcherReconcileOutcome, AppError> {
-    reconcile_disk_state_for_watcher(
-        context,
-        DiskReconcileRequest::watcher_batch(game_id, mods_path, changed_paths, watcher_events),
-        watcher_state,
-        watcher_session,
-    )
-    .await
 }
 
 /// Disk Reconcile keeps runtime projection aligned with filesystem reality.
@@ -198,6 +176,7 @@ async fn run_reconcile_with_authority(
             }
         }
         let changed_paths = current_request.changed_paths.clone();
+        let echo_watermark = context.watcher_suppressor.expected_echo_watermark();
         let mut result = run_reconcile_with_owned_locks(context.clone(), current_request).await?;
         if !result.status.applied() {
             return Ok(result);
@@ -217,6 +196,9 @@ async fn run_reconcile_with_authority(
                             context.watcher_suppressor.mark_repaired_through(evidence);
                         }
                     }
+                    context
+                        .watcher_suppressor
+                        .mark_rename_echoes_reconciled_through(&session, echo_watermark);
                     return Ok(result);
                 }
             }

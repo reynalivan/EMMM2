@@ -92,10 +92,116 @@ fn move_journal_removes_owned_target_when_source_still_exists() {
     std::fs::write(source.join("mod.ini"), "source").unwrap();
     std::fs::write(target.join("mod.ini"), "partial").unwrap();
 
-    rollback_move_journal(&[MoveJournalEntry::new(source.clone(), target.clone())]).unwrap();
+    let source_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&source).unwrap();
+    let target_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&target).unwrap();
+    rollback_move_journal(&[MoveJournalEntry::from_owned_move(
+        source.clone(),
+        target.clone(),
+        &source_proof,
+        &target_proof,
+    )])
+    .unwrap();
 
     assert!(source.join("mod.ini").is_file());
     assert!(!target.exists());
+}
+
+#[test]
+fn move_journal_cleanup_preserves_replaced_target_when_owned_source_still_exists() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("partial-target");
+    let owned_target = root.path().join("owned-target");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("payload"), "original source").unwrap();
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("payload"), "partial copy").unwrap();
+    let source_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&source).unwrap();
+    let target_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&target).unwrap();
+    std::fs::rename(&target, &owned_target).unwrap();
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("payload"), "foreign target").unwrap();
+    let entry = MoveJournalEntry::from_owned_move(
+        source.clone(),
+        target.clone(),
+        &source_proof,
+        &target_proof,
+    );
+
+    assert!(rollback_move_journal(&[entry]).is_err());
+    for (path, contents) in [
+        (source, "original source"),
+        (target, "foreign target"),
+        (owned_target, "partial copy"),
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(path.join("payload")).unwrap(),
+            contents
+        );
+    }
+}
+
+#[test]
+fn move_journal_never_rolls_back_a_replacement_target() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    std::fs::create_dir(&target).unwrap();
+    let entry = MoveJournalEntry::new(source.clone(), target.clone());
+    std::fs::rename(&target, root.path().join("original")).unwrap();
+    std::fs::create_dir(&target).unwrap();
+    assert!(rollback_move_journal(&[entry]).is_err());
+    assert!(target.is_dir());
+    assert!(!source.exists());
+}
+
+#[test]
+fn move_journal_preserves_owned_target_when_source_is_reoccupied() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("payload"), "original").unwrap();
+    let entry = MoveJournalEntry::new(source.clone(), target.clone());
+    std::fs::create_dir(&source).unwrap();
+    assert!(rollback_move_journal(&[entry]).is_err());
+    assert!(source.is_dir());
+    assert_eq!(
+        std::fs::read_to_string(target.join("payload")).unwrap(),
+        "original"
+    );
+}
+
+#[test]
+fn move_journal_keeps_published_identity_across_return_to_registration() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    std::fs::create_dir(&source).unwrap();
+    let source_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&source).unwrap();
+    let target_proof =
+        crate::platform::fs::file_utils::rename_cross_drive_fallback_tracked(&source, &target)
+            .unwrap();
+    std::fs::rename(&target, root.path().join("owned-target")).unwrap();
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("foreign"), "must survive").unwrap();
+    let entry = MoveJournalEntry::from_owned_move(
+        source.clone(),
+        target.clone(),
+        &source_proof,
+        &target_proof,
+    );
+    assert!(rollback_move_journal(&[entry]).is_err());
+    assert_eq!(
+        std::fs::read_to_string(target.join("foreign")).unwrap(),
+        "must survive"
+    );
+    assert!(!source.exists());
 }
 
 #[tokio::test]

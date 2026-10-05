@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::games::domain::models::ItemStatus;
@@ -12,7 +13,7 @@ use crate::modules::reconciliation::application::disk_reconcile::watcher_batch::
     collect_rename_hints, WatcherRenameHints,
 };
 use crate::modules::system::adapters::sqlite::utils::stable_ids::generate_stable_id;
-use crate::modules::workspace::application::scanner::watcher::ModWatchEvent;
+use crate::modules::workspace::api::scanner::watcher::ModWatchEvent;
 use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
 use crate::shared::errors::AppError;
 
@@ -57,57 +58,88 @@ struct ModRenameHintsRequest<'a> {
     change_summary: &'a mut ChangeSummaryBuilder,
 }
 
+fn exact_key(path: &str) -> String {
+    crate::shared::path_key::exact_location_key_for_path(Path::new(path))
+}
+
+fn exact_suffix(path: &str, prefix: &str) -> Option<PathBuf> {
+    let path_key = exact_key(path);
+    let prefix_key = exact_key(prefix);
+    if path_key == prefix_key {
+        return Some(PathBuf::new());
+    }
+    path_key.strip_prefix(&format!("{prefix_key}/"))?;
+    let path = PathBuf::from(path.replace('\\', "/"));
+    let prefix = PathBuf::from(prefix.replace('\\', "/"));
+    Some(
+        path.components()
+            .skip(prefix.components().count())
+            .collect(),
+    )
+}
+
 async fn apply_mod_rename_hints(
     conn: &mut sqlx::SqliteConnection,
     request: ModRenameHintsRequest<'_>,
 ) -> Result<(), AppError> {
-    for (hint_from, hint_to) in &request.hints.mod_renames {
-        let exact_match =
-            crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
-                &mut *conn,
-                hint_from,
-                request.game_id,
-            )
-            .await?;
-        let rename_pairs = if exact_match.is_some() {
-            vec![(hint_from.clone(), hint_to.clone())]
-        } else {
-            let rows = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile(
-                &mut *conn,
-                request.game_id,
-            )
-            .await?;
-            rows.into_iter()
-                .filter_map(|row| {
-                    let suffix = crate::shared::path_key::strip_path_prefix_preserve_display(
-                        &row.folder_path,
-                        hint_from,
-                        None,
-                    )?;
-                    if suffix.is_empty() {
-                        return None;
-                    }
-                    let target = Path::new(hint_to).join(suffix);
-                    request
-                        .mods_path
-                        .join(&target)
-                        .is_dir()
-                        .then(|| (row.folder_path, target.to_string_lossy().to_string()))
-                })
-                .collect()
-        };
-
-        for (old_relative, new_relative) in rename_pairs {
-            let mod_exists =
-                crate::modules::library::adapters::sqlite::mods::get_mod_id_and_status_by_path_tx(
-                    &mut *conn,
-                    &old_relative,
-                    request.game_id,
+    let root_keys = request
+        .hints
+        .mod_renames
+        .iter()
+        .filter_map(|(from, _)| {
+            Path::new(from).components().next().map(|root| {
+                crate::shared::path_key::folder_path_key(
+                    &root.as_os_str().to_string_lossy(),
+                    Some(request.mods_root),
                 )
-                .await?;
-            let Some((old_id, _object_id, _status)) = mod_exists else {
+            })
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let rows = crate::modules::library::api::get_reconcile_mod_rows(
+        &mut *conn,
+        request.game_id,
+        &root_keys,
+        &[],
+    )
+    .await?;
+    let mut rows_by_path = rows
+        .into_iter()
+        .map(|row| (exact_key(&row.folder_path), row))
+        .collect::<BTreeMap<_, _>>();
+    for (hint_from, hint_to) in &request.hints.mod_renames {
+        let source_key = exact_key(hint_from);
+        let candidates = rows_by_path
+            .get(&source_key)
+            .into_iter()
+            .chain(
+                rows_by_path
+                    .range(format!("{source_key}/")..format!("{source_key}0"))
+                    .map(|(_, row)| row),
+            )
+            .cloned()
+            .collect::<Vec<_>>();
+        for mut row in candidates {
+            let old_relative = row.folder_path.clone();
+            let Some(suffix) = exact_suffix(&old_relative, hint_from) else {
                 continue;
             };
+            let new_relative = if suffix.as_os_str().is_empty() {
+                hint_to.clone()
+            } else {
+                Path::new(hint_to)
+                    .join(suffix)
+                    .to_string_lossy()
+                    .to_string()
+            };
+            let target_identity = crate::platform::fs::file_utils::filesystem_identity(
+                &request.mods_path.join(&new_relative),
+            );
+            if row.filesystem_identity.is_none() || row.filesystem_identity != target_identity {
+                continue;
+            }
+            let old_id = row.id.clone();
 
             let components = Path::new(&new_relative).components().collect::<Vec<_>>();
             if components.len() < 2 {
@@ -196,15 +228,27 @@ async fn apply_mod_rename_hints(
             .await?;
             request.collection_reference_impact.merge(impact);
 
-            push_path_update(
-                &mut *request.path_updates,
-                DiskReconcilePathKind::Mod,
-                &old_relative,
-                &new_relative,
-            );
-            request
-                .change_summary
-                .record_mod_renamed(&metadata.actual_name);
+            let parent_covers_path = request.hints.object_renames.iter().any(|(old, new)| {
+                exact_suffix(&old_relative, old)
+                    .zip(exact_suffix(&new_relative, new))
+                    .is_some_and(|(from, to)| from == to)
+            });
+            if !parent_covers_path {
+                push_path_update(
+                    &mut *request.path_updates,
+                    DiskReconcilePathKind::Mod,
+                    &old_relative,
+                    &new_relative,
+                );
+                request
+                    .change_summary
+                    .record_mod_renamed(&metadata.actual_name);
+            }
+            rows_by_path.remove(&exact_key(&old_relative));
+            row.folder_path = new_relative;
+            row.id = new_id;
+            row.status = metadata.status;
+            rows_by_path.insert(exact_key(&row.folder_path), row);
         }
     }
 
@@ -220,23 +264,37 @@ async fn apply_object_rename_hints(
     collection_reference_impact: &mut CollectionReferenceImpact,
     change_summary: &mut ChangeSummaryBuilder,
 ) -> Result<(), AppError> {
+    let root_keys = hints
+        .object_renames
+        .iter()
+        .map(|(old, _)| crate::shared::path_key::folder_path_key(old, None))
+        .collect::<Vec<_>>();
+    let rows = crate::modules::catalog::api::get_reconcile_object_rows(
+        &mut *conn,
+        game_id,
+        &root_keys,
+        &[],
+    )
+    .await?;
     for (old_folder, new_folder) in &hints.object_renames {
+        let Some(row) = rows
+            .iter()
+            .find(|row| exact_key(&row.folder_path) == exact_key(old_folder))
+        else {
+            continue;
+        };
+        let identity = crate::platform::fs::file_utils::filesystem_identity(
+            &Path::new(mods_root).join(new_folder),
+        );
+        if row.filesystem_identity.is_none() || row.filesystem_identity != identity {
+            continue;
+        }
         let next_status = ItemStatus::from_is_disabled(is_disabled_folder(new_folder));
-        crate::modules::catalog::adapters::sqlite::object::update_object_runtime_state_by_path(
+        crate::modules::catalog::adapters::sqlite::object::update_object_runtime_state_by_id(
             &mut *conn,
-            game_id,
-            old_folder,
+            &row.id,
             new_folder,
             next_status,
-        )
-        .await?;
-
-        crate::modules::library::adapters::sqlite::mods::update_child_paths_tx(
-            &mut *conn,
-            game_id,
-            old_folder,
-            new_folder,
-            Some(mods_root),
         )
         .await?;
 
@@ -293,39 +351,38 @@ pub(crate) async fn apply_watcher_rename_hints(
     )
     .await?;
     let mut uncovered_hints = hints.clone();
-    uncovered_hints.mod_renames = hints
-        .mod_renames
-        .iter()
-        .filter_map(|(mod_from, mod_to)| {
-            for (object_from, object_to) in &hints.object_renames {
-                let Some(from_suffix) = crate::shared::path_key::strip_path_prefix_preserve_display(
-                    mod_from,
-                    object_from,
-                    None,
-                ) else {
-                    continue;
-                };
-                let Some(to_suffix) = crate::shared::path_key::strip_path_prefix_preserve_display(
-                    mod_to, object_to, None,
-                ) else {
-                    continue;
-                };
-                if !from_suffix.is_empty() {
-                    if from_suffix.eq_ignore_ascii_case(&to_suffix) {
-                        return None;
+    uncovered_hints.mod_renames = hints.object_renames.clone();
+    uncovered_hints.mod_renames.extend(
+        hints
+            .mod_renames
+            .iter()
+            .filter_map(|(mod_from, mod_to)| {
+                for (object_from, object_to) in &hints.object_renames {
+                    let Some(from_suffix) = exact_suffix(mod_from, object_from) else {
+                        continue;
+                    };
+                    let Some(to_suffix) = exact_suffix(mod_to, object_to) else {
+                        continue;
+                    };
+                    if !from_suffix.as_os_str().is_empty() {
+                        if crate::shared::path_key::exact_location_key_for_path(&from_suffix)
+                            == crate::shared::path_key::exact_location_key_for_path(&to_suffix)
+                        {
+                            return None;
+                        }
+                        return Some((
+                            Path::new(object_to)
+                                .join(from_suffix)
+                                .to_string_lossy()
+                                .to_string(),
+                            mod_to.clone(),
+                        ));
                     }
-                    return Some((
-                        Path::new(object_to)
-                            .join(from_suffix)
-                            .to_string_lossy()
-                            .to_string(),
-                        mod_to.clone(),
-                    ));
                 }
-            }
-            Some((mod_from.clone(), mod_to.clone()))
-        })
-        .collect();
+                Some((mod_from.clone(), mod_to.clone()))
+            })
+            .collect::<Vec<_>>(),
+    );
     apply_mod_rename_hints(
         &mut *request.conn,
         ModRenameHintsRequest {

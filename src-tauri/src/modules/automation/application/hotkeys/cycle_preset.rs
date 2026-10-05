@@ -75,6 +75,12 @@ pub(super) async fn execute_cycle_preset(
         .active_game()
         .ok_or_else(|| AppError::Internal("No active game selected".to_string()))?;
     let game_id = game.id.as_str();
+    let root_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&game.mod_path)?;
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::PresetApply,
+    )?;
 
     let collections = crate::modules::collections::application::collection::list_collections(
         pool_state.inner(),
@@ -138,6 +144,12 @@ pub(super) async fn execute_cycle_preset(
     let mutation_lease = disk_reconcile
         .acquire_ready_mutation_lease(game_id, op_lock.inner_lock())
         .await?;
+    root_proof.validate(&game.mod_path)?;
+    crate::modules::reconciliation::api::ensure_projection_epoch(
+        config_state.inner(),
+        game_id,
+        root_proof.identity(),
+    )?;
 
     let apply_result =
         crate::modules::collections::application::collection::apply_collection_durable(
@@ -162,8 +174,7 @@ pub(super) async fn execute_cycle_preset(
         &game.mod_path,
         crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
         &apply_result.runtime_path_rewrites,
-    )
-    .await;
+    );
     drop(mutation_lease);
 
     Ok(format!(

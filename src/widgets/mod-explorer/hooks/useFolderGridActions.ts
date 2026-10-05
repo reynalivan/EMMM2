@@ -15,6 +15,8 @@ interface UseFolderGridActionsOptions {
   activeGame: ReturnType<typeof useActiveGame>['activeGame'];
   explorerSubPath: string | undefined;
   ancestorDisabledPath: string | null;
+  selfIdentity?: string | null;
+  ancestorDisabledIdentity?: string | null;
   objects: ObjectSummary[];
   clearGridSelection: () => void;
   sourceAvailable: boolean;
@@ -29,6 +31,8 @@ export function useFolderGridActions({
   activeGame,
   explorerSubPath,
   ancestorDisabledPath,
+  selfIdentity,
+  ancestorDisabledIdentity,
   objects,
   clearGridSelection,
   sourceAvailable,
@@ -139,17 +143,17 @@ export function useFolderGridActions({
       }
 
       const targetPath = await join(activeGame.mod_path, explorerSubPath);
-      await switchActions.setFolderPathEnabled(targetPath, enable);
+      await switchActions.setFolderPathEnabled(targetPath, enable, selfIdentity);
     },
-    [activeGame, explorerSubPath, sourceAvailable, switchActions],
+    [activeGame, explorerSubPath, sourceAvailable, switchActions, selfIdentity],
   );
 
   const openEnableParentDialog = useCallback(() => {
     if (!ancestorDisabledPath) {
       return;
     }
-    void switchActions.setFolderPathEnabled(ancestorDisabledPath, true);
-  }, [ancestorDisabledPath, switchActions]);
+    void switchActions.setFolderPathEnabled(ancestorDisabledPath, true, ancestorDisabledIdentity);
+  }, [ancestorDisabledPath, switchActions, ancestorDisabledIdentity]);
 
   const handleToggleEnabledGuarded = useCallback(
     (folder: WorkspaceExplorerNode) => {

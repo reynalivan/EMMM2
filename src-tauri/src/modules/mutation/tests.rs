@@ -22,6 +22,63 @@ fn open_journal(path: &Path) -> Arc<OperationJournal> {
 }
 
 #[test]
+fn projection_batch_completes_with_one_durable_snapshot_and_preserves_pending_on_error() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("journal.json");
+    let journal = open_journal(&path);
+    let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+    let mut ids = Vec::new();
+    for index in 0..8 {
+        let old = temp.path().join(format!("Old-{index}"));
+        let new = temp.path().join(format!("New-{index}"));
+        std::fs::create_dir(&old).unwrap();
+        let id = journal.plan_operation(rename_plan(&old, &new)).unwrap();
+        journal.mark_applying(&id).unwrap();
+        std::fs::rename(old, new).unwrap();
+        journal.mark_step_applied(&id, 0).unwrap();
+        journal.mark_disk_committed(&id).unwrap();
+        ids.push(id);
+    }
+    journal.reset_persistence_metrics();
+    let mut invalid = ids.clone();
+    invalid.push("missing-operation".into());
+    assert!(coordinator.complete_disk_projection(&invalid).is_err());
+    assert_eq!(
+        journal.pending_disk_commits().len(),
+        ids.len(),
+        "no partial completion"
+    );
+    assert_eq!(journal.persistence_metrics().writes, 0);
+    let repair_id = ids.last().unwrap();
+    journal
+        .isolate_disk_commit_for_repair(repair_id, "unproven root")
+        .unwrap();
+    journal.reset_persistence_metrics();
+    assert!(coordinator.complete_disk_projection(&ids).is_err());
+    assert!(journal
+        .entries()
+        .iter()
+        .all(|operation| operation.status == OperationStatus::DiskCommitted));
+    assert_eq!(journal.persistence_metrics().writes, 0);
+    journal
+        .mark_repaired_projection_committed(repair_id)
+        .unwrap();
+    let progress_path = active_state_path(&path, &ids[0]);
+    let stale_progress = std::fs::read(&progress_path).unwrap();
+    journal.reset_persistence_metrics();
+    coordinator.complete_disk_projection(&ids).unwrap();
+    assert_eq!(journal.persistence_metrics().writes, 1);
+    assert!(journal.pending_disk_commits().is_empty());
+    std::fs::write(&progress_path, stale_progress).unwrap();
+    let reopened = OperationJournal::open(&path, TEST_HISTORY_LIMIT).unwrap();
+    assert!(reopened
+        .entries()
+        .iter()
+        .all(|operation| operation.status == OperationStatus::Completed
+            && operation.database_projection_status == DatabaseProjectionStatus::Committed));
+}
+
+#[test]
 fn legacy_rename_step_kind_deserializes_to_typed_variant() {
     let step: super::journal::OperationStep = serde_json::from_value(serde_json::json!({
         "sequence": 0,
@@ -691,7 +748,7 @@ fn unversioned_journal_migrates_to_a_versioned_snapshot() {
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
 
     assert_eq!(reopened.entries()[0].id, id);
-    assert_eq!(snapshot["format_version"].as_u64(), Some(2));
+    assert_eq!(snapshot["format_version"].as_u64(), Some(3));
     assert_eq!(snapshot["revision"].as_u64(), Some(1));
     assert_eq!(snapshot["operation_ids"][0].as_str(), Some(id.as_str()));
     assert!(snapshot["checksum"]

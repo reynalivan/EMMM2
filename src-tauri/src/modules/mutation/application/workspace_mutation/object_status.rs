@@ -80,6 +80,12 @@ pub async fn disable_object_roots(
     if plans.is_empty() {
         return Ok(ObjectDisableResult::default());
     }
+    let source_proofs = plans
+        .iter()
+        .map(|(_, source, _)| {
+            crate::platform::fs::file_utils::FilesystemIdentityProof::capture(source)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         app, pool, game_id,
@@ -105,25 +111,45 @@ pub async fn disable_object_roots(
             .flat_map(|(_, source, target)| [source.as_path(), target.as_path()]),
     );
     let mut journal = Vec::new();
-    for (_, source, target) in &plans {
-        if let Err(error) =
-            crate::platform::fs::file_utils::rename_cross_drive_fallback(source, target)
-        {
-            let rollback = rollback_move_journal(&journal);
-            drop(suppression);
-            let recovery =
+    for ((_, source, target), source_proof) in plans.iter().zip(&source_proofs) {
+        let outcome = source_proof.validate(source).and_then(|()| {
+            crate::platform::fs::file_utils::rename_cross_drive_fallback_tracked(source, target)
+                .map_err(|error| {
+                    if let Some(target_proof) = error.target_proof() {
+                        journal.push(MoveJournalEntry::from_owned_move(
+                            source.clone(),
+                            target.clone(),
+                            source_proof,
+                            target_proof,
+                        ));
+                    }
+                    AppError::from(error.into_io_error())
+                })
+        });
+        let target_proof = match outcome {
+            Ok(proof) => proof,
+            Err(error) => {
+                let rollback = rollback_move_journal(&journal);
+                drop(suppression);
+                let recovery =
                 crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
                     app, pool, game_id, &lease,
                 )
                 .await;
-            drop(lease);
-            return Err(AppError::Io(format!(
+                drop(lease);
+                return Err(AppError::Io(format!(
                 "Could not disable object folder: {error}; rollback: {}; recovery reconcile: {}",
                 result_label(rollback),
                 result_label(recovery)
             )));
-        }
-        journal.push(MoveJournalEntry::new(source.clone(), target.clone()));
+            }
+        };
+        journal.push(MoveJournalEntry::from_owned_move(
+            source.clone(),
+            target.clone(),
+            source_proof,
+            &target_proof,
+        ));
     }
     drop(suppression);
 

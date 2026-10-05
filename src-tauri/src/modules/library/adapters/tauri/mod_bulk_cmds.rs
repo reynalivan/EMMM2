@@ -17,6 +17,33 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const MAX_BULK_PATHS: usize = 10_000;
 const BULK_TOGGLE_CHUNK_SIZE: usize = 32;
 
+fn rebase_toggle_identities(
+    identities: Vec<(String, String)>,
+    rewrites: &[crate::modules::workspace::domain::workspace::WorkspacePathRewrite],
+) -> Vec<(String, String)> {
+    let rewrites = rewrites
+        .iter()
+        .map(|rewrite| (Path::new(&rewrite.old_path), Path::new(&rewrite.new_path)))
+        .collect::<HashMap<_, _>>();
+    identities
+        .into_iter()
+        .map(|(path, identity)| {
+            let source = Path::new(&path);
+            let rebased = source.ancestors().find_map(|ancestor| {
+                rewrites.get(ancestor).map(|destination| {
+                    let suffix = source.strip_prefix(ancestor).expect("ancestor prefix");
+                    if suffix.as_os_str().is_empty() {
+                        destination.to_string_lossy().into_owned()
+                    } else {
+                        destination.join(suffix).to_string_lossy().into_owned()
+                    }
+                })
+            });
+            (rebased.unwrap_or(path), identity)
+        })
+        .collect()
+}
+
 fn validate_snapshot_identities(
     expected_identities: Option<&[(String, String)]>,
 ) -> Result<(), AppError> {
@@ -234,7 +261,11 @@ fn apply_committed_reconcile(
 fn partition_toggle_paths(
     validated: Vec<ValidatedPath>,
     conflicts: &[crate::modules::reconciliation::application::disk_reconcile::types::FolderNameConflictGroup],
+    trusted_scope: bool,
 ) -> (Vec<ValidatedPath>, Vec<bulk::BulkActionError>) {
+    if trusted_scope {
+        return (validated, Vec::new());
+    }
     let (blocked, safe): (Vec<_>, Vec<_>) = validated.into_iter().partition(|path| {
         let canonical_path = path.to_string_lossy().into_owned();
         crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
@@ -332,23 +363,28 @@ fn toggle_step_paths(steps: &[bulk::PreparedToggleStep]) -> Vec<String> {
 }
 
 fn trusted_bulk_toggle_scope(steps: &[bulk::PreparedToggleStep], mods_root: &Path) -> bool {
+    let Ok(mods_root) = crate::shared::path_key::physical_namespace_path(mods_root) else {
+        return false;
+    };
     !steps.is_empty()
         && steps.iter().all(|step| {
-            step.old_path.starts_with(mods_root)
-                && step.new_path.starts_with(mods_root)
-                && step.old_path.parent() == step.new_path.parent()
+            let (Ok(old), Ok(new)) = (
+                crate::shared::path_key::physical_namespace_path(&step.old_path),
+                crate::shared::path_key::physical_namespace_path(&step.new_path),
+            ) else {
+                return false;
+            };
+            old.starts_with(&mods_root)
+                && new.starts_with(&mods_root)
+                && old.parent() == new.parent()
                 && crate::shared::path_key::folder_path_key(
-                    &step
-                        .old_path
-                        .strip_prefix(mods_root)
-                        .unwrap_or(&step.old_path)
+                    &old.strip_prefix(&mods_root)
+                        .unwrap_or(&old)
                         .to_string_lossy(),
                     None,
                 ) == crate::shared::path_key::folder_path_key(
-                    &step
-                        .new_path
-                        .strip_prefix(mods_root)
-                        .unwrap_or(&step.new_path)
+                    &new.strip_prefix(&mods_root)
+                        .unwrap_or(&new)
                         .to_string_lossy(),
                     None,
                 )
@@ -411,6 +447,7 @@ fn merge_toggle_chunk_result(aggregate: &mut bulk::BulkResult, result: bulk::Bul
     aggregate.collection_impact.merge(result.collection_impact);
     if let Some(revision) = result.disk_revision {
         aggregate.disk_revision = Some(aggregate.disk_revision.unwrap_or(0).max(revision));
+        aggregate.source_epoch = result.source_epoch;
     }
     if result.sync_warning.is_some() {
         aggregate.sync_warning = result.sync_warning;
@@ -446,7 +483,6 @@ pub async fn bulk_cancel(
 #[allow(clippy::too_many_arguments)] // Tauri command boundary keeps the existing IPC payload stable.
 pub async fn bulk_toggle_mods(
     app: AppHandle,
-    config: State<'_, ConfigService>,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
     disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
@@ -455,7 +491,9 @@ pub async fn bulk_toggle_mods(
     enable: bool,
     operation_id: String,
     intent_revision: Option<u64>,
+    expected_identities: Option<Vec<(String, String)>>,
 ) -> Result<bulk::BulkResult, AppError> {
+    let config = app.state::<ConfigService>();
     let op_lock = app.state::<MutationCoordinator>();
     bulk_toggle_mods_impl(
         app.clone(),
@@ -468,7 +506,7 @@ pub async fn bulk_toggle_mods(
         paths,
         enable,
         operation_id,
-        None,
+        expected_identities,
         intent_revision,
     )
     .await
@@ -515,21 +553,67 @@ async fn bulk_toggle_mods_impl(
     disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, MutationCoordinator>,
     game_id: String,
-    paths: Vec<String>,
+    mut paths: Vec<String>,
     enable: bool,
     operation_id: String,
-    expected_identities: Option<Vec<(String, String)>>,
+    mut expected_identities: Option<Vec<(String, String)>>,
     intent_revision: Option<u64>,
 ) -> Result<bulk::BulkResult, AppError> {
+    let command_started_at = Instant::now();
     validate_bulk_size(&paths)?;
-    let admission = op_lock.admit_intents(
+    let _foreground_intent = op_lock.inner_lock().foreground_intent();
+    let source_epoch =
+        crate::modules::reconciliation::api::projection_source_epoch(config.inner(), &game_id)?;
+    let admission_root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    if let Some(identities) = &mut expected_identities {
+        let proof_paths = identities
+            .iter()
+            .map(|(path, _)| path.as_str())
+            .collect::<HashSet<_>>();
+        if identities.len() != paths.len()
+            || proof_paths.len() != identities.len()
+            || paths
+                .iter()
+                .any(|path| !proof_paths.contains(path.as_str()))
+        {
+            return Err(AppError::Validation(
+                "Bulk toggle identity proof must cover every selected path".into(),
+            ));
+        }
+        let mut resolved_paths = HashMap::new();
+        for (path, identity) in identities.iter_mut() {
+            let resolved =
+                crate::modules::workspace::api::workspace::switch::resolve_expected_switch_path(
+                    &admission_root,
+                    &admission_root.join(&*path),
+                    Some(identity),
+                )?;
+            resolved_paths.insert(path.clone(), resolved.to_string_lossy().into_owned());
+            *path = resolved.to_string_lossy().into_owned();
+        }
+        for path in &mut paths {
+            *path = resolved_paths
+                .remove(path)
+                .ok_or(AppError::ExplorerSnapshotExpired)?;
+        }
+    }
+    let admission_started_at = Instant::now();
+    let mut admission = op_lock.admit_intents_in_epoch(
         &game_id,
+        Some(&source_epoch),
         intent_revision,
-        paths.iter().cloned().map(IntentTarget::ModPath),
+        paths.iter().map(|path| {
+            IntentTarget::ModPath(admission_root.join(path).to_string_lossy().into_owned())
+        }),
     );
+    let admission_elapsed = admission_started_at.elapsed();
+    for path in &paths {
+        admission.bind_request_alias(Path::new(path), &admission_root.join(path));
+    }
     let cancel_state = app.state::<BulkCancelState>();
     let cancellation = cancel_state.register(&operation_id)?;
-    let _foreground_intent = op_lock.inner_lock().foreground_intent();
 
     let (validated, stale_paths) =
         crate::platform::fs::guard::validate_mod_toggle_paths(&config, &game_id, &paths)?;
@@ -540,6 +624,15 @@ async fn bulk_toggle_mods_impl(
         .chain(overlapping_paths)
         .filter(|failure| admission.is_current_path(&game_id, Path::new(&failure.path)))
         .collect::<Vec<_>>();
+    let storage_proof = disk_reconcile.capture_toggle_storage_proof(
+        &game_id,
+        &admission_root,
+        &validated
+            .iter()
+            .map(|path| path.as_ref().to_path_buf())
+            .collect::<Vec<_>>(),
+        state.inner(),
+    )?;
     let valid_paths = validated
         .into_iter()
         .map(|path| path.original().to_string())
@@ -547,7 +640,8 @@ async fn bulk_toggle_mods_impl(
     let mut aggregate = bulk::BulkResult::new(Vec::new(), std::mem::take(&mut failures));
     emit_toggle_progress(&app, &operation_id, enable, 0, paths.len(), true, false);
 
-    'chunks: for chunk in valid_paths.chunks(BULK_TOGGLE_CHUNK_SIZE) {
+    let chunk_count = valid_paths.len().div_ceil(BULK_TOGGLE_CHUNK_SIZE);
+    'chunks: for (chunk_index, chunk) in valid_paths.chunks(BULK_TOGGLE_CHUNK_SIZE).enumerate() {
         if cancellation.flag().load(Ordering::Relaxed) {
             aggregate.cancelled = true;
             break;
@@ -573,8 +667,15 @@ async fn bulk_toggle_mods_impl(
                 chunk_paths.clone(),
                 enable,
                 &operation_id,
+                &source_epoch,
+                intent_revision,
+                chunk_index,
+                chunk_count,
+                admission_elapsed,
+                command_started_at,
                 chunk_identities,
                 &admission,
+                storage_proof.as_ref(),
                 cancellation.flag(),
             )
             .await;
@@ -627,6 +728,8 @@ async fn bulk_toggle_mods_impl(
     aggregate.processed_count = aggregate.success.len() + aggregate.failures.len();
     aggregate.unprocessed_count = paths.len().saturating_sub(aggregate.processed_count);
     aggregate.cancelled |= aggregate.unprocessed_count > 0;
+    aggregate.expected_identities = expected_identities
+        .map(|identities| rebase_toggle_identities(identities, &aggregate.path_rewrites));
     emit_toggle_progress(
         &app,
         &operation_id,
@@ -651,12 +754,25 @@ async fn bulk_toggle_mods_chunk(
     paths: Vec<String>,
     enable: bool,
     operation_id: &str,
+    source_epoch: &str,
+    intent_revision: Option<u64>,
+    chunk_index: usize,
+    chunk_count: usize,
+    admission_elapsed: std::time::Duration,
+    command_started_at: Instant,
     expected_identities: Option<Vec<(String, String)>>,
     admission: &crate::modules::mutation::coordinator::IntentAdmission,
+    storage_proof: Option<
+        &crate::modules::reconciliation::api::disk_reconcile::orchestrator::ToggleStorageProof,
+    >,
     cancel: &AtomicBool,
 ) -> Result<bulk::BulkResult, AppError> {
     let started_at = Instant::now();
     let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
+    let trace_enabled = cfg!(debug_assertions) || diagnostics_enabled;
+    let mods_root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
     // Containment failures reject the entire request. Stale folders are local
     // failures, so a multi-select remains useful when one entry disappeared.
     let (validated, stale_paths) =
@@ -686,6 +802,16 @@ async fn bulk_toggle_mods_chunk(
     let _foreground_intent = op_lock.inner_lock().foreground_intent();
     let lock_wait_started_at = Instant::now();
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    if crate::platform::fs::file_utils::filesystem_identity(&mods_root).as_deref()
+        != Some(source_epoch)
+    {
+        return Err(AppError::ExplorerSnapshotExpired);
+    }
+    crate::modules::reconciliation::api::ensure_projection_epoch(
+        config.inner(),
+        &game_id,
+        source_epoch,
+    )?;
     let (validated, superseded_paths): (Vec<_>, Vec<_>) = validated
         .into_iter()
         .partition(|path| admission.is_current_path(&game_id, Path::new(path.original())));
@@ -698,6 +824,9 @@ async fn bulk_toggle_mods_chunk(
             .collect::<Vec<_>>()
     });
     validate_snapshot_identities(current_identities.as_deref())?;
+    for path in &validated {
+        admission.validate_resolved_path(&mods_root.join(path.original()), path.as_ref())?;
+    }
     if validated.is_empty() {
         let processed = preflight_failures.len();
         let result = bulk::BulkResult::new(Vec::new(), preflight_failures).with_execution_state(
@@ -709,13 +838,22 @@ async fn bulk_toggle_mods_chunk(
         return Ok(result);
     }
     let lock_wait_elapsed = lock_wait_started_at.elapsed();
+    if let Some(proof) = storage_proof {
+        disk_reconcile.validate_toggle_storage_proof(
+            &game_id,
+            &mods_root,
+            &validated
+                .iter()
+                .map(|path| path.as_ref().to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            proof,
+            state.inner(),
+        )?;
+    }
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_preflight(
         &app,
         &game_id,
     )?;
-    let mods_root = config
-        .mods_root_for(&game_id)
-        .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
     let initial_paths = validated
         .iter()
         .map(|path| path.as_ref().to_path_buf())
@@ -723,7 +861,7 @@ async fn bulk_toggle_mods_chunk(
     let initial_prepared = bulk::prepare_bulk_toggle(&initial_paths, enable);
     let initial_steps = initial_prepared.planned_steps_with_identity();
     if initial_steps.is_empty() {
-        disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
+        disk_reconcile.ensure_indexed_root(&game_id, &mods_root)?;
         let _lock = op_lock
             .acquire_exempt(
                 crate::modules::mutation::coordinator::MutationExemption::LibraryMetadata,
@@ -744,9 +882,12 @@ async fn bulk_toggle_mods_chunk(
     }
     let trusted_scope = trusted_bulk_toggle_scope(&initial_steps, &mods_root);
     let storage_fast_path = trusted_scope
-        && disk_reconcile
-            .ensure_core_ready_for_mutation(&game_id)
-            .is_ok();
+        && (storage_proof.is_some()
+            || disk_reconcile.toggle_scope_is_ready(
+                &game_id,
+                &mods_root,
+                &toggle_step_paths(&initial_steps),
+            ));
     let preflight_started_at = Instant::now();
     let validated = if storage_fast_path {
         validated
@@ -768,7 +909,7 @@ async fn bulk_toggle_mods_chunk(
         .await?;
         drop(preflight_guard);
         let (validated, folder_conflict_failures) =
-            partition_toggle_paths(validated, &preflight.folder_conflicts);
+            partition_toggle_paths(validated, &preflight.folder_conflicts, trusted_scope);
         preflight_failures.extend(folder_conflict_failures);
         validated
     };
@@ -786,11 +927,14 @@ async fn bulk_toggle_mods_chunk(
         .iter()
         .map(|path| path.as_ref().to_path_buf())
         .collect::<Vec<_>>();
-    let prepared = if storage_fast_path {
+    let mut prepared = if storage_fast_path {
         initial_prepared
     } else {
         bulk::prepare_bulk_toggle(&validated_paths, enable)
     };
+    if let Some(proof) = storage_proof.filter(|_| trusted_scope) {
+        prepared.set_namespace_proof(proof.namespace());
+    }
     let planned_steps = prepared.planned_steps_with_identity();
     if planned_steps.is_empty() {
         let _lock = op_lock
@@ -826,19 +970,37 @@ async fn bulk_toggle_mods_chunk(
         .collect();
     let journal_started_at = Instant::now();
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "bulk-toggle",
-            game_id.clone(),
-            journal_steps,
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "bulk-toggle",
+                game_id.clone(),
+                journal_steps,
+            )
+            .with_source_epoch(source_epoch.to_string()),
+        )
         .await?;
     let journal_elapsed = journal_started_at.elapsed();
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_toggle_scope_guard(
         disk_reconcile.inner(),
         &game_id,
+        &mods_root,
+        &toggle_step_paths(&planned_steps),
         game_guard,
         operation_guard,
-    )?;
+        storage_proof.filter(|_| trusted_scope).map(|proof| (proof, state.inner())),
+        async |game_guard, operation_guard| {
+            crate::modules::reconciliation::application::disk_reconcile::emit::mutation_preflight_report_under_game_lock(
+                &app,
+                pool.inner(),
+                &game_id,
+                toggle_step_paths(&planned_steps),
+                trusted_scope && disk_reconcile.trusted_regional_mutation_allowed(&game_id, &mods_root),
+                game_guard,
+                operation_guard.op_guard(),
+            ).await?;
+            Ok(())
+        },
+    ).await?;
     if validated
         .iter()
         .any(|path| !admission.is_current_path(&game_id, Path::new(path.original())))
@@ -864,7 +1026,16 @@ async fn bulk_toggle_mods_chunk(
         current_identities.as_deref(),
     )
     .and_then(|_| prepared.validate_identities())
-    {
+    .and_then(|_| {
+        for path in &validated {
+            admission.validate_resolved_path(&mods_root.join(path.original()), path.as_ref())?;
+        }
+        crate::modules::reconciliation::api::ensure_projection_epoch(
+            config.inner(),
+            &game_id,
+            source_epoch,
+        )
+    }) {
         mutation_lease.begin_rollback()?;
         let settlements = planned_sequences
             .iter()
@@ -874,16 +1045,19 @@ async fn bulk_toggle_mods_chunk(
         mutation_lease.finish_rollback()?;
         return Err(error);
     }
-    let trusted_mutation = (trusted_bulk_toggle_scope(&planned_steps, &mods_root)
-        && disk_reconcile.trusted_regional_mutation_allowed(&game_id, &mods_root))
-    .then(|| state.current_session_for_root(&mods_root))
-    .flatten()
-    .and_then(|session| {
-        disk_reconcile
-            .trusted_internal_mutation_evidence(&game_id, &mods_root, session.generation())
-            .map(|authority| (authority, session))
-    });
-    let expected_echo_evidence = trusted_mutation.as_ref().map(|(_, session)| {
+    let trusted_mutation = trusted_bulk_toggle_scope(&planned_steps, &mods_root)
+        .then(|| state.current_session_for_root(&mods_root))
+        .flatten()
+        .filter(|session| {
+            storage_proof.is_some_and(|proof| proof.session() == session)
+                || disk_reconcile.trusted_toggle_session_is_ready(
+                    &game_id,
+                    &mods_root,
+                    &toggle_step_paths(&planned_steps),
+                    session.generation(),
+                )
+        });
+    let expected_echo_evidence = trusted_mutation.as_ref().map(|session| {
         state.suppressor.expect_rename_echoes(
             &game_id,
             session,
@@ -896,6 +1070,7 @@ async fn bulk_toggle_mods_chunk(
             }),
         )
     });
+    let storage_started_at = Instant::now();
     let rename_started_at = Instant::now();
     let mut execution =
         bulk::execute_prepared_bulk_toggle_silent(&app, &state, &prepared, cancel, operation_id);
@@ -981,7 +1156,14 @@ async fn bulk_toggle_mods_chunk(
             return Err(error);
         }
     };
+    let storage_durable_elapsed = storage_started_at.elapsed();
     execution.result.disk_revision = Some(disk_revision);
+    execution.result.source_epoch = Some(source_epoch.to_string());
+    if let Some(evidence) = &expected_echo_evidence {
+        if !state.suppressor.commit_expected_rename_echoes(evidence) {
+            disk_reconcile.invalidate_authority(&game_id, &mods_root);
+        }
+    }
     if trusted_mutation.is_none() {
         disk_reconcile.invalidate_authority(&game_id, &mods_root);
     }
@@ -992,21 +1174,48 @@ async fn bulk_toggle_mods_chunk(
         log::error!("Could not invalidate runtime publication after bulk disk commit: {error}");
     }
     drop(mutation_lease);
-    crate::modules::workspace::adapters::tauri::workspace_cmds::queue_toggle_projection(
+    let diagnostic_operation_id = trace_enabled.then(|| {
+        op_lock
+            .pending_disk_commits()
+            .ok()
+            .and_then(|operations| {
+                operations
+                    .into_iter()
+                    .find(|operation| operation.disk_revision == Some(disk_revision))
+            })
+            .map(|operation| operation.id)
+            .unwrap_or_else(|| "unavailable".to_string())
+    });
+    crate::modules::reconciliation::api::queue_toggle_projection(
         app.clone(),
         pool.inner().clone(),
-        game_id,
+        game_id.clone(),
     );
-    log::debug!(
-        "bulk toggle timing outcome=disk_committed operation_id={} rename_count={} preflight_ms={} lock_wait_ms={} journal_ms={} rename_ms={} total_ms={}",
-        operation_id,
-        execution.applied_sequences.len(),
-        preflight_elapsed.as_millis(),
-        lock_wait_elapsed.as_millis(),
-        journal_elapsed.as_millis(),
-        rename_elapsed.as_millis(),
-        started_at.elapsed().as_millis(),
-    );
+    if trace_enabled {
+        log::info!(
+            "bulk toggle span outcome=disk_committed game_id={} source_epoch={} intent_revision={:?} command_operation_id={} operation_id={} disk_revision={} chunk={}/{} rename_count={} trusted_scope={} storage_fast_path={} trusted_echo={} admission_us={} game_lease_wait_us={} preflight_us={} operation_lease_and_journal_us={} rename_us={} storage_durable_us={} chunk_total_us={} command_total_us={}",
+            game_id,
+            source_epoch,
+            intent_revision,
+            operation_id,
+            diagnostic_operation_id.as_deref().unwrap_or("unavailable"),
+            disk_revision,
+            chunk_index + 1,
+            chunk_count,
+            execution.applied_sequences.len(),
+            trusted_scope,
+            storage_fast_path,
+            trusted_mutation.is_some(),
+            admission_elapsed.as_micros(),
+            lock_wait_elapsed.as_micros(),
+            preflight_elapsed.as_micros(),
+            journal_elapsed.as_micros(),
+            rename_elapsed.as_micros(),
+            storage_durable_elapsed.as_micros(),
+            started_at.elapsed().as_micros(),
+            command_started_at.elapsed().as_micros(),
+        );
+    }
     let result = settle_superseded_bulk_items(execution.result, paths.len(), superseded_count);
     record_bulk_toggle_result(&app, diagnostics_enabled, &result);
     Ok(result)
@@ -1095,6 +1304,18 @@ async fn bulk_delete_mods_impl(
     let (validated, stale_paths) =
         crate::platform::fs::guard::validate_mod_toggle_paths(&config, &game_id, &paths)?;
     let (validated, overlapping_paths) = normalize_toggle_paths(validated);
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::StructuralMutation,
+    )?;
+    let source_proofs = validated
+        .iter()
+        .map(|folder| crate::platform::fs::file_utils::FilesystemIdentityProof::capture(folder))
+        .collect::<Result<Vec<_>, _>>()?;
+    let root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
     let mut preflight_failures = stale_paths
         .into_iter()
         .map(|(path, error)| bulk::BulkActionError { path, error })
@@ -1123,6 +1344,15 @@ async fn bulk_delete_mods_impl(
         expected_identities.as_deref(),
     )
     .await?;
+    root_proof.validate(
+        &config
+            .mods_root_for(&game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
+    root_proof.validate(&root)?;
+    for (folder, proof) in validated.iter().zip(&source_proofs) {
+        proof.validate(folder)?;
+    }
     let prepared = bulk::prepare_bulk_delete(&validated)?;
     let planned_sequences = prepared
         .journal_steps()
@@ -1138,11 +1368,14 @@ async fn bulk_delete_mods_impl(
         })
         .collect();
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "bulk-delete",
-            game_id.clone(),
-            journal_steps,
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "bulk-delete",
+                game_id.clone(),
+                journal_steps,
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile.inner(),
@@ -1150,6 +1383,25 @@ async fn bulk_delete_mods_impl(
         game_guard,
         operation_guard,
     )?;
+    if let Err(error) = root_proof
+        .validate(&root)
+        .and_then(|()| {
+            root_proof.validate(
+                &config
+                    .mods_root_for(&game_id)
+                    .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+            )
+        })
+        .and_then(|()| {
+            validated
+                .iter()
+                .zip(&source_proofs)
+                .try_for_each(|(path, proof)| proof.validate(path))
+        })
+    {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     let mut execution = bulk::execute_prepared_bulk_delete(
         &app,
         &state,
@@ -1724,6 +1976,38 @@ async fn bulk_pin_mods_impl(
 mod tests {
     use super::*;
 
+    #[test]
+    fn trusted_bulk_scope_accepts_guard_canonical_paths_without_weakening_containment() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("Blue");
+        std::fs::create_dir(&source).unwrap();
+        let old_path = std::fs::canonicalize(&source).unwrap();
+        let expected_identity =
+            crate::platform::fs::file_utils::filesystem_identity(&old_path).unwrap();
+        let mut step = bulk::PreparedToggleStep {
+            sequence: 0,
+            new_path: old_path.parent().unwrap().join("DISABLED Blue"),
+            old_path,
+            expected_identity,
+        };
+        assert!(trusted_bulk_toggle_scope(
+            std::slice::from_ref(&step),
+            temp.path()
+        ));
+        assert!(!trusted_bulk_toggle_scope(
+            std::slice::from_ref(&step),
+            &temp.path().join("Other")
+        ));
+        step.new_path = step.old_path.parent().unwrap().join("Green");
+        assert!(!trusted_bulk_toggle_scope(
+            std::slice::from_ref(&step),
+            temp.path()
+        ));
+        step.new_path = step.old_path.parent().unwrap().join("Other/DISABLED Blue");
+        assert!(!trusted_bulk_toggle_scope(&[step], temp.path()));
+        assert!(!trusted_bulk_toggle_scope(&[], temp.path()));
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn bulk_toggle_source_binding_rejects_same_relative_path_in_other_root() {
         use crate::modules::settings::application::config::GameConfig;
@@ -1818,19 +2102,34 @@ mod tests {
 
     #[test]
     fn a_newer_single_intent_removes_only_its_folder_from_a_bulk_chunk() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("A");
+        let second = temp.path().join("B");
+        let disabled = temp.path().join("DISABLED A");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
         let coordinator = MutationCoordinator::unconfigured();
-        let paths = vec!["E:/Mods/A".into(), "E:/Mods/B".into()];
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
         let bulk = coordinator.admit_intents(
             "game",
             Some(1),
             paths.iter().cloned().map(IntentTarget::ModPath),
         );
+        std::fs::rename(&first, &disabled).unwrap();
         coordinator.admit_intents(
             "game",
             Some(2),
-            [IntentTarget::ModPath("E:/Mods/DISABLED A".into())],
+            [IntentTarget::ModPath(
+                disabled.to_string_lossy().into_owned(),
+            )],
         );
-        assert_eq!(current_toggle_paths(&bulk, "game", &paths), ["E:/Mods/B"]);
+        assert_eq!(
+            current_toggle_paths(&bulk, "game", &paths),
+            [second.to_string_lossy().into_owned()]
+        );
     }
 
     #[test]
@@ -1930,12 +2229,65 @@ mod tests {
             }],
         }];
 
-        let (safe_paths, failures) = partition_toggle_paths(validated, &conflicts);
+        let (safe_paths, failures) = partition_toggle_paths(validated, &conflicts, false);
 
         assert_eq!(safe_paths.len(), 1);
         assert_eq!(safe_paths[0].original(), "DISABLED Safe");
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].path, "DISABLED Conflict");
+
+        let validated = crate::platform::fs::guard::validate_paths(&config, "game-1", &requested)
+            .expect("paths still validate");
+        let (safe_paths, failures) = partition_toggle_paths(validated, &conflicts, true);
+        assert_eq!(
+            safe_paths.len(),
+            2,
+            "physically bound toggles reach actual destination validation"
+        );
+        assert!(
+            failures.is_empty(),
+            "logical conflict groups must not block a free destination"
+        );
+    }
+
+    #[test]
+    fn bulk_receipt_rebases_selected_identity_and_descendants_without_dropping_other_targets() {
+        use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
+        let root = std::path::PathBuf::from("Mods");
+        let old = root.join("A");
+        let new = root.join("DISABLED A");
+        let unrelated = root.join("B");
+        let result = rebase_toggle_identities(
+            vec![
+                (old.to_string_lossy().into_owned(), "physical-a".into()),
+                (
+                    old.join("Child").to_string_lossy().into_owned(),
+                    "physical-child".into(),
+                ),
+                (
+                    unrelated.to_string_lossy().into_owned(),
+                    "physical-b".into(),
+                ),
+            ],
+            &[WorkspacePathRewrite {
+                old_path: old.to_string_lossy().into_owned(),
+                new_path: new.to_string_lossy().into_owned(),
+            }],
+        );
+        assert_eq!(
+            result,
+            vec![
+                (new.to_string_lossy().into_owned(), "physical-a".into()),
+                (
+                    new.join("Child").to_string_lossy().into_owned(),
+                    "physical-child".into()
+                ),
+                (
+                    unrelated.to_string_lossy().into_owned(),
+                    "physical-b".into()
+                ),
+            ]
+        );
     }
 
     #[test]

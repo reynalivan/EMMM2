@@ -46,6 +46,8 @@ pub struct ModFolder {
     pub folder_name: String,
     /// Full absolute path
     pub path: String,
+    #[specta(optional)]
+    pub filesystem_identity: Option<String>,
     /// Whether the mod is enabled (no "DISABLED " prefix)
     pub is_enabled: bool,
     /// Whether this entry is a directory (vs a file)
@@ -120,6 +122,8 @@ pub struct FolderGridResponse {
     pub self_node_type: Option<String>,
     pub self_is_mod: bool,
     pub self_is_enabled: bool,
+    #[specta(optional)]
+    pub self_identity: Option<String>,
     pub self_owner_object_id: Option<String>,
     pub self_owner_object_folder_path: Option<String>,
     pub self_classification_reasons: Vec<String>,
@@ -130,4 +134,6 @@ pub struct FolderGridResponse {
     pub ancestor_disabled_by: Option<String>,
     /// Absolute path of the nearest disabled ancestor (for toggling).
     pub ancestor_disabled_path: Option<String>,
+    #[specta(optional)]
+    pub ancestor_disabled_identity: Option<String>,
 }

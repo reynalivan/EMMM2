@@ -2,10 +2,11 @@
 //! Reconcile after releasing the operation lock.
 
 use super::naming::{
-    find_existing_sibling_case_insensitive, rename_conflict_error, standardize_prefix,
+    find_existing_destination_case_insensitive, rename_conflict_error, standardize_prefix,
     SiblingNameIndex,
 };
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
+use crate::platform::fs::rename::rename_no_replace;
 use crate::shared::errors::AppError;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -15,39 +16,6 @@ const RENAME_RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(40),
     Duration::from_millis(80),
 ];
-
-#[cfg(windows)]
-fn rename_same_parent_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_WRITE_THROUGH};
-
-    let source_wide = source
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let destination_wide = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let moved = unsafe {
-        MoveFileExW(
-            source_wide.as_ptr(),
-            destination_wide.as_ptr(),
-            MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if moved == 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn rename_same_parent_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::fs::rename(source, destination)
-}
 
 fn is_transient_rename_lock(error: &std::io::Error) -> bool {
     #[cfg(windows)]
@@ -66,9 +34,17 @@ pub struct ToggleRenamePlan {
     old_path: PathBuf,
     new_path: PathBuf,
     expected_identity: String,
+    namespace_proof:
+        Option<std::sync::Arc<crate::platform::fs::file_utils::FilesystemNamespaceProof>>,
 }
 
 impl ToggleRenamePlan {
+    pub(crate) fn set_namespace_proof(
+        &mut self,
+        proof: std::sync::Arc<crate::platform::fs::file_utils::FilesystemNamespaceProof>,
+    ) {
+        self.namespace_proof = Some(proof);
+    }
     pub fn old_path(&self) -> &Path {
         &self.old_path
     }
@@ -108,7 +84,10 @@ impl ToggleRenamePlan {
             .map(Some)
             .chain(std::iter::once(None))
         {
-            let actual_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(source);
+            if let Some(proof) = &self.namespace_proof {
+                proof.validate_paths(&[source.to_path_buf(), destination.to_path_buf()])?;
+            }
+            let actual_identity = crate::platform::fs::file_utils::filesystem_identity(source);
             if actual_identity.as_deref() != Some(self.expected_identity.as_str()) {
                 return Err(AppError::Io(format!(
                     "Folder changed while preparing the rename: {}",
@@ -119,24 +98,18 @@ impl ToggleRenamePlan {
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy();
-            if let Some(existing_path) =
-                find_existing_sibling_case_insensitive(parent, &destination_name, source)
-            {
-                let source_name = source.file_name().unwrap_or_default().to_string_lossy();
-                let base = crate::modules::workspace::domain::normalizer::normalize_display_name(
-                    &source_name,
-                );
-                return Err(rename_conflict_error(destination, &existing_path, &base));
-            }
-            match rename_same_parent_no_replace(source, destination) {
+            // Planning is a snapshot; atomic no-overwrite is the final namespace guard.
+            match rename_no_replace(source, destination) {
                 Ok(()) => return Ok(()),
                 Err(error) if is_transient_rename_lock(&error) && retry_delay.is_some() => {
                     std::thread::sleep(*retry_delay.expect("retry guard checked above"));
                 }
                 Err(error) => {
-                    if let Some(existing_path) =
-                        find_existing_sibling_case_insensitive(parent, &destination_name, source)
-                    {
+                    if let Some(existing_path) = find_existing_destination_case_insensitive(
+                        parent,
+                        &destination_name,
+                        source,
+                    ) {
                         let source_name = source.file_name().unwrap_or_default().to_string_lossy();
                         let base =
                             crate::modules::workspace::domain::normalizer::normalize_display_name(
@@ -192,16 +165,16 @@ pub fn plan_toggle_rename_with_sibling_index(
         .ok_or_else(|| AppError::Io("Invalid path".to_string()))?;
     let new_path = parent.join(&new_name);
     let existing_path = match sibling_index {
-        Some(index) => index.find_collision(&new_name, src),
-        None => find_existing_sibling_case_insensitive(parent, &new_name, src),
+        Some(index) => index.find_destination_collision(&new_name, src),
+        None => find_existing_destination_case_insensitive(parent, &new_name, src),
     };
     if let Some(existing_path) = existing_path {
         let base = crate::modules::workspace::domain::normalizer::normalize_display_name(&old_name);
         return Err(rename_conflict_error(&new_path, &existing_path, &base));
     }
 
-    let expected_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(src)
-        .ok_or_else(|| {
+    let expected_identity =
+        crate::platform::fs::file_utils::filesystem_identity(src).ok_or_else(|| {
             AppError::Io(format!(
                 "Could not establish filesystem identity for {}",
                 src.display()
@@ -212,6 +185,7 @@ pub fn plan_toggle_rename_with_sibling_index(
         old_path: src.to_path_buf(),
         new_path,
         expected_identity,
+        namespace_proof: None,
     }))
 }
 
@@ -282,6 +256,28 @@ pub async fn toggle_mod_inner(
 #[cfg(test)]
 mod tests {
     use super::{map_toggle_error, plan_toggle_rename};
+
+    #[test]
+    fn proven_toggle_rechecks_parent_ownership_at_storage_attempt() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        let source = root.join("Alice/Skin");
+        std::fs::create_dir_all(&source).unwrap();
+        let mut plan = plan_toggle_rename(&source, false).unwrap().unwrap();
+        plan.set_namespace_proof(std::sync::Arc::new(
+            crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+                &root,
+                std::slice::from_ref(&source),
+            )
+            .unwrap(),
+        ));
+        std::fs::rename(root.join("Alice"), root.join("OriginalAlice")).unwrap();
+        std::fs::create_dir(root.join("Alice")).unwrap();
+        std::fs::rename(root.join("OriginalAlice/Skin"), &source).unwrap();
+        assert!(plan.apply("mod folder").is_err());
+        assert!(source.is_dir());
+        assert!(!root.join("Alice/DISABLED Skin").exists());
+    }
 
     #[test]
     fn prepared_toggle_rejects_a_replacement_source_identity() {

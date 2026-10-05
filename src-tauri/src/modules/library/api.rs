@@ -1,5 +1,7 @@
 pub use super::application::*;
 
+pub(crate) use super::adapters::sqlite::mods::get_rows_for_reconcile_scope as get_reconcile_mod_rows;
+
 // Workspace resolves an immutable explorer snapshot before delegating the
 // mutation. Keep that cross-slice contract behind Library's facade so callers
 // never reach into the Tauri adapter implementation directly.

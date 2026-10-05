@@ -27,7 +27,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_explorer_bulk,
             crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_preview,
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_switch,
-            crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_switch_snapshot,
+            crate::modules::reconciliation::adapters::tauri::toggle_projection::get_workspace_switch_snapshot,
             crate::modules::workspace::adapters::tauri::workspace_cmds::admit_workspace_switch_intent,
             crate::modules::workspace::adapters::tauri::workspace_cmds::execute_workspace_object_bulk_switch,
             crate::modules::system::adapters::tauri::app_cmds::get_logs,
@@ -343,7 +343,9 @@ pub fn run() {
 
             let pool_ref: tauri::State<'_, sqlx::SqlitePool> = app.state();
             let credential_store =
-                crate::platform::security::credential_store::CredentialStore::default();
+                crate::platform::security::credential_store::CredentialStore::for_app_identifier(
+                    &app.config().identifier,
+                );
             let has_ai_api_key = match credential_store.has_ai_api_key() {
                 Ok(has_api_key) => has_api_key,
                 Err(error) => {

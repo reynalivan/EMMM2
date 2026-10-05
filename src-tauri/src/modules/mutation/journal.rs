@@ -9,8 +9,8 @@ use uuid::Uuid;
 use crate::platform::fs::atomic_file::atomic_write;
 use crate::shared::errors::AppError;
 
-const JOURNAL_FORMAT_VERSION: u32 = 2;
-const ACTIVE_STATE_FORMAT_VERSION: u32 = 2;
+const JOURNAL_FORMAT_VERSION: u32 = 3;
+const ACTIVE_STATE_FORMAT_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationStatus {
@@ -64,6 +64,7 @@ pub enum DatabaseProjectionStatus {
     NotStarted,
     Committed,
     Failed,
+    NeedsRepair,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +141,7 @@ pub struct OperationPlan {
     pub kind: String,
     pub game_id: String,
     pub steps: Vec<PlannedStep>,
+    pub source_epoch: Option<String>,
 }
 
 impl OperationPlan {
@@ -152,7 +154,13 @@ impl OperationPlan {
             kind: kind.into(),
             game_id: game_id.into(),
             steps,
+            source_epoch: None,
         }
+    }
+
+    pub fn with_source_epoch(mut self, source_epoch: String) -> Self {
+        self.source_epoch = Some(source_epoch);
+        self
     }
 }
 
@@ -173,6 +181,8 @@ pub struct Operation {
     pub id: String,
     pub kind: String,
     pub game_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_epoch: Option<String>,
     pub created_at: String,
     pub status: OperationStatus,
     pub steps: Vec<OperationStep>,
@@ -352,6 +362,7 @@ impl OperationJournal {
             id: id.clone(),
             kind: plan.kind,
             game_id: plan.game_id,
+            source_epoch: plan.source_epoch,
             created_at: chrono::Utc::now().to_rfc3339(),
             status: OperationStatus::Planned,
             steps: plan
@@ -609,6 +620,57 @@ impl OperationJournal {
         })
     }
 
+    /// The caller has committed the database checkpoint for these exact disk
+    /// operations. Publish one durable terminal snapshot before deleting progress.
+    pub(crate) fn complete_disk_projection(&self, ids: &[String]) -> Result<(), AppError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let mut remaining = ids.iter().map(String::as_str).collect::<HashSet<_>>();
+        let mut state = self.lock_state()?;
+        let mut next = state.entries.clone();
+        for operation in &mut next {
+            if !remaining.remove(operation.id.as_str()) {
+                continue;
+            }
+            require_status(
+                operation,
+                &[OperationStatus::DiskCommitted, OperationStatus::DbCommitted],
+            )?;
+            if operation.disk_revision.is_none()
+                || operation.database_projection_status == DatabaseProjectionStatus::NeedsRepair
+                || operation
+                    .steps
+                    .iter()
+                    .any(|step| step.status == StepStatus::Planned)
+                || (operation.status == OperationStatus::DbCommitted
+                    && operation.database_projection_status != DatabaseProjectionStatus::Committed)
+            {
+                return Err(AppError::Validation(format!(
+                    "Mutation operation {} is not pending proven disk projection",
+                    operation.id
+                )));
+            }
+            operation.database_projection_status = DatabaseProjectionStatus::Committed;
+            operation.status = OperationStatus::Completed;
+            operation.last_error = None;
+        }
+        if let Some(missing) = remaining.into_iter().next() {
+            return Err(AppError::NotFound(format!(
+                "Mutation journal operation {missing}"
+            )));
+        }
+        let revision = next_revision(state.revision)?;
+        self.persist(&next, revision)?;
+        state.entries = next;
+        state.revision = revision;
+        for id in ids {
+            state.active_revisions.remove(id);
+            self.remove_active_state(id);
+        }
+        Ok(())
+    }
+
     pub fn complete(&self, id: &str) -> Result<(), AppError> {
         self.mutate_operation(id, |operation| {
             require_status(operation, &[OperationStatus::DbCommitted])?;
@@ -618,6 +680,24 @@ impl OperationJournal {
                 )));
             }
             operation.status = OperationStatus::Completed;
+            Ok(())
+        })
+    }
+
+    pub(crate) fn mark_repaired_projection_committed(&self, id: &str) -> Result<(), AppError> {
+        self.mutate_operation(id, |operation| {
+            require_status(
+                operation,
+                &[OperationStatus::DiskCommitted, OperationStatus::DbCommitted],
+            )?;
+            if operation.database_projection_status != DatabaseProjectionStatus::NeedsRepair {
+                return Err(AppError::Validation(
+                    "Only an isolated disk projection can be repaired".to_string(),
+                ));
+            }
+            operation.database_projection_status = DatabaseProjectionStatus::Committed;
+            operation.status = OperationStatus::DbCommitted;
+            operation.last_error = None;
             Ok(())
         })
     }
@@ -739,6 +819,30 @@ impl OperationJournal {
         })
     }
 
+    /// Preserve acknowledged storage and immutable recovery evidence while
+    /// excluding foreign-root work from ordinary projection retries.
+    pub(crate) fn isolate_disk_commit_for_repair(
+        &self,
+        id: &str,
+        error: impl Into<String>,
+    ) -> Result<(), AppError> {
+        let error = error.into();
+        self.mutate_operation(id, |operation| {
+            require_status(
+                operation,
+                &[OperationStatus::DiskCommitted, OperationStatus::DbCommitted],
+            )?;
+            if operation.disk_revision.is_none() {
+                return Err(AppError::Validation(
+                    "Repair isolation requires a durable disk commit".to_string(),
+                ));
+            }
+            operation.database_projection_status = DatabaseProjectionStatus::NeedsRepair;
+            operation.last_error = Some(error);
+            Ok(())
+        })
+    }
+
     pub fn entries(&self) -> Vec<Operation> {
         self.state
             .lock()
@@ -753,6 +857,7 @@ impl OperationJournal {
             .into_iter()
             .filter(|operation| {
                 operation.disk_revision.is_some()
+                    && operation.database_projection_status != DatabaseProjectionStatus::NeedsRepair
                     && matches!(
                         operation.status,
                         OperationStatus::DiskCommitted | OperationStatus::DbCommitted
@@ -772,6 +877,7 @@ impl OperationJournal {
             .any(|operation| {
                 operation.game_id == game_id
                     && operation.disk_revision.is_some()
+                    && operation.database_projection_status != DatabaseProjectionStatus::NeedsRepair
                     && matches!(
                         operation.status,
                         OperationStatus::DiskCommitted | OperationStatus::DbCommitted
@@ -1164,7 +1270,7 @@ fn decode_active_state(
     operation: &Operation,
 ) -> Result<ActiveOperationState, AppError> {
     let snapshot = serde_json::from_slice::<ActiveOperationStateSnapshot>(bytes)?;
-    if !matches!(snapshot.format_version, 1 | ACTIVE_STATE_FORMAT_VERSION) {
+    if !matches!(snapshot.format_version, 1 | 2 | ACTIVE_STATE_FORMAT_VERSION) {
         return Err(AppError::Validation(format!(
             "Unsupported mutation progress format version {}",
             snapshot.format_version
@@ -1580,6 +1686,7 @@ fn decode_journal(bytes: &[u8]) -> Result<DecodedJournal, AppError> {
                     id: entry.id,
                     kind: format!("legacy: {}", entry.plan),
                     game_id: "legacy-unknown".to_string(),
+                    source_epoch: None,
                     created_at: "1970-01-01T00:00:00Z".to_string(),
                     status: if completed {
                         OperationStatus::Completed
@@ -1603,7 +1710,7 @@ fn decode_journal(bytes: &[u8]) -> Result<DecodedJournal, AppError> {
 }
 
 fn validate_snapshot(snapshot: JournalSnapshot) -> Result<DecodedJournal, AppError> {
-    if !matches!(snapshot.format_version, 1 | JOURNAL_FORMAT_VERSION) {
+    if !matches!(snapshot.format_version, 1 | 2 | JOURNAL_FORMAT_VERSION) {
         return Err(AppError::Validation(format!(
             "Unsupported mutation journal format version {}",
             snapshot.format_version
@@ -1665,6 +1772,7 @@ fn benchmark_history_operation(index: u32) -> Operation {
         id: format!("benchmark-history-{index}"),
         kind: "benchmark-history".to_string(),
         game_id: "benchmark-game".to_string(),
+        source_epoch: None,
         created_at: "1970-01-01T00:00:00Z".to_string(),
         status: OperationStatus::Completed,
         steps: vec![OperationStep {
@@ -1687,61 +1795,106 @@ mod disk_revision_format_tests {
     use super::*;
 
     #[test]
-    fn version_one_snapshot_and_progress_remain_readable() {
-        let operation = Operation {
-            id: Uuid::new_v4().to_string(),
-            kind: "rename-mod".to_string(),
-            game_id: "game-1".to_string(),
-            created_at: "1970-01-01T00:00:00Z".to_string(),
-            status: OperationStatus::Applied,
-            steps: vec![OperationStep {
-                sequence: 0,
-                kind: MutationStepKind::Rename,
-                old_path: Some(PathBuf::from("C:/Mods/Old")),
-                new_path: Some(PathBuf::from("C:/Mods/New")),
-                stage_path: None,
-                expected_identity: None,
-                status: StepStatus::Applied,
-            }],
-            database_projection_status: DatabaseProjectionStatus::NotStarted,
-            last_error: None,
-            disk_revision: None,
-        };
-        let ids = vec![operation.id.clone()];
-        let snapshot = JournalSnapshot {
-            format_version: 1,
-            revision: 1,
-            operation_ids: ids.clone(),
-            entries: vec![operation.clone()],
-            checksum: snapshot_checksum(1, 1, &ids, std::slice::from_ref(&operation)).unwrap(),
-        };
-        assert!(matches!(
-            decode_journal(&serde_json::to_vec(&snapshot).unwrap()).unwrap(),
-            DecodedJournal::Versioned { .. }
-        ));
+    fn source_epoch_is_durable_and_legacy_none_is_not_serialized() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("journal.json");
+        let journal = OperationJournal::open(path.clone(), 16).unwrap();
+        journal
+            .plan_operation(
+                OperationPlan::new(
+                    "workspace-switch",
+                    "game",
+                    vec![PlannedStep::rename(
+                        0,
+                        PathBuf::from("C:/Mods/A"),
+                        PathBuf::from("C:/Mods/DISABLED A"),
+                    )],
+                )
+                .with_source_epoch("physical-root".to_string()),
+            )
+            .unwrap();
+        drop(journal);
+        let loaded = OperationJournal::open(path, 16).unwrap();
+        assert_eq!(
+            loaded.entries()[0].source_epoch.as_deref(),
+            Some("physical-root")
+        );
+        let mut legacy = loaded.entries()[0].clone();
+        legacy.source_epoch = None;
+        assert!(!serde_json::to_value(legacy)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .contains_key("source_epoch"));
+    }
 
-        let statuses = encode_step_statuses(&operation.steps);
-        let progress = ActiveOperationStateSnapshot {
-            format_version: 1,
-            revision: 1,
-            operation_id: operation.id.clone(),
-            status: operation.status,
-            database_projection_status: operation.database_projection_status,
-            step_statuses: statuses.clone(),
-            last_error: None,
-            disk_revision: None,
-            checksum: active_state_checksum(&ActiveOperationStatePayload {
-                format_version: 1,
+    #[test]
+    fn legacy_snapshot_and_progress_remain_readable() {
+        for legacy_version in [1, 2] {
+            let operation = Operation {
+                id: Uuid::new_v4().to_string(),
+                kind: "rename-mod".to_string(),
+                game_id: "game-1".to_string(),
+                source_epoch: None,
+                created_at: "1970-01-01T00:00:00Z".to_string(),
+                status: OperationStatus::Applied,
+                steps: vec![OperationStep {
+                    sequence: 0,
+                    kind: MutationStepKind::Rename,
+                    old_path: Some(PathBuf::from("C:/Mods/Old")),
+                    new_path: Some(PathBuf::from("C:/Mods/New")),
+                    stage_path: None,
+                    expected_identity: None,
+                    status: StepStatus::Applied,
+                }],
+                database_projection_status: DatabaseProjectionStatus::NotStarted,
+                last_error: None,
+                disk_revision: None,
+            };
+            let ids = vec![operation.id.clone()];
+            let snapshot = JournalSnapshot {
+                format_version: legacy_version,
                 revision: 1,
-                operation_id: &operation.id,
+                operation_ids: ids.clone(),
+                entries: vec![operation.clone()],
+                checksum: snapshot_checksum(
+                    legacy_version,
+                    1,
+                    &ids,
+                    std::slice::from_ref(&operation),
+                )
+                .unwrap(),
+            };
+            assert!(matches!(
+                decode_journal(&serde_json::to_vec(&snapshot).unwrap()).unwrap(),
+                DecodedJournal::Versioned { .. }
+            ));
+
+            let statuses = encode_step_statuses(&operation.steps);
+            let progress = ActiveOperationStateSnapshot {
+                format_version: legacy_version,
+                revision: 1,
+                operation_id: operation.id.clone(),
                 status: operation.status,
                 database_projection_status: operation.database_projection_status,
-                step_statuses: &statuses,
-                last_error: &None,
+                step_statuses: statuses.clone(),
+                last_error: None,
                 disk_revision: None,
-            })
-            .unwrap(),
-        };
-        assert!(decode_active_state(&serde_json::to_vec(&progress).unwrap(), &operation).is_ok());
+                checksum: active_state_checksum(&ActiveOperationStatePayload {
+                    format_version: legacy_version,
+                    revision: 1,
+                    operation_id: &operation.id,
+                    status: operation.status,
+                    database_projection_status: operation.database_projection_status,
+                    step_statuses: &statuses,
+                    last_error: &None,
+                    disk_revision: None,
+                })
+                .unwrap(),
+            };
+            assert!(
+                decode_active_state(&serde_json::to_vec(&progress).unwrap(), &operation).is_ok()
+            );
+        }
     }
 }

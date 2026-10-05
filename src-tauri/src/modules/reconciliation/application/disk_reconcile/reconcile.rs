@@ -260,6 +260,26 @@ pub async fn reconcile_disk_projection(
         precomputed_discovery,
     } = request;
 
+    // A durable toggle journal stores canonical Windows endpoints. Keep the
+    // whole trusted batch in that namespace, including physical scanner joins;
+    // never canonicalize historical source paths that no longer exist.
+    let trusted_root = trusted_mutation_scope
+        .then(|| super::super::toggle_projection::projection_physical_path(mods_path))
+        .transpose()?;
+    let mods_path = trusted_root.as_deref().unwrap_or(mods_path);
+    let trusted_paths = trusted_mutation_scope
+        .then(|| {
+            changed_paths
+                .iter()
+                .map(|path| {
+                    super::super::toggle_projection::projection_physical_path(Path::new(path))
+                        .map(|path| path.to_string_lossy().into_owned())
+                })
+                .collect::<std::io::Result<Vec<_>>>()
+        })
+        .transpose()?;
+    let changed_paths = trusted_paths.as_deref().unwrap_or(changed_paths);
+
     let mut changed_roots = collect_changed_roots(mods_path, changed_paths);
     let mut thumbnail_roots = collect_thumbnail_roots(mods_path, changed_paths);
     for changed_path in changed_paths {
@@ -270,6 +290,18 @@ pub async fn reconcile_disk_projection(
     }
     let runtime_file_changed = collect_runtime_file_changed(changed_paths);
     let mut effective_watcher_events = watcher_events.unwrap_or_default().to_vec();
+    if trusted_mutation_scope {
+        for event in &mut effective_watcher_events {
+            if let ModWatchEvent::Renamed { from, to } = event {
+                *from = super::super::toggle_projection::projection_physical_path(Path::new(from))?
+                    .to_string_lossy()
+                    .into_owned();
+                *to = super::super::toggle_projection::projection_physical_path(Path::new(to))?
+                    .to_string_lossy()
+                    .into_owned();
+            }
+        }
+    }
     effective_watcher_events.extend(path_hints.iter().map(|hint| ModWatchEvent::Renamed {
         from: mods_path.join(&hint.old_path).to_string_lossy().to_string(),
         to: mods_path.join(&hint.new_path).to_string_lossy().to_string(),
@@ -591,8 +623,9 @@ pub async fn reconcile_disk_projection(
             .as_millis()
             .min(u128::from(u64::MAX)) as u64;
         log::info!(
-            "disk reconcile timing game_id={} scan_scope={:?} full_scan_count={} affected_roots={} census_directories={} classified_roots={} classified_directories={} db_object_rows_loaded={} db_mod_rows_loaded={} census_ms={} classification_ms={} db_projection_ms={} total_ms={}",
+            "disk reconcile timing game_id={} reason={:?} scan_scope={:?} full_scan_count={} affected_roots={} census_directories={} classified_roots={} classified_directories={} db_object_rows_loaded={} db_mod_rows_loaded={} census_ms={} classification_ms={} db_projection_ms={} total_ms={}",
             game_id,
+            reason,
             scan_scope,
             usize::from(scan_scope == DiskReconcileScanScope::Full),
             changed_roots.len(),

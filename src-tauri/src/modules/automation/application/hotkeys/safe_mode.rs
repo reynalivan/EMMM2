@@ -33,8 +33,26 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
         .active_game()
         .ok_or_else(|| AppError::Internal("No active game selected".to_string()))?;
     let game_id = game.id.clone();
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::SafeMode,
+    )?;
     let mods_path = game.mod_path.clone();
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&mods_path)?;
     let target_safe_mode = !current_settings.safety.runtime_safe_mode_for(&game_id);
+    let snapshot_lease = crate::modules::collections::api::acquire_current_snapshot_lease(
+        app,
+        pool_state.inner(),
+        mutation_coordinator.inner(),
+        &game_id,
+    )
+    .await?;
+    root_proof.validate(&mods_path)?;
+    crate::modules::reconciliation::api::ensure_projection_epoch(
+        config_state.inner(),
+        &game_id,
+        root_proof.identity(),
+    )?;
     let runtime =
         crate::modules::collections::adapters::sqlite::runtime::get(pool_state.inner(), &game_id)
             .await?;
@@ -70,6 +88,7 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
             if target_safe_mode { "on" } else { "off" },
         ));
     };
+    drop(snapshot_lease);
 
     let preflight_paths =
         crate::modules::collections::application::collection::collection_preflight_scope_paths(
@@ -92,6 +111,12 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
     let mutation_lease = disk_reconcile
         .acquire_ready_mutation_lease(&game_id, mutation_coordinator.inner_lock())
         .await?;
+    root_proof.validate(&mods_path)?;
+    crate::modules::reconciliation::api::ensure_projection_epoch(
+        config_state.inner(),
+        &game_id,
+        root_proof.identity(),
+    )?;
 
     // The apply pipeline needs the target eligibility immediately, but the
     // committed setting must not lead the durable filesystem mutation. Keep a
@@ -139,8 +164,7 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
         &mods_path,
         crate::modules::reconciliation::api::RuntimeSyncCause::SafeModeChanged,
         &apply_result.runtime_path_rewrites,
-    )
-    .await;
+    );
     drop(mutation_lease);
 
     Ok(format!(
@@ -149,4 +173,21 @@ pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<S
         apply_result.mods_enabled,
         apply_result.mods_disabled,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn safe_mode_capture_and_empty_decision_follow_coherent_snapshot_barrier() {
+        let source = include_str!("safe_mode.rs");
+        let executor = source.split("#[cfg(test)]").next().unwrap();
+        let barrier = executor.find("acquire_current_snapshot_lease(").unwrap();
+        assert!(barrier < executor.find("sqlite::runtime::get(").unwrap());
+        assert!(barrier < executor.find("capture_last_changes_if_needed(").unwrap());
+        assert!(barrier < executor.find("let Some(active_collection_id)").unwrap());
+        assert!(
+            executor.find("drop(snapshot_lease)").unwrap()
+                < executor.find("acquire_ready_mutation_lease(").unwrap()
+        );
+    }
 }

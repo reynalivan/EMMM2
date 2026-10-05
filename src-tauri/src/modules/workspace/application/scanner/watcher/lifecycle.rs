@@ -537,16 +537,65 @@ fn authority_observer(
     let mods_root = mods_root.to_path_buf();
     let watcher_session = session.generation();
     let session = session.clone();
+    let deferred_app = app.clone();
+    let deferred_game_id = game_id.clone();
+    let deferred_root = mods_root.clone();
+    #[cfg(debug_assertions)]
+    let observation_samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    #[cfg(debug_assertions)]
+    let deferred_samples = observation_samples.clone();
+    let on_unproven = Arc::new(move |paths: &[std::path::PathBuf], events_lost| {
+        #[cfg(debug_assertions)]
+        if deferred_samples.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 16 {
+            log::info!("watcher authority unproven game_id={} session={} source=deferred_echo path_count={} coverage_lost={}", deferred_game_id, watcher_session, paths.len(), events_lost);
+        }
+        let state = deferred_app.state::<
+            crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+        >();
+        state.observe_authority_event(
+            &deferred_game_id,
+            watcher_session,
+            &deferred_root,
+            paths,
+            events_lost,
+        );
+    });
     std::sync::Arc::new(move |paths, kind, events_lost| {
         let state = app.state::<
             crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
         >();
+        if events_lost {
+            suppressor.invalidate_rename_echoes(&session);
+        }
         if !events_lost
             && kind.is_some_and(|kind| {
-                suppressor.consume_expected_rename_echo(&game_id, &session, kind, paths)
+                suppressor.observe_expected_rename_echo(
+                    &game_id,
+                    &session,
+                    kind,
+                    paths,
+                    on_unproven.clone(),
+                )
             })
         {
             return;
+        }
+        #[cfg(debug_assertions)]
+        if observation_samples.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 16 {
+            let directory_count = paths.iter().filter(|path| path.is_dir()).count();
+            let relative_depths = paths
+                .iter()
+                .map(|path| {
+                    crate::shared::path_key::physical_namespace_path(path)
+                        .ok()
+                        .and_then(|path| {
+                            let root = crate::shared::path_key::physical_namespace_path(&mods_root)
+                                .ok()?;
+                            Some(path.strip_prefix(root).ok()?.components().count())
+                        })
+                })
+                .collect::<Vec<_>>();
+            log::info!("watcher authority unproven game_id={} session={} source=event kind={:?} path_count={} directory_count={} relative_depths={:?} coverage_lost={}", game_id, watcher_session, kind, paths.len(), directory_count, relative_depths, events_lost);
         }
         state.observe_authority_event(&game_id, watcher_session, &mods_root, paths, events_lost);
     })
@@ -1734,20 +1783,24 @@ async fn process_event_loop(
         };
 
         // Disk Reconcile only. Watcher must never invoke the Deep Match Scanner pipeline.
-        let watcher_state = app.state::<WatcherState>();
-        let result = if is_retry {
-            match crate::modules::reconciliation::application::disk_reconcile::orchestrator::try_reconcile_disk_state_for_prewarm(
-                context,
-                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
+        let request = if is_retry || events_lost || force_full {
+            crate::modules::reconciliation::api::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
                     game_id.clone(),
                     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
                     changed_paths.clone(),
-                    force_full,
+                    events_lost || force_full,
                 )
                 .defer_overlay_sync()
-                .for_watcher_session(session.clone()),
+        } else {
+            crate::modules::reconciliation::api::disk_reconcile::orchestrator::DiskReconcileRequest::watcher_batch(
+                game_id.clone(), mods_root, changed_paths.clone(), &batch,
             )
-            .await {
+        };
+        // Ordinary batches use the same non-blocking path as catch-up. Dirty
+        // authority survives a deferred/cancelled scan and drives the timer retry.
+        let result = match crate::modules::reconciliation::api::disk_reconcile::orchestrator::try_reconcile_disk_state_for_prewarm(
+            context, request.for_watcher_session(session.clone()),
+        ).await {
                 Ok(Some(result)) => Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)),
                 Ok(None) => {
                     retry_after = Some(
@@ -1758,32 +1811,6 @@ async fn process_event_loop(
                     continue;
                 }
                 Err(error) => Err(error),
-            }
-        } else if events_lost || force_full {
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_for_watcher(
-                context,
-                crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest::manual(
-                    game_id.clone(),
-                    crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::ManualRepair,
-                    Vec::new(),
-                    true,
-                )
-                .defer_overlay_sync(),
-                watcher_state.inner(),
-                session.clone(),
-            )
-            .await
-        } else {
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state_from_watcher_batch(
-                context,
-                game_id.clone(),
-                mods_root,
-                changed_paths.clone(),
-                &batch,
-                watcher_state.inner(),
-                session.clone(),
-            )
-            .await
         };
 
         if !app.state::<WatcherState>().is_current_session(&session) {

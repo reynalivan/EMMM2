@@ -49,6 +49,23 @@ impl RecoveryRunner {
     }
 
     fn recover_operation(&self, operation: &Operation) -> Result<(), AppError> {
+        if operation.database_projection_status == DatabaseProjectionStatus::NeedsRepair {
+            return Ok(());
+        }
+        if let Some(expected_epoch) = &operation.source_epoch {
+            let actual = self
+                .roots
+                .game_roots
+                .get(&operation.game_id)
+                .and_then(|root| crate::platform::fs::file_utils::filesystem_identity(root));
+            if actual.as_ref() != Some(expected_epoch) {
+                return self.mark_repair(
+                    operation,
+                    "Mods root identity changed; preserving the journal for manual recovery"
+                        .to_string(),
+                );
+            }
+        }
         if operation.disk_revision.is_some() {
             return match operation.status {
                 OperationStatus::DiskCommitted => Ok(()),
@@ -219,7 +236,12 @@ impl RecoveryRunner {
         if operation.status == OperationStatus::FailedNeedsRepair {
             return Ok(());
         }
-        self.journal.fail(&operation.id, error)
+        if operation.disk_revision.is_some() {
+            self.journal
+                .isolate_disk_commit_for_repair(&operation.id, error)
+        } else {
+            self.journal.fail(&operation.id, error)
+        }
     }
 }
 
@@ -393,6 +415,75 @@ fn nearest_existing_ancestor(path: &Path) -> Option<&Path> {
 mod tests {
     use super::*;
     use crate::modules::mutation::journal::{OperationPlan, PlannedStep};
+
+    #[tokio::test]
+    async fn replaced_root_never_rolls_back_an_acknowledged_disk_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        let old = root.join("A");
+        let disabled = root.join("DISABLED A");
+        std::fs::create_dir_all(&old).unwrap();
+        let epoch = crate::platform::fs::file_utils::filesystem_identity(&root).unwrap();
+        let identity = crate::platform::fs::file_utils::filesystem_identity(&old).unwrap();
+        let journal =
+            Arc::new(OperationJournal::open(temp.path().join("journal.json"), 16).unwrap());
+        let operation_id = journal
+            .plan_operation(
+                OperationPlan::new(
+                    "workspace-switch",
+                    "game",
+                    vec![PlannedStep::rename(0, old.clone(), disabled.clone())
+                        .with_expected_identity(Some(identity))],
+                )
+                .with_source_epoch(epoch),
+            )
+            .unwrap();
+        journal.mark_applying(&operation_id).unwrap();
+        std::fs::rename(&old, &disabled).unwrap();
+        journal
+            .settle_steps(
+                &operation_id,
+                &[(
+                    0,
+                    crate::modules::mutation::journal::StepSettlement::Applied,
+                )],
+            )
+            .unwrap();
+        journal.mark_disk_committed(&operation_id).unwrap();
+        let preserved = temp.path().join("Preserved");
+        std::fs::rename(&root, &preserved).unwrap();
+        std::fs::create_dir_all(&disabled).unwrap();
+        let replacement = crate::platform::fs::file_utils::filesystem_identity(&disabled);
+        let runner = RecoveryRunner::new(
+            journal.clone(),
+            RecoveryRoots::new(
+                HashMap::from([("game".into(), root)]),
+                temp.path().join("staging"),
+            ),
+        );
+        runner.run_recovery().await.unwrap();
+        assert_eq!(
+            crate::platform::fs::file_utils::filesystem_identity(&disabled),
+            replacement
+        );
+        assert!(preserved.join("DISABLED A").exists());
+        assert!(!old.exists());
+        assert_eq!(journal.entries()[0].status, OperationStatus::DiskCommitted);
+        assert_eq!(
+            journal.entries()[0].database_projection_status,
+            DatabaseProjectionStatus::NeedsRepair
+        );
+        assert!(journal.pending_disk_commits().is_empty());
+        assert!(!journal.has_pending_disk_commit_for_game("game"));
+        drop(runner);
+        drop(journal);
+        let loaded = OperationJournal::open(temp.path().join("journal.json"), 16).unwrap();
+        assert_eq!(loaded.entries()[0].status, OperationStatus::DiskCommitted);
+        assert_eq!(
+            loaded.entries()[0].database_projection_status,
+            DatabaseProjectionStatus::NeedsRepair
+        );
+    }
 
     fn conflict_recovery(
         root: &Path,

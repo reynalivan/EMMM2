@@ -20,11 +20,21 @@ pub async fn delete_mod(
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >();
     let op_lock = app.state::<MutationCoordinator>();
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::StructuralMutation,
+    )?;
 
     // `game_id` is required: it names the mods root the path must sit inside.
     // Without it the delete used to skip containment entirely and trash any
     // absolute path the caller sent.
     let validated = validate_path(&config, &game_id, &path)?;
+    let source_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&validated)?;
+    let root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
     let preflight_paths = [validated.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
@@ -35,18 +45,29 @@ pub async fn delete_mod(
     .await?;
 
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
+    root_proof.validate(&root)?;
+    root_proof.validate(
+        &config
+            .mods_root_for(&game_id)
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+    )?;
+    source_proof.validate(&validated)?;
     disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
     let prepared = trash::prepare_trash_move(validated.as_ref())?;
     let operation_guard = op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "delete-mod",
-            game_id.clone(),
-            vec![crate::modules::mutation::api::PlannedStep::rename(
-                0,
-                prepared.source().to_path_buf(),
-                prepared.quarantine().to_path_buf(),
-            )],
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "delete-mod",
+                game_id.clone(),
+                vec![crate::modules::mutation::api::PlannedStep::rename(
+                    0,
+                    prepared.source().to_path_buf(),
+                    prepared.quarantine().to_path_buf(),
+                )
+                .with_expected_identity(Some(source_proof.identity().to_string()))],
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile.inner(),
@@ -54,6 +75,18 @@ pub async fn delete_mod(
         game_guard,
         operation_guard,
     )?;
+    if let Err(error) = root_proof
+        .validate(
+            &config
+                .mods_root_for(&game_id)
+                .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?,
+        )
+        .and_then(|()| root_proof.validate(&root))
+        .and_then(|()| source_proof.validate(&validated))
+    {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     if let Err(error) = prepared.execute(&state) {
         mutation_lease.mark_step_rolled_back(0)?;
         mutation_lease.begin_rollback()?;

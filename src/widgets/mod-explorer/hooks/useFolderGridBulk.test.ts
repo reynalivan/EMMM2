@@ -16,6 +16,7 @@ vi.unmock('@tanstack/react-query');
 
 const {
   applyRuntimeMutationResult,
+  scheduleWorkspaceSwitchRefresh,
   buildQueryRemovalDescriptor,
   executeWorkspaceExplorerBulk,
   bulkToggleMods,
@@ -26,6 +27,7 @@ const {
   admitWorkspaceIntentOverride,
 } = vi.hoisted(() => ({
   applyRuntimeMutationResult: vi.fn().mockResolvedValue(undefined),
+  scheduleWorkspaceSwitchRefresh: vi.fn().mockResolvedValue(undefined),
   buildQueryRemovalDescriptor: vi.fn(() => ({ events: [] })),
   executeWorkspaceExplorerBulk: vi.fn(),
   bulkToggleMods: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock('@/features/workspace-runtime', async (importOriginal) => ({
   applyRuntimeEffects: vi.fn(),
   admitWorkspaceIntentOverride,
   applyRuntimeMutationResult,
+  scheduleWorkspaceSwitchRefresh,
   buildQueryRemovalDescriptor,
   buildWorkspacePathRewritesDescriptor: vi.fn(() => ({ events: [] })),
   publishCollectionReferenceImpact,
@@ -106,6 +109,7 @@ const bulkResult: BulkResult = {
   sync_warning: null,
   runtime_sync_generation: null,
   disk_revision: null,
+  expected_identities: [['C:/Mods/Alice/Blue', 'identity-blue']] as [string, string][],
 };
 
 const defaultQueryClient = new QueryClient();
@@ -125,6 +129,7 @@ describe('useFolderGridBulk', () => {
     executeWorkspaceExplorerBulk.mockReset();
     bulkToggleMods.mockReset();
     applyRuntimeMutationResult.mockReset();
+    scheduleWorkspaceSwitchRefresh.mockReset().mockResolvedValue(undefined);
     executeWorkspaceExplorerBulk.mockResolvedValue(bulkResult);
     bulkToggleMods.mockResolvedValue(bulkResult);
     applyRuntimeMutationResult.mockResolvedValue(undefined);
@@ -158,6 +163,7 @@ describe('useFolderGridBulk', () => {
       expect.any(Array),
       true,
       expect.any(Number),
+      [],
     );
 
     await waitFor(() => {
@@ -288,6 +294,7 @@ describe('useFolderGridBulk', () => {
       false,
       expect.any(String),
       expect.any(Number),
+      [['C:/Mods/Alice/Blue', 'identity-blue']],
     );
   });
 
@@ -322,6 +329,7 @@ describe('useFolderGridBulk', () => {
       finishFirst({
         ...bulkResult,
         success: ['C:/Mods/Alice/DISABLED Blue'],
+        expected_identities: [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
         path_rewrites: [
           { old_path: 'C:/Mods/Alice/Blue', new_path: 'C:/Mods/Alice/DISABLED Blue' },
         ],
@@ -335,7 +343,56 @@ describe('useFolderGridBulk', () => {
         true,
         expect.any(String),
         expect.any(Number),
+        [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
       ),
+    );
+  });
+
+  it('preserves offscreen physical identities when continuing an all-matching toggle', async () => {
+    let finishFirst!: (value: typeof bulkResult) => void;
+    executeWorkspaceExplorerBulk.mockImplementationOnce(
+      () =>
+        new Promise<typeof bulkResult>((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    const { result } = renderHook(
+      () =>
+        useFolderGridBulk({
+          selection: {
+            mode: 'all_matching',
+            query: explorerQuery,
+            listingRevision: 'revision-1',
+            excludedPaths: new Set<string>(),
+            totalMatching: 2,
+          },
+          explorerQuery,
+          listingRevision: 'revision-1',
+          sortedFolders: [],
+          clearGridSelection: vi.fn(),
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { wrapper },
+    );
+    act(() => {
+      result.current.handleBulkToggle(false);
+      result.current.handleBulkToggle(true);
+    });
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1));
+    const identities: [string, string][] = [
+      ['C:/Mods/Alice/DISABLED Blue', 'identity-blue'],
+      ['C:/Mods/Alice/DISABLED Offscreen', 'identity-offscreen'],
+    ];
+    await act(async () => finishFirst({ ...bulkResult, expected_identities: identities }));
+    await waitFor(() => expect(bulkToggleMods).toHaveBeenCalledTimes(1));
+    expect(bulkToggleMods).toHaveBeenCalledWith(
+      'game-1',
+      identities.map(([path]) => path),
+      true,
+      expect.any(String),
+      expect.any(Number),
+      identities,
     );
   });
 
@@ -381,13 +438,14 @@ describe('useFolderGridBulk', () => {
         false,
         expect.any(String),
         expect.any(Number),
+        [['C:/Mods/Alice/Blue', 'identity-blue']],
       ),
     );
   });
 
   it('releases the bulk control before its background refresh completes', async () => {
     let finishRefresh!: () => void;
-    applyRuntimeMutationResult.mockReturnValue(
+    scheduleWorkspaceSwitchRefresh.mockReturnValue(
       new Promise<void>((resolve) => {
         finishRefresh = resolve;
       }),
@@ -409,9 +467,9 @@ describe('useFolderGridBulk', () => {
     act(() => result.current.handleBulkToggle(true));
 
     await waitFor(() => {
-      expect(applyRuntimeMutationResult).toHaveBeenCalledWith(
+      expect(scheduleWorkspaceSwitchRefresh).toHaveBeenCalledWith(
         expect.any(QueryClient),
-        'folderSwitch',
+        expect.objectContaining({ gameId: 'game-1', affectedPaths: bulkResult.success }),
       );
     });
     try {
@@ -422,7 +480,7 @@ describe('useFolderGridBulk', () => {
   });
 
   it('keeps the disk-backed toggle overlay when its background refresh fails', async () => {
-    applyRuntimeMutationResult.mockRejectedValue(new Error('projection refresh failed'));
+    scheduleWorkspaceSwitchRefresh.mockRejectedValue(new Error('projection refresh failed'));
     const { result } = renderHook(
       () =>
         useFolderGridBulk({
@@ -439,7 +497,7 @@ describe('useFolderGridBulk', () => {
 
     act(() => result.current.handleBulkToggle(true));
 
-    await waitFor(() => expect(applyRuntimeMutationResult).toHaveBeenCalled());
+    await waitFor(() => expect(scheduleWorkspaceSwitchRefresh).toHaveBeenCalled());
     await waitFor(() => expect(result.current.bulkMutationPending).toBe(false));
     expect(clearFolderBulkPendingDesired).not.toHaveBeenCalled();
   });

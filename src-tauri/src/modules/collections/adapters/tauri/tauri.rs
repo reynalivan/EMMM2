@@ -69,19 +69,39 @@ async fn acquire_current_snapshot_guard(
     pool: &SqlitePool,
     coordinator: &MutationCoordinator,
     game_id: &str,
-) -> Result<crate::modules::mutation::coordinator::MutationExemptionGuard, AppError> {
+) -> Result<CurrentSnapshotGuard, AppError> {
+    let admission = crate::modules::mutation::api::admit_immutable_mutation(
+        game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::CollectionCapture,
+    )?;
+    let mutation = acquire_current_snapshot_lease(app, pool, coordinator, game_id).await?;
+    Ok(CurrentSnapshotGuard {
+        _mutation: mutation,
+        _admission: admission,
+    })
+}
+
+pub(crate) async fn acquire_current_snapshot_lease(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    coordinator: &MutationCoordinator,
+    game_id: &str,
+) -> Result<
+    crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+    AppError,
+> {
+    let disk_reconcile = app.state::<
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >();
     for _ in 0..3 {
-        let source_epoch =
-            crate::modules::workspace::adapters::tauri::workspace_cmds::projection_source_epoch(
-                &app.state::<crate::modules::settings::application::config::ConfigService>(),
-                game_id,
-            )?;
+        let source_epoch = crate::modules::reconciliation::api::projection_source_epoch(
+            &app.state::<crate::modules::settings::application::config::ConfigService>(),
+            game_id,
+        )?;
         let pending_before = coordinator.pending_toggle_disk_commit_ids(game_id)?;
         ensure_current_runtime_snapshot_preflight(app, pool, game_id).await?;
-        let guard = coordinator
-            .acquire_exempt(
-                crate::modules::mutation::coordinator::MutationExemption::CollectionMetadata,
-            )
+        let guard = disk_reconcile
+            .acquire_nested_mutation_lease(game_id, coordinator)
             .await?;
         let pending_after = coordinator.pending_toggle_disk_commit_ids(game_id)?;
         if pending_after.iter().all(|id| pending_before.contains(id)) {
@@ -91,9 +111,16 @@ async fn acquire_current_snapshot_guard(
                 .filter(|operation| pending_after.contains(&operation.id))
                 .filter_map(|operation| operation.disk_revision)
                 .max();
-            crate::modules::workspace::adapters::tauri::workspace_cmds::complete_reconciled_toggle_projection(
-                app, pool, coordinator, game_id, &source_epoch, &pending_after, projected_revision,
-            ).await?;
+            crate::modules::reconciliation::api::complete_reconciled_toggle_projection(
+                app,
+                pool,
+                coordinator,
+                game_id,
+                &source_epoch,
+                &pending_after,
+                projected_revision,
+            )
+            .await?;
             return Ok(guard);
         }
         drop(guard);
@@ -102,6 +129,11 @@ async fn acquire_current_snapshot_guard(
         "Mods changed repeatedly while capturing the collection; retry once switching settles"
             .to_string(),
     ))
+}
+
+struct CurrentSnapshotGuard {
+    _mutation: crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
+    _admission: crate::modules::mutation::api::ImmutableMutationPermit,
 }
 
 fn current_runtime_snapshot_conflicts_block(
@@ -234,6 +266,10 @@ pub async fn apply_collection(
     collection_id: String,
     ignore_missing: Option<bool>,
 ) -> Result<ApplyResult, AppError> {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::CollectionApply,
+    )?;
     let started_at = std::time::Instant::now();
     let settings = config.get_settings();
     let diagnostics_enabled = settings.diagnostics.telemetry_enabled;
@@ -247,13 +283,16 @@ pub async fn apply_collection(
             })
         })?;
     let mods_path = game.mod_path.clone();
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&mods_path)?;
     let mut mutation_lease = None;
     for _ in 0..3 {
-        let source_epoch =
-            crate::modules::workspace::adapters::tauri::workspace_cmds::projection_source_epoch(
-                &app.state::<crate::modules::settings::application::config::ConfigService>(),
-                &game_id,
-            )?;
+        let source_epoch = root_proof.identity();
+        root_proof.validate(&mods_path)?;
+        crate::modules::reconciliation::api::ensure_projection_epoch(
+            config.inner(),
+            &game_id,
+            source_epoch,
+        )?;
         let pending_before = op_lock.pending_toggle_disk_commit_ids(&game_id)?;
         if !pending_before.is_empty() {
             ensure_current_runtime_snapshot_preflight(&app, pool.inner(), &game_id).await?;
@@ -275,6 +314,12 @@ pub async fn apply_collection(
         let lease = disk_reconcile
             .acquire_nested_mutation_lease(&game_id, op_lock.inner())
             .await?;
+        root_proof.validate(&mods_path)?;
+        crate::modules::reconciliation::api::ensure_projection_epoch(
+            config.inner(),
+            &game_id,
+            source_epoch,
+        )?;
         let pending_after = op_lock.pending_toggle_disk_commit_ids(&game_id)?;
         if pending_after.iter().all(|id| pending_before.contains(id)) {
             let projected_revision = op_lock
@@ -283,9 +328,16 @@ pub async fn apply_collection(
                 .filter(|operation| pending_after.contains(&operation.id))
                 .filter_map(|operation| operation.disk_revision)
                 .max();
-            crate::modules::workspace::adapters::tauri::workspace_cmds::complete_reconciled_toggle_projection(
-                &app, pool.inner(), op_lock.inner(), &game_id, &source_epoch, &pending_after, projected_revision,
-            ).await?;
+            crate::modules::reconciliation::api::complete_reconciled_toggle_projection(
+                &app,
+                pool.inner(),
+                op_lock.inner(),
+                &game_id,
+                source_epoch,
+                &pending_after,
+                projected_revision,
+            )
+            .await?;
             mutation_lease = Some(lease);
             break;
         }
@@ -338,8 +390,7 @@ pub async fn apply_collection(
             &mods_path,
             crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
             &applied.runtime_path_rewrites,
-        )
-        .await;
+        );
     }
 
     drop(mutation_lease);
@@ -462,6 +513,10 @@ pub async fn restore_last_changes(
     op_lock: State<'_, MutationCoordinator>,
     game_id: String,
 ) -> Result<ApplyResult, AppError> {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::CollectionApply,
+    )?;
     let started_at = std::time::Instant::now();
     let runtime =
         crate::modules::collections::adapters::sqlite::runtime::get(pool.inner(), &game_id)
@@ -478,6 +533,7 @@ pub async fn restore_last_changes(
         .find(|game| game.id == game_id)
         .ok_or_else(|| AppError::NotFound(format!("Game '{game_id}' not found")))?;
     let mods_path = game.mod_path.clone();
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&mods_path)?;
     let preflight_paths =
         collection::collection_preflight_scope_paths(pool.inner(), &game_id, &draft_id, &mods_path)
             .await?;
@@ -491,6 +547,12 @@ pub async fn restore_last_changes(
     let mutation_lease = disk_reconcile
         .acquire_nested_mutation_lease(&game_id, op_lock.inner())
         .await?;
+    root_proof.validate(&mods_path)?;
+    crate::modules::reconciliation::api::ensure_projection_epoch(
+        config.inner(),
+        &game_id,
+        root_proof.identity(),
+    )?;
     let restored_baseline = collection::valid_active_baseline(
         pool.inner(),
         &game_id,
@@ -519,8 +581,7 @@ pub async fn restore_last_changes(
         &mods_path,
         crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
         &result.runtime_path_rewrites,
-    )
-    .await;
+    );
     drop(mutation_lease);
     record_collection_operation(
         &app,
@@ -643,6 +704,10 @@ pub async fn resolve_recovery_task(
         crate::modules::workspace::adapters::sqlite::task::get_task_by_id(pool.inner(), &task_id)
             .await?
             .ok_or_else(|| AppError::Validation(format!("Task {task_id} not found")))?;
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &task.game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::Recovery,
+    )?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         &app,
         pool.inner(),
@@ -790,6 +855,59 @@ mod tests {
             assert!(
                 remainder[..end].contains("acquire_current_snapshot_guard"),
                 "{command} must reconcile pending disk changes before capturing current state"
+            );
+        }
+    }
+
+    #[test]
+    fn current_snapshot_retains_game_and_operation_lease_during_capture() {
+        let source = include_str!("tauri.rs");
+        let start = source
+            .find("async fn acquire_current_snapshot_guard(")
+            .unwrap();
+        let end = source[start..]
+            .find("fn current_runtime_snapshot_conflicts_block(")
+            .unwrap()
+            + start;
+        let guard = &source[start..end];
+        assert!(guard.contains("acquire_nested_mutation_lease(game_id, coordinator)"));
+        assert!(!guard.contains("acquire_exempt("));
+        assert!(guard.contains("DiskMutationLease"));
+    }
+
+    #[test]
+    fn immutable_collection_admission_precedes_projection_and_storage_waits() {
+        let source = include_str!("tauri.rs");
+        let helper_start = source
+            .find("async fn acquire_current_snapshot_guard(")
+            .unwrap();
+        let helper_end = source[helper_start..]
+            .find("struct CurrentSnapshotGuard")
+            .unwrap()
+            + helper_start;
+        let helper = &source[helper_start..helper_end];
+        assert!(
+            helper.find("admit_immutable_mutation").unwrap()
+                < helper
+                    .find("ensure_current_runtime_snapshot_preflight")
+                    .unwrap()
+        );
+        for command in [
+            "pub async fn apply_collection(",
+            "pub async fn restore_last_changes(",
+        ] {
+            let start = source.find(command).unwrap();
+            let remainder = &source[start..];
+            let end = remainder[1..]
+                .find("#[tauri::command]")
+                .map(|offset| offset + 1)
+                .unwrap_or(remainder.len());
+            let command_source = &remainder[..end];
+            assert!(
+                command_source.find("admit_immutable_mutation").unwrap()
+                    < command_source
+                        .find("acquire_nested_mutation_lease")
+                        .unwrap()
             );
         }
     }

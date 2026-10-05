@@ -127,6 +127,7 @@
   "reconcile": {
     "authority_pending": "磁盘更改已应用，但索引验证仍待完成。",
     "runtime_effects_pending": "磁盘更改已应用，但运行时刷新仍待处理。",
+    "workspace_switch_needs_repair": "磁盘更改已应用，但工作区同步需要修复。",
     "runtime_syncing": "正在更新游戏运行时…",
     "runtime_sync_failed": "运行时更新失败",
     "manual_reload_short": "需要手动重新加载",

@@ -4,8 +4,10 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '@/app/store';
 import { toast } from '@/shared/ui/toast';
+import { useActiveGame } from '@/entities/game';
 import type {
   WorkspaceParentEnableRequirement,
+  WorkspaceNode,
   WorkspaceSwitchInput,
   WorkspaceSwitchResult,
 } from '@/entities/workspace';
@@ -16,12 +18,13 @@ import {
   setObjectBulkPendingDesired,
   useWorkspaceSwitchActions,
 } from './useWorkspaceSwitchActions';
-import { recordWorkspaceProjectedRevision } from './workspaceSwitchOps';
+import { primeWorkspaceRootEpoch, recordWorkspaceProjectedRevision } from './workspaceSwitchOps';
 
 const executeWorkspaceSwitch = vi.fn();
 const getWorkspaceSwitchSnapshot = vi.fn();
 const admitWorkspaceSwitchIntent = vi.fn().mockResolvedValue(true);
 const successToast = vi.spyOn(toast, 'success').mockReturnValue('toast-id');
+const warningToast = vi.spyOn(toast, 'warning').mockReturnValue('warning-id');
 
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {
@@ -32,7 +35,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
 }));
 
 vi.mock('@/entities/game', () => ({
-  useActiveGame: () => ({ activeGame: { id: 'game-1' } }),
+  useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
 }));
 
 vi.mock('../../../shared/lib/committedMutationWarning', () => ({
@@ -115,10 +118,23 @@ function appliedSwitchResult(primaryPath: string): WorkspaceSwitchResult {
   };
 }
 
+async function restoreSwitchFeedbackRoot(): Promise<void> {
+  getWorkspaceSwitchSnapshot.mockResolvedValue({
+    game_id: 'game-1',
+    source_epoch: 'root-a',
+    projected_revision: 0,
+  });
+  await act(async () => {
+    useAppStore.setState({ activeGameId: 'game-1' });
+    await primeWorkspaceRootEpoch('game-1');
+  });
+}
+
 describe('useWorkspaceSwitchActions parent confirmation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     executeWorkspaceSwitch.mockReset();
+    vi.mocked(useActiveGame).mockImplementation(() => ({ activeGame: { id: 'game-1' } }) as never);
     getWorkspaceSwitchSnapshot.mockResolvedValue({
       game_id: 'game-1',
       source_epoch: 'root-a',
@@ -148,7 +164,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
   });
 
-  it('keeps the newest bulk folder state across enabled and disabled path spellings', () => {
+  it('does not alias distinct enabled and disabled bulk paths without disk identity proof', () => {
     const node = {
       node_kind: 'terminal_mod',
       id: 'mod-1',
@@ -158,12 +174,188 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
 
     act(() => setFolderBulkPendingDesired('game-1', ['E:/Mods/DISABLED Blue'], true, 200));
-    expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+    expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
     act(() => setFolderBulkPendingDesired('game-1', ['E:/Mods/Blue'], false, 201));
     act(() => clearFolderBulkPendingDesired('game-1', ['E:/Mods/DISABLED Blue'], 200));
     expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
     act(() => clearFolderBulkPendingDesired('game-1', ['E:/Mods/Blue'], 201));
     expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
+  });
+
+  it('clears only the matching bulk revision when a replacement shares an old folder path', () => {
+    const oldNode = {
+      node_kind: 'terminal_mod',
+      id: 'replacement-bulk',
+      path: 'E:/Mods/A',
+      filesystem_identity: 'physical-old',
+      switch_state: 'enabled',
+    } as never;
+    const newNode = { ...(oldNode as object), filesystem_identity: 'physical-new' } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    act(() => {
+      setFolderBulkPendingDesired('game-1', ['E:/Mods/A'], false, 300, [
+        ['E:/Mods/A', 'physical-old'],
+      ]);
+      setFolderBulkPendingDesired('game-1', ['E:/Mods/A'], true, 301, [
+        ['E:/Mods/A', 'physical-new'],
+      ]);
+    });
+    act(() => clearFolderBulkPendingDesired('game-1', ['E:/Mods/A'], 301));
+    expect(result.current.getPendingDesiredEnabled(newNode)).toBeUndefined();
+    expect(result.current.getPendingDesiredEnabled(oldNode)).toBe(false);
+    act(() => clearFolderBulkPendingDesired('game-1', ['E:/Mods/A'], 300));
+  });
+
+  it('indexes a ten-thousand-target bulk overlay without pairwise alias scans', () => {
+    const paths = Array.from({ length: 10_000 }, (_, index) => `E:/Mods/Bulk-${index}`);
+    const proofs: [string, string][] = paths.map((path, index) => [path, `physical-${index}`]);
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    const aliasChecks = vi.spyOn(Set.prototype, 'has');
+    try {
+      act(() => setFolderBulkPendingDesired('game-1', paths, false, 302, proofs));
+      expect(aliasChecks.mock.calls.length).toBeLessThan(paths.length * 10);
+    } finally {
+      aliasChecks.mockRestore();
+    }
+    const last = {
+      node_kind: 'terminal_mod',
+      id: null,
+      path: paths[paths.length - 1],
+      filesystem_identity: 'physical-9999',
+      switch_state: 'enabled',
+    } as never;
+    expect(result.current.getPendingDesiredEnabled(last)).toBe(false);
+    act(() => clearFolderBulkPendingDesired('game-1', paths, 302));
+    expect(result.current.getPendingDesiredEnabled(last)).toBeUndefined();
+  });
+
+  it('keeps the listing physical identity through rapid confirmed-path continuation', async () => {
+    let completeFirst!: (value: WorkspaceSwitchResult) => void;
+    let completeSecond!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeSecond = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+    const node = {
+      node_kind: 'terminal_mod',
+      id: 'physical-continuation',
+      path: 'E:/Mods/A',
+      filesystem_identity: 'physical-a',
+      switch_state: 'enabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    let first!: Promise<string | null>;
+    act(() => {
+      first = result.current.setNodeEnabled(node, false, 'folder_grid');
+      result.current.setNodeEnabled(node, true, 'preview');
+    });
+    await act(async () => completeFirst(appliedSwitchResult('E:/Mods/DISABLED A')));
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
+    let fromStalePath!: Promise<string | null>;
+    act(() => {
+      fromStalePath = result.current.setFolderPathEnabled('E:/Mods/A', false, 'physical-a');
+    });
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
+    await act(async () => completeSecond(appliedSwitchResult('E:/Mods/A')));
+    await first;
+    await fromStalePath;
+    expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.target)).toEqual([
+      { kind: 'mod_path', value: 'E:/Mods/A', expected_identity: 'physical-a' },
+      { kind: 'mod_path', value: 'E:/Mods/DISABLED A', expected_identity: 'physical-a' },
+      { kind: 'mod_path', value: 'E:/Mods/A', expected_identity: 'physical-a' },
+    ]);
+  });
+
+  it('does not coalesce a replacement folder with the old listing identity', async () => {
+    let rejectFirst!: (error: Error) => void;
+    let completeSecond!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeSecond = resolve;
+          }),
+      );
+    const old = {
+      node_kind: 'terminal_mod',
+      id: 'replacement-id',
+      path: 'E:/Mods/A',
+      filesystem_identity: 'physical-old',
+      switch_state: 'enabled',
+    };
+    const replacement = { ...old, filesystem_identity: 'physical-new' };
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    let first!: Promise<string | null>;
+    let second!: Promise<string | null>;
+    act(() => {
+      first = result.current.setNodeEnabled(old as never, false, 'folder_grid');
+      second = result.current.setNodeEnabled(replacement as never, false, 'preview');
+    });
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      rejectFirst(new Error('old folder was replaced'));
+      await expect(first).resolves.toBeNull();
+    });
+    expect(result.current.isNodePending(old as never)).toBe(false);
+    expect(result.current.isNodePending(replacement as never)).toBe(true);
+    expect(result.current.getPendingDesiredEnabled(replacement as never)).toBe(false);
+    await act(async () => {
+      completeSecond(appliedSwitchResult('E:/Mods/DISABLED A'));
+      await second;
+    });
+    expect(result.current.isNodePending(replacement as never)).toBe(false);
+  });
+
+  it('keeps two real enabled/disabled sibling targets independent during rapid input', async () => {
+    let completeFirst!: (value: WorkspaceSwitchResult) => void;
+    executeWorkspaceSwitch
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(appliedSwitchResult('E:/Mods/DISABLED A'));
+    const firstNode = {
+      node_kind: 'terminal_mod',
+      id: 'real-enabled-a',
+      path: 'E:/Mods/A',
+      switch_state: 'enabled',
+    } as never;
+    const secondNode = {
+      node_kind: 'terminal_mod',
+      id: 'real-disabled-a',
+      path: 'E:/Mods/DISABLED A',
+      switch_state: 'disabled',
+    } as never;
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    let first!: Promise<string | null>;
+    await act(async () => {
+      first = result.current.setNodeEnabled(firstNode, false, 'folder_grid');
+      await result.current.setNodeEnabled(secondNode, true, 'preview');
+    });
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
+    expect(result.current.getPendingDesiredEnabled(firstNode)).toBe(false);
+    await act(async () => {
+      completeFirst(appliedSwitchResult('E:/Mods/DISABLED A'));
+      await first;
+    });
   });
 
   it('binds the reviewed token to the confirmed mutation and duplicate continuation', async () => {
@@ -513,6 +705,12 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     });
     expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
     expect(invalidate).not.toHaveBeenCalled();
+    expect(result.current.getNodeDiskObservation(node)).toMatchObject({
+      path: 'E:/Mods/A',
+      enabled: true,
+      revision: 42,
+    });
+    expect(result.current.isNodePending(node)).toBe(false);
 
     act(() => recordWorkspaceProjectedRevision('game-1', 42));
     await waitFor(() => expect(invalidate).toHaveBeenCalled());
@@ -521,6 +719,393 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     releaseRefresh();
     await waitFor(() => expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined());
   });
+
+  it('reports one repair warning for a shared burst while preserving acknowledged disk switches', async () => {
+    vi.useFakeTimers();
+    try {
+      getWorkspaceSwitchSnapshot.mockResolvedValue({
+        game_id: 'game-1',
+        source_epoch: 'feedback-repair-root',
+        projected_revision: 0,
+        projection_repair_reason: 'Folder ownership needs repair',
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+      vi.mocked(useQueryClient).mockReturnValue(queryClient);
+      executeWorkspaceSwitch
+        .mockResolvedValueOnce({
+          ...appliedSwitchResult('E:/Mods/A'),
+          source_epoch: 'feedback-repair-root',
+          disk_revision: 1,
+        })
+        .mockResolvedValueOnce({
+          ...appliedSwitchResult('E:/Mods/B'),
+          source_epoch: 'feedback-repair-root',
+          disk_revision: 2,
+        });
+      const node = {
+        node_kind: 'terminal_mod',
+        id: 'feedback-a',
+        path: 'E:/Mods/DISABLED A',
+        filesystem_identity: 'feedback-physical-a',
+        switch_state: 'disabled',
+      } as never;
+      const otherNode = {
+        ...(node as object),
+        id: 'feedback-b',
+        path: 'E:/Mods/DISABLED B',
+        filesystem_identity: 'feedback-physical-b',
+      } as never;
+      const { result } = renderHook(() => useWorkspaceSwitchActions(), {
+        wrapper: wrapperWithClient(queryClient),
+      });
+      await act(async () => {
+        await Promise.all([
+          result.current.setNodeEnabled(node, true, 'folder_grid'),
+          result.current.setNodeEnabled(otherNode, true, 'folder_grid'),
+        ]);
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      expect(warningToast).toHaveBeenCalledExactlyOnceWith(
+        'Changes were applied on disk, but workspace synchronization needs repair.',
+        7000,
+      );
+      expect(result.current.getNodeSyncError(node)).toBeInstanceOf(Error);
+      expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+      expect(result.current.getNodeDiskObservation(node)).toMatchObject({
+        path: 'E:/Mods/A',
+        enabled: true,
+        revision: 1,
+      });
+      expect(result.current.getPendingDesiredEnabled(otherNode)).toBe(true);
+      expect(result.current.isNodePending(node)).toBe(false);
+      expect(invalidate).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(warningToast).toHaveBeenCalledOnce();
+    } finally {
+      await restoreSwitchFeedbackRoot();
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores a refresh failure after changing games without clearing the disk receipt', async () => {
+    vi.useFakeTimers();
+    try {
+      let rejectRefresh!: (error: Error) => void;
+      const refresh = new Promise<void>((_resolve, reject) => {
+        rejectRefresh = reject;
+      });
+      getWorkspaceSwitchSnapshot.mockResolvedValue({
+        game_id: 'game-1',
+        source_epoch: 'feedback-game-root',
+        projected_revision: 1,
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(refresh);
+      vi.mocked(useQueryClient).mockReturnValue(queryClient);
+      executeWorkspaceSwitch.mockResolvedValue({
+        ...appliedSwitchResult('E:/Mods/A'),
+        changed_folder_paths: ['E:/Mods/A'],
+        source_epoch: 'feedback-game-root',
+        disk_revision: 1,
+      });
+      const node = {
+        node_kind: 'terminal_mod',
+        id: 'feedback-game-a',
+        path: 'E:/Mods/DISABLED A',
+        filesystem_identity: 'feedback-game-physical-a',
+        switch_state: 'disabled',
+      } as never;
+      const { result } = renderHook(() => useWorkspaceSwitchActions(), {
+        wrapper: wrapperWithClient(queryClient),
+      });
+      await act(async () => {
+        await result.current.setNodeEnabled(node, true, 'folder_grid');
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(invalidate).toHaveBeenCalled();
+      await act(async () => {
+        useAppStore.setState({ activeGameId: 'game-2' });
+        rejectRefresh(new Error('database busy'));
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(warningToast).not.toHaveBeenCalled();
+      expect(result.current.getNodeSyncError(node)).toBeUndefined();
+      expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+      expect(result.current.getNodeDiskObservation(node)).toMatchObject({ revision: 1 });
+    } finally {
+      await restoreSwitchFeedbackRoot();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not report a superseded repair result or clear a newer disk observation', async () => {
+    vi.useFakeTimers();
+    try {
+      const snapshot = {
+        game_id: 'game-1',
+        source_epoch: 'feedback-latest-root',
+        projected_revision: 0,
+        projection_repair_reason: null as string | null,
+      };
+      getWorkspaceSwitchSnapshot.mockResolvedValue(snapshot);
+      let completeSnapshot!: (value: typeof snapshot) => void;
+      let completeNextSwitch!: (value: WorkspaceSwitchResult) => void;
+      let completeRefresh!: () => void;
+      const refresh = new Promise<void>((resolve) => {
+        completeRefresh = resolve;
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(refresh);
+      vi.mocked(useQueryClient).mockReturnValue(queryClient);
+      executeWorkspaceSwitch
+        .mockResolvedValueOnce({
+          ...appliedSwitchResult('E:/Mods/A'),
+          source_epoch: snapshot.source_epoch,
+          disk_revision: 1,
+        })
+        .mockImplementationOnce(
+          () =>
+            new Promise<WorkspaceSwitchResult>((resolve) => {
+              completeNextSwitch = resolve;
+            }),
+        );
+      const node = {
+        node_kind: 'terminal_mod',
+        id: 'feedback-latest-a',
+        path: 'E:/Mods/DISABLED A',
+        filesystem_identity: 'feedback-latest-physical-a',
+        switch_state: 'disabled',
+      } as never;
+      const { result } = renderHook(() => useWorkspaceSwitchActions(), {
+        wrapper: wrapperWithClient(queryClient),
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      getWorkspaceSwitchSnapshot.mockImplementationOnce(
+        () =>
+          new Promise<typeof snapshot>((resolve) => {
+            completeSnapshot = resolve;
+          }),
+      );
+      await act(async () => {
+        await result.current.setNodeEnabled(node, true, 'folder_grid');
+      });
+      let nextSwitch!: Promise<string | null>;
+      act(() => {
+        nextSwitch = result.current.setNodeEnabled(node, false, 'preview');
+      });
+      await act(async () => {
+        completeSnapshot({ ...snapshot, projection_repair_reason: 'Old switch needs repair' });
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(warningToast).not.toHaveBeenCalled();
+      expect(result.current.getNodeSyncError(node)).toBeUndefined();
+      expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+
+      getWorkspaceSwitchSnapshot.mockResolvedValue({ ...snapshot, projected_revision: 2 });
+      await act(async () => {
+        completeNextSwitch({
+          ...appliedSwitchResult('E:/Mods/DISABLED A'),
+          changed_folder_paths: ['E:/Mods/DISABLED A'],
+          source_epoch: snapshot.source_epoch,
+          disk_revision: 2,
+        });
+        await nextSwitch;
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(result.current.getNodeDiskObservation(node)).toMatchObject({
+        enabled: false,
+        revision: 2,
+      });
+      expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+      expect(warningToast).not.toHaveBeenCalled();
+      await act(async () => {
+        completeRefresh();
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
+    } finally {
+      await restoreSwitchFeedbackRoot();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { withSuccessor: false, viaPath: false },
+    { withSuccessor: true, viaPath: false },
+    { withSuccessor: false, viaPath: true },
+    { withSuccessor: false, viaPath: false, rapidReturn: true },
+  ])(
+    'resumes an acknowledged receipt after returning to the same game and root epoch (path: $viaPath, successor: $withSuccessor)',
+    async ({ withSuccessor, viaPath, rapidReturn }) => {
+      vi.useFakeTimers();
+      try {
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        let completeInactiveRefresh!: () => void;
+        let completeRevisitRefresh!: () => void;
+        let completeSuccessorRefresh!: () => void;
+        const inactiveRefresh = new Promise<void>((resolve) => {
+          completeInactiveRefresh = resolve;
+        });
+        const revisitRefresh = new Promise<void>((resolve) => {
+          completeRevisitRefresh = resolve;
+        });
+        const successorRefresh = new Promise<void>((resolve) => {
+          completeSuccessorRefresh = resolve;
+        });
+        const invalidate = vi
+          .spyOn(queryClient, 'invalidateQueries')
+          .mockReturnValue(inactiveRefresh);
+        vi.mocked(useQueryClient).mockReturnValue(queryClient);
+        getWorkspaceSwitchSnapshot.mockResolvedValue({
+          game_id: 'game-1',
+          source_epoch: 'feedback-revisit-root',
+          projected_revision: 1,
+        });
+        executeWorkspaceSwitch.mockResolvedValue({
+          ...appliedSwitchResult('E:/Mods/A'),
+          source_epoch: 'feedback-revisit-root',
+          disk_revision: 1,
+          changed_folder_paths: ['E:/Mods/A'],
+        });
+        const node = {
+          node_kind: 'terminal_mod',
+          id: 'feedback-revisit-a',
+          path: 'E:/Mods/DISABLED A',
+          filesystem_identity: 'feedback-revisit-physical-a',
+          switch_state: 'disabled',
+        } as never;
+        const { result, rerender } = renderHook(
+          () => {
+            const actions = useWorkspaceSwitchActions();
+            useWorkspaceSwitchActions();
+            return actions;
+          },
+          {
+            wrapper: ({ children }) =>
+              React.createElement(
+                React.StrictMode,
+                null,
+                React.createElement(QueryClientProvider, { client: queryClient }, children),
+              ),
+          },
+        );
+        await act(async () => {
+          if (viaPath) {
+            await result.current.setFolderPathEnabled(
+              'E:/Mods/DISABLED A',
+              true,
+              'feedback-revisit-physical-a',
+            );
+          } else {
+            await result.current.setNodeEnabled(node, true, 'folder_grid');
+          }
+          await vi.advanceTimersByTimeAsync(1);
+        });
+        const initialInvalidations = invalidate.mock.calls.length;
+        expect(initialInvalidations).toBeGreaterThan(0);
+        const gameAActions = result.current;
+        await act(async () => {
+          useAppStore.setState({ activeGameId: 'game-2' });
+          vi.mocked(useActiveGame).mockImplementation(
+            () => ({ activeGame: { id: 'game-2' } }) as never,
+          );
+          rerender();
+          if (!rapidReturn) completeInactiveRefresh();
+          await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(gameAActions.getPendingDesiredEnabled(node)).toBe(true);
+        expect(gameAActions.getNodeDiskObservation(node)).toMatchObject({ revision: 1 });
+        const externallyDisabledNode = {
+          ...(node as object),
+          switch_state: 'disabled',
+        } as WorkspaceNode;
+        const refreshedNodeKey = ['feedback-revisit-node'];
+        queryClient.setQueryData(refreshedNodeKey, externallyDisabledNode);
+
+        // The external disk state changed while inactive; the epoch remains identical.
+        getWorkspaceSwitchSnapshot.mockResolvedValue({
+          game_id: 'game-1',
+          source_epoch: 'feedback-revisit-root',
+          projected_revision: 2,
+        });
+        invalidate.mockReturnValue(revisitRefresh);
+        await act(async () => {
+          useAppStore.setState({ activeGameId: 'game-1' });
+          vi.mocked(useActiveGame).mockImplementation(
+            () => ({ activeGame: { id: 'game-1' } }) as never,
+          );
+          rerender();
+          await vi.advanceTimersByTimeAsync(1);
+        });
+        if (rapidReturn) {
+          expect(invalidate).toHaveBeenCalledTimes(initialInvalidations);
+          await act(async () => {
+            completeInactiveRefresh();
+            await vi.advanceTimersByTimeAsync(1);
+          });
+        }
+        expect(invalidate).toHaveBeenCalledTimes(initialInvalidations * 2);
+        expect(result.current.getPendingDesiredEnabled(node)).toBe(true);
+        if (withSuccessor) {
+          getWorkspaceSwitchSnapshot.mockResolvedValue({
+            game_id: 'game-1',
+            source_epoch: 'feedback-revisit-root',
+            projected_revision: 3,
+          });
+          invalidate.mockReturnValue(successorRefresh);
+          executeWorkspaceSwitch.mockResolvedValueOnce({
+            ...appliedSwitchResult('E:/Mods/DISABLED A'),
+            source_epoch: 'feedback-revisit-root',
+            disk_revision: 3,
+            changed_folder_paths: ['E:/Mods/DISABLED A'],
+          });
+          await act(async () => {
+            await result.current.toggleNode(node, 'preview');
+          });
+          expect(result.current.isNodePending(node)).toBe(false);
+          expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+          expect(result.current.getNodeDiskObservation(node)).toMatchObject({ revision: 3 });
+        }
+        await act(async () => {
+          completeRevisitRefresh();
+          await vi.advanceTimersByTimeAsync(1);
+        });
+        if (withSuccessor) {
+          expect(result.current.getPendingDesiredEnabled(node)).toBe(false);
+          expect(result.current.getNodeDiskObservation(node)).toMatchObject({ revision: 3 });
+          await act(async () => {
+            completeSuccessorRefresh();
+            await vi.advanceTimersByTimeAsync(1);
+          });
+        }
+        expect(result.current.getPendingDesiredEnabled(node)).toBeUndefined();
+        expect(result.current.getNodeDiskObservation(node)).toBeUndefined();
+        const refreshedNode = queryClient.getQueryData<WorkspaceNode>(refreshedNodeKey);
+        expect(
+          result.current.getPendingDesiredEnabled(refreshedNode) ??
+            refreshedNode?.switch_state === 'enabled',
+        ).toBe(false);
+        expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(withSuccessor ? 2 : 1);
+        const settledInvalidations = invalidate.mock.calls.length;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(30_000);
+        });
+        expect(invalidate).toHaveBeenCalledTimes(settledInvalidations);
+      } finally {
+        vi.mocked(useActiveGame).mockImplementation(
+          () => ({ activeGame: { id: 'game-1' } }) as never,
+        );
+        await restoreSwitchFeedbackRoot();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('keeps the disk receipt overlay until a delayed projection is verified', async () => {
     vi.useFakeTimers();
@@ -828,7 +1413,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     ]);
   });
 
-  it('coalesces folder-path requests across enabled and disabled spellings', async () => {
+  it('coalesces repeated requests for the same exact folder path', async () => {
     let completeFirst!: (value: WorkspaceSwitchResult) => void;
     executeWorkspaceSwitch
       .mockImplementationOnce(
@@ -843,8 +1428,8 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     let first!: Promise<string | null>;
     let second!: Promise<string | null>;
     act(() => {
-      first = result.current.setFolderPathEnabled('E:/Mods/DISABLED A', true);
-      second = result.current.setFolderPathEnabled('E:/Mods/A', false);
+      first = result.current.setFolderPathEnabled('E:/Mods/DISABLED A', true, 'physical-path-a');
+      second = result.current.setFolderPathEnabled('E:/Mods/DISABLED A', false, 'physical-path-a');
     });
     await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
 
@@ -856,11 +1441,24 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
       'E:/Mods/DISABLED A',
       'E:/Mods/A',
     ]);
+    expect(
+      executeWorkspaceSwitch.mock.calls.map(([input]) => input.target.expected_identity),
+    ).toEqual(['physical-path-a', 'physical-path-a']);
     expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.desired_enabled)).toEqual([
       true,
       false,
     ]);
     await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Disabled: A'));
+  });
+
+  it('does not dispatch listing-backed path switches whose physical identity could not be read', async () => {
+    const { result } = renderHook(() => useWorkspaceSwitchActions(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.setFolderPathEnabled('E:/Mods/A', false, null),
+      ).resolves.toBeNull();
+    });
+    expect(executeWorkspaceSwitch).not.toHaveBeenCalled();
   });
 
   it('summarizes rapid disk-verified switches without one toast per commit', async () => {

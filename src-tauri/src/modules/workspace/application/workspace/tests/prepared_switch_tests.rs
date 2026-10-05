@@ -1,4 +1,25 @@
 use super::*;
+
+#[test]
+fn listing_identity_rejects_replacement_but_survives_prefix_rename() {
+    let fixture = tempfile::tempdir().unwrap();
+    let source = fixture.path().join("A");
+    let disabled = fixture.path().join("DISABLED A");
+    std::fs::create_dir(&source).unwrap();
+    let expected = crate::platform::fs::file_utils::filesystem_identity(&source).unwrap();
+    std::fs::rename(&source, &disabled).unwrap();
+    assert_eq!(
+        resolve_expected_switch_path(fixture.path(), &source, Some(&expected)).unwrap(),
+        disabled
+    );
+    std::fs::create_dir(&source).unwrap();
+    assert!(matches!(
+        resolve_expected_switch_path(fixture.path(), &source, Some(&expected)),
+        Err(AppError::ExplorerSnapshotExpired)
+    ));
+    assert!(source.is_dir());
+    assert!(disabled.is_dir());
+}
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 use crate::modules::workspace::domain::workspace::{
     WorkspaceSwitchOriginSurface, WorkspaceSwitchTarget,
@@ -32,6 +53,7 @@ async fn normal_leaf_toggle_can_prepare_after_database_pool_closes() {
     let input = WorkspaceSwitchInput {
         game_id: "game".into(),
         target: WorkspaceSwitchTarget {
+            expected_identity: None,
             kind: WorkspaceSwitchTargetKind::ModPath,
             value: target.to_string_lossy().into_owned(),
         },
@@ -74,6 +96,7 @@ async fn normal_leaf_toggle_rejects_only_same_parent_physical_name_collision() {
     let input = WorkspaceSwitchInput {
         game_id: "game".into(),
         target: WorkspaceSwitchTarget {
+            expected_identity: None,
             kind: WorkspaceSwitchTargetKind::ModPath,
             value: target.to_string_lossy().into_owned(),
         },
@@ -158,6 +181,7 @@ async fn enabled_sibling_does_not_block_normal_activation_or_exclusive_choice() 
     let mut input = WorkspaceSwitchInput {
         game_id: "game".into(),
         target: WorkspaceSwitchTarget {
+            expected_identity: None,
             kind: WorkspaceSwitchTargetKind::ModPath,
             value: target.to_string_lossy().into_owned(),
         },
@@ -345,6 +369,7 @@ async fn mod_switch_describes_and_sequences_every_disabled_parent() {
     let mut input = WorkspaceSwitchInput {
         game_id: "game".into(),
         target: WorkspaceSwitchTarget {
+            expected_identity: None,
             kind: WorkspaceSwitchTargetKind::ModPath,
             value: child.to_string_lossy().into_owned(),
         },

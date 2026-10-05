@@ -200,10 +200,10 @@ pub async fn runtime_sync_request_for_changed_paths(
     }
 }
 
-/// Build and enqueue the narrowest runtime refresh for committed filesystem
-/// rewrites. An empty rewrite set still queues a status-only generation so a
-/// collection name or Safe Mode change reaches the published artifact.
-pub async fn enqueue_runtime_sync_for_rewrites(
+/// Reserve the committed root scope synchronously while the mutation lease is
+/// held. Runtime DB reads/harvesting belong to the worker, not this boundary.
+/// Empty rewrites queue a status-only generation.
+pub fn enqueue_runtime_sync_for_rewrites(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
     game_id: &str,
@@ -211,25 +211,22 @@ pub async fn enqueue_runtime_sync_for_rewrites(
     cause: RuntimeSyncCause,
     rewrites: &[crate::modules::workspace::domain::workspace::WorkspacePathRewrite],
 ) -> u64 {
-    let changed_paths = rewrites
+    let request = runtime_sync_request_for_rewrites(mods_root, rewrites);
+    enqueue_runtime_sync_scoped(app, pool, game_id, cause, request)
+}
+
+fn runtime_sync_request_for_rewrites(
+    mods_root: &std::path::Path,
+    rewrites: &[crate::modules::workspace::domain::workspace::WorkspacePathRewrite],
+) -> RuntimeSyncRequest {
+    let roots = rewrites
         .iter()
-        .map(|rewrite| rewrite.new_path.clone())
-        .collect::<Vec<_>>();
-    let fallback_roots = rewrites
-        .iter()
-        .map(|rewrite| crate::shared::path_key::relative_to_root(&rewrite.new_path, mods_root))
-        .collect::<std::collections::HashSet<_>>()
+        .flat_map(|rewrite| [&rewrite.old_path, &rewrite.new_path])
+        .map(|path| crate::shared::path_key::relative_to_root(path, mods_root))
+        .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let request = runtime_sync_request_for_changed_paths(
-        pool,
-        game_id,
-        mods_root,
-        &changed_paths,
-        &fallback_roots,
-    )
-    .await;
-    enqueue_runtime_sync_scoped(app, pool, game_id, cause, request)
+    runtime_sync_request_for_roots(&roots)
 }
 
 pub(crate) fn enqueue_runtime_sync_with_authority(
@@ -328,6 +325,7 @@ async fn run_worker(
         };
         let cause = cause_from_label(&job.cause).unwrap_or(fallback_cause);
         fallback_cause = cause;
+        let queued_work = std::time::Instant::now();
         let _work_permit = RUNTIME_WORK_PERMITS
             .acquire()
             .await
@@ -336,6 +334,8 @@ async fn run_worker(
             let _ = state.finish_runtime_sync(&game_id, job.generation);
             continue;
         }
+        let worker_started = std::time::Instant::now();
+        log::debug!("RuntimeSync game_id={game_id} generation={} publication_revision={:?} permit_wait_ms={}", job.generation, job.publication_revision, queued_work.elapsed().as_millis());
         emit_status(
             &app,
             RuntimeSyncStatus {
@@ -395,6 +395,7 @@ async fn run_worker(
         }
         let authoritative =
             finish_runtime_sync_generation(&state, &game_id, job.generation, staged, settled);
+        log::debug!("RuntimeSync game_id={game_id} generation={} publication_revision={:?} phase={phase:?} authoritative={authoritative} elapsed_ms={}", job.generation, job.publication_revision, worker_started.elapsed().as_millis());
         if authoritative {
             emit_status(
                 &app,
@@ -469,6 +470,53 @@ mod tests {
         );
         assert!(
             ensure_runtime_retry_ready(InitialRecoveryReadiness::Failed { generation: 4 }).is_err()
+        );
+    }
+
+    #[test]
+    fn committed_rewrites_reserve_runtime_without_waiting_on_database() {
+        // The synchronous signature makes an awaited DB lookup at this
+        // lease-held reservation boundary a compile error.
+        let _: fn(
+            &tauri::AppHandle,
+            &sqlx::SqlitePool,
+            &str,
+            &std::path::Path,
+            RuntimeSyncCause,
+            &[crate::modules::workspace::domain::workspace::WorkspacePathRewrite],
+        ) -> u64 = enqueue_runtime_sync_for_rewrites;
+    }
+
+    #[test]
+    fn committed_rewrite_scope_keeps_old_and_new_roots_and_empty_status_updates() {
+        use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
+
+        let root = std::path::Path::new("C:/Mods");
+        let rewrites = vec![
+            WorkspacePathRewrite {
+                old_path: "C:/Mods/Parent/Skin".into(),
+                new_path: "C:/Mods/DISABLED Parent/Skin".into(),
+            },
+            WorkspacePathRewrite {
+                old_path: "C:/Mods/Parent/Skin".into(),
+                new_path: "C:/Mods/DISABLED Parent/Skin".into(),
+            },
+        ];
+        let RuntimeSyncRequest::ScopedRoots { roots } =
+            runtime_sync_request_for_rewrites(root, &rewrites)
+        else {
+            panic!("rewrite reservation must use root scopes");
+        };
+        assert_eq!(
+            roots
+                .iter()
+                .map(|root| root.as_stored())
+                .collect::<Vec<_>>(),
+            vec!["DISABLED Parent/Skin", "Parent/Skin"]
+        );
+        assert_eq!(
+            runtime_sync_request_for_rewrites(root, &[]),
+            RuntimeSyncRequest::ScopedRoots { roots: vec![] }
         );
     }
 

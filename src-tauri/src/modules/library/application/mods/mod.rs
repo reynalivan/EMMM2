@@ -5,7 +5,6 @@ pub mod core_ops;
 pub mod info_json;
 pub mod metadata;
 pub mod object_switch;
-pub mod organizer_duplicates;
 pub mod organizer_ext;
 pub mod organizer_move;
 pub mod organizer_targets;

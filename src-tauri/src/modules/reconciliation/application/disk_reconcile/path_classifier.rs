@@ -2,9 +2,11 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 fn top_level_root_from_path(path: &Path, mods_path: &Path) -> Option<String> {
-    let relative = path.strip_prefix(mods_path).ok()?;
+    let path = crate::shared::path_key::physical_namespace_path(path).ok()?;
+    let mods_path = crate::shared::path_key::physical_namespace_path(mods_path).ok()?;
+    let relative = path.strip_prefix(&mods_path).ok()?;
     let first = relative.components().next()?;
-    let value = first.as_os_str().to_string_lossy().trim().to_string();
+    let value = first.as_os_str().to_string_lossy().to_string();
     if value.is_empty() || value.starts_with('.') {
         return None;
     }
@@ -99,6 +101,32 @@ mod tests {
         );
 
         assert_eq!(roots, vec!["Alice".to_string(), "Bob".to_string()]);
+    }
+
+    #[test]
+    fn physical_root_names_keep_trailing_spaces() {
+        assert_eq!(
+            collect_changed_roots(
+                Path::new("E:/Mods"),
+                &["E:/Mods/Alice /mod.ini".to_string()]
+            ),
+            vec!["Alice ".to_string()]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn changed_roots_accept_canonical_events_with_regular_configured_root() {
+        let roots = collect_changed_roots(
+            Path::new(r"C:\Mods"),
+            &[r"\\?\C:\Mods\Alice. \DISABLED A".to_string()],
+        );
+        assert_eq!(roots, vec!["Alice. ".to_string()]);
+        assert!(collect_changed_roots(
+            Path::new(r"C:\Mods"),
+            &[r"\\?\C:\ModsOther\Alice\A".to_string()]
+        )
+        .is_empty());
     }
 
     #[test]

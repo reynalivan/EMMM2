@@ -1,3 +1,4 @@
+pub(crate) use super::adapters::tauri::tauri::acquire_current_snapshot_lease;
 pub use super::application::*;
 
 #[cfg(debug_assertions)]

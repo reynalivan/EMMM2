@@ -34,7 +34,7 @@ pub struct MutationCoordinator {
     lock: OperationLock,
     journal: OnceLock<Arc<OperationJournal>>,
     task_registry: Arc<TaskRegistry>,
-    latest_intents: Arc<Mutex<HashMap<IntentKey, u64>>>,
+    latest_intents: Arc<Mutex<IntentRegistry>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -46,79 +46,136 @@ pub enum IntentTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct IntentKey {
     game_id: String,
+    source_epoch: Option<String>,
     target: IntentTarget,
 }
 
+#[derive(Default)]
+struct IntentRegistry {
+    revisions: HashMap<IntentKey, u64>,
+    aliases: HashMap<IntentKey, IntentTarget>,
+}
+
 impl IntentKey {
-    fn new(game_id: &str, target: IntentTarget) -> Self {
+    fn new(game_id: &str, source_epoch: Option<&str>, target: IntentTarget) -> Self {
         let target = match target {
-            IntentTarget::ModPath(path) => {
-                IntentTarget::ModPath(logical_path_key(Path::new(&path)))
-            }
+            IntentTarget::ModPath(path) => IntentTarget::ModPath(location_key(Path::new(&path))),
             IntentTarget::ObjectId(id) => IntentTarget::ObjectId(id),
         };
         Self {
             game_id: game_id.to_string(),
+            source_epoch: source_epoch.map(str::to_owned),
             target,
         }
     }
 }
 
-fn logical_path_key(path: &Path) -> String {
-    let normalized = path.to_string_lossy().replace('\\', "/");
-    let regular = if let Some(unc) = normalized.strip_prefix("//?/UNC/") {
-        format!("//{unc}")
-    } else if let Some(path) = normalized.strip_prefix("//?/") {
-        path.to_string()
-    } else {
-        normalized
-    };
-    regular
-        .split('/')
-        .map(|part| {
-            let prefix = crate::DISABLED_PREFIX;
-            let base = if part
-                .get(..prefix.len())
-                .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
-            {
-                &part[prefix.len()..]
-            } else {
-                part
-            };
-            base.to_lowercase()
-        })
-        .collect::<Vec<_>>()
-        .join("/")
-        .trim_end_matches('/')
-        .to_string()
+fn location_key(path: &Path) -> String {
+    crate::shared::path_key::exact_location_key_for_path(path)
+}
+
+impl IntentRegistry {
+    fn resolve(
+        &mut self,
+        game_id: &str,
+        source_epoch: Option<&str>,
+        target: IntentTarget,
+    ) -> IntentKey {
+        let path_identity = match &target {
+            IntentTarget::ModPath(path) => {
+                crate::platform::fs::file_utils::filesystem_identity(Path::new(path))
+            }
+            IntentTarget::ObjectId(_) => None,
+        };
+        let location = IntentKey::new(game_id, source_epoch, target);
+        let target = path_identity
+            .map(|id| IntentTarget::ModPath(format!("identity:{id}")))
+            .or_else(|| self.aliases.get(&location).cloned())
+            .unwrap_or_else(|| location.target.clone());
+        if target != location.target {
+            self.aliases.insert(location.clone(), target.clone());
+        }
+        IntentKey { target, ..location }
+    }
 }
 
 pub struct IntentAdmission {
     revision: Option<u64>,
     keys: Vec<IntentKey>,
-    latest: Arc<Mutex<HashMap<IntentKey, u64>>>,
+    latest: Arc<Mutex<IntentRegistry>>,
+    source_epoch: Option<String>,
+    path_targets: HashMap<String, IntentKey>,
 }
 
 impl IntentAdmission {
+    pub(crate) fn is_current_object(&self, game_id: &str, object_id: &str) -> bool {
+        let Some(revision) = self.revision else {
+            return true;
+        };
+        let key = IntentKey::new(
+            game_id,
+            self.source_epoch.as_deref(),
+            IntentTarget::ObjectId(object_id.to_string()),
+        );
+        crate::shared::sync::lock(&self.latest)
+            .revisions
+            .get(&key)
+            .is_none_or(|latest| *latest <= revision)
+    }
+    pub(crate) fn bind_request_alias(&mut self, requested: &Path, resolved: &Path) {
+        if let Some(key) = self.path_targets.get(&location_key(resolved)).cloned() {
+            self.path_targets.insert(location_key(requested), key);
+        }
+    }
+    pub(crate) fn validate_resolved_path(
+        &self,
+        requested: &Path,
+        resolved: &Path,
+    ) -> Result<(), AppError> {
+        let expected = self
+            .path_targets
+            .get(&location_key(requested))
+            .and_then(|key| match &key.target {
+                IntentTarget::ModPath(identity) => identity.strip_prefix("identity:"),
+                IntentTarget::ObjectId(_) => None,
+            });
+        let actual = crate::platform::fs::file_utils::filesystem_identity(resolved);
+        if expected.is_none() || actual.as_deref() != expected {
+            return Err(AppError::Io("Mod folder identity changed after the switch was requested; refresh the folder before retrying".to_string()));
+        }
+        Ok(())
+    }
     pub fn is_current(&self) -> bool {
         let Some(revision) = self.revision else {
             return true;
         };
         let latest = crate::shared::sync::lock(&self.latest);
-        self.keys
-            .iter()
-            .all(|key| latest.get(key).is_some_and(|latest| *latest <= revision))
+        self.keys.iter().all(|key| {
+            latest
+                .revisions
+                .get(key)
+                .is_some_and(|latest| *latest <= revision)
+        })
     }
 
     pub fn is_current_path(&self, game_id: &str, path: &Path) -> bool {
         let Some(revision) = self.revision else {
             return true;
         };
-        let key = IntentKey::new(
-            game_id,
-            IntentTarget::ModPath(path.to_string_lossy().into_owned()),
-        );
-        crate::shared::sync::lock(&self.latest)
+        let mut latest = crate::shared::sync::lock(&self.latest);
+        let key = self
+            .path_targets
+            .get(&location_key(path))
+            .cloned()
+            .unwrap_or_else(|| {
+                latest.resolve(
+                    game_id,
+                    self.source_epoch.as_deref(),
+                    IntentTarget::ModPath(path.to_string_lossy().into_owned()),
+                )
+            });
+        latest
+            .revisions
             .get(&key)
             .is_none_or(|latest| *latest <= revision)
     }
@@ -130,7 +187,7 @@ impl MutationCoordinator {
             lock: OperationLock::new(),
             journal: OnceLock::new(),
             task_registry: Arc::new(TaskRegistry::new()),
-            latest_intents: Arc::new(Mutex::new(HashMap::new())),
+            latest_intents: Arc::new(Mutex::new(IntentRegistry::default())),
         }
     }
 
@@ -139,7 +196,7 @@ impl MutationCoordinator {
             lock,
             journal: OnceLock::new(),
             task_registry: Arc::new(TaskRegistry::new()),
-            latest_intents: Arc::new(Mutex::new(HashMap::new())),
+            latest_intents: Arc::new(Mutex::new(IntentRegistry::default())),
         };
         coordinator
             .configure(journal)
@@ -238,16 +295,38 @@ impl MutationCoordinator {
         revision: Option<u64>,
         targets: impl IntoIterator<Item = IntentTarget>,
     ) -> IntentAdmission {
+        self.admit_intents_in_epoch(game_id, None, revision, targets)
+    }
+
+    pub fn admit_intents_in_epoch(
+        &self,
+        game_id: &str,
+        source_epoch: Option<&str>,
+        revision: Option<u64>,
+        targets: impl IntoIterator<Item = IntentTarget>,
+    ) -> IntentAdmission {
+        let mut latest = crate::shared::sync::lock(&self.latest_intents);
+        let mut path_targets = HashMap::new();
         let keys = targets
             .into_iter()
-            .map(|target| IntentKey::new(game_id, target))
+            .map(|target| {
+                let location = match &target {
+                    IntentTarget::ModPath(path) => Some(location_key(Path::new(path))),
+                    IntentTarget::ObjectId(_) => None,
+                };
+                let key = latest.resolve(game_id, source_epoch, target);
+                if let Some(location) = location {
+                    path_targets.insert(location, key.clone());
+                }
+                key
+            })
             .collect::<Vec<_>>();
         if let Some(revision) = revision {
-            let mut latest = crate::shared::sync::lock(&self.latest_intents);
             // Keep the high-water mark after a command returns: IPC can deliver
             // an older request after the newer request has already completed.
             for key in &keys {
                 latest
+                    .revisions
                     .entry(key.clone())
                     .and_modify(|current| *current = (*current).max(revision))
                     .or_insert(revision);
@@ -257,6 +336,8 @@ impl MutationCoordinator {
             revision,
             keys,
             latest: self.latest_intents.clone(),
+            source_epoch: source_epoch.map(str::to_owned),
+            path_targets,
         }
     }
 
@@ -271,12 +352,22 @@ impl MutationCoordinator {
     }
 
     pub fn latest_toggle_disk_revision(&self, game_id: &str) -> Result<u64, AppError> {
+        self.latest_toggle_disk_revision_in_epoch(game_id, None)
+    }
+
+    pub(crate) fn latest_toggle_disk_revision_in_epoch(
+        &self,
+        game_id: &str,
+        source_epoch: Option<&str>,
+    ) -> Result<u64, AppError> {
         Ok(self
             .journal()?
             .entries()
             .into_iter()
             .filter(|operation| {
                 operation.game_id == game_id
+                    && source_epoch
+                        .is_none_or(|epoch| operation.source_epoch.as_deref() == Some(epoch))
                     && matches!(operation.kind.as_str(), "workspace-switch" | "bulk-toggle")
             })
             .filter_map(|operation| operation.disk_revision)
@@ -286,6 +377,76 @@ impl MutationCoordinator {
 
     pub fn current_journal_revision(&self) -> Result<u64, AppError> {
         self.journal()?.current_revision()
+    }
+
+    pub(crate) fn earliest_toggle_projection_repair(
+        &self,
+        game_id: &str,
+        source_epoch: &str,
+    ) -> Result<Option<(u64, String)>, AppError> {
+        Ok(self.repair_toggle_disk_commits_in_epoch(game_id, source_epoch)?.into_iter()
+            .filter_map(|operation| operation.disk_revision.map(|revision| (revision, operation.last_error.unwrap_or_else(|| "Disk projection needs repair; resolve the affected folder conflict before capturing a collection".to_string()))))
+            .min_by_key(|(revision, _)| *revision))
+    }
+
+    pub(crate) fn repair_toggle_disk_commits_in_epoch(
+        &self,
+        game_id: &str,
+        source_epoch: &str,
+    ) -> Result<Vec<crate::modules::mutation::journal::Operation>, AppError> {
+        Ok(self
+            .journal()?
+            .entries()
+            .into_iter()
+            .filter(|operation| {
+                operation.game_id == game_id
+                    && operation.source_epoch.as_deref() == Some(source_epoch)
+                    && matches!(operation.kind.as_str(), "workspace-switch" | "bulk-toggle")
+                    && operation.database_projection_status
+                        == crate::modules::mutation::journal::DatabaseProjectionStatus::NeedsRepair
+            })
+            .collect())
+    }
+
+    pub(crate) fn toggle_projection_lineage_in_epoch(
+        &self,
+        game_id: &str,
+        source_epoch: &str,
+    ) -> Result<Vec<crate::modules::mutation::journal::Operation>, AppError> {
+        let mut operations = self
+            .journal()?
+            .entries()
+            .into_iter()
+            .filter(|operation| {
+                operation.game_id == game_id
+                    && operation.source_epoch.as_deref() == Some(source_epoch)
+                    && operation.disk_revision.is_some()
+                    && matches!(operation.kind.as_str(), "workspace-switch" | "bulk-toggle")
+            })
+            .collect::<Vec<_>>();
+        operations.sort_by_key(|operation| operation.disk_revision);
+        Ok(operations)
+    }
+
+    pub(crate) fn complete_repaired_disk_projection(
+        &self,
+        game_id: &str,
+        source_epoch: &str,
+        operation_ids: &[String],
+    ) -> Result<(), AppError> {
+        let repairs = self.repair_toggle_disk_commits_in_epoch(game_id, source_epoch)?;
+        for id in operation_ids {
+            if !repairs.iter().any(|operation| &operation.id == id) {
+                return Err(AppError::Validation(
+                    "Repair operation does not belong to the current root epoch".to_string(),
+                ));
+            }
+        }
+        for id in operation_ids {
+            self.journal()?.mark_repaired_projection_committed(id)?;
+            self.journal()?.complete(id)?;
+        }
+        Ok(())
     }
 
     pub fn pending_toggle_disk_commit_ids(&self, game_id: &str) -> Result<Vec<String>, AppError> {
@@ -301,24 +462,7 @@ impl MutationCoordinator {
     }
 
     pub fn complete_disk_projection(&self, operation_ids: &[String]) -> Result<(), AppError> {
-        let journal = self.journal()?;
-        let pending = journal.pending_disk_commits();
-        for operation_id in operation_ids {
-            let operation = pending
-                .iter()
-                .find(|operation| &operation.id == operation_id)
-                .ok_or_else(|| {
-                    AppError::Validation(format!(
-                        "Mutation operation {operation_id} is not pending disk projection"
-                    ))
-                })?;
-            if operation.status == crate::modules::mutation::journal::OperationStatus::DiskCommitted
-            {
-                journal.mark_db_committed(operation_id)?;
-            }
-            journal.complete(operation_id)?;
-        }
-        Ok(())
+        self.journal()?.complete_disk_projection(operation_ids)
     }
 
     pub fn note_disk_projection_failure(
@@ -331,6 +475,15 @@ impl MutationCoordinator {
             journal.mark_projection_failed(operation_id, error)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn isolate_projection_for_repair(
+        &self,
+        operation_id: &str,
+        error: &str,
+    ) -> Result<(), AppError> {
+        self.journal()?
+            .isolate_disk_commit_for_repair(operation_id, error.to_string())
     }
 
     fn journal(&self) -> Result<&Arc<OperationJournal>, AppError> {
@@ -460,71 +613,161 @@ mod architecture_tests {
     use super::{IntentTarget, MutationCoordinator};
 
     #[test]
-    fn later_folder_intent_supersedes_both_storage_spellings() {
-        let coordinator = MutationCoordinator::unconfigured();
-        let old = coordinator.admit_intents(
-            "game",
-            Some(10),
-            [IntentTarget::ModPath("E:/Mods/DISABLED Alice".into())],
-        );
-        let latest = coordinator.admit_intents(
-            "game",
-            Some(11),
-            [IntentTarget::ModPath("E:/Mods/Alice".into())],
-        );
-        assert!(!old.is_current());
-        assert!(latest.is_current());
-        assert!(!old.is_current_path("game", Path::new("E:/Mods/Alice")));
-        assert!(latest.is_current_path("game", Path::new("E:/Mods/DISABLED Alice")));
-    }
-
-    #[test]
-    fn thousand_rapid_intents_keep_only_the_latest_revision_for_one_folder() {
+    fn physical_folders_with_prefix_equivalent_paths_do_not_supersede_each_other() {
+        let temp = tempfile::tempdir().unwrap();
+        let enabled = temp.path().join("Alice/Skin");
+        let disabled = temp.path().join("DISABLED Alice/Skin");
+        std::fs::create_dir_all(&enabled).unwrap();
+        std::fs::create_dir_all(&disabled).unwrap();
         let coordinator = MutationCoordinator::unconfigured();
         let first = coordinator.admit_intents(
             "game",
             Some(1),
-            [IntentTarget::ModPath("E:/Mods/DISABLED Alice".into())],
+            [IntentTarget::ModPath(
+                enabled.to_string_lossy().into_owned(),
+            )],
+        );
+        coordinator.admit_intents(
+            "game",
+            Some(2),
+            [IntentTarget::ModPath(
+                disabled.to_string_lossy().into_owned(),
+            )],
+        );
+        assert!(
+            first.is_current(),
+            "distinct disk identities must not share admission"
+        );
+    }
+
+    #[test]
+    fn replaced_folder_does_not_inherit_previous_intent_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("Alice");
+        std::fs::create_dir(&path).unwrap();
+        let coordinator = MutationCoordinator::unconfigured();
+        let first = coordinator.admit_intents(
+            "game",
+            Some(1),
+            [IntentTarget::ModPath(path.to_string_lossy().into_owned())],
+        );
+        std::fs::rename(&path, temp.path().join("Original")).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        coordinator.admit_intents(
+            "game",
+            Some(2),
+            [IntentTarget::ModPath(path.to_string_lossy().into_owned())],
+        );
+        assert!(
+            first.is_current(),
+            "a replacement folder is a distinct target"
+        );
+        assert!(
+            first.validate_resolved_path(&path, &path).is_err(),
+            "a queued switch cannot rebind to the replacement"
+        );
+    }
+
+    #[test]
+    fn later_folder_intent_supersedes_both_storage_spellings() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_path = temp.path().join("DISABLED Alice");
+        let new_path = temp.path().join("Alice");
+        std::fs::create_dir(&old_path).unwrap();
+        let coordinator = MutationCoordinator::unconfigured();
+        let old = coordinator.admit_intents(
+            "game",
+            Some(10),
+            [IntentTarget::ModPath(
+                old_path.to_string_lossy().into_owned(),
+            )],
+        );
+        std::fs::rename(&old_path, &new_path).unwrap();
+        let latest = coordinator.admit_intents(
+            "game",
+            Some(11),
+            [IntentTarget::ModPath(
+                new_path.to_string_lossy().into_owned(),
+            )],
+        );
+        assert!(!old.is_current());
+        assert!(latest.is_current());
+        assert!(!old.is_current_path("game", &new_path));
+        assert!(latest.is_current_path("game", &old_path));
+        assert!(
+            old.validate_resolved_path(&old_path, &new_path).is_ok(),
+            "proven rename alias keeps its identity"
+        );
+    }
+
+    #[test]
+    fn thousand_rapid_intents_keep_only_the_latest_revision_for_one_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let enabled = temp.path().join("Alice");
+        let disabled = temp.path().join("DISABLED Alice");
+        std::fs::create_dir(&disabled).unwrap();
+        let coordinator = MutationCoordinator::unconfigured();
+        let first = coordinator.admit_intents(
+            "game",
+            Some(1),
+            [IntentTarget::ModPath(
+                disabled.to_string_lossy().into_owned(),
+            )],
         );
         for revision in 2..=1_000 {
             let path = if revision % 2 == 0 {
-                "E:/Mods/Alice"
+                std::fs::rename(&disabled, &enabled).unwrap();
+                &enabled
             } else {
-                "E:/Mods/DISABLED Alice"
+                std::fs::rename(&enabled, &disabled).unwrap();
+                &disabled
             };
-            coordinator.admit_intents("game", Some(revision), [IntentTarget::ModPath(path.into())]);
+            coordinator.admit_intents(
+                "game",
+                Some(revision),
+                [IntentTarget::ModPath(path.to_string_lossy().into_owned())],
+            );
         }
         let latest = coordinator.admit_intents(
             "game",
             Some(1_000),
-            [IntentTarget::ModPath("E:/Mods/Alice".into())],
+            [IntentTarget::ModPath(
+                enabled.to_string_lossy().into_owned(),
+            )],
         );
         assert!(!first.is_current());
         assert!(latest.is_current());
         assert_eq!(
-            crate::shared::sync::lock(&coordinator.latest_intents).len(),
+            crate::shared::sync::lock(&coordinator.latest_intents)
+                .revisions
+                .len(),
             1
         );
     }
 
     #[test]
     fn older_bulk_arriving_after_newer_single_stays_superseded() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("Alice");
+        let disabled = temp.path().join("DISABLED Alice");
+        std::fs::create_dir(&path).unwrap();
         let coordinator = MutationCoordinator::unconfigured();
         let latest = coordinator.admit_intents(
             "game",
             Some(30),
-            [IntentTarget::ModPath("E:/Mods/Alice".into())],
+            [IntentTarget::ModPath(path.to_string_lossy().into_owned())],
         );
         drop(latest);
+        std::fs::rename(&path, &disabled).unwrap();
         let bulk = coordinator.admit_intents(
             "game",
             Some(29),
             [
-                IntentTarget::ModPath("E:/Mods/DISABLED Alice".into()),
+                IntentTarget::ModPath(disabled.to_string_lossy().into_owned()),
                 IntentTarget::ModPath("E:/Mods/Bob".into()),
             ],
         );
-        assert!(!bulk.is_current_path("game", Path::new("E:/Mods/Alice")));
+        assert!(!bulk.is_current_path("game", &disabled));
         assert!(bulk.is_current_path("game", Path::new("E:/Mods/Bob")));
     }
 
@@ -586,7 +829,9 @@ mod architecture_tests {
         coordinator.admit_intents(
             "game",
             Some(2),
-            [IntentTarget::ModPath("\\\\?\\E:\\Mods\\Blue".into())],
+            [IntentTarget::ModPath(
+                "\\\\?\\E:\\Mods\\DISABLED Blue".into(),
+            )],
         );
         assert!(!older.is_current());
     }

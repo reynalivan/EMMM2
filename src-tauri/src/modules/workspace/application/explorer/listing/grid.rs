@@ -339,12 +339,16 @@ fn list_mod_folders_blocking(
             self_node_type: Some(self_node_type.as_str().to_string()),
             self_is_mod,
             self_is_enabled,
+            self_identity: crate::platform::fs::file_utils::filesystem_identity(&target),
             self_owner_object_id: None,
             self_owner_object_folder_path: None,
             self_classification_reasons,
             children: folders,
             conflicts,
             ancestor_disabled_by,
+            ancestor_disabled_identity: ancestor_disabled_path.as_deref().and_then(|path| {
+                crate::platform::fs::file_utils::filesystem_identity(Path::new(path))
+            }),
             ancestor_disabled_path,
         },
     )

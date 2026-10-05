@@ -90,6 +90,7 @@ pub(crate) fn map_workspace_node(
         name: display_name.clone(),
         folder_name: folder.folder_name,
         path: folder.path,
+        filesystem_identity: folder.filesystem_identity,
         is_enabled: folder.is_enabled,
         is_directory: folder.is_directory,
         thumbnail_path: folder.thumbnail_path,
@@ -145,6 +146,7 @@ pub(crate) fn map_workspace_explorer(explorer: FolderGridResponse) -> WorkspaceE
         self_type_chip: map_type_chip(self_display_mode),
         self_is_mod: explorer.self_is_mod,
         self_is_enabled: explorer.self_is_enabled,
+        self_identity: explorer.self_identity,
         self_is_effectively_active: explorer.self_is_enabled && !self_ancestor_disabled,
         self_owner_object_id: explorer.self_owner_object_id,
         self_owner_object_folder_path: explorer.self_owner_object_folder_path,
@@ -157,6 +159,7 @@ pub(crate) fn map_workspace_explorer(explorer: FolderGridResponse) -> WorkspaceE
         conflicts: explorer.conflicts,
         ancestor_disabled_by: explorer.ancestor_disabled_by,
         ancestor_disabled_path: explorer.ancestor_disabled_path,
+        ancestor_disabled_identity: explorer.ancestor_disabled_identity,
         inactive_reason,
     }
 }
@@ -169,6 +172,7 @@ pub(crate) fn empty_workspace_explorer() -> WorkspaceExplorer {
         self_type_chip: None,
         self_is_mod: false,
         self_is_enabled: false,
+        self_identity: None,
         self_is_effectively_active: false,
         self_owner_object_id: None,
         self_owner_object_folder_path: None,
@@ -177,6 +181,7 @@ pub(crate) fn empty_workspace_explorer() -> WorkspaceExplorer {
         conflicts: Vec::new(),
         ancestor_disabled_by: None,
         ancestor_disabled_path: None,
+        ancestor_disabled_identity: None,
         inactive_reason: None,
     }
 }

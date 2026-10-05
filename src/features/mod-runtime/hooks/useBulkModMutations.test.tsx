@@ -101,6 +101,7 @@ describe('bulk mod mutations', () => {
       true,
       expect.stringMatching(/^toggle-[0-9a-f-]+$/),
       123,
+      null,
     );
   });
 

@@ -37,7 +37,8 @@ import {
   publishCollectionReferenceImpact,
   setFolderBulkPendingDesired,
   showWorkspaceRenameConflictDialog,
-  waitForWorkspaceProjection,
+  scheduleWorkspaceSwitchRefresh,
+  buildRuntimeMutationDescriptor,
   workspaceKeys,
 } from '@/features/workspace-runtime';
 import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
@@ -68,6 +69,7 @@ interface ToggleExecutionSnapshot {
   overlayPaths: string[];
   selectionIdentity: WorkspaceExplorerSelectionModel;
   listingRevision: string;
+  expectedIdentities: [string, string][];
 }
 
 function sameToggleSelection(
@@ -227,6 +229,7 @@ export function useFolderGridBulk({
       frozenSnapshot?: BulkExecutionSnapshot,
       togglePaths?: string[],
       onToggleSettled?: () => void,
+      toggleIdentities?: [string, string][],
     ): Promise<BulkResult> => {
       let snapshot = frozenSnapshot;
       if (!snapshot) {
@@ -246,6 +249,7 @@ export function useFolderGridBulk({
               action.enable,
               action.operation_id,
               snapshot.intentRevision ?? null,
+              toggleIdentities ?? null,
             )
           : commands.executeWorkspaceExplorerBulk(
               {
@@ -255,7 +259,7 @@ export function useFolderGridBulk({
               snapshot.intentRevision ?? null,
             );
       if (action.kind === 'toggle') {
-        await ensureWorkspaceProjectionListener();
+        void ensureWorkspaceProjectionListener();
       }
       const result = await execute();
       if (!isActiveGame(snapshot.gameId)) {
@@ -284,11 +288,16 @@ export function useFolderGridBulk({
       }
 
       if (action.kind === 'toggle') {
-        const refresh = (
-          result.disk_revision === null
-            ? Promise.resolve()
-            : waitForWorkspaceProjection(snapshot.gameId, result.disk_revision)
-        ).then(() => applyRuntimeMutationResult(queryClient, 'folderSwitch'));
+        const refresh = scheduleWorkspaceSwitchRefresh(queryClient, {
+          gameId: snapshot.gameId,
+          sourceEpoch:
+            'source_epoch' in result && typeof result.source_epoch === 'string'
+              ? result.source_epoch
+              : undefined,
+          diskRevision: result.disk_revision,
+          affectedPaths: result.success,
+          descriptor: buildRuntimeMutationDescriptor('folderSwitch'),
+        });
         refreshInBackground(refresh.then(onToggleSettled), 'workspace');
       } else if (action.kind === 'delete') {
         refreshInBackground(
@@ -375,6 +384,11 @@ export function useFolderGridBulk({
                   .filter((path) => !selection.excludedPaths.has(path)),
           selectionIdentity: selection,
           listingRevision,
+          expectedIdentities: sortedFolders.flatMap((folder) =>
+            folder.filesystem_identity
+              ? [[folder.path, folder.filesystem_identity] as [string, string]]
+              : [],
+          ),
         };
         if (bulkMutationInFlight.current) {
           const running = runningToggle.current;
@@ -387,10 +401,19 @@ export function useFolderGridBulk({
             toggleSnapshot.overlayPaths,
             action.enable,
             intentRevision,
+            toggleSnapshot.expectedIdentities,
           );
+          const identitiesByPath = new Map(toggleSnapshot.expectedIdentities);
           admitWorkspaceIntentOverride(
             activeGameId,
-            toggleSnapshot.overlayPaths.map((path) => ({ kind: 'mod_path', value: path })),
+            toggleSnapshot.overlayPaths.map((path) => {
+              const identity = identitiesByPath.get(path);
+              return {
+                kind: 'mod_path',
+                value: path,
+                ...(identity ? { expected_identity: identity } : {}),
+              };
+            }),
             intentRevision,
           );
           pendingToggle.current = toggleSnapshot;
@@ -406,6 +429,7 @@ export function useFolderGridBulk({
           toggleSnapshot.overlayPaths,
           toggleSnapshot.action.enable,
           toggleSnapshot.execution.intentRevision ?? 0,
+          toggleSnapshot.expectedIdentities,
         );
       }
       const handleError = async (error: unknown) => {
@@ -422,6 +446,7 @@ export function useFolderGridBulk({
         const runToggle = async () => {
           let next: ToggleExecutionSnapshot | null = toggleSnapshot;
           let committedPaths: string[] | null = null;
+          let committedIdentities: [string, string][] | undefined;
           while (next) {
             const current = next;
             runningToggle.current = current;
@@ -436,21 +461,12 @@ export function useFolderGridBulk({
                     current.overlayPaths,
                     current.execution.intentRevision ?? 0,
                   ),
+                committedIdentities,
               );
-              const originalPaths =
-                current.execution.selection.selection.mode === 'explicit'
-                  ? current.execution.selection.selection.paths
-                  : [];
-              const renamedPaths = new Map(
-                result.path_rewrites.map((rewrite) => [rewrite.old_path, rewrite.new_path]),
-              );
-              const continuationPaths = [
-                ...originalPaths.map((path) => renamedPaths.get(path) ?? path),
-                ...result.success,
-                ...result.failures.map((failure) => failure.path),
-              ];
-              committedPaths =
-                continuationPaths.length > 0 ? [...new Set(continuationPaths)] : null;
+              committedIdentities = result.expected_identities ?? undefined;
+              committedPaths = committedIdentities?.length
+                ? committedIdentities.map(([path]) => path)
+                : null;
             } catch (error) {
               clearFolderBulkPendingDesired(
                 current.execution.gameId,

@@ -13,6 +13,9 @@ pub enum WorkspaceSwitchTargetKind {
 pub struct WorkspaceSwitchTarget {
     pub kind: WorkspaceSwitchTargetKind,
     pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub expected_identity: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -102,4 +105,7 @@ pub struct WorkspaceSwitchResult {
     pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
     pub runtime_sync_generation: Option<u64>,
     pub disk_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub source_epoch: Option<String>,
 }

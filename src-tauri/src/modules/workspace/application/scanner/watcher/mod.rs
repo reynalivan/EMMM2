@@ -177,10 +177,10 @@ impl WatcherState {
         root: &Path,
         runtime_config_path: Option<&Path>,
     ) -> Option<u64> {
-        let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let root_key = crate::shared::path_key::exact_location_key_for_path(root);
         let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
         let runtime_config_key =
-            runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
+            runtime_config_path.map(crate::shared::path_key::exact_location_key_for_path);
         crate::shared::sync::lock(&self.inactive_watchers)
             .get(game_id)
             .filter(|watcher| {
@@ -204,10 +204,10 @@ impl WatcherState {
         crate::shared::sync::lock(&self.inactive_watchers).insert(
             game_id,
             InactiveWatcher {
-                root_key: crate::shared::path_key::canonical_path_key_for_path(root),
+                root_key: crate::shared::path_key::exact_location_key_for_path(root),
                 root_identity: crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root),
                 runtime_config_key: runtime_config_path
-                    .map(crate::shared::path_key::canonical_path_key_for_path),
+                    .map(crate::shared::path_key::exact_location_key_for_path),
                 session,
                 watcher,
                 receiver,
@@ -221,10 +221,10 @@ impl WatcherState {
         root: &Path,
         runtime_config_path: Option<&Path>,
     ) -> Option<(WatcherSession, ModWatcher, WatchEventReceiver)> {
-        let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let root_key = crate::shared::path_key::exact_location_key_for_path(root);
         let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
         let runtime_config_key =
-            runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
+            runtime_config_path.map(crate::shared::path_key::exact_location_key_for_path);
         let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
         if watchers.get(game_id).is_none_or(|watcher| {
             root_identity.is_none()
@@ -244,10 +244,10 @@ impl WatcherState {
         root: &Path,
         runtime_config_path: Option<&Path>,
     ) -> bool {
-        let root_key = crate::shared::path_key::canonical_path_key_for_path(root);
+        let root_key = crate::shared::path_key::exact_location_key_for_path(root);
         let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
         let runtime_config_key =
-            runtime_config_path.map(crate::shared::path_key::canonical_path_key_for_path);
+            runtime_config_path.map(crate::shared::path_key::exact_location_key_for_path);
         let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
         let mismatched = watchers.get(game_id).is_some_and(|watcher| {
             root_identity.is_none()
@@ -273,6 +273,12 @@ impl Default for WatcherState {
 /// A rename side that survives filtering and suppression.
 fn is_runtime_config_path(path: &Path, runtime_config_path: Option<&Path>) -> bool {
     runtime_config_path.is_some_and(|expected| {
+        let (Ok(path), Ok(expected)) = (
+            crate::shared::path_key::physical_namespace_path(path),
+            crate::shared::path_key::physical_namespace_path(expected),
+        ) else {
+            return false;
+        };
         path.to_string_lossy()
             .eq_ignore_ascii_case(&expected.to_string_lossy())
     })
@@ -321,6 +327,10 @@ fn classify_event_with_runtime_config(
         send(ModWatchEvent::Error(
             WATCH_BACKEND_RESCAN_REQUIRED.to_string(),
         ));
+        return;
+    }
+
+    if suppressor.is_committed_rename_echo(session, &event.kind, &event.paths) {
         return;
     }
 

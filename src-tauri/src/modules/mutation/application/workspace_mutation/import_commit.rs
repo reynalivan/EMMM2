@@ -13,15 +13,40 @@ use tauri::{Emitter, Manager};
 pub struct MoveJournalEntry {
     pub source: PathBuf,
     pub target: PathBuf,
+    target_proof: Option<crate::platform::fs::file_utils::FilesystemIdentityProof>,
+    source_identity: Option<String>,
 }
 
 impl MoveJournalEntry {
+    pub(super) fn from_owned_move(
+        source: PathBuf,
+        target: PathBuf,
+        source_proof: &crate::platform::fs::file_utils::FilesystemIdentityProof,
+        target_proof: &crate::platform::fs::file_utils::FilesystemIdentityProof,
+    ) -> Self {
+        Self {
+            source,
+            target,
+            source_identity: Some(source_proof.identity().to_string()),
+            target_proof: Some(target_proof.clone()),
+        }
+    }
+    #[cfg(test)]
     pub fn new(source: PathBuf, target: PathBuf) -> Self {
-        Self { source, target }
+        let target_proof =
+            crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&target).ok();
+        let source_identity = crate::platform::fs::file_utils::filesystem_identity(&source);
+        Self {
+            source,
+            target,
+            target_proof,
+            source_identity,
+        }
     }
 }
 
 struct PlannedMove {
+    source_proof: crate::platform::fs::file_utils::FilesystemIdentityProof,
     item: ImportItem,
     source: PathBuf,
     object_dir: PathBuf,
@@ -42,18 +67,48 @@ fn fingerprint_path_key(path: &str) -> String {
     crate::shared::path_key::folder_path_key(&resolved.to_string_lossy(), None)
 }
 
+fn validate_import_root(
+    proof: &crate::platform::fs::file_utils::FilesystemIdentityProof,
+    captured_root: &Path,
+    configured_root: &Path,
+) -> Result<(), AppError> {
+    proof.validate(captured_root)?;
+    proof.validate(configured_root)
+}
+
 pub fn rollback_move_journal(journal: &[MoveJournalEntry]) -> Result<(), AppError> {
     let mut failures = Vec::new();
     for entry in journal.iter().rev() {
         if !entry.target.exists() {
             continue;
         }
+        let Some(target_proof) = entry.target_proof.as_ref() else {
+            failures.push(format!(
+                "rollback target ownership is unavailable: {}",
+                entry.target.display()
+            ));
+            continue;
+        };
+        if target_proof.validate(&entry.target).is_err() {
+            failures.push(format!(
+                "rollback target identity changed: {}",
+                entry.target.display()
+            ));
+            continue;
+        }
         if entry.source.exists() {
-            let cleanup = if entry.target.is_dir() {
-                std::fs::remove_dir_all(&entry.target)
-            } else {
-                std::fs::remove_file(&entry.target)
-            };
+            if entry.source_identity.is_none()
+                || crate::platform::fs::file_utils::filesystem_identity(&entry.source)
+                    != entry.source_identity
+            {
+                failures.push(format!(
+                    "rollback source was reoccupied: {}",
+                    entry.source.display()
+                ));
+                continue;
+            }
+            let cleanup =
+                crate::platform::fs::file_utils::remove_owned_path(&entry.target, target_proof);
             if let Err(error) = cleanup {
                 failures.push(format!(
                     "could not remove owned rollback target '{}': {error}",
@@ -121,6 +176,12 @@ pub async fn commit_import_batch(
     let canonical_root = Path::new(&mods_root).canonicalize().map_err(|error| {
         AppError::Validation(format!("Configured mods path is unavailable: {error}"))
     })?;
+    let root_proof =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&canonical_root)?;
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &batch.game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::StructuralMutation,
+    )?;
     if batch
         .items
         .iter()
@@ -243,22 +304,34 @@ pub async fn commit_import_batch(
         .lock_owned()
         .await;
     disk_reconcile_state.ensure_core_ready_for_mutation(&batch.game_id)?;
+    let current_root =
+        crate::modules::games::adapters::sqlite::game::get_mod_path(pool, &batch.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    validate_import_root(&root_proof, &canonical_root, Path::new(&current_root))?;
+    for plan in &plans {
+        plan.source_proof.validate(&plan.source)?;
+    }
     let operation_guard = operation_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "import-commit",
-            batch.game_id.clone(),
-            plans
-                .iter()
-                .enumerate()
-                .map(|(sequence, plan)| {
-                    crate::modules::mutation::api::PlannedStep::rename(
-                        sequence as u32,
-                        plan.source.clone(),
-                        plan.target.clone(),
-                    )
-                })
-                .collect(),
-        ))
+        .acquire_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                "import-commit",
+                batch.game_id.clone(),
+                plans
+                    .iter()
+                    .enumerate()
+                    .map(|(sequence, plan)| {
+                        crate::modules::mutation::api::PlannedStep::rename(
+                            sequence as u32,
+                            plan.source.clone(),
+                            plan.target.clone(),
+                        )
+                        .with_expected_identity(Some(plan.source_proof.identity().to_string()))
+                    })
+                    .collect(),
+            )
+            .with_source_epoch(root_proof.identity().to_string()),
+        )
         .await?;
     let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile_state.inner(),
@@ -266,6 +339,15 @@ pub async fn commit_import_batch(
         game_guard,
         operation_guard,
     )?;
+    let current_root =
+        crate::modules::games::adapters::sqlite::game::get_mod_path(pool, &batch.game_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Game mods path not found".into()))?;
+    if let Err(error) = validate_import_root(&root_proof, &canonical_root, Path::new(&current_root))
+    {
+        mutation_lease.abort_unapplied()?;
+        return Err(error);
+    }
     let target_manifest_index = app
         .try_state::<crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>()
         .ok_or_else(|| AppError::Internal("TargetManifestIndexState is unavailable".to_string()))?;
@@ -1170,6 +1252,7 @@ async fn resolve_plan(
         ))
     })?;
     let physical_name = physical_import_name(&item.planned_name);
+    let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&source)?;
     crate::modules::library::application::mods::core_ops::validate_folder_name_component(
         &physical_name,
     )?;
@@ -1180,6 +1263,7 @@ async fn resolve_plan(
     let target = placement_dir.join(physical_name);
     ensure_target_under_root(mods_root, &target, true)?;
     Ok(PlannedMove {
+        source_proof,
         item: item.clone(),
         source,
         object_dir,
@@ -1452,6 +1536,7 @@ async fn execute_moves(
     _collision_ids: &mut BTreeSet<String>,
 ) -> Result<(), AppError> {
     for plan in plans {
+        plan.source_proof.validate(&plan.source)?;
         if plan.target.exists() {
             return Err(AppError::Validation(format!(
                 "target_changed: destination '{}' became occupied during commit",
@@ -1474,15 +1559,19 @@ async fn execute_moves(
             &plan.source,
             &plan.target,
         ) {
-            Ok(()) => journal.push(MoveJournalEntry::new(
+            Ok(target_proof) => journal.push(MoveJournalEntry::from_owned_move(
                 plan.source.clone(),
                 plan.target.clone(),
+                &plan.source_proof,
+                &target_proof,
             )),
             Err(error) => {
-                if error.target_is_owned() {
-                    journal.push(MoveJournalEntry::new(
+                if let Some(target_proof) = error.target_proof() {
+                    journal.push(MoveJournalEntry::from_owned_move(
                         plan.source.clone(),
                         plan.target.clone(),
+                        &plan.source_proof,
+                        target_proof,
                     ));
                 }
                 return Err(error.into_io_error().into());
@@ -1822,6 +1911,92 @@ mod tests {
     use super::validate_no_new_installed_duplicate;
     use crate::shared::errors::AppError;
     use std::path::PathBuf;
+
+    #[test]
+    fn queued_import_rejects_old_root_replacement_after_configured_root_moves() {
+        let temp = tempfile::tempdir().unwrap();
+        let captured = temp.path().join("original-root");
+        let relocated = temp.path().join("relocated-root");
+        std::fs::create_dir(&captured).unwrap();
+        let proof =
+            crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&captured).unwrap();
+        std::fs::rename(&captured, &relocated).unwrap();
+        std::fs::create_dir(&captured).unwrap();
+        proof.validate(&relocated).unwrap();
+        assert!(super::validate_import_root(&proof, &captured, &relocated).is_err());
+        assert!(captured.is_dir());
+        assert!(relocated.is_dir());
+    }
+
+    #[tokio::test]
+    async fn copied_import_recovery_preserves_different_target_identity_after_journal_reopen() {
+        use crate::modules::mutation::journal::{
+            OperationJournal, OperationPlan, OperationStatus, PlannedStep,
+        };
+        use crate::modules::mutation::recovery::{RecoveryRoots, RecoveryRunner};
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        let source = root.join("source");
+        let target = root.join("copied-target");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("payload"), "original").unwrap();
+        let source_identity =
+            crate::platform::fs::file_utils::filesystem_identity(&source).unwrap();
+        let root_identity = crate::platform::fs::file_utils::filesystem_identity(&root).unwrap();
+        let journal_path = temp.path().join("journal.json");
+        let journal = OperationJournal::open(journal_path.clone(), 16).unwrap();
+        let id = journal
+            .plan_operation(
+                OperationPlan::new(
+                    "import-commit",
+                    "game",
+                    vec![PlannedStep::rename(0, source.clone(), target.clone())
+                        .with_expected_identity(Some(source_identity.clone()))],
+                )
+                .with_source_epoch(root_identity),
+            )
+            .unwrap();
+        journal.mark_applying(&id).unwrap();
+        std::fs::create_dir(&target).unwrap();
+        std::fs::copy(source.join("payload"), target.join("payload")).unwrap();
+        std::fs::remove_file(source.join("payload")).unwrap();
+        std::fs::remove_dir(&source).unwrap();
+        let target_identity =
+            crate::platform::fs::file_utils::filesystem_identity(&target).unwrap();
+        assert_ne!(source_identity, target_identity);
+        journal.mark_step_applied(&id, 0).unwrap();
+        drop(journal);
+        let journal =
+            std::sync::Arc::new(OperationJournal::open(journal_path.clone(), 16).unwrap());
+        let recovery = RecoveryRunner::new(
+            journal.clone(),
+            RecoveryRoots::new(
+                std::collections::HashMap::from([("game".into(), root)]),
+                temp.path().join("staging"),
+            ),
+        );
+        recovery.run_recovery().await.unwrap();
+        assert_eq!(
+            journal.entries()[0].status,
+            OperationStatus::FailedNeedsRepair
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("payload")).unwrap(),
+            "original"
+        );
+        assert_eq!(
+            crate::platform::fs::file_utils::filesystem_identity(&target).as_deref(),
+            Some(target_identity.as_str())
+        );
+        assert!(!source.exists());
+        drop(recovery);
+        drop(journal);
+        let reopened = OperationJournal::open(journal_path, 16).unwrap();
+        assert_eq!(
+            reopened.entries()[0].status,
+            OperationStatus::FailedNeedsRepair
+        );
+    }
 
     #[test]
     fn duplicate_scan_failure_does_not_block_a_commit() {

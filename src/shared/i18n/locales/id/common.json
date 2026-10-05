@@ -127,6 +127,7 @@
   "reconcile": {
     "authority_pending": "Perubahan disk sudah diterapkan, tetapi validasi indexing masih tertunda.",
     "runtime_effects_pending": "Perubahan disk sudah diterapkan, tetapi pembaruan runtime masih tertunda.",
+    "workspace_switch_needs_repair": "Perubahan sudah diterapkan di disk, tetapi sinkronisasi workspace perlu diperbaiki.",
     "runtime_syncing": "Memperbarui runtime game…",
     "runtime_sync_failed": "Pembaruan runtime gagal",
     "manual_reload_short": "Perlu muat ulang manual",

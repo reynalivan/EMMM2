@@ -1,5 +1,7 @@
 pub use super::application::*;
 
+pub(crate) use super::adapters::sqlite::object::get_rows_for_reconcile_scope as get_reconcile_object_rows;
+
 #[cfg(debug_assertions)]
 pub mod testing {
     pub mod adapters {

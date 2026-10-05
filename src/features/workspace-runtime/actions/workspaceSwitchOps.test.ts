@@ -16,6 +16,7 @@ import {
   recordWorkspaceProjectedRevision,
   togglePendingKey,
   waitForWorkspaceProjection,
+  primeWorkspaceRootEpoch,
 } from './workspaceSwitchOps';
 
 const executeWorkspaceSwitchCommand = vi.fn();
@@ -28,6 +29,7 @@ const applyFolderConflictReconcileResult = vi.fn(() => true);
 const setRenameConfirmations = vi.fn();
 const toastError = vi.fn();
 const toastInfo = vi.fn();
+const toastWarning = vi.fn();
 const notifyCommittedMutationSyncWarning = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
 const cancelRuntimeDescriptorQueries = vi.fn((queryClient: QueryClient) =>
@@ -64,6 +66,7 @@ vi.mock('@/shared/ui/toast', () => ({
   toast: {
     error: (...args: unknown[]) => toastError(...args),
     info: (...args: unknown[]) => toastInfo(...args),
+    warning: (...args: unknown[]) => toastWarning(...args),
   },
 }));
 
@@ -125,7 +128,7 @@ describe('workspace switch ops', () => {
       );
       expect(
         buildNodePendingKey({ node_kind: 'terminal_mod', path: 'E:/Mods/DISABLED A' } as never),
-      ).toBe(buildNodePendingKey({ node_kind: 'terminal_mod', path: 'E:/Mods/A' } as never));
+      ).not.toBe(buildNodePendingKey({ node_kind: 'terminal_mod', path: 'E:/Mods/A' } as never));
     });
 
     it('narrows object nodes', () => {
@@ -388,6 +391,239 @@ describe('workspace switch ops', () => {
     expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledWith('game-1');
   });
 
+  it('shares one snapshot request across simultaneous receipts in an epoch', async () => {
+    let completeSnapshot!: (value: unknown) => void;
+    getWorkspaceSwitchSnapshotCommand.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          completeSnapshot = resolve;
+        }),
+    );
+    const first = waitForWorkspaceProjection('game-1', 101, 'shared-root');
+    const second = waitForWorkspaceProjection('game-1', 102, 'shared-root');
+    await vi.waitFor(() => expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledTimes(1));
+    completeSnapshot({ game_id: 'game-1', source_epoch: 'shared-root', projected_revision: 102 });
+    await Promise.all([first, second]);
+  });
+
+  it('does not acknowledge an old-root receipt using a newer root checkpoint', async () => {
+    getWorkspaceSwitchSnapshotCommand.mockResolvedValueOnce({
+      game_id: 'game-1',
+      source_epoch: 'new-root',
+      projected_revision: 999_999,
+    });
+    await expect(waitForWorkspaceProjection('game-1', 150, 'old-root')).rejects.toThrow('epoch');
+  });
+
+  it('does not refresh queries for a no-op receipt', async () => {
+    await applyWorkspaceSwitchEffects(
+      new QueryClient(),
+      {
+        status: 'noop',
+        impact: { rewrites: [], refresh_scopes: [] },
+      } as unknown as WorkspaceSwitchResult,
+      'folderSwitch',
+      { gameId: 'game-1' },
+    );
+    expect(publishRuntimeDescriptor).not.toHaveBeenCalled();
+    expect(cancelRuntimeDescriptorQueries).not.toHaveBeenCalled();
+  });
+
+  it('recovers a rejected refresh without dropping its verified disk observation', async () => {
+    publishRuntimeDescriptor
+      .mockRejectedValueOnce(new Error('query busy'))
+      .mockResolvedValue(undefined);
+    await applyWorkspaceSwitchEffects(
+      new QueryClient(),
+      {
+        status: 'applied',
+        impact: { rewrites: [], refresh_scopes: ['workspaceChanged'] },
+      } as unknown as WorkspaceSwitchResult,
+      'folderSwitch',
+      { gameId: 'game-1' },
+    );
+    expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces a burst of failed refresh receipts into one retry owner', async () => {
+    vi.useFakeTimers();
+    try {
+      publishRuntimeDescriptor.mockRejectedValue(new Error('query busy'));
+      const client = new QueryClient();
+      const completions = Array.from({ length: 100 }, (_, index) =>
+        applyWorkspaceSwitchEffects(
+          client,
+          {
+            status: 'applied',
+            primary_path: 'E:/Mods/A',
+            impact: {
+              rewrites: [],
+              refresh_scopes: index % 2 ? ['workspaceChanged'] : ['collectionsChanged'],
+            },
+          } as unknown as WorkspaceSwitchResult,
+          'folderSwitch',
+          { gameId: 'game-1' },
+        ),
+      );
+      expect(new Set(completions).size).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
+      publishRuntimeDescriptor.mockResolvedValue(undefined);
+      await vi.advanceTimersByTimeAsync(250);
+      await Promise.all(completions);
+      expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(2);
+      expect(publishRuntimeDescriptor).toHaveBeenLastCalledWith(
+        client,
+        expect.objectContaining({
+          refreshEvents: expect.arrayContaining(['workspaceChanged', 'collectionsChanged']),
+        }),
+        'active',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('recovers an unknown receipt epoch after the first snapshot fails', async () => {
+    vi.useFakeTimers();
+    try {
+      appState.activeGameId = 'game-unknown-epoch';
+      getWorkspaceSwitchSnapshotCommand
+        .mockRejectedValueOnce(new Error('snapshot database busy'))
+        .mockResolvedValue({
+          game_id: 'game-unknown-epoch',
+          source_epoch: 'first-root',
+          projected_revision: 7,
+        });
+      const onSyncError = vi.fn();
+      const completion = applyWorkspaceSwitchEffects(
+        new QueryClient(),
+        {
+          status: 'applied',
+          primary_path: 'E:/Mods/A',
+          source_epoch: 'first-root',
+          disk_revision: 7,
+          impact: { rewrites: [], refresh_scopes: ['workspaceChanged'] },
+        } as unknown as WorkspaceSwitchResult,
+        'folderSwitch',
+        { gameId: 'game-unknown-epoch', onSyncError },
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onSyncError).toHaveBeenCalledTimes(1);
+      expect(publishRuntimeDescriptor).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(completion).resolves.toBeUndefined();
+      expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledTimes(2);
+      expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      appState.activeGameId = 'game-1';
+    }
+  });
+
+  it('retries cancellation failure without abandoning the shared receipt owner', async () => {
+    vi.useFakeTimers();
+    try {
+      cancelRuntimeDescriptorQueries.mockRejectedValueOnce(new Error('cancellation interrupted'));
+      const client = new QueryClient();
+      const completion = applyWorkspaceSwitchEffects(
+        client,
+        {
+          status: 'applied',
+          primary_path: 'E:/Mods/A',
+          impact: { rewrites: [], refresh_scopes: ['workspaceChanged'] },
+        } as unknown as WorkspaceSwitchResult,
+        'folderSwitch',
+        { gameId: 'game-1' },
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      expect(publishRuntimeDescriptor).not.toHaveBeenCalled();
+      const second = applyWorkspaceSwitchEffects(
+        client,
+        {
+          status: 'applied',
+          primary_path: 'E:/Mods/B',
+          impact: { rewrites: [], refresh_scopes: ['collectionsChanged'] },
+        } as unknown as WorkspaceSwitchResult,
+        'folderSwitch',
+        { gameId: 'game-1' },
+      );
+      expect(second).toBe(completion);
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(completion).resolves.toBeUndefined();
+      expect(cancelRuntimeDescriptorQueries).toHaveBeenCalledTimes(3);
+      expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('revalidates a new receipt epoch instead of permanently trusting a cached old root', async () => {
+    getWorkspaceSwitchSnapshotCommand.mockResolvedValueOnce({
+      game_id: 'game-1',
+      source_epoch: 'cached-old-root',
+      projected_revision: 5,
+    });
+    await primeWorkspaceRootEpoch('game-1');
+    getWorkspaceSwitchSnapshotCommand.mockResolvedValue({
+      game_id: 'game-1',
+      source_epoch: 'verified-new-root',
+      projected_revision: 60,
+    });
+    const settled = applyWorkspaceSwitchEffects(
+      new QueryClient(),
+      {
+        status: 'applied',
+        primary_path: 'E:/Mods/A',
+        source_epoch: 'verified-new-root',
+        disk_revision: 60,
+        impact: { rewrites: [], refresh_scopes: ['workspaceChanged'] },
+      } as unknown as WorkspaceSwitchResult,
+      'folderSwitch',
+      { gameId: 'game-1' },
+    );
+    await expect(settled).resolves.toBeUndefined();
+    expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledTimes(2);
+    expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the latest revision when another receipt arrives during an active refresh', async () => {
+    let releaseRefresh!: () => void;
+    publishRuntimeDescriptor.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRefresh = resolve;
+        }),
+    );
+    const client = new QueryClient();
+    const receipt = (revision: number) =>
+      ({
+        status: 'applied',
+        primary_path: 'E:/Mods/A',
+        disk_revision: revision,
+        source_epoch: 'root-a',
+        impact: { rewrites: [], refresh_scopes: ['workspaceChanged'] },
+      }) as unknown as WorkspaceSwitchResult;
+    recordWorkspaceProjectedRevision('game-1', 51, 'root-a');
+    getWorkspaceSwitchSnapshotCommand.mockResolvedValue({
+      game_id: 'game-1',
+      source_epoch: 'root-a',
+      projected_revision: 51,
+    });
+    const first = applyWorkspaceSwitchEffects(client, receipt(51), 'folderSwitch', {
+      gameId: 'game-1',
+    });
+    await vi.waitFor(() => expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1));
+    const second = applyWorkspaceSwitchEffects(client, receipt(52), 'folderSwitch', {
+      gameId: 'game-1',
+    });
+    expect(second).toBe(first);
+    releaseRefresh();
+    recordWorkspaceProjectedRevision('game-1', 52, 'root-a');
+    await Promise.all([first, second]);
+    expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(2);
+  });
+
   it('retries a transient projection snapshot error without losing the disk receipt', async () => {
     getWorkspaceSwitchSnapshotCommand
       .mockRejectedValueOnce(new Error('database busy'))
@@ -400,6 +636,120 @@ describe('workspace switch ops', () => {
 
     await expect(waitForWorkspaceProjection('game-1', 100_000)).resolves.toBeUndefined();
     expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops shared refresh at a repair hole without acknowledging merged later receipts', async () => {
+    vi.useFakeTimers();
+    try {
+      appState.activeGameId = 'game-repair-hole';
+      getWorkspaceSwitchSnapshotCommand.mockResolvedValue({
+        game_id: 'game-repair-hole',
+        source_epoch: 'repair-root',
+        projected_revision: 9,
+        projection_repair_reason: 'Folder ownership needs repair before synchronization can finish',
+      });
+      const client = new QueryClient();
+      const onSyncError = vi.fn();
+      const onOtherSyncError = vi.fn();
+      const receipt = (revision: number) =>
+        ({
+          status: 'applied',
+          primary_path: `E:/Mods/repair-${revision}`,
+          source_epoch: 'repair-root',
+          disk_revision: revision,
+          impact: { rewrites: [], refresh_scopes: ['workspaceChanged'] },
+        }) as unknown as WorkspaceSwitchResult;
+      const first = applyWorkspaceSwitchEffects(client, receipt(10), 'folderSwitch', {
+        gameId: 'game-repair-hole',
+        onSyncError,
+      });
+      const failed = expect(first).rejects.toThrow('Folder ownership needs repair');
+      const second = applyWorkspaceSwitchEffects(client, receipt(11), 'folderSwitch', {
+        gameId: 'game-repair-hole',
+        onSyncError: onOtherSyncError,
+      });
+      expect(second).toBe(first);
+      await vi.advanceTimersByTimeAsync(1);
+      await failed;
+      expect(onSyncError).toHaveBeenCalledOnce();
+      expect(onOtherSyncError).toHaveBeenCalledOnce();
+      expect(toastWarning).toHaveBeenCalledExactlyOnceWith(
+        'Changes were applied on disk, but workspace synchronization needs repair.',
+        7000,
+      );
+      expect(onSyncError.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+      expect(publishRuntimeDescriptor).not.toHaveBeenCalled();
+      const repeatedRepair = applyWorkspaceSwitchEffects(client, receipt(12), 'folderSwitch', {
+        gameId: 'game-repair-hole',
+      });
+      const repeatedFailure = expect(repeatedRepair).rejects.toThrow(
+        'Folder ownership needs repair',
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      await repeatedFailure;
+      expect(toastWarning).toHaveBeenCalledOnce();
+      const snapshots = getWorkspaceSwitchSnapshotCommand.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledTimes(snapshots);
+
+      getWorkspaceSwitchSnapshotCommand.mockResolvedValue({
+        game_id: 'game-repair-hole',
+        source_epoch: 'repair-root',
+        projected_revision: 11,
+        projection_repair_reason: null,
+      });
+      const recovered = applyWorkspaceSwitchEffects(client, receipt(11), 'folderSwitch', {
+        gameId: 'game-repair-hole',
+      });
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(recovered).resolves.toBeUndefined();
+      expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      appState.activeGameId = 'game-1';
+    }
+  });
+
+  it('retains recently renewed repair-warning keys when the warning cache reaches capacity', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new QueryClient();
+      const failWithRepair = async (index: number) => {
+        const gameId = `warning-capacity-${index}`;
+        const sourceEpoch = `${gameId}-root`;
+        appState.activeGameId = gameId;
+        getWorkspaceSwitchSnapshotCommand.mockResolvedValue({
+          game_id: gameId,
+          source_epoch: sourceEpoch,
+          projected_revision: 0,
+          projection_repair_reason: 'Folder ownership needs repair',
+        });
+        await expect(
+          applyWorkspaceSwitchEffects(
+            client,
+            {
+              status: 'applied',
+              source_epoch: sourceEpoch,
+              disk_revision: 1,
+              impact: { rewrites: [], refresh_scopes: ['workspaceChanged'] },
+            } as unknown as WorkspaceSwitchResult,
+            'folderSwitch',
+            { gameId },
+          ),
+        ).rejects.toThrow('Folder ownership needs repair');
+      };
+      for (let index = 0; index < 64; index += 1) await failWithRepair(index);
+      expect(toastWarning).toHaveBeenCalledTimes(64);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await failWithRepair(0);
+      await failWithRepair(64);
+      expect(toastWarning).toHaveBeenCalledTimes(66);
+      await failWithRepair(0);
+      expect(toastWarning).toHaveBeenCalledTimes(66);
+    } finally {
+      appState.activeGameId = 'game-1';
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the disk receipt until the database actually catches up', async () => {
@@ -420,20 +770,27 @@ describe('workspace switch ops', () => {
     }
   });
 
-  it('rechecks a stalled native snapshot without discarding the disk receipt', async () => {
+  it('does not launch overlapping native snapshots when one stalls', async () => {
     vi.useFakeTimers();
     try {
-      getWorkspaceSwitchSnapshotCommand
-        .mockImplementationOnce(() => new Promise(() => undefined))
-        .mockResolvedValue({
-          game_id: 'game-1',
-          source_epoch: 'root-a',
-          disk_revision: 9_000_001,
-          projected_revision: 9_000_001,
-        });
+      let completeSnapshot!: (value: unknown) => void;
+      getWorkspaceSwitchSnapshotCommand.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            completeSnapshot = resolve;
+          }),
+      );
       const waiting = waitForWorkspaceProjection('game-1', 9_000_001);
-      await vi.advanceTimersByTimeAsync(3_000);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(getWorkspaceSwitchSnapshotCommand).toHaveBeenCalledTimes(1);
+      recordWorkspaceProjectedRevision('game-1', 9_000_001);
       await expect(waiting).resolves.toBeUndefined();
+      completeSnapshot({
+        game_id: 'game-1',
+        source_epoch: 'root-a',
+        projected_revision: 9_000_001,
+      });
+      await vi.advanceTimersByTimeAsync(1);
     } finally {
       vi.useRealTimers();
     }

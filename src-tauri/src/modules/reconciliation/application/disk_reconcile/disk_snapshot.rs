@@ -194,23 +194,7 @@ pub struct DiskSnapshotProgress {
     pub current_root: Option<String>,
 }
 
-pub(crate) fn filesystem_identity(path: &Path) -> Option<String> {
-    let id = file_id::get_file_id(path).ok()?;
-    Some(match id {
-        file_id::FileId::Inode {
-            device_id,
-            inode_number,
-        } => format!("inode:{device_id}:{inode_number}"),
-        file_id::FileId::LowRes {
-            volume_serial_number,
-            file_index,
-        } => format!("win-low:{volume_serial_number}:{file_index}"),
-        file_id::FileId::HighRes {
-            volume_serial_number,
-            file_id,
-        } => format!("win-high:{volume_serial_number}:{file_id}"),
-    })
-}
+pub(crate) use crate::platform::fs::file_utils::filesystem_identity;
 
 impl DiskProjection {
     pub fn scoped_to_roots(&self, changed_roots: &[String]) -> Self {

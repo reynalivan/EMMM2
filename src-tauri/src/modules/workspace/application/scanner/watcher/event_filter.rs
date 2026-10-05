@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const RELEVANT_EXTENSIONS: &[&str] = &["ini", "json", "png", "jpg", "jpeg", "webp"];
 
@@ -21,13 +21,9 @@ fn is_relevant_path(path: &Path) -> bool {
 }
 
 pub(crate) fn should_keep_event_path(path: &Path, watcher_path: &Path) -> bool {
-    if !should_keep_structural_event_path(path, watcher_path) {
+    let Some(relative) = relative_event_path(path, watcher_path) else {
         return false;
-    }
-
-    let relative = path
-        .strip_prefix(watcher_path)
-        .expect("structural containment was checked above");
+    };
     if relative.components().nth(2).is_none() {
         return true;
     }
@@ -47,16 +43,19 @@ pub(crate) fn should_keep_event_path(path: &Path, watcher_path: &Path) -> bool {
 }
 
 pub(crate) fn should_keep_structural_event_path(path: &Path, watcher_path: &Path) -> bool {
-    let Ok(relative) = path.strip_prefix(watcher_path) else {
-        return false;
-    };
+    relative_event_path(path, watcher_path).is_some()
+}
 
+fn relative_event_path(path: &Path, watcher_path: &Path) -> Option<PathBuf> {
+    let path = crate::shared::path_key::physical_namespace_path(path).ok()?;
+    let root = crate::shared::path_key::physical_namespace_path(watcher_path).ok()?;
+    let relative = path.strip_prefix(root).ok()?;
     if relative
         .components()
         .any(|component| component.as_os_str().to_string_lossy().starts_with('.'))
     {
-        return false;
+        return None;
     }
 
-    true
+    Some(relative.to_path_buf())
 }

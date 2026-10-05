@@ -288,18 +288,26 @@ pub async fn run_trusted_internal_disk_reconcile_under_lease(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     changed_paths: Vec<String>,
+    rename_events: Vec<crate::modules::workspace::application::scanner::watcher::ModWatchEvent>,
     lease: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
 > {
-    run_trusted_internal_disk_reconcile_with_path_hints_under_lease(
+    let config = app.state::<crate::modules::settings::application::config::ConfigService>();
+    validate_trusted_toggle_batch_scope(config.inner(), game_id, &changed_paths)?;
+    run_internal_disk_reconcile_with_path_hints_under_lease_options(
         app,
         pool,
         game_id,
         changed_paths,
         Vec::new(),
         lease,
+        InternalReconcileOptions {
+            defer_runtime: true,
+            trusted_scope: true,
+            rename_events,
+        },
     )
     .await
 }
@@ -317,9 +325,14 @@ fn validate_trusted_toggle_batch_scope(
     let mods_root = config
         .mods_root_for(game_id)
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
+    let mods_root = super::super::toggle_projection::projection_physical_path(&mods_root)?;
     for pair in changed_paths.chunks_exact(2) {
-        let old_path = std::path::Path::new(&pair[0]);
-        let new_path = std::path::Path::new(&pair[1]);
+        let old_path = super::super::toggle_projection::projection_physical_path(
+            std::path::Path::new(&pair[0]),
+        )?;
+        let new_path = super::super::toggle_projection::projection_physical_path(
+            std::path::Path::new(&pair[1]),
+        )?;
         if !old_path.starts_with(&mods_root)
             || !new_path.starts_with(&mods_root)
             || old_path.parent() != new_path.parent()
@@ -372,6 +385,7 @@ pub async fn run_internal_disk_reconcile_with_path_hints_under_lease(
         InternalReconcileOptions {
             defer_runtime: false,
             trusted_scope: false,
+            rename_events: Vec::new(),
         },
     )
     .await
@@ -400,6 +414,7 @@ pub async fn run_deferred_internal_disk_reconcile_with_path_hints_under_lease(
         InternalReconcileOptions {
             defer_runtime: true,
             trusted_scope: false,
+            rename_events: Vec::new(),
         },
     )
     .await
@@ -434,15 +449,17 @@ pub async fn run_trusted_internal_disk_reconcile_with_path_hints_under_lease(
         InternalReconcileOptions {
             defer_runtime: true,
             trusted_scope: true,
+            rename_events: Vec::new(),
         },
     )
     .await
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct InternalReconcileOptions {
     defer_runtime: bool,
     trusted_scope: bool,
+    rename_events: Vec<crate::modules::workspace::application::scanner::watcher::ModWatchEvent>,
 }
 
 async fn run_internal_disk_reconcile_with_path_hints_under_lease_options(
@@ -491,6 +508,7 @@ async fn run_internal_disk_reconcile_with_path_hints_under_lease_options(
             )
             .collect(),
     );
+    let request = request.with_internal_rename_events(options.rename_events);
     let request = if options.trusted_scope {
         request.trust_durable_mutation_scope()
     } else {
@@ -558,10 +576,10 @@ async fn run_initial_recovery_with_projection(
     generation: u64,
 ) -> Result<DiskReconcileResult, AppError> {
     use crate::modules::mutation::coordinator::MutationCoordinator;
-    use crate::modules::settings::application::config::ConfigService;
-    use crate::modules::workspace::adapters::tauri::workspace_cmds::{
+    use crate::modules::reconciliation::api::{
         complete_reconciled_toggle_projection, projection_source_epoch, queue_toggle_projection,
     };
+    use crate::modules::settings::application::config::ConfigService;
 
     let coordinator = app.try_state::<MutationCoordinator>().ok_or_else(|| {
         AppError::Internal("MutationCoordinator missing for initial recovery".to_string())

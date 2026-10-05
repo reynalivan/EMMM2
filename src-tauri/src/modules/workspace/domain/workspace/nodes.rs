@@ -134,6 +134,8 @@ pub struct WorkspaceExplorerNode {
     pub name: String,
     pub folder_name: String,
     pub path: String,
+    #[specta(optional)]
+    pub filesystem_identity: Option<String>,
     pub is_enabled: bool,
     pub is_directory: bool,
     pub thumbnail_path: Option<String>,

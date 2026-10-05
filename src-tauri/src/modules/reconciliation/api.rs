@@ -3,6 +3,10 @@ pub use super::adapters::tauri::runtime_sync::{
     enqueue_runtime_sync, enqueue_runtime_sync_for_rewrites, enqueue_runtime_sync_scoped,
     runtime_sync_request_for_changed_paths, runtime_sync_request_for_roots, RuntimeSyncCause,
 };
+pub(crate) use super::adapters::tauri::toggle_projection::{
+    complete_reconciled_toggle_projection, ensure_projection_epoch, projection_source_epoch,
+    queue_toggle_projection,
+};
 pub(crate) use super::application::disk_reconcile::orchestrator::ActivationAuthority;
 pub use super::application::*;
 pub use crate::modules::system::application::app::post_apply::{

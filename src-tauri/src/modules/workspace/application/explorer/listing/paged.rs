@@ -351,12 +351,16 @@ fn build_workspace_explorer_context(
             self_node_type: Some(node_type.as_str().to_string()),
             self_is_mod,
             self_is_enabled,
+            self_identity: crate::platform::fs::file_utils::filesystem_identity(&resolved.target),
             self_owner_object_id: None,
             self_owner_object_folder_path: None,
             self_classification_reasons: classification_reasons,
             children: Vec::new(),
             conflicts: Vec::new(),
             ancestor_disabled_by,
+            ancestor_disabled_identity: ancestor_disabled_path.as_deref().and_then(|path| {
+                crate::platform::fs::file_utils::filesystem_identity(Path::new(path))
+            }),
             ancestor_disabled_path,
         },
     )
@@ -597,6 +601,7 @@ fn build_workspace_explorer_page_from_snapshot(
             build_mod_folder_from_path(&candidate.path, input.query.explorer_sub_path.as_deref())
                 .ok_or(AppError::ExplorerSnapshotExpired)?;
         apply_child_state(&mut folder, candidate.state.clone());
+        folder.filesystem_identity = candidate.filesystem_identity.clone();
         folders.push(folder);
     }
 

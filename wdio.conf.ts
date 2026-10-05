@@ -2,12 +2,31 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
+import { createHash } from 'node:crypto';
 import { download as downloadEdgeDriver } from 'edgedriver';
+import {
+  assertDriverPortsAvailable,
+  assertCurrentBuild,
+  stopOwnedDriver,
+  waitForOwnedDriver,
+} from './tests/e2e/support/driverLifecycle.js';
+import { cleanupScheduledMockGames } from './tests/e2e/support/fixtures.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let tauriDriver: ChildProcess;
+let tauriDriver: ChildProcess | undefined;
+const E2E_IDENTIFIER = 'com.reynalivan.emmm.e2e';
+const DRIVER_PORT = 4444;
+const NATIVE_DRIVER_PORT = 4445;
+
+function cleanupOwnedDriver(): boolean {
+  const owned = tauriDriver;
+  tauriDriver = undefined;
+  if (!owned?.pid || owned.exitCode !== null || owned.signalCode !== null) return false;
+  stopOwnedDriver(owned);
+  return true;
+}
 
 /** Where `tauri build` drops the binary — shared with `tauri dev` and `cargo build`. */
 const BUILT_BINARY = path.resolve(__dirname, 'src-tauri/target/debug/emmm.exe');
@@ -17,14 +36,14 @@ const BUILT_BINARY = path.resolve(__dirname, 'src-tauri/target/debug/emmm.exe');
  * `emmm.exe` in dev mode — which loads from the dev server instead of embedding
  * the frontend — so a dev build started mid-run used to replace the binary the
  * suite was launching, and every spec after that died on "asset not found:
- * index.html". Copying also keeps `taskkill` scoped to this name, so purging
- * ghost processes no longer kills the app the developer is running.
+ * index.html".
  */
 const E2E_BINARY = path.resolve(__dirname, 'src-tauri/target/debug/emmm-e2e.exe');
 
 export const config = {
   hostname: '127.0.0.1',
-  port: 4444,
+  port: DRIVER_PORT,
+  logLevel: 'warn',
   specs: ['./tests/e2e/specs/**/*.e2e.ts'],
   maxInstances: 1,
   capabilities: [
@@ -47,11 +66,24 @@ export const config = {
   // `pnpm tauri build --debug` carries the PRODUCTION identifier, so reusing it
   // would point the suite (and its `reset_database`) at the real library.
   // Debug build: devtools stay enabled, which tauri-driver requires.
-  onPrepare: () => {
+  onPrepare: async () => {
+    delete process.env.EMMM_E2E_BUILD_SHA256;
+    await assertDriverPortsAvailable([DRIVER_PORT, NATIVE_DRIVER_PORT]);
+    const overrides: unknown = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, 'src-tauri/tauri.e2e.conf.json'), 'utf8'),
+    );
+    if (
+      typeof overrides !== 'object' ||
+      overrides === null ||
+      !('identifier' in overrides) ||
+      overrides.identifier !== E2E_IDENTIFIER
+    ) {
+      throw new Error('Refusing E2E build without its isolated app identifier');
+    }
     const built = spawnSync(
       'pnpm',
       ['tauri', 'build', '--debug', '--no-bundle', '--config', 'src-tauri/tauri.e2e.conf.json'],
-      { stdio: 'inherit', shell: true },
+      { stdio: 'inherit', shell: true, windowsHide: true },
     );
     if (built.status !== 0) {
       throw new Error(`tauri build failed with exit code ${built.status}`);
@@ -61,28 +93,41 @@ export const config = {
     }
     // Snapshot it under the suite's own name so nothing can swap it mid-run.
     fs.copyFileSync(BUILT_BINARY, E2E_BINARY);
+    process.env.EMMM_E2E_BUILD_SHA256 = createHash('sha256')
+      .update(fs.readFileSync(E2E_BINARY))
+      .digest('hex');
   },
   // ensure we are running `tauri-driver` before the session starts so that wdio can connect to it
   beforeSession: async () => {
-    // Purge ghost processes from an earlier run. Scoped to `emmm-e2e.exe` so a
-    // developer's own running app is left alone.
-    try {
-      spawnSync('taskkill', ['/F', '/IM', 'emmm-e2e.exe', '/T'], { shell: true });
-      spawnSync('taskkill', ['/F', '/IM', 'msedgedriver.exe', '/T'], { shell: true });
-      spawnSync('taskkill', ['/F', '/IM', 'tauri-driver.exe', '/T'], { shell: true });
-    } catch {
-      // ignore
-    }
-
+    assertCurrentBuild(
+      process.env.EMMM_E2E_BUILD_SHA256,
+      createHash('sha256').update(fs.readFileSync(E2E_BINARY)).digest('hex'),
+    );
+    await assertDriverPortsAvailable([DRIVER_PORT, NATIVE_DRIVER_PORT]);
+    console.info('Checking Microsoft Edge driver; missing matching driver may be downloaded.');
     const edgeDriverPath = await downloadEdgeDriver();
 
-    tauriDriver = spawn('tauri-driver', ['--native-driver', edgeDriverPath], {
-      stdio: [null, process.stdout, process.stderr],
-      shell: true,
-    });
-
-    // give tauri-driver some time to start up and listen on port 4444
-    await new Promise((resolve) => setTimeout(resolve, 20000));
+    tauriDriver = spawn(
+      'tauri-driver',
+      [
+        '--port',
+        String(DRIVER_PORT),
+        '--native-port',
+        String(NATIVE_DRIVER_PORT),
+        '--native-driver',
+        edgeDriverPath,
+      ],
+      {
+        stdio: [null, process.stdout, process.stderr],
+        windowsHide: true,
+      },
+    );
+    try {
+      await waitForOwnedDriver(tauriDriver, `http://127.0.0.1:${DRIVER_PORT}/status`);
+    } catch (error) {
+      cleanupOwnedDriver();
+      throw error;
+    }
   },
   // Each spec file gets a clean slate: games, objects, collections and trash
   // otherwise accumulate across the run and leak between specs. Safe to wipe
@@ -90,45 +135,67 @@ export const config = {
   before: async () => {
     const { browser } = await import('@wdio/globals');
     await browser.url('http://tauri.localhost/');
-    const result = (await browser.executeAsync((done: (r: unknown) => void) => {
-      const core = (
-        window as unknown as {
-          __TAURI__: { core: { invoke: (cmd: string) => Promise<unknown> } };
-        }
-      ).__TAURI__.core;
-      core.invoke('reset_database').then(
-        () => done({ ok: true }),
-        (error: unknown) => done({ ok: false, error: String(error) }),
-      );
-    })) as { ok: boolean; error?: string };
+    const result = (await browser.executeAsync(
+      (expectedIdentifier: string, done: (r: unknown) => void) => {
+        const core = (
+          window as unknown as {
+            __TAURI__: { core: { invoke: (cmd: string) => Promise<unknown> } };
+          }
+        ).__TAURI__.core;
+        void core
+          .invoke('plugin:app|identifier')
+          .then((identifier) => {
+            if (identifier !== expectedIdentifier)
+              throw new Error('Refusing database reset outside the E2E application');
+            return core.invoke('reset_database');
+          })
+          .then(
+            () => done({ ok: true }),
+            (error: unknown) =>
+              done({
+                ok: false,
+                error: error instanceof Error ? error.message : JSON.stringify(error),
+              }),
+          );
+      },
+      E2E_IDENTIFIER,
+    )) as { ok: boolean; error?: string };
 
     if (!result.ok) {
       throw new Error(`reset_database failed before spec: ${result.error}`);
     }
   },
   // clean up the `tauri-driver` process we spawned at the start of the session
-  afterSession: () => {
-    tauriDriver?.kill();
+  afterSession: async () => {
+    if (cleanupOwnedDriver()) {
+      const removed = await cleanupScheduledMockGames();
+      console.info(`Owned native process tree stopped; removed ${removed} scheduled fixtures.`);
+    } else {
+      console.warn('Native shutdown could not be verified; scheduled E2E fixtures retained.');
+    }
   },
   baseUrl: 'http://tauri.localhost',
 };
 
-function onShutdown(fn: () => void) {
-  const cleanup = () => {
-    try {
-      fn();
-    } finally {
-      process.exit();
-    }
-  };
-
-  process.on('exit', cleanup);
-  process.on('SIGINT', cleanup);
-  process.on('SIGTERM', cleanup);
-  process.on('SIGHUP', cleanup);
-  process.on('SIGBREAK', cleanup);
-}
-
-onShutdown(() => {
-  tauriDriver?.kill();
+process.once('exit', () => {
+  try {
+    cleanupOwnedDriver();
+  } catch (error) {
+    console.error('E2E driver cleanup failed:', error);
+  }
 });
+for (const [signal, exitCode] of [
+  ['SIGINT', 130],
+  ['SIGTERM', 143],
+  ['SIGHUP', 129],
+  ['SIGBREAK', 149],
+] as const) {
+  process.once(signal, () => {
+    try {
+      cleanupOwnedDriver();
+    } catch (error) {
+      console.error('E2E driver cleanup failed:', error);
+    }
+    process.exit(exitCode);
+  });
+}

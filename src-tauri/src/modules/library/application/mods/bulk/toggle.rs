@@ -44,6 +44,16 @@ pub struct PreparedToggleStep {
 }
 
 impl PreparedBulkToggle {
+    pub(crate) fn set_namespace_proof(
+        &mut self,
+        proof: std::sync::Arc<crate::platform::fs::file_utils::FilesystemNamespaceProof>,
+    ) {
+        for item in &mut self.items {
+            if let PreparedToggleState::Ready { plan, .. } = &mut item.state {
+                plan.set_namespace_proof(std::sync::Arc::clone(&proof));
+            }
+        }
+    }
     pub fn resequence(&mut self, start: u32) -> u32 {
         let mut sequence = start;
         for item in &mut self.items {

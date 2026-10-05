@@ -10,8 +10,13 @@ pub struct WatcherRenameHints {
 }
 
 fn relative_path(path: &str, mods_path: &Path) -> Option<String> {
-    let relative = Path::new(path).strip_prefix(mods_path).ok()?;
-    Some(relative.to_string_lossy().to_string())
+    if let Ok(relative) = Path::new(path).strip_prefix(mods_path) {
+        return Some(relative.to_string_lossy().into_owned());
+    }
+    let path = crate::shared::path_key::physical_namespace_path(Path::new(path)).ok()?;
+    let mods_path = crate::shared::path_key::physical_namespace_path(mods_path).ok()?;
+    let relative = path.strip_prefix(&mods_path).ok()?;
+    Some(relative.to_string_lossy().into_owned())
 }
 
 fn component_count(path: &str) -> usize {
@@ -94,6 +99,34 @@ mod tests {
     use super::{collect_changed_paths, collect_rename_hints};
     use crate::modules::workspace::application::scanner::watcher::ModWatchEvent;
     use std::path::Path;
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_rename_events_keep_exact_relative_names() {
+        let hints = collect_rename_hints(
+            Path::new(r"C:\Mods"),
+            &[ModWatchEvent::Renamed {
+                from: r"\\?\C:\Mods\Alice. \Blue".to_string(),
+                to: r"\\?\C:\Mods\Alice. \DISABLED Blue".to_string(),
+            }],
+        );
+        assert_eq!(
+            hints.mod_renames,
+            vec![(
+                r"Alice. \Blue".to_string(),
+                r"Alice. \DISABLED Blue".to_string()
+            )]
+        );
+        assert!(collect_rename_hints(
+            Path::new(r"C:\Mods"),
+            &[ModWatchEvent::Renamed {
+                from: r"\\?\C:\ModsOther\Alice\Blue".to_string(),
+                to: r"\\?\C:\ModsOther\Alice\DISABLED Blue".to_string()
+            }]
+        )
+        .mod_renames
+        .is_empty());
+    }
 
     #[test]
     fn collect_changed_paths_keeps_both_rename_sides() {

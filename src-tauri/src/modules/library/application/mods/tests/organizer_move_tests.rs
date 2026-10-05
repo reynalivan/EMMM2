@@ -15,6 +15,66 @@ fn normalized_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
+fn prepared_move(source: &Path, target: &Path) -> PreparedOrganizerMove {
+    PreparedOrganizerMove {
+        target_anchor: target.parent().unwrap().to_path_buf(),
+        target_proof: FilesystemIdentityProof::capture(target.parent().unwrap()).unwrap(),
+        renames: vec![PreparedOrganizerRename {
+            source_proof: FilesystemIdentityProof::capture(source).unwrap(),
+            old_path: source.to_path_buf(),
+            new_path: target.to_path_buf(),
+            old_rel: "source".into(),
+            new_rel: "target".into(),
+            target_object_id: "object".into(),
+        }],
+        primary_results: vec!["target".into()],
+        target_base_path: target.parent().unwrap().to_path_buf(),
+        target_base_requires_creation: false,
+    }
+}
+
+#[test]
+fn organizer_move_does_not_overwrite_a_destination_created_after_preparation() {
+    let root = TempDir::new().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    std::fs::create_dir(&source).unwrap();
+    let prepared = prepared_move(&source, &target);
+    std::fs::create_dir(&target).unwrap();
+    assert!(execute_prepared_move(&WatcherState::new(), &prepared).is_err());
+    assert!(source.is_dir());
+    assert!(target.is_dir());
+}
+
+#[test]
+fn organizer_move_rejects_a_replaced_source_after_preparation() {
+    let root = TempDir::new().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    std::fs::create_dir(&source).unwrap();
+    let prepared = prepared_move(&source, &target);
+    std::fs::rename(&source, root.path().join("original")).unwrap();
+    std::fs::create_dir(&source).unwrap();
+    assert!(execute_prepared_move(&WatcherState::new(), &prepared).is_err());
+    assert!(source.is_dir());
+    assert!(!target.exists());
+}
+
+#[test]
+fn organizer_rollback_rejects_a_replaced_destination() {
+    let root = TempDir::new().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    std::fs::create_dir(&source).unwrap();
+    let prepared = prepared_move(&source, &target);
+    execute_prepared_move(&WatcherState::new(), &prepared).unwrap();
+    std::fs::rename(&target, root.path().join("original")).unwrap();
+    std::fs::create_dir(&target).unwrap();
+    assert!(rollback_prepared_move(&WatcherState::new(), &prepared).is_err());
+    assert!(target.is_dir());
+    assert!(!source.exists());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_reconcile() {
     let temp = TempDir::new().expect("temporary mods root");
@@ -76,6 +136,12 @@ async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_
     )
     .await
     .expect("mod");
+    let source_identity = FilesystemIdentityProof::capture(&source_path).unwrap();
+    sqlx::query("UPDATE mods SET filesystem_identity = ? WHERE id = 'mod'")
+        .bind(source_identity.identity())
+        .execute(&pool)
+        .await
+        .expect("indexed source identity");
     insert_test_collection(
         &pool,
         &TestCollectionFixture {
@@ -158,6 +224,9 @@ async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_
     assert_eq!(outcome.path_hints[0].target_object_id, "target");
 
     assert!(target_object_path.join("Old Mod").is_dir());
+    source_identity
+        .validate(&target_object_path.join("Old Mod"))
+        .unwrap();
     let mod_row: (Option<String>, String) =
         sqlx::query_as("SELECT object_id, folder_path FROM mods WHERE id = 'mod'")
             .fetch_one(&pool)

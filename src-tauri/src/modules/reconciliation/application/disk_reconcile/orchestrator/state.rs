@@ -1,6 +1,7 @@
 //! Per-game reconcile locks, activation cache, and runtime-effect state.
 
 use crate::shared::errors::AppError;
+use crate::shared::path_key::physical_namespace_path;
 use crate::shared::sync::lock;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -92,6 +93,7 @@ pub struct DiskReconcileState {
     games: std::sync::Mutex<HashMap<String, GameSyncState>>,
     initial_recovery: std::sync::Mutex<HashMap<String, Arc<InitialRecoveryGate>>>,
     authority: std::sync::Mutex<HashMap<String, GameAuthorityState>>,
+    projection_wakes: std::sync::Mutex<HashMap<String, Arc<Notify>>>,
 }
 
 #[derive(Debug, Default)]
@@ -167,7 +169,9 @@ fn authority_root_key(root: &Path) -> String {
 }
 
 fn affected_top_root(mods_root: &Path, changed_path: &Path) -> Option<PathBuf> {
-    let relative = changed_path.strip_prefix(mods_root).ok()?;
+    let mods_root = physical_namespace_path(mods_root).ok()?;
+    let changed_path = physical_namespace_path(changed_path).ok()?;
+    let relative = changed_path.strip_prefix(&mods_root).ok()?;
     let first = relative.components().next()?;
     let name = first.as_os_str().to_string_lossy();
     if name.is_empty() || name.starts_with('.') {
@@ -181,6 +185,25 @@ fn affected_top_root(mods_root: &Path, changed_path: &Path) -> Option<PathBuf> {
 pub struct DiskMutationLease {
     _game_guard: OwnedMutexGuard<()>,
     operation_guard: DiskMutationOperationGuard,
+}
+
+pub(crate) struct ToggleStorageProof {
+    session: crate::modules::workspace::api::scanner::watcher::WatcherSession,
+    namespace: Arc<crate::platform::fs::file_utils::FilesystemNamespaceProof>,
+}
+
+impl ToggleStorageProof {
+    pub(crate) fn session(
+        &self,
+    ) -> &crate::modules::workspace::api::scanner::watcher::WatcherSession {
+        &self.session
+    }
+
+    pub(crate) fn namespace(
+        &self,
+    ) -> Arc<crate::platform::fs::file_utils::FilesystemNamespaceProof> {
+        Arc::clone(&self.namespace)
+    }
 }
 
 enum DiskMutationOperationGuard {
@@ -223,6 +246,51 @@ impl DiskMutationLease {
         if let Err(error) = state.ensure_core_ready_for_mutation(game_id) {
             lease.abort_unapplied()?;
             return Err(error);
+        }
+        Ok(lease)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn from_toggle_scope_guard(
+        state: &DiskReconcileState,
+        game_id: &str,
+        mods_root: &Path,
+        paths: &[String],
+        game_guard: OwnedMutexGuard<()>,
+        operation_guard: crate::modules::mutation::coordinator::MutationGuard,
+        storage_proof: Option<(
+            &ToggleStorageProof,
+            &crate::modules::workspace::api::scanner::watcher::WatcherState,
+        )>,
+        repair: impl AsyncFnOnce(
+            &OwnedMutexGuard<()>,
+            &crate::modules::mutation::coordinator::MutationGuard,
+        ) -> Result<(), AppError>,
+    ) -> Result<Self, AppError> {
+        if let Some((proof, watcher)) = storage_proof {
+            let validation =
+                state.validate_toggle_storage_proof(game_id, mods_root, paths, proof, watcher);
+            if let Err(error) = validation {
+                operation_guard.abort_unapplied()?;
+                return Err(error);
+            }
+            return Ok(Self::from_durable_guard(game_guard, operation_guard));
+        }
+        // Watcher observations can arrive while the durable plan is written.
+        // Repair once under the same guards without rebinding that plan.
+        if !state.toggle_scope_is_ready(game_id, mods_root, paths) {
+            if let Err(error) = repair(&game_guard, &operation_guard).await {
+                operation_guard.abort_unapplied()?;
+                return Err(error);
+            }
+        }
+        let lease = Self::from_durable_guard(game_guard, operation_guard);
+        if !state.toggle_scope_is_ready(game_id, mods_root, paths) {
+            lease.abort_unapplied()?;
+            return Err(AppError::Io(
+                "Target disk authority changed during switch preparation; retry after repair"
+                    .to_string(),
+            ));
         }
         Ok(lease)
     }
@@ -291,7 +359,7 @@ impl DiskMutationLease {
         }
     }
 
-    fn abort_unapplied(self) -> Result<(), AppError> {
+    pub(crate) fn abort_unapplied(self) -> Result<(), AppError> {
         match self.operation_guard {
             DiskMutationOperationGuard::Durable(guard) => guard.abort_unapplied(),
             DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
@@ -353,6 +421,7 @@ enum InitialRecoveryStatus {
 struct InitialRecoveryState {
     generation: u64,
     status: InitialRecoveryStatus,
+    core_root_identity: Option<String>,
 }
 
 impl Default for InitialRecoveryGate {
@@ -361,6 +430,7 @@ impl Default for InitialRecoveryGate {
             state: std::sync::Mutex::new(InitialRecoveryState {
                 generation: 0,
                 status: InitialRecoveryStatus::Unstarted,
+                core_root_identity: None,
             }),
             notify: Notify::new(),
         }
@@ -401,6 +471,13 @@ pub enum InitialRecoveryReadiness {
 impl DiskReconcileState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn projection_wakeup(&self, game_id: &str) -> Arc<Notify> {
+        lock(&self.projection_wakes)
+            .entry(game_id.to_string())
+            .or_insert_with(|| Arc::new(Notify::new()))
+            .clone()
     }
 
     pub async fn acquire_nested_mutation_lease(
@@ -662,6 +739,166 @@ impl DiskReconcileState {
         })
     }
 
+    pub(crate) fn toggle_scope_is_ready(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        paths: &[String],
+    ) -> bool {
+        self.toggle_scope_is_ready_for_session(game_id, mods_root, paths, None)
+    }
+
+    pub(crate) fn capture_toggle_storage_proof(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        paths: &[PathBuf],
+        watcher: &crate::modules::workspace::api::scanner::watcher::WatcherState,
+    ) -> Result<Option<ToggleStorageProof>, AppError> {
+        let Some(session) = watcher.current_session_for_root(mods_root) else {
+            return Ok(None);
+        };
+        if paths.is_empty()
+            || !self.toggle_storage_coverage_is_ready(game_id, mods_root, session.generation())
+            || watcher.suppressor.has_unrepaired_drops()
+            || watcher.suppressor.pending_repair(&session).is_some()
+        {
+            return Ok(None);
+        }
+        Ok(Some(ToggleStorageProof {
+            session,
+            namespace: Arc::new(
+                crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+                    mods_root, paths,
+                )?,
+            ),
+        }))
+    }
+
+    pub(crate) fn validate_toggle_storage_proof(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        paths: &[String],
+        proof: &ToggleStorageProof,
+        watcher: &crate::modules::workspace::api::scanner::watcher::WatcherState,
+    ) -> Result<(), AppError> {
+        if paths.is_empty()
+            || watcher.current_session_for_root(mods_root).as_ref() != Some(&proof.session)
+            || !self.toggle_storage_coverage_is_ready(
+                game_id,
+                mods_root,
+                proof.session.generation(),
+            )
+            || watcher.suppressor.has_unrepaired_drops()
+            || watcher.suppressor.pending_repair(&proof.session).is_some()
+        {
+            #[cfg(debug_assertions)]
+            {
+                let identity = crate::platform::fs::file_utils::filesystem_identity(mods_root);
+                let (trusted, dropped, root_matches) = lock(&self.authority)
+                    .get(game_id)
+                    .map(|state| {
+                        (
+                            state.trusted,
+                            state.dropped_events,
+                            state.root_identity == identity,
+                        )
+                    })
+                    .unwrap_or((false, false, false));
+                log::info!("toggle storage proof rejected game_id={} session={} current_session_matches={} indexed_root={} suppressor_repair={} authority_trusted={} authority_dropped={} root_matches={}",
+                    game_id, proof.session.generation(), watcher.current_session_for_root(mods_root).as_ref() == Some(&proof.session),
+                    self.ensure_indexed_root(game_id, mods_root).is_ok(), watcher.suppressor.has_unrepaired_drops(),
+                    trusted, dropped, root_matches);
+            }
+            return Err(AppError::Io(
+                "Toggle watcher coverage changed; repair indexing before retrying".into(),
+            ));
+        }
+        proof
+            .namespace
+            .validate_paths(&paths.iter().map(PathBuf::from).collect::<Vec<_>>())
+    }
+
+    fn toggle_storage_coverage_is_ready(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        watcher_session: u64,
+    ) -> bool {
+        if self.ensure_indexed_root(game_id, mods_root).is_err() {
+            return false;
+        }
+        let current_identity = crate::platform::fs::file_utils::filesystem_identity(mods_root);
+        lock(&self.authority).get(game_id).is_some_and(|state| {
+            state.root_key == authority_root_key(mods_root)
+                && state.watcher_session == watcher_session
+                && state.root_identity.is_some()
+                && state.root_identity == current_identity
+                && state.trusted
+                && !state.dropped_events
+        })
+    }
+
+    pub(crate) fn trusted_toggle_session_is_ready(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        paths: &[String],
+        watcher_session: u64,
+    ) -> bool {
+        self.toggle_scope_is_ready_for_session(game_id, mods_root, paths, Some(watcher_session))
+    }
+
+    fn toggle_scope_is_ready_for_session(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        paths: &[String],
+        watcher_session: Option<u64>,
+    ) -> bool {
+        if self.ensure_indexed_root(game_id, mods_root).is_err() || paths.is_empty() {
+            return false;
+        }
+        let Ok(paths) = paths
+            .iter()
+            .map(|path| physical_namespace_path(Path::new(path)))
+            .collect::<std::io::Result<Vec<_>>>()
+        else {
+            return false;
+        };
+        let identity = crate::platform::fs::file_utils::filesystem_identity(mods_root);
+        lock(&self.authority).get(game_id).is_some_and(|state| {
+            state.root_key == authority_root_key(mods_root)
+                && watcher_session.is_none_or(|session| state.watcher_session == session)
+                && identity.is_some()
+                && state.root_identity == identity
+                && state.trusted
+                && !state.dropped_events
+                && !state.dirty_roots.iter().any(|dirty| {
+                    paths
+                        .iter()
+                        .any(|path| path.starts_with(dirty) || dirty.starts_with(path))
+                })
+        })
+    }
+
+    pub(crate) fn ensure_indexed_root(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+    ) -> Result<(), AppError> {
+        self.ensure_core_recovery_allows_preflight(game_id)?;
+        let current = crate::platform::fs::file_utils::filesystem_identity(mods_root);
+        let gate = self.initial_recovery_gate(game_id);
+        let proof = lock(&gate.state).core_root_identity.clone();
+        if current.is_some() && proof == current {
+            Ok(())
+        } else {
+            Err(AppError::Io("Mods root identity changed or core proof is unavailable; index this game before modifying mods".to_string()))
+        }
+    }
+
     /// Starts watcher coverage without continuity proof. A full catch-up is
     /// required before this session may become authoritative.
     pub(crate) fn begin_authority_session(
@@ -684,6 +921,7 @@ impl DiskReconcileState {
             dropped_events: true,
             ..GameAuthorityState::default()
         };
+        self.projection_wakeup(game_id).notify_one();
     }
 
     /// Moves the existing observation to an overlapping watcher without
@@ -814,6 +1052,7 @@ impl DiskReconcileState {
         }
         state.event_generation = state.event_generation.saturating_add(1);
         state.dropped_events |= events_lost;
+        let physical_root = physical_namespace_path(mods_root);
         for path in paths {
             if let Some(root) = affected_top_root(mods_root, path) {
                 state.dirty_roots.insert(root);
@@ -822,7 +1061,12 @@ impl DiskReconcileState {
                     state.dropped_events = true;
                     break;
                 }
-            } else if path == mods_root || !path.starts_with(mods_root) {
+            } else if physical_root
+                .as_ref()
+                .ok()
+                .zip(physical_namespace_path(path).ok())
+                .is_none_or(|(root, path)| path == *root || !path.starts_with(root))
+            {
                 // Importer/settings changes sit outside Mods and can alter the
                 // effective runtime roots. A root-only event is equally
                 // ambiguous because it may summarize unknown descendant work.
@@ -952,6 +1196,16 @@ impl DiskReconcileState {
         }
         state.reconcile_revision = result.reconcile_revision;
         state.trusted = true;
+        self.projection_wakeup(game_id).notify_one();
+        if let Some(gate) = lock(&self.initial_recovery).get(game_id).cloned() {
+            let mut core = lock(&gate.state);
+            if core.core_root_identity.is_none()
+                && matches!(&core.status,
+                InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(result)) if result.status.applied())
+            {
+                core.core_root_identity = state.root_identity.clone();
+            }
+        }
         true
     }
 
@@ -1002,7 +1256,7 @@ impl DiskReconcileState {
 
     pub fn initial_recovery_readiness(&self, game_id: &str) -> InitialRecoveryReadiness {
         let gate = self.initial_recovery_gate(game_id);
-        let (generation, core_revision, core_applied) = {
+        let (generation, core_applied) = {
             let state = lock(&gate.state);
             match &state.status {
                 InitialRecoveryStatus::Unstarted => {
@@ -1020,27 +1274,12 @@ impl DiskReconcileState {
                         generation: state.generation,
                     };
                 }
-                InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(result)) => (
-                    state.generation,
-                    result.reconcile_revision,
-                    result.status.applied(),
-                ),
+                InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(result)) => {
+                    (state.generation, result.status.applied())
+                }
             }
         };
-        let current_result_revision = lock(&self.games)
-            .get(game_id)
-            .and_then(|state| state.last_result.as_ref())
-            .filter(|result| result.status.applied() && result.reconcile_revision >= core_revision)
-            .map(|result| result.reconcile_revision);
-        // A projection is not safe for mutations until watcher continuity has
-        // accepted that exact revision. record_result runs before this proof.
-        let authority_matches = lock(&self.authority).get(game_id).is_some_and(|state| {
-            state.trusted
-                && !state.dropped_events
-                && state.dirty_roots.is_empty()
-                && Some(state.reconcile_revision) == current_result_revision
-        });
-        if core_applied && current_result_revision.is_some() && authority_matches {
+        if core_applied {
             InitialRecoveryReadiness::Ready { generation }
         } else {
             InitialRecoveryReadiness::Failed { generation }
@@ -1049,7 +1288,23 @@ impl DiskReconcileState {
 
     pub fn ensure_core_ready_for_mutation(&self, game_id: &str) -> Result<(), AppError> {
         match self.initial_recovery_readiness(game_id) {
-            InitialRecoveryReadiness::Ready { .. } => Ok(()),
+            InitialRecoveryReadiness::Ready { .. } => {
+                let revision = lock(&self.games)
+                    .get(game_id)
+                    .and_then(|game| game.last_result.as_ref())
+                    .map(|result| result.reconcile_revision);
+                let clean = lock(&self.authority).get(game_id).is_some_and(|state| {
+                    state.trusted
+                        && !state.dropped_events
+                        && state.dirty_roots.is_empty()
+                        && Some(state.reconcile_revision) == revision
+                });
+                if clean {
+                    Ok(())
+                } else {
+                    Err(AppError::Io("Disk watcher authority needs repair before this operation; core indexing is already complete".to_string()))
+                }
+            }
             InitialRecoveryReadiness::Unstarted { .. }
             | InitialRecoveryReadiness::Syncing { .. }
             | InitialRecoveryReadiness::Failed { .. } => Err(AppError::Io(
@@ -1142,6 +1397,7 @@ impl DiskReconcileState {
             let mut state = lock(&gate.state);
             state.generation += 1;
             state.status = InitialRecoveryStatus::Unstarted;
+            state.core_root_identity = None;
             Arc::clone(&gate)
         };
         gate.notify.notify_waiters();
@@ -1153,6 +1409,10 @@ impl DiskReconcileState {
         generation: u64,
         outcome: InitialRecoveryOutcome,
     ) -> bool {
+        let core_root_identity = lock(&self.authority)
+            .get(game_id)
+            .filter(|authority| authority.trusted && !authority.dropped_events)
+            .and_then(|authority| authority.root_identity.clone());
         let gate = lock(&self.initial_recovery).get(game_id).cloned();
         if let Some(gate) = gate {
             let finished = {
@@ -1163,6 +1423,7 @@ impl DiskReconcileState {
                     false
                 } else {
                     state.status = InitialRecoveryStatus::Finished(outcome);
+                    state.core_root_identity = core_root_identity;
                     true
                 }
             };
@@ -1232,6 +1493,9 @@ impl DiskReconcileState {
         recovery.status = InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(
             Box::new(result.clone()),
         ));
+        recovery.core_root_identity = authority
+            .get(game_id)
+            .and_then(|state| state.root_identity.clone());
         drop(recovery);
         gate.notify.notify_waiters();
         true
@@ -1619,6 +1883,49 @@ mod initial_recovery_tests {
         assert!(state.ensure_core_ready_for_mutation("game").is_err());
     }
 
+    #[test]
+    fn indexed_toggle_scope_ignores_unrelated_dirty_roots_but_rejects_gaps_and_replacement() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        std::fs::create_dir_all(root.join("Alice/Skin")).unwrap();
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending("game");
+        state.begin_authority_session("game", &root, 1);
+        let mut result = recovery_result(DiskReconcileStatus::Applied);
+        result.scan_scope = DiskReconcileScanScope::Full;
+        state.record_result("game", &mut result);
+        assert!(state.mark_authority_reconciled("game", &root, 1, 0, &result, &[]));
+        state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(result)),
+        );
+        let paths = vec![root.join("Alice/Skin").to_string_lossy().into_owned()];
+        assert!(state.toggle_scope_is_ready("game", &root, &paths));
+        state.observe_authority_event("game", 1, &root, &[root.join("Bob/Other")], false);
+        assert!(state.toggle_scope_is_ready("game", &root, &paths));
+        assert!(state.trusted_toggle_session_is_ready("game", &root, &paths, 1));
+        assert!(!state.trusted_toggle_session_is_ready("game", &root, &paths, 2));
+        assert!(state
+            .trusted_internal_mutation_evidence("game", &root, 1)
+            .is_none());
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
+        assert_eq!(
+            state.initial_recovery_readiness("game"),
+            InitialRecoveryReadiness::Ready { generation }
+        );
+        state.observe_authority_event("game", 1, &root, &[root.join("Alice/Other")], false);
+        assert!(!state.toggle_scope_is_ready("game", &root, &paths));
+        assert!(!state.trusted_toggle_session_is_ready("game", &root, &paths, 1));
+        state.invalidate_authority("game", &root);
+        assert!(!state.toggle_scope_is_ready("game", &root, &paths));
+        assert!(!state.trusted_toggle_session_is_ready("game", &root, &paths, 1));
+        std::fs::rename(&root, temp.path().join("OriginalMods")).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        assert!(state.ensure_indexed_root("game", &root).is_err());
+        assert!(!state.trusted_toggle_session_is_ready("game", &root, &paths, 1));
+    }
+
     #[tokio::test]
     async fn mutation_lease_rechecks_readiness_after_waiting_for_game_lock() {
         let state = Arc::new(DiskReconcileState::new());
@@ -1686,7 +1993,7 @@ mod initial_recovery_tests {
     }
 
     #[test]
-    fn later_unavailable_reconcile_revokes_core_readiness() {
+    fn later_unavailable_reconcile_preserves_core_but_blocks_unverified_mutation() {
         let state = DiskReconcileState::new();
         let generation = state.mark_initial_recovery_pending("game");
         let mut applied = recovery_result(DiskReconcileStatus::Applied);
@@ -1701,12 +2008,13 @@ mod initial_recovery_tests {
         state.record_result("game", &mut unavailable);
         assert_eq!(
             state.initial_recovery_readiness("game"),
-            InitialRecoveryReadiness::Failed { generation }
+            InitialRecoveryReadiness::Ready { generation }
         );
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
     }
 
     #[test]
-    fn stale_completed_recovery_cannot_override_a_newer_blocked_projection() {
+    fn completed_core_and_latest_projection_have_independent_eligibility() {
         let state = DiskReconcileState::new();
         let generation = state.mark_initial_recovery_pending("game");
         let mut applied = recovery_result(DiskReconcileStatus::Applied);
@@ -1721,8 +2029,9 @@ mod initial_recovery_tests {
         );
         assert_eq!(
             state.initial_recovery_readiness("game"),
-            InitialRecoveryReadiness::Failed { generation }
+            InitialRecoveryReadiness::Ready { generation }
         );
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
     }
 
     #[test]

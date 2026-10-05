@@ -18,6 +18,7 @@ export {
   parseRenameConflict,
   showWorkspaceRenameConflictDialog,
   waitForWorkspaceProjection,
+  scheduleWorkspaceSwitchRefresh,
 } from './actions/workspaceSwitchOps';
 export * from './components/WorkspaceSwitchControl';
 export * from './components/WorkspaceSwitchLabel';

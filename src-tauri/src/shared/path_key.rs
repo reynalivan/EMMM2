@@ -1,5 +1,37 @@
 use std::path::{Path, PathBuf};
 
+/// Align Windows namespaces lexically while preserving native filesystem names.
+/// Historical rename sources may no longer exist, so they cannot be canonicalized.
+pub(crate) fn physical_namespace_path(path: &Path) -> std::io::Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        let absolute = std::path::absolute(path)?;
+        let mut components = absolute.components();
+        let Some(Component::Prefix(prefix)) = components.next() else {
+            return Ok(absolute);
+        };
+        let mut root = match prefix.kind() {
+            Prefix::Disk(drive) => PathBuf::from(format!(r"\\?\{}:\", char::from(drive))),
+            Prefix::UNC(server, share) => {
+                let mut root = std::ffi::OsString::from(r"\\?\UNC\");
+                root.push(server);
+                root.push(r"\");
+                root.push(share);
+                root.push(r"\");
+                PathBuf::from(root)
+            }
+            _ => return Ok(absolute),
+        };
+        root.extend(components.filter(|component| !matches!(component, Component::RootDir)));
+        Ok(root)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(path.to_path_buf())
+    }
+}
+
 pub(crate) fn canonical_collection_path_key(
     folder_path: &str,
     mods_path: Option<&str>,
@@ -22,6 +54,25 @@ pub(crate) fn canonical_path_key_for_path(path: &Path) -> String {
         let normalized =
             crate::modules::workspace::domain::normalizer::normalize_display_name(&raw);
         key.extend(normalized.chars().map(|ch| ch.to_ascii_lowercase()));
+    }
+    key
+}
+
+/// Physical location spelling, not a logical enabled/disabled alias or filesystem identity.
+pub(crate) fn exact_location_key_for_path(path: &Path) -> String {
+    let path = normalize_verbatim_path(path);
+    let mut key = String::with_capacity(path.as_os_str().len());
+    for component in path.components() {
+        if !key.is_empty() {
+            key.push('/');
+        }
+        key.extend(
+            component
+                .as_os_str()
+                .to_string_lossy()
+                .chars()
+                .map(|ch| ch.to_ascii_lowercase()),
+        );
     }
     key
 }
@@ -131,8 +182,10 @@ pub fn relative_to_root(path: &str, mods_root: &Path) -> String {
 mod tests {
     use super::{
         canonical_collection_path_key, canonical_name_key, canonical_path_key_for_path,
-        names_equal_by_key, path_starts_with_key, strip_path_prefix_preserve_display,
+        exact_location_key_for_path, names_equal_by_key, path_starts_with_key,
+        strip_path_prefix_preserve_display,
     };
+    use std::path::Path;
 
     #[test]
     fn canonical_collection_path_key_matches_relative_and_absolute_unicode_paths() {
@@ -158,6 +211,36 @@ mod tests {
         assert!(relative_key.contains("캐릭터"));
         assert!(relative_key.contains("日本語"));
         assert!(relative_key.contains("mod"));
+    }
+
+    #[test]
+    fn exact_locations_preserve_disabled_spellings_and_parent_namespace() {
+        let enabled = exact_location_key_for_path(Path::new("C:/Mods/Alice/Skin"));
+        let disabled_parent = exact_location_key_for_path(Path::new("C:/Mods/DISABLED Alice/Skin"));
+        let disabled_child = exact_location_key_for_path(Path::new("C:/Mods/Alice/DISABLED Skin"));
+        assert_ne!(enabled, disabled_parent);
+        assert_ne!(enabled, disabled_child);
+        assert_ne!(disabled_parent, disabled_child);
+        assert_ne!(
+            exact_location_key_for_path(Path::new("C:/Mods/DISABLED Alice")),
+            exact_location_key_for_path(Path::new("C:/Mods/DISABLED DISABLED Alice")),
+        );
+    }
+
+    #[test]
+    fn exact_locations_normalize_windows_verbatim_separators_and_ascii_case() {
+        assert_eq!(
+            exact_location_key_for_path(Path::new(r"C:\Mods\DISABLED Alice")),
+            exact_location_key_for_path(Path::new(r"\\?\c:\mods\DISABLED alice")),
+        );
+        assert_eq!(
+            exact_location_key_for_path(Path::new(r"\\Server\Share\Mods\DISABLED Alice")),
+            exact_location_key_for_path(Path::new(r"\\?\UNC\server\share\mods\DISABLED alice")),
+        );
+        assert_eq!(
+            exact_location_key_for_path(Path::new("C:/Mods/Alice")),
+            exact_location_key_for_path(Path::new(r"c:\mods\ALICE")),
+        );
     }
 
     #[test]

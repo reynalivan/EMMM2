@@ -172,7 +172,7 @@ pub(super) async fn resolve_object_root_path(
     })
 }
 
-pub(super) async fn resolve_object_root_paths(
+pub(crate) async fn resolve_object_root_paths(
     pool: &sqlx::SqlitePool,
     game_id: &str,
     object_ids: &[String],
@@ -199,7 +199,7 @@ pub(super) async fn resolve_object_root_paths(
     let canonical_mods_root = mods_root
         .canonicalize()
         .map_err(|error| AppError::Validation(format!("Mods folder is unavailable: {error}")))?;
-    let indexed_roots = index_object_roots(mods_root);
+    let mut indexed_roots = None;
     let mut resolved = Vec::with_capacity(object_ids.len());
 
     for object_id in object_ids {
@@ -218,6 +218,7 @@ pub(super) async fn resolve_object_root_paths(
         let current_path = found
             .or_else(|| {
                 indexed_roots
+                    .get_or_insert_with(|| index_object_roots(mods_root))
                     .get(&crate::shared::path_key::canonical_name_key(&object.name))
                     .cloned()
             })

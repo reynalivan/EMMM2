@@ -11,6 +11,372 @@ use notify::EventKind;
 
 use super::*;
 
+#[test]
+fn proven_prefix_toggle_retains_dirty_evidence_without_waiting_for_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Mods");
+    let source = root.join("Alice/Skin");
+    std::fs::create_dir_all(&source).unwrap();
+    let state = DiskReconcileState::new();
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&root);
+    let generation = state.mark_initial_recovery_pending("game-1");
+    state.begin_authority_session("game-1", &root, session.generation());
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled(
+        "game-1",
+        &root,
+        session.generation(),
+        0,
+        &baseline,
+        &[]
+    ));
+    state.finish_initial_recovery(
+        "game-1",
+        generation,
+        InitialRecoveryOutcome::Completed(Box::new(baseline)),
+    );
+    let proof = state
+        .capture_toggle_storage_proof("game-1", &root, std::slice::from_ref(&source), &watcher)
+        .unwrap()
+        .unwrap();
+    state.observe_authority_event(
+        "game-1",
+        session.generation(),
+        &root,
+        &[root.join("Alice")],
+        false,
+    );
+    let paths = vec![
+        source.to_string_lossy().into_owned(),
+        root.join("Alice/DISABLED Skin")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    assert!(!state.toggle_scope_is_ready("game-1", &root, &paths));
+    assert_eq!(
+        watcher.current_session_for_root(&root).as_ref(),
+        Some(proof.session())
+    );
+    state
+        .validate_toggle_storage_proof("game-1", &root, &paths, &proof, &watcher)
+        .expect("physical prefix action must not wait for dirty metadata projection");
+    assert!(
+        state.ensure_core_ready_for_mutation("game-1").is_err(),
+        "snapshot barrier must retain dirt"
+    );
+    std::fs::rename(&source, root.join("Alice/DISABLED Skin")).unwrap();
+    state
+        .validate_toggle_storage_proof("game-1", &root, &paths, &proof, &watcher)
+        .unwrap();
+    std::fs::rename(root.join("Alice"), root.join("OriginalAlice")).unwrap();
+    std::fs::create_dir(root.join("Alice")).unwrap();
+    std::fs::rename(
+        root.join("OriginalAlice/DISABLED Skin"),
+        root.join("Alice/DISABLED Skin"),
+    )
+    .unwrap();
+    assert!(
+        state
+            .validate_toggle_storage_proof("game-1", &root, &paths, &proof, &watcher)
+            .is_err(),
+        "same source identity cannot authorize a replacement ancestor"
+    );
+}
+
+#[test]
+fn toggle_storage_proof_rejects_session_suppressor_gap_and_root_replacement() {
+    for failure in ["authority-gap", "suppressor-gap", "session", "root"] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        let source = root.join("Alice/Skin");
+        std::fs::create_dir_all(&source).unwrap();
+        let state = DiskReconcileState::new();
+        let watcher = WatcherState::new();
+        let session = watcher.begin_session(&root);
+        let generation = state.mark_initial_recovery_pending("game-1");
+        state.begin_authority_session("game-1", &root, session.generation());
+        let mut baseline = applied_result("game-1");
+        state.record_result("game-1", &mut baseline);
+        assert!(state.mark_authority_reconciled(
+            "game-1",
+            &root,
+            session.generation(),
+            0,
+            &baseline,
+            &[]
+        ));
+        state.finish_initial_recovery(
+            "game-1",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(baseline)),
+        );
+        let proof = state
+            .capture_toggle_storage_proof("game-1", &root, std::slice::from_ref(&source), &watcher)
+            .unwrap()
+            .unwrap();
+        match failure {
+            "authority-gap" => state.observe_authority_event(
+                "game-1",
+                session.generation(),
+                &root,
+                std::slice::from_ref(&source),
+                true,
+            ),
+            "suppressor-gap" => watcher.suppressor.mark_blanket_event_dropped(&session),
+            "session" => {
+                watcher.begin_session(&root);
+            }
+            "root" => {
+                std::fs::rename(&root, temp.path().join("OriginalMods")).unwrap();
+                std::fs::create_dir(&root).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            state
+                .validate_toggle_storage_proof(
+                    "game-1",
+                    &root,
+                    &[source.to_string_lossy().into_owned()],
+                    &proof,
+                    &watcher
+                )
+                .is_err(),
+            "{failure}"
+        );
+        assert!(
+            state
+                .capture_toggle_storage_proof("game-1", &root, &[source], &watcher)
+                .unwrap()
+                .is_none(),
+            "{failure}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn watcher_batch_yields_to_foreground_without_losing_dirty_authority() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Mods");
+    std::fs::create_dir_all(root.join("Alice")).unwrap();
+    seed_game_row(&ctx.pool, "game-1", &root).await;
+    let config = ConfigService::new_for_test_async(ctx.pool.clone()).await;
+    let state = DiskReconcileState::new();
+    let watcher = WatcherState::new();
+    let session = watcher.begin_session(&root);
+    let operation_lock = OperationLock::new();
+    state.begin_authority_session("game-1", &root, session.generation());
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    state.mark_authority_reconciled("game-1", &root, session.generation(), 0, &baseline, &[]);
+    state.observe_authority_event(
+        "game-1",
+        session.generation(),
+        &root,
+        &[root.join("Alice")],
+        false,
+    );
+    let foreground = operation_lock.foreground_intent();
+    let context = DiskReconcileContext {
+        pool: &ctx.pool,
+        config: &config,
+        state: &state,
+        watcher_suppressor: watcher.suppressor.clone(),
+        operation_lock: &operation_lock,
+        progress_reporter: None,
+    };
+    let request = || {
+        DiskReconcileRequest::watcher_batch(
+            "game-1".into(),
+            &root,
+            vec![root.join("Alice").to_string_lossy().into_owned()],
+            &[],
+        )
+        .for_watcher_session(session.clone())
+    };
+    assert!(
+        super::entry::try_reconcile_disk_state_for_prewarm(context.clone(), request())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(state.game_lock("game-1").try_lock_owned().is_ok());
+    assert!(matches!(
+        state.authority_catch_up("game-1", &root, session.generation()),
+        AuthorityCatchUp::Scoped { .. }
+    ));
+    drop(foreground);
+    assert!(
+        super::entry::try_reconcile_disk_state_for_prewarm(context, request())
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn prepared_toggle_repairs_dirt_observed_during_journal_preparation() {
+    use crate::modules::mutation::api::{OperationPlan, PlannedStep};
+    use crate::modules::mutation::coordinator::MutationCoordinator;
+    use crate::modules::mutation::journal::OperationJournal;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Mods");
+    let source = root.join("Alice");
+    let destination = root.join("DISABLED Alice");
+    std::fs::create_dir_all(&source).unwrap();
+    let state = DiskReconcileState::new();
+    let generation = state.mark_initial_recovery_pending("game-1");
+    state.begin_authority_session("game-1", &root, 7);
+    let mut baseline = applied_result("game-1");
+    state.record_result("game-1", &mut baseline);
+    assert!(state.mark_authority_reconciled("game-1", &root, 7, 0, &baseline, &[]));
+    assert!(state.finish_initial_recovery(
+        "game-1",
+        generation,
+        InitialRecoveryOutcome::Completed(Box::new(baseline))
+    ));
+    let paths = vec![
+        source.to_string_lossy().into_owned(),
+        destination.to_string_lossy().into_owned(),
+    ];
+    assert!(state.toggle_scope_is_ready("game-1", &root, &paths));
+    let journal = Arc::new(OperationJournal::open(temp.path().join("journal.json"), 16).unwrap());
+    let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+    let game_guard = state.game_lock("game-1").lock_owned().await;
+    let operation_guard = coordinator
+        .acquire_operation(OperationPlan::new(
+            "bulk-toggle",
+            "game-1",
+            vec![PlannedStep::rename(0, source.clone(), destination.clone())],
+        ))
+        .await
+        .unwrap();
+    state.observe_authority_event("game-1", 7, &root, &[source.join("mod.ini")], false);
+    assert!(!state.toggle_scope_is_ready("game-1", &root, &paths));
+    let lease = DiskMutationLease::from_toggle_scope_guard(
+        &state,
+        "game-1",
+        &root,
+        &paths,
+        game_guard,
+        operation_guard,
+        None,
+        async |_game_guard, _operation_guard| {
+            assert!(state.game_lock("game-1").try_lock_owned().is_err());
+            assert!(coordinator
+                .inner_lock()
+                .try_acquire_for_reconcile()
+                .is_none());
+            let generation = state.authority_event_generation("game-1", 7).unwrap();
+            let mut repaired = applied_result("game-1");
+            state.record_result("game-1", &mut repaired);
+            assert!(state.mark_authority_reconciled(
+                "game-1",
+                &root,
+                7,
+                generation,
+                &repaired,
+                &[]
+            ));
+            Ok(())
+        },
+    )
+    .await
+    .expect("unchanged prepared target must repair rather than fail");
+    lease.abort_unapplied().unwrap();
+    assert!(source.is_dir());
+    assert!(!destination.exists());
+}
+
+#[tokio::test]
+async fn prepared_toggle_aborts_unapplied_when_repair_fails_or_remains_unproven() {
+    use crate::modules::mutation::api::{OperationPlan, PlannedStep};
+    use crate::modules::mutation::coordinator::MutationCoordinator;
+    use crate::modules::mutation::journal::{OperationJournal, OperationStatus, StepStatus};
+    for repair_fails in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        let source = root.join("Alice");
+        let destination = root.join("DISABLED Alice");
+        std::fs::create_dir_all(&source).unwrap();
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending("game-1");
+        state.begin_authority_session("game-1", &root, 7);
+        let mut baseline = applied_result("game-1");
+        state.record_result("game-1", &mut baseline);
+        assert!(state.mark_authority_reconciled("game-1", &root, 7, 0, &baseline, &[]));
+        state.finish_initial_recovery(
+            "game-1",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(baseline)),
+        );
+        let paths = vec![
+            source.to_string_lossy().into_owned(),
+            destination.to_string_lossy().into_owned(),
+        ];
+        let journal =
+            Arc::new(OperationJournal::open(temp.path().join("journal.json"), 16).unwrap());
+        let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+        let game_guard = state.game_lock("game-1").lock_owned().await;
+        let operation_guard = coordinator
+            .acquire_operation(OperationPlan::new(
+                "bulk-toggle",
+                "game-1",
+                vec![PlannedStep::rename(0, source.clone(), destination.clone())],
+            ))
+            .await
+            .unwrap();
+        state.observe_authority_event("game-1", 7, &root, &[source.join("mod.ini")], false);
+        let outcome = DiskMutationLease::from_toggle_scope_guard(
+            &state,
+            "game-1",
+            &root,
+            &paths,
+            game_guard,
+            operation_guard,
+            None,
+            async |_game_guard, _operation_guard| {
+                if repair_fails {
+                    return Err(crate::shared::errors::AppError::Io("repair failed".into()));
+                }
+                let generation = state.authority_event_generation("game-1", 7).unwrap();
+                let mut repaired = applied_result("game-1");
+                state.record_result("game-1", &mut repaired);
+                assert!(state.mark_authority_reconciled(
+                    "game-1",
+                    &root,
+                    7,
+                    generation,
+                    &repaired,
+                    &[]
+                ));
+                state.observe_authority_event(
+                    "game-1",
+                    7,
+                    &root,
+                    std::slice::from_ref(&source),
+                    true,
+                );
+                Ok(())
+            },
+        )
+        .await;
+        assert!(outcome.is_err());
+        assert!(source.is_dir());
+        assert!(!destination.exists());
+        let entries = journal.entries();
+        assert_eq!(entries[0].status, OperationStatus::RolledBack);
+        assert!(entries[0]
+            .steps
+            .iter()
+            .all(|step| step.status == StepStatus::Skipped));
+        assert!(state.game_lock("game-1").try_lock_owned().is_ok());
+    }
+}
+
 fn applied_result(
     game_id: &str,
 ) -> crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult {
@@ -136,7 +502,12 @@ fn authority_token_uses_clean_scoped_and_full_catch_up_without_acknowledging_new
         } => {
             assert_eq!(
                 changed_paths,
-                vec![mods_root.join("Alice").to_string_lossy().into_owned()]
+                vec![
+                    crate::shared::path_key::physical_namespace_path(&mods_root.join("Alice"))
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned()
+                ]
             );
             observed_generation
         }
@@ -192,6 +563,74 @@ fn inactive_watcher_failure_or_unproven_handoff_forces_full_catch_up() {
     assert!(!state.trusted_regional_mutation_allowed("game-1", &mods_root));
     assert!(matches!(
         state.authority_catch_up("game-1", &mods_root, 4),
+        AuthorityCatchUp::Full { .. }
+    ));
+}
+
+#[cfg(windows)]
+#[test]
+fn canonical_watcher_events_keep_scoped_authority_and_clear_with_regular_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Mods");
+    std::fs::create_dir_all(root.join("Alice/Skin")).unwrap();
+    let canonical = std::fs::canonicalize(&root).unwrap();
+    let state = DiskReconcileState::new();
+    let generation = state.mark_initial_recovery_pending("game");
+    state.begin_authority_session("game", &root, 1);
+    let mut baseline = applied_result("game");
+    state.record_result("game", &mut baseline);
+    assert!(state.mark_authority_reconciled("game", &root, 1, 0, &baseline, &[]));
+    state.finish_initial_recovery(
+        "game",
+        generation,
+        InitialRecoveryOutcome::Completed(Box::new(baseline)),
+    );
+    state.observe_authority_event("game", 1, &root, &[canonical.join("Alice/Skin")], false);
+    let observed_generation = match state.authority_catch_up("game", &root, 1) {
+        AuthorityCatchUp::Scoped {
+            observed_generation,
+            ..
+        } => observed_generation,
+        other => panic!("namespace spelling must not create lost coverage: {other:?}"),
+    };
+    for spelling in [&root, &canonical] {
+        assert!(!state.toggle_scope_is_ready(
+            "game",
+            spelling,
+            &[spelling.join("Alice/Skin").to_string_lossy().into_owned()]
+        ));
+        assert!(state.toggle_scope_is_ready(
+            "game",
+            spelling,
+            &[spelling.join("Bob/Skin").to_string_lossy().into_owned()]
+        ));
+    }
+    let mut scoped = applied_result("game");
+    scoped.scan_scope = DiskReconcileScanScope::Scoped;
+    state.record_result("game", &mut scoped);
+    assert!(state.mark_authority_reconciled(
+        "game",
+        &root,
+        1,
+        observed_generation,
+        &scoped,
+        &[root.join("Alice").to_string_lossy().into_owned()]
+    ));
+    assert!(matches!(
+        state.authority_catch_up("game", &root, 1),
+        AuthorityCatchUp::Clean { .. }
+    ));
+    state.observe_authority_event(
+        "game",
+        1,
+        &root,
+        &[std::fs::canonicalize(temp.path())
+            .unwrap()
+            .join("OtherMods/Alice")],
+        false,
+    );
+    assert!(matches!(
+        state.authority_catch_up("game", &root, 1),
         AuthorityCatchUp::Full { .. }
     ));
 }
@@ -289,7 +728,7 @@ fn trusted_rename_echo_is_consumed_and_commit_keeps_authority_clean() {
     let authority = state
         .trusted_internal_mutation_evidence("game-1", &mods_root, session.generation())
         .expect("clean authority evidence");
-    watcher.suppressor.expect_rename_echoes(
+    let echo_evidence = watcher.suppressor.expect_rename_echoes(
         "game-1",
         &session,
         [ExpectedRenameEcho {
@@ -300,6 +739,9 @@ fn trusted_rename_echo_is_consumed_and_commit_keeps_authority_clean() {
     );
 
     std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    assert!(watcher
+        .suppressor
+        .commit_expected_rename_echoes(&echo_evidence));
     let kind = EventKind::Modify(ModifyKind::Name(RenameMode::Both));
     assert!(watcher.suppressor.consume_expected_rename_echo(
         "game-1",
@@ -331,7 +773,7 @@ fn split_rename_echoes_are_consumed_as_one_trusted_mutation() {
         .expect("source identity");
     let watcher = WatcherState::new();
     let session = watcher.begin_session(&mods_root);
-    watcher.suppressor.expect_rename_echoes(
+    let echo_evidence = watcher.suppressor.expect_rename_echoes(
         "game-1",
         &session,
         [ExpectedRenameEcho {
@@ -342,6 +784,9 @@ fn split_rename_echoes_are_consumed_as_one_trusted_mutation() {
     );
 
     std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    assert!(watcher
+        .suppressor
+        .commit_expected_rename_echoes(&echo_evidence));
     assert!(watcher.suppressor.consume_expected_rename_echo(
         "game-1",
         &session,
@@ -385,7 +830,7 @@ fn mismatched_identity_or_additional_rename_echo_dirties_authority() {
         &baseline,
         &[],
     ));
-    watcher.suppressor.expect_rename_echoes(
+    let echo_evidence = watcher.suppressor.expect_rename_echoes(
         "game-1",
         &session,
         [ExpectedRenameEcho {
@@ -396,6 +841,9 @@ fn mismatched_identity_or_additional_rename_echo_dirties_authority() {
     );
 
     std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    assert!(!watcher
+        .suppressor
+        .commit_expected_rename_echoes(&echo_evidence));
     let additional_path = mods_root.join("Bob").join("mod.ini");
     let kind = EventKind::Modify(ModifyKind::Name(RenameMode::Both));
     let mismatched_paths = vec![old_path.clone(), new_path.clone()];
@@ -432,7 +880,7 @@ fn stale_watcher_session_cannot_consume_trusted_echo_evidence() {
     let watcher = WatcherState::new();
     let owner = watcher.begin_session(&mods_root);
     let stale = watcher.begin_session(&mods_root);
-    watcher.suppressor.expect_rename_echoes(
+    let echo_evidence = watcher.suppressor.expect_rename_echoes(
         "game-1",
         &owner,
         [ExpectedRenameEcho {
@@ -443,6 +891,9 @@ fn stale_watcher_session_cannot_consume_trusted_echo_evidence() {
     );
 
     std::fs::rename(&old_path, &new_path).expect("trusted rename");
+    assert!(watcher
+        .suppressor
+        .commit_expected_rename_echoes(&echo_evidence));
     let kind = EventKind::Modify(ModifyKind::Name(RenameMode::Both));
     assert!(!watcher.suppressor.consume_expected_rename_echo(
         "game-1",
@@ -1137,6 +1588,15 @@ async fn serialized_public_requests_keep_their_own_watcher_events_and_path_hints
         )
         .await
         .expect("mod seed");
+        let source = mods_path.join(folder_path);
+        let identity = crate::platform::fs::file_utils::filesystem_identity(&source)
+            .expect("seed source identity");
+        sqlx::query("UPDATE mods SET filesystem_identity = ? WHERE id = ?")
+            .bind(identity)
+            .bind(id)
+            .execute(&ctx.pool)
+            .await
+            .expect("seed physical identity");
     }
     std::fs::rename(&alice_old, &alice).expect("rename Alice mod");
     std::fs::rename(&bob_old, &bob).expect("rename Bob mod");
