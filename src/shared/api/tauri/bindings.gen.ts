@@ -2386,7 +2386,11 @@ export type FolderEntry = { name: string; is_dir: boolean }
 export type FolderNameConflictCandidate = { path: string; folder_name: string; base_name: string; is_enabled: boolean }
 export type FolderNameConflictGroup = { group_id: string; identity: string; display_name: string; candidates: FolderNameConflictCandidate[] }
 export type GameActivationPhase = "syncing" | "ready" | "source_unavailable" | "failed"
-export type GameActivationResult = { game_id: string | null; generation: number; phase: GameActivationPhase }
+export type GameActivationResult = { game_id: string | null; generation: number; phase: GameActivationPhase;
+/**
+ * Authoritative settings after the activation's durable selection write.
+ */
+settings: AppSettings }
 export type GameConfig = { id: string; name: string; game_type: number; instance_path?: string; mod_path: string;
 /**
  * Optional per-game ReadyToMove inbox. When absent, the OS Downloads default is used.

@@ -3,11 +3,10 @@ import { listen } from '@tauri-apps/api/event';
 import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import { queryClient } from '@/shared/lib/queryClient';
-import { settingsKeys } from '@/entities/settings';
+import { publishSettingsSnapshot } from '@/entities/settings';
 import { toast } from '@/shared/ui/toast';
 import type { AppSliceCreator } from './sliceTypes';
 import type {
-  AppSettings,
   DiskReconcileResult,
   DiskReconcileProgress,
   DiskReconcileReason,
@@ -45,6 +44,7 @@ let startupReconcileUnlisten: (() => void) | null = null;
 let startupReconcileHandlerReady = false;
 const startupReconcileGapResultsByGame = new Map<string, DiskReconcileResult[]>();
 let activeGameRequestSequence = 0;
+let storeInitialization: Promise<void> | null = null;
 
 function queueStartupReconcileResult(result: DiskReconcileResult): void {
   const results = startupReconcileGapResultsByGame.get(result.game_id) ?? [];
@@ -186,130 +186,138 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
   runtimeSyncByGame: {},
   gameActivationByGame: {},
 
-  initStore: async () => {
-    const [runtimeListener, activationListener] = await ensureRuntimeStatusListeners(get);
-    if (runtimeListener.status === 'rejected') {
-      console.error('Failed to register runtime status listener', runtimeListener.reason);
-    }
-    if (activationListener.status === 'rejected') {
-      console.error('Failed to register game activation listener', activationListener.reason);
-    }
-    const startupReportsByGame = new Map<string, DiskReconcileResult>();
-    let startupInitialized = false;
-    if (!startupReconcileHandlerReady) {
-      const unlisten = await listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
-        if (startupReconcileHandlerReady) {
+  initStore: () => {
+    if (storeInitialization) return storeInitialization;
+    storeInitialization = (async () => {
+      const [runtimeListener, activationListener] = await ensureRuntimeStatusListeners(get);
+      if (runtimeListener.status === 'rejected') {
+        console.error('Failed to register runtime status listener', runtimeListener.reason);
+      }
+      if (activationListener.status === 'rejected') {
+        console.error('Failed to register game activation listener', activationListener.reason);
+      }
+      const startupReportsByGame = new Map<string, DiskReconcileResult>();
+      let startupInitialized = false;
+      if (!startupReconcileHandlerReady) {
+        const unlisten = await listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
+          if (startupReconcileHandlerReady) {
+            return;
+          }
+          if (startupInitialized) {
+            queueStartupReconcileResult(event.payload);
+            return;
+          }
+
+          const current = startupReportsByGame.get(event.payload.game_id);
+          if (!current || event.payload.reconcile_revision > current.reconcile_revision) {
+            startupReportsByGame.set(event.payload.game_id, event.payload);
+          }
+        }).catch(() => null);
+        if (unlisten) {
+          if (startupReconcileHandlerReady) {
+            unlisten();
+          } else {
+            startupReconcileUnlisten?.();
+            startupReconcileUnlisten = unlisten;
+          }
+        }
+      }
+      try {
+        const initRequestSequence = activeGameRequestSequence;
+        const settings = await commands.getSettings();
+        if (initRequestSequence !== activeGameRequestSequence) {
+          startupInitialized = true;
           return;
         }
-        if (startupInitialized) {
-          queueStartupReconcileResult(event.payload);
+        const activeGameId = settings.active_game_id;
+        // `setActiveGameId` may already have activated this game during
+        // onboarding. Repeating the command restarts its recovery watcher and
+        // can make a freshly indexed library scan again.
+        const activation =
+          activeGameId && get().activeGameId !== activeGameId
+            ? await commands.setActiveGame(activeGameId)
+            : null;
+        if (initRequestSequence !== activeGameRequestSequence) {
+          startupInitialized = true;
           return;
         }
+        const currentSettings = activation?.settings ?? settings;
+        publishSettingsSnapshot(queryClient, currentSettings);
+        const activeReport = activeGameId ? (startupReportsByGame.get(activeGameId) ?? null) : null;
+        const activeReportRevision = activeReport?.reconcile_revision ?? 0;
 
-        const current = startupReportsByGame.get(event.payload.game_id);
-        if (!current || event.payload.reconcile_revision > current.reconcile_revision) {
-          startupReportsByGame.set(event.payload.game_id, event.payload);
+        if (activation?.game_id) {
+          get().setGameActivationStatus({
+            game_id: activation.game_id,
+            generation: activation.generation,
+            phase: activation.phase,
+            reconcile_revision: null,
+            runtime_sync_generation: null,
+            error: null,
+          });
         }
-      }).catch(() => null);
-      if (unlisten) {
-        if (startupReconcileHandlerReady) {
-          unlisten();
-        } else {
-          startupReconcileUnlisten?.();
-          startupReconcileUnlisten = unlisten;
+        set({
+          activeGameId,
+          autoCloseLauncher: currentSettings.auto_close_launcher ?? false,
+          ...(activeGameId && activeReport
+            ? {
+                diskReconcileByGame: {
+                  [activeGameId]: {
+                    at: activeReport.status === 'Applied' ? Date.now() : 0,
+                    pending: false,
+                    unavailable:
+                      activeReport.status === 'SourceUnavailable'
+                        ? (activeReport.error_message ?? 'Mods folder is unavailable')
+                        : null,
+                    progress: null,
+                    revision: activeReportRevision,
+                  },
+                },
+                folderConflictsByGame: {
+                  [activeGameId]: activeReport.folder_conflicts,
+                },
+                folderConflictReportsByGame: {
+                  [activeGameId]: {
+                    revision: activeReportRevision,
+                    groups: activeReport.folder_conflicts,
+                    status:
+                      activeReport.status === 'AppliedWithFolderConflicts' &&
+                      activeReport.folder_conflicts.length > 0
+                        ? 'open'
+                        : 'cleared',
+                    reason: activeReport.reason,
+                  },
+                },
+                renameConfirmationsByGame: {
+                  [activeGameId]: activeReport.rename_confirmations,
+                },
+              }
+            : {}),
+        });
+        startupInitialized = true;
+        if (activeGameId) {
+          void Promise.all([
+            queryClient.prefetchQuery({
+              queryKey: collectionRuntimeKeys.descriptor(activeGameId),
+              queryFn: () => commands.getCollectionRuntimeDescriptor(activeGameId),
+            }),
+            queryClient.prefetchQuery({
+              queryKey: collectionKeys.list(activeGameId),
+              queryFn: () => commands.listCollections(activeGameId),
+            }),
+          ]).catch((error: unknown) => {
+            console.error('Failed to warm collection cache during startup', error);
+          });
         }
-      }
-    }
-    try {
-      const initRequestSequence = activeGameRequestSequence;
-      const settings = await commands.getSettings();
-      if (initRequestSequence !== activeGameRequestSequence) {
+      } catch (err) {
         startupInitialized = true;
-        return;
+        console.error('Failed to init store from backend:', err);
+        toast.error(formatAppError(err));
       }
-      const activeGameId = settings.active_game_id;
-      // `setActiveGameId` may already have activated this game during
-      // onboarding. Repeating the command restarts its recovery watcher and
-      // can make a freshly indexed library scan again.
-      const activation =
-        activeGameId && get().activeGameId !== activeGameId
-          ? await commands.setActiveGame(activeGameId)
-          : null;
-      if (initRequestSequence !== activeGameRequestSequence) {
-        startupInitialized = true;
-        return;
-      }
-      const activeReport = activeGameId ? (startupReportsByGame.get(activeGameId) ?? null) : null;
-      const activeReportRevision = activeReport?.reconcile_revision ?? 0;
-
-      if (activation?.game_id) {
-        get().setGameActivationStatus({
-          game_id: activation.game_id,
-          generation: activation.generation,
-          phase: activation.phase,
-          reconcile_revision: null,
-          runtime_sync_generation: null,
-          error: null,
-        });
-      }
-      set({
-        activeGameId,
-        autoCloseLauncher: settings.auto_close_launcher ?? false,
-        ...(activeGameId && activeReport
-          ? {
-              diskReconcileByGame: {
-                [activeGameId]: {
-                  at: activeReport.status === 'Applied' ? Date.now() : 0,
-                  pending: false,
-                  unavailable:
-                    activeReport.status === 'SourceUnavailable'
-                      ? (activeReport.error_message ?? 'Mods folder is unavailable')
-                      : null,
-                  progress: null,
-                  revision: activeReportRevision,
-                },
-              },
-              folderConflictsByGame: {
-                [activeGameId]: activeReport.folder_conflicts,
-              },
-              folderConflictReportsByGame: {
-                [activeGameId]: {
-                  revision: activeReportRevision,
-                  groups: activeReport.folder_conflicts,
-                  status:
-                    activeReport.status === 'AppliedWithFolderConflicts' &&
-                    activeReport.folder_conflicts.length > 0
-                      ? 'open'
-                      : 'cleared',
-                  reason: activeReport.reason,
-                },
-              },
-              renameConfirmationsByGame: {
-                [activeGameId]: activeReport.rename_confirmations,
-              },
-            }
-          : {}),
-      });
-      startupInitialized = true;
-      if (activeGameId) {
-        void Promise.all([
-          queryClient.prefetchQuery({
-            queryKey: collectionRuntimeKeys.descriptor(activeGameId),
-            queryFn: () => commands.getCollectionRuntimeDescriptor(activeGameId),
-          }),
-          queryClient.prefetchQuery({
-            queryKey: collectionKeys.list(activeGameId),
-            queryFn: () => commands.listCollections(activeGameId),
-          }),
-        ]).catch((error: unknown) => {
-          console.error('Failed to warm collection cache during startup', error);
-        });
-      }
-    } catch (err) {
-      startupInitialized = true;
-      console.error('Failed to init store from backend:', err);
-      toast.error(formatAppError(err));
-    }
+    })().finally(() => {
+      storeInitialization = null;
+    });
+    return storeInitialization;
   },
 
   takeStartupDiskReconcileResults: (gameId) => {
@@ -345,9 +353,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
       if (requestSequence !== activeGameRequestSequence) {
         return;
       }
-      queryClient.setQueryData<AppSettings | undefined>(settingsKeys.all, (current) =>
-        current ? { ...current, active_game_id: id } : current,
-      );
+      if (activation?.settings) publishSettingsSnapshot(queryClient, activation.settings);
       if (activation?.game_id) {
         get().setGameActivationStatus({
           game_id: activation.game_id,
@@ -407,7 +413,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
     set({ autoCloseLauncher: enabled });
     try {
       await commands.setAutoCloseLauncher(enabled);
-      queryClient.setQueryData(settingsKeys.all, await commands.getSettings());
+      publishSettingsSnapshot(queryClient, await commands.getSettings());
     } catch (e) {
       console.error('Failed to sync auto close launcher to backend', e);
       if (get().autoCloseLauncher === enabled) {

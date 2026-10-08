@@ -162,21 +162,27 @@ export function useSharedModActions(options: SharedModActionsOptions = {}) {
     async (newName: string) => {
       const folder = state.renameDialog.folder;
       if (!folder || !activeGame?.id) {
-        return;
+        return false;
       }
 
       if (hasIllegalCharacters(newName)) {
         toast.error(t('objects:edit_modal.validation.path_invalid'));
-        return;
+        return false;
       }
 
-      await renameMod.mutateAsync({
-        folderPath: folder.path,
-        newName,
-        gameId: activeGame.id,
-      });
+      try {
+        await renameMod.mutateAsync({
+          folderPath: folder.path,
+          newName,
+          gameId: activeGame.id,
+        });
+      } catch {
+        // The mutation reports failures and recovery; consume its rejection at the UI boundary.
+        return false;
+      }
       closeWorkspaceDialog('modRename');
       options.onRenameSuccess?.();
+      return true;
     },
     [activeGame, options, renameMod, state.renameDialog.folder, t],
   );

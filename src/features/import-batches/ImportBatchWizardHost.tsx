@@ -18,6 +18,7 @@ import type {
 } from '../../shared/api/tauri/bindings.gen';
 import type { ObjectSummary } from '@/entities/game-object';
 import { extractArchiveErrorKind, formatAppError } from '../../shared/lib/appError';
+import { isDemoMode } from '@/shared/lib/appMode';
 import { toast } from '@/shared/ui/toast';
 import { useAppStore } from '@/app/store';
 import { ImportBatchWizard } from '@/features/match-wizard/@x/import-batches';
@@ -290,6 +291,7 @@ export function ImportBatchWizardHost() {
   useEffect(() => subscribeImportBatchWizard((request) => void launch(request)), [launch]);
 
   useEffect(() => {
+    if (isDemoMode) return;
     const unlisten = listen<{ batch_id: string }>('import:batch-update', (event) => {
       if (batch?.id === event.payload.batch_id) void loadBatch(batch.id);
     });
@@ -489,16 +491,7 @@ export function ImportBatchWizardHost() {
         onRename={(item, plannedName) =>
           updateItem(item.id, async () => {
             const renamed = await commands.renameImportItemPlan({ itemId: item.id, plannedName });
-            if (!renamed.matchCategory) {
-              const suggestion = renamed.categorySuggestions[0];
-              await commands.setImportItemClassification({
-                itemId: item.id,
-                category: suggestion?.category ?? 'Other',
-                subCategory: suggestion?.subCategory ?? null,
-                metadata: suggestion?.metadata ?? {},
-              });
-            }
-            await commands.refreshImportItemSuggestions(item.id);
+            if (renamed.matchCategory) await commands.refreshImportItemSuggestions(item.id);
           })
         }
         onRetry={(item) =>
@@ -518,16 +511,6 @@ export function ImportBatchWizardHost() {
               });
               setReport(result);
               return;
-            }
-            if (item.status === 'awaiting_category') {
-              const suggestion = item.categorySuggestions[0];
-              await commands.setImportItemClassification({
-                itemId: item.id,
-                category: suggestion?.category ?? 'Other',
-                subCategory: suggestion?.subCategory ?? null,
-                metadata: suggestion?.metadata ?? {},
-              });
-              return commands.refreshImportItemSuggestions(item.id);
             }
             if (item.matchCategory) return commands.refreshImportItemSuggestions(item.id);
             return analyzeBatch(batch.id, null);

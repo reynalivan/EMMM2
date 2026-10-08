@@ -21,6 +21,11 @@ interface WorkspaceRuntimeSnapshot {
   };
 }
 
+// The native watcher batches filesystem notifications for 500ms. Keep the
+// readiness signal continuously true past that window so a delayed echo from a
+// just-completed app mutation cannot race the next mutation.
+const WATCHER_SETTLE_WINDOW_MS = 800;
+
 /**
  * Read-back helpers for two-sided (disk + DB) assertions. All query the same
  * DB projection the UI consumes. These checks prove native read-model
@@ -79,6 +84,7 @@ function workspaceStructureInput(gameId: string): Record<string, unknown> {
 export async function waitForWorkspaceCoreReady(gameId: string, timeout = 30_000): Promise<void> {
   let lastStatus = 'unavailable';
   let failure: string | null = null;
+  let readySince: number | null = null;
   try {
     await browser.waitUntil(
       async () => {
@@ -90,10 +96,15 @@ export async function waitForWorkspaceCoreReady(gameId: string, timeout = 30_000
           failure = `Workspace core recovery failed for ${gameId}`;
           return true;
         }
-        return (
+        const ready =
           snapshot.runtime.recovery_status === 'ready' &&
-          snapshot.runtime.source_state.status === 'available'
-        );
+          snapshot.runtime.source_state.status === 'available';
+        if (!ready) {
+          readySince = null;
+          return false;
+        }
+        readySince ??= Date.now();
+        return Date.now() - readySince >= WATCHER_SETTLE_WINDOW_MS;
       },
       {
         timeout,
@@ -178,6 +189,7 @@ export async function createObject(
       input: { game_id: gameId, name, object_type: objectType },
     },
   );
+  await waitForWorkspaceCoreReady(gameId);
   return result.id;
 }
 
@@ -188,4 +200,5 @@ export async function createObject(
  */
 export async function reconcile(gameId: string, reason = 'ManualRepair'): Promise<void> {
   await invokeInApp('reconcile_disk_state_cmd', { gameId, reason, forceFull: true });
+  await waitForWorkspaceCoreReady(gameId);
 }

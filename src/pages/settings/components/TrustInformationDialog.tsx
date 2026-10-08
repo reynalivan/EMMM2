@@ -1,5 +1,7 @@
 import { X } from 'lucide-react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 export type TrustDocument = 'privacy' | 'terms';
 
@@ -10,6 +12,13 @@ interface TrustInformationDialogProps {
 
 export function TrustInformationDialog({ document, onClose }: TrustInformationDialogProps) {
   const { t } = useTranslation('settings');
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useDialogSync(dialogRef, document !== null);
+
+  const closeDialog = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
 
   if (!document) return null;
 
@@ -52,11 +61,14 @@ export function TrustInformationDialog({ document, onClose }: TrustInformationDi
 
   return (
     <dialog
-      open
-      className="modal modal-open bg-overlay-mask backdrop-blur-sm"
+      ref={dialogRef}
+      className="modal bg-overlay-mask backdrop-blur-sm"
       aria-modal="true"
       aria-labelledby="trust-information-title"
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        closeDialog();
+      }}
     >
       <section className="modal-box flex max-h-[80vh] max-w-xl flex-col overflow-hidden p-0">
         <header className="flex shrink-0 items-center justify-between border-b border-base-300 px-5 py-4">
@@ -67,7 +79,7 @@ export function TrustInformationDialog({ document, onClose }: TrustInformationDi
             type="button"
             className="btn btn-ghost btn-sm btn-square"
             aria-label={t('general.trust.close_dialog')}
-            onClick={onClose}
+            onClick={closeDialog}
           >
             <X size={18} />
           </button>
@@ -84,7 +96,9 @@ export function TrustInformationDialog({ document, onClose }: TrustInformationDi
         </div>
       </section>
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose}>{t('general.trust.close')}</button>
+        <button type="button" onClick={closeDialog}>
+          {t('general.trust.close')}
+        </button>
       </form>
     </dialog>
   );

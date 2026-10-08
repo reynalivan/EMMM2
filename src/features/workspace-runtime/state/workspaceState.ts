@@ -50,7 +50,12 @@ export type WorkspaceDialogState =
 export type WorkspaceTransitionTarget =
   | { kind: 'focusObject'; folderPath: string }
   | { kind: 'navigateExplorer'; currentPath: string[]; explorerSubPath?: string }
-  | { kind: 'selectMod'; path: string | null; mobilePane?: WorkspaceMobilePane }
+  | {
+      kind: 'selectMod';
+      path: string | null;
+      mobilePane?: WorkspaceMobilePane;
+      selectionEffect?: WorkspaceExplorerSelectionEffect;
+    }
   | { kind: 'collapseSection'; sectionId: string }
   | {
       kind: 'clearSelection';
@@ -58,6 +63,13 @@ export type WorkspaceTransitionTarget =
       mobilePane?: WorkspaceMobilePane;
       clearObjectSelection?: boolean;
     };
+
+export interface WorkspaceExplorerSelectionEffect {
+  gridSelection?: string[];
+  affectedPaths?: string[];
+  isCurrent?: () => boolean;
+  onApplied?: () => void;
+}
 
 export type WorkspacePreviewTransitionState =
   | { kind: 'idle'; pendingTarget: null }
@@ -68,6 +80,7 @@ export interface WorkspaceRuntimeState {
   explorerSubPath: string | undefined;
   currentPath: string[];
   selectedModPath: string | null;
+  gridSelection: Set<string>;
   mobileActivePane: WorkspaceMobilePane;
   previewDirty: boolean;
   previewTransition: WorkspacePreviewTransitionState;

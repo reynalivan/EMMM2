@@ -11,7 +11,7 @@ import { GameType, type GameConfig } from '@/entities/game';
 import { pathsEqual } from '../../../shared/lib/pathKey';
 import { formatAppError } from '../../../shared/lib/appError';
 
-function getGameSchema(t: TFunction) {
+function getGameSchema(t: TFunction, existingModPaths: string[]) {
   return z
     .object({
       id: z.string().optional(),
@@ -21,7 +21,11 @@ function getGameSchema(t: TFunction) {
       mod_path: z
         .string()
         .min(1, t('games.form.validation.path_required'))
-        .refine((value) => !/[?*<>|]/.test(value), t('games.form.validation.path_invalid')),
+        .refine((value) => !/[?*<>|]/.test(value), t('games.form.validation.path_invalid'))
+        .refine(
+          (value) => !existingModPaths.some((path) => pathsEqual(path, value)),
+          t('games.form.validation.path_duplicate'),
+        ),
       ready_to_move_path: z.string().nullable().optional(),
       launch_mode: z.enum(['standalone', 'xxmi_managed']),
       game_exe: z.string().nullable().optional(),
@@ -67,7 +71,7 @@ export default function GameFormModal({
   isSourceMigrationPending = false,
 }: GameFormModalProps) {
   const { t } = useTranslation('settings');
-  const schema = getGameSchema(t);
+  const schema = getGameSchema(t, existingModPaths);
   const {
     register,
     handleSubmit,
@@ -94,13 +98,6 @@ export default function GameFormModal({
   const launchMode = useWatch({ control, name: 'launch_mode' });
 
   useDialogSync(dialogRef, isOpen);
-
-  const modPathField = register('mod_path', {
-    validate: (value) => {
-      const isDuplicate = existingModPaths.some((path) => pathsEqual(path, value));
-      return isDuplicate ? t('games.form.validation.path_duplicate') : true;
-    },
-  });
 
   useEffect(() => {
     if (isOpen) {
@@ -275,7 +272,7 @@ export default function GameFormModal({
                 type="text"
                 className={`input input-bordered join-item w-full ${errors.mod_path ? 'input-error' : ''}`}
                 placeholder={t('games.form.path_placeholder')}
-                {...modPathField}
+                {...register('mod_path')}
               />
               <button
                 type="button"

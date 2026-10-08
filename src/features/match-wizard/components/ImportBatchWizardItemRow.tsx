@@ -4,11 +4,14 @@ import { useTranslation } from 'react-i18next';
 import type {
   DestinationSuggestion,
   DestinationMatchMethod,
+  GameSchema,
   ImportBatch,
   ImportDecision,
   ImportItem,
   ImportSourcePreview,
+  JsonValue,
   ReviewReasonCode,
+  StableCategory,
 } from '../../../shared/api/tauri/bindings.gen';
 import type { ObjectSummary } from '@/entities/game-object';
 import { archiveErrorKindFromStoredMessage } from '../../../shared/lib/appError';
@@ -21,6 +24,7 @@ type Props = {
   batch: ImportBatch;
   item: ImportItem;
   objects: ObjectSummary[];
+  schema: GameSchema | null;
   busy: boolean;
   selected: boolean;
   onToggleSelected: () => void;
@@ -33,6 +37,12 @@ type Props = {
     item: ImportItem,
     objectId: string,
     decision?: ImportDecision,
+  ) => Promise<void>;
+  onClassify: (
+    item: ImportItem,
+    category: StableCategory,
+    subCategory: string | null,
+    metadata: JsonValue,
   ) => Promise<void>;
   onSkip: (item: ImportItem) => Promise<void>;
   onRename: (item: ImportItem, plannedName: string) => Promise<void>;
@@ -49,6 +59,8 @@ export function ImportBatchWizardItemRow({
   busy,
   item,
   objects,
+  schema,
+  onClassify,
   onChooseDestination,
   onChooseManualTarget,
   onLoadSourcePreview,
@@ -64,10 +76,19 @@ export function ImportBatchWizardItemRow({
 }: Props) {
   const { t } = useTranslation('match_wizard');
   const sourceDisplayName = withoutDisabledPrefix(item.plannedName);
+  const suggestedCategory = item.categorySuggestions[0]?.category;
+  const fallbackCategory = item.matchCategory ?? 'Other';
   const [plannedName, setPlannedName] = useState(sourceDisplayName);
   const [editing, setEditing] = useState(false);
   const [destinationRequestToken, setDestinationRequestToken] = useState(0);
+  const [selectedCategory, setSelectedCategory] = useState<StableCategory>(
+    suggestedCategory ?? fallbackCategory,
+  );
   useEffect(() => setPlannedName(withoutDisabledPrefix(item.plannedName)), [item.plannedName]);
+  useEffect(
+    () => setSelectedCategory(suggestedCategory ?? fallbackCategory),
+    [fallbackCategory, item.id, suggestedCategory],
+  );
   const archiveSource = ['archive_root', 'browser_download'].includes(item.sourceKind);
   const needsRecovery = [
     'committing',
@@ -89,7 +110,6 @@ export function ImportBatchWizardItemRow({
   const canRetry = [
     'discovered',
     'staged',
-    'awaiting_category',
     'awaiting_destination',
     'failed',
     'partial',
@@ -99,6 +119,9 @@ export function ImportBatchWizardItemRow({
     'committing',
   ].includes(item.status);
   const topSuggestion = item.destinationSuggestions[0] ?? null;
+  const categorySuggestion =
+    item.categorySuggestions.find((suggestion) => suggestion.category === selectedCategory) ?? null;
+  const categoryOptions = categoryOptionsFor(schema);
   const targetComparison = item.targetComparison;
   const canKeepSeparate =
     targetComparison !== null &&
@@ -291,6 +314,41 @@ export function ImportBatchWizardItemRow({
                 </span>
               )}
             </div>
+            {item.status === 'awaiting_category' && (
+              <div className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-warning/30 bg-warning/5 p-2">
+                <label className="min-w-32 flex-1 text-xs text-base-content/70">
+                  {t('classification_object_type')}
+                  <select
+                    aria-label={t('classification_object_type')}
+                    className="select select-bordered select-xs mt-1 w-full"
+                    disabled={busy}
+                    value={selectedCategory}
+                    onChange={(event) => setSelectedCategory(event.target.value as StableCategory)}
+                  >
+                    {categoryOptions.map((category) => (
+                      <option key={category} value={category}>
+                        {t(`categories.${category}`, { defaultValue: category })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-xs"
+                  disabled={busy}
+                  onClick={() =>
+                    void onClassify(
+                      item,
+                      selectedCategory,
+                      categorySuggestion?.subCategory ?? null,
+                      categorySuggestion?.metadata ?? {},
+                    )
+                  }
+                >
+                  {t('actions.confirm')}
+                </button>
+              </div>
+            )}
           </div>
         </ImportSourcePreviewCard>
         {reviewNeedsAction && reviewDetails.length > 0 && (
@@ -434,6 +492,17 @@ function isTargetComparisonReason(code: ReviewReasonCode): boolean {
     code === 'target_name_conflict' ||
     code === 'target_comparison_incomplete'
   );
+}
+
+const CATEGORY_OPTIONS: StableCategory[] = ['Character', 'Weapon', 'UI', 'Other'];
+
+function categoryOptionsFor(schema: GameSchema | null): StableCategory[] {
+  const fromSchema = (schema?.categories ?? [])
+    .map((category) => category.name)
+    .filter((category): category is StableCategory =>
+      CATEGORY_OPTIONS.includes(category as StableCategory),
+    );
+  return [...new Set([...fromSchema, ...CATEGORY_OPTIONS])];
 }
 
 function uniqueMessages(messages: Array<string | null>): string[] {

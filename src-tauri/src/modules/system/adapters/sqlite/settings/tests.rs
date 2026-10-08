@@ -36,7 +36,7 @@ async fn test_get_all_settings() {
     set_setting(&pool, "language", "en").await.unwrap();
 
     let all = get_all_settings(&pool).await.unwrap();
-    assert_eq!(all.len(), 2);
+    assert!(all.contains_key("unicode_key_version"));
     assert_eq!(all.get("theme").map(|s| s.as_str()), Some("dark"));
     assert_eq!(all.get("language").map(|s| s.as_str()), Some("en"));
 }
@@ -72,7 +72,9 @@ async fn test_reset_all_data() {
 
     // Pre-condition
     assert_eq!(count_games(&pool).await.unwrap(), 1);
-    assert_eq!(get_all_settings(&pool).await.unwrap().len(), 2);
+    let settings = get_all_settings(&pool).await.unwrap();
+    assert_eq!(settings.get("theme").map(String::as_str), Some("dark"));
+    assert_eq!(settings.get("language").map(String::as_str), Some("en"));
 
     // Act
     reset_all_data(&pool).await.unwrap();

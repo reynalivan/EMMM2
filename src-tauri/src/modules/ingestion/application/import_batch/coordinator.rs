@@ -297,7 +297,8 @@ pub async fn set_import_item_decision_with_target_index(
     } else {
         (item.confidence_percentage, item.confidence_tier)
     };
-    if !import_batch::store_decision(db, &input, confidence, tier).await? {
+    let review_gate = without_target_comparison_reasons(&item.review_gate);
+    if !import_batch::store_decision(db, &input, confidence, tier, &review_gate).await? {
         return Err(AppError::Validation(format!(
             "Import item '{}' is not awaiting a destination decision",
             input.item_id
@@ -789,6 +790,19 @@ pub(crate) fn review_gate_for(
         }
     }
     gate
+}
+
+fn without_target_comparison_reasons(review_gate: &ReviewGate) -> ReviewGate {
+    let mut next = review_gate.clone();
+    next.reasons.retain(|reason| {
+        !matches!(
+            reason.code,
+            ReviewReasonCode::TargetHasAdditionalFiles
+                | ReviewReasonCode::TargetNameConflict
+                | ReviewReasonCode::TargetComparisonIncomplete
+        )
+    });
+    next
 }
 
 #[cfg(test)]

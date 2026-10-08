@@ -12,6 +12,7 @@ import FolderGridStateViews from './components/FolderGridStateViews';
 import FolderGridContent from './components/FolderGridContent';
 import FolderGridFooter from './components/FolderGridFooter';
 import FolderGridSyncToast from './components/FolderGridSyncToast';
+import { isEditableKeyboardTarget } from '@/shared/lib/isEditableKeyboardTarget';
 
 export default function FolderGrid() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -134,6 +135,7 @@ export default function FolderGrid() {
         activePane === 'folderGrid' && 'ring-1 ring-inset ring-primary/20',
       )}
       onKeyDown={(e) => {
+        if (e.defaultPrevented || isEditableKeyboardTarget(e.target)) return;
         if (activePane !== 'folderGrid') return;
 
         if (e.key === 'Escape' && selectedCount > 0) {

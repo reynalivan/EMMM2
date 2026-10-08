@@ -3,7 +3,11 @@ import { useShallow } from 'zustand/react/shallow';
 import { selectWorkspaceRuntimeState } from './workspaceStoreSelectors';
 import { useAppStore } from '@/app/store';
 import type { WorkspaceRuntimeEvent } from './workspaceEvents';
-import type { WorkspaceRuntimeState, WorkspaceTransitionTarget } from './workspaceState';
+import type {
+  WorkspaceExplorerSelectionEffect,
+  WorkspaceRuntimeState,
+  WorkspaceTransitionTarget,
+} from './workspaceState';
 
 export function getWorkspaceRuntimeState(): WorkspaceRuntimeState {
   return selectWorkspaceRuntimeState(useAppStore.getState());
@@ -37,8 +41,17 @@ export function useWorkspaceRuntime() {
   }, []);
 
   const selectMod = useCallback(
-    (path: string | null, mobilePane?: 'sidebar' | 'grid' | 'details') => {
-      dispatchWorkspaceRuntimeEvent({ type: 'MOD_SELECTED', path, mobilePane });
+    (
+      path: string | null,
+      mobilePane?: 'sidebar' | 'grid' | 'details',
+      selectionEffect?: WorkspaceExplorerSelectionEffect,
+    ) => {
+      return dispatchWorkspaceRuntimeEvent({
+        type: 'MOD_SELECTED',
+        path,
+        mobilePane,
+        selectionEffect,
+      });
     },
     [],
   );

@@ -16,6 +16,46 @@ import {
   shouldResetDirtyPreviewForReconciliation,
 } from './workspaceRuntimeTransitions';
 
+function rewritePendingTarget(
+  target: WorkspaceTransitionTarget,
+  rewrites: Array<{ oldPath: string; newPath: string }>,
+  selectedObjectFolderPath: string | null,
+): WorkspaceTransitionTarget {
+  if (target.kind === 'selectMod') {
+    return {
+      ...target,
+      path: rewriteWorkspacePathValue(target.path, rewrites) ?? null,
+      selectionEffect: target.selectionEffect
+        ? {
+            ...target.selectionEffect,
+            gridSelection: target.selectionEffect.gridSelection?.map(
+              (path) => rewriteWorkspacePathValue(path, rewrites) ?? path,
+            ),
+          }
+        : undefined,
+    };
+  }
+
+  if (target.kind === 'focusObject') {
+    return {
+      ...target,
+      folderPath: rewriteWorkspacePathValue(target.folderPath, rewrites) ?? target.folderPath,
+    };
+  }
+
+  if (target.kind === 'navigateExplorer') {
+    const explorerSubPath =
+      rewriteWorkspacePathValue(target.explorerSubPath, rewrites) ?? undefined;
+    return {
+      ...target,
+      explorerSubPath,
+      currentPath: buildCurrentPath(selectedObjectFolderPath, explorerSubPath),
+    };
+  }
+
+  return target;
+}
+
 export function reduceWorkspaceRuntimeState(
   state: WorkspaceRuntimeState,
   event: WorkspaceRuntimeEvent,
@@ -61,6 +101,7 @@ export function reduceWorkspaceRuntimeState(
       kind: 'selectMod',
       path: event.path,
       mobilePane: event.mobilePane,
+      selectionEffect: event.selectionEffect,
     };
     if (shouldGuardPreviewTransition(state, target)) {
       return queuePreviewTransition(state, target);
@@ -105,6 +146,13 @@ export function reduceWorkspaceRuntimeState(
   }
 
   if (event.type === 'SELECTION_RECONCILED') {
+    const selectionUnchanged =
+      event.reconciliationStatus === 'unchanged' &&
+      state.selectedObjectFolderPath === event.selectedObjectFolderPath &&
+      state.explorerSubPath === event.explorerSubPath &&
+      state.selectedModPath === event.selectedModPath &&
+      state.currentPath.length === event.currentPath.length &&
+      state.currentPath.every((path, index) => path === event.currentPath[index]);
     const resetDirtyPreview = shouldResetDirtyPreviewForReconciliation(state, event);
     return {
       ...state,
@@ -113,9 +161,12 @@ export function reduceWorkspaceRuntimeState(
       currentPath: event.currentPath,
       selectedModPath: event.selectedModPath,
       previewDirty: resetDirtyPreview ? false : state.previewDirty,
-      previewTransition: INITIAL_WORKSPACE_PREVIEW_TRANSITION,
+      previewTransition: selectionUnchanged
+        ? state.previewTransition
+        : INITIAL_WORKSPACE_PREVIEW_TRANSITION,
       dialogState:
-        resetDirtyPreview || state.dialogState.kind === 'previewUnsavedChanges'
+        resetDirtyPreview ||
+        (!selectionUnchanged && state.dialogState.kind === 'previewUnsavedChanges')
           ? INITIAL_WORKSPACE_DIALOG_STATE
           : state.dialogState,
     };
@@ -128,13 +179,46 @@ export function reduceWorkspaceRuntimeState(
       rewriteWorkspacePathValue(state.explorerSubPath, event.rewrites) ?? undefined;
     const selectedModPath =
       rewriteWorkspacePathValue(state.selectedModPath, event.rewrites) ?? null;
+    const gridSelection = new Set(
+      [...state.gridSelection].map(
+        (path) => rewriteWorkspacePathValue(path, event.rewrites) ?? path,
+      ),
+    );
+    const pendingTarget =
+      state.previewTransition.kind === 'pending' ? state.previewTransition.pendingTarget : null;
+    const pendingSelectionEffect =
+      pendingTarget?.kind === 'selectMod' ? pendingTarget.selectionEffect : undefined;
+    const callbackPathChanged =
+      pendingSelectionEffect?.onApplied !== undefined &&
+      (pendingSelectionEffect.affectedPaths ?? []).some(
+        (path) => rewriteWorkspacePathValue(path, event.rewrites) !== path,
+      );
+    const previewTransition =
+      state.previewTransition.kind !== 'pending' || callbackPathChanged
+        ? callbackPathChanged
+          ? INITIAL_WORKSPACE_PREVIEW_TRANSITION
+          : state.previewTransition
+        : {
+            kind: 'pending' as const,
+            pendingTarget: rewritePendingTarget(
+              state.previewTransition.pendingTarget,
+              event.rewrites,
+              selectedObjectFolderPath,
+            ),
+          };
 
     return {
       ...state,
       selectedObjectFolderPath,
       explorerSubPath,
       selectedModPath,
+      gridSelection,
       currentPath: buildCurrentPath(selectedObjectFolderPath, explorerSubPath),
+      previewTransition,
+      dialogState:
+        callbackPathChanged && state.dialogState.kind === 'previewUnsavedChanges'
+          ? INITIAL_WORKSPACE_DIALOG_STATE
+          : state.dialogState,
     };
   }
 

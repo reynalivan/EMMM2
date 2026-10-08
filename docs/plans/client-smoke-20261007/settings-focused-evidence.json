@@ -1,0 +1,390 @@
+{
+  "scope": "Native UI focused replay; read-only settings scalars and trusted DOM event counts, no injected store changes, no credential values, no submitted revision trace",
+  "driverDisconnectedDuringTeardown": true,
+  "records": [
+    {
+      "test": "cold startup can persist its first Settings save without external writes after rendering",
+      "before": {
+        "revision": 1136,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "after": {
+        "revision": 1136,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "events": {
+        "input": 22,
+        "change": 1,
+        "trusted": 54,
+        "latestChanges": [
+          {
+            "event": "change",
+            "label": "",
+            "name": null,
+            "trusted": true,
+            "valueLength": 22,
+            "selectedValue": null,
+            "checked": null
+          }
+        ]
+      },
+      "messages": [
+        "Failed to save settings: [object Object]",
+        "Failed to update keywords: Settings changed since this screen was loaded. Refresh and retry your edit."
+      ],
+      "bridge": {
+        "invokeWritable": false,
+        "invokeConfigurable": false
+      }
+    },
+    {
+      "test": "cache-refreshed Settings save persists after Close after launch publishes the current snapshot",
+      "before": {
+        "revision": 1139,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "after": {
+        "revision": 1143,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "events": {
+        "input": 29,
+        "change": 3,
+        "trusted": 74,
+        "latestChanges": [
+          {
+            "event": "change",
+            "label": "Close after launch",
+            "name": null,
+            "trusted": true,
+            "valueLength": 2,
+            "selectedValue": null,
+            "checked": true
+          },
+          {
+            "event": "change",
+            "label": "Close after launch",
+            "name": null,
+            "trusted": true,
+            "valueLength": 2,
+            "selectedValue": null,
+            "checked": false
+          },
+          {
+            "event": "change",
+            "label": "",
+            "name": null,
+            "trusted": true,
+            "valueLength": 27,
+            "selectedValue": null,
+            "checked": null
+          }
+        ]
+      },
+      "messages": [
+        "Unexpected error",
+        "Disk changes were applied, but runtime refresh is still pending.",
+        "Settings saved successfully."
+      ],
+      "bridge": {
+        "invokeWritable": false,
+        "invokeConfigurable": false
+      }
+    },
+    {
+      "test": "blocks saving an overlay binding conflicting with F5 while OS globals remain off",
+      "before": {
+        "revision": 1146,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "after": {
+        "revision": 1146,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "events": {
+        "input": 4,
+        "change": 1,
+        "trusted": 15,
+        "latestChanges": [
+          {
+            "event": "change",
+            "label": "",
+            "name": null,
+            "trusted": true,
+            "valueLength": 2,
+            "selectedValue": null,
+            "checked": true
+          }
+        ]
+      },
+      "messages": ["Key Conflicts DetectedSafe Mode and Toggle overlay share key \"F5\""],
+      "bridge": {
+        "invokeWritable": false,
+        "invokeConfigurable": false
+      }
+    },
+    {
+      "test": "blocks saving an overlay binding conflicting with F6 while OS globals remain off",
+      "before": {
+        "revision": 1149,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "after": {
+        "revision": 1149,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "events": {
+        "input": 4,
+        "change": 1,
+        "trusted": 15,
+        "latestChanges": [
+          {
+            "event": "change",
+            "label": "",
+            "name": null,
+            "trusted": true,
+            "valueLength": 2,
+            "selectedValue": null,
+            "checked": true
+          }
+        ]
+      },
+      "messages": ["Key Conflicts DetectedToggle overlay conflicts with package toggle on \"F6\""],
+      "bridge": {
+        "invokeWritable": false,
+        "invokeConfigurable": false
+      }
+    },
+    {
+      "test": "blocks saving an overlay binding conflicting with F8 while OS globals remain off",
+      "before": {
+        "revision": 1152,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "after": {
+        "revision": 1152,
+        "theme": "onyx",
+        "language": "en",
+        "autoCloseLauncher": false,
+        "keywords": ["nsfw", "nude", "18+"],
+        "hotkeys": {
+          "enabled": false,
+          "safe_mode": "F5",
+          "next_preset": "Ctrl+F5",
+          "prev_preset": "Shift+F5",
+          "toggle_overlay": "F7",
+          "preset_status_overlay_enabled": false
+        },
+        "keyviewer": {
+          "enabled": false
+        },
+        "ai": {
+          "enabled": false,
+          "hasApiKey": false,
+          "endpoint": "empty"
+        }
+      },
+      "events": {
+        "input": 4,
+        "change": 1,
+        "trusted": 15,
+        "latestChanges": [
+          {
+            "event": "change",
+            "label": "",
+            "name": null,
+            "trusted": true,
+            "valueLength": 2,
+            "selectedValue": null,
+            "checked": true
+          }
+        ]
+      },
+      "messages": [
+        "Key Conflicts DetectedToggle overlay conflicts with 3DMigoto frame analysis on \"F8\""
+      ],
+      "bridge": {
+        "invokeWritable": false,
+        "invokeConfigurable": false
+      }
+    },
+    {
+      "configuredVerbatim": false,
+      "candidateVerbatim": false,
+      "frontendPathsEqual": true,
+      "equalAfterVerbatimPrefixRemoval": true,
+      "candidateHasInvalidFormCharacters": false
+    }
+  ]
+}

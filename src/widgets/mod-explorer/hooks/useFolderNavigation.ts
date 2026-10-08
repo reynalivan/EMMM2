@@ -1,4 +1,5 @@
 import { useState, useCallback, type KeyboardEvent } from 'react';
+import { isEditableKeyboardTarget } from '@/shared/lib/isEditableKeyboardTarget';
 
 export interface FolderNavigationProps<T> {
   items: T[];
@@ -29,7 +30,7 @@ export function useFolderNavigation<T>({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent | globalThis.KeyboardEvent) => {
-      // Allow default behavior for some keys if needed, but usually we prevent default for navigation
+      if (e.defaultPrevented || isEditableKeyboardTarget(e.target)) return;
 
       // Ctrl+A — select all items
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -89,8 +90,6 @@ export function useFolderNavigation<T>({
           }
           return; // No focus change needed (or maybe handled by navigate)
         case 'Backspace':
-          // Only if not in an input field (check target?) - Browser usually handles this check but we should be careful
-          // We assume this handler is on a focusable container (div tabIndex=0)
           e.preventDefault();
           onGoUp?.();
           return;

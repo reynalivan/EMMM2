@@ -926,16 +926,21 @@ pub async fn store_decision(
     input: &crate::modules::ingestion::application::import_batch::types::SetImportItemDecisionInput,
     confidence: u8,
     tier: ConfidenceTier,
+    review_gate: &ReviewGate,
 ) -> Result<bool, sqlx::Error> {
     let next_status = if input.decision == ImportDecision::Skip {
         ImportItemStatus::Skipped
     } else {
         ImportItemStatus::Ready
     };
+    let review_gate_json = serde_json::to_string(review_gate)
+        .map_err(|error| decode_error(format!("could not encode review gate: {error}")))?;
     let result = sqlx::query(
         "UPDATE import_jobs
          SET decision = ?, destination_object_id = ?, destination_path = ?,
              match_entry_key = ?, match_alias_name = ?, match_confidence = ?, confidence_tier = ?,
+             target_comparison_json = NULL, review_gate_json = ?,
+             result = CASE WHEN result = 'target_conflict' THEN NULL ELSE result END,
              analysis_ack_revision = analysis_revision,
              status = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
@@ -947,6 +952,7 @@ pub async fn store_decision(
     .bind(&input.matched_alias)
     .bind(f64::from(confidence))
     .bind(tier.as_str())
+    .bind(review_gate_json)
     .bind(next_status.as_str())
     .bind(&input.item_id)
     .execute(db)

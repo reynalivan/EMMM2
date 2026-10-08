@@ -116,7 +116,34 @@ describe('useWorkspaceExplorerSelection', () => {
     await waitFor(() => {
       expect(result.current.selection.mode).toBe('explicit');
       expect(result.current.selectedCount).toBe(0);
-      expect(clearExplicitPaths).toHaveBeenCalledOnce();
+      expect(clearExplicitPaths).not.toHaveBeenCalled();
+    });
+  });
+
+  it('preserves explicit paths when the listing revision changes', async () => {
+    const clearExplicitPaths = vi.fn();
+    const explicitPaths = new Set(['C:/Mods/A']);
+    const { result, rerender } = renderHook(
+      ({ listingRevision }) =>
+        useWorkspaceExplorerSelection({
+          query: query(null),
+          listingRevision,
+          totalMatching: 3,
+          loadedPaths: [],
+          explicitPaths,
+          setExplicitPaths: vi.fn(),
+          clearExplicitPaths,
+        }),
+      { initialProps: { listingRevision: null as string | null } },
+    );
+
+    rerender({ listingRevision: 'revision-1' });
+    rerender({ listingRevision: 'revision-2' });
+
+    await waitFor(() => {
+      expect(result.current.selection).toEqual({ mode: 'explicit', paths: explicitPaths });
+      expect(result.current.isPathSelected('C:/Mods/A')).toBe(true);
+      expect(clearExplicitPaths).not.toHaveBeenCalled();
     });
   });
 

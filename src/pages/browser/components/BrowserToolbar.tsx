@@ -161,6 +161,7 @@ export function BrowserToolbar({
               className="input input-sm input-bordered w-full pl-9 pr-10 font-mono text-sm"
               placeholder={t('tabs.url_placeholder')}
               value={urlInput}
+              onFocus={startEditingAddress}
               onBlur={() => setIsEditingAddress(false)}
               onChange={(event) => onUrlInputChange(event.target.value)}
             />

@@ -6,6 +6,8 @@ import * as usePreviewDataModule from './usePreviewData';
 import * as workspaceViewModelModule from '@/features/workspace-runtime';
 import { useAppStore } from '@/app/store';
 
+const selectionOverride = vi.hoisted(() => ({ path: undefined as string | null | undefined }));
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
@@ -97,23 +99,24 @@ vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => {
       const result = useWorkspaceViewModel();
       const preview = result.data?.preview;
       return {
-        data: preview
-          ? {
-              request_identity: {
-                game_id: 'GIMI',
-                explorer_sub_path: 'root',
-                selected_mod_path: preview.selected_path,
-              },
-              context_status: 'ready',
-              preview,
-              selection: {
-                selected_mod_path: preview.selected_path,
-                reconciliation_status: 'unchanged',
-                reconciliation_reason: null,
-                affected_paths: [],
-              },
-            }
-          : undefined,
+        data:
+          preview && !result.isPending
+            ? {
+                request_identity: {
+                  game_id: 'GIMI',
+                  explorer_sub_path: 'root',
+                  selected_mod_path: preview.selected_path,
+                },
+                context_status: 'ready',
+                preview,
+                selection: {
+                  selected_mod_path: preview.selected_path,
+                  reconciliation_status: 'unchanged',
+                  reconciliation_reason: null,
+                  affected_paths: [],
+                },
+              }
+            : undefined,
         isPending: false,
         isError: false,
         error: null,
@@ -125,7 +128,10 @@ vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => {
       return {
         selectedObjectFolderPath: null,
         explorerSubPath: 'root',
-        selectedModPath: result.data?.preview?.selected_path ?? null,
+        selectedModPath:
+          selectionOverride.path === undefined
+            ? (result.data?.preview?.selected_path ?? null)
+            : selectionOverride.path,
       };
     },
   };
@@ -150,6 +156,7 @@ function createMockMutation() {
 }
 
 function setupDefaultMocks() {
+  selectionOverride.path = undefined;
   const useModIniDocumentsMock = usePreviewDataModule.useModIniDocuments as any;
   const usePreviewImagesMock = usePreviewDataModule.usePreviewImages as any;
   const useUpdateModInfoDetailsMock = usePreviewDataModule.useUpdateModInfoDetails as any;
@@ -202,6 +209,70 @@ describe('usePreviewPanelState', () => {
     cleanup(); // React Testing Library cleanup
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('preserves container metadata and edit mode through a query gap and persists at the same identity destination', async () => {
+    vi.useFakeTimers();
+    const oldPath = 'E:/Mods/Container';
+    const destination = 'E:/Mods/DISABLED Container';
+    const metadata = {
+      actual_name: 'Container',
+      author: 'Author',
+      version: '1.0',
+      description: 'Original',
+    };
+    const preview = (path: string, filesystemIdentity = 'container-id') => ({
+      selected_path: path,
+      selected_node: {
+        path,
+        id: null,
+        node_kind: 'container',
+        filesystem_identity: filesystemIdentity,
+        display_name: 'Container',
+      },
+      display_title: 'Container',
+      mod_info_summary: metadata,
+    });
+    const setPreview = (path: string, pending = false, filesystemIdentity = 'container-id') => {
+      const query = createMockQuery({ preview: preview(path, filesystemIdentity) });
+      query.isPending = pending;
+      vi.mocked(workspaceViewModelModule.useWorkspaceViewModel).mockReturnValue(
+        query as ReturnType<typeof workspaceViewModelModule.useWorkspaceViewModel>,
+      );
+      selectionOverride.path = path;
+    };
+    const mutation = createMockMutation();
+    mutation.mutateAsync.mockResolvedValue(undefined);
+    vi.mocked(usePreviewDataModule.useUpdateModInfoDetails).mockReturnValue(
+      mutation as ReturnType<typeof usePreviewDataModule.useUpdateModInfoDetails>,
+    );
+    setPreview(oldPath);
+    const { result, rerender } = renderHook(() => usePreviewPanelState());
+    act(() => {
+      result.current.setDescriptionDraft('QA pending toggle');
+      result.current.setMetadataEditing(true);
+    });
+    setPreview(destination, true);
+    rerender();
+    expect(result.current.activePath).toBeNull();
+    expect(result.current.descriptionDraft).toBe('QA pending toggle');
+    expect(result.current.metadataDirty).toBe(true);
+    expect(result.current.isMetadataEditing).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(5000));
+    expect(mutation.mutateAsync).not.toHaveBeenCalled();
+    setPreview(destination);
+    rerender();
+    expect(result.current.isMetadataEditing).toBe(true);
+    expect(result.current.descriptionDraft).toBe('QA pending toggle');
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+    expect(mutation.mutateAsync).toHaveBeenCalledWith({
+      folderPath: destination,
+      update: { ...metadata, description: 'QA pending toggle' },
+    });
+    expect(result.current.metadataDirty).toBe(false);
+    setPreview(destination, false, 'another-container-id');
+    rerender();
+    expect(result.current.isMetadataEditing).toBe(false);
   });
 
   // Covers: TC-6.1-01 (Metadata read/display)

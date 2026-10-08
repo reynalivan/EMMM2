@@ -11,6 +11,62 @@ vi.mock('react-i18next', async (importOriginal) => ({
 }));
 
 describe('GameFormModal', () => {
+  it.each(['E:/GIMI/Mods', 'e:/gimi/mods', 'E:\\GIMI\\Mods\\'])(
+    'blocks submission when the mods directory duplicates %s',
+    async (modPath) => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const { container } = render(
+        <GameFormModal
+          isOpen
+          onClose={vi.fn()}
+          onSave={onSave}
+          existingModPaths={['E:/GIMI/Mods']}
+        />,
+      );
+      fireEvent.change(screen.getByPlaceholderText('games.form.name_placeholder'), {
+        target: { value: 'GIMI' },
+      });
+      fireEvent.change(screen.getByPlaceholderText('games.form.exe_placeholder'), {
+        target: { value: 'E:/GIMI/GenshinImpact.exe' },
+      });
+      fireEvent.change(screen.getByPlaceholderText('games.form.path_placeholder'), {
+        target: { value: modPath },
+      });
+      fireEvent.submit(container.querySelector('form')!);
+
+      expect(await screen.findByText('games.form.validation.path_duplicate')).toBeInTheDocument();
+      expect(screen.getByTestId('game-form-submit')).toBeDisabled();
+      expect(onSave).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows a different mods directory with the same folder name', async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    render(
+      <GameFormModal
+        isOpen
+        onClose={vi.fn()}
+        onSave={onSave}
+        existingModPaths={['E:/GIMI/Mods']}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText('games.form.name_placeholder'), {
+      target: { value: 'GIMI' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('games.form.exe_placeholder'), {
+      target: { value: 'D:/GIMI/GenshinImpact.exe' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('games.form.path_placeholder'), {
+      target: { value: 'D:/GIMI/Mods' },
+    });
+    const submit = screen.getByTestId('game-form-submit');
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ mod_path: 'D:/GIMI/Mods' }));
+  });
+
   it('shows a migration status while a mods directory change is running', () => {
     render(
       <GameFormModal

@@ -271,6 +271,41 @@ describe('useSharedModActions', () => {
     expect(toastError).toHaveBeenCalledWith('objects:edit_modal.validation.path_invalid');
   });
 
+  it('consumes reported rename failures without closing the dialog or running success effects', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const folder = createFolder();
+    const onRenameSuccess = vi.fn();
+    renameMutateAsync.mockRejectedValue(new Error('A folder with that name already exists'));
+    useAppStore.setState({ workspaceDialogState: { kind: 'modRename', folder } });
+    const { result } = renderHook(() => useSharedModActions({ onRenameSuccess }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await expect(result.current.handleRenameSubmit('Shared')).resolves.toBe(false);
+    });
+
+    expect(useAppStore.getState().workspaceDialogState).toEqual({ kind: 'modRename', folder });
+    expect(onRenameSuccess).not.toHaveBeenCalled();
+  });
+
+  it('closes the rename dialog and runs success effects only after a successful mutation', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const folder = createFolder();
+    const onRenameSuccess = vi.fn();
+    useAppStore.setState({ workspaceDialogState: { kind: 'modRename', folder } });
+    const { result } = renderHook(() => useSharedModActions({ onRenameSuccess }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await expect(result.current.handleRenameSubmit('Renamed')).resolves.toBe(true);
+    });
+
+    expect(useAppStore.getState().workspaceDialogState.kind).not.toBe('modRename');
+    expect(onRenameSuccess).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the shared classification wizard for the owning object', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { result } = renderHook(() => useSharedModActions(), {

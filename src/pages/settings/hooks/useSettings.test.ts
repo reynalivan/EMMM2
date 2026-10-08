@@ -10,6 +10,7 @@ vi.mock('@tanstack/react-query', () => {
     getQueryData: vi.fn(),
     setQueryData: vi.fn(),
     invalidateQueries: vi.fn(),
+    cancelQueries: vi.fn().mockResolvedValue(undefined),
   };
   return {
     useQueryClient: vi.fn(() => mUseQueryClient),

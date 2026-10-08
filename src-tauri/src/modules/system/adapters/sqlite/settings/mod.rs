@@ -4,10 +4,13 @@ use std::collections::HashMap;
 // ── KV Settings ─────────────────────────────────────────────
 
 /// Get a single setting value by key.
-pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
+pub async fn get_setting<'e, E>(executor: E, key: &str) -> Result<Option<String>, sqlx::Error>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
     let row: Option<(String,)> = sqlx::query_as("SELECT value FROM app_settings WHERE key = ?")
         .bind(key)
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     Ok(row.map(|r| r.0))
 }
@@ -124,23 +127,6 @@ pub async fn reset_all_data_with_revision(
 pub async fn vacuum_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query("VACUUM").execute(pool).await?;
     Ok(())
-}
-
-pub async fn get_app_meta(pool: &SqlitePool, key: &str) -> Option<String> {
-    sqlx::query_scalar::<_, String>("SELECT value FROM app_meta WHERE key = ?")
-        .bind(key)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-}
-
-pub async fn set_app_meta(pool: &SqlitePool, key: &str, value: &str) {
-    let _ = sqlx::query("INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)")
-        .bind(key)
-        .bind(value)
-        .execute(pool)
-        .await;
 }
 
 #[cfg(test)]

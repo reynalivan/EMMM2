@@ -42,12 +42,12 @@ export function shouldGuardPreviewTransition(
     return false;
   }
 
-  if (state.previewTransition.kind === 'pending') {
+  if (!state.selectedModPath) {
     return false;
   }
 
-  if (!state.selectedModPath) {
-    return false;
+  if (state.previewTransition.kind === 'pending') {
+    return true;
   }
 
   if (target.kind === 'selectMod') {
@@ -126,6 +126,9 @@ export function applyTransitionTarget(
     return {
       ...settled,
       selectedModPath: target.path,
+      gridSelection: target.selectionEffect?.gridSelection
+        ? new Set(target.selectionEffect.gridSelection)
+        : state.gridSelection,
       mobileActivePane: target.mobilePane ?? state.mobileActivePane,
     };
   }

@@ -6,7 +6,8 @@ import { normalizeThemeSetting, type ThemeSetting } from '@/shared/lib/themeOpti
 import i18n from '@/shared/i18n/config';
 import { useTranslation } from 'react-i18next';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
-import { settingsKeys, settingsQueryOptions } from './settingsQuery';
+import { settingsKeys, settingsQueryOptions, publishSettingsSnapshot } from './settingsQuery';
+import { formatAppError } from '@/shared/lib/appError';
 import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
 
 // Re-export for consumers
@@ -29,7 +30,7 @@ export function useSettings() {
     mutationFn: persistSettings,
     onSuccess: async (savedSettings) => {
       const previousSettings = queryClient.getQueryData<AppSettings>(settingsKeys.all);
-      queryClient.setQueryData(settingsKeys.all, savedSettings);
+      publishSettingsSnapshot(queryClient, savedSettings);
       const previousKeywords = previousSettings?.safety?.keywords ?? [];
       const savedKeywords = savedSettings.safety?.keywords ?? [];
       const keywordsChanged =
@@ -49,7 +50,7 @@ export function useSettings() {
       addToast(
         'error',
         t('settings:toast.save_failed', {
-          error: String(err),
+          error: formatAppError(err),
         }),
       );
     },
@@ -69,7 +70,7 @@ export function useSettings() {
       addToast(
         'error',
         t('layout:maintenance.failed', {
-          error: String(err),
+          error: formatAppError(err),
         }),
       );
     },
@@ -84,7 +85,8 @@ export function useSettings() {
       };
       return persistSettings(newSettings);
     },
-    onSuccess: async () => {
+    onSuccess: async (savedSettings) => {
+      publishSettingsSnapshot(queryClient, savedSettings);
       await publishQueryScopes(queryClient, ['settings']);
     },
     onError: (err) => {
@@ -92,7 +94,7 @@ export function useSettings() {
       addToast(
         'error',
         t('settings:toast.ai_failed', {
-          error: String(err),
+          error: formatAppError(err),
         }),
       );
     },
@@ -100,13 +102,13 @@ export function useSettings() {
 
   const setAiApiKey = async (apiKey: string) => {
     const savedSettings = await commands.setAiApiKey(apiKey);
-    queryClient.setQueryData(settingsKeys.all, savedSettings);
+    publishSettingsSnapshot(queryClient, savedSettings);
     return savedSettings;
   };
 
   const deleteAiApiKey = async () => {
     const savedSettings = await commands.deleteAiApiKey();
-    queryClient.setQueryData(settingsKeys.all, savedSettings);
+    publishSettingsSnapshot(queryClient, savedSettings);
     return savedSettings;
   };
 
@@ -121,7 +123,8 @@ export function useSettings() {
 
       return persistSettings(newSettings);
     },
-    onSuccess: async () => {
+    onSuccess: async (savedSettings) => {
+      publishSettingsSnapshot(queryClient, savedSettings);
       await publishQueryScopes(queryClient, ['settings']);
       addToast('success', t('settings:toast.theme_success'));
     },
@@ -130,7 +133,7 @@ export function useSettings() {
       addToast(
         'error',
         t('settings:toast.theme_failed', {
-          error: String(err),
+          error: formatAppError(err),
         }),
       );
     },
@@ -139,7 +142,7 @@ export function useSettings() {
   const modViewerExecutableMutation = useMutation({
     mutationFn: (path: string | null) => commands.setModViewerExecutable(path),
     onSuccess: (savedSettings, path) => {
-      queryClient.setQueryData(settingsKeys.all, savedSettings);
+      publishSettingsSnapshot(queryClient, savedSettings);
       addToast(
         'success',
         t(
@@ -151,19 +154,22 @@ export function useSettings() {
     },
     onError: (err) => {
       console.error(err);
-      addToast('error', t('settings:integrations.mod_viewer.save_failed', { error: String(err) }));
+      addToast(
+        'error',
+        t('settings:integrations.mod_viewer.save_failed', { error: formatAppError(err) }),
+      );
     },
   });
 
   const telemetryEnabledMutation = useMutation({
     mutationFn: (enabled: boolean) => commands.setTelemetryEnabled(enabled),
     onSuccess: async (savedSettings) => {
-      queryClient.setQueryData(settingsKeys.all, savedSettings);
+      publishSettingsSnapshot(queryClient, savedSettings);
       await publishQueryScopes(queryClient, ['settings']);
     },
     onError: (err) => {
       console.error(err);
-      addToast('error', t('settings:diagnostics.save_failed', { error: String(err) }));
+      addToast('error', t('settings:diagnostics.save_failed', { error: formatAppError(err) }));
     },
   });
 
@@ -174,7 +180,7 @@ export function useSettings() {
   ) => {
     const result = await commands.saveHotkeyConfiguration(expectedRevision, hotkeys, keyviewer);
     notifyCommittedMutationSyncWarning(result);
-    queryClient.setQueryData(settingsKeys.all, result.settings);
+    publishSettingsSnapshot(queryClient, result.settings);
     await publishQueryScopes(queryClient, ['settings']);
     return result.settings;
   };
@@ -200,11 +206,12 @@ export function useSettings() {
           ...settingsQuery.data,
           language,
         };
-        await persistSettings(newSettings);
+        const savedSettings = await persistSettings(newSettings);
         await i18n.changeLanguage(language);
-        return newSettings;
+        return savedSettings;
       },
-      onSuccess: async () => {
+      onSuccess: async (savedSettings) => {
+        publishSettingsSnapshot(queryClient, savedSettings);
         await publishQueryScopes(queryClient, ['settings']);
         addToast('success', t('settings:toast.lang_success'));
       },
@@ -213,7 +220,7 @@ export function useSettings() {
         addToast(
           'error',
           t('settings:toast.lang_failed', {
-            error: String(err),
+            error: formatAppError(err),
           }),
         );
       },

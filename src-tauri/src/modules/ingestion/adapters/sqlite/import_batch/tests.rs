@@ -782,6 +782,7 @@ async fn replacing_a_decision_clears_stale_canonical_identity() {
         },
         75,
         ConfidenceTier::High,
+        &ReviewGate::default(),
     )
     .await
     .unwrap());
@@ -797,6 +798,7 @@ async fn replacing_a_decision_clears_stale_canonical_identity() {
         },
         0,
         ConfidenceTier::NoMatch,
+        &ReviewGate::default(),
     )
     .await
     .unwrap());

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WorkspaceExplorerQuery, WorkspaceExplorerSelectionModel } from '@/entities/workspace';
 import {
   isWorkspaceExplorerPathSelected,
@@ -33,18 +33,28 @@ export function useWorkspaceExplorerSelection({
     { mode: 'all_matching' }
   > | null>(null);
   const scopeKey = query ? workspaceExplorerQueryScopeKey(query) : null;
-  const snapshotKey = JSON.stringify([scopeKey, selectionScopeKey ?? null, listingRevision]);
-  const previousSnapshotKey = useRef(snapshotKey);
+  const contextKey = JSON.stringify([scopeKey, selectionScopeKey ?? null]);
+  const selectionSnapshotKey = JSON.stringify([contextKey, listingRevision]);
+  const currentSelectionSnapshotKey = useRef(selectionSnapshotKey);
+  const currentContextKey = useRef(contextKey);
+  useLayoutEffect(() => {
+    currentSelectionSnapshotKey.current = selectionSnapshotKey;
+    currentContextKey.current = contextKey;
+  }, [contextKey, selectionSnapshotKey]);
+  const previousContextKey = useRef(contextKey);
+  const previousListingRevision = useRef(listingRevision);
 
   useEffect(() => {
-    if (previousSnapshotKey.current === snapshotKey) {
-      return;
+    if (previousContextKey.current !== contextKey) {
+      previousContextKey.current = contextKey;
+      setAllMatching(null);
+      clearExplicitPaths();
+    } else if (previousListingRevision.current !== listingRevision) {
+      setAllMatching(null);
     }
 
-    previousSnapshotKey.current = snapshotKey;
-    setAllMatching(null);
-    clearExplicitPaths();
-  }, [clearExplicitPaths, snapshotKey]);
+    previousListingRevision.current = listingRevision;
+  }, [clearExplicitPaths, contextKey, listingRevision]);
 
   useEffect(() => {
     if (allMatching && explicitPaths.size > 0) {
@@ -60,7 +70,10 @@ export function useWorkspaceExplorerSelection({
       let excludedPaths = current.excludedPaths;
       if (loadedPaths.length >= totalMatching && excludedPaths.size > 0) {
         const matchingPaths = new Set(loadedPaths);
-        excludedPaths = new Set([...excludedPaths].filter((path) => matchingPaths.has(path)));
+        const retainedPaths = [...excludedPaths].filter((path) => matchingPaths.has(path));
+        if (retainedPaths.length !== excludedPaths.size) {
+          excludedPaths = new Set(retainedPaths);
+        }
       }
       return current.totalMatching !== totalMatching || excludedPaths !== current.excludedPaths
         ? { ...current, totalMatching, excludedPaths }
@@ -73,6 +86,28 @@ export function useWorkspaceExplorerSelection({
     [allMatching, explicitPaths],
   );
   const selectedCount = workspaceExplorerSelectionCount(selection);
+
+  const createAllMatchingCommit = useCallback(
+    (
+      nextSelection: Extract<WorkspaceExplorerSelectionModel, { mode: 'all_matching' }> | null,
+      validateListingRevision = true,
+    ) => {
+      const capturedSnapshotKey = selectionSnapshotKey;
+      const capturedContextKey = contextKey;
+      const isCurrent = () =>
+        currentSelectionSnapshotKey.current === capturedSnapshotKey ||
+        (!validateListingRevision && currentContextKey.current === capturedContextKey);
+      return {
+        isCurrent,
+        onApplied: () => {
+          if (isCurrent()) {
+            setAllMatching(nextSelection);
+          }
+        },
+      };
+    },
+    [contextKey, selectionSnapshotKey],
+  );
 
   const clearSelection = useCallback(() => {
     setAllMatching(null);
@@ -182,5 +217,6 @@ export function useWorkspaceExplorerSelection({
     removePaths,
     togglePath,
     selectAllMatching,
+    createAllMatchingCommit,
   };
 }

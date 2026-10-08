@@ -1,0 +1,181 @@
+{
+  "scope": "Local client smoke regression fixes; private native QA fixtures only",
+  "release_actions": {
+    "commit": false,
+    "push": false,
+    "installer_build": false
+  },
+  "native_runs": [
+    {
+      "suite": "settings",
+      "passed": 44,
+      "failed": 0,
+      "fixture_cleanup_verified": true,
+      "removed_fixture_roots": 2
+    },
+    {
+      "suite": "browser direct address",
+      "passed": 1,
+      "failed": 0,
+      "fixture_cleanup_verified": true,
+      "removed_fixture_roots": 1
+    },
+    {
+      "suite": "workspace final clean replay",
+      "passed": 20,
+      "failed": 0,
+      "elapsed_reported": "1m 19.7s",
+      "fixture_cleanup_verified": true,
+      "removed_fixture_roots": 2,
+      "cases": [
+        {
+          "title": "navigates Dashboard, Mods and Collections through the App Menu",
+          "state": "passed",
+          "duration_ms": 1961
+        },
+        {
+          "title": "selects a second game and restores the first without mixing object rows",
+          "state": "passed",
+          "duration_ms": 3324
+        },
+        {
+          "title": "filters object search including Unicode no-match and clears it through the UI",
+          "state": "passed",
+          "duration_ms": 432
+        },
+        {
+          "title": "changes object status filters and sort chips, then clears the filter",
+          "state": "passed",
+          "duration_ms": 524
+        },
+        {
+          "title": "searches mods, clears an empty result and preserves targets through list and sort changes",
+          "state": "passed",
+          "duration_ms": 1899
+        },
+        {
+          "title": "switches a card and its preview against exact filesystem prefixes",
+          "state": "passed",
+          "duration_ms": 862
+        },
+        {
+          "title": "accounts for seven rapid rendered switch clicks and keeps the last intent",
+          "state": "passed",
+          "duration_ms": 1247
+        },
+        {
+          "title": "selects two mods and runs bulk disable, enable and clear on the frozen selection",
+          "state": "passed",
+          "duration_ms": 1513
+        },
+        {
+          "title": "round-trips Favorite, bulk Pin and Remove Pin on isolated targets",
+          "state": "passed",
+          "duration_ms": 8202
+        },
+        {
+          "title": "validates blank and duplicate folder names, cancels and creates a Unicode folder",
+          "state": "passed",
+          "duration_ms": 1090
+        },
+        {
+          "title": "checks inline rename blank, cancel, normalized duplicate and Unicode success",
+          "state": "passed",
+          "duration_ms": 3409
+        },
+        {
+          "title": "cancels then confirms disabled-ancestor enable without changing own-disabled or same-name sentinels",
+          "state": "passed",
+          "duration_ms": 1669
+        },
+        {
+          "title": "renders a true enabled/disabled name collision as read-only without conflating hash conflicts",
+          "state": "passed",
+          "duration_ms": 4079
+        },
+        {
+          "title": "edits metadata through the preview and persists Unicode and empty description",
+          "state": "passed",
+          "duration_ms": 6568
+        },
+        {
+          "title": "validates INI key edits, cancels an unsaved transition, discards and saves through rendered controls",
+          "state": "passed",
+          "duration_ms": 1322
+        },
+        {
+          "title": "navigates gallery images, wraps fullscreen navigation and cancels image deletion",
+          "state": "passed",
+          "duration_ms": 1016
+        },
+        {
+          "title": "rejects a blank collection name, cancels and saves a Unicode collection from current state",
+          "state": "passed",
+          "duration_ms": 1257
+        },
+        {
+          "title": "renames a stored collection, cancels and handles a blank inline name without changing membership",
+          "state": "passed",
+          "duration_ms": 1644
+        },
+        {
+          "title": "distinguishes current from saved membership, cancels apply and confirms exact disk restoration",
+          "state": "passed",
+          "duration_ms": 1831
+        },
+        {
+          "title": "cancels collection deletion then deletes only the owned E2E row and preserves mod files",
+          "state": "passed",
+          "duration_ms": 1154
+        }
+      ]
+    }
+  ],
+  "diagnosis": [
+    {
+      "stage": "full replay before completed-receipt bridge",
+      "passed": 19,
+      "failed": 1,
+      "failed_case": "Bulk Enable after Disable",
+      "native_clicks": ["Disable", "Enable"]
+    },
+    {
+      "stage": "scalar-only diagnostic reproduction",
+      "receipt": {
+        "processed": 2,
+        "success": 2,
+        "rewrites": 2,
+        "identities": 2,
+        "failures": 0,
+        "cancelled": false
+      },
+      "next_enable": {
+        "listing_coverage": false,
+        "receipt_present": false,
+        "error_classification": "Validation"
+      }
+    },
+    {
+      "stage": "mixed path spelling fix",
+      "focused_regressions_passed": 28,
+      "read_only_review": "No actionable findings",
+      "temporary_product_diagnostics_removed": true
+    }
+  ],
+  "boundaries": [
+    "No large-library latency SLA",
+    "No full Browser navigation rerun",
+    "No real game/loader/global hotkey integration",
+    "No Explorer/default editor/external viewer verification",
+    "No positive mod/image recycle-bin deletion",
+    "No drag/resize or bulk Move-to-Object menu replay"
+  ],
+  "safety": {
+    "private_identifier_verified_before_reset": true,
+    "production_library_used": false,
+    "production_credentials_used": false,
+    "telemetry_enabled": false,
+    "global_hotkeys_enabled": false,
+    "anonymous_error_report_sent": false
+  }
+}

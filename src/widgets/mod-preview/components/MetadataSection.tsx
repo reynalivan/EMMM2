@@ -3,6 +3,8 @@ import { Pencil } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface MetadataSectionProps {
+  isEditing: boolean;
+  onEditingChange: (isEditing: boolean) => void;
   activePath: string | null;
   authorDraft: string;
   versionDraft: string;
@@ -16,6 +18,8 @@ interface MetadataSectionProps {
 }
 
 export default function MetadataSection({
+  isEditing,
+  onEditingChange,
   activePath,
   authorDraft,
   versionDraft,
@@ -29,7 +33,6 @@ export default function MetadataSection({
 }: MetadataSectionProps) {
   const { t } = useTranslation(['preview']);
   const [showSavedStatus, setShowSavedStatus] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const prevDirty = useRef(metadataDirty);
 
   useEffect(() => {
@@ -46,9 +49,9 @@ export default function MetadataSection({
 
   useEffect(() => {
     if (!canEdit && isEditing) {
-      setIsEditing(false);
+      onEditingChange(false);
     }
-  }, [canEdit, isEditing]);
+  }, [canEdit, isEditing, onEditingChange]);
 
   if (!isEditing) {
     return (
@@ -66,7 +69,7 @@ export default function MetadataSection({
             )}
             <button
               className="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content"
-              onClick={() => setIsEditing(true)}
+              onClick={() => onEditingChange(true)}
               title={t('preview:metadata.edit_title')}
               disabled={!activePath || !canEdit}
             >
@@ -125,7 +128,7 @@ export default function MetadataSection({
           ) : (
             <button
               className="btn btn-ghost btn-xs text-primary"
-              onClick={() => setIsEditing(false)}
+              onClick={() => onEditingChange(false)}
             >
               {t('preview:actions.done')}
             </button>

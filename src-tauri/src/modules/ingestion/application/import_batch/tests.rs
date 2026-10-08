@@ -491,6 +491,18 @@ async fn target_with_extra_files_requires_review_then_keeps_a_separate_name() {
     )
     .await
     .unwrap();
+    insert_test_object(
+        &context.pool,
+        &TestObjectFixture {
+            id: "object-yoimiya-target-review",
+            game_id: "gimi-target-review",
+            name: "Yoimiya",
+            folder_path: "Yoimiya",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
     let batch = create_import_batch(
         &context.pool,
         CreateImportBatchInput {
@@ -576,6 +588,32 @@ async fn target_with_extra_files_requires_review_then_keeps_a_separate_name() {
             .and_then(|value| value.suggested_separate_name.as_deref()),
         Some("Spring Skin (2)")
     );
+
+    let reallocated = set_import_item_decision(
+        &context.pool,
+        SetImportItemDecisionInput {
+            destination_object_id: Some("object-yoimiya-target-review".to_string()),
+            ..select_target.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(reallocated.status, ImportItemStatus::Ready);
+    assert_eq!(
+        reallocated.destination_object_id.as_deref(),
+        Some("object-yoimiya-target-review")
+    );
+    assert!(reallocated.target_comparison.is_none());
+    assert!(reallocated
+        .review_gate
+        .reasons
+        .iter()
+        .all(|reason| !matches!(
+            reason.code,
+            super::types::ReviewReasonCode::TargetHasAdditionalFiles
+                | super::types::ReviewReasonCode::TargetNameConflict
+                | super::types::ReviewReasonCode::TargetComparisonIncomplete
+        )));
 
     let kept_separately = set_import_item_decision(
         &context.pool,

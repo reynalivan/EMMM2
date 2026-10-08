@@ -24,6 +24,37 @@ describe('useFolderNavigation', () => {
     expect(result.current.focusedId).toBeNull();
   });
 
+  it.each(['a', 'Backspace', 'Delete', 'ArrowLeft', 'Tab'])(
+    'leaves %s to an editing control',
+    (key) => {
+      const onSelectAll = vi.fn();
+      const onGoUp = vi.fn();
+      const onDelete = vi.fn();
+      const { result } = renderHook(() =>
+        useFolderNavigation({
+          ...defaultProps,
+          onSelectAll,
+          onGoUp,
+          onDelete,
+        }),
+      );
+      const input = document.createElement('input');
+      const event = new KeyboardEvent('keydown', {
+        key,
+        ctrlKey: key === 'a',
+        bubbles: true,
+        cancelable: true,
+      });
+      input.addEventListener('keydown', (event) => result.current.handleKeyDown(event));
+      act(() => input.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(false);
+      expect(onSelectAll).not.toHaveBeenCalled();
+      expect(onGoUp).not.toHaveBeenCalled();
+      expect(onDelete).not.toHaveBeenCalled();
+      expect(result.current.focusedId).toBeNull();
+    },
+  );
+
   it('ArrowRight moves focus next', () => {
     const { result } = renderHook(() => useFolderNavigation(defaultProps));
 

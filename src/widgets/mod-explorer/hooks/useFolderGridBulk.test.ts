@@ -7,6 +7,7 @@ import { thumbnailKeys } from '@/entities/mod';
 import type { BulkResult } from '@/shared/api/tauri/bindings.gen';
 import {
   WORKSPACE_EXPLORER_BULK_SELECTION_LIMIT,
+  type WorkspaceExplorerQuery,
   type WorkspaceExplorerSelectionModel,
 } from '@/entities/workspace';
 import { workspaceKeys } from '@/features/workspace-runtime';
@@ -41,14 +42,15 @@ const { toastError, toastSuccess } = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }));
+const activeGameId = vi.hoisted(() => ({ value: 'game-1' }));
 
 vi.mock('@/entities/game', () => ({
-  useActiveGame: () => ({ activeGame: { id: 'game-1' } }),
+  useActiveGame: () => ({ activeGame: { id: activeGameId.value } }),
 }));
 
 vi.mock('@/app/store', () => ({
   useAppStore: {
-    getState: () => ({ activeGameId: 'game-1' }),
+    getState: () => ({ activeGameId: activeGameId.value }),
   },
 }));
 
@@ -122,8 +124,13 @@ function folder(path: string): ModFolder {
   return { path, name: path, folder_name: path } as ModFolder;
 }
 
+function identifiedFolder(path: string, identity: string): ModFolder {
+  return { ...folder(path), filesystem_identity: identity } as ModFolder;
+}
+
 describe('useFolderGridBulk', () => {
   beforeEach(() => {
+    activeGameId.value = 'game-1';
     vi.clearAllMocks();
     defaultQueryClient.clear();
     executeWorkspaceExplorerBulk.mockReset();
@@ -346,6 +353,355 @@ describe('useFolderGridBulk', () => {
         [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
       ),
     );
+  });
+
+  it('uses the completed physical identity while renamed paths outpace the listing refresh', async () => {
+    const renamedResult: BulkResult = {
+      ...bulkResult,
+      success: ['C:/Mods/Alice/DISABLED Blue'],
+      expected_identities: [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
+      path_rewrites: [{ old_path: 'C:/Mods/Alice/Blue', new_path: 'C:/Mods/Alice/DISABLED Blue' }],
+    };
+    executeWorkspaceExplorerBulk.mockResolvedValueOnce(renamedResult);
+    const selection: WorkspaceExplorerSelectionModel = {
+      mode: 'explicit',
+      paths: new Set(['C:/Mods/Alice/Blue']),
+    };
+    const { result, rerender } = renderHook(
+      ({ currentSelection }: { currentSelection: WorkspaceExplorerSelectionModel }) =>
+        useFolderGridBulk({
+          selection: currentSelection,
+          explorerQuery,
+          listingRevision: 'revision-1',
+          sortedFolders: [identifiedFolder('C:/Mods/Alice/Blue', 'identity-blue')],
+          clearGridSelection: vi.fn(),
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { initialProps: { currentSelection: selection }, wrapper },
+    );
+
+    act(() => result.current.handleBulkToggle(false));
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1));
+
+    rerender({
+      currentSelection: {
+        mode: 'explicit',
+        paths: new Set(['C:/Mods/Alice/DISABLED Blue']),
+      },
+    });
+    act(() => result.current.handleBulkToggle(true));
+
+    await waitFor(() => expect(bulkToggleMods).toHaveBeenCalledTimes(1));
+    expect(bulkToggleMods).toHaveBeenCalledWith(
+      'game-1',
+      ['C:/Mods/Alice/DISABLED Blue'],
+      true,
+      expect.any(String),
+      expect.any(Number),
+      [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
+    );
+    expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps absolute backend receipts back to relative selections with existing path rewrite semantics', async () => {
+    const sourcePath = 'Alice\\Blue';
+    const rewrittenPath = 'Alice\\DISABLED Blue';
+    const absoluteOldPath = 'C:/Mods/Alice/Blue';
+    const absoluteNewPath = 'C:/Mods/Alice/DISABLED Blue';
+    executeWorkspaceExplorerBulk.mockResolvedValueOnce({
+      ...bulkResult,
+      success: [absoluteNewPath],
+      expected_identities: [[absoluteNewPath, 'identity-blue']],
+      path_rewrites: [{ old_path: absoluteOldPath, new_path: absoluteNewPath }],
+    });
+    let selection: WorkspaceExplorerSelectionModel = {
+      mode: 'explicit',
+      paths: new Set([sourcePath]),
+    };
+    const { result, rerender } = renderHook(
+      () =>
+        useFolderGridBulk({
+          selection,
+          explorerQuery,
+          listingRevision: 'revision-1',
+          sortedFolders: [identifiedFolder(sourcePath, 'identity-blue')],
+          clearGridSelection: vi.fn(),
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    act(() => result.current.handleBulkToggle(false));
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.bulkMutationPending).toBe(false));
+
+    selection = { mode: 'explicit', paths: new Set([rewrittenPath]) };
+    rerender();
+    act(() => result.current.handleBulkToggle(true));
+
+    await waitFor(() => expect(bulkToggleMods).toHaveBeenCalledTimes(1));
+    expect(bulkToggleMods).toHaveBeenCalledWith(
+      'game-1',
+      [rewrittenPath],
+      true,
+      expect.any(String),
+      expect.any(Number),
+      [[rewrittenPath, 'identity-blue']],
+    );
+    expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1);
+  });
+
+  it('retires a completed receipt when selection leaves and returns to its rewritten paths', async () => {
+    const renamedResult: BulkResult = {
+      ...bulkResult,
+      success: ['C:/Mods/Alice/DISABLED Blue'],
+      expected_identities: [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
+      path_rewrites: [{ old_path: 'C:/Mods/Alice/Blue', new_path: 'C:/Mods/Alice/DISABLED Blue' }],
+    };
+    executeWorkspaceExplorerBulk.mockResolvedValueOnce(renamedResult);
+    let selection: WorkspaceExplorerSelectionModel = {
+      mode: 'explicit',
+      paths: new Set(['C:/Mods/Alice/Blue']),
+    };
+    const { result, rerender } = renderHook(
+      () =>
+        useFolderGridBulk({
+          selection,
+          explorerQuery,
+          listingRevision: 'revision-1',
+          sortedFolders: [identifiedFolder('C:/Mods/Alice/Blue', 'identity-blue')],
+          clearGridSelection: vi.fn(),
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    act(() => result.current.handleBulkToggle(false));
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.bulkMutationPending).toBe(false));
+
+    selection = { mode: 'explicit', paths: new Set(['C:/Mods/Alice/DISABLED Blue']) };
+    rerender();
+    selection = { mode: 'explicit', paths: new Set(['C:/Mods/Alice/Other']) };
+    rerender();
+    selection = { mode: 'explicit', paths: new Set(['C:/Mods/Alice/DISABLED Blue']) };
+    rerender();
+    act(() => result.current.handleBulkToggle(true));
+
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(2));
+    expect(bulkToggleMods).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'different query',
+    'different game',
+    'different explicit selection',
+    'incomplete receipt',
+    'replacement identity',
+  ])('does not reuse a completed identity receipt for %s', async (scenario) => {
+    const renamedResult: BulkResult = {
+      ...bulkResult,
+      success: ['C:/Mods/Alice/DISABLED Blue'],
+      expected_identities:
+        scenario === 'incomplete receipt' ? [] : [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
+      path_rewrites: [{ old_path: 'C:/Mods/Alice/Blue', new_path: 'C:/Mods/Alice/DISABLED Blue' }],
+    };
+    executeWorkspaceExplorerBulk.mockResolvedValueOnce(renamedResult);
+    let query: WorkspaceExplorerQuery = explorerQuery;
+    let selection: WorkspaceExplorerSelectionModel = {
+      mode: 'explicit',
+      paths: new Set(['C:/Mods/Alice/Blue']),
+    };
+    let sortedFolders = [identifiedFolder('C:/Mods/Alice/Blue', 'identity-blue')];
+    const { result, rerender } = renderHook(
+      () =>
+        useFolderGridBulk({
+          selection,
+          explorerQuery: query,
+          listingRevision: 'revision-1',
+          sortedFolders,
+          clearGridSelection: vi.fn(),
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    act(() => result.current.handleBulkToggle(false));
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.bulkMutationPending).toBe(false));
+
+    if (scenario === 'different query') {
+      query = { ...explorerQuery, search_query: 'Blue' };
+    } else if (scenario === 'different game') {
+      activeGameId.value = 'game-2';
+      query = { ...explorerQuery, game_id: 'game-2' };
+    } else if (scenario === 'different explicit selection') {
+      selection = { mode: 'explicit', paths: new Set(['C:/Mods/Alice/Other']) };
+    } else if (scenario === 'replacement identity') {
+      sortedFolders = [identifiedFolder('C:/Mods/Alice/DISABLED Blue', 'identity-replacement')];
+    }
+    if (scenario !== 'different explicit selection') {
+      selection = {
+        mode: 'explicit',
+        paths: new Set(['C:/Mods/Alice/DISABLED Blue']),
+      };
+    }
+    rerender();
+    act(() => result.current.handleBulkToggle(true));
+
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(2));
+    expect(bulkToggleMods).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { scenario: 'before the listing revision advances', revision: 'revision-1' },
+    { scenario: 'after the listing revision advances', revision: 'revision-2' },
+  ])(
+    'continues an opposite toggle for the same physical selection $scenario',
+    async ({ revision }) => {
+      let finishFirst!: (value: typeof bulkResult) => void;
+      executeWorkspaceExplorerBulk.mockImplementationOnce(
+        () =>
+          new Promise<typeof bulkResult>((resolve) => {
+            finishFirst = resolve;
+          }),
+      );
+      let selection: WorkspaceExplorerSelectionModel = {
+        mode: 'explicit',
+        paths: new Set(['C:/Mods/Alice/Blue', 'C:/Mods/Alice/Green']),
+      };
+      let listingRevision = 'revision-1';
+      let sortedFolders = [
+        identifiedFolder('C:/Mods/Alice/Blue', 'identity-blue'),
+        identifiedFolder('C:/Mods/Alice/Green', 'identity-green'),
+      ];
+      const { result, rerender } = renderHook(
+        () =>
+          useFolderGridBulk({
+            selection,
+            explorerQuery,
+            listingRevision,
+            sortedFolders,
+            clearGridSelection: vi.fn(),
+            removeGridSelectionPaths: vi.fn(),
+            openMoveDialog: vi.fn(),
+          }),
+        { wrapper },
+      );
+
+      act(() => result.current.handleBulkToggle(false));
+      await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1));
+
+      selection = {
+        mode: 'explicit',
+        paths: new Set(['C:/Mods/Alice/DISABLED Blue', 'C:/Mods/Alice/DISABLED Green']),
+      };
+      listingRevision = revision;
+      sortedFolders = [
+        identifiedFolder('C:/Mods/Alice/DISABLED Blue', 'identity-blue'),
+        identifiedFolder('C:/Mods/Alice/DISABLED Green', 'identity-green'),
+      ];
+      rerender();
+      act(() => result.current.handleBulkToggle(true));
+
+      expect(admitWorkspaceIntentOverride).toHaveBeenCalledTimes(1);
+      expect(admitWorkspaceIntentOverride).toHaveBeenCalledWith(
+        'game-1',
+        [
+          {
+            kind: 'mod_path',
+            value: 'C:/Mods/Alice/DISABLED Blue',
+            expected_identity: 'identity-blue',
+          },
+          {
+            kind: 'mod_path',
+            value: 'C:/Mods/Alice/DISABLED Green',
+            expected_identity: 'identity-green',
+          },
+        ],
+        expect.any(Number),
+      );
+
+      await act(async () =>
+        finishFirst({
+          ...bulkResult,
+          success: ['C:/Mods/Alice/DISABLED Blue', 'C:/Mods/Alice/DISABLED Green'],
+          processed_count: 2,
+          expected_identities: [
+            ['C:/Mods/Alice/DISABLED Blue', 'identity-blue'],
+            ['C:/Mods/Alice/DISABLED Green', 'identity-green'],
+          ],
+          path_rewrites: [
+            { old_path: 'C:/Mods/Alice/Blue', new_path: 'C:/Mods/Alice/DISABLED Blue' },
+            { old_path: 'C:/Mods/Alice/Green', new_path: 'C:/Mods/Alice/DISABLED Green' },
+          ],
+        }),
+      );
+
+      await waitFor(() => expect(bulkToggleMods).toHaveBeenCalledTimes(1));
+      expect(bulkToggleMods).toHaveBeenCalledWith(
+        'game-1',
+        ['C:/Mods/Alice/DISABLED Blue', 'C:/Mods/Alice/DISABLED Green'],
+        true,
+        expect.any(String),
+        expect.any(Number),
+        [
+          ['C:/Mods/Alice/DISABLED Blue', 'identity-blue'],
+          ['C:/Mods/Alice/DISABLED Green', 'identity-green'],
+        ],
+      );
+    },
+  );
+
+  it('rejects a changed physical selection across listing revisions', async () => {
+    let finishFirst!: (value: typeof bulkResult) => void;
+    executeWorkspaceExplorerBulk.mockImplementationOnce(
+      () =>
+        new Promise<typeof bulkResult>((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    let selection: WorkspaceExplorerSelectionModel = {
+      mode: 'explicit',
+      paths: new Set(['C:/Mods/Alice/Blue']),
+    };
+    let listingRevision = 'revision-1';
+    let sortedFolders = [identifiedFolder('C:/Mods/Alice/Blue', 'identity-blue')];
+    const { result, rerender } = renderHook(
+      () =>
+        useFolderGridBulk({
+          selection,
+          explorerQuery,
+          listingRevision,
+          sortedFolders,
+          clearGridSelection: vi.fn(),
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { wrapper },
+    );
+
+    act(() => result.current.handleBulkToggle(false));
+    await waitFor(() => expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1));
+    selection = {
+      mode: 'explicit',
+      paths: new Set(['C:/Mods/Alice/Parent/Blue']),
+    };
+    listingRevision = 'revision-2';
+    sortedFolders = [identifiedFolder('C:/Mods/Alice/Parent/Blue', 'identity-different')];
+    rerender();
+
+    act(() => result.current.handleBulkToggle(true));
+
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(admitWorkspaceIntentOverride).not.toHaveBeenCalled();
+
+    await act(async () => finishFirst(bulkResult));
+    expect(bulkToggleMods).not.toHaveBeenCalled();
   });
 
   it('preserves offscreen physical identities when continuing an all-matching toggle', async () => {

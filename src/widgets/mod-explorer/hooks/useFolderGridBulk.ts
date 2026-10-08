@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useActiveGame } from '@/entities/game';
 import { thumbnailKeys, type MoveStatus } from '@/entities/mod';
@@ -39,6 +39,7 @@ import {
   showWorkspaceRenameConflictDialog,
   scheduleWorkspaceSwitchRefresh,
   buildRuntimeMutationDescriptor,
+  rewriteWorkspacePathValue,
   workspaceKeys,
 } from '@/features/workspace-runtime';
 import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
@@ -70,20 +71,23 @@ interface ToggleExecutionSnapshot {
   selectionIdentity: WorkspaceExplorerSelectionModel;
   listingRevision: string;
   expectedIdentities: [string, string][];
+  useCommittedIdentities?: boolean;
+}
+
+interface CompletedToggleReceipt {
+  gameId: string;
+  queryKey: string;
+  listingRevision: string;
+  sourcePaths: string[];
+  identities: [string, string][];
 }
 
 function sameToggleSelection(
   left: ToggleExecutionSnapshot,
   right: ToggleExecutionSnapshot,
 ): boolean {
-  if (
-    left.execution.gameId !== right.execution.gameId ||
-    left.listingRevision !== right.listingRevision
-  ) {
+  if (left.execution.gameId !== right.execution.gameId) {
     return false;
-  }
-  if (left.selectionIdentity === right.selectionIdentity) {
-    return true;
   }
   const a = left.execution.selection;
   const b = right.execution.selection;
@@ -93,13 +97,136 @@ function sameToggleSelection(
   ) {
     return false;
   }
+
+  if (
+    left.listingRevision === right.listingRevision &&
+    left.selectionIdentity === right.selectionIdentity
+  ) {
+    return true;
+  }
+
   const aPaths = a.selection.mode === 'explicit' ? a.selection.paths : a.selection.excluded_paths;
   const bPaths = b.selection.mode === 'explicit' ? b.selection.paths : b.selection.excluded_paths;
-  if (aPaths.length !== bPaths.length) {
+  const rightPathSet = new Set(bPaths);
+  const pathsMatch =
+    aPaths.length === bPaths.length && aPaths.every((path) => rightPathSet.has(path));
+
+  if (left.listingRevision === right.listingRevision && pathsMatch) {
+    return true;
+  }
+
+  if (a.selection.mode !== 'explicit' || b.selection.mode !== 'explicit') {
     return false;
   }
-  const bSet = new Set(bPaths);
-  return aPaths.every((path) => bSet.has(path));
+  const leftIdentities = selectedFilesystemIdentities(left);
+  const rightIdentities = selectedFilesystemIdentities(right);
+  return (
+    leftIdentities !== null &&
+    rightIdentities !== null &&
+    leftIdentities.length === rightIdentities.length &&
+    leftIdentities.every((identity, index) => identity === rightIdentities[index])
+  );
+}
+
+function selectedFilesystemIdentities(snapshot: ToggleExecutionSnapshot): string[] | null {
+  if (snapshot.execution.selection.selection.mode !== 'explicit') {
+    return null;
+  }
+
+  const selectedPaths = snapshot.execution.selection.selection.paths;
+  const identityByPath = new Map(snapshot.expectedIdentities);
+  const identities: string[] = [];
+  for (const path of selectedPaths) {
+    const identity = identityByPath.get(path);
+    if (identity === undefined) {
+      return null;
+    }
+    identities.push(identity);
+  }
+
+  return identities.sort();
+}
+
+function samePathSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const paths = new Set(left);
+  return paths.size === left.length && right.every((path) => paths.has(path));
+}
+
+function createCompletedToggleReceipt(
+  snapshot: ToggleExecutionSnapshot,
+  result: BulkResult,
+): CompletedToggleReceipt | null {
+  const selection = snapshot.execution.selection.selection;
+  const identities = result.expected_identities;
+  const sourcePaths = selection.mode === 'explicit' ? [...selection.paths] : [];
+  const rewrites = result.path_rewrites.map(({ old_path, new_path }) => ({
+    oldPath: old_path,
+    newPath: new_path,
+  }));
+  if (selection.mode !== 'explicit') {
+    return null;
+  }
+  if (result.path_rewrites.length === 0) {
+    return null;
+  }
+  if (result.cancelled || result.unprocessed_count !== 0) {
+    return null;
+  }
+  if (
+    result.processed_count !== selection.paths.length ||
+    result.success.length !== selection.paths.length ||
+    result.failures.length !== 0
+  ) {
+    return null;
+  }
+  if (!identities || identities.length !== selection.paths.length) {
+    return null;
+  }
+
+  const uniqueIdentityPaths = new Set<string>();
+  const identityValues = new Set<string>();
+  for (const [path, identity] of identities) {
+    if (!path || !identity || uniqueIdentityPaths.has(path) || identityValues.has(identity)) {
+      return null;
+    }
+    uniqueIdentityPaths.add(path);
+    identityValues.add(identity);
+  }
+
+  const sourceIdentityByPath = new Map(snapshot.expectedIdentities);
+  const identityCounts = new Map<string, number>();
+  for (const [, identity] of identities) {
+    identityCounts.set(identity, (identityCounts.get(identity) ?? 0) + 1);
+  }
+  const mappedIdentities: [string, string][] = [];
+  const mappedPaths = new Set<string>();
+  const sourceIdentityValues = new Set<string>();
+  for (const sourcePath of sourcePaths) {
+    const identity = sourceIdentityByPath.get(sourcePath);
+    const rewrittenPath = rewriteWorkspacePathValue(sourcePath, rewrites) ?? sourcePath;
+    if (
+      !identity ||
+      identityCounts.get(identity) !== 1 ||
+      sourceIdentityValues.has(identity) ||
+      mappedPaths.has(rewrittenPath)
+    ) {
+      return null;
+    }
+    sourceIdentityValues.add(identity);
+    mappedPaths.add(rewrittenPath);
+    mappedIdentities.push([rewrittenPath, identity]);
+  }
+
+  return {
+    gameId: snapshot.execution.gameId,
+    queryKey: JSON.stringify(snapshot.execution.selection.query),
+    listingRevision: snapshot.listingRevision,
+    sourcePaths: [...selection.paths],
+    identities: mappedIdentities,
+  };
 }
 
 interface BulkMoveSnapshot extends BulkExecutionSnapshot {
@@ -209,6 +336,49 @@ export function useFolderGridBulk({
   const bulkMutationInFlight = useRef(false);
   const runningToggle = useRef<ToggleExecutionSnapshot | null>(null);
   const pendingToggle = useRef<ToggleExecutionSnapshot | null>(null);
+  const completedToggleReceipt = useRef<CompletedToggleReceipt | null>(null);
+
+  useEffect(() => {
+    const receipt = completedToggleReceipt.current;
+    if (!receipt) {
+      return;
+    }
+    const selectedPaths = selection.mode === 'explicit' ? [...selection.paths] : [];
+    const receiptPaths = receipt.identities.map(([path]) => path);
+    if (
+      activeGameId !== receipt.gameId ||
+      !explorerQuery ||
+      receipt.queryKey !== JSON.stringify(explorerQuery) ||
+      selection.mode !== 'explicit'
+    ) {
+      completedToggleReceipt.current = null;
+      return;
+    }
+
+    const cachedByPath = new Map(
+      sortedFolders.flatMap((folder) =>
+        folder.filesystem_identity
+          ? [[folder.path, folder.filesystem_identity] as [string, string]]
+          : [],
+      ),
+    );
+    const identitiesByPath = new Map(receipt.identities);
+    const hasConflictingCachedIdentity = receiptPaths.some((path) => {
+      const cachedIdentity = cachedByPath.get(path);
+      return cachedIdentity !== undefined && cachedIdentity !== identitiesByPath.get(path);
+    });
+    const cachedPaths = new Set(sortedFolders.map((folder) => folder.path));
+    const listingCoversReceipt = receiptPaths.every((path) => cachedPaths.has(path));
+    const sourceSelectionMatches = samePathSet(selectedPaths, receipt.sourcePaths);
+    const rewrittenSelectionMatches = samePathSet(selectedPaths, receiptPaths);
+    if (
+      hasConflictingCachedIdentity ||
+      listingCoversReceipt ||
+      (!sourceSelectionMatches && !rewrittenSelectionMatches)
+    ) {
+      completedToggleReceipt.current = null;
+    }
+  }, [activeGameId, explorerQuery, selection, sortedFolders]);
 
   const beginBulkMutation = useCallback(() => {
     if (bulkMutationInFlight.current) {
@@ -347,6 +517,9 @@ export function useFolderGridBulk({
 
   const runBulkAction = useCallback(
     (action: WorkspaceExplorerBulkAction, onSuccess?: (result: BulkResult) => void) => {
+      if (action.kind !== 'toggle') {
+        completedToggleReceipt.current = null;
+      }
       if (!selectionStable) {
         return;
       }
@@ -365,17 +538,82 @@ export function useFolderGridBulk({
       let toggleSnapshot: ToggleExecutionSnapshot | null = null;
       if (action.kind === 'toggle') {
         if (!activeGameId || !explorerQuery || !listingRevision) {
+          const receipt = completedToggleReceipt.current;
+          if (
+            !receipt ||
+            selection.mode !== 'explicit' ||
+            receipt.gameId !== activeGameId ||
+            receipt.queryKey !== JSON.stringify(explorerQuery)
+          ) {
+            completedToggleReceipt.current = null;
+            toast.error(t('common:errors.explorer_snapshot_expired'));
+            return;
+          }
+        }
+        const intentRevision = nextWorkspaceIntentRevision();
+        const cachedIdentities = sortedFolders.flatMap((folder) =>
+          folder.filesystem_identity
+            ? [[folder.path, folder.filesystem_identity] as [string, string]]
+            : [],
+        );
+        let useCommittedIdentities = false;
+        let expectedIdentities = cachedIdentities;
+        let snapshotSelection: WorkspaceExplorerSelectionInput;
+        let snapshotListingRevision: string;
+        const receipt = completedToggleReceipt.current;
+        const selectedPaths = selection.mode === 'explicit' ? Array.from(selection.paths) : null;
+        const selectedPathSet = selectedPaths ? new Set(selectedPaths) : null;
+        if (
+          selectedPaths &&
+          selectedPathSet &&
+          receipt &&
+          activeGameId &&
+          explorerQuery &&
+          receipt.gameId === activeGameId &&
+          receipt.queryKey === JSON.stringify(explorerQuery) &&
+          receipt.identities.length === selectedPaths.length &&
+          receipt.identities.every(([path]) => selectedPathSet.has(path))
+        ) {
+          const identitiesByPath = new Map(receipt.identities);
+          const cachedByPath = new Map(cachedIdentities);
+          const cachedPaths = new Set(sortedFolders.map((folder) => folder.path));
+          const hasConflictingCachedIdentity = selectedPaths.some((path) => {
+            const cachedIdentity = cachedByPath.get(path);
+            return cachedIdentity !== undefined && cachedIdentity !== identitiesByPath.get(path);
+          });
+          const listingCoversSelection = selectedPaths.every((path) => cachedPaths.has(path));
+          if (hasConflictingCachedIdentity || listingCoversSelection) {
+            completedToggleReceipt.current = null;
+          } else {
+            useCommittedIdentities = true;
+            expectedIdentities = receipt.identities;
+          }
+        } else {
+          completedToggleReceipt.current = null;
+        }
+
+        if (useCommittedIdentities && receipt && explorerQuery && activeGameId && selectedPaths) {
+          snapshotSelection = {
+            query: explorerQuery,
+            listing_revision: receipt.listingRevision,
+            selection: { mode: 'explicit', paths: selectedPaths },
+          };
+          snapshotListingRevision = receipt.listingRevision;
+        } else if (activeGameId && explorerQuery && listingRevision) {
+          snapshotSelection = toWorkspaceExplorerSelectionInput(
+            selection,
+            explorerQuery,
+            listingRevision,
+          );
+          snapshotListingRevision = listingRevision;
+        } else {
           toast.error(t('common:errors.explorer_snapshot_expired'));
           return;
         }
-        const intentRevision = nextWorkspaceIntentRevision();
+
         toggleSnapshot = {
           action,
-          execution: {
-            gameId: activeGameId,
-            selection: toWorkspaceExplorerSelectionInput(selection, explorerQuery, listingRevision),
-            intentRevision,
-          },
+          execution: { gameId: activeGameId, selection: snapshotSelection, intentRevision },
           overlayPaths:
             selection.mode === 'explicit'
               ? [...selection.paths]
@@ -383,12 +621,9 @@ export function useFolderGridBulk({
                   .map((folder) => folder.path)
                   .filter((path) => !selection.excludedPaths.has(path)),
           selectionIdentity: selection,
-          listingRevision,
-          expectedIdentities: sortedFolders.flatMap((folder) =>
-            folder.filesystem_identity
-              ? [[folder.path, folder.filesystem_identity] as [string, string]]
-              : [],
-          ),
+          listingRevision: snapshotListingRevision,
+          expectedIdentities,
+          ...(useCommittedIdentities ? { useCommittedIdentities: true } : {}),
         };
         if (bulkMutationInFlight.current) {
           const running = runningToggle.current;
@@ -445,8 +680,11 @@ export function useFolderGridBulk({
       if (toggleSnapshot) {
         const runToggle = async () => {
           let next: ToggleExecutionSnapshot | null = toggleSnapshot;
-          let committedPaths: string[] | null = null;
-          let committedIdentities: [string, string][] | undefined;
+          let committedIdentities: [string, string][] | undefined =
+            toggleSnapshot.useCommittedIdentities ? toggleSnapshot.expectedIdentities : undefined;
+          let committedPaths: string[] | null = committedIdentities?.length
+            ? committedIdentities.map(([path]) => path)
+            : null;
           while (next) {
             const current = next;
             runningToggle.current = current;
@@ -467,7 +705,11 @@ export function useFolderGridBulk({
               committedPaths = committedIdentities?.length
                 ? committedIdentities.map(([path]) => path)
                 : null;
+              completedToggleReceipt.current = isActiveGame(current.execution.gameId)
+                ? createCompletedToggleReceipt(current, result)
+                : null;
             } catch (error) {
+              completedToggleReceipt.current = null;
               clearFolderBulkPendingDesired(
                 current.execution.gameId,
                 current.overlayPaths,

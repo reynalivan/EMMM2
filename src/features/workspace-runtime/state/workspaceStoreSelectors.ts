@@ -12,6 +12,7 @@ export function selectWorkspaceRuntimeState(state: AppState): WorkspaceRuntimeSt
     explorerSubPath: state.explorerSubPath,
     currentPath: state.currentPath,
     selectedModPath: state.selectedModPath,
+    gridSelection: state.gridSelection,
     mobileActivePane: state.mobileActivePane,
     previewDirty: state.workspacePreviewDirty,
     previewTransition: state.workspacePreviewTransition ?? INITIAL_WORKSPACE_PREVIEW_TRANSITION,

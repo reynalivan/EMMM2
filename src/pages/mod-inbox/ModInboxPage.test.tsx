@@ -223,7 +223,17 @@ describe('ModInboxPage', () => {
     });
   });
 
-  it('selects every ready entry by default and opens the created batch in the shared wizard', async () => {
+  it('refreshes pending inbox entries before opening the created batch in the shared wizard', async () => {
+    const reservedSnapshot = {
+      ...readySnapshot,
+      readyEntries: readySnapshot.readyEntries.map((entry) => ({
+        ...entry,
+        pendingBatchId: 'batch-1',
+      })),
+    };
+    vi.mocked(modInboxCommands.getModInbox)
+      .mockResolvedValueOnce(readySnapshot)
+      .mockResolvedValueOnce(reservedSnapshot);
     vi.mocked(modInboxCommands.createModInboxBatch).mockResolvedValue({ id: 'batch-1' } as never);
     render(
       <StrictMode>
@@ -247,7 +257,10 @@ describe('ModInboxPage', () => {
         kind: 'existing',
         batchId: 'batch-1',
       });
+      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(2);
     });
+    expect(screen.getByRole('checkbox', { name: 'Select Raiden Pack' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Select Nahida.zip' })).toBeDisabled();
   });
 
   it('virtualizes large ready inbox lists instead of mounting every row', async () => {

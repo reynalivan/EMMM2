@@ -1,11 +1,14 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/app/store';
 import { useActiveGame } from '@/entities/game';
 import { useFolderGridNav } from './useFolderGridNav';
 import { useFolderGridBulk } from './useFolderGridBulk';
 import { useFolderGridImport } from './useFolderGridImport';
-import { useWorkspaceRuntime } from '@/features/workspace-runtime';
+import {
+  useWorkspaceRuntime,
+  type WorkspaceExplorerSelectionEffect,
+} from '@/features/workspace-runtime';
 import { useFolderGridRuntime } from './useFolderGridRuntime';
 import { useFolderGridActions } from './useFolderGridActions';
 import { useFolderGridSelection } from './useFolderGridSelection';
@@ -170,21 +173,32 @@ export function useFolderGrid() {
     openMoveDialog: actions.openMoveDialog,
   });
 
+  const { selectMod } = runtime;
+  const selectGridMod = useCallback(
+    (
+      path: string | null,
+      mobilePane?: 'sidebar' | 'grid' | 'details',
+      selectionEffect?: WorkspaceExplorerSelectionEffect,
+    ) => {
+      const nextState = selectMod(path, mobilePane, selectionEffect);
+      return nextState.previewTransition.kind === 'idle' && nextState.selectedModPath === path;
+    },
+    [selectMod],
+  );
+
   const { focusedId, handleKeyDown, handleToggleSelection, handleActivateItem } =
     useFolderGridSelection({
       sortedFolders,
       selectedModPath: runtime.state.selectedModPath,
       selection: explorerSelection.selection,
-      addSelectionPaths: explorerSelection.addPaths,
-      toggleSelectionPath: explorerSelection.togglePath,
-      clearSelection: explorerSelection.clearSelection,
+      createAllMatchingCommit: explorerSelection.createAllMatchingCommit,
       selectAllMatching: explorerSelection.selectAllMatching,
       currentPath,
       isGridView,
       columnCount,
       isMobile,
       scrollToIndex,
-      selectMod: runtime.selectMod,
+      selectMod: selectGridMod,
       handleNavigate: nav.handleNavigate,
       handleBreadcrumbClick: nav.handleBreadcrumbClick,
       handleDeleteRequest: actions.handleDeleteRequest,

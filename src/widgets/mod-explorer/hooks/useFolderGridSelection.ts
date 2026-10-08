@@ -7,6 +7,7 @@ import {
   workspaceExplorerSelectionCount,
 } from '@/entities/workspace';
 import { workspaceKeys } from '@/features/workspace-runtime';
+import type { WorkspaceExplorerSelectionEffect } from '@/features/workspace-runtime';
 import { publishQueryInvalidations } from '@/shared/lib/queryRefresh';
 import { useFolderNavigation } from './useFolderNavigation';
 import { useRangeSelection } from '../../../shared/lib/hooks/useRangeSelection';
@@ -18,16 +19,21 @@ interface UseFolderGridSelectionOptions {
   sortedFolders: ModFolder[];
   selectedModPath?: string | null;
   selection: WorkspaceExplorerSelectionModel;
-  addSelectionPaths: (paths: Iterable<string>) => void;
-  toggleSelectionPath: (path: string, multi: boolean) => void;
-  clearSelection: () => void;
+  createAllMatchingCommit: (
+    selection: Extract<WorkspaceExplorerSelectionModel, { mode: 'all_matching' }> | null,
+    validateListingRevision?: boolean,
+  ) => Pick<WorkspaceExplorerSelectionEffect, 'isCurrent' | 'onApplied'>;
   selectAllMatching: () => void;
   currentPath: string[];
   isGridView: boolean;
   columnCount: number;
   isMobile: boolean;
   scrollToIndex: (index: number, options: { align: 'auto' | 'start' | 'center' | 'end' }) => void;
-  selectMod: (path: string | null, mobilePane?: 'sidebar' | 'grid' | 'details') => void;
+  selectMod: (
+    path: string | null,
+    mobilePane?: 'sidebar' | 'grid' | 'details',
+    selectionEffect?: WorkspaceExplorerSelectionEffect,
+  ) => boolean;
   handleNavigate: (folderName: string) => void;
   handleBreadcrumbClick: (index: number) => void;
   handleDeleteRequest: (folder: ModFolder) => void;
@@ -38,9 +44,7 @@ export function useFolderGridSelection({
   sortedFolders,
   selectedModPath = null,
   selection,
-  addSelectionPaths,
-  toggleSelectionPath,
-  clearSelection,
+  createAllMatchingCommit,
   selectAllMatching,
   currentPath,
   isGridView,
@@ -59,6 +63,27 @@ export function useFolderGridSelection({
     () => new Set(sortedFolders.map((folder) => normalizeWorkspacePath(folder.path))),
     [sortedFolders],
   );
+  const createSelectionEffect = useCallback(
+    (nextSelection: WorkspaceExplorerSelectionModel): WorkspaceExplorerSelectionEffect => {
+      if (nextSelection.mode === 'all_matching') {
+        return {
+          gridSelection: [],
+          affectedPaths: [...nextSelection.excludedPaths],
+          ...createAllMatchingCommit(nextSelection),
+        };
+      }
+
+      const currentSnapshotCommit = createAllMatchingCommit(null, false);
+      return {
+        gridSelection: [...nextSelection.paths],
+        isCurrent: currentSnapshotCommit.isCurrent,
+        ...(selection.mode === 'all_matching'
+          ? { onApplied: currentSnapshotCommit.onApplied }
+          : {}),
+      };
+    },
+    [createAllMatchingCommit, selection.mode],
+  );
 
   useEffect(() => {
     if (!anchorId || visiblePathKeys.has(normalizeWorkspacePath(anchorId))) {
@@ -75,17 +100,20 @@ export function useFolderGridSelection({
 
   const handleActivateItem = useCallback(
     (path: string) => {
+      const selectionEffect = createSelectionEffect({ mode: 'explicit', paths: new Set() });
+      if (!selectMod(path, isMobile ? 'details' : undefined, selectionEffect)) {
+        return;
+      }
+
       if (
         selectedModPath &&
         normalizeWorkspacePath(selectedModPath) === normalizeWorkspacePath(path)
       ) {
         void publishQueryInvalidations(queryClient, [workspaceKeys.previews], 'active');
       }
-      clearSelection();
-      selectMod(path, isMobile ? 'details' : undefined);
       setAnchorId(path);
     },
-    [clearSelection, isMobile, queryClient, selectMod, selectedModPath, setAnchorId],
+    [createSelectionEffect, isMobile, queryClient, selectMod, selectedModPath, setAnchorId],
   );
 
   const handleToggleSelection = useCallback(
@@ -93,27 +121,49 @@ export function useFolderGridSelection({
       if (isShift) {
         const range = getRange(path);
         if (range) {
-          addSelectionPaths(range);
-          selectMod(path, isMobile ? 'details' : undefined);
+          let nextSelection: WorkspaceExplorerSelectionModel;
+          if (selection.mode === 'all_matching') {
+            const excludedPaths = new Set(selection.excludedPaths);
+            for (const rangePath of range) {
+              excludedPaths.delete(rangePath);
+            }
+            nextSelection = { ...selection, excludedPaths };
+          } else {
+            nextSelection = { mode: 'explicit', paths: new Set([...selection.paths, ...range]) };
+          }
+          if (
+            !selectMod(path, isMobile ? 'details' : undefined, createSelectionEffect(nextSelection))
+          ) {
+            return;
+          }
           return;
         }
       }
 
       let nextSelectedModPath: string | null = path;
       let nextSelectionSize = 1;
+      let nextSelection: WorkspaceExplorerSelectionModel;
       if (selection.mode === 'explicit') {
-        const nextSelection = new Set(multi ? selection.paths : []);
-        if (nextSelection.has(path)) {
-          nextSelection.delete(path);
+        const nextPaths = new Set(multi ? selection.paths : []);
+        if (nextPaths.has(path)) {
+          nextPaths.delete(path);
         } else {
-          nextSelection.add(path);
+          nextPaths.add(path);
         }
-        nextSelectionSize = nextSelection.size;
-        const nextPaths = Array.from(nextSelection);
-        nextSelectedModPath = nextPaths[nextPaths.length - 1] ?? null;
+        nextSelectionSize = nextPaths.size;
+        const nextPathEntries = Array.from(nextPaths);
+        nextSelectedModPath = nextPathEntries[nextPathEntries.length - 1] ?? null;
+        nextSelection = { mode: 'explicit', paths: nextPaths };
       } else if (multi) {
         const wasSelected = isWorkspaceExplorerPathSelected(selection, path);
         nextSelectionSize = workspaceExplorerSelectionCount(selection) + (wasSelected ? -1 : 1);
+        const excludedPaths = new Set(selection.excludedPaths);
+        if (wasSelected) {
+          excludedPaths.add(path);
+        } else {
+          excludedPaths.delete(path);
+        }
+        nextSelection = { ...selection, excludedPaths };
         if (wasSelected) {
           nextSelectedModPath =
             sortedFolders.find(
@@ -121,22 +171,22 @@ export function useFolderGridSelection({
                 folder.path !== path && isWorkspaceExplorerPathSelected(selection, folder.path),
             )?.path ?? null;
         }
+      } else {
+        nextSelection = { mode: 'explicit', paths: new Set([path]) };
       }
 
-      toggleSelectionPath(path, multi);
-      selectMod(nextSelectedModPath, isMobile && nextSelectionSize === 1 ? 'details' : undefined);
+      if (
+        !selectMod(
+          nextSelectedModPath,
+          isMobile && nextSelectionSize === 1 ? 'details' : undefined,
+          createSelectionEffect(nextSelection),
+        )
+      ) {
+        return;
+      }
       setAnchorId(path);
     },
-    [
-      addSelectionPaths,
-      getRange,
-      isMobile,
-      selectMod,
-      selection,
-      setAnchorId,
-      sortedFolders,
-      toggleSelectionPath,
-    ],
+    [createSelectionEffect, getRange, isMobile, selectMod, selection, setAnchorId, sortedFolders],
   );
 
   const { focusedId, handleKeyDown } = useFolderNavigation({

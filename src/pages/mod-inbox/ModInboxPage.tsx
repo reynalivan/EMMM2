@@ -260,6 +260,7 @@ export default function ModInboxPage() {
         gameId: activeGameId,
         entryKeys,
       });
+      await refresh();
       setReadySelection(new Set());
       openImportBatchWizard({ kind: 'existing', batchId: batch.id });
     } catch (cause) {

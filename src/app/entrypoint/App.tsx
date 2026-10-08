@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode, useEffect, useState } from 'react';
+import { lazy, Suspense, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { FaroRoutes } from '@grafana/faro-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -60,13 +60,17 @@ function deferWorkspaceContent(content: ReactNode) {
 function AppRouter() {
   const navigate = useNavigate();
   const location = useLocation();
+  const startupPath = useRef(location.pathname);
+  const startupStarted = useRef(false);
   const queryClient = useQueryClient();
   const [pendingTasks, setPendingTasks] = useState<PipelineTask[]>([]);
   const [isCheckingRecovery, setIsCheckingRecovery] = useState(true);
 
   useEffect(() => {
+    if (startupStarted.current) return;
+    startupStarted.current = true;
     if (isDemoMode) {
-      if (location.pathname !== '/welcome') {
+      if (startupPath.current !== '/welcome') {
         navigate('/dashboard', { replace: true });
       }
       dismissSplash();
@@ -128,7 +132,7 @@ function AppRouter() {
           dismissSplash();
         });
     }
-  }, [location.pathname, navigate]);
+  }, [navigate]);
 
   if (isCheckingRecovery) {
     return (
@@ -243,13 +247,15 @@ export function DashboardWorkspace() {
           <TopBar launchBar={<LaunchBar />} contextControls={<CollectionContextControls />} />
         }
         runtimeHosts={
-          isDemoMode ? undefined : (
-            <>
-              <ExternalChangeHandler />
-              <ImportBatchWizardHost />
-              <ObjectClassificationWizardHost />
-            </>
-          )
+          <>
+            <ImportBatchWizardHost />
+            {!isDemoMode && (
+              <>
+                <ExternalChangeHandler />
+                <ObjectClassificationWizardHost />
+              </>
+            )}
+          </>
         }
         loadingPage={loadingPage}
         dashboard={deferWorkspaceContent(<Dashboard />)}

@@ -1,8 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DashboardWorkspace } from './App';
+import App, { DashboardWorkspace } from './App';
 
-const { state, games } = vi.hoisted(() => ({
+const { state, games, initStore } = vi.hoisted(() => ({
+  initStore: vi.fn<() => Promise<void>>(),
   state: {
     workspaceView: 'dashboard',
     selectedObjectFolderPath: null,
@@ -20,7 +24,32 @@ const { state, games } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/store', () => ({
-  useAppStore: (selector: (value: typeof state) => unknown) => selector(state),
+  useAppStore: Object.assign((selector: (value: typeof state) => unknown) => selector(state), {
+    getState: () => ({ ...state, initStore }),
+  }),
+}));
+vi.mock('@/entities/settings', () => ({ useSettings: () => ({ settings: undefined }) }));
+vi.mock('@/pages/settings', () => ({
+  useThemeRuntime: () => undefined,
+  DynamicThemeInjector: () => null,
+}));
+vi.mock('@/shared/lib/logger', () => ({ initLogger: () => Promise.resolve() }));
+vi.mock('@/shared/lib/dismissSplash', () => ({ dismissSplash: vi.fn() }));
+vi.mock('@/shared/ui/components/ui/DiagnosticsErrorDialog', () => ({
+  DiagnosticsErrorDialog: () => null,
+}));
+vi.mock('@/shared/ui/components/ui/CrashRecoveryDialog', () => ({
+  CrashRecoveryDialog: () => null,
+}));
+vi.mock('@/pages/browser', () => ({ DownloadConfirmationHost: () => null }));
+vi.mock('@/widgets/mod-explorer', () => ({
+  FolderConflictManager: () => null,
+  RenameConfirmationManager: () => null,
+  WorkspaceSourceUnavailableDialog: () => null,
+}));
+vi.mock('@/features/file-watcher', () => ({
+  ExternalChangeHandler: () => null,
+  FileInUseDialog: () => null,
 }));
 vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({ activeGame: games[0], games }),
@@ -44,8 +73,63 @@ vi.mock('@/widgets/top-bar', () => ({
 }));
 vi.mock('@/shared/lib/appMode', () => ({ isDemoMode: false }));
 
+describe('App startup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    initStore.mockResolvedValue(undefined);
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'app_startup_check') return [];
+      if (command === 'check_config_status') return 'HasConfig';
+      throw new Error(`Unexpected startup command: ${command}`);
+    });
+  });
+
+  it('runs boot once across StrictMode replay and subsequent route changes', async () => {
+    let finishRecovery!: (tasks: []) => void;
+    const recovery = new Promise<[]>((resolve) => {
+      finishRecovery = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'app_startup_check') return recovery;
+      if (command === 'check_config_status') return 'HasConfig';
+      throw new Error(`Unexpected startup command: ${command}`);
+    });
+    let navigate!: ReturnType<typeof useNavigate>;
+    function NavigationControl() {
+      navigate = useNavigate();
+      return null;
+    }
+
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/']}>
+          <NavigationControl />
+          <App />
+        </MemoryRouter>
+      </StrictMode>,
+    );
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === 'app_startup_check'),
+    ).toHaveLength(1);
+
+    await act(async () => finishRecovery([]));
+    await waitFor(() => expect(screen.getByTestId('workspace')).toBeInTheDocument());
+    await act(async () => navigate('/unknown-route'));
+    await waitFor(() => expect(screen.getByTestId('workspace')).toBeInTheDocument());
+
+    expect(initStore).toHaveBeenCalledTimes(1);
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === 'app_startup_check'),
+    ).toHaveLength(1);
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === 'check_config_status'),
+    ).toHaveLength(1);
+  });
+});
+
 describe('DashboardWorkspace readiness', () => {
   beforeEach(() => {
+    state.workspaceView = 'dashboard';
     state.activeGameId = 'game-b';
     state.requestedGameId = null;
     state.gameActivationByGame = { 'game-b': { phase: 'syncing' } };

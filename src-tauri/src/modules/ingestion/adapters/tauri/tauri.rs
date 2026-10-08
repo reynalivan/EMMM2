@@ -651,8 +651,13 @@ pub async fn open_mod_inbox_folder(
 pub async fn create_mod_inbox_batch(
     app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
+    disk_reconcile_state: State<
+        '_,
+        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
+    >,
     input: CreateModInboxBatchInput,
 ) -> Result<ImportBatch, AppError> {
+    disk_reconcile_state.ensure_core_ready_for_mutation(&input.game_id)?;
     let root = crate::modules::ingestion::application::import_batch::ready_to_move::resolve_mod_inbox_root(
         &app,
         pool.inner(),

@@ -43,6 +43,8 @@ function areStringSetsEqual(left: Set<string>, right: Set<string>): boolean {
 export function usePreviewPanelState() {
   const { t } = useTranslation(['preview', 'common']);
   const {
+    activeGameId,
+    selectedPath,
     activePath,
     folderNameConflict,
     selectedFolder,
@@ -110,12 +112,17 @@ export function usePreviewPanelState() {
     setAuthorDraft,
     setVersionDraft,
     setDescriptionDraft,
+    isMetadataEditing,
+    setMetadataEditing,
     metadataDirty,
     changedFields: changedMetadataFields,
     saveMetadata,
     discardMetadata,
   } = useMetadataDraft({
-    activePath,
+    activePath: sourceUnavailableMessage || folderNameConflict ? null : activePath,
+    selectedPath,
+    gameId: activeGameId,
+    filesystemIdentity: selectedFolder?.filesystem_identity?.trim() || null,
     fallbackTitle: resolvedTitle ?? '',
     source: metaSource,
     onSave: async (folderPath, draft) => {
@@ -304,6 +311,8 @@ export function usePreviewPanelState() {
     setAuthorDraft,
     setVersionDraft,
     setDescriptionDraft,
+    isMetadataEditing,
+    setMetadataEditing,
     metadataDirty,
     keyBindSections,
     openSectionIds,

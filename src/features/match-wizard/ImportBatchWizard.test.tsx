@@ -106,22 +106,55 @@ function handlers() {
 }
 
 describe('ImportBatchWizard', () => {
-  it('renders one review table without classification controls', () => {
+  it('lets the user explicitly classify an item awaiting a category', async () => {
+    const batchItem = item({
+      status: 'awaiting_category',
+      matchCategory: null,
+      categorySuggestions: [
+        {
+          category: 'Weapon',
+          subCategory: 'Claymore',
+          confidencePercentage: 72,
+          confidenceTier: 'medium',
+          evidence: [],
+          metadata: { element: 'Geo' },
+        },
+      ],
+    });
+    const callbacks = handlers();
     render(
       <ImportBatchWizard
-        batch={batch(item())}
-        schema={null}
+        batch={batch(batchItem)}
+        schema={{
+          categories: [
+            {
+              name: 'Weapon',
+              icon: 'sword',
+              color: '#000',
+              subcategories: ['Claymore'],
+            },
+          ],
+          filters: [],
+        }}
         objects={[]}
         busyItemId={null}
         report={null}
-        {...handlers()}
+        {...callbacks}
       />,
     );
 
     expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.getByText('…/Downloads/unknown-mod')).toBeInTheDocument();
-    expect(screen.queryByText('sections.match')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /filters.no_match/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'classification_object_type' }), {
+      target: { value: 'Weapon' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'actions.confirm' }));
+
+    await waitFor(() =>
+      expect(callbacks.onClassify).toHaveBeenCalledWith(batchItem, 'Weapon', 'Claymore', {
+        element: 'Geo',
+      }),
+    );
   });
 
   it('opens manual destination choice for a no-match item instead of blocking Proceed', async () => {

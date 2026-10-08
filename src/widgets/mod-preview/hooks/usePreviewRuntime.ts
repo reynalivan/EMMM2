@@ -24,6 +24,7 @@ import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime
 import { useAppStore } from '@/app/store';
 import { isFolderConflictProtected } from '@/features/workspace-runtime';
 import type { FolderNameConflictGroup } from '../../../shared/api/tauri/bindings';
+import { pathsEqual } from '@/shared/lib/pathKey';
 
 const EMPTY_FOLDER_CONFLICTS: FolderNameConflictGroup[] = [];
 
@@ -33,6 +34,8 @@ interface PreviewIniDocument {
 }
 
 interface PreviewRuntimeState {
+  activeGameId: string | null;
+  selectedPath: string | null;
   activePath: string | null;
   folderNameConflict: FolderNameConflictGroup | null;
   selectedFolder: WorkspaceExplorerNode | null;
@@ -66,8 +69,16 @@ export function usePreviewRuntime(): PreviewRuntimeState {
     enabled: Boolean(workspace) && !sourceUnavailableMessage && !structureQuery.isPlaceholderData,
   });
   const previewResult = previewQuery.data?.context_status === 'ready' ? previewQuery.data : null;
-  const activePath = previewResult?.preview.selected_path ?? null;
   const activeGameId = useAppStore((state) => state.activeGameId);
+  const selectedPath = currentSelection.selectedModPath;
+  const readyPath = previewResult?.preview.selected_path ?? null;
+  const activePath =
+    selectedPath &&
+    readyPath &&
+    previewResult?.request_identity.game_id === activeGameId &&
+    pathsEqual(selectedPath, readyPath)
+      ? readyPath
+      : null;
   const folderConflicts = useAppStore((state) =>
     activeGameId
       ? (state.folderConflictsByGame[activeGameId] ?? EMPTY_FOLDER_CONFLICTS)
@@ -82,8 +93,8 @@ export function usePreviewRuntime(): PreviewRuntimeState {
           ),
         ) ?? null);
   const detailPath = folderNameConflict ? null : activePath;
-  const previewSummary = previewResult?.preview ?? null;
-  const selectedNode = previewResult?.preview.selected_node ?? null;
+  const previewSummary = activePath ? (previewResult?.preview ?? null) : null;
+  const selectedNode = previewSummary?.selected_node ?? null;
   const selectedFolder = isWorkspaceExplorerNode(selectedNode) ? selectedNode : null;
   const availableObjects = workspace?.objects ?? [];
   const resolvedTitle = previewSummary?.display_title ?? selectedFolder?.display_name ?? null;
@@ -116,6 +127,8 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const images = useMemo(() => previewImagesQuery.data ?? [], [previewImagesQuery.data]);
 
   return {
+    activeGameId,
+    selectedPath,
     activePath,
     folderNameConflict,
     selectedFolder,

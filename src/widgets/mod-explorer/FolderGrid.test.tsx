@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import FolderGrid from './FolderGrid';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { createWrapper } from '../../tests/testing/test-utils';
@@ -202,6 +202,18 @@ describe('FolderGrid', () => {
     });
     render(<FolderGrid />, { wrapper: createWrapper });
     expect(screen.getByText('No mods installed yet.')).toBeInTheDocument();
+  });
+
+  it('does not run bulk deletion or clear selection from a nested text editor', () => {
+    mockUseFolderGrid.mockReturnValue({ ...defaultHookReturn, selectedCount: 2 });
+    render(<FolderGrid />, { wrapper: createWrapper });
+    const editor = document.createElement('input');
+    screen.getByTestId('folder-grid').appendChild(editor);
+    fireEvent.keyDown(editor, { key: 'Delete' });
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(defaultHookReturn.handleBulkDeleteRequest).not.toHaveBeenCalled();
+    expect(defaultHookReturn.clearGridSelection).not.toHaveBeenCalled();
+    expect(defaultHookReturn.handleKeyDown).not.toHaveBeenCalled();
   });
 
   it('uses the grid pane as the container-query boundary for floating controls', () => {

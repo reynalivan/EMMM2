@@ -57,6 +57,8 @@ export default function PreviewPanel() {
     setAuthorDraft,
     setVersionDraft,
     setDescriptionDraft,
+    isMetadataEditing,
+    setMetadataEditing,
     metadataDirty,
     keyBindSections,
     openSectionIds,
@@ -296,6 +298,8 @@ export default function PreviewPanel() {
       />
 
       <MetadataSection
+        isEditing={isMetadataEditing}
+        onEditingChange={setMetadataEditing}
         activePath={activePath}
         authorDraft={authorDraft}
         versionDraft={versionDraft}

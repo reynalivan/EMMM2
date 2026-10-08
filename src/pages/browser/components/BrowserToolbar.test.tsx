@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { BrowserToolbar, BrowserToolbarMenu } from './BrowserToolbar';
 
 vi.mock('@/shared/ui/liquid', () => ({
@@ -36,6 +36,31 @@ const props = {
 };
 
 describe('BrowserToolbar', () => {
+  it('keeps a new address focused while typing a valid URL and formats it after blur', () => {
+    function StatefulToolbar() {
+      const [urlInput, setUrlInput] = useState('');
+      return <BrowserToolbar {...props} urlInput={urlInput} onUrlInputChange={setUrlInput} />;
+    }
+    render(<StatefulToolbar />);
+    const input = screen.getByRole('textbox');
+    input.focus();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'https://' } });
+    fireEvent.change(input, { target: { value: 'https://g' } });
+
+    expect(screen.getByRole('textbox')).toBe(input);
+    expect(input).toHaveFocus();
+    fireEvent.change(input, { target: { value: 'https://gamebanana.com/mods/123' } });
+    expect(input).toHaveValue('https://gamebanana.com/mods/123');
+    expect(input).toHaveFocus();
+
+    fireEvent.blur(input);
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'https://gamebanana.com/mods/123' }),
+    ).toBeInTheDocument();
+  });
+
   it('emphasizes the site identity, then exposes the full address for editing', async () => {
     render(<BrowserToolbar {...props} />);
 

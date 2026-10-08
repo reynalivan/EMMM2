@@ -212,11 +212,13 @@ pub enum GameActivationPhase {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GameActivationResult {
     pub game_id: Option<String>,
     pub generation: u64,
     pub phase: GameActivationPhase,
+    /// Authoritative settings after the activation's durable selection write.
+    pub settings: crate::modules::settings::api::config::AppSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]

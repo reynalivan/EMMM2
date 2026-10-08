@@ -404,6 +404,7 @@ pub async fn set_active_game(
             game_id: None,
             generation,
             phase: GameActivationPhase::Ready,
+            settings: state.get_settings(),
         });
     };
     let game = target_game.expect("validated Some game id has a game");
@@ -457,6 +458,7 @@ pub async fn set_active_game(
                 game_id: Some(game_id),
                 generation,
                 phase,
+                settings: state.get_settings(),
             });
         }
     };
@@ -469,6 +471,7 @@ pub async fn set_active_game(
         } else {
             GameActivationPhase::Syncing
         },
+        settings: state.get_settings(),
     })
 }
 

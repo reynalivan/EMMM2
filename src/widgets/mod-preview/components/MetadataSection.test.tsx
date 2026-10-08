@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '../../../tests/testing/test-utils';
 import MetadataSection from './MetadataSection';
+import { useState } from 'react';
 
 describe('MetadataSection', () => {
   const defaultProps = {
@@ -15,13 +16,21 @@ describe('MetadataSection', () => {
     onDiscard: vi.fn(),
   };
 
+  function renderSection(props = defaultProps, initiallyEditing = false) {
+    function Harness() {
+      const [isEditing, setIsEditing] = useState(initiallyEditing);
+      return <MetadataSection {...props} isEditing={isEditing} onEditingChange={setIsEditing} />;
+    }
+    return render(<Harness />);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   // Covers: TC-17-01 (Load Valid Metadata)
   it('should populate fields with valid metadata in \u2264 100ms', async () => {
-    render(<MetadataSection {...defaultProps} />);
+    renderSection();
 
     await waitFor(() => {
       expect(screen.getByText('Original Description')).toBeInTheDocument();
@@ -33,7 +42,7 @@ describe('MetadataSection', () => {
   // Covers: TC-17-04 (Auto-Save on Blur / State Indication)
   it('should show auto-saving state and revert button when metadataDirty is true', async () => {
     const props = { ...defaultProps, metadataDirty: true };
-    render(<MetadataSection {...props} />);
+    renderSection(props);
 
     const editBtn = screen.getByTitle('Edit Metadata');
     fireEvent.click(editBtn);
@@ -48,7 +57,7 @@ describe('MetadataSection', () => {
   it('should trigger onAuthorChange when author input changes', async () => {
     const onAuthorChangeMock = vi.fn();
     const props = { ...defaultProps, onAuthorChange: onAuthorChangeMock };
-    render(<MetadataSection {...props} />);
+    renderSection(props);
 
     const editBtn = screen.getByTitle('Edit Metadata');
     fireEvent.click(editBtn);
@@ -62,12 +71,17 @@ describe('MetadataSection', () => {
   });
 
   it('uses the visible Edit action instead of a hidden double-click interaction', () => {
-    render(<MetadataSection {...defaultProps} />);
+    renderSection();
 
     fireEvent.doubleClick(screen.getByText('Original Description'));
 
     expect(screen.queryByLabelText('Author')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTitle('Edit Metadata'));
     expect(screen.getByLabelText('Author')).toBeInTheDocument();
+  });
+
+  it('restores editing from the owner state when the section remounts', () => {
+    renderSection(defaultProps, true);
+    expect(screen.getByLabelText('Description')).toHaveValue('Original Description');
   });
 });

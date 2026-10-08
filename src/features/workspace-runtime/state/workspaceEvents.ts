@@ -4,6 +4,7 @@ import type {
 } from '@/entities/workspace';
 import type {
   WorkspaceDialogState,
+  WorkspaceExplorerSelectionEffect,
   WorkspaceMobilePane,
   WorkspaceTransitionTarget,
 } from './workspaceState';
@@ -16,7 +17,12 @@ export type WorkspaceRuntimeEvent =
       currentPath: string[];
       explorerSubPath?: string;
     }
-  | { type: 'MOD_SELECTED'; path: string | null; mobilePane?: WorkspaceMobilePane }
+  | {
+      type: 'MOD_SELECTED';
+      path: string | null;
+      mobilePane?: WorkspaceMobilePane;
+      selectionEffect?: WorkspaceExplorerSelectionEffect;
+    }
   | {
       type: 'SELECTION_CLEARED';
       resetExplorer: boolean;

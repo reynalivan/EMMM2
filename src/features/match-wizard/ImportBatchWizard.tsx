@@ -123,10 +123,12 @@ function initiallySelectedItemIds(items: ImportItem[]): Set<string> {
 
 export function ImportBatchWizard({
   batch,
+  schema,
   objects,
   busyItemId,
   report,
   onCancel,
+  onClassify,
   onChooseDestination,
   onChooseManualTarget,
   onClose,
@@ -443,6 +445,7 @@ export function ImportBatchWizard({
                           batch={batch}
                           item={item}
                           objects={objects}
+                          schema={schema}
                           busy={busyItemId === item.id}
                           selected={selected.has(item.id)}
                           virtualIndex={virtualRow.index}
@@ -457,6 +460,7 @@ export function ImportBatchWizard({
                           }
                           onChooseDestination={onChooseDestination}
                           onChooseManualTarget={onChooseManualTarget}
+                          onClassify={onClassify}
                           onSkip={onSkip}
                           onRename={onRename}
                           onRetry={onRetry}

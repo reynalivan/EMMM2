@@ -32,7 +32,7 @@ pub async fn init_test_db() -> TestContext {
 
 #[allow(dead_code)]
 pub async fn refresh_unicode_keys(pool: &Pool<Sqlite>) {
-    sqlx::query("DELETE FROM app_meta WHERE key = 'unicode_key_version'")
+    sqlx::query("DELETE FROM app_settings WHERE key = 'unicode_key_version'")
         .execute(pool)
         .await
         .expect("reset unicode key marker");
