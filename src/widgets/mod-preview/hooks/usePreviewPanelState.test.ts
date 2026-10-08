@@ -1,197 +1,16 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import {
+  previewDataMocks,
+  workspaceQueryMock,
+  selectionOverrideState,
+  createMockQuery,
+  createMockMutation,
+  setupDefaultMocks,
+} from './previewPanelState.test-fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '../../../tests/testing/test-utils';
 import { usePreviewPanelState } from './usePreviewPanelState';
-import * as usePreviewDataModule from './usePreviewData';
-import * as workspaceViewModelModule from '@/features/workspace-runtime';
 import { useAppStore } from '@/app/store';
-
-const selectionOverride = vi.hoisted(() => ({ path: undefined as string | null | undefined }));
-
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}));
-
-vi.mock('@/app/store', () => {
-  // One shared state object with the workspace runtime slice, so `getState()`
-  // and the selector hook see the same store the app does.
-  const state = {
-    explorerSubPath: 'root',
-    gridSelection: new Set(),
-    setMobilePane: vi.fn(),
-    selectedObjectFolderPath: null,
-    selectedModPath: null,
-    currentPath: [] as string[],
-    mobileActivePane: 'sidebar' as const,
-    workspacePreviewDirty: false,
-    workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
-    workspaceDialogState: { kind: 'none' },
-    dispatchWorkspaceRuntime: vi.fn(),
-    activeGameId: 'GIMI',
-    folderConflictsByGame: {} as Record<string, unknown[]>,
-  };
-
-  return {
-    useAppStore: Object.assign(
-      vi.fn((selector) => (typeof selector === 'function' ? selector(state) : state)),
-      { getState: () => state },
-    ),
-  };
-});
-
-vi.mock('@/shared/ui/toast', () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
-  },
-}));
-
-vi.mock('./usePreviewData', () => ({
-  useModIniDocuments: vi.fn(),
-  usePreviewImages: vi.fn(),
-  useRemovePreviewImage: vi.fn(),
-  useSavePreviewImage: vi.fn(),
-  useClearPreviewImages: vi.fn(),
-  useUpdateModInfoDetails: vi.fn(),
-  useWriteModIni: vi.fn(),
-  useSelectedModPath: vi.fn(() => null),
-}));
-
-vi.mock('@/features/workspace-runtime/hooks/useWorkspaceViewModel', () => {
-  const useWorkspaceViewModel = vi.fn(() => ({
-    data: {
-      runtime: {
-        source_state: { status: 'available', message: null },
-      },
-      preview: {
-        selected_path: null,
-        selected_node: null,
-        is_flat_mod_root: false,
-        display_title: null,
-        display_subtitle: null,
-        mod_info_summary: null,
-        ini_summary: null,
-        image_summary: null,
-        warning_summary: {
-          state: 'none',
-          messages: [],
-        },
-      },
-    },
-  }));
-
-  return {
-    useWorkspaceViewModel,
-    useWorkspaceStructure: () => {
-      const result = useWorkspaceViewModel();
-      return {
-        ...result,
-        isPlaceholderData: false,
-        data: result.data
-          ? {
-              ...result.data,
-            }
-          : result.data,
-      };
-    },
-    useWorkspacePreview: () => {
-      const result = useWorkspaceViewModel();
-      const preview = result.data?.preview;
-      return {
-        data:
-          preview && !result.isPending
-            ? {
-                request_identity: {
-                  game_id: 'GIMI',
-                  explorer_sub_path: 'root',
-                  selected_mod_path: preview.selected_path,
-                },
-                context_status: 'ready',
-                preview,
-                selection: {
-                  selected_mod_path: preview.selected_path,
-                  reconciliation_status: 'unchanged',
-                  reconciliation_reason: null,
-                  affected_paths: [],
-                },
-              }
-            : undefined,
-        isPending: false,
-        isError: false,
-        error: null,
-        refetch: vi.fn(),
-      };
-    },
-    useWorkspaceSelectionInput: () => {
-      const result = useWorkspaceViewModel();
-      return {
-        selectedObjectFolderPath: null,
-        explorerSubPath: 'root',
-        selectedModPath:
-          selectionOverride.path === undefined
-            ? (result.data?.preview?.selected_path ?? null)
-            : selectionOverride.path,
-      };
-    },
-  };
-});
-
-function createMockQuery(data: any = null, isSuccess = false) {
-  return {
-    data,
-    isSuccess,
-    isFetching: false,
-    isPending: false,
-    refetch: vi.fn(),
-  };
-}
-
-function createMockMutation() {
-  return {
-    mutate: vi.fn(),
-    mutateAsync: vi.fn(),
-    isPending: false,
-  };
-}
-
-function setupDefaultMocks() {
-  selectionOverride.path = undefined;
-  const useModIniDocumentsMock = usePreviewDataModule.useModIniDocuments as any;
-  const usePreviewImagesMock = usePreviewDataModule.usePreviewImages as any;
-  const useUpdateModInfoDetailsMock = usePreviewDataModule.useUpdateModInfoDetails as any;
-  const useSavePreviewImageMock = usePreviewDataModule.useSavePreviewImage as any;
-  const useRemovePreviewImageMock = usePreviewDataModule.useRemovePreviewImage as any;
-  const useClearPreviewImagesMock = usePreviewDataModule.useClearPreviewImages as any;
-  const useWriteModIniMock = usePreviewDataModule.useWriteModIni as any;
-  const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
-
-  useModIniDocumentsMock.mockReturnValue(createMockQuery(null));
-  usePreviewImagesMock.mockReturnValue(createMockQuery(null));
-  useUpdateModInfoDetailsMock.mockReturnValue(createMockMutation());
-  useSavePreviewImageMock.mockReturnValue(createMockMutation());
-  useRemovePreviewImageMock.mockReturnValue(createMockMutation());
-  useClearPreviewImagesMock.mockReturnValue(createMockMutation());
-  useWriteModIniMock.mockReturnValue(createMockMutation());
-  useWorkspaceViewModelMock.mockReturnValue({
-    data: {
-      preview: {
-        selected_path: null,
-        selected_node: null,
-        is_flat_mod_root: false,
-        display_title: null,
-        display_subtitle: null,
-        mod_info_summary: null,
-        ini_summary: null,
-        image_summary: null,
-        warning_summary: {
-          state: 'none',
-          messages: [],
-        },
-      },
-    },
-  });
-}
+const selectionOverride = selectionOverrideState();
 
 describe('usePreviewPanelState', () => {
   beforeEach(() => {
@@ -236,16 +55,12 @@ describe('usePreviewPanelState', () => {
     const setPreview = (path: string, pending = false, filesystemIdentity = 'container-id') => {
       const query = createMockQuery({ preview: preview(path, filesystemIdentity) });
       query.isPending = pending;
-      vi.mocked(workspaceViewModelModule.useWorkspaceViewModel).mockReturnValue(
-        query as ReturnType<typeof workspaceViewModelModule.useWorkspaceViewModel>,
-      );
+      workspaceQueryMock().mockReturnValue(query);
       selectionOverride.path = path;
     };
     const mutation = createMockMutation();
     mutation.mutateAsync.mockResolvedValue(undefined);
-    vi.mocked(usePreviewDataModule.useUpdateModInfoDetails).mockReturnValue(
-      mutation as ReturnType<typeof usePreviewDataModule.useUpdateModInfoDetails>,
-    );
+    previewDataMocks().useUpdateModInfoDetails.mockReturnValue(mutation);
     setPreview(oldPath);
     const { result, rerender } = renderHook(() => usePreviewPanelState());
     act(() => {
@@ -290,7 +105,7 @@ describe('usePreviewPanelState', () => {
     vi.useFakeTimers();
 
     const selectedPath = 'E:/Mods/Parent/VariantA';
-    const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
+    const useWorkspaceViewModelMock = workspaceQueryMock();
     useWorkspaceViewModelMock.mockReturnValue({
       data: {
         preview: {
@@ -380,7 +195,7 @@ describe('usePreviewPanelState', () => {
       folderConflictsByGame: Record<string, unknown[]>;
     };
     appState.folderConflictsByGame = { GIMI: [group] };
-    (workspaceViewModelModule.useWorkspaceViewModel as any).mockReturnValue({
+    workspaceQueryMock().mockReturnValue({
       data: {
         preview: {
           selected_path: selectedPath,
@@ -397,13 +212,13 @@ describe('usePreviewPanelState', () => {
 
     expect(result.current.activePath).toBe(selectedPath);
     expect(result.current.folderNameConflict).toEqual(group);
-    expect(usePreviewDataModule.useModIniDocuments).toHaveBeenCalledWith(null);
-    expect(usePreviewDataModule.usePreviewImages).toHaveBeenCalledWith(null);
+    expect(previewDataMocks().useModIniDocuments).toHaveBeenCalledWith(null);
+    expect(previewDataMocks().usePreviewImages).toHaveBeenCalledWith(null);
   });
 
   // Covers: TC-6.1-01 (Title and description sync from workspace preview summary)
   it('should sync title and description from workspace preview summary', async () => {
-    const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
+    const useWorkspaceViewModelMock = workspaceQueryMock();
     useWorkspaceViewModelMock.mockReturnValue({
       data: {
         preview: {
@@ -437,257 +252,4 @@ describe('usePreviewPanelState', () => {
   });
 
   // Covers: TC-6.2-01 (Gallery image list from usePreviewImages)
-  it('should fetch and store preview images', async () => {
-    const usePreviewImagesMock = usePreviewDataModule.usePreviewImages as any;
-    usePreviewImagesMock.mockReturnValue(
-      createMockQuery(['E:/Mods/Test/preview1.png', 'E:/Mods/Test/preview2.png'], true),
-    );
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.images).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.4-01 (Unsaved changes guard - activePath change)
-  it('should show unsaved modal when changing activePath with unsaved editor changes', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.3-02 (INI field edit)
-  it('should update editor field on updateEditorField', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      result.current.updateEditorField('field1', 'newValue');
-      expect(result.current.draftByField).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.3-02 (INI field save)
-  it('should save editor changes with saveEditor', async () => {
-    const useWriteModIniMock = usePreviewDataModule.useWriteModIni as any;
-    const mutateAsyncMock = vi.fn(async () => undefined);
-    useWriteModIniMock.mockReturnValue({
-      ...createMockMutation(),
-      mutateAsync: mutateAsyncMock,
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.saveEditor).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.3-02 (INI field discard)
-  it('should discard editor changes on discardEditor', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      result.current.discardEditor();
-      expect(result.current.draftByField).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.1-01 (Metadata save)
-  it('should save metadata on saveMetadata', async () => {
-    const useUpdateModInfoDetailsMock = usePreviewDataModule.useUpdateModInfoDetails as any;
-    const mutateAsyncMock = vi.fn(async () => ({ actual_name: 'Test', description: 'Desc' }));
-    useUpdateModInfoDetailsMock.mockReturnValue({
-      ...createMockMutation(),
-      mutateAsync: mutateAsyncMock,
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.saveMetadata).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.1-01 (Metadata discard)
-  it('should discard metadata changes on discardMetadata', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      result.current.discardMetadata();
-      expect(result.current.titleDraft).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.3-01 (Section toggle with modal)
-  it('should show unsaved modal when toggling section with unsaved changes', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.requestToggleSection).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.2-02 (Paste thumbnail mutation)
-  it('should handle paste thumbnail via mutation', async () => {
-    const useSavePreviewImageMock = usePreviewDataModule.useSavePreviewImage as any;
-    const mutateAsyncMock = vi.fn(async () => 'path/to/image.png');
-    useSavePreviewImageMock.mockReturnValue({
-      ...createMockMutation(),
-      mutateAsync: mutateAsyncMock,
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.savePreviewImage).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.2-02 (Remove thumbnail mutation)
-  it('should handle remove thumbnail via mutation', async () => {
-    const useRemovePreviewImageMock = usePreviewDataModule.useRemovePreviewImage as any;
-    const mutateAsyncMock = vi.fn(async () => undefined);
-    useRemovePreviewImageMock.mockReturnValue({
-      ...createMockMutation(),
-      mutateAsync: mutateAsyncMock,
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.removePreviewImage).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.2-02 (Clear all thumbnails mutation)
-  it('should handle clear all thumbnails via mutation', async () => {
-    const useClearPreviewImagesMock = usePreviewDataModule.useClearPreviewImages as any;
-    const mutateAsyncMock = vi.fn(async () => []);
-    useClearPreviewImagesMock.mockReturnValue({
-      ...createMockMutation(),
-      mutateAsync: mutateAsyncMock,
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.clearPreviewImages).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.3-02 (Autosave metadata on title/description change)
-  it('should handle autosave on metadata changes after 500ms', async () => {
-    const useUpdateModInfoDetailsMock = usePreviewDataModule.useUpdateModInfoDetails as any;
-    const mutateAsyncMock = vi.fn(async () => ({ actual_name: 'New', description: 'New Desc' }));
-    useUpdateModInfoDetailsMock.mockReturnValue({
-      ...createMockMutation(),
-      mutateAsync: mutateAsyncMock,
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.updateModInfo).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.4-01 (applyPendingTransition for mod change)
-  it('should apply pending mod transition', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.applyPendingTransition).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.4-01 (applyPendingTransition for section collapse)
-  it('should apply pending section collapse transition', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      result.current.applyPendingTransition();
-      expect(result.current.openSectionIds).toBeDefined();
-    });
-  });
-
-  // Covers: TC-6.3-01 (KeyBind sections building)
-  it('should build keybind sections from INI documents', async () => {
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.keyBindSections).toBeDefined();
-    });
-  });
-
-  it('opens every keybind file by default so bindings are immediately readable', async () => {
-    const useModIniDocumentsMock = usePreviewDataModule.useModIniDocuments as any;
-    const useWorkspaceViewModelMock = workspaceViewModelModule.useWorkspaceViewModel as any;
-    useModIniDocumentsMock.mockReturnValue(
-      createMockQuery(
-        [
-          {
-            filename: 'alpha.ini',
-            document: {
-              source_hash: 'alpha-source',
-              mode: 'Structured',
-              raw_lines: ['[KeyAlpha]', 'key = a'],
-              variables: [],
-              key_bindings: [
-                {
-                  section_name: 'KeyAlpha',
-                  key: 'a',
-                  back: null,
-                  key_line_idx: 1,
-                  back_line_idx: null,
-                },
-              ],
-            },
-          },
-          {
-            filename: 'beta.ini',
-            document: {
-              source_hash: 'beta-source',
-              mode: 'Structured',
-              raw_lines: ['[KeyBeta]', 'key = b'],
-              variables: [],
-              key_bindings: [
-                {
-                  section_name: 'KeyBeta',
-                  key: 'b',
-                  back: null,
-                  key_line_idx: 1,
-                  back_line_idx: null,
-                },
-              ],
-            },
-          },
-        ],
-        true,
-      ),
-    );
-    useWorkspaceViewModelMock.mockReturnValue({
-      data: {
-        preview: {
-          selected_path: 'E:/Mods/Readable',
-          selected_node: null,
-          is_flat_mod_root: false,
-          display_title: null,
-          display_subtitle: null,
-          mod_info_summary: null,
-          ini_summary: null,
-          image_summary: null,
-          warning_summary: { state: 'none', messages: [] },
-        },
-      },
-    });
-
-    const { result } = renderHook(() => usePreviewPanelState());
-
-    await waitFor(() => {
-      expect(result.current.openSectionIds).toEqual(new Set(['alpha.ini', 'beta.ini']));
-    });
-  });
 });

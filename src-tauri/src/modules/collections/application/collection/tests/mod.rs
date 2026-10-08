@@ -25,7 +25,7 @@ use std::sync::Arc;
 // ── Shared fixtures ─────────────────────────────────────────────────────────
 
 /// The one game every test in this module uses.
-async fn seed_game(pool: &sqlx::SqlitePool, id: &str, mods_path: Option<&str>) {
+pub(crate) async fn seed_game(pool: &sqlx::SqlitePool, id: &str, mods_path: Option<&str>) {
     insert_test_game(
         pool,
         &TestGameFixture {
@@ -45,7 +45,7 @@ async fn seed_game(pool: &sqlx::SqlitePool, id: &str, mods_path: Option<&str>) {
 }
 
 /// The one character object every test in this module uses.
-async fn seed_ainoz_object(pool: &sqlx::SqlitePool, id: &str, game_id: &str) {
+pub(crate) async fn seed_ainoz_object(pool: &sqlx::SqlitePool, id: &str, game_id: &str) {
     insert_test_object(
         pool,
         &TestObjectFixture {
@@ -89,7 +89,7 @@ fn test_collection_object(collection_id: &str) -> CollectionObject {
     }
 }
 
-fn create_flat_mod_folder(mods_root: &std::path::Path, relative_path: &str) {
+pub(crate) fn create_flat_mod_folder(mods_root: &std::path::Path, relative_path: &str) {
     let target = mods_root.join(relative_path);
     std::fs::create_dir_all(&target).expect("create flat mod folder");
     std::fs::write(
@@ -104,6 +104,7 @@ mod characterization_tests;
 mod create_tests;
 mod delete_tests;
 mod lifecycle_tests;
+mod parent_activation_tests;
 mod preview_tests;
 mod references_tests;
 mod replace_tests;

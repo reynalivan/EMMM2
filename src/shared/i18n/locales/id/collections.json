@@ -97,7 +97,9 @@
       "will_disable": "Akan nonaktif",
       "excluded_safe_mode": "Dikecualikan di Mode Aman",
       "empty_disable": "Tidak ada mod yang akan dinonaktifkan.",
-      "empty_enable": "Tidak ada mod yang akan diaktifkan."
+      "empty_enable": "Tidak ada mod yang akan diaktifkan.",
+      "missing": "Tidak ditemukan di disk",
+      "object_changes": "Object: {{enabled}} akan aktif; {{disabled}} akan nonaktif."
     },
     "actions": {
       "cancel": "Batal",

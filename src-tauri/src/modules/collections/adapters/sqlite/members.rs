@@ -8,6 +8,20 @@ use super::mapping::parse_warnings_json;
 use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
 use crate::shared::errors::CollectionError;
 
+const MOD_MEMBERS_QUERY: &str = r#"SELECT cm.collection_id, cm.mod_id, cm.mod_path, cm.mod_path_key,
+    COALESCE(cm.object_id, cm.object_ref_key) AS effective_object_id,
+    cm.preview_path, cm.node_type, cm.warnings_json,
+    CASE WHEN m.id IS NULL THEN cm.is_safe ELSE m.is_safe END AS is_safe,
+    CASE WHEN m.id IS NULL THEN cm.safety_source ELSE m.safety_source END AS safety_source,
+    m.actual_name AS display_name
+    FROM collection_mods cm JOIN collections c ON c.id = cm.collection_id
+    LEFT JOIN mods m ON m.game_id = c.game_id AND (m.id = cm.mod_id OR (
+        m.folder_path_key = cm.mod_path_key AND NOT EXISTS (
+            SELECT 1 FROM mods owned WHERE owned.id = cm.mod_id AND owned.game_id = c.game_id
+        )
+    ))
+    WHERE cm.collection_id = ?"#;
+
 fn optional_string_column(
     row: &SqliteRow,
     column: &'static str,
@@ -53,19 +67,10 @@ pub async fn get_mods(
     pool: &SqlitePool,
     collection_id: &str,
 ) -> Result<Vec<CollectionMod>, CollectionError> {
-    let rows = sqlx::query(
-        r#"SELECT cm.collection_id, cm.mod_id, cm.mod_path, cm.mod_path_key,
-                  COALESCE(cm.object_id, cm.object_ref_key) AS effective_object_id,
-                  cm.preview_path, cm.node_type, cm.warnings_json,
-                  cm.is_safe, cm.safety_source,
-                  m.actual_name as display_name
-           FROM collection_mods cm
-           LEFT JOIN mods m ON cm.mod_id = m.id
-           WHERE cm.collection_id = ?"#,
-    )
-    .bind(collection_id)
-    .fetch_all(pool)
-    .await?;
+    let rows = sqlx::query(MOD_MEMBERS_QUERY)
+        .bind(collection_id)
+        .fetch_all(pool)
+        .await?;
 
     rows.iter().map(map_mod_row).collect()
 }
@@ -94,17 +99,15 @@ pub async fn get_objects(
         .collect::<Result<Vec<_>, _>>()?)
 }
 
-/// Member mods inside an open transaction (no mods join; display_name stays None).
+/// Member mods and their current safety classification inside one transaction.
 pub async fn get_mods_tx(
     conn: &mut SqliteConnection,
     collection_id: &str,
 ) -> Result<Vec<CollectionMod>, CollectionError> {
-    let rows = sqlx::query(
-        "SELECT collection_id, mod_id, mod_path, mod_path_key, COALESCE(object_id, object_ref_key) AS effective_object_id, preview_path, node_type, warnings_json, is_safe, safety_source FROM collection_mods WHERE collection_id = ?",
-    )
-    .bind(collection_id)
-    .fetch_all(&mut *conn)
-    .await?;
+    let rows = sqlx::query(MOD_MEMBERS_QUERY)
+        .bind(collection_id)
+        .fetch_all(&mut *conn)
+        .await?;
 
     rows.iter().map(map_mod_row).collect()
 }

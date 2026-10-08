@@ -1,7 +1,7 @@
 //! Read-only previews: collection contents and the apply diff.
 
 use super::filter_target_mods_for_safe_mode;
-use super::live_state::load_live_runtime_state;
+use super::live_state::load_apply_projection_state;
 use super::projection::{load_projected_collection_state, require_collection, require_game_match};
 use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::collections::domain::collection::{ApplyPreview, CollectionPreview};
@@ -53,15 +53,28 @@ pub async fn preview_apply(
         ));
     }
 
-    let (current_mods, current_objects) = load_live_runtime_state(pool, game_id).await?;
-    let current_projected_state =
-        projected_state::build_projected_state(&current_mods, &current_objects, mods_path);
-    let current_tree_nodes =
-        projected_state::build_live_active_preview_tree(&current_projected_state);
     let target_state = load_projected_collection_state(pool, &collection, mods_path).await?;
-    let target_mods = projected_state::mods_from_projected_state(&collection.id, &target_state);
     let target_objects =
         projected_state::objects_from_projected_state(&collection.id, &target_state);
+    let (current_mods, current_objects) =
+        load_apply_projection_state(pool, game_id, &target_objects).await?;
+    let mut current_projected_state =
+        projected_state::build_projected_state(&current_mods, &current_objects, mods_path);
+    let current_tree_nodes =
+        projected_state::build_preview_tree_from_projected_state(&current_projected_state)
+            .into_iter()
+            .filter(|object| {
+                (object.is_effectively_active && !object.children.is_empty())
+                    || target_objects.iter().any(|target| {
+                        target.object_id == object.id && target.is_enabled != object.is_enabled
+                    })
+            })
+            .collect();
+    current_projected_state.summary.active_root_count = current_mods
+        .iter()
+        .filter(|member| super::is_mod_effectively_active(&member.mod_path))
+        .count();
+    let target_mods = projected_state::mods_from_projected_state(&collection.id, &target_state);
     let effective_target_mods = filter_target_mods_for_safe_mode(target_mods, safe_mode_enabled);
     let effective_target_state =
         projected_state::build_projected_state(&effective_target_mods, &target_objects, mods_path);

@@ -164,6 +164,12 @@ pub async fn create_collection(
     }
     if save_mode == CreateCollectionMode::SaveCurrentState {
         collection::runtime::set_active_tx(&mut tx, &input.game_id, Some(&id)).await?;
+        collection::safe_mode::refresh_snapshot_if_present_tx(
+            &mut tx,
+            &input.game_id,
+            &projected_state,
+        )
+        .await?;
         collection::runtime::clear_draft_tx(&mut tx, &input.game_id).await?;
     } else if draft_to_consume.is_some() {
         collection::runtime::clear_draft_tx(&mut tx, &input.game_id).await?;

@@ -43,6 +43,38 @@ function object(children: PreviewTreeNode[]): PreviewTreeNode {
 }
 
 describe('buildApplyPreviewDiff', () => {
+  it('marks missing members without counting them as pending activations', () => {
+    const missing = {
+      ...mod('root::missing'),
+      status_kind: 'missing',
+      is_effectively_active: false,
+    };
+    const diff = buildApplyPreviewDiff({
+      current_tree_nodes: [],
+      target_tree_nodes: [object([missing])],
+      effective_target_tree_nodes: [object([missing])],
+    });
+
+    expect(diff.enableCount).toBe(0);
+    expect(diff.targetChanges.get(missing.id)).toBe('missing');
+  });
+
+  it('reports Object changes even when the Object has no mod children', () => {
+    const before = object([]);
+    const after = { ...before, is_enabled: false, is_effectively_active: false };
+    const diff = buildApplyPreviewDiff({
+      current_tree_nodes: [before],
+      target_tree_nodes: [after],
+      effective_target_tree_nodes: [after],
+    });
+
+    expect(diff.objectDisableCount).toBe(1);
+    expect(diff.targetChanges.get(after.id)).toBe('will_disable');
+    expect(
+      filterPreviewTreeToChanges([after], diff.targetChanges, new Set(['will_disable'])),
+    ).toEqual([after]);
+  });
+
   it('derives effective Safe Mode changes while retaining excluded target mods', () => {
     const diff = buildApplyPreviewDiff({
       current_tree_nodes: [object([mod('root::shared'), mod('root::old')])],

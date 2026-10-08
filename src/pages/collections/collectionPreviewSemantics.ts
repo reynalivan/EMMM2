@@ -36,6 +36,10 @@ function getCollectionNodeStatusLabel(
   t: TFunction,
   node: Pick<PreviewTreeNode, 'status_kind' | 'show_inactive_chip'>,
 ): string | null {
+  if (node.status_kind === 'missing') {
+    return t('apply.diff.missing');
+  }
+
   if (node.status_kind === 'disabled_by_container') {
     return t('tree.disabled_by_container');
   }

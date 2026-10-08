@@ -172,7 +172,7 @@ export function archiveErrorKindFromStoredMessage(message: string | null): Archi
 
 export function extractFileInUsePayload(error: unknown): FileInUsePayload | null {
   const structured = normalizeStructuredError(error);
-  if (!structured || structured.type !== 'FileInUse') {
+  if (!structured || !['FileInUse', 'PathBusy'].includes(structured.type)) {
     return null;
   }
 
@@ -181,6 +181,9 @@ export function extractFileInUsePayload(error: unknown): FileInUsePayload | null
   }
 
   const payload = structured.payload as Record<string, unknown>;
+  if (structured.type === 'PathBusy') {
+    return typeof payload.path === 'string' ? { path: payload.path, processes: [] } : null;
+  }
   if (typeof payload.path !== 'string' || !Array.isArray(payload.processes)) {
     return null;
   }

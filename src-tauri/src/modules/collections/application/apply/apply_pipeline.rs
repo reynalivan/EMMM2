@@ -14,11 +14,6 @@ use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
 use crate::modules::workspace::domain::task::TaskStatus;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::shared::errors::CollectionError;
-use crate::shared::path_key::folder_path_key;
-
-// ---------------------------------------------------------------------------
-// ApplyPipeline — Composable collection apply operation
-// ---------------------------------------------------------------------------
 
 /// Context passed through all pipeline steps during a collection apply.
 pub struct ApplyContext {
@@ -32,6 +27,11 @@ pub struct ApplyContext {
     pub finalize_active_collection: bool,
     pub final_active_collection_id: Option<String>,
     pub mutation_started: bool,
+    pub runtime_target_state:
+        Option<crate::modules::collections::domain::collection::ProjectedCollectionState>,
+    pub requested_target_state:
+        Option<crate::modules::collections::domain::collection::ProjectedCollectionState>,
+    pub defer_task_completion: bool,
     pub rollback_collection_id: Option<String>,
     pub rollback_active_collection_id: Option<String>,
 
@@ -93,6 +93,9 @@ impl ApplyContext {
                 .capture_last_changes
                 .then(|| request.collection_id.to_string()),
             mutation_started: false,
+            runtime_target_state: None,
+            requested_target_state: None,
+            defer_task_completion: false,
             rollback_collection_id: None,
             rollback_active_collection_id: None,
             collection: None,
@@ -172,17 +175,7 @@ async fn finalize_apply(
             )
             .await?;
         }
-        let completed =
-            crate::modules::workspace::adapters::sqlite::task::compare_and_set_status_tx(
-                &mut tx,
-                task_id,
-                expected_status,
-                TaskStatus::Completed,
-            )
-            .await?;
-        if !completed {
-            return Err(sqlx::Error::RowNotFound);
-        }
+        finalize_task_snapshot(ctx, &mut tx, task_id, expected_status).await?;
         tx.commit().await
     }
     .await;
@@ -193,6 +186,41 @@ async fn finalize_apply(
             "Applied collection but failed to finalize recovery task '{task_id}': {error}"
         ))
     })
+}
+
+async fn finalize_task_snapshot(
+    ctx: &ApplyContext,
+    conn: &mut sqlx::SqliteConnection,
+    task_id: &str,
+    expected: TaskStatus,
+) -> Result<(), sqlx::Error> {
+    if ctx.defer_task_completion {
+        return Ok(());
+    }
+    let completed = crate::modules::workspace::adapters::sqlite::task::compare_and_set_status_tx(
+        conn,
+        task_id,
+        expected,
+        TaskStatus::Completed,
+    )
+    .await?;
+    if !completed {
+        return Err(sqlx::Error::RowNotFound);
+    }
+    if let Some(snapshot) = ctx
+        .requested_target_state
+        .as_ref()
+        .filter(|_| ctx.safe_mode)
+    {
+        crate::modules::collections::adapters::sqlite::safe_mode::set_snapshot_tx(
+            conn,
+            &ctx.game_id,
+            Some(snapshot),
+        )
+        .await
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    }
+    Ok(())
 }
 
 async fn settle_normal_apply_failure(ctx: &ApplyContext, task_id: &str, finalization_failed: bool) {
@@ -241,7 +269,9 @@ async fn execute_inner(
         ));
     }
 
-    super::steps::validate_collection::validate(ctx).await?;
+    if ctx.runtime_target_state.is_none() {
+        super::steps::validate_collection::validate(ctx).await?;
+    }
 
     crate::modules::library::application::apply_progress::update(
         &ctx.game_id,
@@ -259,7 +289,7 @@ async fn execute_inner(
     );
 
     super::steps::resolve_current_state::resolve(ctx).await?;
-    compute_diff(ctx);
+    super::steps::resolve_current_state::compute_diff(ctx);
     let steps = super::steps::batch_rename::prepare(ctx).await?;
     ctx.mutation_started = !steps.is_empty();
     if let Some(coordinator) = mutation_coordinator.filter(|_| !steps.is_empty()) {
@@ -291,7 +321,10 @@ async fn execute_inner(
         None,
     );
 
-    ctx.final_state_name = Some(ctx.collection()?.name.clone());
+    ctx.final_state_name = ctx
+        .collection
+        .as_ref()
+        .map(|collection| collection.name.clone());
 
     let apply_result = ApplyResult {
         mods_enabled: ctx.mods_enabled,
@@ -306,150 +339,10 @@ async fn execute_inner(
     Ok(apply_result)
 }
 
-fn compute_diff(ctx: &mut ApplyContext) {
-    let target_keys: HashSet<String> = ctx
-        .target_mods
-        .iter()
-        .map(|member| {
-            member
-                .mod_path_key
-                .clone()
-                .unwrap_or_else(|| folder_path_key(&member.mod_path, None))
-        })
-        .collect();
-
-    ctx.to_enable = target_keys
-        .difference(&ctx.currently_enabled_path_keys)
-        .cloned()
-        .collect();
-    ctx.to_disable = ctx
-        .currently_enabled_path_keys
-        .difference(&target_keys)
-        .cloned()
-        .collect();
-}
-
 fn mutation_error(error: crate::shared::errors::AppError) -> CollectionError {
     CollectionError::Io(error.to_string())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn successful_apply_surfaces_task_finalization_failure() {
-        let test_db = crate::test_utils::init_test_db().await;
-        let pool = test_db.pool.clone();
-        pool.close().await;
-        let mut apply_context = ApplyContext::new(ApplyCollectionRequest {
-            pool: &pool,
-            game_id: "game-1",
-            collection_id: "collection-1",
-            capture_last_changes: false,
-            mods_path: PathBuf::from("E:/Mods"),
-            suppressor: std::sync::Arc::new(WatcherSuppressor::new(false)),
-            ignore_missing: false,
-            settings: AppSettings::default(),
-        });
-        apply_context.final_state_name = Some("Preset".to_string());
-
-        let error = finalize_apply(&apply_context, "task-1", TaskStatus::Pending)
-            .await
-            .expect_err("task finalization failure must be returned");
-
-        assert!(matches!(error, CollectionError::Db(_)));
-    }
-
-    #[tokio::test]
-    async fn finalization_failure_rolls_back_active_baseline_and_task_completion_together() {
-        let test_db = crate::test_utils::init_test_db().await;
-        crate::test_utils::insert_test_game(
-            &test_db.pool,
-            &crate::test_utils::TestGameFixture {
-                id: "game-atomic-finalize",
-                name: "Atomic finalize",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
-                path: "E:/Games/Atomic",
-                mods_path: Some("E:/Mods/Atomic"),
-            },
-        )
-        .await
-        .expect("seed game");
-        for (id, name) in [("baseline-before", "Before"), ("baseline-after", "After")] {
-            crate::modules::collections::adapters::sqlite::create(
-                &test_db.pool,
-                id,
-                "game-atomic-finalize",
-                name,
-                true,
-                false,
-            )
-            .await
-            .expect("seed collection");
-        }
-        crate::modules::collections::adapters::sqlite::runtime::set_active(
-            &test_db.pool,
-            "game-atomic-finalize",
-            Some("baseline-before"),
-        )
-        .await
-        .expect("seed active baseline");
-        crate::modules::workspace::adapters::sqlite::task::create_claimed_task(
-            &test_db.pool,
-            "task-atomic-finalize",
-            "game-atomic-finalize",
-            crate::modules::workspace::domain::task::TASK_TYPE_APPLY_COLLECTION,
-            Some("baseline-after"),
-        )
-        .await
-        .expect("seed running task");
-        sqlx::query(
-            "CREATE TRIGGER fail_task_completion BEFORE UPDATE OF status ON tasks \
-             WHEN NEW.id = 'task-atomic-finalize' AND NEW.status = 'COMPLETED' \
-             BEGIN SELECT RAISE(FAIL, 'injected task completion failure'); END",
-        )
-        .execute(&test_db.pool)
-        .await
-        .expect("install failure trigger");
-
-        let mut apply_context = ApplyContext::new(ApplyCollectionRequest {
-            pool: &test_db.pool,
-            game_id: "game-atomic-finalize",
-            collection_id: "baseline-after",
-            capture_last_changes: false,
-            mods_path: PathBuf::from("E:/Mods/Atomic"),
-            suppressor: std::sync::Arc::new(WatcherSuppressor::new(false)),
-            ignore_missing: false,
-            settings: AppSettings::default(),
-        });
-        apply_context.finalize_active_collection = true;
-        apply_context.final_active_collection_id = Some("baseline-after".to_string());
-
-        let error = finalize_apply(&apply_context, "task-atomic-finalize", TaskStatus::Running)
-            .await
-            .expect_err("injected finalization failure");
-        assert!(matches!(error, CollectionError::Db(_)));
-
-        let runtime = crate::modules::collections::adapters::sqlite::runtime::get(
-            &test_db.pool,
-            "game-atomic-finalize",
-        )
-        .await
-        .expect("load runtime")
-        .expect("runtime exists");
-        assert_eq!(
-            runtime.active_collection_id.as_deref(),
-            Some("baseline-before"),
-            "active baseline update must roll back with failed task completion"
-        );
-        let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(
-            &test_db.pool,
-            "task-atomic-finalize",
-        )
-        .await
-        .expect("load task")
-        .expect("task exists");
-        assert_eq!(task.status, TaskStatus::Running);
-    }
-}
+#[path = "apply_pipeline_tests.rs"]
+mod tests;

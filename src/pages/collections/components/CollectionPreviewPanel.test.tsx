@@ -72,4 +72,23 @@ describe('CollectionPreviewPanel', () => {
     expect(screen.getByText('Named collection')).toBeInTheDocument();
     expect(screen.queryByText('Current changes')).not.toBeInTheDocument();
   });
+
+  it('shows preview failures with a retry action', () => {
+    mockUseCollectionPreview.mockReturnValue({
+      isLoading: false,
+      isError: true,
+      error: new Error('Disk projection unavailable'),
+      data: undefined,
+      refetch: vi.fn(),
+    });
+    render(
+      <CollectionPreviewPanel
+        source={{ kind: 'stored_collection', collectionId: 'collection-1' }}
+        gameId="game-1"
+        runtimeSnapshot={undefined}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Disk projection unavailable');
+    expect(screen.getByRole('button', { name: 'common:actions.retry' })).toBeInTheDocument();
+  });
 });

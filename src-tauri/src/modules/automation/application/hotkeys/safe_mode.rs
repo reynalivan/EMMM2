@@ -1,11 +1,6 @@
-//! Per-game Safe Mode executor.
-//!
-//! Safe Mode reapplies the active collection through the normal durable apply
-//! pipeline. The collection remains the user's requested state; the pipeline
-//! filters its managed members to `is_safe` only while Safe Mode is enabled.
-
 use tauri::Manager;
 
+use crate::modules::collections::application::collection;
 use crate::modules::settings::application::config::ConfigService;
 use crate::shared::errors::AppError;
 
@@ -18,176 +13,77 @@ fn require<'a, T: Send + Sync + 'static>(
 }
 
 pub(super) async fn execute_toggle_safe_mode(app: &tauri::AppHandle) -> Result<String, AppError> {
-    let config_state = require::<ConfigService>(app, "ConfigService")?;
-    let pool_state = require::<sqlx::SqlitePool>(app, "SqlitePool")?;
-    let watcher_state = require::<
-        crate::modules::workspace::application::scanner::watcher::WatcherState,
-    >(app, "WatcherState")?;
-    let mutation_coordinator = require::<crate::modules::mutation::coordinator::MutationCoordinator>(
+    let config = require::<ConfigService>(app, "ConfigService")?;
+    let pool = require::<sqlx::SqlitePool>(app, "SqlitePool")?;
+    let watcher = require::<crate::modules::workspace::application::scanner::watcher::WatcherState>(
+        app,
+        "WatcherState",
+    )?;
+    let coordinator = require::<crate::modules::mutation::coordinator::MutationCoordinator>(
         app,
         "MutationCoordinator",
     )?;
-
-    let current_settings = config_state.get_settings();
-    let game = current_settings
+    let initial = config.get_settings();
+    let game = initial
         .active_game()
-        .ok_or_else(|| AppError::Internal("No active game selected".to_string()))?;
+        .ok_or_else(|| AppError::Validation("No active game selected".to_string()))?;
     let game_id = game.id.clone();
+    let mods_path = game.mod_path.clone();
     let _admission = crate::modules::mutation::api::admit_immutable_mutation(
         &game_id,
         crate::modules::mutation::api::ImmutableMutationKind::SafeMode,
     )?;
-    let mods_path = game.mod_path.clone();
     let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&mods_path)?;
-    let target_safe_mode = !current_settings.safety.runtime_safe_mode_for(&game_id);
     let snapshot_lease = crate::modules::collections::api::acquire_current_snapshot_lease(
         app,
-        pool_state.inner(),
-        mutation_coordinator.inner(),
+        pool.inner(),
+        coordinator.inner(),
         &game_id,
     )
     .await?;
     root_proof.validate(&mods_path)?;
     crate::modules::reconciliation::api::ensure_projection_epoch(
-        config_state.inner(),
+        config.inner(),
         &game_id,
         root_proof.identity(),
     )?;
-    let runtime =
-        crate::modules::collections::adapters::sqlite::runtime::get(pool_state.inner(), &game_id)
-            .await?;
-    let mut active_collection_id = runtime
-        .as_ref()
-        .and_then(|state| state.active_collection_id.clone())
-        .or_else(|| {
-            runtime
-                .as_ref()
-                .and_then(|state| state.draft_collection_id.clone())
-        });
-    if active_collection_id.is_none() {
-        active_collection_id =
-            crate::modules::collections::application::collection::capture_last_changes_if_needed(
-                pool_state.inner(),
-                &game_id,
-            )
-            .await?;
-    }
-    let Some(active_collection_id) = active_collection_id else {
-        // An empty managed library is still a valid runtime intent: the next
-        // import or preset apply must inherit this filter instead of forcing
-        // the user to press F5 again. There is no folder mutation to journal.
-        config_state.set_runtime_safe_mode(&game_id, target_safe_mode)?;
-        let generation = crate::modules::reconciliation::api::enqueue_runtime_sync(
-            app,
-            pool_state.inner(),
-            &game_id,
-            crate::modules::reconciliation::api::RuntimeSyncCause::SafeModeChanged,
-        );
-        return Ok(format!(
-            "Safe Mode {} (no managed mods, overlay queued as generation {generation})",
-            if target_safe_mode { "on" } else { "off" },
-        ));
-    };
+    let settings = config.get_settings();
+    let previous_enabled = settings.safety.runtime_safe_mode_for(&game_id);
+    let task_id =
+        collection::prepare_safe_mode_transition(pool.inner(), &game_id, previous_enabled).await?;
     drop(snapshot_lease);
 
-    let preflight_paths =
-        crate::modules::collections::application::collection::collection_preflight_scope_paths(
-            pool_state.inner(),
-            &game_id,
-            &active_collection_id,
-            &mods_path,
-        )
-        .await?;
-    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
-        app,
-        pool_state.inner(),
-        &game_id,
-        Some(&preflight_paths),
-    )
-    .await?;
-    let disk_reconcile = require::<
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-    >(app, "DiskReconcileState")?;
-    let mutation_lease = disk_reconcile
-        .acquire_ready_mutation_lease(&game_id, mutation_coordinator.inner_lock())
-        .await?;
-    root_proof.validate(&mods_path)?;
-    crate::modules::reconciliation::api::ensure_projection_epoch(
-        config_state.inner(),
-        &game_id,
-        root_proof.identity(),
-    )?;
-
-    // The apply pipeline needs the target eligibility immediately, but the
-    // committed setting must not lead the durable filesystem mutation. Keep a
-    // private target snapshot until that mutation has finalized successfully.
-    let mut apply_settings = current_settings.clone();
-    apply_settings
-        .safety
-        .set_runtime_safe_mode(game_id.clone(), target_safe_mode);
-    let apply_result =
-        crate::modules::collections::application::collection::apply_collection_durable_for_safe_mode(
-            crate::modules::collections::application::collection::ApplyCollectionRequest {
-                pool: pool_state.inner(),
-                game_id: &game_id,
-                collection_id: &active_collection_id,
-                capture_last_changes: false,
-                mods_path: mods_path.clone(),
-                suppressor: watcher_state.suppressor.clone(),
-                ignore_missing: true,
-                settings: apply_settings.clone(),
+    let outcome = async {
+        let preflight_paths = collection::safe_mode_preflight_scope_paths(pool.inner(), &task_id, &mods_path)
+            .await?.ok_or_else(|| AppError::Validation("Safe Mode intent is missing".to_string()))?;
+        crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
+            app, pool.inner(), &game_id, Some(&preflight_paths),
+        ).await?;
+        let disk_reconcile = require::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>(app, "DiskReconcileState")?;
+        let mutation_lease = disk_reconcile.acquire_ready_mutation_lease(&game_id, coordinator.inner_lock()).await?;
+        root_proof.validate(&mods_path)?;
+        crate::modules::reconciliation::api::ensure_projection_epoch(config.inner(), &game_id, root_proof.identity())?;
+        let task = crate::modules::workspace::adapters::sqlite::task::get_task_by_id(pool.inner(), &task_id)
+            .await?.ok_or_else(|| AppError::Validation("Safe Mode task is missing".to_string()))?;
+        let result = collection::execute_safe_mode_transition(
+            collection::ApplyCollectionRequest {
+                pool: pool.inner(), game_id: &game_id, collection_id: "", capture_last_changes: false,
+                mods_path: mods_path.clone(), suppressor: watcher.suppressor.clone(),
+                ignore_missing: true, settings,
             },
-            mutation_coordinator.inner(),
-        )
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!(
-                "Safe Mode mutation did not commit; requested state remains unchanged: {error}"
-            ))
-        })?;
-
-    // This is deliberately after the journal-backed apply. If persistence of
-    // the presentation state fails, the folder mutation is already committed;
-    // report that truth instead of claiming a rollback that never happened.
-    config_state
-        .set_runtime_safe_mode(&game_id, target_safe_mode)
-        .map_err(|error| {
-            AppError::Internal(format!(
-                "Safe Mode mutation committed but runtime state sync is pending: {error}"
-            ))
-        })?;
-
-    let generation = crate::modules::reconciliation::api::enqueue_runtime_sync_for_rewrites(
-        app,
-        pool_state.inner(),
-        &game_id,
-        &mods_path,
-        crate::modules::reconciliation::api::RuntimeSyncCause::SafeModeChanged,
-        &apply_result.runtime_path_rewrites,
-    );
-    drop(mutation_lease);
-
-    Ok(format!(
-        "Safe Mode {} (enabled: {}, disabled: {}; overlay queued as generation {generation})",
-        if target_safe_mode { "on" } else { "off" },
-        apply_result.mods_enabled,
-        apply_result.mods_disabled,
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn safe_mode_capture_and_empty_decision_follow_coherent_snapshot_barrier() {
-        let source = include_str!("safe_mode.rs");
-        let executor = source.split("#[cfg(test)]").next().unwrap();
-        let barrier = executor.find("acquire_current_snapshot_lease(").unwrap();
-        assert!(barrier < executor.find("sqlite::runtime::get(").unwrap());
-        assert!(barrier < executor.find("capture_last_changes_if_needed(").unwrap());
-        assert!(barrier < executor.find("let Some(active_collection_id)").unwrap());
-        assert!(
-            executor.find("drop(snapshot_lease)").unwrap()
-                < executor.find("acquire_ready_mutation_lease(").unwrap()
+            &task_id, task.final_active_collection_id, config.inner(), coordinator.inner(),
+        ).await?;
+        let generation = crate::modules::reconciliation::api::enqueue_runtime_sync_for_rewrites(
+            app, pool.inner(), &game_id, &mods_path,
+            crate::modules::reconciliation::api::RuntimeSyncCause::SafeModeChanged,
+            &result.runtime_path_rewrites,
         );
+        drop(mutation_lease);
+        Ok(format!("Safe Mode {} (enabled: {}, disabled: {}; overlay queued as generation {generation})",
+            if previous_enabled { "off" } else { "on" }, result.mods_enabled, result.mods_disabled))
+    }.await;
+    if outcome.is_err() {
+        collection::release_safe_mode_task_if_running(pool.inner(), &task_id).await?;
     }
+    outcome
 }

@@ -1,8 +1,9 @@
+import { StatePanel, SummaryStat } from './ApplyCollectionStatePanel';
+import { ApplyPreviewSummary } from './ApplyPreviewSummary';
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import {
   useApplyCollectionPreview,
   useApplyCollection,
@@ -10,8 +11,6 @@ import {
   useReplaceCollectionWithCurrentState,
 } from '../hooks/useCollections';
 import { useAppStore } from '@/app/store';
-import { CollectionTreeView } from './CollectionTreeView';
-import type { PreviewTreeNode } from '@/entities/collection';
 import { ApplyCollectionActions } from './ApplyCollectionActions';
 import { extractMissingModsPayload, formatAppError } from '../../../shared/lib/appError';
 import type { ApplyResult } from '@/entities/collection';
@@ -27,89 +26,16 @@ interface ApplyCollectionModalProps {
   onClose: () => void;
 }
 
-function SummaryStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl border border-base-content/8 bg-base-300/20 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-base-content/85">{value}</div>
-    </div>
-  );
-}
-
-interface StatePanelProps {
-  containerClass: string;
-  heading: string;
-  title: string;
-  titleClass: string;
-  summary: { active_root_count: number; enabled_object_count: number; object_count: number };
-  nodes?: PreviewTreeNode[];
-  colorClass: string;
-  emptyMessage: string;
-  treeIdentity: string;
-  nodeChanges?: ReadonlyMap<string, ApplyPreviewChange>;
-  t: TFunction;
-}
-
-const CURRENT_CHANGED_STATES: ReadonlySet<ApplyPreviewChange> = new Set(['will_disable']);
+const CURRENT_CHANGED_STATES: ReadonlySet<ApplyPreviewChange> = new Set([
+  'will_disable',
+  'will_enable',
+]);
 const TARGET_CHANGED_STATES: ReadonlySet<ApplyPreviewChange> = new Set([
   'will_enable',
+  'will_disable',
+  'missing',
   'excluded_by_safe_mode',
 ]);
-
-/** One side of the before/after comparison. Both sides render identically. */
-function StatePanel({
-  containerClass,
-  heading,
-  title,
-  titleClass,
-  summary,
-  nodes,
-  colorClass,
-  emptyMessage,
-  treeIdentity,
-  nodeChanges,
-  t,
-}: StatePanelProps) {
-  const [treeScrollElement, setTreeScrollElement] = useState<HTMLDivElement | null>(null);
-  return (
-    <div className={`flex-1 flex flex-col max-h-full overflow-hidden ${containerClass}`}>
-      <div className="p-4 bg-base-300/30 border-b border-base-content/5 shrink-0">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-base-content/45">
-              {heading}
-            </div>
-            <div className={`mt-1 text-lg font-semibold ${titleClass}`}>{title}</div>
-          </div>
-          <SummaryStat
-            label={t('collections:apply.summary.mods', 'Active Roots')}
-            value={summary.active_root_count}
-          />
-        </div>
-      </div>
-      <div className="p-4 grid grid-cols-2 gap-3 border-b border-base-content/5 bg-base-100/30">
-        <SummaryStat
-          label={t('collections:apply.summary.objects_on', 'Objects On')}
-          value={summary.enabled_object_count}
-        />
-        <SummaryStat
-          label={t('collections:apply.summary.objects', 'Objects')}
-          value={summary.object_count}
-        />
-      </div>
-      <div ref={setTreeScrollElement} className="flex-1 overflow-y-auto custom-scrollbar p-4">
-        <CollectionTreeView
-          nodes={nodes}
-          colorClass={colorClass}
-          emptyMessage={emptyMessage}
-          scrollElement={treeScrollElement}
-          treeIdentity={treeIdentity}
-          nodeChanges={nodeChanges}
-        />
-      </div>
-    </div>
-  );
-}
 
 export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionModalProps) {
   const { t } = useTranslation(['collections', 'layout', 'common']);
@@ -234,66 +160,12 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
         </div>
 
         {preview && diff && !result && !missingPaths && (
-          <div className="shrink-0 border-b border-base-content/5 bg-base-300/35 px-6 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div
-                className="join"
-                role="tablist"
-                aria-label={t('collections:apply.diff.view_label')}
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={previewMode === 'full'}
-                  className={`btn btn-xs join-item ${
-                    previewMode === 'full' ? 'btn-primary' : 'btn-ghost'
-                  }`}
-                  onClick={() => setPreviewMode('full')}
-                >
-                  {t('collections:apply.diff.full_collection')}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={previewMode === 'changes'}
-                  className={`btn btn-xs join-item ${
-                    previewMode === 'changes' ? 'btn-primary' : 'btn-ghost'
-                  }`}
-                  onClick={() => setPreviewMode('changes')}
-                >
-                  {t('collections:apply.diff.changes_only')}
-                </button>
-              </div>
-              {preview.safe_mode_enabled && (
-                <span className="badge badge-sm border-warning/20 bg-warning/10 text-warning/85">
-                  {t('collections:apply.diff.safe_mode_on')}
-                </span>
-              )}
-            </div>
-
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <SummaryStat
-                label={t('collections:apply.diff.disable_count')}
-                value={diff.disableCount}
-              />
-              <SummaryStat
-                label={t('collections:apply.diff.enable_count')}
-                value={diff.enableCount}
-              />
-              <SummaryStat
-                label={t('collections:apply.diff.unchanged_count')}
-                value={diff.unchangedCount}
-              />
-            </div>
-
-            {diff.excludedBySafeModeCount > 0 && (
-              <div className="mt-3 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-xs text-warning/90">
-                {t('collections:apply.diff.safe_mode_exclusions', {
-                  count: diff.excludedBySafeModeCount,
-                })}
-              </div>
-            )}
-          </div>
+          <ApplyPreviewSummary
+            diff={diff}
+            previewMode={previewMode}
+            setPreviewMode={setPreviewMode}
+            safeModeEnabled={preview.safe_mode_enabled}
+          />
         )}
 
         <div className="flex-1 overflow-hidden bg-base-100 flex min-h-[50vh]">

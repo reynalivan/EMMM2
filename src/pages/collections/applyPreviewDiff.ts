@@ -1,7 +1,7 @@
 import type { ApplyPreview, PreviewTreeNode } from '@/entities/collection';
 
 export type ApplyPreviewChange =
-  'will_enable' | 'will_disable' | 'unchanged' | 'excluded_by_safe_mode';
+  'will_enable' | 'will_disable' | 'unchanged' | 'excluded_by_safe_mode' | 'missing';
 
 export type ApplyPreviewDiff = {
   currentChanges: ReadonlyMap<string, ApplyPreviewChange>;
@@ -10,6 +10,8 @@ export type ApplyPreviewDiff = {
   disableCount: number;
   unchangedCount: number;
   excludedBySafeModeCount: number;
+  objectEnableCount: number;
+  objectDisableCount: number;
 };
 
 type ApplyPreviewTrees = Pick<
@@ -17,29 +19,37 @@ type ApplyPreviewTrees = Pick<
   'current_tree_nodes' | 'target_tree_nodes' | 'effective_target_tree_nodes'
 >;
 
-function collectModNodeIds(nodes: PreviewTreeNode[], ids = new Set<string>()): Set<string> {
+function collectNodes(
+  nodes: PreviewTreeNode[],
+  result = new Map<string, PreviewTreeNode>(),
+): Map<string, PreviewTreeNode> {
   for (const node of nodes) {
-    if (node.kind === 'mod') {
-      ids.add(node.id);
+    if (node.kind !== 'folder') {
+      result.set(node.id, node);
     }
-    collectModNodeIds(node.children, ids);
+    collectNodes(node.children, result);
   }
-  return ids;
+  return result;
 }
 
 export function buildApplyPreviewDiff(preview: ApplyPreviewTrees): ApplyPreviewDiff {
-  const currentNodeIds = collectModNodeIds(preview.current_tree_nodes);
-  const targetNodeIds = collectModNodeIds(preview.target_tree_nodes);
-  const effectiveTargetNodeIds = collectModNodeIds(preview.effective_target_tree_nodes);
+  const currentNodes = collectNodes(preview.current_tree_nodes);
+  const targetNodes = collectNodes(preview.target_tree_nodes);
+  const effectiveTargetNodes = collectNodes(preview.effective_target_tree_nodes);
   const currentChanges = new Map<string, ApplyPreviewChange>();
   const targetChanges = new Map<string, ApplyPreviewChange>();
   let enableCount = 0;
   let disableCount = 0;
   let unchangedCount = 0;
   let excludedBySafeModeCount = 0;
+  let objectEnableCount = 0;
+  let objectDisableCount = 0;
 
-  for (const nodeId of currentNodeIds) {
-    if (effectiveTargetNodeIds.has(nodeId)) {
+  for (const [nodeId, node] of currentNodes) {
+    if (node.kind !== 'mod' || node.status_kind === 'missing') continue;
+    const parentWillEnable = node.object_id && effectiveTargetNodes.get(node.object_id)?.is_enabled;
+    if (!node.is_effectively_active && !parentWillEnable) continue;
+    if (effectiveTargetNodes.get(nodeId)?.is_effectively_active) {
       currentChanges.set(nodeId, 'unchanged');
       unchangedCount += 1;
     } else {
@@ -48,11 +58,25 @@ export function buildApplyPreviewDiff(preview: ApplyPreviewTrees): ApplyPreviewD
     }
   }
 
-  for (const nodeId of targetNodeIds) {
-    if (!effectiveTargetNodeIds.has(nodeId)) {
+  for (const [nodeId, node] of targetNodes) {
+    if (node.kind === 'object') {
+      const current = currentNodes.get(nodeId);
+      if (!current || current.is_enabled === node.is_enabled) continue;
+      const change = node.is_enabled ? 'will_enable' : 'will_disable';
+      currentChanges.set(nodeId, change);
+      targetChanges.set(nodeId, change);
+      objectEnableCount += Number(node.is_enabled);
+      objectDisableCount += Number(!node.is_enabled);
+      continue;
+    }
+    if (node.status_kind === 'missing') {
+      targetChanges.set(nodeId, 'missing');
+    } else if (!effectiveTargetNodes.has(nodeId)) {
       targetChanges.set(nodeId, 'excluded_by_safe_mode');
       excludedBySafeModeCount += 1;
-    } else if (currentNodeIds.has(nodeId)) {
+    } else if (!effectiveTargetNodes.get(nodeId)?.is_effectively_active) {
+      targetChanges.set(nodeId, 'unchanged');
+    } else if (currentNodes.get(nodeId)?.is_effectively_active) {
       targetChanges.set(nodeId, 'unchanged');
     } else {
       targetChanges.set(nodeId, 'will_enable');
@@ -67,6 +91,8 @@ export function buildApplyPreviewDiff(preview: ApplyPreviewTrees): ApplyPreviewD
     disableCount,
     unchangedCount,
     excludedBySafeModeCount,
+    objectEnableCount,
+    objectDisableCount,
   };
 }
 
@@ -94,7 +120,7 @@ function filterNodeToChanges(
     const filtered = filterNodeToChanges(child, changes, includedChanges);
     return filtered ? [filtered] : [];
   });
-  if (children.length === 0) {
+  if (children.length === 0 && !includedChanges.has(changes.get(node.id) ?? 'unchanged')) {
     return null;
   }
 

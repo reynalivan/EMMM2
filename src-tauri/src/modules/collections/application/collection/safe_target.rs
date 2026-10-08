@@ -11,14 +11,45 @@ pub(crate) fn filter_target_mods_for_safe_mode(
     }
 
     mods.into_iter()
-        .filter(|member| {
-            member.is_safe
-                && member
-                    .safety_source
-                    .as_deref()
-                    .is_some_and(|source| source != SAFETY_SOURCE_UNKNOWN)
-        })
+        .filter(|member| is_safe_mode_eligible(member.is_safe, member.safety_source.as_deref()))
         .collect()
+}
+
+pub(crate) fn is_safe_mode_eligible(is_safe: bool, safety_source: Option<&str>) -> bool {
+    is_safe && safety_source.is_some_and(|source| source != SAFETY_SOURCE_UNKNOWN)
+}
+
+pub(crate) async fn constrain_runtime_snapshot_safety(
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    state: &mut crate::modules::collections::domain::collection::ProjectedCollectionState,
+) -> Result<(), crate::shared::errors::CollectionError> {
+    let keys = state
+        .active_roots
+        .iter()
+        .map(|root| root.root_key.clone())
+        .collect::<Vec<_>>();
+    let mut conn = pool.acquire().await?;
+    let rows = crate::modules::library::adapters::sqlite::mods::get_rows_for_reconcile_scope(
+        &mut conn,
+        game_id,
+        &keys,
+        &[],
+    )
+    .await?;
+    let by_key = rows
+        .into_iter()
+        .map(|row| (row.folder_path_key, (row.is_safe, row.safety_source)))
+        .collect::<std::collections::HashMap<_, _>>();
+    for root in &mut state.active_roots {
+        if let Some((is_safe, source)) = by_key.get(&root.root_key) {
+            root.is_safe &= *is_safe;
+            if !is_safe_mode_eligible(*is_safe, source.as_deref()) {
+                root.safety_source.clone_from(source);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

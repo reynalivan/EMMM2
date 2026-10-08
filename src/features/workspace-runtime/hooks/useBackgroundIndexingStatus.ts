@@ -1,5 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isDemoMode } from '@/shared/lib/appMode';
 import {
   commands,
   type OnboardingIndexingBackgroundGameStatus,
@@ -38,7 +39,9 @@ export function useBackgroundIndexingStatus(): BackgroundIndexingStatusState {
     const refreshSequence = ++refreshSequenceRef.current;
     const eventSequenceAtStart = eventSequenceRef.current;
     try {
-      const statuses = await commands.getOnboardingIndexingBackgroundStatus();
+      const statuses: OnboardingIndexingBackgroundStatus[] = isDemoMode
+        ? []
+        : await commands.getOnboardingIndexingBackgroundStatus();
       if (!mountedRef.current || refreshSequence !== refreshSequenceRef.current) return;
       const sessionsById = new Map(
         (Array.isArray(statuses) ? statuses : []).map((status) => [status.session_id, status]),
@@ -65,6 +68,13 @@ export function useBackgroundIndexingStatus(): BackgroundIndexingStatusState {
     let unlisten: (() => void) | undefined;
     let unlistenProgress: (() => void) | undefined;
     mountedRef.current = true;
+
+    if (isDemoMode) {
+      void refresh();
+      return () => {
+        mountedRef.current = false;
+      };
+    }
 
     void listen<OnboardingIndexingSnapshotProgress>(
       'onboarding_indexing:snapshot_progress',

@@ -36,3 +36,47 @@ pub(crate) fn classify_collection_path_transition(
 
     CollectionPathTransitionKind::SemanticMoveOrRename
 }
+
+fn path_with_reference_separator(path: &str, reference: &str) -> String {
+    if reference.contains('/') {
+        path.replace('\\', "/")
+    } else if reference.contains('\\') {
+        path.replace('/', "\\")
+    } else {
+        path.to_string()
+    }
+}
+
+pub(super) fn rewrite_descendant_path(
+    path: &str,
+    old_root: &str,
+    new_root: &str,
+) -> Option<String> {
+    let path_key = crate::shared::path_key::folder_path_key(path, None);
+    let old_key = crate::shared::path_key::folder_path_key(old_root, None);
+    if path_key == old_key {
+        return Some(path_with_reference_separator(new_root, path));
+    }
+    let key_prefix = format!("{old_key}/");
+    if !path_key.starts_with(&key_prefix) {
+        return None;
+    }
+
+    let root_component_count = old_root
+        .split(['/', '\\'])
+        .filter(|component| !component.is_empty())
+        .count();
+    let mut seen_components = 1;
+    for (index, separator) in path.char_indices() {
+        if !matches!(separator, '/' | '\\') {
+            continue;
+        }
+        if seen_components == root_component_count {
+            let remainder = &path[index + separator.len_utf8()..];
+            let new_root = path_with_reference_separator(new_root, path);
+            return Some(format!("{new_root}{separator}{remainder}"));
+        }
+        seen_components += 1;
+    }
+    None
+}

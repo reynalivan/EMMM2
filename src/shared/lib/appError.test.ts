@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatAppError, isExplorerSnapshotExpired } from './appError';
+import { extractFileInUsePayload, formatAppError, isExplorerSnapshotExpired } from './appError';
 
 describe('formatAppError', () => {
+  it('keeps PathBusy actionable even without identified processes', () => {
+    expect(
+      extractFileInUsePayload({ type: 'PathBusy', payload: { path: 'C:/Mods/Blue' } }),
+    ).toEqual({ path: 'C:/Mods/Blue', processes: [] });
+  });
   it('formats an expired explorer snapshot as an actionable error', () => {
     expect(formatAppError({ type: 'ExplorerSnapshotExpired' })).toBe(
       'The folder listing changed. Reload it and select the mods again.',

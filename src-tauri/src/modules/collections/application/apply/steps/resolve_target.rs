@@ -5,30 +5,42 @@ use crate::shared::path_key::folder_path_key;
 
 /// Load the target collection's members.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
-    let collection = ctx.collection()?.clone();
     let mods_path = ctx.mods_path.to_string_lossy().to_string();
-    let snapshot =
-        crate::modules::collections::application::collection::load_projected_collection_state(
-            &ctx.pool,
-            &collection,
-            Some(mods_path.as_str()),
-        )
-        .await?;
+    let snapshot = match ctx.runtime_target_state.as_ref() {
+        Some(state) => {
+            let mut state = state.clone();
+            crate::modules::collections::application::collection::constrain_runtime_snapshot_safety(
+                &ctx.pool, &ctx.game_id, &mut state,
+            ).await?;
+            state
+        }
+        None => {
+            let collection = ctx.collection()?.clone();
+            crate::modules::collections::application::collection::load_projected_collection_state(
+                &ctx.pool,
+                &collection,
+                Some(mods_path.as_str()),
+            )
+            .await?
+        }
+    };
+    ctx.requested_target_state = Some(snapshot.clone());
     let (mods, objects) =
         crate::modules::collections::application::collection::collection_members_from_projected_state(
             &ctx.collection_id,
             &snapshot,
         );
     let requested_mod_count = mods.len();
-    ctx.safe_mode_scope_path_keys = mods
-        .iter()
-        .map(|member| {
-            member
-                .mod_path_key
-                .clone()
-                .unwrap_or_else(|| folder_path_key(&member.mod_path, None))
-        })
-        .collect();
+    ctx.safe_mode_scope_path_keys.extend(
+        mods.iter()
+            .map(|member| {
+                member
+                    .mod_path_key
+                    .clone()
+                    .unwrap_or_else(|| folder_path_key(&member.mod_path, None))
+            })
+            .collect::<Vec<_>>(),
+    );
     ctx.target_mods = filter_target_mods_for_safe_mode(mods, ctx.safe_mode);
     ctx.target_objects = objects;
 

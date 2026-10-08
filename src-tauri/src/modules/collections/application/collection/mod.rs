@@ -10,7 +10,10 @@ mod path_transition;
 mod preview;
 mod projection;
 mod references;
+mod references_transitions;
 mod runtime;
+mod safe_mode;
+mod safe_mode_references;
 mod safe_target;
 
 pub use apply::*;
@@ -22,6 +25,7 @@ pub use preview::*;
 pub use projection::*;
 pub use references::*;
 pub use runtime::*;
+pub(crate) use safe_mode::*;
 pub(crate) use safe_target::*;
 
 #[cfg(test)]

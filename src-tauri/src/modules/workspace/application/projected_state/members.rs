@@ -32,6 +32,14 @@ pub fn build_preview_tree_from_projected_state(
                 .map(projected_root_to_node)
                 .collect::<Vec<_>>();
             children.sort_by_cached_key(|child| canonical_name_key(&child.name));
+            if !object.is_enabled {
+                for child in &mut children {
+                    child.is_effectively_active = false;
+                    if child.status_kind.is_none() {
+                        child.status_kind = Some("disabled_by_container".to_string());
+                    }
+                }
+            }
 
             PreviewTreeNode {
                 kind: PreviewTreeNodeKind::Object,

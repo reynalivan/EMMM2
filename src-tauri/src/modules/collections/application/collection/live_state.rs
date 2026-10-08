@@ -43,50 +43,11 @@ pub(crate) async fn load_live_runtime_state(
             ..object
         })
         .collect();
-    let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id).await?;
-    Ok(build_live_runtime_state(
-        current_mod_rows,
-        current_objects,
-        mods_path.as_deref(),
-    ))
-}
-
-/// Runtime roots needed by collection apply. Unlike a snapshot capture this
-/// does not load unrelated objects that have no enabled mod beneath them.
-pub(crate) async fn load_live_active_projection_state(
-    pool: &SqlitePool,
-    game_id: &str,
-) -> Result<(Vec<CollectionMod>, Vec<CollectionObject>), CollectionError> {
-    let mods_path = load_game_mods_path(pool, game_id).await?;
     let current_mod_rows = collection::get_live_active_mod_rows(pool, game_id)
         .await?
         .into_iter()
         .filter(|row| is_mod_effectively_active(&row.mod_path))
-        .collect::<Vec<_>>();
-    let object_ids = current_mod_rows
-        .iter()
-        .map(|row| row.object_id.clone())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let current_objects =
-        crate::modules::catalog::adapters::sqlite::object::get_game_objects_by_ids(
-            pool,
-            game_id,
-            &object_ids,
-        )
-        .await?
-        .into_iter()
-        .map(|object| CollectionObject {
-            kind: crate::modules::collections::domain::collection::MemberKind::Object,
-            collection_id: String::new(),
-            object_id: object.id,
-            is_enabled: is_object_enabled(Some(&object.folder_path)),
-            display_name: Some(object.name),
-            path_key: Some(object.folder_path),
-        })
         .collect();
-
     Ok(build_live_runtime_state(
         current_mod_rows,
         current_objects,
@@ -106,9 +67,6 @@ fn build_live_runtime_state(
 
     let mut current_mods = Vec::with_capacity(current_mod_rows.len());
     for row in current_mod_rows {
-        if !is_mod_effectively_active(&row.mod_path) {
-            continue;
-        }
         let mod_id = row.mod_id;
         let mod_path = row.mod_path;
         let mod_path_key = row.mod_path_key;
@@ -153,6 +111,52 @@ fn build_live_runtime_state(
     }
 
     (current_mods, current_objects)
+}
+
+pub(crate) async fn load_apply_projection_state(
+    pool: &SqlitePool,
+    game_id: &str,
+    targets: &[CollectionObject],
+) -> Result<(Vec<CollectionMod>, Vec<CollectionObject>), CollectionError> {
+    let mods_path = load_game_mods_path(pool, game_id).await?;
+    let objects = collection::get_live_objects(pool, game_id).await?;
+    let activating_paths = objects
+        .iter()
+        .filter(|object| !is_object_enabled(object.path_key.as_deref()))
+        .filter(|object| {
+            targets
+                .iter()
+                .any(|target| target.object_id == object.object_id && target.is_enabled)
+        })
+        .filter_map(|object| object.path_key.as_deref())
+        .collect::<Vec<_>>();
+    let rows = collection::get_live_active_mod_rows(pool, game_id)
+        .await?
+        .into_iter()
+        .filter(|row| {
+            is_mod_effectively_active(&row.mod_path)
+                || activating_paths.iter().any(|parent| {
+                    crate::shared::path_key::strip_path_prefix_preserve_display(
+                        &row.mod_path,
+                        parent,
+                        None,
+                    )
+                    .is_some_and(|suffix| is_mod_effectively_active(&suffix))
+                })
+        })
+        .collect();
+    let objects = objects
+        .into_iter()
+        .map(|object| CollectionObject {
+            is_enabled: is_object_enabled(object.path_key.as_deref()),
+            ..object
+        })
+        .collect();
+    Ok(build_live_runtime_state(
+        rows,
+        objects,
+        mods_path.as_deref(),
+    ))
 }
 
 /// Absolute roots of the active mods that a current-runtime snapshot records.

@@ -61,6 +61,14 @@ pub async fn resolve_recovery_task(request: RecoveryTaskRequest<'_>) -> Result<(
         .ok_or_else(|| AppError::Validation(format!("Task {} not found", task_id)))?;
 
     if action == RecoveryAction::Ignore {
+        if crate::modules::collections::adapters::sqlite::safe_mode::get_intent(pool, task_id)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Validation(
+                "A Safe Mode transition must be retried or rolled back".to_string(),
+            ));
+        }
         return settle_ignored_task(pool, task_id).await;
     }
 
@@ -139,6 +147,41 @@ async fn resolve_claimed_task(
         settings,
         mods_path,
     };
+
+    if crate::modules::collections::adapters::sqlite::safe_mode::get_intent(pool, &task.id)
+        .await?
+        .is_some()
+    {
+        if action == RecoveryAction::Rollback {
+            crate::modules::collections::adapters::sqlite::safe_mode::request_rollback(
+                pool, &task.id,
+            )
+            .await?;
+        }
+        crate::modules::collections::application::collection::execute_safe_mode_transition(
+            crate::modules::collections::application::collection::ApplyCollectionRequest {
+                pool,
+                game_id: &task.game_id,
+                collection_id: "",
+                capture_last_changes: false,
+                mods_path: apply_context.mods_path,
+                suppressor: watcher_state.suppressor.clone(),
+                ignore_missing: true,
+                settings: apply_context.settings,
+            },
+            &task.id,
+            crate::modules::collections::application::collection::valid_active_baseline(
+                pool,
+                &task.game_id,
+                task.final_active_collection_id.as_deref(),
+            )
+            .await?,
+            config,
+            coordinator,
+        )
+        .await?;
+        return Ok(());
+    }
 
     match action {
         RecoveryAction::Retry => retry_task(apply_context, task, coordinator).await,

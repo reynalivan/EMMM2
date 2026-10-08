@@ -97,7 +97,9 @@
       "will_disable": "Will disable",
       "excluded_safe_mode": "Excluded in Safe Mode",
       "empty_disable": "No mods will be disabled.",
-      "empty_enable": "No mods will be enabled."
+      "empty_enable": "No mods will be enabled.",
+      "missing": "Missing on disk",
+      "object_changes": "Objects: {{enabled}} will turn on; {{disabled}} will turn off."
     },
     "actions": {
       "cancel": "Cancel",

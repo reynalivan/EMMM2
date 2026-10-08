@@ -287,7 +287,15 @@ fn source_is_missing(source_path: &str, mods_path: Option<&str>) -> bool {
         return false;
     };
 
-    !resolved_path.exists()
+    let Some(mods_root) = mods_path.map(Path::new) else {
+        return !resolved_path.is_dir();
+    };
+    crate::modules::library::application::mods::core_ops::resolve_existing_runtime_variant(
+        mods_root,
+        &resolved_path,
+        true,
+    )
+    .is_none()
 }
 
 fn merge_warnings(target: &mut Vec<String>, source: &[String]) {

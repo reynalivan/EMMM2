@@ -8,6 +8,12 @@ import type {
 import { useBackgroundIndexingStatus } from './useBackgroundIndexingStatus';
 
 const getStatus = vi.hoisted(() => vi.fn());
+const mode = vi.hoisted(() => ({ demo: false }));
+vi.mock('@/shared/lib/appMode', () => ({
+  get isDemoMode() {
+    return mode.demo;
+  },
+}));
 vi.mock('@/shared/api/tauri/bindings', () => ({
   commands: { getOnboardingIndexingBackgroundStatus: getStatus },
 }));
@@ -21,6 +27,19 @@ function emit<T>(event: string, payload: T): void {
 }
 
 describe('useBackgroundIndexingStatus', () => {
+  it('loads fixture status without native event listeners in demo mode', async () => {
+    mode.demo = true;
+    getStatus.mockResolvedValue([]);
+    try {
+      const { result, unmount } = renderHook(() => useBackgroundIndexingStatus());
+      await waitFor(() => expect(result.current.isLoaded).toBe(true));
+      expect(listen).not.toHaveBeenCalled();
+      expect(result.current.loadError).toBe(false);
+      unmount();
+    } finally {
+      mode.demo = false;
+    }
+  });
   beforeEach(() => {
     handlers.clear();
     getStatus.mockReset();

@@ -2,8 +2,7 @@
 //! is the source of truth — the `mods` rows and `object_runtime_projection`
 //! converge via the scoped disk reconcile the caller runs after the batch.
 
-use std::collections::HashSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use crate::modules::library::application::mods::core_ops::standardize_prefix;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
@@ -112,6 +111,9 @@ impl RuntimeRenamePlan {
                 ),
             ));
         }
+        if self.new_abs == self.old_abs {
+            return Ok(());
+        }
         if self.new_abs != self.old_abs && self.new_abs.exists() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
@@ -127,7 +129,10 @@ impl RuntimeRenamePlan {
 
 /// Map a failed folder rename to a structured error, so a locked folder keeps
 /// its `FileInUse` / `PathBusy` classification all the way to the UI.
-fn classify_rename_failure(src: &std::path::Path, error: std::io::Error) -> CollectionError {
+pub(crate) fn classify_rename_failure(
+    src: &std::path::Path,
+    error: std::io::Error,
+) -> CollectionError {
     match crate::modules::library::application::mods::core_ops::map_toggle_error(
         src,
         "mod folder",
@@ -295,33 +300,6 @@ fn build_plan(
     )))
 }
 
-fn validate_plans(plans: &[RuntimeRenamePlan]) -> Result<(), AppError> {
-    let mut old_paths = HashSet::new();
-    let mut new_paths = HashSet::new();
-
-    for plan in plans {
-        if !old_paths.insert(normalize_for_collision(&plan.old_abs)) {
-            return Err(AppError::Internal(format!(
-                "Duplicate mutation source path detected: {}",
-                plan.old_abs.display()
-            )));
-        }
-
-        if !new_paths.insert(normalize_for_collision(&plan.new_abs)) {
-            return Err(AppError::Internal(format!(
-                "Duplicate mutation target path detected: {}",
-                plan.new_abs.display()
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-fn normalize_for_collision(path: &Path) -> String {
-    path.to_string_lossy().to_lowercase()
-}
-
 fn rollback_successes(plans: &[RuntimeRenamePlan], warnings: &mut Vec<String>) {
     for plan in plans.iter().rev() {
         if plan.old_abs == plan.new_abs {
@@ -354,34 +332,10 @@ fn rollback_successes(plans: &[RuntimeRenamePlan], warnings: &mut Vec<String>) {
     }
 }
 
-fn validate_relative_path(path: &str) -> Result<(), AppError> {
-    let path = Path::new(path);
-    if path.as_os_str().is_empty() {
-        return Err(AppError::Internal("Mod folder path is empty".to_string()));
-    }
-
-    if path.is_absolute() {
-        return Err(AppError::Internal(format!(
-            "Absolute mod folder path is not allowed: {}",
-            path.display()
-        )));
-    }
-
-    for component in path.components() {
-        match component {
-            Component::Normal(_) | Component::CurDir => {}
-            Component::ParentDir | Component::Prefix(_) | Component::RootDir => {
-                return Err(AppError::Internal(format!(
-                    "Unsafe mod folder path is not allowed: {}",
-                    path.display()
-                )));
-            }
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 #[path = "engine_tests.rs"]
 mod tests;
+
+#[path = "engine_validation.rs"]
+mod validation;
+use validation::{validate_plans, validate_relative_path};

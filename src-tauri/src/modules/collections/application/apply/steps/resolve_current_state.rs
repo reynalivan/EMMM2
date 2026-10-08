@@ -4,9 +4,10 @@ use crate::shared::errors::CollectionError;
 /// Resolve currently-enabled mod path keys within this apply operation's scope.
 pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     let (mods, objects) =
-        crate::modules::collections::application::collection::load_live_active_projection_state(
+        crate::modules::collections::application::collection::load_apply_projection_state(
             &ctx.pool,
             &ctx.game_id,
+            &ctx.target_objects,
         )
         .await?;
     ctx.currently_enabled_path_keys =
@@ -26,4 +27,26 @@ pub async fn resolve(ctx: &mut ApplyContext) -> Result<(), CollectionError> {
     );
 
     Ok(())
+}
+
+pub fn compute_diff(ctx: &mut ApplyContext) {
+    let target_keys: std::collections::HashSet<String> =
+        ctx.target_mods
+            .iter()
+            .map(|member| {
+                member.mod_path_key.clone().unwrap_or_else(|| {
+                    crate::shared::path_key::folder_path_key(&member.mod_path, None)
+                })
+            })
+            .collect();
+
+    ctx.to_enable = target_keys
+        .difference(&ctx.currently_enabled_path_keys)
+        .cloned()
+        .collect();
+    ctx.to_disable = ctx
+        .currently_enabled_path_keys
+        .difference(&target_keys)
+        .cloned()
+        .collect();
 }

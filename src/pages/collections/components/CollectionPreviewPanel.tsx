@@ -14,6 +14,7 @@ import { getCollectionDisplayName, useRuntimeLabels } from '../../../shared/lib/
 import type { CollectionRuntimeSnapshot } from '@/entities/collection';
 import type { CollectionWorkspaceSource } from '../types';
 import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
+import { formatAppError } from '../../../shared/lib/appError';
 
 interface CollectionPreviewPanelProps {
   source: CollectionWorkspaceSource | null;
@@ -112,6 +113,20 @@ export function CollectionPreviewPanel({
             />
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (previewQuery.isError) {
+    return (
+      <div
+        role="alert"
+        className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+      >
+        <p className="text-sm text-error">{formatAppError(previewQuery.error)}</p>
+        <button className="btn btn-sm btn-neutral" onClick={() => void previewQuery.refetch()}>
+          {t('common:actions.retry')}
+        </button>
       </div>
     );
   }

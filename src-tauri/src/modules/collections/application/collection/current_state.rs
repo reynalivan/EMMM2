@@ -68,6 +68,8 @@ pub async fn replace_collection_with_current_state(
     .await?;
     collection::update_safety_summary_tx(&mut tx, &collection.id, collection_is_safe).await?;
     collection::runtime::set_active_tx(&mut tx, game_id, Some(&collection.id)).await?;
+    collection::safe_mode::refresh_snapshot_if_present_tx(&mut tx, game_id, &projected_state)
+        .await?;
     collection::runtime::clear_draft_tx(&mut tx, game_id).await?;
     if let Some(draft_id) = draft_id {
         collection::delete_tx(&mut tx, &draft_id).await?;

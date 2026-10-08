@@ -97,7 +97,9 @@
       "will_disable": "将禁用",
       "excluded_safe_mode": "安全模式下已排除",
       "empty_disable": "没有 Mod 会被禁用。",
-      "empty_enable": "没有 Mod 会被启用。"
+      "empty_enable": "没有 Mod 会被启用。",
+      "missing": "磁盘上缺失",
+      "object_changes": "对象：{{enabled}} 个将启用；{{disabled}} 个将禁用。"
     },
     "actions": {
       "cancel": "取消",
