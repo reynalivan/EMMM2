@@ -15,8 +15,27 @@ export interface ConflictModSet {
   conflicts: ConflictInfo[];
 }
 
+const utf8Encoder = new TextEncoder();
+
+function comparePaths(left: string, right: string): number {
+  const leftBytes = utf8Encoder.encode(left);
+  const rightBytes = utf8Encoder.encode(right);
+  const sharedLength = Math.min(leftBytes.length, rightBytes.length);
+
+  for (let index = 0; index < sharedLength; index += 1) {
+    const difference = leftBytes[index] - rightBytes[index];
+    if (difference !== 0) return difference;
+  }
+
+  return leftBytes.length - rightBytes.length;
+}
+
 function sortPaths(paths: string[]): string[] {
-  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(paths)].sort(comparePaths);
+}
+
+export function buildConflictModSetKey(modPaths: string[]): string {
+  return JSON.stringify(sortPaths(modPaths));
 }
 
 /**
@@ -28,7 +47,7 @@ export function groupConflictsByModSet(conflicts: ConflictInfo[]): ConflictModSe
 
   for (const conflict of conflicts) {
     const modPaths = sortPaths(conflict.mod_paths);
-    const key = JSON.stringify(modPaths);
+    const key = buildConflictModSetKey(modPaths);
     const existing = groups.get(key);
     if (existing) {
       existing.conflicts.push(conflict);

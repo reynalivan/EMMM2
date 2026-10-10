@@ -21,6 +21,13 @@ import { useAppStore } from '@/app/store';
 import { applyRuntimePathInvalidationMutationResult } from '@/features/workspace-runtime/@x/mod-runtime';
 import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
 
+export const activeModConflictKeys = {
+  all: ['conflicts'] as const,
+  conflicts: (gameId: string | undefined) => [...activeModConflictKeys.all, gameId] as const,
+  ignoredGroups: (gameId: string | undefined) =>
+    [...activeModConflictKeys.all, 'ignored-groups', gameId] as const,
+};
+
 /**
  * Getter for the active game id that throws when there is none.
  *
@@ -171,10 +178,44 @@ export function useActiveConflicts() {
   const { activeGame } = useActiveGame();
 
   return useQuery<ConflictInfo[]>({
-    queryKey: ['conflicts', activeGame?.id],
+    queryKey: activeModConflictKeys.conflicts(activeGame?.id),
     queryFn: () =>
       activeGame?.id ? commands.getActiveModConflicts(activeGame.id) : Promise.resolve([]),
     enabled: !!activeGame?.id,
     staleTime: 60_000, // Conflicts rarely change — watcher invalidates on toggle
+  });
+}
+
+export function useIgnoredActiveModConflictGroupKeys() {
+  const { activeGame } = useActiveGame();
+
+  return useQuery<string[]>({
+    queryKey: activeModConflictKeys.ignoredGroups(activeGame?.id),
+    queryFn: () =>
+      activeGame?.id
+        ? commands.listIgnoredActiveModConflictGroupKeys(activeGame.id)
+        : Promise.resolve([]),
+    enabled: !!activeGame?.id,
+    staleTime: 60_000,
+  });
+}
+
+export function useSetActiveModConflictGroupsIgnored() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (params: { gameId: string; modPathGroups: string[][]; ignored: boolean }) =>
+      commands.setActiveModConflictGroupsIgnored(
+        params.gameId,
+        params.modPathGroups,
+        params.ignored,
+      ),
+    onSuccess: (_result, variables) => {
+      const descriptor = buildQueryInvalidationDescriptor(
+        [activeModConflictKeys.ignoredGroups(variables.gameId)],
+        [],
+      );
+      applyRuntimeEffects(queryClient, descriptor);
+    },
   });
 }

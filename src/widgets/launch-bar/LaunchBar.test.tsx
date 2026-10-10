@@ -6,6 +6,7 @@ import type { ConflictInfo } from '@/entities/workspace';
 const launchConfiguredGame = vi.fn();
 const toastError = vi.fn();
 let activeConflicts: ConflictInfo[] = [];
+let ignoredConflictGroupKeys: string[] = [];
 let workspaceView = 'mods';
 
 vi.mock('@/entities/game', () => ({
@@ -14,6 +15,12 @@ vi.mock('@/entities/game', () => ({
 }));
 vi.mock('@/features/mod-runtime', () => ({
   useActiveConflicts: vi.fn(() => ({ data: activeConflicts })),
+  useIgnoredActiveModConflictGroupKeys: vi.fn(() => ({
+    data: ignoredConflictGroupKeys,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
 }));
 vi.mock('@/app/store', () => ({
   useAppStore: (
@@ -45,15 +52,8 @@ vi.mock('@/features/randomizer', () => ({
 }));
 vi.mock('@/features/conflict-report', () => ({
   ConflictModal: () => <div data-testid="conflict-modal"></div>,
+  buildConflictModSetKey: (modPaths: string[]) => JSON.stringify([...modPaths].sort()),
 }));
-vi.mock('@/features/scanner/components/ConflictToast', () => ({
-  default: ({ onDismiss }: { onDismiss: () => void }) => (
-    <button data-testid="conflict-toast" onClick={onDismiss}>
-      Dismiss conflict
-    </button>
-  ),
-}));
-
 function conflict(hash: string): ConflictInfo {
   return {
     hash,
@@ -70,6 +70,7 @@ function conflict(hash: string): ConflictInfo {
 describe('LaunchBar', () => {
   beforeEach(() => {
     activeConflicts = [];
+    ignoredConflictGroupKeys = [];
     workspaceView = 'mods';
     launchConfiguredGame.mockReset();
     toastError.mockReset();
@@ -98,17 +99,12 @@ describe('LaunchBar', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('shows a changed conflict batch after the previous batch was dismissed', () => {
+  it('shows a warning trigger without an automatic conflict overlay', () => {
     activeConflicts = [conflict('aaaaaaaa')];
-    const { rerender } = render(<LaunchBar />);
+    render(<LaunchBar />);
 
-    fireEvent.click(screen.getByTestId('conflict-toast'));
-    expect(screen.queryByTestId('conflict-toast')).not.toBeInTheDocument();
-
-    activeConflicts = [conflict('bbbbbbbb')];
-    rerender(<LaunchBar />);
-
-    expect(screen.getByTestId('conflict-toast')).toBeInTheDocument();
+    expect(screen.queryByText('Dismiss conflict')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /shared hashes/i })).toBeInTheDocument();
   });
 
   it('presents shared hash conflicts as a quiet review action', () => {
@@ -117,10 +113,18 @@ describe('LaunchBar', () => {
 
     const trigger = screen.getByRole('button', { name: /shared hashes/i });
     expect(trigger).toHaveClass('btn-ghost');
-    expect(trigger).toHaveClass('text-info');
-    expect(trigger).not.toHaveClass('btn-warning');
+    expect(trigger).toHaveClass('text-warning');
+    expect(trigger).not.toHaveClass('text-info');
     expect(trigger).not.toHaveClass('animate-pulse');
     expect(trigger).toHaveTextContent('1');
+  });
+
+  it('hides ignored conflict groups from the warning count', () => {
+    activeConflicts = [conflict('aaaaaaaa')];
+    ignoredConflictGroupKeys = ['["ModA","ModB"]'];
+    render(<LaunchBar />);
+
+    expect(screen.queryByRole('button', { name: /shared hashes/i })).not.toBeInTheDocument();
   });
 
   it('keeps randomize, conflicts, and play available in the compact top-bar menu', async () => {

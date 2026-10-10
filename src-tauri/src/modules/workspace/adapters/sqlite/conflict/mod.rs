@@ -2,6 +2,108 @@ use crate::modules::workspace::domain::conflicts::IgnoredConflict;
 use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 
+const MAX_ACTIVE_CONFLICT_GROUPS_PER_REQUEST: usize = 1_000;
+const MAX_MOD_PATHS_PER_ACTIVE_CONFLICT_GROUP: usize = 64;
+
+pub fn canonical_active_conflict_group_key(mod_paths: &[String]) -> Result<String, String> {
+    if mod_paths.len() < 2 {
+        return Err("An active conflict group must contain at least two mod paths".to_string());
+    }
+    if mod_paths.len() > MAX_MOD_PATHS_PER_ACTIVE_CONFLICT_GROUP {
+        return Err(format!(
+            "An active conflict group cannot contain more than {MAX_MOD_PATHS_PER_ACTIVE_CONFLICT_GROUP} mod paths"
+        ));
+    }
+
+    let mut normalized = Vec::with_capacity(mod_paths.len());
+    for path in mod_paths {
+        if path.trim().is_empty() {
+            return Err("An active conflict group cannot contain an empty mod path".to_string());
+        }
+        normalized.push(path.to_string());
+    }
+
+    normalized.sort_unstable();
+    normalized.dedup();
+
+    if normalized.len() < 2 {
+        return Err("An active conflict group must contain two distinct mod paths".to_string());
+    }
+
+    serde_json::to_string(&normalized)
+        .map_err(|error| format!("Could not serialize active conflict paths: {error}"))
+}
+
+pub async fn list_ignored_active_mod_conflict_group_keys(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT mod_paths
+         FROM ignored_active_mod_conflict_groups
+         WHERE game_id = ?
+         ORDER BY created_at DESC, mod_paths",
+    )
+    .bind(game_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn set_ignored_active_mod_conflict_group_keys(
+    pool: &SqlitePool,
+    game_id: &str,
+    group_keys: &[String],
+    ignored: bool,
+) -> Result<(), sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+
+    for group_key in group_keys {
+        if ignored {
+            sqlx::query(
+                "INSERT INTO ignored_active_mod_conflict_groups (game_id, mod_paths)
+                 VALUES (?, ?)
+                 ON CONFLICT(game_id, mod_paths) DO NOTHING",
+            )
+            .bind(game_id)
+            .bind(group_key)
+            .execute(&mut *transaction)
+            .await?;
+        } else {
+            sqlx::query(
+                "DELETE FROM ignored_active_mod_conflict_groups
+                 WHERE game_id = ? AND mod_paths = ?",
+            )
+            .bind(game_id)
+            .bind(group_key)
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+
+    transaction.commit().await
+}
+
+pub fn canonical_active_conflict_group_keys(
+    mod_path_groups: &[Vec<String>],
+) -> Result<Vec<String>, String> {
+    if mod_path_groups.is_empty() {
+        return Err("At least one active conflict group is required".to_string());
+    }
+    if mod_path_groups.len() > MAX_ACTIVE_CONFLICT_GROUPS_PER_REQUEST {
+        return Err(format!(
+            "A request cannot contain more than {MAX_ACTIVE_CONFLICT_GROUPS_PER_REQUEST} active conflict groups"
+        ));
+    }
+
+    let mut group_keys = mod_path_groups
+        .iter()
+        .map(|mod_paths| canonical_active_conflict_group_key(mod_paths))
+        .collect::<Result<Vec<_>, _>>()?;
+    group_keys.sort_unstable();
+    group_keys.dedup();
+    Ok(group_keys)
+}
+
 /// Fetches all ignored conflicts for a game, enriched with object and mod names.
 pub async fn list_ignored_object_conflicts(
     pool: &SqlitePool,
@@ -127,4 +229,35 @@ pub async fn revoke_object_conflict(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{canonical_active_conflict_group_key, canonical_active_conflict_group_keys};
+
+    #[test]
+    fn canonical_group_key_sorts_and_deduplicates_paths() {
+        let key = canonical_active_conflict_group_key(&[
+            "E:/Mods/ModB".to_string(),
+            "E:/Mods/ModA".to_string(),
+            "E:/Mods/ModB".to_string(),
+        ])
+        .expect("the group should be valid");
+
+        assert_eq!(key, r#"["E:/Mods/ModA","E:/Mods/ModB"]"#);
+    }
+
+    #[test]
+    fn canonical_group_key_rejects_single_or_blank_paths() {
+        assert!(canonical_active_conflict_group_key(&["E:/Mods/ModA".to_string()]).is_err());
+        assert!(
+            canonical_active_conflict_group_key(&["E:/Mods/ModA".to_string(), " ".to_string(),])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn canonical_group_keys_reject_an_empty_bulk_action() {
+        assert!(canonical_active_conflict_group_keys(&[]).is_err());
+    }
 }

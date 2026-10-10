@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ConflictInfo } from '@/entities/workspace';
 import {
   buildConflictKey,
+  buildConflictModSetKey,
   chooseConflictWinner,
   groupConflictsByModSet,
   setModDecision,
@@ -27,6 +28,13 @@ describe('conflict resolution decisions', () => {
     const right = conflict('aaaaaaaa', ['E:/Mods/ModB', 'E:/Mods/ModA']);
 
     expect(buildConflictKey(left)).toBe(buildConflictKey(right));
+    expect(buildConflictModSetKey(left.mod_paths)).toBe(buildConflictModSetKey(right.mod_paths));
+  });
+
+  it('matches Rust UTF-8 path ordering for non-BMP characters', () => {
+    expect(buildConflictModSetKey(['E:/Mods/\u{1F600}', 'E:/Mods/\uE000'])).toBe(
+      JSON.stringify(['E:/Mods/\uE000', 'E:/Mods/\u{1F600}']),
+    );
   });
 
   it('groups multiple runtime hashes for the same mod locations', () => {

@@ -85,6 +85,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::library::adapters::tauri::mod_meta_cmds::preview_randomized_loadout,
             crate::modules::library::adapters::tauri::mod_meta_cmds::apply_randomized_loadout,
             crate::modules::library::adapters::tauri::mod_meta_cmds::get_active_mod_conflicts,
+            crate::modules::library::adapters::tauri::mod_meta_cmds::list_ignored_active_mod_conflict_group_keys,
+            crate::modules::library::adapters::tauri::mod_meta_cmds::set_active_mod_conflict_groups_ignored,
             crate::modules::library::adapters::tauri::mod_meta_cmds::read_mod_info,
             crate::modules::library::adapters::tauri::mod_meta_cmds::update_mod_info,
             crate::modules::library::adapters::tauri::mod_meta_cmds::set_mod_category,

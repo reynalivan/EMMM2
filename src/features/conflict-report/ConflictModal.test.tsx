@@ -5,8 +5,10 @@ import ConflictModal from './ConflictModal';
 
 const mocks = vi.hoisted(() => ({
   bulkToggle: vi.fn(),
+  setIgnoredGroups: vi.fn(),
   openInExplorer: vi.fn(),
   isPending: false,
+  ignoredGroupsPending: false,
 }));
 
 vi.mock('../../shared/lib/hooks/useDialogSync', () => ({
@@ -24,6 +26,13 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutateAsync: mocks.bulkToggle, isPending: mocks.isPending }),
+}));
+
+vi.mock('../mod-runtime/hooks/useFolderMutations', () => ({
+  useSetActiveModConflictGroupsIgnored: () => ({
+    mutateAsync: mocks.setIgnoredGroups,
+    isPending: mocks.ignoredGroupsPending,
+  }),
 }));
 
 vi.mock('../../shared/api/tauri/bindings', () => ({
@@ -72,7 +81,9 @@ describe('ConflictModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isPending = false;
+    mocks.ignoredGroupsPending = false;
     mocks.openInExplorer.mockResolvedValue(undefined);
+    mocks.setIgnoredGroups.mockResolvedValue(undefined);
     mocks.bulkToggle.mockResolvedValue({
       success: ['E:/Mods/DISABLED ModB'],
       failures: [],
@@ -140,6 +151,106 @@ describe('ConflictModal', () => {
       }),
     ).toHaveAttribute('aria-pressed', 'false');
     expect(mocks.bulkToggle).not.toHaveBeenCalled();
+    expect(mocks.setIgnoredGroups).not.toHaveBeenCalled();
+  });
+
+  it('shows unresolved groups by default and can show ignored groups on demand', () => {
+    render(
+      <ConflictModal
+        open
+        onClose={vi.fn()}
+        conflicts={[conflict]}
+        gameId="game-1"
+        ignoredGroupKeys={new Set(['["E:/Mods/ModA","E:/Mods/ModB"]'])}
+      />,
+    );
+
+    expect(screen.getByText('scanner:conflict_modal.empty_unresolved')).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('tab', {
+        name: 'scanner:conflict_modal.filter_ignored:1',
+        hidden: true,
+      }),
+    );
+
+    expect(screen.getByText('E:/Mods/ModA')).toBeInTheDocument();
+  });
+
+  it('persists an ignore action from an individual mod row', async () => {
+    render(<ConflictModal open onClose={vi.fn()} conflicts={[conflict]} gameId="game-1" />);
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'scanner:conflict_modal.ignore_mod:ModA',
+        hidden: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.setIgnoredGroups).toHaveBeenCalledWith({
+        gameId: 'game-1',
+        modPathGroups: [['E:/Mods/ModA', 'E:/Mods/ModB']],
+        ignored: true,
+      });
+    });
+  });
+
+  it('clears uncommitted disable decisions after a group is ignored', async () => {
+    render(<ConflictModal open onClose={vi.fn()} conflicts={[conflict]} gameId="game-1" />);
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'scanner:conflict_modal.keep_enabled:ModA',
+        hidden: true,
+      }),
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'scanner:conflict_modal.review_changes',
+        hidden: true,
+      }),
+    ).toBeEnabled();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'scanner:conflict_modal.ignore_mod:ModA',
+        hidden: true,
+      }),
+    );
+    await waitFor(() => expect(mocks.setIgnoredGroups).toHaveBeenCalledOnce());
+
+    expect(
+      screen.getByRole('button', {
+        name: 'scanner:conflict_modal.review_changes',
+        hidden: true,
+      }),
+    ).toBeDisabled();
+  });
+
+  it('ignores selected conflict groups through the bulk action', async () => {
+    render(<ConflictModal open onClose={vi.fn()} conflicts={[conflict]} gameId="game-1" />);
+
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'scanner:conflict_modal.select_group',
+        hidden: true,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'scanner:conflict_modal.ignore_selected:1',
+        hidden: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.setIgnoredGroups).toHaveBeenCalledWith({
+        gameId: 'game-1',
+        modPathGroups: [['E:/Mods/ModA', 'E:/Mods/ModB']],
+        ignored: true,
+      });
+    });
   });
 
   it('reviews the impact before disabling non-winning mods', async () => {
@@ -218,7 +329,14 @@ describe('ConflictModal', () => {
       }),
     );
 
-    expect(await screen.findByText('File is locked')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mocks.bulkToggle).toHaveBeenCalledWith({
+        gameId: 'game-1',
+        paths: ['E:/Mods/ModB'],
+        enable: false,
+      });
+    });
+    await waitFor(() => expect(screen.getByText('File is locked')).toBeInTheDocument());
     expect(
       screen.getByRole('button', {
         name: 'scanner:conflict_modal.disable_mod:ModB',

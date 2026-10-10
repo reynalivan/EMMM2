@@ -43,7 +43,10 @@ export default defineConfig(({ command, mode }) => {
     // using the lightningcss version enforced in pnpm.overrides.
     build: {
       chunkSizeWarningLimit: 1000,
-      rollupOptions: {
+      rolldownOptions: {
+        checks: {
+          pluginTimings: false,
+        },
         output: {
           manualChunks(id: string) {
             if (id.includes('node_modules')) {

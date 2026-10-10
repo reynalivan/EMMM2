@@ -703,6 +703,22 @@ async getActiveModConflicts(gameId: string) : Promise<Result<ConflictInfo[], App
     else return { status: "error", error: e  as any };
 }
 },
+async listIgnoredActiveModConflictGroupKeys(gameId: string) : Promise<Result<string[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_ignored_active_mod_conflict_group_keys", { gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setActiveModConflictGroupsIgnored(gameId: string, modPathGroups: string[][], ignored: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_active_mod_conflict_groups_ignored", { gameId, modPathGroups, ignored }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async readModInfo(gameId: string, folderPath: string) : Promise<Result<ModInfo | null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_mod_info", { gameId, folderPath }) };

@@ -395,6 +395,45 @@ pub async fn get_active_mod_conflicts(
 
 #[specta::specta]
 #[tauri::command]
+pub async fn list_ignored_active_mod_conflict_group_keys(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+) -> Result<Vec<String>, AppError> {
+    Ok(
+        crate::modules::workspace::adapters::sqlite::conflict::list_ignored_active_mod_conflict_group_keys(
+            pool.inner(),
+            &game_id,
+        )
+        .await?,
+    )
+}
+
+#[specta::specta]
+#[tauri::command]
+pub async fn set_active_mod_conflict_groups_ignored(
+    pool: tauri::State<'_, sqlx::SqlitePool>,
+    game_id: String,
+    mod_path_groups: Vec<Vec<String>>,
+    ignored: bool,
+) -> Result<(), AppError> {
+    let group_keys = crate::modules::workspace::adapters::sqlite::conflict::canonical_active_conflict_group_keys(
+        &mod_path_groups,
+    )
+    .map_err(AppError::Validation)?;
+
+    crate::modules::workspace::adapters::sqlite::conflict::set_ignored_active_mod_conflict_group_keys(
+        pool.inner(),
+        &game_id,
+        &group_keys,
+        ignored,
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[specta::specta]
+#[tauri::command]
 pub async fn read_mod_info(
     config: tauri::State<'_, ConfigService>,
     game_id: String,

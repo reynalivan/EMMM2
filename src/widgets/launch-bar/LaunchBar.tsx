@@ -1,47 +1,14 @@
 import { formatAppError } from '../../shared/lib/appError';
-import { Play, Shuffle, Copy } from 'lucide-react';
+import { AlertTriangle, Play, Shuffle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { launchConfiguredGame, useActiveGame } from '@/entities/game';
-import { useActiveConflicts } from '@/features/mod-runtime';
+import { useActiveConflicts, useIgnoredActiveModConflictGroupKeys } from '@/features/mod-runtime';
 import { useAppStore } from '@/app/store';
 import { RandomizerModal } from '@/features/randomizer';
-import { ConflictModal } from '@/features/conflict-report';
-import { ConflictToast } from '@/features/scanner';
+import { buildConflictModSetKey, ConflictModal } from '@/features/conflict-report';
 import { useTranslation } from 'react-i18next';
-import type { ConflictInfo } from '@/entities/workspace';
 import { toast } from '@/shared/ui/toast';
-
-function buildConflictSignature(conflicts: ConflictInfo[]): string | null {
-  if (conflicts.length === 0) return null;
-
-  return conflicts
-    .map((conflict) => {
-      const evidence = conflict.evidence
-        .map((item) =>
-          [
-            item.mod_path,
-            item.source_path,
-            item.section_name,
-            item.condition ?? '',
-            item.priority ?? '',
-            item.match_first_index ?? '',
-            item.shader_stage ?? '',
-          ].join(':'),
-        )
-        .sort()
-        .join(',');
-      return [
-        conflict.kind,
-        conflict.hash,
-        conflict.certainty,
-        [...conflict.mod_paths].sort().join(','),
-        evidence,
-      ].join('|');
-    })
-    .sort()
-    .join('||');
-}
 
 export default function LaunchBar() {
   const { t } = useTranslation(['layout']);
@@ -51,14 +18,22 @@ export default function LaunchBar() {
   const [isLaunching, setIsLaunching] = useState(false);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
-  const [dismissedConflictSignature, setDismissedConflictSignature] = useState<string | null>(null);
   const [moreMenuTarget, setMoreMenuTarget] = useState<HTMLElement | null>(null);
 
   const { data: conflicts } = useActiveConflicts();
-  const hasConflicts = conflicts && conflicts.length > 0;
-  const conflictSignature = useMemo(() => buildConflictSignature(conflicts ?? []), [conflicts]);
-  const showToast = !!hasConflicts && conflictSignature !== dismissedConflictSignature;
-  const dismissCurrentConflicts = () => setDismissedConflictSignature(conflictSignature);
+  const ignoredConflictGroups = useIgnoredActiveModConflictGroupKeys();
+  const ignoredGroupKeys = useMemo(
+    () => new Set(ignoredConflictGroups.data ?? []),
+    [ignoredConflictGroups.data],
+  );
+  const unresolvedConflicts = useMemo(
+    () =>
+      (conflicts ?? []).filter(
+        (conflict) => !ignoredGroupKeys.has(buildConflictModSetKey(conflict.mod_paths)),
+      ),
+    [conflicts, ignoredGroupKeys],
+  );
+  const hasConflicts = unresolvedConflicts.length > 0;
 
   useEffect(() => {
     setMoreMenuTarget(document.getElementById('topbar-more-launch-portal'));
@@ -81,7 +56,6 @@ export default function LaunchBar() {
 
   const openConflicts = () => {
     setConflictOpen(true);
-    dismissCurrentConflicts();
   };
 
   return (
@@ -99,21 +73,16 @@ export default function LaunchBar() {
         )}
 
         {hasConflicts && (
-          <div className="relative">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm h-9 min-h-9 gap-1 px-2.5 text-info transition-colors hover:bg-info/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-info focus-visible:outline-offset-2 active:translate-y-px"
-              onClick={openConflicts}
-              aria-label={`${t('layout:launch_bar.shared_hashes')}: ${conflicts.length}`}
-              title={t('layout:launch_bar.conflict_toast', { count: conflicts.length })}
-            >
-              <Copy size={14} />
-              <span className="font-mono text-xs tabular-nums">{conflicts.length}</span>
-            </button>
-            {showToast && (
-              <ConflictToast conflicts={conflicts} onDismiss={dismissCurrentConflicts} />
-            )}
-          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm min-h-11 gap-1.5 px-2.5 text-warning transition-colors hover:bg-warning/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-warning focus-visible:outline-offset-2 active:translate-y-px"
+            onClick={openConflicts}
+            aria-label={`${t('layout:launch_bar.shared_hashes')}: ${unresolvedConflicts.length}`}
+            title={t('layout:launch_bar.conflict_warning', { count: unresolvedConflicts.length })}
+          >
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span className="font-mono text-xs tabular-nums">{unresolvedConflicts.length}</span>
+          </button>
         )}
 
         <button
@@ -155,16 +124,16 @@ export default function LaunchBar() {
               {hasConflicts && (
                 <button
                   type="button"
-                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-sm text-info transition-colors hover:bg-info/10"
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-sm text-warning transition-colors hover:bg-warning/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-warning focus-visible:outline-offset-2"
                   onClick={(event) => {
                     event.currentTarget.blur();
                     openConflicts();
                   }}
                 >
-                  <Copy size={15} aria-hidden="true" />
+                  <AlertTriangle size={15} aria-hidden="true" />
                   <span>{t('layout:launch_bar.conflicts')}</span>
-                  <span className="ml-auto rounded-full bg-info/10 px-1.5 font-mono text-xs tabular-nums">
-                    {conflicts.length}
+                  <span className="ml-auto rounded-full bg-warning/10 px-1.5 font-mono text-xs tabular-nums">
+                    {unresolvedConflicts.length}
                   </span>
                 </button>
               )}
@@ -201,6 +170,10 @@ export default function LaunchBar() {
         onClose={() => setConflictOpen(false)}
         conflicts={conflicts || []}
         gameId={activeGame.id}
+        ignoredGroupKeys={ignoredGroupKeys}
+        isIgnoredGroupsLoading={ignoredConflictGroups.isLoading}
+        ignoredGroupsError={ignoredConflictGroups.error}
+        onRetryIgnoredGroups={() => void ignoredConflictGroups.refetch()}
       />
     </>
   );

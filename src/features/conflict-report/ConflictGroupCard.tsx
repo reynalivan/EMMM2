@@ -8,9 +8,14 @@ interface ConflictGroupCardProps {
   decisions: ConflictDecisions;
   pathErrors: ReadonlyMap<string, string>;
   disabled: boolean;
+  ignored: boolean;
+  selected: boolean;
   onKeep: (path: string) => void;
   onDisable: (path: string) => void;
   onOpenFolder: (path: string) => void;
+  onIgnoreGroup: () => void;
+  onRestoreGroup: () => void;
+  onSelectedChange: (selected: boolean) => void;
 }
 
 function pathName(path: string): string {
@@ -22,9 +27,14 @@ export default function ConflictGroupCard({
   decisions,
   pathErrors,
   disabled,
+  ignored,
+  selected,
   onKeep,
   onDisable,
   onOpenFolder,
+  onIgnoreGroup,
+  onRestoreGroup,
+  onSelectedChange,
 }: ConflictGroupCardProps) {
   const { t } = useTranslation(['scanner']);
   const { conflicts, modPaths } = conflictSet;
@@ -37,21 +47,54 @@ export default function ConflictGroupCard({
 
   return (
     <section
-      className="bg-base-200/50 p-3 rounded-lg border border-base-content/5"
+      className={`rounded-xl border p-3 ${
+        ignored ? 'border-base-content/10 bg-base-200/30' : 'border-base-content/10 bg-base-200/50'
+      }`}
       aria-labelledby={headingId}
     >
-      <div className="flex justify-between items-start gap-3 mb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span id={headingId} className="badge badge-sm badge-neutral font-mono opacity-70">
-            {t('scanner:conflict_modal.runtime_keys', { count: runtimeKeyCount })}
-          </span>
-          <span className={`badge badge-sm ${resolved ? 'badge-success' : 'badge-ghost'}`}>
-            {t(`scanner:conflict_modal.${resolved ? 'resolved' : 'unresolved'}`)}
-          </span>
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <label
+            className="flex min-h-11 shrink-0 cursor-pointer items-center gap-2"
+            title={t('scanner:conflict_modal.select_group')}
+          >
+            <input
+              type="checkbox"
+              className="checkbox checkbox-warning checkbox-sm"
+              checked={selected}
+              onChange={(event) => onSelectedChange(event.target.checked)}
+              disabled={disabled}
+              aria-label={t('scanner:conflict_modal.select_group')}
+            />
+          </label>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span id={headingId} className="badge badge-sm badge-neutral font-mono opacity-70">
+              {t('scanner:conflict_modal.runtime_keys', { count: runtimeKeyCount })}
+            </span>
+            <span
+              className={`badge badge-sm ${
+                ignored ? 'badge-ghost' : resolved ? 'badge-success' : 'badge-warning'
+              }`}
+            >
+              {ignored
+                ? t('scanner:conflict_modal.ignored')
+                : t(`scanner:conflict_modal.${resolved ? 'resolved' : 'unresolved'}`)}
+            </span>
+          </div>
         </div>
-        <span className="text-xs text-base-content/50">
-          {t('scanner:conflict_modal.mod_locations', { count: modPaths.length })}
-        </span>
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <span className="text-xs text-base-content/60">
+            {t('scanner:conflict_modal.mod_locations', { count: modPaths.length })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm min-h-11 border-0 bg-base-content/10 px-3 text-base-content hover:bg-base-content/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-warning focus-visible:outline-offset-2"
+            onClick={ignored ? onRestoreGroup : onIgnoreGroup}
+            disabled={disabled}
+          >
+            {t(`scanner:conflict_modal.${ignored ? 'restore_group' : 'ignore_group'}`)}
+          </button>
+        </div>
       </div>
 
       {hasPotentialConflict && (
@@ -71,26 +114,46 @@ export default function ConflictGroupCard({
                     {name}
                   </span>
                 </div>
+                {!ignored && (
+                  <>
+                    <button
+                      type="button"
+                      className={`btn btn-sm min-h-11 ${
+                        decision === 'keep' ? 'btn-success' : 'btn-ghost'
+                      }`}
+                      aria-label={t('scanner:conflict_modal.keep_enabled', { name })}
+                      aria-pressed={decision === 'keep'}
+                      onClick={() => onKeep(path)}
+                      disabled={disabled}
+                    >
+                      {t('scanner:conflict_modal.keep')}
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm min-h-11 ${
+                        decision === 'disable' ? 'btn-error' : 'btn-ghost'
+                      }`}
+                      aria-label={t('scanner:conflict_modal.disable_mod', { name })}
+                      aria-pressed={decision === 'disable'}
+                      onClick={() => onDisable(path)}
+                      disabled={disabled}
+                    >
+                      {t('scanner:conflict_modal.disable')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm min-h-11 btn-ghost"
+                      aria-label={t('scanner:conflict_modal.ignore_mod', { name })}
+                      onClick={onIgnoreGroup}
+                      disabled={disabled}
+                    >
+                      {t('scanner:conflict_modal.ignore')}
+                    </button>
+                  </>
+                )}
                 <button
-                  className={`btn btn-xs ${decision === 'keep' ? 'btn-success' : 'btn-ghost'}`}
-                  aria-label={t('scanner:conflict_modal.keep_enabled', { name })}
-                  aria-pressed={decision === 'keep'}
-                  onClick={() => onKeep(path)}
-                  disabled={disabled}
-                >
-                  {t('scanner:conflict_modal.keep')}
-                </button>
-                <button
-                  className={`btn btn-xs ${decision === 'disable' ? 'btn-error' : 'btn-ghost'}`}
-                  aria-label={t('scanner:conflict_modal.disable_mod', { name })}
-                  aria-pressed={decision === 'disable'}
-                  onClick={() => onDisable(path)}
-                  disabled={disabled}
-                >
-                  {t('scanner:conflict_modal.disable')}
-                </button>
-                <button
-                  className="btn btn-xs btn-ghost"
+                  type="button"
+                  className="btn btn-sm min-h-11 btn-ghost"
                   aria-label={t('scanner:conflict_modal.open_folder', { name })}
                   onClick={() => onOpenFolder(path)}
                   disabled={disabled}

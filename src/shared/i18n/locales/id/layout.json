@@ -54,6 +54,7 @@
         "source_unavailable_description": "Folder mod tidak tersedia. Periksa lokasinya lalu coba lagi, atau pilih game lain.",
         "progress_label": "Progres pengindeksan",
         "folders_complete": "{{completed}} dari {{total}} folder",
+        "mods_complete": "{{completed}} / {{total}} mod diproses",
         "folders_classified": "{{count}} folder diklasifikasi",
         "preparing": "Menyiapkan pemeriksaan penuh",
         "scanning_root": "Memindai {{root}}",
@@ -103,7 +104,8 @@
     "randomizer": "Acak (Gacha)",
     "conflicts": "Konflik Aktif",
     "shared_hashes": "Hash bersama",
-    "conflict_toast": "{{count}} Konflik Mod Aktif"
+    "conflict_toast": "{{count}} Konflik Mod Aktif",
+    "conflict_warning": "{{count}} Konflik Mod Aktif"
   },
   "app": {
     "name": "EMMM",
