@@ -9,13 +9,85 @@ async fn setup_pool() -> SqlitePool {
     ctx.pool
 }
 
+#[tokio::test]
+async fn keybinding_candidates_exclude_disabled_ancestors_without_changing_own_status() {
+    let pool = setup_pool().await;
+    seed_game(&pool, "g1", "Genshin").await;
+    seed_game(&pool, "g2", "Other Game").await;
+    for (id, game_id, folder_path, status) in [
+        ("active", "g1", "Alice/Blue Dress", "ENABLED"),
+        (
+            "nested",
+            "g1",
+            "Alice/DISABLED Variants/Red Dress",
+            "ENABLED",
+        ),
+        (
+            "windows",
+            "g1",
+            "Alice\\disabled_Costumes\\Green Dress",
+            "ENABLED",
+        ),
+        ("object", "g1", "DISABLED-Alice/Yellow Dress", "ENABLED"),
+        ("own", "g1", "Alice/DISABLED Gray Dress", "ENABLED"),
+        ("inactive", "g1", "Alice/Pink Dress", "DISABLED"),
+        ("other", "g2", "Alice/Purple Dress", "ENABLED"),
+    ] {
+        seed_mod(
+            &pool,
+            SeedMod {
+                id,
+                game_id,
+                name: id,
+                status,
+                object_type: None,
+                ..Default::default()
+            },
+        )
+        .await;
+        sqlx::query("UPDATE mods SET folder_path = ? WHERE id = ?")
+            .bind(folder_path)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE objects SET matched_alias_name = 'Alice Alias' WHERE id = 'obj_g1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let candidates = dashboard::fetch_enabled_mods_for_keybindings(&pool, "g1")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        candidates,
+        vec![(
+            "active".to_string(),
+            "Alice/Blue Dress".to_string(),
+            Some("Other".to_string()),
+            Some("Alice Alias".to_string()),
+        )]
+    );
+    let own_enabled: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = 'g1' AND status = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        own_enabled, 5,
+        "ancestor filtering must not rewrite individual mod status"
+    );
+}
+
 async fn seed_game(pool: &SqlitePool, id: &str, name: &str) {
     crate::test_utils::insert_test_game(
         pool,
         &crate::test_utils::TestGameFixture {
             id,
             name,
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: &format!("/dummy/{}", id),
             mods_path: Some(&format!("/dummy/mods/{}", id)),
         },
@@ -229,6 +301,106 @@ async fn test_zero_data_empty_db() {
 }
 
 // ── Category Distribution ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn duplicate_waste_uses_optimizer_report_and_current_root() {
+    let pool = setup_pool().await;
+    seed_game(&pool, "g1", "Genshin").await;
+    seed_mod(&pool, SeedMod::default()).await;
+    sqlx::query("INSERT INTO dedup_jobs (id, game_id, root_path, status) VALUES ('scan', 'g1', '/dummy/mods/g1', 'completed')")
+        .execute(&pool).await.unwrap();
+    let report = serde_json::json!({"members": [
+        {"totalSizeBytes": 1000},
+        {"totalSizeBytes": 2400},
+        {"totalSizeBytes": 600}
+    ]});
+    sqlx::query("INSERT INTO dedup_groups (id, job_id, reasons_json, resolution_status) VALUES ('group', 'scan', ?, 'pending')")
+        .bind(report.to_string()).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO dedup_group_members (id, group_id, folder_id, signals_json, is_primary) VALUES ('member', 'group', 'm1', '{}', 0)")
+        .execute(&pool).await.unwrap();
+
+    assert_eq!(dashboard::fetch_duplicate_waste(&pool).await.unwrap(), 3000);
+    sqlx::query("UPDATE mods SET size_bytes = 999999 WHERE id = 'm1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(dashboard::fetch_duplicate_waste(&pool).await.unwrap(), 3000);
+    sqlx::query("UPDATE dedup_groups SET resolution_status = 'resolved' WHERE id = 'group'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(dashboard::fetch_duplicate_waste(&pool).await.unwrap(), 0);
+    sqlx::query("UPDATE dedup_groups SET resolution_status = 'pending' WHERE id = 'group'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE games SET mods_path = '/dummy/replaced' WHERE id = 'g1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(dashboard::fetch_duplicate_waste(&pool).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn duplicate_waste_ignores_legacy_unbound_reports() {
+    let pool = setup_pool().await;
+    seed_game(&pool, "g1", "Genshin").await;
+    seed_mod(&pool, SeedMod::default()).await;
+    sqlx::query(
+        "INSERT INTO dedup_jobs (id, game_id, status) VALUES ('legacy', 'g1', 'completed')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO dedup_groups (id, job_id, reasons_json, resolution_status) VALUES ('legacy-group', 'legacy', '[]', 'pending')")
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO dedup_group_members (id, group_id, folder_id, signals_json, is_primary) VALUES ('member', 'legacy-group', 'm1', '{}', 0)")
+        .execute(&pool).await.unwrap();
+    assert_eq!(dashboard::fetch_duplicate_waste(&pool).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn duplicate_waste_drops_deleted_indexed_members_from_persisted_report() {
+    let pool = setup_pool().await;
+    seed_game(&pool, "g1", "Genshin").await;
+    for id in ["primary", "duplicate"] {
+        seed_mod(
+            &pool,
+            SeedMod {
+                id,
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    let members = ["primary", "duplicate"].map(|id| {
+        serde_json::json!({
+            "modId": id, "version": null,
+            "folderPath": format!("/dummy/mod/{id}"), "displayName": id,
+            "totalSizeBytes": 500, "fileCount": 1,
+            "isSafe": true, "confidenceScore": 100, "signals": []
+        })
+    });
+    let report: crate::modules::duplicates::api::testing::domain::dup_scan::DupScanReport =
+        serde_json::from_value(serde_json::json!({
+            "scanId": "scan", "gameId": "g1", "rootPath": "/dummy/mods/g1",
+            "totalGroups": 1, "totalMembers": 2,
+            "groups": [{"groupId": "group", "confidenceScore": 100,
+                "matchReason": "Exact", "isUnsafe": false, "signals": [], "members": members}]
+        }))
+        .unwrap();
+    crate::modules::duplicates::api::testing::adapters::sqlite::dedup::persist_completed_report(
+        &pool, &report,
+    )
+    .await
+    .unwrap();
+    assert_eq!(dashboard::fetch_duplicate_waste(&pool).await.unwrap(), 500);
+    sqlx::query("DELETE FROM mods WHERE id = 'duplicate'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(dashboard::fetch_duplicate_waste(&pool).await.unwrap(), 0);
+}
 
 #[tokio::test]
 async fn test_category_distribution() {

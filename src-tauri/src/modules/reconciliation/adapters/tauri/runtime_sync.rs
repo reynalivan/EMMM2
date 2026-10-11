@@ -5,14 +5,23 @@ static RUNTIME_ENQUEUE_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
 static RUNTIME_WORK_PERMITS: std::sync::LazyLock<tokio::sync::Semaphore> =
     std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(2));
 
+struct RuntimeSyncAdmission {
+    cause: RuntimeSyncCause,
+    activation_authority: Option<ActivationAuthority>,
+    request: RuntimeSyncRequest,
+    reply: Option<tokio::sync::oneshot::Sender<RuntimeSyncReply>>,
+    expected_generation: Option<u64>,
+}
+
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
-    ActivationAuthority, DiskReconcileState, StagedRuntimeEffects,
+    ActivationAuthority, DiskReconcileState, RuntimeSyncReply, StagedRuntimeEffects,
 };
 use crate::modules::reconciliation::application::disk_reconcile::types::{
-    PendingRuntimeEffects, RuntimeSyncPhase, RuntimeSyncStatus,
+    PendingRuntimeEffects, RuntimeSyncPhase, RuntimeSyncReloadStatus, RuntimeSyncStatus,
 };
 use crate::modules::system::application::app::post_apply::{
-    OverlaySyncCause, RuntimeModChange, RuntimeModOutcome, RuntimeReloadOutcome, RuntimeSyncRequest,
+    OverlaySyncCause, RuntimeModChange, RuntimeModOutcome, RuntimeReloadOutcome,
+    RuntimeSyncRequest, RuntimeSyncResult,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -119,6 +128,37 @@ pub fn enqueue_runtime_sync(
         activation_authority,
         RuntimeSyncRequest::Full,
     )
+}
+
+/// Synchronous callers await the existing worker's owned result, without a
+/// separate publication path or an additional scheduler.
+pub async fn request_runtime_sync_and_wait(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    cause: RuntimeSyncCause,
+) -> Result<RuntimeSyncResult, crate::shared::errors::AppError> {
+    let authority = app
+        .state::<DiskReconcileState>()
+        .activation_authority_for(game_id);
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    enqueue_runtime_sync_inner_with_reply(
+        app,
+        pool,
+        game_id,
+        RuntimeSyncAdmission {
+            cause,
+            activation_authority: authority,
+            request: RuntimeSyncRequest::Full,
+            reply: Some(sender),
+            expected_generation: None,
+        },
+    );
+    match receiver.await {
+        Ok(RuntimeSyncReply::Completed(result)) => result,
+        Ok(RuntimeSyncReply::Superseded) => Ok(crate::modules::system::api::app::post_apply::superseded_sync_result(cause.overlay_cause())),
+        Err(_) => Err(crate::shared::errors::AppError::Internal("Runtime worker stopped before returning its publication result; pending work is retained".to_string())),
+    }
 }
 
 pub fn enqueue_runtime_sync_scoped(
@@ -254,8 +294,50 @@ fn enqueue_runtime_sync_inner(
     activation_authority: Option<ActivationAuthority>,
     request: RuntimeSyncRequest,
 ) -> u64 {
+    enqueue_runtime_sync_inner_with_reply(
+        app,
+        pool,
+        game_id,
+        RuntimeSyncAdmission {
+            cause,
+            activation_authority,
+            request,
+            reply: None,
+            expected_generation: None,
+        },
+    )
+    .expect("unconditional runtime admission cannot be superseded")
+}
+
+fn enqueue_runtime_sync_inner_with_reply(
+    app: &tauri::AppHandle,
+    pool: &sqlx::SqlitePool,
+    game_id: &str,
+    admission: RuntimeSyncAdmission,
+) -> Option<u64> {
+    let RuntimeSyncAdmission {
+        cause,
+        activation_authority,
+        request,
+        reply,
+        expected_generation,
+    } = admission;
     let state = app.state::<DiskReconcileState>();
     let _enqueue_guard = crate::shared::sync::lock(&RUNTIME_ENQUEUE_LOCK);
+    if expected_generation
+        .is_some_and(|generation| !state.runtime_sync_is_current(game_id, generation))
+    {
+        return None;
+    }
+    // Admission retains intent even if the caller drops its receiver or the
+    // worker stops before claiming this request. Only the winning worker ACKs.
+    state.stage_runtime_effects(
+        game_id,
+        PendingRuntimeEffects {
+            collections_dirty: true,
+            overlay_refresh: true,
+        },
+    );
     let publication_revision = crate::modules::system::application::app::post_apply::reserve_overlay_sync_revision_for_request(
             game_id,
             request,
@@ -265,11 +347,12 @@ fn enqueue_runtime_sync_inner(
             error
         })
         .ok();
-    let enqueue = state.enqueue_runtime_sync(
+    let enqueue = state.enqueue_runtime_sync_with_reply(
         game_id,
         cause.label(),
         publication_revision,
         activation_authority,
+        reply,
     );
     drop(_enqueue_guard);
     emit_status(
@@ -280,6 +363,8 @@ fn enqueue_runtime_sync_inner(
             phase: RuntimeSyncPhase::Queued,
             cause: cause.label().to_string(),
             message: None,
+            reload_status: None,
+            reload_binding: None,
         },
     );
     if enqueue.start_worker {
@@ -290,7 +375,7 @@ fn enqueue_runtime_sync_inner(
             run_worker(app, pool, game_id, cause).await;
         });
     }
-    enqueue.generation
+    Some(enqueue.generation)
 }
 
 fn finish_runtime_sync_generation(
@@ -319,7 +404,7 @@ async fn run_worker(
     let mut fallback_cause = initial_cause;
     loop {
         let state = app.state::<DiskReconcileState>();
-        let Some(job) = state.claim_latest_runtime_sync(&game_id) else {
+        let Some(mut job) = state.claim_latest_runtime_sync(&game_id) else {
             log::error!("Runtime sync worker for '{game_id}' had no queued generation");
             return;
         };
@@ -331,6 +416,9 @@ async fn run_worker(
             .await
             .expect("runtime work semaphore is never closed");
         if !state.runtime_sync_is_current(&game_id, job.generation) {
+            if let Some(reply) = job.reply.take() {
+                let _ = reply.send(RuntimeSyncReply::Superseded);
+            }
             let _ = state.finish_runtime_sync(&game_id, job.generation);
             continue;
         }
@@ -344,6 +432,8 @@ async fn run_worker(
                 phase: RuntimeSyncPhase::Running,
                 cause: job.cause.clone(),
                 message: None,
+                reload_status: None,
+                reload_binding: None,
             },
         );
 
@@ -370,19 +460,53 @@ async fn run_worker(
                     .to_string(),
             )),
         };
-        let (phase, message, settled) = match outcome {
-            Ok(result) if result.failure.is_some() => {
-                (RuntimeSyncPhase::Failed, result.failure, false)
+        let reply_result = outcome.clone();
+        let Some((phase, message, settled, reload_status, reload_binding)) =
+            runtime_sync_completion(outcome)
+        else {
+            if state.runtime_sync_is_current(&game_id, job.generation)
+                && job
+                    .activation_authority
+                    .as_ref()
+                    .is_some_and(|authority| authority.with_current(|| ()).is_some())
+                && config.get_settings().active_game_id.as_deref() == Some(game_id.as_str())
+            {
+                // Legacy core-only callers can still reserve a revision without
+                // queue admission. Recover their merged intent through this owner.
+                // Check under admission's lock too: a real successor admitted
+                // since the earlier check must retain its scope and waiter.
+                enqueue_runtime_sync_inner_with_reply(
+                    &app,
+                    &pool,
+                    &game_id,
+                    RuntimeSyncAdmission {
+                        cause: RuntimeSyncCause::Recovery,
+                        activation_authority: job.activation_authority.clone(),
+                        request: RuntimeSyncRequest::Full,
+                        reply: None,
+                        expected_generation: Some(job.generation),
+                    },
+                );
             }
-            Ok(result) => match result.reload {
-                RuntimeReloadOutcome::NeedsManualReload { reason, .. } => {
-                    (RuntimeSyncPhase::NeedsManualReload, Some(reason), true)
-                }
-                RuntimeReloadOutcome::NotRequired | RuntimeReloadOutcome::ReloadSent { .. } => {
-                    (RuntimeSyncPhase::Succeeded, None, true)
-                }
-            },
-            Err(error) => (RuntimeSyncPhase::Failed, Some(error.to_string()), false),
+            if let Some(reply) = job.reply.take() {
+                let _ = reply.send(RuntimeSyncReply::Superseded);
+            }
+            if finish_runtime_sync_generation(&state, &game_id, job.generation, staged, false) {
+                emit_status(
+                    &app,
+                    RuntimeSyncStatus {
+                        game_id: game_id.clone(),
+                        generation: job.generation,
+                        phase: RuntimeSyncPhase::Failed,
+                        cause: job.cause,
+                        message: Some("Runtime synchronization lost its activation authority; pending work is retained. Retry after game activation is ready".to_string()),
+                        reload_status: None,
+                        reload_binding: None,
+                    },
+                );
+                return;
+            }
+            continue;
         };
         if phase == RuntimeSyncPhase::Failed {
             log::error!(
@@ -395,6 +519,14 @@ async fn run_worker(
         }
         let authoritative =
             finish_runtime_sync_generation(&state, &game_id, job.generation, staged, settled);
+        if let Some(reply) = job.reply.take() {
+            let outcome = if authoritative {
+                RuntimeSyncReply::Completed(reply_result)
+            } else {
+                RuntimeSyncReply::Superseded
+            };
+            let _ = reply.send(outcome);
+        }
         log::debug!("RuntimeSync game_id={game_id} generation={} publication_revision={:?} phase={phase:?} authoritative={authoritative} elapsed_ms={}", job.generation, job.publication_revision, worker_started.elapsed().as_millis());
         if authoritative {
             emit_status(
@@ -405,11 +537,64 @@ async fn run_worker(
                     phase,
                     cause: job.cause,
                     message,
+                    reload_status,
+                    reload_binding,
                 },
             );
             return;
         }
     }
+}
+
+type RuntimeSyncCompletion = (
+    RuntimeSyncPhase,
+    Option<String>,
+    bool,
+    Option<RuntimeSyncReloadStatus>,
+    Option<String>,
+);
+
+fn runtime_sync_completion(
+    outcome: Result<RuntimeSyncResult, crate::shared::errors::AppError>,
+) -> Option<RuntimeSyncCompletion> {
+    if outcome.as_ref().is_ok_and(RuntimeSyncResult::is_superseded) {
+        return None;
+    }
+    Some(match outcome {
+        Ok(result) if result.failure.is_some() => {
+            (RuntimeSyncPhase::Failed, result.failure, false, None, None)
+        }
+        Ok(result) => match result.reload {
+            RuntimeReloadOutcome::NeedsManualReload { binding, reason } => (
+                RuntimeSyncPhase::NeedsManualReload,
+                Some(reason),
+                true,
+                Some(RuntimeSyncReloadStatus::Manual),
+                binding,
+            ),
+            RuntimeReloadOutcome::NotRequired => (
+                RuntimeSyncPhase::Succeeded,
+                None,
+                true,
+                Some(RuntimeSyncReloadStatus::NotRequired),
+                None,
+            ),
+            RuntimeReloadOutcome::ReloadSent { binding } => (
+                RuntimeSyncPhase::Succeeded,
+                None,
+                true,
+                Some(RuntimeSyncReloadStatus::Sent),
+                Some(binding),
+            ),
+        },
+        Err(error) => (
+            RuntimeSyncPhase::Failed,
+            Some(error.to_string()),
+            false,
+            None,
+            None,
+        ),
+    })
 }
 
 fn cause_from_label(label: &str) -> Option<RuntimeSyncCause> {
@@ -428,6 +613,7 @@ fn cause_from_label(label: &str) -> Option<RuntimeSyncCause> {
 }
 
 fn emit_status(app: &tauri::AppHandle, status: RuntimeSyncStatus) {
+    crate::modules::automation::api::update_hotkey_notice_runtime(app, &status);
     if let Err(error) = app.emit("runtime_sync:status", status) {
         log::warn!("Could not emit runtime sync status: {error}");
     }
@@ -436,6 +622,134 @@ fn emit_status(app: &tauri::AppHandle, status: RuntimeSyncStatus) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::errors::AppError;
+
+    #[test]
+    fn legitimate_skip_failure_and_manual_reload_keep_their_completion_contracts() {
+        use crate::modules::system::api::app::post_apply::RuntimeSyncPublication;
+        let mut result = RuntimeSyncResult {
+            cause: OverlaySyncCause::SettingsChanged,
+            publication: RuntimeSyncPublication::Skipped,
+            reload: RuntimeReloadOutcome::NotRequired,
+            failure: None,
+        };
+        assert_eq!(
+            runtime_sync_completion(Ok(result.clone())),
+            Some((
+                RuntimeSyncPhase::Succeeded,
+                None,
+                true,
+                Some(RuntimeSyncReloadStatus::NotRequired),
+                None,
+            ))
+        );
+        result.publication = RuntimeSyncPublication::Superseded;
+        assert!(runtime_sync_completion(Ok(result.clone())).is_none());
+        assert!(result.diagnostic_message().unwrap().contains("superseded"));
+        result.publication = RuntimeSyncPublication::Published;
+        result.reload = RuntimeReloadOutcome::NeedsManualReload {
+            binding: Some("F10".into()),
+            reason: "Focus the game and reload".into(),
+        };
+        assert_eq!(
+            runtime_sync_completion(Ok(result.clone())),
+            Some((
+                RuntimeSyncPhase::NeedsManualReload,
+                Some("Focus the game and reload".into()),
+                true,
+                Some(RuntimeSyncReloadStatus::Manual),
+                Some("F10".into()),
+            ))
+        );
+        result.reload = RuntimeReloadOutcome::ReloadSent {
+            binding: "Ctrl+F10".into(),
+        };
+        assert_eq!(
+            runtime_sync_completion(Ok(result.clone())),
+            Some((
+                RuntimeSyncPhase::Succeeded,
+                None,
+                true,
+                Some(RuntimeSyncReloadStatus::Sent),
+                Some("Ctrl+F10".into()),
+            ))
+        );
+        result.publication = RuntimeSyncPublication::FailedBeforePublish;
+        result.failure = Some("Publication is pending".into());
+        assert_eq!(
+            runtime_sync_completion(Ok(result)),
+            Some((
+                RuntimeSyncPhase::Failed,
+                Some("Publication is pending".into()),
+                false,
+                None,
+                None,
+            ))
+        );
+        assert_eq!(
+            runtime_sync_completion(Err(AppError::Io("Unavailable".into()))),
+            Some((
+                RuntimeSyncPhase::Failed,
+                Some(AppError::Io("Unavailable".into()).to_string()),
+                false,
+                None,
+                None,
+            ))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn revision_only_supersession_cannot_acknowledge_or_report_success() {
+        use crate::modules::system::application::app::post_apply;
+        let _epoch = crate::modules::reconciliation::application::disk_reconcile::orchestrator::activation_epoch_test_guard_async().await;
+        let state = DiskReconcileState::new();
+        let game = format!("revision-only-{}", uuid::Uuid::new_v4());
+        state.begin_activation(Some(game.clone()));
+        let authority = state.activation_authority_for(&game);
+        let older = post_apply::reserve_overlay_sync_revision(&game).unwrap();
+        let queued =
+            state.enqueue_runtime_sync(&game, "settings_changed", Some(older), authority.clone());
+        let job = state.claim_latest_runtime_sync(&game).unwrap();
+        let staged = state.stage_runtime_effects_for_settlement(
+            &game,
+            PendingRuntimeEffects {
+                collections_dirty: true,
+                overlay_refresh: true,
+            },
+        );
+        let newer = post_apply::reserve_overlay_sync_revision(&game).unwrap();
+        assert!(newer > older);
+        assert!(state.runtime_sync_is_current(&game, queued.generation));
+        let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let config = crate::modules::settings::application::config::ConfigService::new_for_test(
+            pool.clone(),
+        );
+        let result = post_apply::request_overlay_sync_with_retry_for_game_at_revision(
+            &pool,
+            &config,
+            &game,
+            OverlaySyncCause::SettingsChanged,
+            older,
+            authority,
+        )
+        .await
+        .unwrap();
+        let completion = runtime_sync_completion(Ok(result));
+        let settled = completion
+            .as_ref()
+            .is_some_and(|(_, _, settled, _, _)| *settled);
+        finish_runtime_sync_generation(&state, &game, job.generation, staged, settled);
+        let pending = state.stage_runtime_effects(&game, PendingRuntimeEffects::default());
+        state.begin_activation(None);
+        assert!(
+            pending.collections_dirty && pending.overlay_refresh,
+            "superseded work cannot acknowledge pending effects"
+        );
+        assert!(
+            completion.is_none(),
+            "superseded work cannot emit terminal success"
+        );
+    }
 
     #[test]
     fn runtime_sync_cause_round_trips_through_queue_label() {

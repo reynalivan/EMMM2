@@ -1,3 +1,4 @@
+pub(crate) mod adapters;
 pub(crate) mod admission;
 pub(crate) mod application;
 pub mod coordinator;

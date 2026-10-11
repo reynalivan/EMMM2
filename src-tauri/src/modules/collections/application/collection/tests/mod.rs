@@ -31,7 +31,7 @@ pub(crate) async fn seed_game(pool: &sqlx::SqlitePool, id: &str, mods_path: Opti
         &TestGameFixture {
             id,
             name: id,
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: if id == "game-1" {
                 "E:/Games/TestGame"
             } else {

@@ -13,6 +13,16 @@ fn object_ref_key_for_mod(member: &CollectionMod) -> String {
     key.split('/').next().unwrap_or(&key).to_string()
 }
 
+fn object_ref_key_for_object(object: &CollectionObject) -> String {
+    crate::shared::path_key::folder_path_key(
+        object
+            .path_key
+            .as_deref()
+            .unwrap_or(object.object_id.as_str()),
+        None,
+    )
+}
+
 pub struct CollectionStateSnapshot<'a> {
     pub collection_id: &'a str,
     pub mods: &'a [CollectionMod],
@@ -121,12 +131,7 @@ async fn insert_objects(
     query_builder.push_values(objects, |mut bindings, object| {
         bindings
             .push_bind(&object.collection_id)
-            .push_bind(
-                object
-                    .path_key
-                    .as_deref()
-                    .unwrap_or(object.object_id.as_str()),
-            )
+            .push_bind(object_ref_key_for_object(object))
             .push_bind(
                 existing_object_ids
                     .contains(&object.object_id)

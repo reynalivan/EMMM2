@@ -1,116 +1,309 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
-use std::os::windows::ffi::OsStrExt;
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::System::RestartManager::{
-    RmEndSession, RmGetList, RmRegisterResources, RmStartSession, RM_PROCESS_INFO,
-};
+mod windows;
 
-/// `RmStartSession` writes a session key of up to `CCH_RM_SESSION_KEY` wide
-/// chars **plus a terminating NUL**, so the buffer must hold one more than the
-/// key itself. Undersizing it overflows the caller's stack slot.
-#[cfg(target_os = "windows")]
-const CCH_RM_SESSION_KEY: usize = 32;
+const MAX_FILES: usize = 1_024;
+const MAX_DIRECTORIES: usize = 4_096;
+const DISCOVERY_BUDGET: Duration = Duration::from_secs(1);
 
-#[cfg(target_os = "windows")]
-pub fn get_locking_processes(path: &Path) -> Vec<String> {
-    let mut session_handle = 0u32;
-    let mut session_key = [0u16; CCH_RM_SESSION_KEY + 1];
-
-    if unsafe { RmStartSession(&mut session_handle, 0, session_key.as_mut_ptr()) } != 0 {
-        return Vec::new();
-    }
-
-    // Single exit point for the session: every early return inside the
-    // collector still ends up here.
-    let processes = collect_session_processes(session_handle, path);
-    unsafe { RmEndSession(session_handle) };
-    processes
+#[derive(Debug, Clone)]
+pub(crate) struct LockProcess {
+    pub pid: u32,
+    pub started_at: String,
+    pub name: String,
+    pub executable: Option<String>,
+    pub application_type: i32,
+    pub session_id: u32,
+    pub service: String,
+    pub can_close: bool,
+    pub can_terminate: bool,
+    pub unavailable_reason: Option<String>,
 }
 
-/// Reads the processes holding `path` from an already-started Restart Manager
-/// session. The caller owns the session and is responsible for ending it.
-#[cfg(target_os = "windows")]
-fn collect_session_processes(session_handle: u32, path: &Path) -> Vec<String> {
-    let path_wide: Vec<u16> = path
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    let paths = [path_wide.as_ptr()];
+#[derive(Debug)]
+pub(crate) struct LockDiscovery {
+    pub status: &'static str,
+    pub message: Option<String>,
+    pub processes: Vec<LockProcess>,
+}
 
-    let registered = unsafe {
-        RmRegisterResources(
-            session_handle,
-            1,
-            paths.as_ptr(),
-            0,
-            std::ptr::null(),
-            0,
-            std::ptr::null(),
-        )
-    };
-    if registered != 0 {
-        return Vec::new();
-    }
+#[derive(Debug)]
+struct LockResources {
+    files: Vec<PathBuf>,
+    partial: bool,
+    _pins: Vec<std::fs::File>,
+}
 
-    let mut n_proc_info_needed = 0;
-    let mut n_proc_info = 0;
-    let mut reboot_reasons = 0;
-
-    // First call only sizes the buffer; the out-params carry the count.
-    let first_status = unsafe {
-        RmGetList(
-            session_handle,
-            &mut n_proc_info_needed,
-            &mut n_proc_info,
-            std::ptr::null_mut(),
-            &mut reboot_reasons,
-        )
-    };
-    if !matches!(first_status, 0 | ERROR_MORE_DATA) || n_proc_info_needed == 0 {
-        return Vec::new();
-    }
-
-    for _ in 0..3 {
-        n_proc_info = n_proc_info_needed;
-        let mut proc_info: Vec<RM_PROCESS_INFO> = (0..n_proc_info)
-            .map(|_| unsafe { std::mem::zeroed() })
-            .collect();
-        let listed = unsafe {
-            RmGetList(
-                session_handle,
-                &mut n_proc_info_needed,
-                &mut n_proc_info,
-                proc_info.as_mut_ptr(),
-                &mut reboot_reasons,
-            )
+fn pin_resource(path: &Path) -> std::io::Result<std::fs::File> {
+    #[cfg(target_os = "windows")]
+    let file = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_DATA,
+            FILE_SHARE_READ, FILE_SHARE_WRITE,
         };
-        if listed == ERROR_MORE_DATA {
-            continue;
-        }
-        if listed != 0 {
-            return Vec::new();
-        }
-        return proc_info
-            .iter()
-            .take(n_proc_info as usize)
-            .filter_map(|process| {
-                let name = &process.strAppName;
-                let end = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-                String::from_utf16(&name[..end])
-                    .ok()
-                    .filter(|value| !value.is_empty())
-            })
-            .collect();
+        std::fs::OpenOptions::new()
+            .access_mode(FILE_READ_DATA)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)?
+    };
+    #[cfg(not(target_os = "windows"))]
+    let file = std::fs::File::open(path)?;
+    if is_reparse(&file.metadata()?) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "File-lock recovery cannot follow a reparse point",
+        ));
     }
-    Vec::new()
+    Ok(file)
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn get_locking_processes(_path: &Path) -> Vec<String> {
-    Vec::new()
+pub(crate) fn pin_lock_context(root: &Path, target: &Path) -> std::io::Result<Vec<std::fs::File>> {
+    let relative = target.strip_prefix(root).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Recovery target is outside its configured root",
+        )
+    })?;
+    let mut path = root.to_path_buf();
+    let mut handles = vec![pin_resource(&path)?];
+    for component in relative.components() {
+        path.push(component);
+        handles.push(pin_resource(&path)?);
+    }
+    Ok(handles)
+}
+
+fn is_reparse(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
+fn collect_resources(path: &Path) -> std::io::Result<LockResources> {
+    let started = Instant::now();
+    let metadata = std::fs::symlink_metadata(path)?;
+    if is_reparse(&metadata) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "File-lock discovery cannot follow a reparse point",
+        ));
+    }
+    if metadata.is_file() {
+        return Ok(LockResources {
+            files: vec![path.to_path_buf()],
+            partial: false,
+            _pins: vec![pin_resource(path)?],
+        });
+    }
+    let mut result = LockResources {
+        files: Vec::new(),
+        partial: false,
+        _pins: Vec::new(),
+    };
+    let mut directories = vec![path.to_path_buf()];
+    let mut directory_count = 0;
+    while let Some(directory) = directories.pop() {
+        if started.elapsed() >= DISCOVERY_BUDGET || directory_count >= MAX_DIRECTORIES {
+            result.partial = true;
+            break;
+        }
+        directory_count += 1;
+        let pin = match pin_resource(&directory) {
+            Ok(pin) => pin,
+            Err(_) => {
+                result.partial = true;
+                continue;
+            }
+        };
+        result._pins.push(pin);
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(_) => {
+                result.partial = true;
+                continue;
+            }
+        };
+        for entry in entries {
+            if result.files.len() >= MAX_FILES || started.elapsed() >= DISCOVERY_BUDGET {
+                result.partial = true;
+                return Ok(result);
+            }
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    result.partial = true;
+                    continue;
+                }
+            };
+            let metadata = match std::fs::symlink_metadata(entry.path()) {
+                Ok(metadata) => metadata,
+                Err(_) => {
+                    result.partial = true;
+                    continue;
+                }
+            };
+            if is_reparse(&metadata) {
+                result.partial = true;
+                continue;
+            }
+            if metadata.is_dir() {
+                if directories.len() >= MAX_DIRECTORIES {
+                    result.partial = true;
+                } else {
+                    directories.push(entry.path());
+                }
+            } else if metadata.is_file() {
+                match pin_resource(&entry.path()) {
+                    Ok(pin) => {
+                        result._pins.push(pin);
+                        result.files.push(entry.path());
+                    }
+                    Err(_) => {
+                        result.partial = true;
+                    }
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+
+pub(crate) fn discover_lock_processes(path: &Path) -> LockDiscovery {
+    #[cfg(target_os = "windows")]
+    {
+        match collect_resources(path) {
+            Ok(resources) => windows::discover(resources),
+            Err(error) => LockDiscovery {
+                status: "failed",
+                message: Some(error.to_string()),
+                processes: Vec::new(),
+            },
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        LockDiscovery {
+            status: "unavailable",
+            message: Some("Process discovery is available on Windows only".into()),
+            processes: Vec::new(),
+        }
+    }
+}
+
+pub fn get_locking_processes(path: &Path) -> Vec<String> {
+    discover_lock_processes(path)
+        .processes
+        .into_iter()
+        .map(|process| process.name)
+        .collect()
+}
+
+pub(crate) fn control_lock_process(process: &LockProcess, force: bool) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::control(process, force)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (process, force);
+        Err("Process control is available on Windows only".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn recovery_pins_prevent_target_and_root_namespace_changes() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("root");
+        let target = root.join("mod");
+        std::fs::create_dir_all(&target).unwrap();
+        let pins = pin_lock_context(&root, &target).unwrap();
+        assert_eq!(
+            std::fs::rename(&target, root.join("replacement"))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        assert_eq!(
+            std::fs::rename(&root, fixture.path().join("replacement-root"))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        drop(pins);
+        std::fs::rename(&target, root.join("replacement")).unwrap();
+        std::fs::rename(&root, fixture.path().join("replacement-root")).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn recovery_pins_reject_existing_delete_access_and_allow_shared_readers() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            DELETE, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE,
+            FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+        let fixture = tempfile::tempdir().unwrap();
+        let target = fixture.path().join("mod");
+        std::fs::create_dir(&target).unwrap();
+        let holder = std::fs::OpenOptions::new()
+            .access_mode(DELETE | FILE_LIST_DIRECTORY)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(&target)
+            .unwrap();
+        assert_eq!(
+            pin_lock_context(fixture.path(), &target)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        drop(holder);
+        let reader = std::fs::OpenOptions::new()
+            .access_mode(FILE_LIST_DIRECTORY)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(&target)
+            .unwrap();
+        let pins = pin_lock_context(fixture.path(), &target).unwrap();
+        drop(pins);
+        drop(reader);
+    }
+
+    #[test]
+    fn discovery_registers_files_never_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temp.path().join("child")).unwrap();
+        std::fs::write(temp.path().join("child/mod.ini"), b"fixture").unwrap();
+        let resources = collect_resources(temp.path()).unwrap();
+        assert_eq!(resources.files.len(), 1);
+        assert!(resources.files[0].is_file());
+        assert!(!resources.partial);
+    }
+
+    #[test]
+    fn discovery_caps_large_folders_and_marks_partial() {
+        let temp = tempfile::tempdir().unwrap();
+        for index in 0..=MAX_FILES {
+            std::fs::write(temp.path().join(index.to_string()), b"").unwrap();
+        }
+        let resources = collect_resources(temp.path()).unwrap();
+        assert!(resources.files.len() <= MAX_FILES);
+        assert!(resources.partial);
+    }
 }

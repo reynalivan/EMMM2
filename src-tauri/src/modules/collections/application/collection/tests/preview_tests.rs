@@ -83,7 +83,7 @@ async fn get_collection_preview_rejects_cross_game_collection() {
             &TestGameFixture {
                 id: game_id,
                 name: "Test Game",
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 path: if game_id == "game-1" {
                     "E:/Games/TestGame1"
                 } else {

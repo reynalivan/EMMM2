@@ -259,6 +259,16 @@ async fn run_reconcile_with_owned_locks(
     context: DiskReconcileContext<'_>,
     request: DiskReconcileRequest,
 ) -> Result<DiskReconcileResult, AppError> {
+    if request
+        .initial_recovery_generation
+        .is_some_and(|generation| {
+            !context
+                .state
+                .initial_recovery_generation_is_pending(&request.game_id, generation)
+        })
+    {
+        return Err(AppError::Cancelled);
+    }
     let repair_evidence = request
         .watcher_session
         .as_ref()

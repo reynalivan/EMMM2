@@ -1,12 +1,12 @@
 //! Turning scored pairs into the groups the user sees.
 //!
-//! Union-find over the pairs, then one group per component. Split out of
-//! `scanner`, which was holding both the scan pipeline and this assembly.
+//! Union-find exact pairs that can share a group, then build one group per
+//! component. Exact pairs split by a whitelist remain pair-specific groups.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::modules::duplicates::domain::dup_scan::{DupScanGroup, DupScanMember, DupScanSignal};
-use crate::shared::path_key::canonical_path_key_for_path;
+use crate::shared::path_key::exact_location_key_for_path;
 
 use super::snapshot::ModSnapshot;
 
@@ -18,10 +18,11 @@ pub(super) fn build_groups(
     snapshots: &[ModSnapshot],
     pairs: &[ScoredPair],
     path_to_mod_id: &HashMap<String, (String, bool)>,
+    isolated_exact_pairs: &HashSet<(usize, usize)>,
 ) -> Vec<DupScanGroup> {
     let mut parent: Vec<usize> = (0..snapshots.len()).collect();
     for (left, right, score, _, _) in pairs {
-        if *score == 100 {
+        if *score == 100 && !isolated_exact_pairs.contains(&canonical_pair(*left, *right)) {
             union(&mut parent, *left, *right);
         }
     }
@@ -56,7 +57,9 @@ pub(super) fn build_groups(
     group_specs.extend(
         pairs
             .iter()
-            .filter(|pair| pair.2 < 100)
+            .filter(|pair| {
+                pair.2 < 100 || isolated_exact_pairs.contains(&canonical_pair(pair.0, pair.1))
+            })
             .map(|pair| (vec![pair.0, pair.1], vec![pair])),
     );
 
@@ -113,7 +116,7 @@ fn build_group(
         .map(|member_idx| {
             let snapshot = &snapshots[*member_idx];
             let folder_path = snapshot.candidate.path.to_string_lossy().to_string();
-            let folder_key = canonical_path_key_for_path(&snapshot.candidate.path);
+            let folder_key = exact_location_key_for_path(&snapshot.candidate.path);
             let (mod_id, is_safe) = path_to_mod_id
                 .get(&folder_key)
                 .map(|(id, safe)| (Some(id.clone()), *safe))
@@ -142,6 +145,10 @@ fn build_group(
         signals,
         members,
     }
+}
+
+fn canonical_pair(left: usize, right: usize) -> (usize, usize) {
+    (left.min(right), left.max(right))
 }
 
 fn find(parent: &mut [usize], index: usize) -> usize {

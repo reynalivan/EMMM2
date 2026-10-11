@@ -13,6 +13,7 @@ const MAX_THEME_CONFIG_ENTRIES: usize = 128;
 const MAX_THEME_CONFIG_KEY_LEN: usize = 64;
 const MAX_THEME_CONFIG_VALUE_LEN: usize = 512;
 const MAX_THEME_FILE_SIZE: usize = 64 * 1024;
+const BUILTIN_THEME_IDS: [&str; 3] = ["onyx", "light", "system"];
 
 #[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct ThemeConfig {
@@ -136,6 +137,19 @@ fn validate_slug(value: &str, field: &str, max_len: usize) -> Result<(), AppErro
         return Err(validation_error(format!(
             "{field} must start with an ASCII letter or digit and contain only letters, digits, '-' or '_'"
         )));
+    }
+    Ok(())
+}
+
+fn validate_theme_id(id: &str) -> Result<(), AppError> {
+    validate_slug(id, "Theme ID", MAX_THEME_ID_LEN)?;
+    if BUILTIN_THEME_IDS
+        .iter()
+        .any(|builtin| builtin.eq_ignore_ascii_case(id))
+    {
+        return Err(validation_error(
+            "Theme ID is reserved for a built-in theme",
+        ));
     }
     Ok(())
 }
@@ -264,7 +278,7 @@ fn validate_theme_background(background: &ThemeBackground) -> Result<(), AppErro
 }
 
 fn validate_theme(theme: &CustomTheme) -> Result<(), AppError> {
-    validate_slug(&theme.id, "Theme ID", MAX_THEME_ID_LEN)?;
+    validate_theme_id(&theme.id)?;
     if theme.label.trim().is_empty()
         || theme.label.len() > MAX_THEME_LABEL_LEN
         || theme.label.chars().any(char::is_control)
@@ -286,7 +300,7 @@ fn validate_theme(theme: &CustomTheme) -> Result<(), AppError> {
 }
 
 fn theme_path(themes_dir: &Path, id: &str) -> Result<PathBuf, AppError> {
-    validate_slug(id, "Theme ID", MAX_THEME_ID_LEN)?;
+    validate_theme_id(id)?;
     Ok(themes_dir.join(format!("{id}.json")))
 }
 
@@ -343,14 +357,6 @@ fn load_theme_from_dir(themes_dir: &Path, id: &str) -> Result<CustomTheme, AppEr
     Ok(theme)
 }
 
-fn delete_theme_from_dir(themes_dir: &Path, id: &str) -> Result<(), AppError> {
-    let path = theme_path(themes_dir, id)?;
-    if path.exists() {
-        crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&path)?;
-    }
-    Ok(())
-}
-
 fn get_themes_dir(app_handle: &AppHandle) -> Result<PathBuf, AppError> {
     let app_data_dir = app_handle.path().app_data_dir()?;
     let themes_dir = app_data_dir.join("themes");
@@ -362,26 +368,52 @@ fn get_themes_dir(app_handle: &AppHandle) -> Result<PathBuf, AppError> {
     Ok(themes_dir)
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn list_custom_themes(app_handle: AppHandle) -> Result<Vec<ThemeMetadata>, AppError> {
-    let themes_dir = get_themes_dir(&app_handle)?;
+fn list_theme_metadata_from_dir(themes_dir: &Path) -> Result<Vec<ThemeMetadata>, AppError> {
     let mut themes = Vec::new();
 
-    if let Ok(entries) = fs::read_dir(&themes_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(id) = path.file_stem().and_then(|stem| stem.to_str()).filter(|_| {
-                path.extension().and_then(|extension| extension.to_str()) == Some("json")
-            }) else {
-                continue;
-            };
-            if let Ok(theme) = load_theme_from_dir(&themes_dir, id) {
+    let entries = fs::read_dir(themes_dir).map_err(|error| {
+        AppError::Io(format!(
+            "Could not read custom themes directory '{}': {error}. Check that it is accessible and retry.",
+            themes_dir.display()
+        ))
+    })?;
+    for entry in entries {
+        let path = entry
+            .map_err(|error| {
+                AppError::Io(format!(
+                    "Could not read an entry in custom themes directory '{}': {error}. Retry theme discovery.",
+                    themes_dir.display()
+                ))
+            })?
+            .path();
+        let Some(id) = path.file_stem().and_then(|stem| stem.to_str()).filter(|_| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        }) else {
+            continue;
+        };
+        match load_theme_from_dir(themes_dir, id) {
+            Ok(theme) => {
                 themes.push(ThemeMetadata {
                     id: theme.id,
                     label: theme.label,
                 });
             }
+            // Invalid unrelated definitions are unsupported; an invalid dark
+            // definition cannot prove that a legacy selection has no custom theme.
+            Err(AppError::Validation(_)) if !id.eq_ignore_ascii_case("dark") => continue,
+            Err(AppError::Validation(message)) => {
+                return Err(AppError::Validation(format!(
+                    "Custom theme '{id}' is invalid: {message}. Repair or reimport it and retry."
+                )));
+            }
+            Err(AppError::Io(message)) => {
+                return Err(AppError::Io(format!(
+                    "Could not read custom theme '{id}': {message}. Check that the file is accessible and retry."
+                )));
+            }
+            Err(error) => return Err(error),
         }
     }
 
@@ -390,23 +422,16 @@ pub async fn list_custom_themes(app_handle: AppHandle) -> Result<Vec<ThemeMetada
 
 #[tauri::command]
 #[specta::specta]
+pub async fn list_custom_themes(app_handle: AppHandle) -> Result<Vec<ThemeMetadata>, AppError> {
+    let themes_dir = get_themes_dir(&app_handle)?;
+    list_theme_metadata_from_dir(&themes_dir)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn load_custom_theme(app_handle: AppHandle, id: String) -> Result<CustomTheme, AppError> {
     let themes_dir = get_themes_dir(&app_handle)?;
     load_theme_from_dir(&themes_dir, &id)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn save_custom_theme(app_handle: AppHandle, theme: CustomTheme) -> Result<(), AppError> {
-    let themes_dir = get_themes_dir(&app_handle)?;
-    save_theme_to_dir(&themes_dir, &theme)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_custom_theme(app_handle: AppHandle, id: String) -> Result<(), AppError> {
-    let themes_dir = get_themes_dir(&app_handle)?;
-    delete_theme_from_dir(&themes_dir, &id)
 }
 
 #[tauri::command]
@@ -427,37 +452,6 @@ pub async fn import_custom_theme(app_handle: AppHandle) -> Result<Option<CustomT
     let themes_dir = get_themes_dir(&app_handle)?;
     save_theme_to_dir(&themes_dir, &theme)?;
     Ok(Some(theme))
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn export_custom_theme(
-    app_handle: AppHandle,
-    id: String,
-) -> Result<Option<String>, AppError> {
-    let themes_dir = get_themes_dir(&app_handle)?;
-    let theme = load_theme_from_dir(&themes_dir, &id)?;
-    let content = serialize_theme(&theme)?;
-    let selected = app_handle
-        .dialog()
-        .file()
-        .add_filter("JSON Theme", &["json"])
-        .set_file_name(format!("{}.json", theme.id))
-        .blocking_save_file();
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let path = selected.into_path().map_err(|_| {
-        validation_error("Selected export destination is not a local filesystem path")
-    })?;
-    atomic_write(&path, &content)?;
-
-    Ok(Some(
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("theme.json")
-            .to_string(),
-    ))
 }
 
 fn custom_theme_template() -> CustomTheme {
@@ -632,6 +626,126 @@ mod tests {
     }
 
     #[test]
+    fn rejects_reserved_theme_ids_on_import_and_save() {
+        let themes_dir = tempdir().expect("create themes directory");
+        for id in ["onyx", "light", "system", "Onyx", "LIGHT", "System"] {
+            let mut theme = valid_theme();
+            theme.id = id.to_string();
+            let content = serde_json::to_vec(&theme).expect("serialize reserved theme fixture");
+            assert!(parse_theme_bytes(&content).is_err(), "import accepted {id}");
+            assert!(
+                save_theme_to_dir(themes_dir.path(), &theme).is_err(),
+                "save accepted {id}"
+            );
+            assert!(!themes_dir.path().join(format!("{id}.json")).exists());
+        }
+    }
+
+    #[test]
+    fn preserves_custom_dark_on_import_and_save() {
+        let themes_dir = tempdir().expect("create themes directory");
+        let mut theme = valid_theme();
+        theme.id = "dark".to_string();
+        let content = serde_json::to_vec(&theme).expect("serialize custom dark fixture");
+        let imported = parse_theme_bytes(&content).expect("import custom dark theme");
+        save_theme_to_dir(themes_dir.path(), &imported).expect("save custom dark theme");
+        let loaded =
+            load_theme_from_dir(themes_dir.path(), "dark").expect("load custom dark theme");
+        assert_eq!(loaded.id, "dark");
+        assert_eq!(loaded.config.colors, theme.config.colors);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn theme_metadata_listing_preserves_custom_dark_with_uppercase_extension() {
+        let themes_dir = tempdir().expect("create themes directory");
+        let mut theme = valid_theme();
+        theme.id = "dark".to_string();
+        save_theme_to_dir(themes_dir.path(), &theme).expect("save custom dark fixture");
+        fs::rename(
+            themes_dir.path().join("dark.json"),
+            themes_dir.path().join("dark.JSON"),
+        )
+        .expect("rename theme extension");
+        assert_eq!(
+            load_theme_from_dir(themes_dir.path(), "dark")
+                .expect("load case-insensitive Windows path")
+                .id,
+            "dark"
+        );
+
+        let themes = list_theme_metadata_from_dir(themes_dir.path()).expect("list custom themes");
+        assert!(themes.iter().any(|item| item.id == "dark"));
+    }
+
+    #[test]
+    fn theme_metadata_listing_reports_directory_failure_and_recovers() {
+        let temp = tempdir().expect("create test directory");
+        let themes_dir = temp.path().join("themes");
+        assert!(matches!(
+            list_theme_metadata_from_dir(&themes_dir),
+            Err(AppError::Io(_))
+        ));
+
+        let theme = valid_theme();
+        save_theme_to_dir(&themes_dir, &theme).expect("create themes directory and valid theme");
+        let recovered =
+            list_theme_metadata_from_dir(&themes_dir).expect("list recovered directory");
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].id, theme.id);
+        assert_eq!(recovered[0].label, theme.label);
+    }
+
+    #[test]
+    fn theme_metadata_listing_skips_invalid_unrelated_json_but_reports_invalid_dark() {
+        let themes_dir = tempdir().expect("create themes directory");
+        fs::write(themes_dir.path().join("unrelated.json"), "invalid JSON")
+            .expect("write an invalid unrelated theme fixture");
+        save_theme_to_dir(themes_dir.path(), &valid_theme()).expect("save a valid theme");
+        let themes = list_theme_metadata_from_dir(themes_dir.path())
+            .expect("invalid unrelated JSON must not hide valid themes");
+        assert_eq!(themes.len(), 1);
+
+        fs::write(themes_dir.path().join("dark.json"), "invalid JSON")
+            .expect("write an invalid custom dark fixture");
+        assert!(matches!(
+            list_theme_metadata_from_dir(themes_dir.path()),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn theme_metadata_listing_reports_locked_dark_file_and_recovers() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let themes_dir = tempdir().expect("create themes directory");
+        let mut dark = valid_theme();
+        dark.id = "dark".to_string();
+        save_theme_to_dir(themes_dir.path(), &dark).expect("save a valid custom dark theme");
+        save_theme_to_dir(themes_dir.path(), &valid_theme()).expect("save another valid theme");
+        let locked_file = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(themes_dir.path().join("dark.json"))
+            .expect("deny other readers access to custom dark fixture");
+        assert!(matches!(
+            load_theme_from_dir(themes_dir.path(), "dark"),
+            Err(AppError::Io(_))
+        ));
+        assert!(matches!(
+            list_theme_metadata_from_dir(themes_dir.path()),
+            Err(AppError::Io(_))
+        ));
+
+        drop(locked_file);
+        let recovered = list_theme_metadata_from_dir(themes_dir.path())
+            .expect("list themes after releasing lock");
+        assert_eq!(recovered.len(), 2);
+        assert!(recovered.iter().any(|theme| theme.id == "dark"));
+    }
+
+    #[test]
     fn validates_labels_and_config_bounds() {
         let mut theme = valid_theme();
         theme.label = "   ".to_string();
@@ -684,7 +798,6 @@ mod tests {
         assert_eq!(loaded.label, theme.label);
         assert_eq!(loaded.config.colors, theme.config.colors);
         assert!(load_theme_from_dir(themes_dir.path(), "../outside").is_err());
-        assert!(delete_theme_from_dir(themes_dir.path(), "../outside").is_err());
     }
 
     #[test]

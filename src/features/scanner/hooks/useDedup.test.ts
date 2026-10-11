@@ -4,7 +4,7 @@
  * Uses React Testing Library renderHook with mocked IPC commands and React Query.
  */
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   useDedupReport,
@@ -16,6 +16,8 @@ import { commands } from '../../../shared/api/tauri/bindings';
 import type { DupScanReport, DupScanEvent, ResolutionSummary } from '@/entities/workspace';
 import { createWrapper } from '../../../tests/testing/test-utils';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
+import { useDedupScanStore } from '../stores/useDedupScanStore';
+import { IDLE_DEDUP_SCAN_PROGRESS } from '../utils/dedupProgress';
 
 vi.unmock('@tanstack/react-query');
 
@@ -55,6 +57,12 @@ vi.mock('@/shared/lib/queryRefresh', () => ({
 describe('useDedup hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useDedupScanStore.setState({
+      gameId: null,
+      generation: 0,
+      scanId: null,
+      progress: IDLE_DEDUP_SCAN_PROGRESS,
+    });
   });
 
   describe('useDedupReport', () => {
@@ -136,6 +144,52 @@ describe('useDedup hooks', () => {
   });
 
   describe('useStartDedupScan', () => {
+    it('owns startup and clears a rejected start after its subscriber unmounts', async () => {
+      let rejectStart: (error: Error) => void = () => {
+        throw new Error('Start was not invoked');
+      };
+      vi.mocked(commands.dupScanStart).mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            rejectStart = reject;
+          }),
+      );
+      const { result, unmount } = renderHook(() => useStartDedupScan(), {
+        wrapper: createWrapper,
+      });
+      result.current.mutate({ gameId: 'genshin', modsRoot: '/mods', onEvent: vi.fn() });
+      await waitFor(() => expect(commands.dupScanStart).toHaveBeenCalled());
+      expect(useDedupScanStore.getState().progress.isScanning).toBe(true);
+
+      unmount();
+      rejectStart(new Error('Start rejected'));
+
+      await waitFor(() => expect(useDedupScanStore.getState().progress.isScanning).toBe(false));
+    });
+
+    it('notifies cancellation only after the terminal event, including after unmount', async () => {
+      const { toast } = await import('@/shared/ui/toast');
+      let emit: ((event: DupScanEvent) => void) | undefined;
+      vi.mocked(commands.dupScanStart).mockImplementation((_gameId, _root, channel) => {
+        emit = channel.onmessage ?? undefined;
+        return Promise.resolve();
+      });
+      const { result, unmount } = renderHook(() => useStartDedupScan(), { wrapper: createWrapper });
+      result.current.mutate({ gameId: 'genshin', modsRoot: '/mods', onEvent: vi.fn() });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      emit?.({ event: 'started', data: { scanId: 'scan-1', gameId: 'genshin', totalFolders: 4 } });
+      expect(toast.info).not.toHaveBeenCalled();
+      unmount();
+
+      act(() =>
+        emit?.({
+          event: 'cancelled',
+          data: { scanId: 'scan-1', processedFolders: 1, totalFolders: 4 },
+        }),
+      );
+      expect(useDedupScanStore.getState().progress.isScanning).toBe(false);
+      expect(toast.info).toHaveBeenCalledOnce();
+    });
     it('starts a scan and invalidates report cache on success', async () => {
       vi.mocked(commands.dupScanStart).mockResolvedValue(undefined);
 
@@ -183,6 +237,10 @@ describe('useDedup hooks', () => {
       };
 
       vi.mocked(commands.dupScanStart).mockImplementation((_gameId, _modsRoot, channel) => {
+        channel.onmessage?.({
+          event: 'started',
+          data: { scanId: 'scan-1', gameId: 'genshin', totalFolders: 100 },
+        });
         channel.onmessage?.(mockEvent);
         return Promise.resolve();
       });
@@ -213,6 +271,7 @@ describe('useDedup hooks', () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(publishQueryScopes).not.toHaveBeenCalled();
 
+      emit?.({ event: 'started', data: { scanId: 'scan-1', gameId: 'genshin', totalFolders: 2 } });
       emit?.({
         event: 'finished',
         data: { scanId: 'scan-1', totalGroups: 1, totalMembers: 2 },
@@ -236,7 +295,7 @@ describe('useDedup hooks', () => {
       expect(commands.dupScanCancel).toHaveBeenCalledOnce();
     });
 
-    it('shows success toast on cancel', async () => {
+    it('does not announce cancellation when the request is merely acknowledged', async () => {
       const { toast } = await import('@/shared/ui/toast');
       vi.mocked(commands.dupScanCancel).mockResolvedValue(undefined);
 
@@ -247,7 +306,8 @@ describe('useDedup hooks', () => {
       result.current.mutate();
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(toast.info).toHaveBeenCalled();
+      expect(toast.info).not.toHaveBeenCalled();
+      expect(publishQueryScopes).not.toHaveBeenCalled();
     });
 
     it('handles cancel error with toast', async () => {

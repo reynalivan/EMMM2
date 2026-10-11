@@ -1,8 +1,11 @@
 use super::object_toggle_error;
 use crate::modules::collections::application::apply::apply_pipeline::ApplyContext;
+use crate::platform::fs::file_utils::FilesystemNamespaceProof;
 use crate::platform::fs::rename::rename_no_replace;
 use crate::shared::errors::CollectionError;
+use std::sync::Arc;
 
+#[derive(Clone)]
 pub(super) struct AppliedRename {
     pub(super) sequence: u32,
     pub(super) old_path: std::path::PathBuf,
@@ -10,15 +13,32 @@ pub(super) struct AppliedRename {
     pub(super) expected_identity: String,
 }
 
-pub(super) fn rollback_applied(
+pub(super) async fn rollback_applied(
     ctx: &mut ApplyContext,
     planned_count: usize,
     applied: &[AppliedRename],
+    namespace_proof: Arc<FilesystemNamespaceProof>,
 ) -> Result<(), CollectionError> {
     if let Some(guard) = ctx.mutation_guard.as_ref() {
         guard.begin_rollback().map_err(object_toggle_error)?;
     }
-    rollback_renamed_paths(applied)?;
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
+    for rename in applied.iter().rev() {
+        retry_budget
+            .run(|| {
+                let rename = rename.clone();
+                let namespace_proof = namespace_proof.clone();
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        rollback_rename(&rename, Some(&namespace_proof))
+                    })
+                    .await
+                    .map_err(crate::platform::fs::retry::blocking_error)?
+                }
+            })
+            .await
+            .map_err(|error| CollectionError::Io(format!("Rollback rename failed: {error}")))?;
+    }
     let Some(guard) = ctx.mutation_guard.as_ref() else {
         ctx.mutation_started = false;
         ctx.runtime_path_rewrites.clear();
@@ -37,43 +57,82 @@ pub(super) fn rollback_applied(
     Ok(())
 }
 
+#[cfg(test)]
 fn rollback_renamed_paths(applied: &[AppliedRename]) -> Result<(), CollectionError> {
     for rename in applied.iter().rev() {
-        let actual = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&rename.new_path);
-        if actual.as_deref() != Some(rename.expected_identity.as_str()) {
-            return Err(CollectionError::Io(format!(
-                "Rollback folder changed after rename (step {}): {}",
-                rename.sequence,
-                rename.new_path.display()
-            )));
-        }
-        match std::fs::symlink_metadata(&rename.old_path) {
-            Ok(_) => {
-                return Err(CollectionError::Io(format!(
-                    "Rollback destination is occupied (step {}): {}",
-                    rename.sequence,
-                    rename.old_path.display()
-                )));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(CollectionError::Io(format!(
-                    "Could not inspect rollback destination (step {}): {}: {error}",
-                    rename.sequence,
-                    rename.old_path.display()
-                )));
-            }
-        }
-        rename_no_replace(&rename.new_path, &rename.old_path).map_err(|error| {
-            CollectionError::Io(format!(
-                "Rollback rename failed (step {}): {} to {}: {error}",
-                rename.sequence,
-                rename.new_path.display(),
-                rename.old_path.display()
-            ))
-        })?;
+        rollback_rename(rename, None).map_err(|error| CollectionError::Io(error.to_string()))?;
     }
     Ok(())
+}
+
+fn rollback_rename(
+    rename: &AppliedRename,
+    namespace_proof: Option<&FilesystemNamespaceProof>,
+) -> std::io::Result<()> {
+    let paths = [rename.new_path.clone(), rename.old_path.clone()];
+    let pins = namespace_proof
+        .map(|proof| {
+            proof
+                .pin_paths(&paths)
+                .map_err(|error| std::io::Error::other(error.to_string()))
+        })
+        .transpose()?;
+    let actual = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&rename.new_path);
+    if actual.as_deref() != Some(rename.expected_identity.as_str()) {
+        return Err(std::io::Error::other(format!(
+            "Rollback folder changed after rename (step {}): {}",
+            rename.sequence,
+            rename.new_path.display()
+        )));
+    }
+    match std::fs::symlink_metadata(&rename.old_path) {
+        Ok(_) => {
+            return Err(std::io::Error::other(format!(
+                "Rollback destination is occupied (step {}): {}",
+                rename.sequence,
+                rename.old_path.display()
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(std::io::Error::other(format!(
+                "Could not inspect rollback destination (step {}): {}: {error}",
+                rename.sequence,
+                rename.old_path.display()
+            )));
+        }
+    }
+    if let Some(pins) = pins.as_ref() {
+        let parent = rename
+            .new_path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("Rollback source has no parent"))?;
+        let parent = crate::shared::path_key::physical_namespace_path(parent)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let parent_pin = pins
+            .iter()
+            .find(|pin| pin.path() == parent.as_path())
+            .ok_or_else(|| std::io::Error::other("Rollback parent is not pinned"))?;
+        let source_name = rename
+            .new_path
+            .file_name()
+            .ok_or_else(|| std::io::Error::other("Rollback source has no name"))?;
+        let destination_name = rename
+            .old_path
+            .file_name()
+            .ok_or_else(|| std::io::Error::other("Rollback destination has no name"))?;
+        let source = crate::platform::fs::rename::PinnedDirectory::open_for_rename(
+            &parent_pin.stable_path().join(source_name),
+        )?;
+        if source.identity() != rename.expected_identity {
+            return Err(std::io::Error::other(
+                "Rollback source changed after namespace pinning",
+            ));
+        }
+        source.rename_into(parent_pin, destination_name)
+    } else {
+        rename_no_replace(&rename.new_path, &rename.old_path)
+    }
 }
 
 pub(super) fn with_rollback_error(
@@ -88,6 +147,14 @@ pub(super) fn with_rollback_error(
 
 pub(super) async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[String]) {
     ctx.warnings.extend(warnings.iter().cloned());
+    if let Some(proof) = ctx.source_root_proof.as_ref() {
+        if let Err(error) = proof.validate(&ctx.mods_path) {
+            ctx.warnings.push(format!(
+                "Skipped failure reconcile because the original Mods root changed: {error}"
+            ));
+            return;
+        }
+    }
     let rename_events = ctx
         .runtime_path_rewrites
         .iter()

@@ -316,7 +316,7 @@ async fn update_thumbnail_rejects_non_image_source_without_creating_a_file() {
     settings.games.push(GameConfig {
         id: "game-1".to_string(),
         name: "Test Game".to_string(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         instance_path: temp.path().to_path_buf(),
         mod_path: mods_root,
         ready_to_move_path: None,
@@ -332,6 +332,105 @@ async fn update_thumbnail_rejects_non_image_source_without_creating_a_file() {
 
     assert!(super::update_mod_thumbnail(&validated, &source.to_string_lossy()).is_err());
     assert!(!mod_dir.join("not-an-image.png").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn update_thumbnail_preserves_existing_mod_assets_and_uses_the_reserved_preview_name() {
+    use crate::modules::settings::application::config::{ConfigService, GameConfig};
+    use crate::platform::fs::guard::validate_path;
+
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path().join("Mods");
+    let mod_dir = mods_root.join("ModA");
+    fs::create_dir_all(&mod_dir).unwrap();
+    let source_dir = temp.path().join("Source");
+    fs::create_dir(&source_dir).unwrap();
+    let source = source_dir.join("texture.png");
+    image::DynamicImage::new_rgba8(1, 1).save(&source).unwrap();
+    let existing_asset = mod_dir.join("texture.png");
+    fs::write(&existing_asset, b"original mod asset").unwrap();
+
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let config = ConfigService::new_for_test_async(pool).await;
+    let mut settings = config.get_settings();
+    settings.games.push(GameConfig {
+        id: "game-1".to_string(),
+        name: "Test Game".to_string(),
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
+        instance_path: temp.path().to_path_buf(),
+        mod_path: mods_root,
+        ready_to_move_path: None,
+        launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+        game_exe: Some(temp.path().join("game.exe")),
+        loader_exe: None,
+        xxmi_launcher_exe: None,
+        launch_args: None,
+        warnings: Vec::new(),
+    });
+    config.save_settings(settings).unwrap();
+    let target = validate_path(&config, "game-1", &mod_dir.to_string_lossy()).unwrap();
+
+    let saved = super::update_mod_thumbnail(&target, &source.to_string_lossy()).unwrap();
+
+    assert_eq!(fs::read(&existing_asset).unwrap(), b"original mod asset");
+    assert_eq!(
+        std::path::Path::new(&saved),
+        mod_dir.join("preview_custom.png").canonicalize().unwrap()
+    );
+    assert!(mod_dir.join("preview_custom.png").is_file());
+
+    crate::platform::images::preview_visibility::set_hidden(
+        &mod_dir,
+        &[mod_dir.join("preview_custom.png")],
+        true,
+    )
+    .unwrap();
+    assert!(
+        crate::modules::workspace::application::scanner::core::thumbnail::find_thumbnail(&mod_dir)
+            .is_none()
+    );
+    super::update_mod_thumbnail(&target, &source.to_string_lossy()).unwrap();
+    assert_eq!(
+        crate::modules::workspace::application::scanner::core::thumbnail::find_thumbnail(&mod_dir),
+        Some(mod_dir.join("preview_custom.png"))
+    );
+    assert_eq!(fs::read(&existing_asset).unwrap(), b"original mod asset");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn update_thumbnail_rejects_an_oversized_source_before_decode() {
+    use crate::modules::settings::application::config::{ConfigService, GameConfig};
+    use crate::platform::fs::guard::validate_path;
+
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path().join("Mods");
+    let mod_dir = mods_root.join("ModA");
+    fs::create_dir_all(&mod_dir).unwrap();
+    let source = temp.path().join("large.png");
+    fs::write(&source, vec![0_u8; 10 * 1024 * 1024 + 1]).unwrap();
+
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let config = ConfigService::new_for_test_async(pool).await;
+    let mut settings = config.get_settings();
+    settings.games.push(GameConfig {
+        id: "game-1".to_string(),
+        name: "Test Game".to_string(),
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
+        instance_path: temp.path().to_path_buf(),
+        mod_path: mods_root,
+        ready_to_move_path: None,
+        launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+        game_exe: Some(temp.path().join("game.exe")),
+        loader_exe: None,
+        xxmi_launcher_exe: None,
+        launch_args: None,
+        warnings: Vec::new(),
+    });
+    config.save_settings(settings).unwrap();
+    let target = validate_path(&config, "game-1", &mod_dir.to_string_lossy()).unwrap();
+
+    let error = super::update_mod_thumbnail(&target, &source.to_string_lossy()).unwrap_err();
+    assert!(error.to_string().contains("Image too large"));
 }
 
 #[test]

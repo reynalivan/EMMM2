@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { modHealthKeys } from '@/entities/mod';
-import type { DiskReconcileResult } from '@/shared/api/tauri/bindings';
+import { watcherResult } from './modViewerReview.test-fixtures';
 
 const mocks = vi.hoisted(() => ({
   analyzeModHealth: vi.fn(),
@@ -40,43 +40,43 @@ function receipt(folder: string, hash: string) {
   };
 }
 
-function watcherResult(changedRoots: string[]): DiskReconcileResult {
-  return {
-    game_id: 'gimi',
-    reconcile_revision: 1,
-    reason: 'WatcherBatch',
-    status: 'Applied',
-    scan_scope: 'Scoped',
-    folder_conflicts: [],
-    rename_confirmations: [],
-    error_message: null,
-    changed_roots: changedRoots,
-    objects_changed: false,
-    folders_changed: false,
-    collections_changed: false,
-    runtime_file_changed: false,
-    thumbnail_roots: [],
-    cleared_selection_paths: [],
-    path_updates: [],
-    collection_reference_impact: {
-      affected_collection_count: 0,
-      affected_collection_names: [],
-      rewritten_paths: [],
-      missing_paths: [],
-    },
-    change_summary: {
-      object_changes: { added: 0, removed: 0, renamed: 0, modified: 0 },
-      mod_changes: { added: 0, removed: 0, renamed: 0, modified: 0 },
-      object_sample_names: [],
-      mod_sample_names: [],
-      has_user_visible_changes: false,
-    },
-    pending_runtime_effects: { collections_dirty: false, overlay_refresh: false },
-    warnings: [],
-  };
-}
-
 describe('Mod Viewer external review state', () => {
+  it('replaces the enabled snapshot when a disabled spelling launches and ignores its old analysis', async () => {
+    const queryClient = new QueryClient();
+    const enabled = 'E:/Mods/Example';
+    const disabled = 'E:/Mods/DISABLED Example';
+    recordModViewerLaunchSnapshot(queryClient, receipt(enabled, 'before'));
+    let finish:
+      | ((value: {
+          file_manifest: Array<{ relative_path: string; size_bytes: number; blake3: string }>;
+        }) => void)
+      | undefined;
+    mocks.analyzeModHealth.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = reconcileModViewerExternalReviews(
+      watcherResult(['Example']),
+      queryClient,
+      'E:/Mods',
+      null,
+    );
+
+    recordModViewerLaunchSnapshot(queryClient, receipt(disabled, 'replacement'));
+    expect(queryClient.getQueryData(modHealthKeys.viewerSnapshots())).toHaveLength(1);
+    finish?.({
+      file_manifest: [{ relative_path: 'mod.ini', size_bytes: 43, blake3: 'old-result' }],
+    });
+    await pending;
+
+    expect(queryClient.getQueryData(modHealthKeys.viewerReview('gimi', disabled))).toBeNull();
+    expect(mocks.toastInfo).not.toHaveBeenCalled();
+  });
+
+  beforeEach(() => vi.clearAllMocks());
+
   it('replaces a folder snapshot when the viewer launches again', () => {
     const queryClient = new QueryClient();
 
@@ -102,9 +102,85 @@ describe('Mod Viewer external review state', () => {
     dismissModViewerExternalReview(queryClient, 'gimi', 'Mods/Example');
 
     expect(queryClient.getQueryData(modHealthKeys.viewerSnapshots())).toEqual([]);
+    expect(queryClient.getQueryData(modHealthKeys.viewerReview('gimi', 'Mods/Example'))).toBeNull();
+  });
+
+  it('does not publish a review when its launch is dismissed during analysis', async () => {
+    const queryClient = new QueryClient();
+    recordModViewerLaunchSnapshot(queryClient, receipt('E:/Mods/Example', 'before'));
+    let finishAnalysis!: (report: {
+      file_manifest: Array<{ relative_path: string; size_bytes: number; blake3: string }>;
+    }) => void;
+    mocks.analyzeModHealth.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishAnalysis = resolve;
+      }),
+    );
+
+    const reconciliation = reconcileModViewerExternalReviews(
+      watcherResult(['Example']),
+      queryClient,
+      'E:/Mods',
+      null,
+    );
+    dismissModViewerExternalReview(queryClient, 'gimi', 'E:/Mods/Example');
+    finishAnalysis({
+      file_manifest: [{ relative_path: 'mod.ini', size_bytes: 43, blake3: 'after' }],
+    });
+    await reconciliation;
+
     expect(
-      queryClient.getQueryData(modHealthKeys.viewerReview('gimi', 'Mods/Example')),
+      queryClient.getQueryData(modHealthKeys.viewerReview('gimi', 'E:/Mods/Example')),
+    ).toBeNull();
+    expect(
+      queryClient.getQueryData(modHealthKeys.report('gimi', 'E:/Mods/Example')),
     ).toBeUndefined();
+    expect(mocks.toastInfo).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older analysis when a newer reconciliation finishes first', async () => {
+    const queryClient = new QueryClient();
+    recordModViewerLaunchSnapshot(queryClient, receipt('E:/Mods/Example', 'before'));
+    const finish: Array<
+      (report: {
+        file_manifest: Array<{ relative_path: string; size_bytes: number; blake3: string }>;
+      }) => void
+    > = [];
+    mocks.analyzeModHealth.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish.push(resolve);
+        }),
+    );
+
+    const older = reconcileModViewerExternalReviews(
+      watcherResult(['Example']),
+      queryClient,
+      'E:/Mods',
+      null,
+    );
+    const newer = reconcileModViewerExternalReviews(
+      watcherResult(['Example']),
+      queryClient,
+      'E:/Mods',
+      null,
+    );
+    const report = (blake3: string) => ({
+      file_manifest: [{ relative_path: 'mod.ini', size_bytes: 43, blake3 }],
+    });
+    finish[1]?.(report('newer'));
+    await newer;
+    finish[0]?.(report('older'));
+    await older;
+
+    expect(queryClient.getQueryData(modHealthKeys.report('gimi', 'E:/Mods/Example'))).toEqual(
+      report('newer'),
+    );
+    expect(
+      queryClient.getQueryData(modHealthKeys.viewerReview('gimi', 'E:/Mods/Example')),
+    ).toMatchObject({
+      changes: [{ relativePath: 'mod.ini' }],
+    });
   });
 
   it('creates an updated review only for a snapshot under the reconciled root', async () => {
@@ -143,7 +219,7 @@ describe('Mod Viewer external review state', () => {
     });
     expect(
       queryClient.getQueryData(modHealthKeys.viewerReview('gimi', 'E:/Mods/Weapon/Other')),
-    ).toBeUndefined();
+    ).toBeNull();
     expect(mocks.toastInfo).toHaveBeenCalledOnce();
   });
 });

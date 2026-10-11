@@ -16,8 +16,18 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use super::asset_pack::{CatalogPack, CatalogPackReview};
+use super::asset_pack::{CatalogPack, CatalogPackRefreshResult, CatalogPackReview};
+use super::pack_swap::PackSwap;
 use crate::shared::errors::ScannerError;
+
+#[path = "catalog_import_cleanup.rs"]
+mod cleanup;
+pub use cleanup::discard;
+
+#[cfg(not(test))]
+pub fn start_cleanup(app: &tauri::AppHandle) {
+    cleanup::start_cleanup(app);
+}
 
 const ZIP_ASSET_NAME: &str = "catalog-pack.zip";
 const STAGING_TTL: Duration = Duration::from_secs(10 * 60);
@@ -25,6 +35,7 @@ const MAX_RELEASE_METADATA_BYTES: usize = 1_024 * 1_024;
 pub(crate) const MAX_ARCHIVE_BYTES: usize = 75 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 10_000;
 const MAX_UNCOMPRESSED_BYTES: u64 = 150 * 1024 * 1024;
+const MAX_PENDING_IMPORTS: usize = 3;
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -143,38 +154,52 @@ pub async fn install(
     state: &CatalogImportState,
     app_data_dir: &Path,
     staging_token: &str,
-) -> Result<InstalledCatalogProvenance, ScannerError> {
-    let pending = state
-        .pending
-        .lock()
-        .await
-        .remove(staging_token)
-        .ok_or_else(|| {
-            ScannerError::Validation(
-                "Catalog review has expired. Check the pack again before installing.".to_string(),
-            )
-        })?;
+    pool: &sqlx::SqlitePool,
+) -> Result<CatalogPackRefreshResult, ScannerError> {
+    let mut pending_entries = state.pending.lock().await;
+    let pending = pending_entries.get(staging_token).cloned().ok_or_else(|| {
+        ScannerError::Validation(
+            "Catalog review has expired. Check the pack again before installing.".to_string(),
+        )
+    })?;
     if Instant::now() > pending.expires_at {
-        let _ = std::fs::remove_dir_all(&pending.staging_path);
+        cleanup::remove_staging(app_data_dir, &pending.staging_path)?;
+        pending_entries.remove(staging_token);
         return Err(ScannerError::Validation(
             "Catalog review has expired. Check the pack again before installing.".to_string(),
         ));
     }
     // Confirm the staged content immediately before the atomic swap. The
     // original URL or ZIP is never re-read after the user has reviewed it.
-    CatalogPack::load_from_root(pending.staging_path.clone())?.review()?;
-    replace_active_pack(app_data_dir, &pending.staging_path)?;
-    Ok(InstalledCatalogProvenance {
+    let review = CatalogPack::load_from_root(pending.staging_path.clone())?.review()?;
+    let provenance = InstalledCatalogProvenance {
         source_kind: pending.source_kind,
         source_url: pending.source_url,
         repository: pending.repository,
         release_tag: pending.release_tag,
         archive_digest: pending.archive_digest,
+    };
+    let mut transaction = pool.begin().await?;
+    record_provenance(&mut transaction, &provenance).await?;
+    let mut swap = PackSwap::begin(app_data_dir, &pending.staging_path)?;
+    if let Err(error) = transaction.commit().await {
+        swap.rollback().map_err(|rollback| {
+            ScannerError::Io(format!(
+                "Catalog database commit failed ({error}); rollback failed: {rollback}"
+            ))
+        })?;
+        return Err(error.into());
+    }
+    pending_entries.remove(staging_token);
+    swap.commit();
+    Ok(CatalogPackRefreshResult {
+        state: "ready".to_string(),
+        entries: review.entries,
     })
 }
 
-pub async fn record_provenance(
-    pool: &sqlx::SqlitePool,
+async fn record_provenance(
+    connection: &mut sqlx::SqliteConnection,
     provenance: &InstalledCatalogProvenance,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
@@ -190,7 +215,7 @@ pub async fn record_provenance(
     .bind(&provenance.release_tag)
     .bind(ZIP_ASSET_NAME)
     .bind(&provenance.archive_digest)
-    .execute(pool)
+    .execute(connection)
     .await?;
     Ok(())
 }
@@ -208,6 +233,14 @@ async fn stage_archive(
     archive: Vec<u8>,
     source: PendingSource,
 ) -> Result<CatalogImportPreview, ScannerError> {
+    cleanup::prune(state, app_data_dir).await?;
+    // Commands and cleanup hold CatalogUpdateState for the entire operation.
+    if state.pending.lock().await.len() >= MAX_PENDING_IMPORTS {
+        return Err(ScannerError::Validation(
+            "Too many catalog reviews. Cancel an existing review or wait for it to expire."
+                .to_string(),
+        ));
+    }
     if archive.len() > MAX_ARCHIVE_BYTES {
         return Err(ScannerError::Validation(
             "Catalog ZIP exceeds the size limit".to_string(),
@@ -229,7 +262,9 @@ async fn stage_archive(
     let review = match result {
         Ok(review) => review,
         Err(error) => {
-            let _ = std::fs::remove_dir_all(&staging_path);
+            if let Err(cleanup_error) = cleanup::remove_staging(app_data_dir, &staging_path) {
+                log::warn!("Failed to clean rejected catalog staging: {cleanup_error}");
+            }
             return Err(error);
         }
     };
@@ -577,33 +612,32 @@ fn is_allowed_file(path: &Path) -> bool {
     }
 }
 
-fn replace_active_pack(app_data_dir: &Path, staging: &Path) -> Result<(), ScannerError> {
-    let active = CatalogPack::root(app_data_dir);
-    let backup = app_data_dir.join(format!(".catalog-pack-backup-{}", Uuid::new_v4()));
-    let had_active_pack = active.exists();
-    if had_active_pack {
-        std::fs::rename(&active, &backup)?;
-    }
-    if let Err(error) = std::fs::rename(staging, &active) {
-        if had_active_pack {
-            let _ = std::fs::rename(&backup, &active);
-        }
-        return Err(ScannerError::Io(format!(
-            "Could not activate the validated catalog pack: {error}"
-        )));
-    }
-    if had_active_pack {
-        if let Err(error) = std::fs::remove_dir_all(backup) {
-            log::warn!("Catalog pack backup could not be removed after activation: {error}");
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{is_allowed_file, validate_local_archive_path, GithubReleaseSource};
+    use crate::modules::workspace::application::scanner::master_db::test_support::{
+        catalog_archive, catalog_pool, write_catalog,
+    };
     use std::path::Path;
+
+    async fn preview_fixture(
+        state: &super::CatalogImportState,
+        root: &Path,
+    ) -> super::CatalogImportPreview {
+        super::stage_archive(
+            state,
+            root,
+            catalog_archive("new-pack"),
+            super::PendingSource {
+                source_kind: "local".to_string(),
+                source_url: None,
+                repository: None,
+                release_tag: None,
+            },
+        )
+        .await
+        .unwrap()
+    }
 
     #[test]
     fn github_release_source_accepts_only_public_repository_release_urls() {
@@ -654,5 +688,159 @@ mod tests {
     fn local_import_requires_a_zip_file() {
         assert!(validate_local_archive_path(Path::new("missing-catalog.zip")).is_err());
         assert!(validate_local_archive_path(Path::new("catalog.json")).is_err());
+    }
+
+    #[tokio::test]
+    async fn failed_staged_validation_preserves_the_review_token() {
+        let root = tempfile::tempdir().unwrap();
+        let staging = root
+            .path()
+            .join(format!(".catalog-import-staging-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&staging).unwrap();
+        let state = super::CatalogImportState::default();
+        state.pending.lock().await.insert(
+            "review".to_string(),
+            super::PendingImport {
+                staging_path: staging.clone(),
+                source_kind: "local".to_string(),
+                source_url: None,
+                repository: None,
+                release_tag: None,
+                archive_digest: "fixture".to_string(),
+                expires_at: std::time::Instant::now() + super::STAGING_TTL,
+            },
+        );
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        assert!(super::install(&state, root.path(), "review", &pool)
+            .await
+            .is_err());
+        assert!(state.pending.lock().await.contains_key("review"));
+        assert!(staging.is_dir());
+    }
+
+    #[tokio::test]
+    async fn failed_database_commit_restores_pack_and_allows_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let active = super::CatalogPack::root(root.path());
+        write_catalog(&active, "old-pack");
+        let pool = catalog_pool().await;
+        sqlx::raw_sql("PRAGMA foreign_keys = ON;
+            CREATE TABLE guard_parent (id TEXT PRIMARY KEY);
+            CREATE TABLE guard_child (id TEXT REFERENCES guard_parent(id) DEFERRABLE INITIALLY DEFERRED);
+            CREATE TRIGGER fail_commit AFTER INSERT ON catalog_pack_provenance
+            BEGIN INSERT INTO guard_child VALUES ('missing'); END;")
+            .execute(&pool).await.unwrap();
+        let state = super::CatalogImportState::default();
+        let preview = preview_fixture(&state, root.path()).await;
+        let staging = state.pending.lock().await[&preview.staging_token]
+            .staging_path
+            .clone();
+        assert!(
+            super::install(&state, root.path(), &preview.staging_token, &pool)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            super::CatalogPack::load(root.path())
+                .unwrap()
+                .review()
+                .unwrap()
+                .pack_id,
+            "old-pack"
+        );
+        assert!(state
+            .pending
+            .lock()
+            .await
+            .contains_key(&preview.staging_token));
+        assert!(staging.exists());
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM catalog_pack_provenance")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            0
+        );
+        sqlx::query("DROP TRIGGER fail_commit")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let result = super::install(&state, root.path(), &preview.staging_token, &pool)
+            .await
+            .unwrap();
+        assert_eq!(result.entries, 1);
+        assert_eq!(
+            super::CatalogPack::load(root.path())
+                .unwrap()
+                .review()
+                .unwrap()
+                .pack_id,
+            "new-pack"
+        );
+        assert!(!staging.exists());
+        assert!(state.pending.lock().await.is_empty());
+        let thumbnails: Vec<String> =
+            sqlx::query_scalar("SELECT thumbnail_path FROM objects ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(thumbnails, ["old-catalog.png", "user.png"]);
+        assert!(
+            super::install(&state, root.path(), &preview.staging_token, &pool)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn previews_are_bounded_and_discard_releases_storage_idempotently() {
+        let root = tempfile::tempdir().unwrap();
+        let state = super::CatalogImportState::default();
+        for _ in 0..super::MAX_PENDING_IMPORTS {
+            preview_fixture(&state, root.path()).await;
+        }
+        let rejected = super::stage_archive(
+            &state,
+            root.path(),
+            catalog_archive("extra"),
+            super::PendingSource {
+                source_kind: "local".to_string(),
+                source_url: None,
+                repository: None,
+                release_tag: None,
+            },
+        )
+        .await;
+        assert!(rejected.is_err());
+        assert_eq!(
+            std::fs::read_dir(root.path()).unwrap().count(),
+            super::MAX_PENDING_IMPORTS
+        );
+        let (token, path) = {
+            let pending = state.pending.lock().await;
+            let (token, item) = pending.iter().next().unwrap();
+            (token.clone(), item.staging_path.clone())
+        };
+        super::discard(&state, root.path(), &token).await.unwrap();
+        super::discard(&state, root.path(), &token).await.unwrap();
+        assert!(!path.exists());
+        preview_fixture(&state, root.path()).await;
+        assert_eq!(state.pending.lock().await.len(), super::MAX_PENDING_IMPORTS);
+    }
+
+    #[tokio::test]
+    async fn expired_preview_removes_token_and_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let state = super::CatalogImportState::default();
+        let preview = preview_fixture(&state, root.path()).await;
+        let path = {
+            let mut pending = state.pending.lock().await;
+            let item = pending.get_mut(&preview.staging_token).unwrap();
+            item.expires_at = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            item.staging_path.clone()
+        };
+        super::cleanup::prune(&state, root.path()).await.unwrap();
+        assert!(state.pending.lock().await.is_empty());
+        assert!(!path.exists());
     }
 }

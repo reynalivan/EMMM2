@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { commands } from '../../../shared/api/tauri/bindings';
@@ -30,6 +30,18 @@ type Draft = {
   subCategory: string | null;
   metadata: JsonValue;
 };
+
+type LaunchOwner = {
+  generation: number;
+  request: ObjectClassificationLaunchRequest;
+  completed: boolean;
+};
+
+function completeLaunch(owner: LaunchOwner, result: 'applied' | 'cancelled') {
+  if (owner.completed) return;
+  owner.completed = true;
+  owner.request.onComplete?.(result);
+}
 
 function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -76,11 +88,29 @@ export function ObjectClassificationWizardHost() {
   const [busy, setBusy] = useState(false);
   const [schema, setSchema] = useState<GameSchema | null>(null);
   const [disableAfterApply, setDisableAfterApply] = useState(false);
+  const launchGeneration = useRef(0);
+  const activeLaunch = useRef<LaunchOwner | null>(null);
+  const committingGeneration = useRef<number | null>(null);
 
   const launch = useCallback(
     async (next: ObjectClassificationLaunchRequest) => {
+      if (committingGeneration.current !== null) {
+        next.onComplete?.('cancelled');
+        return;
+      }
+      const previous = activeLaunch.current;
+      if (previous && committingGeneration.current !== previous.generation) {
+        completeLaunch(previous, 'cancelled');
+      }
+      const generation = ++launchGeneration.current;
+      const owner: LaunchOwner = { generation, request: next, completed: false };
+      activeLaunch.current = owner;
       setBusy(true);
       setRequest(next);
+      setItems([]);
+      setCatalog([]);
+      setDrafts({});
+      setSchema(null);
       setDisableAfterApply(false);
       try {
         const [preview, entries, games] = await Promise.all([
@@ -92,9 +122,12 @@ export function ObjectClassificationWizardHost() {
           commands.listCanonicalClassificationCatalog(next.gameId),
           commands.getGames(),
         ]);
+        if (launchGeneration.current !== generation) return;
         const game = games.find((candidate) => candidate.id === next.gameId);
-        setSchema(game ? await commands.getGameSchema(game.game_type) : null);
+        const nextSchema = game ? await commands.getGameSchema(game.game_type) : null;
+        if (launchGeneration.current !== generation) return;
         const catalogKeys = new Set(entries.map((entry) => entry.entryKey));
+        setSchema(nextSchema);
         setItems(preview);
         setCatalog(entries);
         setDrafts(
@@ -116,17 +149,24 @@ export function ObjectClassificationWizardHost() {
           ),
         );
       } catch (error) {
+        if (launchGeneration.current !== generation) return;
         toast.error(t('errors.launch', { error: formatAppError(error) }));
         setRequest(null);
-        next.onComplete?.('cancelled');
+        completeLaunch(owner, 'cancelled');
       } finally {
-        setBusy(false);
+        if (launchGeneration.current === generation) setBusy(false);
       }
     },
     [t],
   );
 
   useEffect(() => subscribeObjectClassificationWizard((next) => void launch(next)), [launch]);
+  useEffect(
+    () => () => {
+      launchGeneration.current += 1;
+    },
+    [],
+  );
 
   const selectedItems = useMemo(
     () =>
@@ -176,6 +216,10 @@ export function ObjectClassificationWizardHost() {
   };
 
   const apply = async () => {
+    const generation = launchGeneration.current;
+    const owner = activeLaunch.current;
+    if (!owner) return;
+    committingGeneration.current = generation;
     setBusy(true);
     try {
       const result = await commands.applyObjectClassificationBatch({
@@ -201,31 +245,49 @@ export function ObjectClassificationWizardHost() {
         }),
       );
       if (result.disableWarning) toast.warning(result.disableWarning);
-      const onComplete = request.onComplete;
-      setRequest(null);
-      onComplete?.('applied');
+      if (launchGeneration.current === generation) setRequest(null);
+      completeLaunch(owner, 'applied');
     } catch (error) {
       toast.error(t('errors.commit', { error: formatAppError(error) }));
+      if (launchGeneration.current !== generation) completeLaunch(owner, 'cancelled');
     } finally {
-      setBusy(false);
+      if (committingGeneration.current === generation) committingGeneration.current = null;
+      if (launchGeneration.current === generation) setBusy(false);
     }
   };
 
   const ignoreSuggestion = async (objectId: string) => {
-    if (!request?.onIgnore) return;
+    const ignoredRequest = request;
+    if (!ignoredRequest?.onIgnore) return;
+    const generation = launchGeneration.current;
     setBusy(true);
     try {
-      await request.onIgnore(objectId);
-      setItems((current) => current.filter((item) => item.objectId !== objectId));
-      setDrafts((current) => {
-        const next = { ...current };
-        delete next[objectId];
-        return next;
-      });
+      await ignoredRequest.onIgnore(objectId);
+      if (
+        launchGeneration.current === generation &&
+        activeLaunch.current?.request === ignoredRequest
+      ) {
+        setItems((current) => current.filter((item) => item.objectId !== objectId));
+        setDrafts((current) => {
+          const next = { ...current };
+          delete next[objectId];
+          return next;
+        });
+      }
     } catch (error) {
-      toast.error(t('errors.commit', { error: formatAppError(error) }));
+      if (
+        launchGeneration.current === generation &&
+        activeLaunch.current?.request === ignoredRequest
+      ) {
+        toast.error(t('errors.commit', { error: formatAppError(error) }));
+      }
     } finally {
-      setBusy(false);
+      if (
+        launchGeneration.current === generation &&
+        activeLaunch.current?.request === ignoredRequest
+      ) {
+        setBusy(false);
+      }
     }
   };
 
@@ -500,9 +562,10 @@ export function ObjectClassificationWizardHost() {
               className="btn btn-ghost"
               disabled={busy}
               onClick={() => {
-                const onComplete = request.onComplete;
                 setRequest(null);
-                onComplete?.('cancelled');
+                const owner = activeLaunch.current;
+                if (owner?.generation === launchGeneration.current)
+                  completeLaunch(owner, 'cancelled');
               }}
             >
               {t('common:actions.cancel')}

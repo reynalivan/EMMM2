@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { waitFor } from '@testing-library/react';
 import {
   cancelRuntimeDescriptorQueries,
   publishQueryInvalidations,
   publishRuntimeDescriptor,
   runtimeQueryKeys,
+  refreshStartupReadModels,
 } from './queryRefresh';
 import type { RuntimeEffectDescriptor } from '../../shared/lib/runtimeEffects';
 
@@ -15,6 +18,57 @@ function createQueryClientMock() {
 }
 
 describe('queryRefresh', () => {
+  it('cancels a cold pre-baseline dashboard read before refetching current data', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let releaseOld!: (value: string) => void;
+    const oldRead = new Promise<string>((resolve) => {
+      releaseOld = resolve;
+    });
+    const queryFn = vi
+      .fn<() => Promise<string>>()
+      .mockImplementationOnce(() => oldRead)
+      .mockResolvedValue('baseline-data');
+    const observer = new QueryObserver(client, {
+      queryKey: ['dashboard-stats', 'game-a'],
+      queryFn,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    try {
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      expect(client.getQueryData(['dashboard-stats', 'game-a'])).toBeUndefined();
+      await refreshStartupReadModels(client, 'game-a', () => true);
+      expect(queryFn).toHaveBeenCalledTimes(2);
+      expect(client.getQueryData(['dashboard-stats', 'game-a'])).toBe('baseline-data');
+      releaseOld('stale-before-baseline');
+      await oldRead;
+      expect(client.getQueryData(['dashboard-stats', 'game-a'])).toBe('baseline-data');
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
+
+  it('does not refresh a superseded game or unrelated game queries', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryFn = vi.fn().mockResolvedValue('old-game');
+    const observer = new QueryObserver(client, {
+      queryKey: ['dashboard-stats', 'game-b'],
+      queryFn,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    try {
+      await waitFor(() =>
+        expect(client.getQueryData(['dashboard-stats', 'game-b'])).toBe('old-game'),
+      );
+      await refreshStartupReadModels(client, 'game-a', () => true);
+      await refreshStartupReadModels(client, 'game-b', () => false);
+      expect(queryFn).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
+
   it('batches refresh events in the same tick and merges refetch types', async () => {
     const queryClient = createQueryClientMock();
     const objectDescriptor: RuntimeEffectDescriptor = {

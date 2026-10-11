@@ -6,7 +6,7 @@ import {
   setupDefaultMocks,
 } from './previewPanelState.test-fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, renderHook, waitFor } from '../../../tests/testing/test-utils';
+import { act, cleanup, renderHook, waitFor } from '../../../tests/testing/test-utils';
 import { usePreviewPanelState } from './usePreviewPanelState';
 import { useAppStore } from '@/app/store';
 describe('usePreviewPanelState', () => {
@@ -30,7 +30,13 @@ describe('usePreviewPanelState', () => {
   it('should fetch and store preview images', async () => {
     const usePreviewImagesMock = previewDataMocks().usePreviewImages;
     usePreviewImagesMock.mockReturnValue(
-      createMockQuery(['E:/Mods/Test/preview1.png', 'E:/Mods/Test/preview2.png'], true),
+      createMockQuery(
+        [
+          { path: 'E:/Mods/Test/preview1.png', is_hidden: false },
+          { path: 'E:/Mods/Test/preview2.png', is_hidden: false },
+        ],
+        true,
+      ),
     );
 
     const { result } = renderHook(() => usePreviewPanelState());
@@ -38,6 +44,28 @@ describe('usePreviewPanelState', () => {
     await waitFor(() => {
       expect(result.current.images).toBeDefined();
     });
+  });
+
+  it('keeps hidden images out of the default gallery and includes them when requested', () => {
+    previewDataMocks().usePreviewImages.mockReturnValue(
+      createMockQuery(
+        [
+          { path: 'E:/Mods/Test/preview1.png', is_hidden: false },
+          { path: 'E:/Mods/Test/texture.png', is_hidden: true },
+        ],
+        true,
+      ),
+    );
+    const { result } = renderHook(() => usePreviewPanelState());
+
+    expect(result.current.images).toEqual(['E:/Mods/Test/preview1.png']);
+    expect(result.current.hiddenImagePaths).toEqual(new Set(['E:/Mods/Test/texture.png']));
+    act(() => result.current.setShowHiddenImages(true));
+    expect(result.current.images).toEqual([
+      'E:/Mods/Test/preview1.png',
+      'E:/Mods/Test/texture.png',
+    ]);
+    expect(result.current.hasVisibleImages).toBe(true);
   });
 
   // Covers: TC-6.4-01 (Unsaved changes guard - activePath change)

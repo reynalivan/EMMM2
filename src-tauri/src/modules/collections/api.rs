@@ -1,7 +1,7 @@
 pub(crate) use super::adapters::tauri::tauri::acquire_current_snapshot_lease;
 pub use super::application::*;
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, test))]
 pub mod testing {
     pub mod adapters {
         pub use super::super::super::adapters::*;

@@ -2,6 +2,54 @@ use crate::modules::games::application::game::schema_loader;
 use crate::shared::errors::AppError;
 use tauri::Manager;
 
+#[cfg(test)]
+mod catalog_refresh_tests {
+    use super::refresh_catalog_metadata;
+    use crate::modules::workspace::application::scanner::master_db::{
+        asset_pack::CatalogPack,
+        test_support::{catalog_pool, write_catalog},
+    };
+
+    #[tokio::test]
+    async fn invalid_pack_does_not_clear_thumbnail_references() {
+        let root = tempfile::tempdir().unwrap();
+        let pool = catalog_pool().await;
+        write_catalog(&CatalogPack::root(root.path()), "fixture");
+        std::fs::write(
+            CatalogPack::root(root.path()).join("catalog/gimi.json"),
+            b"corrupted",
+        )
+        .unwrap();
+        assert!(refresh_catalog_metadata(root.path(), &pool).await.is_err());
+        let paths: Vec<String> =
+            sqlx::query_scalar("SELECT thumbnail_path FROM objects ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(paths, ["old-catalog.png", "user.png"]);
+    }
+
+    #[tokio::test]
+    async fn valid_refresh_clears_only_catalog_owned_references() {
+        let root = tempfile::tempdir().unwrap();
+        let pool = catalog_pool().await;
+        write_catalog(&CatalogPack::root(root.path()), "fixture");
+        assert_eq!(
+            refresh_catalog_metadata(root.path(), &pool)
+                .await
+                .unwrap()
+                .entries,
+            1
+        );
+        let paths: Vec<Option<String>> =
+            sqlx::query_scalar("SELECT thumbnail_path FROM objects ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(paths, [None, Some("user.png".to_string())]);
+    }
+}
+
 /// The bundled-resources directory, or a typed error.
 ///
 /// Five commands re-derived this, and `search_master_db` did it twice in one
@@ -94,6 +142,8 @@ pub async fn refresh_catalog_pack(
     crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult,
     AppError,
 > {
+    let update_state = app.state::<crate::modules::workspace::application::scanner::master_db::CatalogUpdateState>();
+    let _operation = update_state.0.lock().await;
     refresh_catalog_pack_service(&app, pool.inner()).await
 }
 
@@ -107,6 +157,24 @@ pub(crate) async fn refresh_catalog_pack_service(
     crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult,
     AppError,
 > {
+    let result = refresh_catalog_metadata(&app.path().app_data_dir()?, pool).await?;
+    crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(app)
+        .await;
+    Ok(result)
+}
+
+async fn refresh_catalog_metadata(
+    app_data_dir: &std::path::Path,
+    pool: &sqlx::SqlitePool,
+) -> Result<
+    crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult,
+    AppError,
+> {
+    let review =
+        crate::modules::workspace::application::scanner::master_db::asset_pack::CatalogPack::load(
+            app_data_dir,
+        )?
+        .review()?;
     sqlx::query(
         "UPDATE objects
          SET thumbnail_path = NULL, thumbnail_source = NULL
@@ -114,30 +182,10 @@ pub(crate) async fn refresh_catalog_pack_service(
     )
     .execute(pool)
     .await?;
-    activate_catalog_pack_service(app).await
-}
-
-/// Expose a newly activated pack to the matcher without reconciling the game
-/// library or replacing any object metadata or thumbnails.
-pub(crate) async fn activate_catalog_pack_service(
-    app: &tauri::AppHandle,
-) -> Result<
-    crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult,
-    AppError,
-> {
-    use tauri::Manager;
-    let app_data_dir = app.path().app_data_dir()?;
-    let pack =
-        crate::modules::workspace::application::scanner::master_db::asset_pack::CatalogPack::load(
-            &app_data_dir,
-        )?;
-    let status = pack.status()?;
-    crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(app)
-        .await;
     Ok(
         crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult {
-            state: status.state,
-            entries: status.entries,
+            state: "ready".to_string(),
+            entries: review.entries,
         },
     )
 }
@@ -186,7 +234,8 @@ pub async fn install_catalog_update(
             &app_data_dir,
         )
         .await?;
-    activate_catalog_pack_service(&app).await?;
+    crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(&app)
+        .await;
     Ok(installed)
 }
 
@@ -288,19 +337,42 @@ pub async fn install_catalog_import(
     use tauri::Manager;
     let _operation = update_state.0.lock().await;
     let app_data_dir = app.path().app_data_dir()?;
-    let provenance =
+    let result =
         crate::modules::workspace::application::scanner::master_db::catalog_import::install(
             import_state.inner(),
             &app_data_dir,
             &staging_token,
+            pool.inner(),
         )
-        .await?;
-    crate::modules::workspace::application::scanner::master_db::catalog_import::record_provenance(
-        pool.inner(),
-        &provenance,
+        .await;
+    // Also clear reads that may have observed a temporary swap before rollback.
+    crate::modules::workspace::application::scanner::master_db::MasterDbCache::invalidate(&app)
+        .await;
+    result.map_err(Into::into)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn discard_catalog_import(
+    app: tauri::AppHandle,
+    import_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogImportState,
+    >,
+    update_state: tauri::State<
+        '_,
+        crate::modules::workspace::application::scanner::master_db::CatalogUpdateState,
+    >,
+    staging_token: String,
+) -> Result<(), AppError> {
+    let _operation = update_state.0.lock().await;
+    crate::modules::workspace::application::scanner::master_db::catalog_import::discard(
+        import_state.inner(),
+        &app.path().app_data_dir()?,
+        &staging_token,
     )
-    .await?;
-    activate_catalog_pack_service(&app).await
+    .await
+    .map_err(Into::into)
 }
 
 /// Read the latest cached identity-suggestion state for one game. This command

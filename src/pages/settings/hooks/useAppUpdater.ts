@@ -1,5 +1,5 @@
 import { formatAppError } from '../../../shared/lib/appError';
-import { useState, useCallback } from 'react';
+import { create } from 'zustand';
 import { Channel } from '@tauri-apps/api/core';
 import { commands } from '../../../shared/api/tauri/bindings';
 import type { AppUpdateInfo, AppUpdateProgress } from '../../../shared/api/tauri/bindings.gen';
@@ -9,68 +9,103 @@ export interface UpdateProgress {
   total: number | null;
 }
 
-export function useAppUpdater() {
-  const [isChecking, setIsChecking] = useState(false);
-  const [update, setUpdate] = useState<AppUpdateInfo | null>(null);
-  const [progress, setProgress] = useState<UpdateProgress | null>(null);
-  const [isInstalling, setIsInstalling] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasChecked, setHasChecked] = useState(false);
+interface UpdaterOperation {
+  readonly kind: 'idle' | 'checking' | 'installing';
+}
 
-  const checkForUpdate = useCallback(async () => {
-    setIsChecking(true);
-    setError(null);
+interface AppUpdaterState {
+  operation: UpdaterOperation;
+  update: AppUpdateInfo | null;
+  progress: UpdateProgress | null;
+  error: string | null;
+  hasChecked: boolean;
+  checkForUpdate: () => Promise<void>;
+  downloadAndInstall: () => Promise<void>;
+  dismiss: () => void;
+}
+
+const IDLE_OPERATION: UpdaterOperation = { kind: 'idle' };
+
+const useAppUpdaterStore = create<AppUpdaterState>((set, get) => ({
+  operation: IDLE_OPERATION,
+  update: null,
+  progress: null,
+  error: null,
+  hasChecked: false,
+
+  checkForUpdate: async () => {
+    if (get().operation.kind !== 'idle') return;
+    const operation: UpdaterOperation = { kind: 'checking' };
+    set({ operation, error: null, progress: null });
     try {
-      const found = await commands.checkAppUpdate();
-      setUpdate(found);
-      setHasChecked(true);
+      const update = await commands.checkAppUpdate();
+      if (get().operation !== operation) return;
+      set({ update, hasChecked: true, operation: IDLE_OPERATION });
     } catch (e) {
-      setError(formatAppError(e));
-    } finally {
-      setIsChecking(false);
+      if (get().operation !== operation) return;
+      set({ error: formatAppError(e), operation: IDLE_OPERATION });
     }
-  }, []);
+  },
 
-  const downloadAndInstall = useCallback(async () => {
-    if (!update) return;
-    setIsInstalling(true);
-    setError(null);
-    setProgress({ downloaded: 0, total: null });
+  downloadAndInstall: async () => {
+    if (!get().update || get().operation.kind !== 'idle') return;
+    const operation: UpdaterOperation = { kind: 'installing' };
+    set({ operation, error: null, progress: { downloaded: 0, total: null } });
     try {
       const progressChannel = new Channel<AppUpdateProgress>();
+      let downloadFinished = false;
       progressChannel.onmessage = (event) => {
+        if (get().operation !== operation || downloadFinished) return;
         if (event.event === 'Started') {
-          setProgress({ downloaded: 0, total: event.data.contentLength ?? null });
+          set({ progress: { downloaded: 0, total: event.data.contentLength ?? null } });
         } else if (event.event === 'Progress') {
-          setProgress((prev) => ({
-            downloaded: (prev?.downloaded ?? 0) + event.data.chunkLength,
-            total: prev?.total ?? null,
-          }));
+          const previous = get().progress;
+          set({
+            progress: {
+              downloaded: (previous?.downloaded ?? 0) + event.data.chunkLength,
+              total: previous?.total ?? null,
+            },
+          });
         } else if (event.event === 'Finished') {
-          setProgress((prev) => ({
-            downloaded: prev?.total ?? prev?.downloaded ?? 0,
-            total: prev?.total ?? null,
-          }));
+          downloadFinished = true;
+          const previous = get().progress;
+          set({
+            progress: {
+              downloaded: previous?.total ?? previous?.downloaded ?? 0,
+              total: previous?.total ?? null,
+            },
+          });
         }
       };
       await commands.installAppUpdate(progressChannel);
+      // A successful install exits/restarts the app; retain admission until then.
     } catch (e) {
-      setError(formatAppError(e));
-      setIsInstalling(false);
+      if (get().operation !== operation) return;
+      set({ error: formatAppError(e), operation: IDLE_OPERATION });
     }
-  }, [update]);
+  },
 
-  const dismiss = useCallback(() => {
-    setUpdate(null);
-    setProgress(null);
-    setError(null);
-    setHasChecked(false);
-  }, []);
+  dismiss: () => {
+    if (get().operation.kind !== 'idle') return;
+    set({ update: null, progress: null, error: null, hasChecked: false });
+  },
+}));
 
+export function useAppUpdater() {
+  const {
+    operation,
+    update,
+    progress,
+    error,
+    hasChecked,
+    checkForUpdate,
+    downloadAndInstall,
+    dismiss,
+  } = useAppUpdaterStore();
   return {
     update,
-    isChecking,
-    isInstalling,
+    isChecking: operation.kind === 'checking',
+    isInstalling: operation.kind === 'installing',
     progress,
     error,
     hasChecked,

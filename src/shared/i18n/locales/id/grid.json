@@ -77,6 +77,8 @@
     "create_folder_submit": "Tambah folder"
   },
   "card": {
+    "conflict_group_label": "{{name}}, konflik nama folder",
+    "open_conflict": "Tinjau konflik",
     "aria_label_enabled": "{{name}}, aktif",
     "aria_label_disabled": "{{name}}, nonaktif",
     "mod_pack": "Paket Mod",

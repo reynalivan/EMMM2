@@ -20,6 +20,12 @@ describe('GallerySection', () => {
     isFetching: false,
     canEdit: true,
     isMutating: false,
+    showHiddenImages: false,
+    hasHiddenImages: false,
+    currentImageHidden: false,
+    hasVisibleImages: true,
+    onToggleShowHidden: vi.fn(),
+    onRestoreCurrent: vi.fn(),
     onPrev: vi.fn(),
     onNext: vi.fn(),
     onPaste: vi.fn(),
@@ -59,8 +65,8 @@ describe('GallerySection', () => {
     fireEvent.click(screen.getByTitle('Preview image actions'));
 
     expect(screen.getByRole('menuitem', { name: 'Import preview image' })).toBeEnabled();
-    expect(screen.getByRole('menuitem', { name: 'Delete current preview image' })).toBeDisabled();
-    expect(screen.getByRole('menuitem', { name: 'Delete all preview images' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Hide current preview image' })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: 'Hide all preview images' })).toBeDisabled();
     expect(screen.getByTestId('gallery-action-menu')).toHaveClass('fixed');
   });
 
@@ -75,12 +81,66 @@ describe('GallerySection', () => {
         screen.getByRole('menuitem', { name: 'Paste image from clipboard' }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('menuitem', { name: 'Delete current preview image' }),
+        screen.getByRole('menuitem', { name: 'Hide current preview image' }),
       ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('menuitem', { name: 'Paste image from clipboard' }));
     expect(onPaste).toHaveBeenCalledOnce();
+  });
+
+  it('shows hidden images from the overflow menu even when all images are hidden', () => {
+    const onToggleShowHidden = vi.fn();
+    render(
+      <GallerySection
+        {...defaultProps}
+        images={[]}
+        hasHiddenImages
+        hasVisibleImages={false}
+        onToggleShowHidden={onToggleShowHidden}
+      />,
+    );
+    fireEvent.click(screen.getByTitle('Preview image actions'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Show hidden preview images' }));
+    expect(onToggleShowHidden).toHaveBeenCalledOnce();
+  });
+
+  it('restores the current hidden image and labels its visibility', () => {
+    const onRestoreCurrent = vi.fn();
+    render(
+      <GallerySection
+        {...defaultProps}
+        showHiddenImages
+        hasHiddenImages
+        currentImageHidden
+        onRestoreCurrent={onRestoreCurrent}
+      />,
+    );
+    expect(screen.getByText('Hidden preview image')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Preview image actions'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Restore current preview image' }));
+    expect(onRestoreCurrent).toHaveBeenCalledOnce();
+    expect(defaultProps.onRequestRemoveCurrent).not.toHaveBeenCalled();
+  });
+
+  it('offers visibility and restore controls in the right-click menu', async () => {
+    const onRestoreCurrent = vi.fn();
+    render(
+      <GallerySection
+        {...defaultProps}
+        showHiddenImages
+        hasHiddenImages
+        currentImageHidden
+        onRestoreCurrent={onRestoreCurrent}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByRole('region', { name: 'Preview image slider' }));
+    const restore = await screen.findByRole('menuitem', { name: 'Restore current preview image' });
+    expect(
+      screen.getByRole('menuitem', { name: 'Hide hidden preview images' }),
+    ).toBeInTheDocument();
+    fireEvent.click(restore);
+    expect(onRestoreCurrent).toHaveBeenCalledOnce();
   });
 
   // Covers: TC-6.2-01 (Gallery image count display)

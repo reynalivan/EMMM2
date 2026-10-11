@@ -293,7 +293,7 @@ describe('useObjectListVirtualizer', () => {
 
     const scrollContainer = document.createElement('div');
     Object.defineProperty(scrollContainer, 'clientHeight', { value: 200 });
-    result.current.parentRef(scrollContainer);
+    act(() => result.current.parentRef(scrollContainer));
     virtualizerState.measurementsCache[1] = {
       index: 1,
       key: 1,

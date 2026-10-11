@@ -24,10 +24,6 @@ vi.mock('lucide-react', async (importOriginal) => ({
   X: () => <div data-testid="icon-x" />,
 }));
 
-// Mock custom hooks
-vi.mock('../hooks/useFolderMutations', () => ({
-  usePasteThumbnail: () => ({ mutateAsync: vi.fn() }),
-}));
 vi.mock('@/features/mod-runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/mod-runtime')>()),
   useModContextMenuItems: (props: {

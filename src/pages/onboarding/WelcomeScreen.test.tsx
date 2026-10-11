@@ -5,6 +5,29 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { GameType, type GameConfig } from '@/entities/game';
+import { createElement, type ReactNode } from 'react';
+
+function mockMotionElement(tag: string) {
+  return ({
+    children,
+    layout: _layout,
+    whileHover: _whileHover,
+    whileTap: _whileTap,
+    onHoverStart: _onHoverStart,
+    onHoverEnd: _onHoverEnd,
+    ...props
+  }: { children?: ReactNode } & Record<string, unknown>) => createElement(tag, props, children);
+}
+
+vi.mock('motion/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('motion/react')>()),
+  motion: {
+    div: mockMotionElement('div'),
+    button: mockMotionElement('button'),
+    label: mockMotionElement('label'),
+    span: mockMotionElement('span'),
+  },
+}));
 
 // Mock Tauri dependencies
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
@@ -328,6 +351,39 @@ describe('WelcomeScreen (TC-03)', () => {
     );
   });
 
+  it('waits for preparation listener registration before starting the indexing session', async () => {
+    let finishRegistration: ((stop: () => void) => void) | undefined;
+    vi.mocked(listen).mockImplementation((event) => {
+      if (event === 'onboarding_indexing:snapshot_progress') {
+        return new Promise((resolve) => {
+          finishRegistration = resolve;
+        });
+      }
+      return Promise.resolve(() => undefined);
+    });
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === 'begin_onboarding_indexing')
+        return Promise.resolve({ session_id: 'session-1' });
+      if (command === 'reconcile_onboarding_indexing_game')
+        return Promise.resolve({ status: 'Applied' });
+      return Promise.resolve(undefined);
+    });
+    render(<WelcomeScreen onComplete={mockOnComplete} />);
+    fireEvent.click(screen.getByText('Add Game Manually'));
+    fireEvent.click(screen.getByText('Finish'));
+    await screen.findByTestId('result-screen');
+    await act(async () => {
+      fireEvent.click(screen.getByText('Result Continue'));
+    });
+    expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).not.toContain(
+      'begin_onboarding_indexing',
+    );
+    await act(async () => {
+      finishRegistration?.(() => undefined);
+    });
+    await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());
+  });
+
   it('shows phase-specific preparation progress without fabricating an overall percentage', async () => {
     let progressHandler: ((event: { payload: unknown }) => void) | undefined;
     let snapshotHandler: ((event: { payload: unknown }) => void) | undefined;
@@ -373,7 +429,7 @@ describe('WelcomeScreen (TC-03)', () => {
           total_roots: 4,
           folders_classified: 0,
           current_root: 'Alice',
-          elapsed_ms: 1_000,
+          elapsed_ms: 0,
         },
       });
     });
@@ -383,6 +439,7 @@ describe('WelcomeScreen (TC-03)', () => {
     );
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '4');
     expect(screen.getByText('Checking folder structure')).toBeInTheDocument();
+    expect(screen.getByText('Elapsed 0s')).toBeInTheDocument();
     expect(screen.getByText('Current folder: Alice')).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 
@@ -405,12 +462,31 @@ describe('WelcomeScreen (TC-03)', () => {
     expect(screen.getByText('Classifying mod folders')).toBeInTheDocument();
     expect(screen.getByText('6 folders classified')).toBeInTheDocument();
 
+    act(() => {
+      snapshotHandler?.({
+        payload: {
+          session_id: 'session-1',
+          game_id: 'new-game',
+          phase: 'Classifying',
+          completed_games: 0,
+          total_games: 1,
+          completed_roots: 1,
+          total_roots: 4,
+          folders_classified: 3,
+          current_root: 'Stale Root',
+          elapsed_ms: 2_000,
+        },
+      });
+    });
+    expect(screen.getByText('6 folders classified')).toBeInTheDocument();
+    expect(screen.queryByText(/Stale Root/)).not.toBeInTheDocument();
+
     await waitFor(() => expect(progressHandler).toBeDefined());
     act(() => {
       progressHandler?.({
         payload: {
           game_id: 'new-game',
-          run_id: 'new-game-1',
+          run_id: 'session-1:new-game',
           reason: 'OnboardingCompleted',
           phase: 'ScanningRoots',
           completed_units: 1,
@@ -426,14 +502,50 @@ describe('WelcomeScreen (TC-03)', () => {
       '1',
     );
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '1');
+    act(() => {
+      progressHandler?.({
+        payload: {
+          game_id: 'new-game',
+          run_id: 'session-1:new-game',
+          reason: 'OnboardingCompleted',
+          phase: 'Projecting',
+          completed_units: 64,
+          total_units: 130,
+          current_root: null,
+          elapsed_ms: 3_000,
+          eta_ms: null,
+        },
+      });
+    });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '64');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '130');
+    expect(screen.getByText('64 / 130 mods processed')).toBeInTheDocument();
     expect(screen.getByText('Current stage')).toBeInTheDocument();
     expect(screen.getByText('Current stage').closest('[aria-live]')).toHaveAttribute(
       'aria-busy',
       'true',
     );
     expect(screen.getByText('Game 1 of 1 · New Game')).toBeInTheDocument();
-    expect(screen.getByText('Scanning mod folders [Alice] · Step 2 of 4')).toBeInTheDocument();
+    expect(screen.getByText('Syncing library · Step 3 of 4')).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+
+    act(() => {
+      progressHandler?.({
+        payload: {
+          game_id: 'new-game',
+          run_id: 'session-1:new-game',
+          reason: 'OnboardingCompleted',
+          phase: 'Finalizing',
+          completed_units: 0,
+          total_units: null,
+          current_root: null,
+          elapsed_ms: 4_000,
+          eta_ms: null,
+        },
+      });
+    });
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByText('Finishing indexing · Step 4 of 4')).toBeInTheDocument();
 
     act(() => {
       snapshotHandler?.({
@@ -454,7 +566,59 @@ describe('WelcomeScreen (TC-03)', () => {
     expect(screen.getByText('Library changed. Checking it again...')).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 
+    act(() => {
+      progressHandler?.({
+        payload: {
+          game_id: 'new-game',
+          run_id: 'session-1:new-game:1',
+          reason: 'OnboardingCompleted',
+          phase: 'Projecting',
+          completed_units: 64,
+          total_units: 130,
+          current_root: null,
+          elapsed_ms: 500,
+          eta_ms: null,
+        },
+      });
+    });
+    expect(screen.getByText('Syncing library · Step 3 of 4')).toBeInTheDocument();
+    expect(screen.queryByText('Library changed. Checking it again...')).not.toBeInTheDocument();
+
     unblock();
     await waitFor(() => expect(mockOnComplete).toHaveBeenCalled());
+  });
+
+  it('resubscribes after a transient preparation listener error when the user retries', async () => {
+    let registrations = 0;
+    vi.mocked(listen).mockImplementation(async (event) => {
+      if (event === 'onboarding_indexing:snapshot_progress' && ++registrations === 1) {
+        throw new Error('Preparation listener unavailable');
+      }
+      return () => undefined;
+    });
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === 'begin_onboarding_indexing')
+        return Promise.resolve({ session_id: 'session-1' });
+      if (command === 'reconcile_onboarding_indexing_game')
+        return Promise.resolve({ status: 'Applied' });
+      return Promise.resolve(undefined);
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      render(<WelcomeScreen onComplete={mockOnComplete} />);
+      fireEvent.click(screen.getByText('Add Game Manually'));
+      fireEvent.click(screen.getByText('Finish'));
+      await screen.findByTestId('result-screen');
+      fireEvent.click(screen.getByText('Result Continue'));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Preparation listener unavailable',
+      );
+      expect(mockOnComplete).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByText('Result Continue'));
+      await waitFor(() => expect(mockOnComplete).toHaveBeenCalledTimes(1));
+      expect(registrations).toBe(2);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

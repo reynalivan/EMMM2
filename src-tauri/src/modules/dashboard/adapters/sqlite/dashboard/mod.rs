@@ -34,22 +34,72 @@ pub async fn fetch_global_stats(pool: &SqlitePool) -> Result<DashboardStats, sql
 }
 
 /// Fetch duplicate waste bytes from dedup scanner results.
-/// Returns the sum of `size_bytes` for non-primary members in pending groups.
+/// Uses the optimizer's measured report; routine indexing does not size assets.
 pub async fn fetch_duplicate_waste(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
-    let row: (i64,) = sqlx::query_as(
+    #[derive(serde::Deserialize)]
+    struct MeasuredGroup {
+        members: Vec<MeasuredMember>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct MeasuredMember {
+        mod_id: Option<String>,
+        total_size_bytes: u64,
+    }
+
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
         r#"
-        SELECT COALESCE(SUM(m.size_bytes), 0)
-        FROM dedup_group_members dgm
-        JOIN dedup_groups dg ON dg.id = dgm.group_id
-        JOIN mods m ON m.id = dgm.folder_id
-        WHERE dgm.is_primary = 0
-          AND dg.resolution_status = 'pending'
+        SELECT dg.reasons_json, jobs.root_path, games.mods_path,
+            (SELECT json_group_array(members.folder_id)
+             FROM dedup_group_members members
+             JOIN mods ON mods.id = members.folder_id
+             WHERE members.group_id = dg.id AND mods.game_id = jobs.game_id)
+        FROM dedup_groups dg
+        JOIN dedup_jobs jobs ON jobs.id = dg.job_id
+        JOIN games ON games.id = jobs.game_id
+        WHERE dg.resolution_status = 'pending'
+          AND jobs.status = 'completed'
+          AND jobs.root_path IS NOT NULL AND jobs.root_path != ''
+          AND games.mods_path != ''
+          AND jobs.id = (
+              SELECT latest.id FROM dedup_jobs latest
+              WHERE latest.game_id = jobs.game_id AND latest.status = 'completed'
+              ORDER BY latest.completed_at DESC, latest.started_at DESC LIMIT 1
+          )
         "#,
     )
-    .fetch_one(pool)
+    .fetch_all(pool)
     .await?;
 
-    Ok(row.0)
+    let mut waste = 0_i64;
+    for (json, stored_root, configured_root, live_ids_json) in rows {
+        if crate::shared::path_key::exact_location_key_for_path(Path::new(&stored_root))
+            != crate::shared::path_key::exact_location_key_for_path(Path::new(&configured_root))
+        {
+            continue;
+        }
+        let group: MeasuredGroup =
+            serde_json::from_str(&json).map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
+        let live_ids: std::collections::HashSet<String> = serde_json::from_str(&live_ids_json)
+            .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
+        let surviving_members = group.members.iter().filter(|member| {
+            member
+                .mod_id
+                .as_ref()
+                .is_none_or(|id| live_ids.contains(id))
+        });
+        for member in surviving_members.skip(1) {
+            let measured = i64::try_from(member.total_size_bytes)
+                .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
+            waste = waste.checked_add(measured).ok_or_else(|| {
+                sqlx::Error::Decode(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Duplicate waste exceeds the supported byte range",
+                )))
+            })?;
+        }
+    }
+    Ok(waste)
 }
 
 /// Fetch enabled mods together with the catalog metadata used by the
@@ -59,7 +109,7 @@ pub async fn fetch_enabled_mods_for_keybindings(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Vec<(String, String, Option<String>, Option<String>)>, sqlx::Error> {
-    sqlx::query_as(
+    let rows: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
         r#"
         SELECT
             m.actual_name,
@@ -75,7 +125,14 @@ pub async fn fetch_enabled_mods_for_keybindings(
     )
     .bind(game_id)
     .fetch_all(pool)
-    .await
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|(_, folder_path, _, _)| {
+            crate::modules::workspace::api::is_effectively_enabled_path(folder_path)
+        })
+        .collect())
 }
 
 /// Fetch mod counts grouped by `object_type` for the category distribution chart.

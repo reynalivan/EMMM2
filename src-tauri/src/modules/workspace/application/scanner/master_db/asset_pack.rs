@@ -72,6 +72,7 @@ struct CatalogFile {
 pub(crate) struct CatalogPack {
     root: PathBuf,
     manifest: Manifest,
+    manifest_checksum: String,
 }
 
 impl CatalogPack {
@@ -93,12 +94,11 @@ impl CatalogPack {
                 "Catalog asset pack is not installed".to_string(),
             ));
         }
+        let manifest_bytes = std::fs::read(&manifest_path)?;
         let manifest: Manifest =
-            serde_json::from_slice(&std::fs::read(&manifest_path)?).map_err(|error| {
-                ScannerError::Parse {
-                    what: "catalog asset-pack manifest".to_string(),
-                    detail: error.to_string(),
-                }
+            serde_json::from_slice(&manifest_bytes).map_err(|error| ScannerError::Parse {
+                what: "catalog asset-pack manifest".to_string(),
+                detail: error.to_string(),
             })?;
         if manifest.id.trim().is_empty()
             || manifest.version.trim().is_empty()
@@ -110,7 +110,11 @@ impl CatalogPack {
                 detail: "missing required metadata".to_string(),
             });
         }
-        Ok(Self { root, manifest })
+        Ok(Self {
+            root,
+            manifest,
+            manifest_checksum: format!("{:x}", Sha256::digest(&manifest_bytes)),
+        })
     }
 
     pub(crate) fn id(&self) -> &str {
@@ -119,6 +123,10 @@ impl CatalogPack {
 
     pub(crate) fn version(&self) -> &str {
         &self.manifest.version
+    }
+
+    pub(crate) fn manifest_checksum(&self) -> &str {
+        &self.manifest_checksum
     }
 
     pub(crate) fn review(&self) -> Result<CatalogPackReview, ScannerError> {
@@ -157,6 +165,14 @@ impl CatalogPack {
     /// catalog-owned avatar paths. User-selected preview images never come
     /// from a catalog pack.
     fn read_entries(&self, game_type: i32) -> Result<Vec<DbEntry>, ScannerError> {
+        self.read_entries_with(game_type, || {})
+    }
+
+    fn read_entries_with(
+        &self,
+        game_type: i32,
+        after_checksum: impl FnOnce(),
+    ) -> Result<Vec<DbEntry>, ScannerError> {
         let game =
             crate::modules::games::application::game::schema_loader::normalize_game_type(game_type);
         let Some(catalog) = self.manifest.catalogs.get(&game) else {
@@ -169,13 +185,27 @@ impl CatalogPack {
                 "Catalog file exceeds the size limit".to_string(),
             ));
         }
-        if sha256_file(&path)? != catalog.sha256.to_ascii_lowercase() {
-            return Err(ScannerError::Io(
-                "Catalog checksum does not match its manifest".to_string(),
-            ));
-        }
-        let json = std::fs::read_to_string(path)?;
-        let mut entries = MasterDb::from_json(&json)?.entries;
+        let mut entries = {
+            let bytes = std::fs::read(&path)?;
+            if bytes.len() as u64 > MAX_CATALOG_BYTES {
+                return Err(ScannerError::Io(
+                    "Catalog file exceeds the size limit".to_string(),
+                ));
+            }
+            if format!("{:x}", Sha256::digest(&bytes)) != catalog.sha256.to_ascii_lowercase() {
+                return Err(ScannerError::Io(
+                    "Catalog checksum does not match its manifest".to_string(),
+                ));
+            }
+            after_checksum();
+            let json = std::str::from_utf8(&bytes).map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "stream did not contain valid UTF-8",
+                )
+            })?;
+            MasterDb::from_json(json)?.entries
+        };
         for entry in &mut entries {
             resolve_entry_thumbnail(&self.root, entry)?;
         }
@@ -374,6 +404,261 @@ mod tests {
     use super::{is_avatar_path, is_supported_avatar, CatalogPack};
     use sha2::{Digest, Sha256};
     use std::path::Path;
+
+    fn legacy_entries_for(
+        pack: &CatalogPack,
+        game_type: i32,
+    ) -> Result<Vec<super::DbEntry>, super::ScannerError> {
+        let game =
+            crate::modules::games::application::game::schema_loader::normalize_game_type(game_type);
+        let Some(catalog) = pack.manifest.catalogs.get(&game) else {
+            return Ok(Vec::new());
+        };
+        let path = super::resolve_child(&pack.root, &catalog.path, "catalog")?;
+        if std::fs::metadata(&path)?.len() > super::MAX_CATALOG_BYTES {
+            return Err(super::ScannerError::Io(
+                "Catalog file exceeds the size limit".to_string(),
+            ));
+        }
+        if super::sha256_file(&path)? != catalog.sha256.to_ascii_lowercase() {
+            return Err(super::ScannerError::Io(
+                "Catalog checksum does not match its manifest".to_string(),
+            ));
+        }
+        let json = std::fs::read_to_string(path)?;
+        let mut entries = super::MasterDb::from_json(&json)?.entries;
+        for entry in &mut entries {
+            super::resolve_entry_thumbnail(&pack.root, entry)?;
+        }
+        for entry in &entries {
+            super::validate_runtime_targets(entry)?;
+        }
+        Ok(entries)
+    }
+
+    fn write_catalog_fixture(root: &Path, bytes: &[u8]) {
+        std::fs::write(root.join("gimi.json"), bytes).expect("write catalog");
+        let manifest = serde_json::json!({
+            "id": "owned-profile-catalog",
+            "version": "1.0.0",
+            "author": "EMMM test",
+            "source": "https://example.invalid/catalog",
+            "catalogs": { "gimi": {
+                "path": "gimi.json",
+                "sha256": format!("{:x}", Sha256::digest(bytes))
+            } }
+        });
+        std::fs::write(
+            root.join("manifest.json"),
+            serde_json::to_vec(&manifest).expect("serialize manifest"),
+        )
+        .expect("write manifest");
+    }
+
+    fn assert_reader_error_parity(pack: &CatalogPack) {
+        let expected = legacy_entries_for(pack, 0)
+            .expect_err("legacy reader must reject damaged fixture")
+            .to_string();
+        let actual = pack
+            .entries_for(0)
+            .expect_err("reused reader must reject damaged fixture")
+            .to_string();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn catalog_reader_preserves_errors_and_avatar_integrity() {
+        let root = tempfile::tempdir().expect("create catalog pack directory");
+        for bytes in [
+            b"{".to_vec(),
+            vec![0xff],
+            vec![b' '; super::MAX_CATALOG_BYTES as usize + 1],
+        ] {
+            write_catalog_fixture(root.path(), &bytes);
+            let pack = CatalogPack::load_from_root(root.path().to_path_buf()).expect("load pack");
+            assert_reader_error_parity(&pack);
+        }
+
+        write_catalog_fixture(root.path(), b"{");
+        std::fs::write(root.path().join("gimi.json"), [0xff]).expect("damage catalog checksum");
+        let pack = CatalogPack::load_from_root(root.path().to_path_buf()).expect("load pack");
+        assert_reader_error_parity(&pack);
+
+        let avatar_dir = root.path().join("assets/gimi/characters");
+        std::fs::create_dir_all(&avatar_dir).expect("create avatar directory");
+        let png_signature = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        for (bytes, matches_checksum) in [
+            (png_signature, false),
+            (b"not an image".to_vec(), true),
+            (Vec::new(), true),
+            (vec![0; super::MAX_AVATAR_BYTES as usize + 1], true),
+        ] {
+            std::fs::write(avatar_dir.join("amber.png"), &bytes).expect("write damaged avatar");
+            let checksum = if matches_checksum {
+                format!("{:x}", Sha256::digest(&bytes))
+            } else {
+                "0".repeat(64)
+            };
+            let catalog = serde_json::to_vec(&serde_json::json!({ "entries": [{
+                "name": "Amber",
+                "object_type": "Character",
+                "thumbnail_path": "assets/gimi/characters/amber.png",
+                "metadata": { "thumbnail_asset_sha256": checksum }
+            }] }))
+            .expect("serialize damaged-avatar catalog");
+            write_catalog_fixture(root.path(), &catalog);
+            let pack = CatalogPack::load_from_root(root.path().to_path_buf()).expect("load pack");
+            assert_reader_error_parity(&pack);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual catalog reader profile with owned PNG assets"]
+    fn profile_verified_catalog_byte_reuse_with_owned_avatars() {
+        const ENTRY_COUNT: usize = 512;
+        const ROUNDS: usize = 7;
+        let root = tempfile::tempdir().expect("create owned catalog pack directory");
+        let avatar_dir = root.path().join("assets/gimi/characters");
+        std::fs::create_dir_all(&avatar_dir).expect("create avatar directory");
+        let image = image::RgbaImage::from_fn(128, 128, |x, y| {
+            let value = x.wrapping_mul(73_856_093) ^ y.wrapping_mul(19_349_663);
+            image::Rgba([value as u8, (value >> 8) as u8, (value >> 16) as u8, 255])
+        });
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .expect("encode owned avatar");
+        let avatar = encoded.into_inner();
+        let avatar_checksum = format!("{:x}", Sha256::digest(&avatar));
+        let entries = (0..ENTRY_COUNT)
+            .map(|index| {
+                let filename = format!("character-{index}.png");
+                std::fs::write(avatar_dir.join(&filename), &avatar).expect("write owned avatar");
+                serde_json::json!({
+                    "name": format!("Character {index}"),
+                    "object_type": "Character",
+                    "aliases": [format!("char-{index}"), format!("hero-{index}")],
+                    "thumbnail_path": format!("assets/gimi/characters/{filename}"),
+                    "metadata": {
+                        "thumbnail_asset_sha256": avatar_checksum,
+                        "description": "Owned catalog metadata and representative character tags. ".repeat(16)
+                    },
+                    "runtime_targets": [{
+                        "variant": "default",
+                        "component": "body",
+                        "resource_kind": "position_vb",
+                        "hash": format!("{:08x}", index + 1),
+                        "slot": "0",
+                        "provenance": {
+                            "source_repo": "github.com/example/catalog",
+                            "commit": "owned-fixture",
+                            "path": format!("gimi/character-{index}.json")
+                        }
+                    }]
+                })
+            })
+            .collect::<Vec<_>>();
+        let catalog = serde_json::to_vec(&serde_json::json!({ "entries": entries }))
+            .expect("serialize owned catalog");
+        write_catalog_fixture(root.path(), &catalog);
+        let pack = CatalogPack::load_from_root(root.path().to_path_buf()).expect("load pack");
+        let expected =
+            serde_json::to_value(legacy_entries_for(&pack, 0).expect("warm legacy reader"))
+                .expect("serialize expected entries");
+        assert_eq!(
+            serde_json::to_value(pack.entries_for(0).expect("warm reused reader")).unwrap(),
+            expected
+        );
+        let mut baseline_ms = Vec::with_capacity(ROUNDS);
+        let mut reused_ms = Vec::with_capacity(ROUNDS);
+        for round in 0..ROUNDS {
+            for legacy in if round % 2 == 0 {
+                [true, false]
+            } else {
+                [false, true]
+            } {
+                let started = std::time::Instant::now();
+                let entries = if legacy {
+                    legacy_entries_for(&pack, 0)
+                } else {
+                    pack.entries_for(0)
+                }
+                .expect("read owned catalog including avatar validation");
+                let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+                assert_eq!(entries.len(), ENTRY_COUNT);
+                assert_eq!(serde_json::to_value(entries).unwrap(), expected);
+                if legacy {
+                    baseline_ms.push(elapsed_ms);
+                } else {
+                    reused_ms.push(elapsed_ms);
+                }
+            }
+        }
+        println!(
+            "catalog_reader_profile entries={ENTRY_COUNT} catalog_bytes={} avatar_files={ENTRY_COUNT} avatar_total_bytes={} rounds={ROUNDS} baseline_ms={baseline_ms:?} reused_ms={reused_ms:?} avatar_validation=full cache=warm profile=debug",
+            catalog.len(),
+            avatar.len() * ENTRY_COUNT,
+        );
+    }
+
+    #[test]
+    fn catalog_parses_the_verified_bytes_when_the_file_changes_after_checksum() {
+        let root = tempfile::tempdir().expect("create catalog pack directory");
+        super::super::test_support::write_catalog(root.path(), "fixture-catalog");
+        let pack = CatalogPack::load_from_root(root.path().to_path_buf()).expect("load pack");
+        let catalog_path = root.path().join("catalog/gimi.json");
+
+        let entries = pack
+            .read_entries_with(0, || {
+                std::fs::write(
+                    &catalog_path,
+                    br#"{"entries":[{"name":"Unverified","object_type":"Character"}]}"#,
+                )
+                .expect("replace catalog after checksum");
+            })
+            .expect("parse the verified snapshot");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "Amber");
+        assert!(
+            pack.entries_for(0).is_err(),
+            "later reads must verify again"
+        );
+    }
+
+    #[test]
+    fn manifest_checksum_fingerprints_the_bytes_used_to_load_the_pack() {
+        let root = tempfile::tempdir().expect("create catalog pack directory");
+        write_catalog_fixture(
+            root.path(),
+            br#"{"entries":[{"name":"Amber","object_type":"Character"}]}"#,
+        );
+        let manifest_path = root.path().join("manifest.json");
+        let verified_bytes = std::fs::read(&manifest_path).expect("read fixture manifest");
+        let pack = CatalogPack::load_from_root(root.path().to_path_buf()).expect("load pack");
+        let mut replacement: serde_json::Value =
+            serde_json::from_slice(&verified_bytes).expect("parse fixture manifest");
+        replacement["version"] = serde_json::json!("2.0.0");
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec(&replacement).expect("serialize replacement manifest"),
+        )
+        .expect("replace manifest");
+
+        assert_eq!(pack.version(), "1.0.0");
+        assert_eq!(
+            pack.manifest_checksum(),
+            format!("{:x}", Sha256::digest(&verified_bytes))
+        );
+        assert_eq!(pack.entries_for(0).expect("read loaded catalog").len(), 1);
+        let replacement_pack =
+            CatalogPack::load_from_root(root.path().to_path_buf()).expect("load replacement pack");
+        assert_eq!(replacement_pack.version(), "2.0.0");
+        assert_ne!(
+            pack.manifest_checksum(),
+            replacement_pack.manifest_checksum()
+        );
+    }
 
     #[test]
     fn avatar_paths_are_limited_to_categorized_game_scoped_files() {

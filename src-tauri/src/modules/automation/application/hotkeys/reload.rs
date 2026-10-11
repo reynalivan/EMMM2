@@ -1,7 +1,11 @@
+use enigo::Key;
+#[cfg(not(target_os = "windows"))]
 use enigo::{
     Direction::{Click, Press, Release},
-    Enigo, Key, Keyboard, Settings,
+    Enigo, Keyboard, Settings,
 };
+#[cfg(any(target_os = "windows", test))]
+use std::time::Duration;
 
 use crate::modules::automation::application::hotkeys::focus;
 use crate::modules::automation::application::hotkeys::manager::normalize_shortcut;
@@ -13,7 +17,9 @@ use crate::shared::errors::AppError;
 /// This intentionally does not claim that 3DMigoto has acknowledged the
 /// reload; it only reports that the configured key was sent.
 pub fn trigger_reload_config(settings: &AppSettings) -> Result<String, AppError> {
-    trigger_reload_config_with_sender(settings, send_reload_key)
+    trigger_reload_config_with_sender(settings, |binding| {
+        trigger_binding_while_focused(settings, binding)
+    })
 }
 
 fn trigger_reload_config_with_sender(
@@ -41,15 +47,13 @@ pub fn trigger_binding_while_focused(
     settings: &AppSettings,
     binding: &str,
 ) -> Result<(), AppError> {
-    if !focus::is_active_game_focused(settings) {
-        return Err(AppError::Validation(
-            "NeedsManualReload: active game is not focused".to_string(),
-        ));
-    }
-    send_reload_key(binding)
+    let (modifiers, main_key) = parse_chord(binding)?;
+    send_chord(&modifiers, main_key, || {
+        focus::is_active_game_focused(settings)
+    })
 }
 
-fn send_reload_key(key_str: &str) -> Result<(), AppError> {
+fn parse_chord(key_str: &str) -> Result<(Vec<Key>, Key), AppError> {
     // Same normalization the OS registration uses, so a key we registered is a
     // key we can replay.
     let normalized = normalize_shortcut(key_str);
@@ -65,16 +69,81 @@ fn send_reload_key(key_str: &str) -> Result<(), AppError> {
 
     let mut modifiers = Vec::new();
     for token in &tokens[..tokens.len() - 1] {
-        modifiers.push(parse_modifier(token)?);
+        let modifier = parse_modifier(token)?;
+        if !modifiers.contains(&modifier) {
+            modifiers.push(modifier);
+        }
     }
 
-    let main_key = parse_main_key(tokens[tokens.len() - 1])?;
+    Ok((modifiers, parse_main_key(tokens[tokens.len() - 1])?))
+}
+
+fn require_focus(focused: bool) -> Result<(), AppError> {
+    if focused {
+        Ok(())
+    } else {
+        Err(AppError::Validation(
+            "NeedsManualReload: active game is not focused".to_string(),
+        ))
+    }
+}
+
+/// The Windows plugin's Released event covers the main key only. Its original
+/// modifier key-up events must finish before synthetic modifier key-downs.
+pub(super) async fn wait_for_input_release(binding: &str) -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
+    {
+        let (_, main_key) = parse_chord(binding)?;
+        let main_key = windows_input::virtual_key(main_key)?;
+        wait_until_released(
+            || windows_input::keys_released(main_key),
+            Duration::from_secs(1),
+        )
+        .await
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = binding;
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+async fn wait_until_released(
+    mut released: impl FnMut() -> bool,
+    timeout: Duration,
+) -> Result<(), AppError> {
+    tokio::time::timeout(timeout, async {
+        while !released() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .map_err(|_| AppError::Validation("NeedsManualReload: keyboard keys are still held".into()))
+}
+
+#[cfg(target_os = "windows")]
+fn send_chord(
+    modifiers: &[Key],
+    main_key: Key,
+    focused: impl FnOnce() -> bool,
+) -> Result<(), AppError> {
+    windows_input::send_chord(modifiers, main_key, focused)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn send_chord(
+    modifiers: &[Key],
+    main_key: Key,
+    focused: impl FnOnce() -> bool,
+) -> Result<(), AppError> {
+    require_focus(focused())?;
 
     let mut enigo = Enigo::new(&Settings::default())?;
 
     let mut pressed = 0usize;
     let send_result = (|| -> Result<(), AppError> {
-        for modifier in &modifiers {
+        for modifier in modifiers {
             enigo.key(*modifier, Press)?;
             pressed += 1;
         }
@@ -96,6 +165,274 @@ fn send_reload_key(key_str: &str) -> Result<(), AppError> {
         (Err(error), Some(release_error)) => Err(AppError::Internal(format!(
             "Reload input failed ({error}); modifier release also failed ({release_error})"
         ))),
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows_input {
+    use super::{require_focus, AppError, Key};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_DELETE, VK_DOWN,
+        VK_END, VK_HOME, VK_INSERT, VK_LEFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RIGHT,
+        VK_RWIN, VK_SHIFT, VK_UP,
+    };
+
+    const REPLAY_MARKER: usize = 100;
+
+    pub(super) fn virtual_key(key: Key) -> Result<VIRTUAL_KEY, AppError> {
+        virtual_key_with(key, VIRTUAL_KEY::try_from)
+    }
+
+    fn virtual_key_with(
+        key: Key,
+        convert: impl FnOnce(Key) -> Result<VIRTUAL_KEY, &'static str>,
+    ) -> Result<VIRTUAL_KEY, AppError> {
+        match key {
+            // Registration uses VK_A..VK_Z/VK_0..VK_9, not locale-dependent
+            // character conversion (which can include Shift/AltGr bits).
+            Key::Unicode(character) if character.is_ascii_alphanumeric() => {
+                Ok(VIRTUAL_KEY(character.to_ascii_uppercase() as u16))
+            }
+            _ => convert(key).map_err(|error| AppError::Internal(error.into())),
+        }
+    }
+
+    pub(super) fn keys_released(main: VIRTUAL_KEY) -> bool {
+        keys_released_with(main, |key| unsafe { GetAsyncKeyState(i32::from(key.0)) })
+    }
+
+    fn keys_released_with(main: VIRTUAL_KEY, mut state: impl FnMut(VIRTUAL_KEY) -> i16) -> bool {
+        [main, VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN]
+            .into_iter()
+            .all(|key| state(key) >= 0)
+    }
+
+    fn event(key: VIRTUAL_KEY, up: bool) -> INPUT {
+        let mut flags = KEYBD_EVENT_FLAGS::default();
+        if matches!(
+            key,
+            VK_DELETE
+                | VK_DOWN
+                | VK_END
+                | VK_HOME
+                | VK_INSERT
+                | VK_LEFT
+                | VK_NEXT
+                | VK_PRIOR
+                | VK_RIGHT
+                | VK_UP
+        ) {
+            flags |= KEYEVENTF_EXTENDEDKEY;
+        }
+        if up {
+            flags |= KEYEVENTF_KEYUP;
+        }
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: key,
+                    dwFlags: flags,
+                    dwExtraInfo: REPLAY_MARKER,
+                    ..Default::default()
+                },
+            },
+        }
+    }
+
+    fn chord_events(modifiers: &[Key], main: Key) -> Result<(Vec<INPUT>, Vec<INPUT>), AppError> {
+        let mut keys = modifiers
+            .iter()
+            .copied()
+            .map(virtual_key)
+            .collect::<Result<Vec<_>, _>>()?;
+        keys.push(virtual_key(main)?);
+        let releases: Vec<_> = keys.iter().rev().map(|key| event(*key, true)).collect();
+        let mut input: Vec<_> = keys.iter().map(|key| event(*key, false)).collect();
+        input.extend_from_slice(&releases);
+        Ok((input, releases))
+    }
+
+    pub(super) fn send_chord(
+        modifiers: &[Key],
+        main: Key,
+        focused: impl FnOnce() -> bool,
+    ) -> Result<(), AppError> {
+        let (input, releases) = chord_events(modifiers, main)?;
+        if !keys_released(virtual_key(main)?) {
+            return Err(AppError::Validation(
+                "NeedsManualReload: keyboard keys are still held".into(),
+            ));
+        }
+        require_focus(focused())?;
+        // One SendInput call keeps original key-up events out of this chord.
+        send_batch(&input, &releases, |events| unsafe {
+            SendInput(events, std::mem::size_of::<INPUT>() as i32)
+        })
+    }
+
+    fn send_batch(
+        input: &[INPUT],
+        releases: &[INPUT],
+        mut send: impl FnMut(&[INPUT]) -> u32,
+    ) -> Result<(), AppError> {
+        let sent = send(input) as usize;
+        if sent == input.len() {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        // This batch contains all key-downs followed by reverse key-ups.
+        // Only the still-held prefix of the inserted downs belongs to us.
+        let pressed = sent.min(releases.len());
+        let already_released = sent.saturating_sub(releases.len());
+        let pending = pressed.saturating_sub(already_released);
+        let cleanup = &releases[releases.len() - pending..];
+        let released = if cleanup.is_empty() {
+            0
+        } else {
+            send(cleanup) as usize
+        };
+        Err(AppError::Internal(format!(
+            "Keyboard replay inserted {sent}/{} events ({error}); cleanup inserted {released}/{} releases",
+            input.len(), cleanup.len(),
+        )))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn modifier_aliases_produce_one_balanced_modifier_pair() {
+            let (modifiers, main) = super::super::parse_chord("Ctrl+Control+F7").unwrap();
+            assert_eq!(modifiers, vec![Key::Control]);
+            let (input, releases) = chord_events(&modifiers, main).unwrap();
+            assert_eq!(input.len(), 4);
+            assert_eq!(releases.len(), 2);
+            assert_eq!(unsafe { input[0].Anonymous.ki.wVk }, VK_CONTROL);
+            assert_eq!(unsafe { input[3].Anonymous.ki.wVk }, VK_CONTROL);
+        }
+
+        #[test]
+        fn main_key_release_does_not_imply_modifier_release() {
+            let main = virtual_key(Key::F16).unwrap();
+            for held in [main, VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN] {
+                assert!(!keys_released_with(main, |key| if key == held {
+                    i16::MIN
+                } else {
+                    0
+                }));
+            }
+            // The low "pressed since last query" bit is not a held-key signal.
+            assert!(keys_released_with(main, |_| 1));
+        }
+
+        #[test]
+        fn replay_is_one_balanced_batch_with_reverse_releases() {
+            let (input, releases) =
+                chord_events(&[Key::Control, Key::Alt, Key::Shift], Key::F16).unwrap();
+            let actual: Vec<_> = input
+                .iter()
+                .map(|event| unsafe {
+                    let key = event.Anonymous.ki;
+                    (key.wVk.0, key.dwFlags.contains(KEYEVENTF_KEYUP))
+                })
+                .collect();
+            assert_eq!(
+                actual,
+                vec![
+                    (0x11, false),
+                    (0x12, false),
+                    (0x10, false),
+                    (0x7f, false),
+                    (0x7f, true),
+                    (0x10, true),
+                    (0x12, true),
+                    (0x11, true)
+                ]
+            );
+            let mut calls = 0;
+            send_batch(&input, &releases, |batch| {
+                calls += 1;
+                batch.len() as u32
+            })
+            .unwrap();
+            assert_eq!(calls, 1);
+        }
+
+        #[test]
+        fn partial_replay_cleans_up_but_blocked_replay_does_not_release_user_keys() {
+            let (input, releases) = chord_events(&[Key::Control], Key::F7).unwrap();
+            for inserted in [0, 1, 3] {
+                let mut calls = 0;
+                let result = send_batch(&input, &releases, |batch| {
+                    calls += 1;
+                    if calls == 1 {
+                        inserted
+                    } else {
+                        batch.len() as u32
+                    }
+                });
+                assert!(result.is_err());
+                assert_eq!(calls, if inserted == 0 { 1 } else { 2 });
+            }
+        }
+
+        #[test]
+        fn partial_replay_releases_only_synthetic_keys_still_down() {
+            let (input, releases) =
+                chord_events(&[Key::Control, Key::Alt, Key::Shift], Key::F16).unwrap();
+            for inserted in 0..input.len() {
+                let mut calls = 0;
+                let mut cleanup = Vec::new();
+                assert!(send_batch(&input, &releases, |batch| {
+                    calls += 1;
+                    if calls == 1 {
+                        inserted as u32
+                    } else {
+                        cleanup = batch
+                            .iter()
+                            .map(|event| unsafe { event.Anonymous.ki.wVk.0 })
+                            .collect();
+                        batch.len() as u32
+                    }
+                })
+                .is_err());
+                let down_count = inserted.min(4) - inserted.saturating_sub(4);
+                let expected: Vec<_> = [VK_CONTROL.0, VK_MENU.0, VK_SHIFT.0, 0x7f][..down_count]
+                    .iter()
+                    .rev()
+                    .copied()
+                    .collect();
+                assert_eq!(cleanup, expected, "inserted={inserted}");
+            }
+        }
+
+        #[test]
+        fn ascii_replay_uses_registered_virtual_keys_not_character_layout_modifiers() {
+            for character in 'a'..='z' {
+                assert_eq!(
+                    virtual_key(Key::Unicode(character)).unwrap().0,
+                    character.to_ascii_uppercase() as u16
+                );
+            }
+            for character in '0'..='9' {
+                assert_eq!(
+                    virtual_key(Key::Unicode(character)).unwrap().0,
+                    character as u16
+                );
+            }
+            let (_, digit) = super::super::parse_chord("Ctrl+1").unwrap();
+            let mut used_character_layout = false;
+            let registered = virtual_key_with(digit, |_| {
+                used_character_layout = true;
+                Ok(VIRTUAL_KEY(0x0131))
+            })
+            .unwrap();
+            assert_eq!(registered.0, 0x31);
+            assert!(!used_character_layout);
+        }
     }
 }
 
@@ -201,6 +538,29 @@ mod tests {
     use crate::modules::games::domain::models::{GameType, LaunchMode};
     use crate::modules::settings::application::config::{AppSettings, GameConfig};
 
+    #[tokio::test]
+    async fn waits_until_the_held_modifier_is_released() {
+        let mut observations = 0;
+        super::wait_until_released(
+            || {
+                observations += 1;
+                observations >= 3
+            },
+            std::time::Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(observations, 3);
+    }
+
+    #[tokio::test]
+    async fn a_held_modifier_times_out_without_replay() {
+        let error = super::wait_until_released(|| false, std::time::Duration::from_millis(25))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("keys are still held"));
+    }
+
     fn settings_with_reload_binding(temp_dir: &tempfile::TempDir) -> AppSettings {
         let package_root = temp_dir.path().join("package");
         let mods_path = package_root.join("Mods");
@@ -215,7 +575,7 @@ mod tests {
             games: vec![GameConfig {
                 id: "game".to_string(),
                 name: "Game".to_string(),
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 instance_path: package_root,
                 mod_path: mods_path,
                 ready_to_move_path: None,
@@ -232,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn reload_dispatches_the_configured_binding_without_a_focus_check() {
+    fn reload_resolves_the_configured_binding_for_the_injected_sender() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let settings = settings_with_reload_binding(&temp_dir);
         let mut sent_binding = None;
@@ -245,5 +605,13 @@ mod tests {
 
         assert_eq!(binding, "Ctrl+F10");
         assert_eq!(sent_binding.as_deref(), Some("Ctrl+F10"));
+    }
+
+    #[test]
+    fn automatic_reload_rejects_an_unfocused_game_before_input_replay() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let settings = settings_with_reload_binding(&temp_dir);
+        let error = super::trigger_reload_config(&settings).unwrap_err();
+        assert!(error.to_string().contains("active game is not focused"));
     }
 }

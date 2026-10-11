@@ -27,6 +27,12 @@ export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
   }, [activeGame, folder.path, t]);
 
   const pasteThumbnailFromClipboard = useCallback(async () => {
+    const folderPath = folder.path;
+    const gameId = activeGame?.id;
+    if (!gameId) {
+      toast.warning(t('preview:empty.no_mod_selected'));
+      return;
+    }
     if (!navigator.clipboard?.read) {
       toast.error(t('common:errors.clipboard_not_supported'));
       return;
@@ -53,16 +59,23 @@ export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
       }
 
       await pasteThumbnail.mutateAsync({
-        folderPath: folder.path,
+        folderPath,
         imageData: imageBytes,
+        gameId,
       });
       toast.success(t('preview:gallery.thumbnail_pasted'));
     } catch (error) {
       toast.error(t('preview:gallery.paste_error', { error: formatAppError(error) }));
     }
-  }, [folder.path, pasteThumbnail, t]);
+  }, [activeGame?.id, folder.path, pasteThumbnail, t]);
 
   const importThumbnail = useCallback(async () => {
+    const folderPath = folder.path;
+    const gameId = activeGame?.id;
+    if (!gameId) {
+      toast.warning(t('preview:empty.no_mod_selected'));
+      return;
+    }
     try {
       const selected = await openDialog({
         multiple: false,
@@ -74,14 +87,15 @@ export function useModContextMenuActions(folder: WorkspaceExplorerNode) {
       }
 
       await updateModThumbnail.mutateAsync({
-        folderPath: folder.path,
+        folderPath,
         sourcePath: selected,
+        gameId,
       });
       toast.success(t('preview:gallery.menu.thumbnail_imported'));
     } catch (error) {
       toast.error(t('preview:gallery.import_error', { error: formatAppError(error) }));
     }
-  }, [folder.path, t, updateModThumbnail]);
+  }, [activeGame?.id, folder.path, t, updateModThumbnail]);
 
   return {
     openExplorer,

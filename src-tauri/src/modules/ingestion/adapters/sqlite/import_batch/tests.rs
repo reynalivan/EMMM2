@@ -29,6 +29,122 @@ type ClearedPlanFields = (
 );
 
 #[tokio::test]
+async fn zero_score_specific_target_survives_analysis_and_refresh_without_auto_redirect() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "specific-game",
+            name: "Game",
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
+            path: "C:/Game",
+            mods_path: Some("C:/Game/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    for id in ["original-object", "object-ayaka"] {
+        insert_test_object(
+            &context.pool,
+            &TestObjectFixture {
+                id,
+                game_id: "specific-game",
+                name: id,
+                folder_path: id,
+                object_type: "Character",
+            },
+        )
+        .await
+        .unwrap();
+    }
+    create_batch(
+        &context.pool,
+        &CreateImportBatchRecord {
+            id: "specific-batch".to_string(),
+            game_id: "specific-game".to_string(),
+            flow: ImportFlow::SpecificImport,
+            target_mode: TargetMode::Specific,
+            target_object_id: Some("original-object".to_string()),
+            target_subpath: None,
+            source_archive_path: None,
+        },
+        &[NewImportItemRecord {
+            id: "specific-item".to_string(),
+            source_kind: ImportSourceKind::Folder,
+            source_path: "C:/Downloads/Skin".to_string(),
+            staging_path: None,
+            planned_name: "Skin".to_string(),
+        }],
+    )
+    .await
+    .unwrap();
+    transition_item_status(
+        &context.pool,
+        "specific-item",
+        ImportItemStatus::Discovered,
+        ImportItemStatus::Staged,
+    )
+    .await
+    .unwrap();
+    let mut analysis = analysis_result_for_test();
+    analysis.review_gate = ReviewGate::default();
+    analysis.diagnostics.clear();
+    analysis.canonical_suggestions[0].match_status = ImportMatchStatus::AutoMatched;
+    let explicit = DestinationSuggestion {
+        kind: DestinationKind::SpecificTarget,
+        object_id: Some("original-object".to_string()),
+        canonical_entry_key: None,
+        folder_name: "Original".to_string(),
+        target_path: "C:/Game/Mods/Original".to_string(),
+        confidence_percentage: 0,
+        confidence_tier: ConfidenceTier::NoMatch,
+        match_method: DestinationMatchMethod::NoNameMatch,
+        warning: None,
+    };
+    analysis.destination_suggestions.insert(0, explicit);
+    assert!(
+        apply_analysis_result(&context.pool, "specific-item", &analysis)
+            .await
+            .unwrap()
+    );
+    let initial = get_batch(&context.pool, "specific-batch")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        initial.items[0].destination_suggestions[0].kind,
+        DestinationKind::SpecificTarget
+    );
+    assert_eq!(
+        initial.items[0].status,
+        ImportItemStatus::AwaitingDestination
+    );
+    assert!(store_match_suggestions(
+        &context.pool,
+        "specific-item",
+        &analysis.canonical_suggestions,
+        &analysis.destination_suggestions,
+        &analysis.evidence,
+        &ReviewGate::default()
+    )
+    .await
+    .unwrap());
+    let refreshed = get_batch(&context.pool, "specific-batch")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        refreshed.items[0].destination_suggestions[0].kind,
+        DestinationKind::SpecificTarget
+    );
+    assert_eq!(
+        refreshed.items[0].status,
+        ImportItemStatus::AwaitingDestination
+    );
+    assert!(refreshed.items[0].destination_object_id.is_none());
+}
+
+#[tokio::test]
 async fn batch_and_items_round_trip_without_frontend_owned_scoring() {
     let context = init_test_db().await;
     insert_test_game(
@@ -36,7 +152,7 @@ async fn batch_and_items_round_trip_without_frontend_owned_scoring() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -82,7 +198,7 @@ async fn applying_analysis_result_is_atomic_and_invalidates_acknowledgment_once(
         &TestGameFixture {
             id: "gimi-analysis",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods/character"),
         },
@@ -265,7 +381,7 @@ async fn auto_matched_identity_uses_the_default_destination_without_overwriting_
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -376,7 +492,7 @@ async fn high_confidence_destination_defaults_to_proceed_when_identity_needs_rev
         &TestGameFixture {
             id: "gimi-high-destination",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -471,7 +587,7 @@ async fn needs_review_identity_keeps_destination_unselected() {
         &TestGameFixture {
             id: "gimi-review",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods/character"),
         },
@@ -594,7 +710,7 @@ async fn batch_commit_requires_review_marker_and_current_item_acknowledgment() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -669,7 +785,7 @@ async fn transition_is_compare_and_swap_and_rejects_stale_state() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -724,7 +840,7 @@ async fn replacing_a_decision_clears_stale_canonical_identity() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -845,7 +961,7 @@ async fn refreshing_suggestions_invalidates_a_ready_decision() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -932,7 +1048,7 @@ async fn successful_filesystem_rollback_restores_a_commit_item_to_ready() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -997,7 +1113,7 @@ async fn interrupted_metadata_finalization_becomes_resumable_on_startup() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -1058,7 +1174,7 @@ async fn startup_recovers_analysis_completed_commits_and_pending_ready_to_move_a
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },

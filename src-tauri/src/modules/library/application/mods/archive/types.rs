@@ -90,25 +90,6 @@ pub struct ArchiveAnalysis {
     pub entries: Vec<ArchiveEntryInfo>,
 }
 
-/// Result of an extraction operation.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtractionResult {
-    pub archive_name: String,
-    /// Paths to all extracted mod root folders
-    pub dest_paths: Vec<String>,
-    #[specta(type = f64)]
-    pub files_extracted: usize,
-    /// Number of independent mod roots found and moved.
-    #[specta(type = f64)]
-    pub mod_count: usize,
-    pub success: bool,
-    pub error: Option<String>,
-    pub aborted: bool,
-    pub collisions: Vec<crate::modules::workspace::application::scanner::core::types::CollisionInfo>,
-    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
-}
-
 /// Read-only import staging outcome. The source archive is never moved or deleted.
 #[derive(Debug, Clone)]
 pub struct StagedArchive {

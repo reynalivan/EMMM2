@@ -9,13 +9,26 @@ interface FolderGridSyncToastProps {
 }
 
 export default function FolderGridSyncToast({ recoveryStatus }: FolderGridSyncToastProps) {
-  const { t } = useTranslation(['grid']);
+  const { t } = useTranslation(['grid', 'layout']);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const reconcileProgress = useAppStore((state) =>
     activeGameId ? (state.diskReconcileByGame[activeGameId]?.progress ?? null) : null,
   );
   const visibleProgress =
     reconcileProgress?.reason === 'InternalMutation' ? null : reconcileProgress;
+  const scanning = visibleProgress?.phase === 'ScanningRoots';
+  const projecting = visibleProgress?.phase === 'Projecting';
+  const totalUnits = visibleProgress?.total_units ?? null;
+  const measured = (scanning || projecting) && totalUnits !== null && totalUnits > 0;
+  const completedUnits = Math.min(visibleProgress?.completed_units ?? 0, totalUnits ?? 0);
+  const activity = visibleProgress
+    ? t(
+        scanning
+          ? 'game_selector.indexing.activation.scanning_without_root'
+          : `game_selector.indexing.activation.phase.${visibleProgress.phase}`,
+        { ns: 'layout' },
+      )
+    : null;
   const isBlockingRecovery = recoveryStatus === 'syncing';
   const isSyncing = isBlockingRecovery || visibleProgress !== null;
   const [isMounted, setIsMounted] = useState(isSyncing);
@@ -62,18 +75,22 @@ export default function FolderGridSyncToast({ recoveryStatus }: FolderGridSyncTo
             <p className="text-xs font-medium text-base-content">
               {t(isBlockingRecovery ? 'banners.disk_syncing' : 'banners.disk_refreshing')}
             </p>
-            {visibleProgress && visibleProgress.total_units !== null && (
+            {activity && <p className="mt-0.5 text-[10px] text-base-content/65">{activity}</p>}
+            {measured && (
               <div className="mt-1 flex items-center gap-2">
                 <progress
                   className="progress progress-info h-1.5 w-28"
-                  value={visibleProgress.completed_units}
-                  max={visibleProgress.total_units}
-                  aria-label={t(
-                    isBlockingRecovery ? 'banners.disk_syncing' : 'banners.disk_refreshing',
-                  )}
+                  value={completedUnits}
+                  max={totalUnits}
+                  aria-label={activity ?? undefined}
                 />
                 <span className="shrink-0 text-[10px] tabular-nums text-base-content/65">
-                  {visibleProgress.completed_units}/{visibleProgress.total_units}
+                  {t(
+                    projecting
+                      ? 'game_selector.indexing.activation.mods_complete'
+                      : 'game_selector.indexing.activation.folders_complete',
+                    { ns: 'layout', completed: completedUnits, total: totalUnits },
+                  )}
                 </span>
               </div>
             )}

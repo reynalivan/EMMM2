@@ -20,7 +20,7 @@ async fn test_dashboard_cmds_delegation() {
         &GameRow {
             id: "fake_game".into(),
             name: "Fake".into(),
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:\\Fake".into(),
             mods_path: Some("C:\\Mods".into()),
             ready_to_move_path: None,
@@ -49,7 +49,7 @@ async fn test_active_keybindings_delegation() {
         &GameRow {
             id: "fake_gen".into(),
             name: "Genshin".into(),
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:\\Genshin".into(),
             mods_path: Some("C:\\Mods".into()),
             ready_to_move_path: None,

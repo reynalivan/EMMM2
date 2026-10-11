@@ -48,7 +48,7 @@ pub async fn toggle_mod_safe(
     let telemetry = app
         .state::<crate::modules::system::application::telemetry::TelemetryStore>()
         .inner()
-        .clone();
+        .capture();
     let started_at = std::time::Instant::now();
     let folder = validate_path(&config, &game_id, &folder_path)?;
     let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&folder)?;
@@ -250,13 +250,15 @@ pub async fn apply_randomized_loadout(
             )
         })
         .collect::<Result<Vec<_>, AppError>>()?;
+    let original_recovery_scope =
+        crate::modules::mutation::api::original_file_lock_scope(&journal_steps)?;
     if journal_steps.is_empty() {
         let _guard = op_lock
             .acquire_exempt(
                 crate::modules::mutation::coordinator::MutationExemption::WorkspaceConfiguration,
             )
             .await?;
-        let result = prepared.execute(&app, &watcher)?;
+        let result = prepared.execute(&app, &watcher).await?;
         let history_warning =
             crate::modules::library::adapters::sqlite::mods::record_randomizer_history(
                 pool.inner(),
@@ -306,7 +308,7 @@ pub async fn apply_randomized_loadout(
         mutation_lease.abort_unapplied()?;
         return Err(error);
     }
-    let result = match prepared.execute_with_outcome(&app, &watcher) {
+    let result = match prepared.execute_with_outcome(&app, &watcher).await {
         Ok(result) => result,
         Err(
             crate::modules::workspace::application::workspace::switch::PreparedWorkspaceExecutionError::Apply(error),
@@ -316,7 +318,7 @@ pub async fn apply_randomized_loadout(
             }
             mutation_lease.begin_rollback()?;
             mutation_lease.finish_rollback()?;
-            return Err(error);
+            return Err(crate::modules::system::api::bind_file_lock_scope(error, &original_recovery_scope));
         }
         Err(
             crate::modules::workspace::application::workspace::switch::PreparedWorkspaceExecutionError::Compensation(error),
@@ -356,7 +358,7 @@ pub async fn apply_randomized_loadout(
         }
         Err(error) => {
             mutation_lease.begin_rollback()?;
-            if let Err(rollback_error) = prepared.rollback(&watcher) {
+            if let Err(rollback_error) = prepared.rollback(&watcher).await {
                 let combined = format!("{error}; randomized loadout rollback failed: {rollback_error}");
                 mutation_lease.fail(combined.clone())?;
                 return Err(AppError::Io(combined));
@@ -662,7 +664,6 @@ pub async fn list_move_targets_for_object(
 pub async fn move_mods_to_object(
     app: tauri::AppHandle,
     config: tauri::State<'_, ConfigService>,
-    pool: tauri::State<'_, sqlx::SqlitePool>,
     op_lock: tauri::State<'_, MutationCoordinator>,
     disk_reconcile_state: tauri::State<
         '_,
@@ -670,7 +671,16 @@ pub async fn move_mods_to_object(
     >,
     watcher: tauri::State<'_, WatcherState>,
     input: MoveModsToObjectInput,
+    recovery_ids: Option<Vec<String>>,
 ) -> Result<crate::modules::library::application::mods::bulk::BulkResult, AppError> {
+    let state_owner = app.clone();
+    let pool = state_owner.state::<sqlx::SqlitePool>();
+    let expected_identities = recovery_ids
+        .as_deref()
+        .map(|ids| {
+            crate::modules::system::api::file_lock_retry_identities(ids, &input.folder_paths)
+        })
+        .transpose()?;
     move_mods_to_object_impl(
         app,
         config,
@@ -679,7 +689,8 @@ pub async fn move_mods_to_object(
         disk_reconcile_state,
         watcher,
         input,
-        None,
+        expected_identities,
+        recovery_ids,
     )
     .await
 }
@@ -707,6 +718,7 @@ pub(crate) async fn move_mods_to_object_from_snapshot(
         watcher,
         input,
         Some(expected_identities),
+        None,
     )
     .await
 }
@@ -724,6 +736,7 @@ async fn move_mods_to_object_impl(
     watcher: tauri::State<'_, WatcherState>,
     input: MoveModsToObjectInput,
     expected_identities: Option<Vec<(String, String)>>,
+    recovery_ids: Option<Vec<String>>,
 ) -> Result<crate::modules::library::application::mods::bulk::BulkResult, AppError> {
     let _admission = crate::modules::mutation::api::admit_immutable_mutation(
         &input.game_id,
@@ -771,6 +784,15 @@ async fn move_mods_to_object_impl(
             expected_identities,
         )?;
     }
+    if let Some(ids) = recovery_ids.as_deref() {
+        let paths = folders
+            .iter()
+            .map(|folder| folder.to_path_buf())
+            .collect::<Vec<_>>();
+        for id in ids {
+            crate::modules::system::api::validate_file_lock_recovery_for_paths(id, &paths)?;
+        }
+    }
     let prepared =
         crate::modules::library::application::mods::organizer_move::prepare_move_mods_to_object(
             pool.inner(),
@@ -784,6 +806,16 @@ async fn move_mods_to_object_impl(
         )
         .await?;
     let journal_steps = prepared.durable_journal_steps();
+    let selected_original_sources = folders
+        .iter()
+        .zip(&source_proofs)
+        .map(|(folder, proof)| (folder.to_path_buf(), proof.identity().to_string()))
+        .collect::<Vec<_>>();
+    let original_recovery_scope =
+        crate::modules::mutation::api::original_file_lock_scope_with_selection(
+            &journal_steps,
+            &selected_original_sources,
+        )?;
     if journal_steps.is_empty() {
         let _guard = op_lock
             .acquire_exempt(
@@ -793,7 +825,8 @@ async fn move_mods_to_object_impl(
         return Ok(
             crate::modules::library::application::mods::organizer_move::execute_prepared_move(
                 &watcher, &prepared,
-            )?
+            )
+            .await?
             .result,
         );
     }
@@ -826,6 +859,24 @@ async fn move_mods_to_object_impl(
                     .zip(&source_proofs)
                     .try_for_each(|(path, proof)| proof.validate(path))
             })
+            .and_then(|()| {
+                if let Some(ids) = recovery_ids.as_deref() {
+                    let paths = folders
+                        .iter()
+                        .map(|folder| folder.to_path_buf())
+                        .collect::<Vec<_>>();
+                    for id in ids {
+                        crate::modules::system::api::validate_file_lock_recovery_for_paths(
+                            id, &paths,
+                        )?;
+                        crate::modules::system::api::validate_file_lock_replay_scope(
+                            id,
+                            &original_recovery_scope,
+                        )?;
+                    }
+                }
+                Ok(())
+            })
     }) {
         mutation_lease.abort_unapplied()?;
         return Err(error);
@@ -833,7 +884,9 @@ async fn move_mods_to_object_impl(
     let organizer =
         match crate::modules::library::application::mods::organizer_move::execute_prepared_move(
             &watcher, &prepared,
-        ) {
+        )
+        .await
+        {
             Ok(outcome) => outcome,
             Err(error) => {
                 if !prepared.is_rolled_back() {
@@ -845,7 +898,10 @@ async fn move_mods_to_object_impl(
                 }
                 mutation_lease.begin_rollback()?;
                 mutation_lease.finish_rollback()?;
-                return Err(error);
+                return Err(crate::modules::system::api::bind_file_lock_scope(
+                    error,
+                    &original_recovery_scope,
+                ));
             }
         };
     for (sequence, _, _) in prepared.journal_steps() {
@@ -905,6 +961,7 @@ async fn move_mods_to_object_impl(
                 crate::modules::library::application::mods::organizer_move::rollback_prepared_move(
                     &watcher, &prepared,
                 )
+                .await
             {
                 let combined = format!("{error}; organizer rollback failed: {rollback_error}");
                 mutation_lease.fail(combined.clone())?;
@@ -929,6 +986,7 @@ async fn move_mods_to_object_impl(
                 crate::modules::library::application::mods::organizer_move::rollback_prepared_move(
                     &watcher, &prepared,
                 )
+                .await
             {
                 let combined = format!("{error}; organizer rollback failed: {rollback_error}");
                 mutation_lease.fail(combined.clone())?;

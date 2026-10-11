@@ -1,5 +1,6 @@
 use super::import_commit::{
-    finalize_ready_to_move_archives, fingerprint_matches, rollback_move_journal, MoveJournalEntry,
+    finalize_ready_to_move_archives, fingerprint_matches, rollback_move_journal,
+    validate_processed_target, MoveJournalEntry,
 };
 use crate::modules::catalog::application::match_engine::inspection::{
     inspect_source, InspectionRequest,
@@ -58,6 +59,28 @@ fn fingerprint_accepts_canonical_equivalent_source_path() {
         fingerprint_matches(&expected, &current),
         "canonical and non-canonical representations must identify the same staged source"
     );
+}
+
+#[test]
+fn processed_target_rejects_a_processed_root_outside_the_inbox() {
+    let workspace = tempfile::tempdir().unwrap();
+    let inbox = workspace.path().join("inbox");
+    let external = workspace.path().join("external");
+    std::fs::create_dir_all(&inbox).unwrap();
+    std::fs::create_dir_all(&external).unwrap();
+    let target = external.join("mod.zip");
+
+    let error = validate_processed_target(
+        &inbox.canonicalize().unwrap(),
+        &external.canonicalize().unwrap(),
+        &target,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        crate::shared::errors::AppError::Security(_)
+    ));
 }
 
 #[test]
@@ -212,7 +235,7 @@ async fn ready_to_move_archive_failure_stays_resumable_until_processed_move_succ
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -326,7 +349,7 @@ async fn ready_to_move_folder_pack_is_retained_in_processed_with_history() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -398,7 +421,7 @@ async fn ready_to_move_finalization_recovers_a_crash_after_the_source_move() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },

@@ -6,9 +6,15 @@ import {
   type AppSettings,
   type CustomTheme,
   type LiquidRoleConfig,
+  type ThemeMetadata,
 } from '@/shared/api/tauri/bindings';
 import { usePrefersReducedMotion } from '@/shared/lib/hooks/usePrefersReducedMotion';
-import { normalizeThemeSetting, resolveTheme } from '@/shared/lib/themeOptions';
+import {
+  getConfirmedCustomThemeIds,
+  getCustomThemeId,
+  normalizeThemeSetting,
+  resolveTheme,
+} from '@/shared/lib/themeOptions';
 
 export const LIQUID_ROLES = ['nav', 'control', 'indicator', 'overlay'] as const;
 
@@ -24,23 +30,37 @@ function subscribeToColorScheme(onChange: () => void) {
   return () => media.removeEventListener('change', onChange);
 }
 
-function useLiquidResolvedTheme(): string {
+function useLiquidResolvedTheme(): { theme: string; customThemeId: string | null } {
   const settings = useQuery<AppSettings>({
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: () => commands.getSettings(),
     staleTime: Infinity,
   });
+  const customThemes = useQuery<ThemeMetadata[]>({
+    queryKey: ['custom-themes', 'list'],
+    queryFn: () => commands.listCustomThemes(),
+    enabled: settings.data?.theme === 'dark',
+    staleTime: Infinity,
+  });
+  const customThemeIds = getConfirmedCustomThemeIds(customThemes);
   const prefersDark = useSyncExternalStore(
     subscribeToColorScheme,
     () => window.matchMedia(DARK_QUERY).matches,
   );
-  return resolveTheme(normalizeThemeSetting(settings.data?.theme), prefersDark);
+  const theme = resolveTheme(
+    normalizeThemeSetting(settings.data?.theme, customThemeIds),
+    prefersDark,
+  );
+  return { theme, customThemeId: getCustomThemeId(theme, customThemeIds) };
 }
 
 function useLiquidCustomTheme(id: string | null) {
   return useQuery<CustomTheme>({
     queryKey: CUSTOM_THEME_QUERY_KEY(id ?? ''),
-    queryFn: () => commands.loadCustomTheme(id as string),
+    queryFn: () => {
+      if (!id) throw new Error('No custom theme selected');
+      return commands.loadCustomTheme(id);
+    },
     enabled: Boolean(id),
     staleTime: Infinity,
   });
@@ -165,8 +185,8 @@ export function useLiquidThemeConfig(role: LiquidRole): {
   config: Partial<LiquidGlassConfig>;
   prefersReducedMotion: boolean;
 } {
-  const theme = useLiquidResolvedTheme();
-  const customTheme = useLiquidCustomTheme(theme === 'onyx' || theme === 'light' ? null : theme);
+  const { theme, customThemeId } = useLiquidResolvedTheme();
+  const customTheme = useLiquidCustomTheme(customThemeId);
   const prefersReducedMotion = usePrefersReducedMotion();
   const overrides = customRoleConfig(customTheme.data, role);
 

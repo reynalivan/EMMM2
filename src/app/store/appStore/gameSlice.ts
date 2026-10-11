@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import { queryClient } from '@/shared/lib/queryClient';
+import { refreshStartupReadModels } from '@/shared/lib/queryRefresh';
 import { publishSettingsSnapshot } from '@/entities/settings';
 import { toast } from '@/shared/ui/toast';
 import type { AppSliceCreator } from './sliceTypes';
@@ -45,6 +46,36 @@ let startupReconcileHandlerReady = false;
 const startupReconcileGapResultsByGame = new Map<string, DiskReconcileResult[]>();
 let activeGameRequestSequence = 0;
 let storeInitialization: Promise<void> | null = null;
+
+interface StartupActivationRequest {
+  gameId: string;
+  requestSequence: number;
+  generation: number | null;
+}
+
+let startupActivationRequest: StartupActivationRequest | null = null;
+
+function settleStartupRecovery(
+  set: (state: Partial<GameSlice>) => void,
+  get: () => GameSlice,
+): void {
+  const request = startupActivationRequest;
+  if (!request || request.generation === null) return;
+  const isCurrent = () =>
+    request.requestSequence === activeGameRequestSequence &&
+    get().activeGameId === request.gameId &&
+    get().gameActivationByGame[request.gameId]?.generation === request.generation;
+  const phase = get().gameActivationByGame[request.gameId]?.phase;
+  if (!isCurrent() || phase === 'syncing') return;
+  startupActivationRequest = null;
+  set({ startupRecoveryGameId: null });
+  if (phase !== 'ready') return;
+  void refreshStartupReadModels(queryClient, request.gameId, isCurrent).catch((error: unknown) => {
+    if (!isCurrent()) return;
+    console.error('Failed to refresh startup read models', error);
+    toast.error(formatAppError(error));
+  });
+}
 
 function queueStartupReconcileResult(result: DiskReconcileResult): void {
   const results = startupReconcileGapResultsByGame.get(result.game_id) ?? [];
@@ -108,6 +139,8 @@ export interface GameSlice {
   activeGameId: string | null;
   /** The latest selection while its backend activation request is pending. */
   requestedGameId: string | null;
+  /** Origin of the startup selection; never grants disk mutation readiness. */
+  startupRecoveryGameId: string | null;
   autoCloseLauncher: boolean;
 
   // One entry per game so the three fields can never drift apart.
@@ -177,6 +210,7 @@ function ensureRuntimeStatusListeners(
 export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
   activeGameId: null,
   requestedGameId: null,
+  startupRecoveryGameId: null,
   autoCloseLauncher: false,
 
   diskReconcileByGame: {},
@@ -188,6 +222,11 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
 
   initStore: () => {
     if (storeInitialization) return storeInitialization;
+    if (
+      startupActivationRequest?.generation === null &&
+      startupActivationRequest.requestSequence === activeGameRequestSequence
+    )
+      return Promise.resolve();
     storeInitialization = (async () => {
       const [runtimeListener, activationListener] = await ensureRuntimeStatusListeners(get);
       if (runtimeListener.status === 'rejected') {
@@ -230,35 +269,16 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
           return;
         }
         const activeGameId = settings.active_game_id;
-        // `setActiveGameId` may already have activated this game during
-        // onboarding. Repeating the command restarts its recovery watcher and
-        // can make a freshly indexed library scan again.
-        const activation =
-          activeGameId && get().activeGameId !== activeGameId
-            ? await commands.setActiveGame(activeGameId)
-            : null;
-        if (initRequestSequence !== activeGameRequestSequence) {
-          startupInitialized = true;
-          return;
-        }
-        const currentSettings = activation?.settings ?? settings;
-        publishSettingsSnapshot(queryClient, currentSettings);
+        const needsActivation = activeGameId !== null && get().activeGameId !== activeGameId;
+        publishSettingsSnapshot(queryClient, settings);
         const activeReport = activeGameId ? (startupReportsByGame.get(activeGameId) ?? null) : null;
         const activeReportRevision = activeReport?.reconcile_revision ?? 0;
 
-        if (activation?.game_id) {
-          get().setGameActivationStatus({
-            game_id: activation.game_id,
-            generation: activation.generation,
-            phase: activation.phase,
-            reconcile_revision: null,
-            runtime_sync_generation: null,
-            error: null,
-          });
-        }
         set({
-          activeGameId,
-          autoCloseLauncher: currentSettings.auto_close_launcher ?? false,
+          ...(needsActivation
+            ? { requestedGameId: activeGameId, startupRecoveryGameId: activeGameId }
+            : { activeGameId }),
+          autoCloseLauncher: settings.auto_close_launcher ?? false,
           ...(activeGameId && activeReport
             ? {
                 diskReconcileByGame: {
@@ -295,6 +315,51 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
             : {}),
         });
         startupInitialized = true;
+        if (activeGameId && needsActivation) {
+          const request: StartupActivationRequest = {
+            gameId: activeGameId,
+            requestSequence: initRequestSequence,
+            generation: null,
+          };
+          startupActivationRequest = request;
+          const isCurrent = () =>
+            startupActivationRequest === request &&
+            request.requestSequence === activeGameRequestSequence;
+          const activation =
+            activationListener.status === 'rejected'
+              ? Promise.reject(activationListener.reason)
+              : commands.setActiveGame(activeGameId);
+          void activation
+            .then((receipt) => {
+              if (!isCurrent()) return;
+              request.generation = receipt.generation;
+              publishSettingsSnapshot(queryClient, receipt.settings);
+              set({ activeGameId, requestedGameId: null });
+              get().setGameActivationStatus({
+                game_id: receipt.game_id,
+                generation: receipt.generation,
+                phase: receipt.phase,
+                reconcile_revision: null,
+                runtime_sync_generation: null,
+                error: null,
+              });
+            })
+            .catch((error: unknown) => {
+              if (!isCurrent()) return;
+              startupActivationRequest = null;
+              const currentStatus = get().gameActivationByGame[activeGameId];
+              get().setGameActivationStatus({
+                game_id: activeGameId,
+                generation: currentStatus?.generation ?? 0,
+                phase: 'failed',
+                reconcile_revision: currentStatus?.reconcile_revision ?? null,
+                runtime_sync_generation: null,
+                error: formatAppError(error),
+              });
+              console.error('Failed to activate startup game', error);
+              toast.error(formatAppError(error));
+            });
+        }
         if (activeGameId) {
           void Promise.all([
             queryClient.prefetchQuery({
@@ -313,6 +378,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
         startupInitialized = true;
         console.error('Failed to init store from backend:', err);
         toast.error(formatAppError(err));
+        throw err;
       }
     })().finally(() => {
       storeInitialization = null;
@@ -331,7 +397,8 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
 
   setActiveGameId: async (id, options) => {
     const requestSequence = ++activeGameRequestSequence;
-    set({ requestedGameId: id });
+    startupActivationRequest = null;
+    set({ requestedGameId: id, startupRecoveryGameId: null });
     try {
       // An onboarding activation can reuse a just-completed scan and finish
       // almost immediately, so subscribe before requesting it.
@@ -558,7 +625,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
         },
       };
     }),
-  setGameActivationStatus: (status) =>
+  setGameActivationStatus: (status) => {
     set((state) => {
       if (!status.game_id) {
         return {};
@@ -593,5 +660,7 @@ export const createGameSlice: AppSliceCreator<GameSlice> = (set, get) => ({
           [status.game_id]: status,
         },
       };
-    }),
+    });
+    settleStartupRecovery(set, get);
+  },
 });

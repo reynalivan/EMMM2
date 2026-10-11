@@ -1,15 +1,10 @@
-import type { WorkspaceParentEnableRequirement, WorkspaceSwitchInput } from '@/entities/workspace';
-import type {
-  WorkspaceDuplicateTarget,
-  WorkspaceFileInUseDialogData,
-  WorkspaceDialogState,
-} from './workspaceState';
+import type { WorkspaceFileInUseDialogData, WorkspaceDialogState } from './workspaceState';
 import { dispatchWorkspaceRuntimeEvent } from './workspaceStoreBridge';
 
-export function openFolderConflictManagerDialog(): void {
+export function openFolderConflictManagerDialog(groupId?: string): void {
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_OPENED',
-    dialog: { kind: 'folderConflicts' },
+    dialog: { kind: 'folderConflicts', ...(groupId ? { groupId } : {}) },
   });
 }
 
@@ -31,17 +26,6 @@ export function openWorkspaceFileInUseDialog(data: WorkspaceFileInUseDialogData)
   dispatchWorkspaceRuntimeEvent({
     type: 'DIALOG_OPENED',
     dialog: { kind: 'fileInUse', data },
-  });
-}
-
-export function openWorkspaceEnableParentDialog(data: {
-  folder: WorkspaceDuplicateTarget;
-  requirement: WorkspaceParentEnableRequirement;
-  resumeInput: WorkspaceSwitchInput;
-}): void {
-  dispatchWorkspaceRuntimeEvent({
-    type: 'DIALOG_OPENED',
-    dialog: { kind: 'folderEnableParent', ...data },
   });
 }
 

@@ -152,6 +152,56 @@ fn no_db_match_does_not_invent_an_other_folder() {
 }
 
 #[test]
+fn destination_matching_does_not_score_empty_normalized_names() {
+    for (source, target) in [("12345", "Ayaka"), ("---", "Ayaka"), ("Ayaka", "12345")] {
+        let existing = vec![ExistingDestination::new(
+            "target",
+            target,
+            target,
+            None,
+            vec![],
+            StableCategory::Other,
+        )];
+        let suggestions = resolve_destination_candidates(DestinationContext {
+            source_name: source,
+            category: StableCategory::Other,
+            specific_target: None,
+            existing: &existing,
+            canonical: None,
+            mods_root: "C:/Mods",
+            enforce_category: false,
+        });
+        assert!(suggestions.is_empty(), "{source} must not match {target}");
+    }
+}
+
+#[test]
+fn destination_keeps_nested_folder_path_separate_from_display_name() {
+    let existing = vec![ExistingDestination::new(
+        "target",
+        "Ayaka",
+        "Characters/Ayaka",
+        None,
+        vec![],
+        StableCategory::Character,
+    )];
+    let suggestions = resolve_destination_candidates(DestinationContext {
+        source_name: "Ayaka skin",
+        category: StableCategory::Character,
+        specific_target: None,
+        existing: &existing,
+        canonical: None,
+        mods_root: "C:/Mods",
+        enforce_category: true,
+    });
+    assert_eq!(suggestions[0].folder_name, "Ayaka");
+    assert_eq!(
+        std::path::Path::new(&suggestions[0].target_path),
+        std::path::Path::new("C:/Mods").join("Characters/Ayaka")
+    );
+}
+
+#[test]
 fn create_folder_is_offered_only_for_canonical_identity() {
     let taxonomy = CanonicalIdentity {
         entry_key: "weapon".to_string(),

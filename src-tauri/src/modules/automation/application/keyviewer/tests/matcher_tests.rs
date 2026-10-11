@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::modules::automation::application::keyviewer::matcher::{
-    match_objects, KvObjectEntry, MatchConfig,
+    match_objects, KvObjectEntry, RuntimeSentinel, SentinelIdentity,
 };
 use crate::modules::matching::application::deep_matcher::models::types::{
     RuntimeResourceKind, RuntimeTarget, RuntimeTargetProvenance,
@@ -41,8 +41,14 @@ fn entry(name: &str, runtime_targets: Vec<RuntimeTarget>) -> KvObjectEntry {
     }
 }
 
-fn active(hashes: &[&str]) -> HashSet<String> {
-    hashes.iter().map(|hash| hash.to_string()).collect()
+fn active(entries: &[KvObjectEntry], hashes: &[&str]) -> HashSet<SentinelIdentity> {
+    entries
+        .iter()
+        .flat_map(|entry| &entry.runtime_targets)
+        .filter(|target| hashes.contains(&target.hash.as_str()))
+        .filter_map(RuntimeSentinel::from_catalog)
+        .map(|target| SentinelIdentity::from(&target))
+        .collect()
 }
 
 #[test]
@@ -58,9 +64,7 @@ fn arlecchino_prefers_position_over_ib_and_face_texture_regardless_of_order() {
 
     let results = match_objects(
         &entries,
-        &active(&["a44625da", "e811d2a1", "6895f405"]),
-        &HashMap::new(),
-        &MatchConfig,
+        &active(&entries, &["a44625da", "e811d2a1", "6895f405"]),
     );
 
     assert_eq!(results.len(), 1);
@@ -85,9 +89,7 @@ fn boss_keeps_all_position_targets_as_one_or_group() {
 
     let results = match_objects(
         &entries,
-        &active(&["55c132a8", "725e36bd", "e811d2a1"]),
-        &HashMap::new(),
-        &MatchConfig,
+        &active(&entries, &["55c132a8", "725e36bd", "e811d2a1"]),
     );
 
     assert_eq!(results.len(), 1);
@@ -111,12 +113,7 @@ fn face_only_mod_uses_texture_when_no_geometry_hash_is_present() {
         ],
     )];
 
-    let results = match_objects(
-        &entries,
-        &active(&["a44625da"]),
-        &HashMap::new(),
-        &MatchConfig,
-    );
+    let results = match_objects(&entries, &active(&entries, &["a44625da"]));
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].sentinels[0].hash, "a44625da");
@@ -137,12 +134,7 @@ fn index_buffer_without_draw_context_is_not_a_runtime_sentinel() {
         )],
     )];
 
-    let results = match_objects(
-        &entries,
-        &active(&["e811d2a1"]),
-        &HashMap::new(),
-        &MatchConfig,
-    );
+    let results = match_objects(&entries, &active(&entries, &["e811d2a1"]));
 
     assert!(results.is_empty());
 }
@@ -153,7 +145,7 @@ fn shared_geometry_hash_does_not_choose_an_arbitrary_character_panel() {
         entry(
             "Character A",
             vec![target(
-                "shared00",
+                "abcdef12",
                 RuntimeResourceKind::PositionVb,
                 Some("vb0"),
             )],
@@ -161,19 +153,14 @@ fn shared_geometry_hash_does_not_choose_an_arbitrary_character_panel() {
         entry(
             "Character B",
             vec![target(
-                "shared00",
+                "abcdef12",
                 RuntimeResourceKind::PositionVb,
                 Some("vb0"),
             )],
         ),
     ];
 
-    let results = match_objects(
-        &entries,
-        &active(&["shared00"]),
-        &HashMap::new(),
-        &MatchConfig,
-    );
+    let results = match_objects(&entries, &active(&entries, &["abcdef12"]));
 
     assert!(results.is_empty());
 }
@@ -189,12 +176,40 @@ fn shader_targets_are_never_selected_for_keyviewer() {
         )],
     )];
 
-    let results = match_objects(
-        &entries,
-        &active(&["12345678abcdef00"]),
-        &HashMap::new(),
-        &MatchConfig,
-    );
+    let results = match_objects(&entries, &active(&entries, &["12345678abcdef00"]));
 
     assert!(results.is_empty());
+}
+
+#[test]
+fn matching_requires_the_observed_resource_kind_and_slot() {
+    use crate::modules::automation::application::keyviewer::harvester::HarvestedTarget;
+
+    let entries = vec![entry(
+        "Character",
+        vec![target(
+            "abcdef12",
+            RuntimeResourceKind::Texture,
+            Some("ps-t0"),
+        )],
+    )];
+    for (kind, slot, expected_count) in [
+        (RuntimeResourceKind::Texture, "ps-t1", 0),
+        (RuntimeResourceKind::PositionVb, "vb0", 0),
+        (RuntimeResourceKind::Texture, "PS-T0", 1),
+    ] {
+        let observed = HarvestedTarget {
+            hash: "ABCDEF12".to_string(),
+            resource_kind: kind,
+            callback_slot: slot.to_string(),
+            match_first_index: None,
+            section_name: "TextureOverrideFixture".to_string(),
+            file_path: "fixture.ini".into(),
+        };
+        let results = match_objects(
+            &entries,
+            &HashSet::from([SentinelIdentity::from(&observed)]),
+        );
+        assert_eq!(results.len(), expected_count);
+    }
 }

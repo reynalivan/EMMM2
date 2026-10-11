@@ -4,6 +4,7 @@ import path from 'path';
 import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
+import { listVisiblePreviewImages } from '../support/previewImages.js';
 import { createObject, reconcile } from '../support/data.js';
 import type { IniDocument } from '../../../src/shared/api/tauri/bindings.gen.js';
 
@@ -86,7 +87,7 @@ describe('Fase 4 — Preview & Editors', () => {
   });
 
   it('TC-19-01: Image gallery lists a saved preview image', async () => {
-    const before = await invokeInApp<string[]>('list_mod_preview_images', {
+    const before = await listVisiblePreviewImages({
       gameId,
       folderPath: modDir,
     });
@@ -96,7 +97,7 @@ describe('Fase 4 — Preview & Editors', () => {
       objectName: 'PrevObj',
       imageData: Array.from(Buffer.from(PNG_BASE64, 'base64')),
     });
-    const after = await invokeInApp<string[]>('list_mod_preview_images', {
+    const after = await listVisiblePreviewImages({
       gameId,
       folderPath: modDir,
     });

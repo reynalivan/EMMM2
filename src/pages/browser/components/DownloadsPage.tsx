@@ -1,7 +1,7 @@
 import { DOWNLOAD_STATUS_BADGE } from '../downloadStatusBadge';
 import { getDownloadProgress, getQueuePosition } from '../downloadPresentation';
 import { useDownloads } from '../hooks/useDownloads';
-import { Download, Globe, Inbox, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { Download, Globe, Inbox, RefreshCw } from 'lucide-react';
 import type { DownloadStatus } from '../types';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '@/shared/lib/utils/formatters';
@@ -16,7 +16,7 @@ import { TopBarActionsPortal } from '@/widgets/top-bar';
 import { DownloadRow } from './DownloadManagerPanel';
 import VirtualList from '@/shared/ui/components/ui/VirtualList';
 import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
-import { DownloadItemActions } from './DownloadItemActions';
+import { DownloadTransferActions } from './DownloadTransferActions';
 
 const getDownloadItemKey = (item: BrowserDownloadItem) => item.id;
 
@@ -179,24 +179,14 @@ export default function DownloadsPage() {
                       </td>
                       <td className="w-1/4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {(item.status === 'requested' || item.status === 'in_progress') && (
-                            <button
-                              className="btn btn-sm btn-outline"
-                              onClick={() => cancelDownload(item.id)}
-                            >
-                              <X size={16} /> {t('common:action.cancel')}
-                            </button>
-                          )}
-                          {(item.status === 'failed' || item.status === 'canceled') && (
-                            <button
-                              className="btn btn-sm btn-primary btn-outline gap-1"
-                              onClick={() => retryDownload(item.id)}
-                            >
-                              <RotateCcw size={16} /> {t('downloads.retry')}
-                            </button>
-                          )}
-                          <DownloadItemActions
+                          <DownloadTransferActions
                             item={item}
+                            onCancel={() => cancelDownload(item.id)}
+                            onPause={() => pauseDownload(item.id)}
+                            onResume={() => resumeDownload(item.id)}
+                            onRefreshLink={() => refreshDownloadLink(item.id)}
+                            onOpenSource={() => openDownloadSource(item.id)}
+                            onRetry={() => retryDownload(item.id)}
                             onRemoveFromList={() =>
                               deleteDownload({ id: item.id, deleteFile: false })
                             }

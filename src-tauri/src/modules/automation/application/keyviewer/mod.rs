@@ -8,6 +8,7 @@
 pub mod generator;
 pub mod harvester;
 pub mod matcher;
+pub(crate) mod models;
 
 #[cfg(test)]
 mod tests;

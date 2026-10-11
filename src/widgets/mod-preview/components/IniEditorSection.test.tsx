@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '../../../tests/testing/test-utils';
+import { act, fireEvent, render, screen, waitFor } from '../../../tests/testing/test-utils';
 import IniEditorSection from './IniEditorSection';
 import type { KeyBindSectionGroup } from '../utils/previewPanelUtils';
 
@@ -127,7 +127,7 @@ describe('IniEditorSection', () => {
     const props = { ...defaultProps, editorDirty: false };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       expect(screen.getByText('Close')).toBeInTheDocument();
@@ -140,7 +140,7 @@ describe('IniEditorSection', () => {
     const props = { ...defaultProps, editorDirty: false };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const closeButton = screen.getByText('Close');
@@ -154,7 +154,7 @@ describe('IniEditorSection', () => {
     const props = { ...defaultProps, editorDirty: true };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const revertButton = screen.getByText('Revert');
@@ -167,7 +167,7 @@ describe('IniEditorSection', () => {
     const props = { ...defaultProps, editorDirty: true, isSaving: true };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const revertButton = screen.getByText('Revert');
@@ -180,7 +180,7 @@ describe('IniEditorSection', () => {
     const props = { ...defaultProps, editorDirty: true };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const saveBtn = screen.getByText('Save');
@@ -195,7 +195,7 @@ describe('IniEditorSection', () => {
     const props = { ...defaultProps, editorDirty: true, onSave: onSaveMock };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const saveBtn = screen.getByText('Save');
@@ -208,13 +208,34 @@ describe('IniEditorSection', () => {
     });
   });
 
+  it('keeps the editor and draft visible when saving fails', async () => {
+    const props = {
+      ...defaultProps,
+      editorDirty: true,
+      draftByField: { ...defaultProps.draftByField, field1: 'B' },
+      onSave: vi.fn().mockResolvedValue(false),
+    };
+    render(<IniEditorSection {...props} />);
+
+    act(() => screen.getByText('Edit').click());
+    await act(async () => {
+      screen.getByText('Save').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('textbox')[0]).toHaveValue('B');
+      expect(screen.getByText('Save')).toBeInTheDocument();
+      expect(screen.queryByText('Edit')).not.toBeInTheDocument();
+    });
+  });
+
   // Covers: TC-6.3-02 (INI field edit/save)
   it('should call onDiscard when Revert button is clicked', async () => {
     const onDiscardMock = vi.fn();
     const props = { ...defaultProps, editorDirty: true, onDiscard: onDiscardMock };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const revert = screen.getByText('Revert');
@@ -234,7 +255,7 @@ describe('IniEditorSection', () => {
     render(<IniEditorSection {...props} />);
 
     // Enter edit mode to make inputs visible
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const inputs = screen.getAllByRole('textbox');
@@ -306,7 +327,7 @@ describe('IniEditorSection', () => {
     const props = { ...defaultProps, editorDirty: false };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const closeButton = screen.getByText('Close');
@@ -325,7 +346,7 @@ describe('IniEditorSection', () => {
     };
     render(<IniEditorSection {...props} />);
 
-    screen.getByText('Edit').click();
+    fireEvent.click(screen.getByText('Edit'));
 
     await waitFor(() => {
       const revertButton = screen.getByText('Revert');

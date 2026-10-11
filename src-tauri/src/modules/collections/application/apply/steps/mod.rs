@@ -13,6 +13,7 @@ mod rollback;
 mod targets;
 fn object_toggle_error(error: AppError) -> CollectionError {
     match error {
+        AppError::FileLock { path, recovery_id } => CollectionError::FileLock { path, recovery_id },
         AppError::FileInUse { path, processes } => CollectionError::FileInUse { path, processes },
         AppError::PathBusy { path } => CollectionError::PathBusy { path },
         other => CollectionError::Io(other.to_string()),

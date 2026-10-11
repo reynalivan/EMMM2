@@ -144,17 +144,13 @@ fn keybind_text_enforces_the_overlay_size_and_line_limits_for_untrusted_text() {
 #[test]
 fn write_keybind_files_creates_one_file_per_character() {
     let dir = TempDir::new().unwrap();
-    let matches = vec![make_match_result("Albedo", &["aabb1111", "aabb2222"])];
-    let mut keybinds = HashMap::new();
-    keybinds.insert(
-        "Albedo".to_string(),
-        vec![SourceKeyBinding {
-            mod_name: "Albedo".to_string(),
-            keybinds: vec![make_keybinding("KeyToggle", Some("1"), None)],
-        }],
-    );
+    let mut panel = make_panel("Albedo", &["aabb1111", "aabb2222"]);
+    panel.sources = vec![SourceKeyBinding {
+        mod_name: "Albedo".to_string(),
+        keybinds: vec![make_keybinding("KeyToggle", Some("1"), None)],
+    }];
 
-    let written = write_keybind_files(dir.path(), &matches, &keybinds, "F7").unwrap();
+    let written = write_keybind_files(dir.path(), &[panel], "F7").unwrap();
 
     assert_eq!(written.len(), 1);
     assert!(dir.path().join("character_000.txt").exists());
@@ -168,6 +164,29 @@ fn write_keybind_files_creates_one_file_per_character() {
 #[test]
 fn write_keybind_files_with_no_matches_writes_nothing() {
     let dir = TempDir::new().unwrap();
-    let written = write_keybind_files(dir.path(), &[], &HashMap::new(), "F7").unwrap();
+    let written = write_keybind_files(dir.path(), &[], "F7").unwrap();
     assert!(written.is_empty());
+}
+
+#[test]
+fn write_keybind_files_keeps_same_named_panels_with_their_own_sources() {
+    let directory = TempDir::new().unwrap();
+    let panels = ["F1", "F2"]
+        .into_iter()
+        .map(|key| {
+            let mut panel = make_panel("Character", &["abcdef12"]);
+            panel.sources = vec![SourceKeyBinding {
+                mod_name: "Same name".to_string(),
+                keybinds: vec![make_keybinding("KeyFixture", Some(key), None)],
+            }];
+            panel
+        })
+        .collect::<Vec<_>>();
+    let files = write_keybind_files(directory.path(), &panels, "F7").unwrap();
+    assert!(std::fs::read_to_string(&files[0])
+        .unwrap()
+        .contains("Key: F1"));
+    assert!(std::fs::read_to_string(&files[1])
+        .unwrap()
+        .contains("Key: F2"));
 }

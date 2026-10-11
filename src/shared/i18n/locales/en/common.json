@@ -41,6 +41,7 @@
     "dismiss": "Dismiss"
   },
   "errors": {
+    "import_location_changed": "The import destination changed. Select the folder again before importing.",
     "explorer_snapshot_expired": "The folder listing changed. Reload it and select the mods again.",
     "no_active_game": "No active game selected",
     "scan_failed": "Scan failed",
@@ -85,7 +86,24 @@
     "description": "Close any app or window still using \"{{folderName}}\", then try again.",
     "windows_explorer": "Windows Explorer",
     "hint": "File locks usually come from Explorer windows, text editors, or tools watching the folder.",
-    "folder_fallback": "this folder"
+    "folder_fallback": "this folder",
+    "still_locked": "The folder is still in use. Unlock it and retry, or cancel this operation.",
+    "unknown_holder": "Windows could not identify the lock holder. Check the game, Explorer, antivirus, or indexing tools.",
+    "refresh_processes": "Refresh processes",
+    "close_app": "Close application",
+    "force_terminate": "Force terminate",
+    "confirm_terminate": "Terminate this application",
+    "keep_app": "Keep application open",
+    "terminate_confirmation": "Force terminate {{name}} (PID {{pid}})? Unsaved work may be lost. Only this process will be targeted.",
+    "process_pid": "PID {{pid}}",
+    "working": "Working… Please wait.",
+    "process_action_done": "Process action completed. Retry the operation when the folder is unlocked.",
+    "retry_blocked": "The failure changed. Cancel and refresh the folder before starting a new operation.",
+    "context_changed": "The active game changed. Cancel and start the operation again in the correct workspace.",
+    "scan_partial": "Only part of the folder could be checked. Other processes may still hold a lock.",
+    "scan_unknown": "No process was identified; the folder may still be locked.",
+    "scan_unavailable": "Process detection is unavailable. Close the application using this folder and retry.",
+    "scan_failed": "Process detection failed. Refresh the process list or unlock the folder manually."
   },
   "workspace": {
     "reason": {

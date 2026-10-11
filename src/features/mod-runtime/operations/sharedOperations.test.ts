@@ -54,13 +54,16 @@ describe('shared mod runtime operations', () => {
       status: 'disabled',
     });
 
-    expect(moveModsToObject).toHaveBeenCalledWith({
-      game_id: 'game-1',
-      folder_paths: ['Mods/Diluc/mod-a'],
-      target_object_id: 'object-2',
-      target_subpath: null,
-      status: 'disabled',
-    });
+    expect(moveModsToObject).toHaveBeenCalledWith(
+      {
+        game_id: 'game-1',
+        folder_paths: ['Mods/Diluc/mod-a'],
+        target_object_id: 'object-2',
+        target_subpath: null,
+        status: 'disabled',
+      },
+      null,
+    );
     expect(applyRuntimeEffects).toHaveBeenCalledTimes(1);
     expect(applyRuntimeMutationResult).toHaveBeenCalledWith({} as never, 'workspaceStructure');
   });

@@ -2,7 +2,7 @@ use super::{build_groups, ScoredPair};
 use crate::modules::duplicates::application::dedup::snapshot::{FileEntry, ModSnapshot};
 use crate::modules::duplicates::domain::dup_scan::DupScanSignal;
 use crate::modules::workspace::application::scanner::core::walker::ModCandidate;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
 fn snapshot(name: &str) -> ModSnapshot {
@@ -52,7 +52,7 @@ fn inexact_similarity_edges_do_not_form_transitive_groups() {
     let snapshots = [snapshot("A"), snapshot("B"), snapshot("C")];
     let pairs = [inexact_pair(0, 1), inexact_pair(1, 2)];
 
-    let groups = build_groups(&snapshots, &pairs, &HashMap::new());
+    let groups = build_groups(&snapshots, &pairs, &HashMap::new(), &HashSet::new());
 
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| group.members.len() == 2));
@@ -64,4 +64,34 @@ fn inexact_similarity_edges_do_not_form_transitive_groups() {
             .collect();
         paths == ["A", "B"] || paths == ["B", "C"]
     }));
+}
+
+#[test]
+fn enabled_and_disabled_locations_keep_distinct_member_metadata() {
+    let snapshots = [snapshot("A"), snapshot("DISABLED A"), snapshot("C")];
+    let pairs = [inexact_pair(0, 2), inexact_pair(1, 2)];
+    let path_to_mod_id = HashMap::from([
+        (
+            crate::shared::path_key::exact_location_key_for_path(&snapshots[0].candidate.path),
+            ("enabled-a".to_string(), true),
+        ),
+        (
+            crate::shared::path_key::exact_location_key_for_path(&snapshots[1].candidate.path),
+            ("disabled-a".to_string(), false),
+        ),
+        (
+            crate::shared::path_key::exact_location_key_for_path(&snapshots[2].candidate.path),
+            ("mod-c".to_string(), true),
+        ),
+    ]);
+
+    let groups = build_groups(&snapshots, &pairs, &path_to_mod_id, &HashSet::new());
+
+    assert_eq!(groups.len(), 2);
+    assert!(!groups[0].is_unsafe);
+    assert_eq!(groups[0].members[0].mod_id.as_deref(), Some("enabled-a"));
+    assert!(groups[0].members[0].is_safe);
+    assert!(groups[1].is_unsafe);
+    assert_eq!(groups[1].members[0].mod_id.as_deref(), Some("disabled-a"));
+    assert!(!groups[1].members[0].is_safe);
 }

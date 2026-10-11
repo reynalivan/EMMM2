@@ -41,6 +41,16 @@ describe('useBrowserStore', () => {
     });
   });
 
+  it('rejects a tab opened under an earlier game session', () => {
+    const store = useBrowserStore.getState();
+    store.setGameContext('game-1');
+    const owner = { gameId: 'game-1', generation: useBrowserStore.getState().generation };
+    store.setGameContext('game-2');
+    store.setGameContext('game-1');
+    store.addTab({ id: 'late-tab', url: 'https://example.test', title: 'Old session' }, owner);
+    expect(useBrowserStore.getState().tabs).toEqual([]);
+  });
+
   it('replaces a local New Tab with its native webview tab', () => {
     const store = useBrowserStore.getState();
     const newTab = createNewBrowserTab();

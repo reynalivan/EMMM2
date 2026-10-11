@@ -108,7 +108,9 @@ pub fn validate_http_url(url: &str) -> Result<(), BrowserError> {
 /// Auto-prepend https:// if user typed a URL without a scheme.
 pub fn normalize_url(raw: &str) -> String {
     let trimmed = raw.trim();
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+    if trimmed.split_once("://").is_some_and(|(scheme, _)| {
+        scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+    }) {
         trimmed.to_string()
     } else {
         format!("https://{trimmed}")
@@ -147,8 +149,23 @@ mod tests {
         assert_eq!(normalize_url("  example.com "), "https://example.com");
         assert_eq!(normalize_url("http://a.test"), "http://a.test");
         assert_eq!(normalize_url(" https://a.test "), "https://a.test");
-        // Only lowercase http(s) counts as "already schemed" here.
-        assert_eq!(normalize_url("HTTP://a.test"), "https://HTTP://a.test");
+        assert_eq!(
+            normalize_url("http-example.com"),
+            "https://http-example.com"
+        );
+    }
+
+    #[test]
+    fn normalize_url_preserves_case_insensitive_http_schemes_and_address_spelling() {
+        for scheme in ["HTTP://", "HTTPS://", "hTtP://", "HtTpS://"] {
+            let url = format!("{scheme}Example.com/CaseSensitivePath?Key=Value#Section");
+            let normalized = normalize_url(&format!(" {url} "));
+            assert_eq!(normalized, url);
+            assert_eq!(
+                normalized.parse::<tauri::Url>().unwrap().host_str(),
+                Some("example.com")
+            );
+        }
     }
 
     #[tokio::test]

@@ -98,10 +98,13 @@ fn normalize_hash(raw: &str) -> Option<String> {
     if let Some(stripped) = hash.strip_prefix("0x") {
         hash = stripped.to_string();
     }
+    if !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
     if hash.len() == 16 {
         hash = hash[8..].to_string();
     }
-    if hash.len() != 8 || !hash.chars().all(|ch| ch.is_ascii_hexdigit()) {
+    if hash.len() != 8 {
         return None;
     }
     Some(hash)

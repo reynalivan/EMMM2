@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { useSettings } from './useSettings';
+import { useCustomThemes } from './useCustomThemes';
 import { normalizeThemeSetting, resolveTheme } from '@/shared/lib/themeOptions';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
@@ -19,9 +20,10 @@ function subscribeToColorScheme(onChange: () => void) {
  */
 export function useResolvedTheme(): string {
   const { settings } = useSettings();
+  const { customThemeIds } = useCustomThemes(settings?.theme === 'dark');
   const prefersDark = useSyncExternalStore(
     subscribeToColorScheme,
     () => window.matchMedia(DARK_QUERY).matches,
   );
-  return resolveTheme(normalizeThemeSetting(settings?.theme), prefersDark);
+  return resolveTheme(normalizeThemeSetting(settings?.theme, customThemeIds), prefersDark);
 }

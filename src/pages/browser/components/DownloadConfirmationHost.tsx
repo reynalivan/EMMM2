@@ -101,6 +101,7 @@ export function DownloadConfirmationHost() {
     const unlistenFailure = listen<DownloadInformationFailure>(
       'browser:download-information-failed',
       (event) => {
+        setRequests((current) => current.filter((request) => request.id !== event.payload.id));
         setLoadingRequests((current) =>
           current.filter((request) => request.id !== event.payload.id),
         );

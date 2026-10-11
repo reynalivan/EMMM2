@@ -89,7 +89,13 @@ export function useWebviewSync(
                   await webview.setPosition(new LogicalPosition(rect.left, rect.top));
                   if (!isMounted) return;
                   await webview.show();
-                  if (isMounted && presentation.focus === 'browser') {
+                  if (
+                    isMounted &&
+                    presentation.focus === 'browser' &&
+                    document.hasFocus() &&
+                    (document.activeElement === document.body ||
+                      document.activeElement === document.documentElement)
+                  ) {
                     await webview.setFocus();
                   }
                 } catch (innerErr) {

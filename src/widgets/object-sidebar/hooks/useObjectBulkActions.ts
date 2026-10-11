@@ -9,6 +9,7 @@ import { formatAppError } from '../../../shared/lib/appError';
 import { useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
+import type { BulkResult } from '../../../shared/api/tauri/bindings.gen';
 import { toast } from '@/shared/ui/toast';
 import { useActiveGame } from '@/entities/game';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +29,12 @@ import {
 import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { runBulkClassifyAndMatch } from '../utils/runBulkClassifyAndMatch';
 import { parseTagList, resolveObjectNames } from '../utils/bulkSummary';
-import { truncateNameList } from '../../../shared/lib/hooks/bulkToastMessages';
+import {
+  formatBulkFailureMessage,
+  truncateNameList,
+  type BulkFailureActionKey,
+} from '../../../shared/lib/hooks/bulkToastMessages';
+import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 import { useAppStore } from '@/app/store';
 
 interface BulkDeps {
@@ -342,21 +348,41 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
   const runBulkFolderCommand = useCallback(
     async (
       ids: Set<string>,
-      run: (gameId: string, paths: string[]) => Promise<unknown>,
+      run: (gameId: string, paths: string[]) => Promise<BulkResult>,
       successKey: string,
+      failureAction: BulkFailureActionKey,
       mutationClass: RuntimeMutationClass = 'objectRows',
     ) => {
       if (!activeGame) return;
+      const gameId = activeGame.id;
       const paths = objects.filter((o) => ids.has(o.id)).map((o) => o.folder_path);
+      if (paths.length === 0) return;
       try {
-        await run(activeGame.id, paths);
-        await publishRuntimeDescriptor(
-          queryClient,
-          buildRuntimeMutationDescriptor(mutationClass),
-          'active',
-        );
-        toast.success(t(successKey, { count: ids.size }));
+        const result = await run(gameId, paths);
+        if (useAppStore.getState().activeGameId !== gameId) return;
+        let refreshFailed = false;
+        try {
+          await publishRuntimeDescriptor(
+            queryClient,
+            buildRuntimeMutationDescriptor(mutationClass),
+            'active',
+          );
+        } catch {
+          refreshFailed = true;
+        }
+        if (useAppStore.getState().activeGameId !== gameId) return;
+        if (result.success.length > 0) {
+          toast.success(t(successKey, { count: result.success.length }));
+        }
+        if (result.failures.length > 0) {
+          toast.error(formatBulkFailureMessage(result.failures, failureAction));
+        }
+        notifyCommittedMutationSyncWarning(result);
+        if (refreshFailed && !result.sync_warning) {
+          toast.warning(t('common:reconcile.runtime_effects_pending'));
+        }
       } catch (e) {
+        if (useAppStore.getState().activeGameId !== gameId) return;
         toast.error(t('objects:edit_modal.error_message', { error: formatAppError(e) }));
       }
     },
@@ -369,6 +395,7 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
         ids,
         (gameId, paths) => commands.bulkToggleFavorite(gameId, paths, favorite),
         favorite ? 'objects:toasts.favorite_added_other' : 'objects:toasts.favorite_removed_other',
+        'favorite',
       ),
     [runBulkFolderCommand],
   );
@@ -379,6 +406,7 @@ export function useObjectBulkActions({ objects }: BulkDeps) {
         ids,
         (gameId, paths) => commands.bulkSetModSafety(gameId, paths, safe),
         safe ? 'objects:toasts.mark_safe' : 'objects:toasts.mark_unsafe',
+        'safety',
         'safetyClassification',
       ),
     [runBulkFolderCommand],

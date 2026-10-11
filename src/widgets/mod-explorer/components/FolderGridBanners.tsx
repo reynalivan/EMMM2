@@ -93,7 +93,10 @@ export default function FolderGridBanners({
           <span className="flex-1 text-xs text-warning">
             {t('folder_grid:conflict_manager.banner', { count: diskConflicts.length })}
           </span>
-          <button className="btn btn-xs btn-warning" onClick={openFolderConflictManagerDialog}>
+          <button
+            className="btn btn-xs btn-warning"
+            onClick={() => openFolderConflictManagerDialog()}
+          >
             {t('folder_grid:conflict_manager.resolve')}
           </button>
         </div>

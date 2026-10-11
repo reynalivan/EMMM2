@@ -62,7 +62,11 @@ interface GameFormModalProps {
   isSourceMigrationPending?: boolean;
 }
 
-export default function GameFormModal({
+export default function GameFormModal(props: GameFormModalProps) {
+  return <GameFormSession key={`${props.isOpen}:${props.initialData?.id ?? 'new'}`} {...props} />;
+}
+
+function GameFormSession({
   isOpen,
   onClose,
   onSave,
@@ -95,9 +99,18 @@ export default function GameFormModal({
 
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const sessionActive = useRef(isOpen);
+  const isBusy = isSubmitting || isSourceMigrationPending;
   const launchMode = useWatch({ control, name: 'launch_mode' });
 
   useDialogSync(dialogRef, isOpen);
+
+  useEffect(() => {
+    sessionActive.current = isOpen;
+    return () => {
+      sessionActive.current = false;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -151,9 +164,10 @@ export default function GameFormModal({
     };
     setSubmitError(null);
     try {
-      if (await onSave(gameConfig)) onClose();
+      const saved = await onSave(gameConfig);
+      if (saved && sessionActive.current) onClose();
     } catch (error) {
-      setSubmitError(formatAppError(error));
+      if (sessionActive.current) setSubmitError(formatAppError(error));
     }
   };
 
@@ -168,7 +182,7 @@ export default function GameFormModal({
             : 'games.form.validation.pick_ready_to_move_title',
         ),
       });
-      if (selected && typeof selected === 'string') {
+      if (sessionActive.current && selected && typeof selected === 'string') {
         setValue(field, selected, { shouldValidate: true });
       }
     } catch (err) {
@@ -190,7 +204,7 @@ export default function GameFormModal({
         ),
         filters: [{ name: 'Executables', extensions: ['exe'] }],
       });
-      if (selected && typeof selected === 'string') {
+      if (sessionActive.current && selected && typeof selected === 'string') {
         setValue(field, selected, { shouldValidate: true });
       }
     } catch (err) {
@@ -199,23 +213,28 @@ export default function GameFormModal({
   };
 
   return (
-    <dialog ref={dialogRef} className="modal bg-overlay-mask backdrop-blur-sm" onClose={onClose}>
+    <dialog
+      ref={dialogRef}
+      className="modal bg-overlay-mask backdrop-blur-sm"
+      onCancel={(event) => {
+        if (isBusy) event.preventDefault();
+      }}
+      onClose={() => {
+        if (sessionActive.current && !isBusy) onClose();
+      }}
+    >
       <div className="bg-base-100 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-base-300">
         <div className="flex items-center justify-between p-4 border-b border-base-300 bg-base-200/50">
           <h3 className="font-bold text-lg">
             {initialData ? t('games.form.title_edit') : t('games.form.title_add')}
           </h3>
-          <button
-            onClick={onClose}
-            className="btn btn-ghost btn-sm btn-square"
-            disabled={isSubmitting}
-          >
+          <button onClick={onClose} className="btn btn-ghost btn-sm btn-square" disabled={isBusy}>
             <X size={20} />
           </button>
         </div>
 
         <form
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={(event) => void handleSubmit(onSubmit)(event)}
           className={`p-6 space-y-4 ${isSourceMigrationPending ? 'pointer-events-none opacity-70' : ''}`}
         >
           {/* Name & Type */}
@@ -420,14 +439,14 @@ export default function GameFormModal({
           )}
 
           <div className="modal-action">
-            <button type="button" className="btn" onClick={onClose} disabled={isSubmitting}>
+            <button type="button" className="btn" onClick={onClose} disabled={isBusy}>
               {t('page.back')}
             </button>
             <button
               type="submit"
               className="btn btn-primary"
               data-testid="game-form-submit"
-              disabled={isSubmitting || !isValid}
+              disabled={isBusy || !isValid}
             >
               {initialData ? t('games.form.save') : t('games.form.add_btn')}
             </button>

@@ -7,24 +7,29 @@ import { useToastStore } from '@/shared/ui/toast';
 import { commands } from '../../../../shared/api/tauri/bindings';
 import { SettingsRow, SettingsSection } from '../SettingsLayout';
 
+type ApiKeyDraft = { value: string; revision: number; show: boolean };
+
 export default function AITab() {
   const { t } = useTranslation(['settings', 'common']);
   const { settings, updateAiConfig, setAiApiKey, deleteAiApiKey, isLoading } = useSettings();
   const { addToast } = useToastStore();
-  const [showKey, setShowKey] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
 
-  // Local state for debouncing/cancel
-  const [apiKey, setApiKey] = useState('');
-  const [apiKeyDirty, setApiKeyDirty] = useState(false);
-  const [baseUrl, setBaseUrl] = useState(settings?.ai.base_url || '');
+  const [apiKeyDraft, setApiKeyDraft] = useState<ApiKeyDraft>({
+    value: '',
+    revision: 0,
+    show: false,
+  });
+  const [baseUrlDraft, setBaseUrlDraft] = useState<{ value: string } | null>(null);
+  const baseUrl = baseUrlDraft?.value ?? settings?.ai.base_url ?? '';
 
-  // Synchronize local state when settings loads initially
-  React.useEffect(() => {
-    if (settings) {
-      setBaseUrl(settings.ai.base_url || '');
-    }
-  }, [settings]);
+  const clearSubmittedKeyDraft = (revision: number) => {
+    setApiKeyDraft((current) =>
+      current.revision === revision
+        ? { value: '', revision: current.revision + 1, show: false }
+        : current,
+    );
+  };
 
   if (isLoading || !settings) {
     return <div className="p-4">{t('settings:ai.status.loading')}</div>;
@@ -49,13 +54,14 @@ export default function AITab() {
   };
 
   const handleSave = async () => {
+    const submittedEndpointDraft = baseUrlDraft;
+    const submittedKeyDraft = apiKeyDraft;
     try {
       await updateAiConfig.mutateAsync({ base_url: baseUrl });
-      if (apiKeyDirty && apiKey.trim()) {
-        await setAiApiKey(apiKey.trim());
-        setApiKey('');
-        setApiKeyDirty(false);
-        setShowKey(false);
+      setBaseUrlDraft((current) => (current === submittedEndpointDraft ? null : current));
+      if (submittedKeyDraft.value.trim()) {
+        await setAiApiKey(submittedKeyDraft.value.trim());
+        clearSubmittedKeyDraft(submittedKeyDraft.revision);
       }
       addToast('success', t('settings:ai.status.saved'));
     } catch (err) {
@@ -69,11 +75,10 @@ export default function AITab() {
   };
 
   const handleRemoveKey = async () => {
+    const submittedKeyRevision = apiKeyDraft.revision;
     try {
       await deleteAiApiKey();
-      setApiKey('');
-      setApiKeyDirty(false);
-      setShowKey(false);
+      clearSubmittedKeyDraft(submittedKeyRevision);
       addToast('success', t('settings:ai.status.key_removed'));
     } catch (err) {
       addToast(
@@ -135,7 +140,7 @@ export default function AITab() {
               }
               className="input input-bordered input-sm w-full sm:w-96"
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={(e) => setBaseUrlDraft({ value: e.target.value })}
             />
           }
         />
@@ -149,7 +154,7 @@ export default function AITab() {
           control={
             <div className="join w-full sm:w-96">
               <input
-                type={showKey ? 'text' : 'password'}
+                type={apiKeyDraft.show ? 'text' : 'password'}
                 aria-label={t('settings:ai.api_key')}
                 placeholder={
                   settings.ai.has_api_key
@@ -157,18 +162,22 @@ export default function AITab() {
                     : t('settings:ai.status.placeholder_key') || 'sk-...'
                 }
                 className="input input-bordered input-sm join-item min-w-0 flex-1"
-                value={apiKey}
+                value={apiKeyDraft.value}
                 onChange={(e) => {
-                  setApiKey(e.target.value);
-                  setApiKeyDirty(true);
+                  const value = e.target.value;
+                  setApiKeyDraft((current) => ({
+                    ...current,
+                    value,
+                    revision: current.revision + 1,
+                  }));
                 }}
               />
               <button
                 className="btn btn-square btn-sm join-item"
-                onClick={() => setShowKey(!showKey)}
-                title={showKey ? t('settings:ai.hide_key') : t('settings:ai.show_key')}
+                onClick={() => setApiKeyDraft((current) => ({ ...current, show: !current.show }))}
+                title={apiKeyDraft.show ? t('settings:ai.hide_key') : t('settings:ai.show_key')}
               >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {apiKeyDraft.show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           }

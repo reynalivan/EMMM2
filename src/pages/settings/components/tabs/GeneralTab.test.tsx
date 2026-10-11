@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import GeneralTab from './GeneralTab';
@@ -7,6 +7,9 @@ import type { ThemeMetadata } from '../../../../shared/api/tauri/bindings';
 let mockAutoClose = false;
 let mockTheme = 'dark';
 let mockCustomThemes: ThemeMetadata[] = [];
+let mockCustomThemesError: Error | null = null;
+let mockCustomThemesRefreshing = false;
+const mockRefreshCustomThemes = vi.fn();
 const mockSetAutoClose = vi.fn();
 const mockUpdateThemeMutate = vi.fn();
 const mockUpdateLanguageMutate = vi.fn();
@@ -20,12 +23,6 @@ vi.mock('@tauri-apps/api/core', () => ({
     version: null,
     message: null,
     entries: 0,
-  }),
-}));
-
-vi.mock('../../hooks/useCustomThemes', () => ({
-  useCustomThemes: () => ({
-    customThemes: mockCustomThemes,
   }),
 }));
 
@@ -44,6 +41,16 @@ vi.mock('../../hooks/useAppUpdater', () => ({
 }));
 
 vi.mock('@/entities/settings', () => ({
+  useCustomThemes: () => ({
+    customThemes: mockCustomThemes,
+    customThemeIds:
+      mockCustomThemesError || mockCustomThemesRefreshing
+        ? undefined
+        : mockCustomThemes.map((theme) => theme.id),
+    error: mockCustomThemesError,
+    refreshing: mockCustomThemesRefreshing,
+    refreshCustomThemes: mockRefreshCustomThemes,
+  }),
   useSettings: () => ({
     settings: {
       theme: mockTheme,
@@ -89,16 +96,26 @@ vi.mock('@/app/store', () => ({
     selector({ autoCloseLauncher: mockAutoClose, setAutoCloseLauncher: mockSetAutoClose }),
 }));
 
+async function renderGeneralTab() {
+  let view!: ReturnType<typeof render>;
+  await act(async () => {
+    view = render(<GeneralTab />);
+  });
+  return view;
+}
+
 describe('GeneralTab (TC-04)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAutoClose = false;
     mockTheme = 'dark';
     mockCustomThemes = [];
+    mockCustomThemesError = null;
+    mockCustomThemesRefreshing = false;
   });
 
-  it('keeps General settings focused on user-facing preferences', () => {
-    render(<GeneralTab />);
+  it('keeps General settings focused on user-facing preferences', async () => {
+    await renderGeneralTab();
     expect(screen.getByText('Appearance')).toBeInTheDocument();
     expect(screen.getByText('System')).toBeInTheDocument();
     expect(screen.queryByText('Tauri Version')).not.toBeInTheDocument();
@@ -107,8 +124,8 @@ describe('GeneralTab (TC-04)', () => {
     expect(screen.queryByText('Theme Information')).not.toBeInTheDocument();
   });
 
-  it('toggles Auto-Close launcher setting', () => {
-    render(<GeneralTab />);
+  it('toggles Auto-Close launcher setting', async () => {
+    await renderGeneralTab();
 
     // It starts with our mocked false value
     const toggle = screen.getByRole('checkbox', { name: /Close after launch/i });
@@ -120,16 +137,16 @@ describe('GeneralTab (TC-04)', () => {
     expect(mockSetAutoClose).toHaveBeenCalledWith(true);
   });
 
-  it('reflects initial store state on toggle', () => {
+  it('reflects initial store state on toggle', async () => {
     mockAutoClose = true;
-    render(<GeneralTab />);
+    await renderGeneralTab();
 
     const toggle = screen.getByRole('checkbox', { name: /Close after launch/i });
     expect(toggle).toBeChecked();
   });
 
-  it('updates only theme when user selects a new option', () => {
-    render(<GeneralTab />);
+  it('updates only theme when user selects a new option', async () => {
+    await renderGeneralTab();
 
     const select = screen.getByRole('combobox', { name: 'Theme' });
     fireEvent.change(select, { target: { value: 'light' } });
@@ -137,28 +154,84 @@ describe('GeneralTab (TC-04)', () => {
     expect(mockUpdateThemeMutate).toHaveBeenCalledWith('light');
   });
 
-  it('lists custom themes in the same theme selector', () => {
+  it('lists custom themes in the same theme selector', async () => {
     mockCustomThemes = [{ id: 'ocean-night', label: 'Ocean Night' }];
-    render(<GeneralTab />);
+    await renderGeneralTab();
 
     expect(screen.getByRole('option', { name: 'Ocean Night' })).toBeInTheDocument();
   });
 
-  it('opens the privacy policy and terms of use from System', () => {
-    render(<GeneralTab />);
+  it.each(['pending', 'failed'] as const)(
+    'shows the actual stored selection while custom theme discovery is %s',
+    async (state) => {
+      mockTheme = 'dark';
+      mockCustomThemesRefreshing = state === 'pending';
+      mockCustomThemesError =
+        state === 'failed' ? new Error('Theme directory is unavailable') : null;
+      await renderGeneralTab();
 
-    fireEvent.click(screen.getByRole('button', { name: /Privacy Policy/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('dark'),
+      );
+      expect(mockUpdateThemeMutate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('selects onyx for legacy dark when no custom dark theme exists', async () => {
+    await renderGeneralTab();
+
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('onyx');
+  });
+
+  it('preserves the selection of a custom theme named dark', async () => {
+    mockCustomThemes = [{ id: 'dark', label: 'Custom Dark' }];
+    await renderGeneralTab();
+
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveValue('dark');
+  });
+
+  it('shows theme discovery failure and lets the user retry', async () => {
+    mockCustomThemesError = new Error('Could not read custom theme dark: file is locked');
+    const { rerender } = await renderGeneralTab();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(mockCustomThemesError.message);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(mockRefreshCustomThemes).toHaveBeenCalledTimes(1);
+
+    mockCustomThemesRefreshing = true;
+    await act(async () => {
+      rerender(<GeneralTab />);
+    });
+    expect(screen.getByRole('button', { name: 'Loading...' })).toBeDisabled();
+    mockCustomThemesError = null;
+    mockCustomThemesRefreshing = false;
+    await act(async () => {
+      rerender(<GeneralTab />);
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('opens the privacy policy and terms of use from System', async () => {
+    await renderGeneralTab();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Privacy Policy/i }));
+    });
     expect(screen.getByRole('dialog')).toHaveTextContent(
       'EMMM does not read or transmit website passwords',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
-    fireEvent.click(screen.getByRole('button', { name: /Terms of Use/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Terms of Use/i }));
+    });
     expect(screen.getByRole('dialog')).toHaveTextContent('independent third-party utility');
   });
 
   it('opens the Ko-fi support page from General settings', async () => {
-    render(<GeneralTab />);
+    await renderGeneralTab();
 
     fireEvent.click(screen.getByRole('button', { name: 'Buy me a coffee' }));
 
@@ -169,8 +242,8 @@ describe('GeneralTab (TC-04)', () => {
     );
   });
 
-  it('keeps application updates within System', () => {
-    render(<GeneralTab />);
+  it('keeps application updates within System', async () => {
+    await renderGeneralTab();
 
     fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
 

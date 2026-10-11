@@ -47,6 +47,10 @@ export default function PreviewPanel() {
     previewError,
     retryPreview,
     images,
+    hiddenImagePaths,
+    hasVisibleImages,
+    showHiddenImages,
+    setShowHiddenImages,
     currentImageIndex,
     setCurrentImageIndex,
     titleDraft,
@@ -71,6 +75,7 @@ export default function PreviewPanel() {
     savePreviewImage,
     removePreviewImage,
     clearPreviewImages,
+    restorePreviewImage,
     writeModIni,
     previewImagesQuery,
     showUnsavedModal,
@@ -126,6 +131,7 @@ export default function PreviewPanel() {
     confirmRemoveCurrentImage,
     requestClearAllImages,
     confirmClearAllImages,
+    restoreCurrentImage,
     requestImportArchives,
     requestImportFolders,
     openCurrentLocation,
@@ -139,6 +145,7 @@ export default function PreviewPanel() {
     savePreviewImage,
     removePreviewImage,
     clearPreviewImages,
+    restorePreviewImage,
   });
   usePreviewEffects({
     activePath: interactiveActivePath,
@@ -194,7 +201,7 @@ export default function PreviewPanel() {
       <PreviewFolderConflictState
         conflict={folderNameConflict}
         onBack={() => runtime.clearSelection({ resetExplorer: true, clearObjectSelection: true })}
-        onResolve={openFolderConflictManagerDialog}
+        onResolve={() => openFolderConflictManagerDialog(folderNameConflict.group_id)}
       />
     );
   }
@@ -273,12 +280,23 @@ export default function PreviewPanel() {
 
       <GallerySection
         images={images}
+        showHiddenImages={showHiddenImages}
+        hasHiddenImages={hiddenImagePaths.size > 0}
+        currentImageHidden={Boolean(currentImagePath && hiddenImagePaths.has(currentImagePath))}
+        hasVisibleImages={hasVisibleImages}
+        onToggleShowHidden={() => setShowHiddenImages((show) => !show)}
+        onRestoreCurrent={() => {
+          void restoreCurrentImage();
+        }}
         imageRefreshKey={previewImagesQuery.dataUpdatedAt}
         currentImageIndex={currentImageIndex}
         isFetching={previewImagesQuery.isFetching}
         canEdit={canEdit}
         isMutating={
-          savePreviewImage.isPending || removePreviewImage.isPending || clearPreviewImages.isPending
+          savePreviewImage.isPending ||
+          removePreviewImage.isPending ||
+          clearPreviewImages.isPending ||
+          restorePreviewImage.isPending
         }
         onPrev={() => setCurrentImageIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1))}
         onNext={() => setCurrentImageIndex((prev) => (prev + 1) % Math.max(images.length, 1))}
@@ -328,9 +346,7 @@ export default function PreviewPanel() {
         onToggleSection={requestToggleSection}
         onFieldChange={updateEditorField}
         onSave={async () => {
-          const success = await saveEditor();
-          return success !== false; // Assuming saveEditor throws or returns false on fail. Assuming it succeeds if no generic error.
-          // Wait, saveEditor is a void function that toasts on error. We can just always close it, or check if editorDirty is false after.
+          return saveEditor();
         }}
         onDiscard={discardEditor}
       />

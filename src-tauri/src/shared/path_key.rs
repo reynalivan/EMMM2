@@ -1,5 +1,10 @@
 use std::path::{Path, PathBuf};
 
+pub(crate) fn has_hidden_path_component(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str().to_string_lossy().starts_with('.'))
+}
+
 /// Align Windows namespaces lexically while preserving native filesystem names.
 /// Historical rename sources may no longer exist, so they cannot be canonicalized.
 pub(crate) fn physical_namespace_path(path: &Path) -> std::io::Result<PathBuf> {

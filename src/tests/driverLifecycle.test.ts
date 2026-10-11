@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertDriverPortsAvailable,
   assertCurrentBuild,
+  copyE2EBinarySnapshot,
   stopOwnedDriver,
   waitForOwnedDriver,
   type TerminateDriver,
@@ -15,6 +16,37 @@ afterEach(() => {
 });
 
 describe('native E2E driver ownership', () => {
+  it('retries a transient busy snapshot copy without changing source or target', async () => {
+    const busy = Object.assign(new Error('QA binary is temporarily busy'), { code: 'EBUSY' });
+    const copy = vi.fn<(source: string, target: string) => void>().mockImplementationOnce(() => {
+      throw busy;
+    });
+    const wait = vi.fn<(milliseconds: number) => Promise<void>>().mockResolvedValue();
+    await expect(
+      copyE2EBinarySnapshot('QA-built.exe', 'QA-private.exe', copy, wait),
+    ).resolves.toBeUndefined();
+    expect(copy).toHaveBeenCalledTimes(2);
+    expect(
+      copy.mock.calls.every(
+        ([source, target]) => source === 'QA-built.exe' && target === 'QA-private.exe',
+      ),
+    ).toBe(true);
+    expect(wait).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails a non-busy snapshot error immediately instead of reusing the old binary', async () => {
+    const denied = Object.assign(new Error('QA copy denied'), { code: 'EACCES' });
+    const copy = vi.fn<(source: string, target: string) => void>().mockImplementation(() => {
+      throw denied;
+    });
+    const wait = vi.fn<(milliseconds: number) => Promise<void>>().mockResolvedValue();
+    await expect(copyE2EBinarySnapshot('QA-built.exe', 'QA-private.exe', copy, wait)).rejects.toBe(
+      denied,
+    );
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+  });
+
   it('rejects a stale binary or failed build even when the old binary exists', () => {
     expect(() => assertCurrentBuild(undefined, 'old')).toThrow('successful binary build');
     expect(() => assertCurrentBuild('new', 'old')).toThrow('successful binary build');

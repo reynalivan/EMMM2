@@ -1,6 +1,6 @@
 import { formatAppError } from '../../shared/lib/appError';
 import { AlertTriangle, Play, Shuffle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { launchConfiguredGame, useActiveGame } from '@/entities/game';
 import { useActiveConflicts, useIgnoredActiveModConflictGroupKeys } from '@/features/mod-runtime';
@@ -9,6 +9,7 @@ import { RandomizerModal } from '@/features/randomizer';
 import { buildConflictModSetKey, ConflictModal } from '@/features/conflict-report';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/shared/ui/toast';
+import { LaunchMenuTargetContext } from '@/shared/ui/components/layout/LaunchMenuTargetContext';
 
 export default function LaunchBar() {
   const { t } = useTranslation(['layout']);
@@ -18,7 +19,7 @@ export default function LaunchBar() {
   const [isLaunching, setIsLaunching] = useState(false);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
-  const [moreMenuTarget, setMoreMenuTarget] = useState<HTMLElement | null>(null);
+  const moreMenuTarget = useContext(LaunchMenuTargetContext);
 
   const { data: conflicts } = useActiveConflicts();
   const ignoredConflictGroups = useIgnoredActiveModConflictGroupKeys();
@@ -34,10 +35,6 @@ export default function LaunchBar() {
     [conflicts, ignoredGroupKeys],
   );
   const hasConflicts = unresolvedConflicts.length > 0;
-
-  useEffect(() => {
-    setMoreMenuTarget(document.getElementById('topbar-more-launch-portal'));
-  }, []);
 
   const handleLaunch = async () => {
     if (!activeGame) return;

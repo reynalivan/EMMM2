@@ -10,6 +10,10 @@ import { publishQueryScopes } from '@/shared/lib/queryRefresh';
 import { SettingsRow, SettingsSection } from '../SettingsLayout';
 
 const LEGACY_BROWSER_STORE_KEY = 'emmm-browser-store';
+const DEFAULT_HOMEPAGE = 'https://www.google.com';
+
+type HomepageDraft = { gameId: string; value: string };
+type HomepageSave = { gameId: string; url: string; draft: HomepageDraft };
 
 function legacyRetentionDays(): number | null {
   try {
@@ -45,14 +49,18 @@ export default function BrowserTab() {
   const queryClient = useQueryClient();
   const activeGameId = useAppStore((state) => state.activeGameId);
   const { addToast } = useToastStore();
-  const [homepageDraft, setHomepageDraft] = useState('https://www.google.com');
+  const [homepageDraft, setHomepageDraft] = useState<HomepageDraft | null>(null);
   const [retentionDaysDraft, setRetentionDaysDraft] = useState('');
 
-  const { data: homepageUrl } = useQuery({
+  const homepageQuery = useQuery({
     queryKey: ['browser_homepage', activeGameId],
     queryFn: () => commands.browserGetHomepage(activeGameId!),
     enabled: Boolean(activeGameId),
   });
+  const homepageUrl = homepageQuery.data;
+  const homepageReady =
+    Boolean(activeGameId) && homepageQuery.isSuccess && !homepageQuery.isFetching;
+  const activeHomepageDraft = homepageDraft?.gameId === activeGameId ? homepageDraft : null;
   const { data: retentionDays } = useQuery({
     queryKey: ['browser-retention-days'],
     queryFn: async () => {
@@ -64,21 +72,18 @@ export default function BrowserTab() {
   });
 
   useEffect(() => {
-    if (homepageUrl !== undefined) {
-      setHomepageDraft(homepageUrl);
-    }
-  }, [homepageUrl]);
-
-  useEffect(() => {
     if (retentionDays !== undefined) {
       setRetentionDaysDraft(String(retentionDays));
     }
   }, [retentionDays]);
 
   const setHomepageMutation = useMutation({
-    mutationFn: (url: string) => commands.browserSetHomepage(activeGameId!, url),
-    onSuccess: async (_, url) => {
-      queryClient.setQueryData(['browser_homepage', activeGameId], url);
+    mutationFn: ({ gameId, url }: HomepageSave) => commands.browserSetHomepage(gameId, url),
+    onSuccess: async (_, { gameId, url, draft }) => {
+      const queryKey = ['browser_homepage', gameId];
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData(queryKey, url);
+      setHomepageDraft((current) => (current === draft ? null : current));
       await publishQueryScopes(queryClient, ['browserHomepage']);
       addToast('success', t('settings:browser.homepage_success'));
     },
@@ -111,9 +116,10 @@ export default function BrowserTab() {
   });
 
   const saveHomepage = () => {
-    const url = homepageDraft.trim();
-    if (activeGameId && url && url !== homepageUrl) {
-      setHomepageMutation.mutate(url);
+    if (!activeGameId || !homepageReady || !activeHomepageDraft) return;
+    const url = activeHomepageDraft.value.trim();
+    if (url && url !== homepageUrl) {
+      setHomepageMutation.mutate({ gameId: activeGameId, url, draft: activeHomepageDraft });
     }
   };
 
@@ -142,9 +148,14 @@ export default function BrowserTab() {
                 type="url"
                 aria-label={t('settings:browser.homepage')}
                 className="input input-bordered input-sm min-w-0 flex-1"
-                value={homepageDraft}
-                onChange={(event) => setHomepageDraft(event.target.value)}
+                value={activeHomepageDraft?.value ?? homepageUrl ?? ''}
+                onChange={(event) => {
+                  if (activeGameId && homepageReady) {
+                    setHomepageDraft({ gameId: activeGameId, value: event.target.value });
+                  }
+                }}
                 onBlur={saveHomepage}
+                disabled={!homepageReady}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.currentTarget.blur();
@@ -153,10 +164,16 @@ export default function BrowserTab() {
               />
               <button
                 className="btn btn-outline btn-sm"
+                disabled={!homepageReady}
                 onClick={() => {
-                  const defaultHomepage = 'https://www.google.com';
-                  setHomepageDraft(defaultHomepage);
-                  setHomepageMutation.mutate(defaultHomepage);
+                  if (!activeGameId || !homepageReady) return;
+                  const draft = { gameId: activeGameId, value: DEFAULT_HOMEPAGE };
+                  setHomepageDraft(draft);
+                  setHomepageMutation.mutate({
+                    gameId: activeGameId,
+                    url: DEFAULT_HOMEPAGE,
+                    draft,
+                  });
                 }}
               >
                 {t('settings:browser.reset')}

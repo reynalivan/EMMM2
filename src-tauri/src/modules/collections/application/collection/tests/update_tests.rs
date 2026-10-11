@@ -9,7 +9,7 @@ async fn update_collection_rejects_collection_from_another_game() {
         &TestGameFixture {
             id: "game-2",
             name: "Second Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame2",
             mods_path: Some("E:/Mods2"),
         },

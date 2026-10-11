@@ -166,28 +166,6 @@ impl Drop for TempDirGuard {
                 "Deferred cleanup for app-owned archive staging {}: {error}",
                 self.path.display()
             );
-            return;
-        }
-        cleanup_temp_extract_parent(&self.path);
-    }
-}
-
-pub(super) fn cleanup_temp_extract_parent(temp_dir: &Path) {
-    let Some(parent) = temp_dir.parent() else {
-        return;
-    };
-
-    if !parent
-        .file_name()
-        .map(|name| name == ".temp_extract")
-        .unwrap_or(false)
-    {
-        return;
-    }
-
-    if let Ok(mut entries) = fs::read_dir(parent) {
-        if entries.next().is_none() {
-            fs::remove_dir(parent).ok();
         }
     }
 }

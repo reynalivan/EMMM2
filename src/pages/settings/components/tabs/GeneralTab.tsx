@@ -8,7 +8,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useAppStore } from '@/app/store';
-import { useSettings } from '@/entities/settings';
+import { useCustomThemes, useSettings } from '@/entities/settings';
 import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import {
@@ -17,7 +17,6 @@ import {
   type ThemeSetting,
 } from '../../../../shared/lib/themeOptions';
 import { useTranslation } from 'react-i18next';
-import { useCustomThemes } from '../../hooks/useCustomThemes';
 import { useAppUpdater } from '../../hooks/useAppUpdater';
 import { getVersion } from '@tauri-apps/api/app';
 import { useEffect, useState } from 'react';
@@ -32,7 +31,13 @@ export default function GeneralTab() {
   const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const setAutoCloseLauncher = useAppStore((state) => state.setAutoCloseLauncher);
   const { settings, updateTheme, updateLanguage, setTelemetryEnabled } = useSettings();
-  const { customThemes, refreshCustomThemes } = useCustomThemes();
+  const {
+    customThemes,
+    customThemeIds,
+    error: customThemesError,
+    refreshing: customThemesRefreshing,
+    refreshCustomThemes,
+  } = useCustomThemes();
   const { t } = useTranslation(['settings', 'common']);
   const { addToast } = useToastStore();
   const [appVersion, setAppVersion] = useState('');
@@ -52,7 +57,10 @@ export default function GeneralTab() {
     dismiss,
   } = useAppUpdater();
 
-  const selectedTheme = normalizeThemeSetting(settings?.theme);
+  const selectedTheme = normalizeThemeSetting(settings?.theme, customThemeIds);
+  const isSelectedThemeListed =
+    THEME_OPTIONS.some((option) => option.value === selectedTheme) ||
+    customThemes.some((theme) => theme.id === selectedTheme);
 
   useEffect(() => {
     getVersion()
@@ -132,6 +140,7 @@ export default function GeneralTab() {
               onChange={(event) => handleThemeChange(event.target.value)}
               disabled={updateTheme.isPending || !settings}
             >
+              {!isSelectedThemeListed && <option value={selectedTheme}>{selectedTheme}</option>}
               <optgroup label={t('general.appearance.groups.builtin')}>
                 {THEME_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -151,6 +160,19 @@ export default function GeneralTab() {
             </select>
           }
         />
+        {customThemesError && (
+          <div className="mb-3 flex items-center gap-3 text-sm text-error" role="alert">
+            <span className="min-w-0 flex-1">{formatAppError(customThemesError)}</span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={customThemesRefreshing}
+              onClick={() => void refreshCustomThemes()}
+            >
+              {customThemesRefreshing ? t('common:status.loading') : t('common:actions.retry')}
+            </button>
+          </div>
+        )}
         <div className="flex flex-wrap justify-end gap-2 border-t border-base-300/70 pt-3">
           <button
             type="button"

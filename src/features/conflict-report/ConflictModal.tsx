@@ -195,7 +195,14 @@ export default function ConflictModal({
   );
 
   return (
-    <dialog ref={dialogRef} className="modal bg-overlay-mask" onClose={handleClose}>
+    <dialog
+      ref={dialogRef}
+      className="modal bg-overlay-mask"
+      onCancel={(event) => {
+        if (isBusy) event.preventDefault();
+      }}
+      onClose={handleClose}
+    >
       <div className="modal-box flex max-h-[calc(100dvh-2rem)] w-[calc(100%-1rem)] max-w-5xl flex-col rounded-xl border border-warning/30 bg-base-100 p-0 shadow-2xl">
         <header className="flex shrink-0 items-start gap-3 border-b border-base-content/10 px-4 py-4 sm:px-6">
           <AlertTriangle className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />

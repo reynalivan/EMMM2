@@ -18,6 +18,9 @@ async fn initialize_mutation_coordinator(
         journal_path,
         MUTATION_JOURNAL_HISTORY_LIMIT,
     )?);
+    if super::readonly_audit::is_active() {
+        super::readonly_audit::ensure_empty_journal(journal.entries().len())?;
+    }
     let game_roots = app
         .state::<crate::modules::settings::application::config::ConfigService>()
         .with_settings(|settings| {
@@ -27,11 +30,34 @@ async fn initialize_mutation_coordinator(
                 .map(|game| (game.id.clone(), game.mod_path.clone()))
                 .collect::<std::collections::HashMap<_, _>>()
         });
+    let pool = app.state::<sqlx::SqlitePool>();
+    let mut ready_to_move_roots = std::collections::HashMap::new();
+    for game_id in game_roots.keys() {
+        match crate::modules::ingestion::api::import_batch::ready_to_move::resolve_mod_inbox_root(
+            app,
+            pool.inner(),
+            game_id,
+            None,
+        )
+        .await
+        {
+            Ok(root) => {
+                ready_to_move_roots.insert(game_id.clone(), root);
+            }
+            Err(error) => {
+                log::warn!(
+                    "startup: ReadyToMove recovery root for game {game_id} is unavailable: {error}"
+                );
+            }
+        }
+    }
     let roots = crate::modules::mutation::recovery::RecoveryRoots::new(
         game_roots.clone(),
         app_data_dir.join("import-staging"),
-    );
+    )
+    .with_ready_to_move_roots(ready_to_move_roots);
     let recovered = crate::modules::mutation::recovery::RecoveryRunner::new(journal.clone(), roots)
+        .with_projection_pool(pool.inner().clone())
         .run_recovery()
         .await?;
     let recorded_quarantines = journal
@@ -47,18 +73,24 @@ async fn initialize_mutation_coordinator(
         })
         .flat_map(|operation| {
             let game_root = game_roots.get(&operation.game_id).cloned();
+            let expected_root_identity = operation.source_epoch;
             operation.steps.into_iter().filter_map(move |step| {
                 let path = (step.status == crate::modules::mutation::journal::StepStatus::Applied)
                     .then_some(step.new_path)
                     .flatten()?;
-                game_root
-                    .as_ref()
-                    .is_some_and(|root| path.starts_with(root))
-                    .then_some(path)
+                Some(
+                    crate::modules::library::api::mods::trash::RecordedQuarantine {
+                        path,
+                        source_path: step.old_path,
+                        game_root: game_root.as_ref()?.clone(),
+                        expected_root_identity: expected_root_identity.clone(),
+                        expected_identity: step.expected_identity,
+                    },
+                )
             })
         })
         .collect::<Vec<_>>();
-    for warning in crate::modules::library::application::mods::trash::finalize_recorded_quarantines(
+    for warning in crate::modules::library::api::mods::trash::finalize_recorded_quarantines(
         recorded_quarantines,
     ) {
         log::warn!("Pending trash quarantine cleanup failed: {warning}");
@@ -140,23 +172,21 @@ pub fn init_pool(app_data_dir: &std::path::Path) -> sqlx::SqlitePool {
 
         let p = match try_init().await {
             Ok(pool) => pool,
-            Err(e) => {
-                log::error!("Database connection or migration failed: {e}. Attempting recovery...");
+            Err(error) if super::app_service::database_is_corrupt(&db_path).await => {
+                log::error!("Database integrity check failed after initialization error: {error}. Attempting recovery...");
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
                 let backup_path = app_data_dir.join(format!("app_corrupt_{}.db", timestamp));
-                let _ = std::fs::rename(&db_path, &backup_path);
-                // WAL keeps its state in sidecar files; leaving them behind
-                // would hand the freshly created database a stale journal.
-                for suffix in ["-wal", "-shm"] {
-                    let sidecar = app_data_dir.join(format!("app.db{suffix}"));
-                    let _ = std::fs::remove_file(sidecar);
-                }
+                super::app_service::quarantine_database_files(&db_path, &backup_path)
+                    .expect("Failed to preserve corrupt database files during recovery");
                 try_init()
                     .await
                     .expect("Failed to initialize database after recovery")
+            }
+            Err(error) => {
+                panic!("Database initialization failed without confirmed corruption: {error}")
             }
         };
 
@@ -197,6 +227,11 @@ async fn recover_interrupted_transfers(pool: &sqlx::SqlitePool) {
     }
 }
 
+struct StartupRecoveryOwner<'a> {
+    game_id: &'a str,
+    generation: Option<u64>,
+}
+
 async fn reconcile_startup_game(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
@@ -204,7 +239,7 @@ async fn reconcile_startup_game(
     watcher_state: &crate::modules::workspace::application::scanner::watcher::WatcherState,
     disk_reconcile_state: &crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     mutation_coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
-    game_id: &str,
+    owner: StartupRecoveryOwner<'_>,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     crate::shared::errors::AppError,
@@ -212,6 +247,7 @@ async fn reconcile_startup_game(
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
         try_reconcile_disk_state_for_prewarm, DiskReconcileRequest,
     };
+    let game_id = owner.game_id;
     let activation_guard = disk_reconcile_state.activation_guard().await;
     let settings = config.get_settings();
     let background = settings.active_game_id.as_deref() != Some(game_id);
@@ -223,6 +259,16 @@ async fn reconcile_startup_game(
             crate::shared::errors::AppError::NotFound(format!("Game '{game_id}' was removed"))
         })?;
     let runtime_config_path = game.instance_path.join("d3dx.ini");
+    if let Some(generation) = owner.generation {
+        if !disk_reconcile_state.initial_recovery_owner_matches_configuration(
+            game_id,
+            generation,
+            &game.mod_path,
+            &runtime_config_path,
+        ) {
+            return Err(crate::shared::errors::AppError::Cancelled);
+        }
+    }
     let watcher_session = if !background {
         watcher_state
             .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
@@ -232,7 +278,7 @@ async fn reconcile_startup_game(
     };
     let watcher_session = match watcher_session {
         Some(session) => session,
-        None => crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
+        None => crate::modules::workspace::api::start_inactive_watcher_with_activation_guard(
             app,
             watcher_state,
             game_id,
@@ -240,11 +286,12 @@ async fn reconcile_startup_game(
             Some(&runtime_config_path),
             &activation_guard,
             if background {
-                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly
+                crate::modules::workspace::api::WatcherInstallScope::InactiveOnly
             } else {
-                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::StartupSelected
+                crate::modules::workspace::api::WatcherInstallScope::StartupSelected
             },
         )
+        .await
         .map_err(crate::shared::errors::AppError::from)?
         .ok_or(crate::shared::errors::AppError::Cancelled)?,
     };
@@ -267,13 +314,17 @@ async fn reconcile_startup_game(
             )),
         };
     let request = || {
-        DiskReconcileRequest::manual(
+        let request = DiskReconcileRequest::manual(
             game_id.to_string(),
             crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::StartupBoot,
             Vec::new(),
             true,
         )
-        .defer_overlay_sync()
+        .defer_overlay_sync();
+        match owner.generation {
+            Some(generation) => request.for_initial_recovery(generation),
+            None => request,
+        }
     };
     let result = if !background {
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::reconcile_disk_state(context, request()).await?
@@ -288,6 +339,11 @@ async fn reconcile_startup_game(
         }
     };
     let _activation_guard = disk_reconcile_state.activation_guard().await;
+    if owner.generation.is_some_and(|generation| {
+        !disk_reconcile_state.initial_recovery_generation_is_pending(game_id, generation)
+    }) {
+        return Err(crate::shared::errors::AppError::Cancelled);
+    }
     let active_now = config.get_settings().active_game_id.as_deref() == Some(game_id);
     let active_session_matches = watcher_state
         .current_session_for_coverage(&game.mod_path, Some(&runtime_config_path))
@@ -317,14 +373,14 @@ async fn reconcile_startup_game(
         )));
     }
     if result.status.applied() && active_now && !active_session_matches {
-        if let Err(error) =
-            crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
-                app.clone(),
-                watcher_state,
-                pool.clone(),
-                game.mod_path.to_string_lossy().into_owned(),
-                game_id.to_string(),
-            )
+        if let Err(error) = crate::modules::workspace::api::start_watcher(
+            app.clone(),
+            watcher_state,
+            pool.clone(),
+            game.mod_path.to_string_lossy().into_owned(),
+            game_id.to_string(),
+        )
+        .await
         {
             disk_reconcile_state.reject_untrusted_reconcile(game_id, result.reconcile_revision);
             return Err(error.into());
@@ -405,8 +461,8 @@ async fn finish_resumed_onboarding_game(
     }
 }
 
-/// Purges stale task rows, fails downloads a crash left in flight, then
-/// reconciles the active game's mod folder against the database.
+/// Recovers interrupted work before setup returns; reconciliation and settled
+/// task-log retention run in the background.
 /// Every step is best-effort and only logs on failure.
 /// Boot-time database housekeeping, plus a background reconcile.
 ///
@@ -449,16 +505,6 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 log::warn!("startup: interrupted collection apply reclaim failed: {error}");
             }
         }
-        match crate::modules::workspace::adapters::sqlite::task::purge_old_tasks(&pool).await {
-            Ok(purged) if purged > 0 => {
-                log::info!("startup: purged {purged} old task log(s) before boot reconcile");
-            }
-            Ok(_) => {}
-            Err(error) => {
-                log::warn!("startup: task GC failed before boot reconcile: {error}");
-            }
-        }
-
         recover_interrupted_transfers(&pool).await;
         match crate::modules::ingestion::adapters::sqlite::import_batch::recover_interrupted_batch_states(&pool).await {
             Ok(recovered) if recovered > 0 => {
@@ -470,33 +516,22 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         match app.path().app_data_dir() {
             Ok(app_data) => {
                 let staging_root = app_data.join("import-staging");
-                match crate::modules::ingestion::adapters::sqlite::import_batch::list_terminal_batch_ids_for_staging_cleanup(&pool).await {
-                    Ok(batch_ids) => {
-                        for batch_id in batch_ids {
-                            if let Err(error) = crate::modules::ingestion::application::import_batch::staging::cleanup_batch_staging(
-                                &staging_root,
-                                &batch_id,
-                            ) {
-                                log::warn!(
-                                    "startup: batch staging cleanup failed for {batch_id}: {error}"
-                                );
-                            }
+                match tokio::try_join!(
+                    crate::modules::ingestion::adapters::sqlite::import_batch::list_terminal_batch_ids_for_staging_cleanup(&pool),
+                    crate::modules::ingestion::adapters::sqlite::import_batch::list_active_staging_paths(&pool),
+                ) {
+                    Ok((batch_ids, paths)) => {
+                        match crate::modules::ingestion::api::import_batch::staging::prepare_startup_staging_cleanup(
+                            &staging_root, &batch_ids, &paths,
+                        ) {
+                            Ok(detached) if detached > 0 => log::info!(
+                                "startup: detached {detached} staging payload(s) for deferred cleanup"
+                            ),
+                            Ok(_) => {},
+                            Err(error) => log::warn!("startup: staging detach failed: {error}"),
                         }
                     }
-                    Err(error) => log::warn!("startup: terminal batch cleanup lookup failed: {error}"),
-                }
-                match crate::modules::ingestion::adapters::sqlite::import_batch::list_active_staging_paths(&pool).await {
-                    Ok(paths) => match crate::modules::ingestion::application::import_batch::staging::cleanup_orphaned_staging(
-                        &staging_root,
-                        &paths,
-                    ) {
-                        Ok(removed) if removed > 0 => {
-                            log::info!("startup: removed {removed} orphaned import staging attempt(s)");
-                        }
-                        Ok(_) => {}
-                        Err(error) => log::warn!("startup: orphaned staging cleanup failed: {error}"),
-                    },
-                    Err(error) => log::warn!("startup: active staging lookup failed: {error}"),
+                    Err(error) => log::warn!("startup: staging cleanup lookup failed: {error}"),
                 }
             }
             Err(error) => log::warn!("startup: app data path unavailable: {error}"),
@@ -566,9 +601,12 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
         .filter(|game| !game.mod_path.as_os_str().is_empty());
     let startup_recovery_generation = startup_game.as_ref().map(|game| {
         app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>()
-            .mark_initial_recovery_pending(&game.id)
+            .mark_initial_recovery_pending_for_root(&game.id, &game.mod_path, &game.instance_path.join("d3dx.ini"))
     });
 
+    let telemetry = app
+        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .capture();
     spawn(async move {
         let config = app.state::<crate::modules::settings::application::config::ConfigService>();
         let watcher_state =
@@ -600,7 +638,10 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 watcher_state.inner(),
                 disk_reconcile_state.inner(),
                 mutation_coordinator.inner(),
-                &game.id,
+                StartupRecoveryOwner {
+                    game_id: &game.id,
+                    generation: Some(recovery_generation),
+                },
             )
             .await;
             if config.get_settings().diagnostics.telemetry_enabled {
@@ -614,10 +655,6 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                     crate::modules::system::application::telemetry::TelemetryErrorCode::from_app_error(error),
                 ),
             };
-                let telemetry = app
-                    .state::<crate::modules::system::application::telemetry::TelemetryStore>()
-                    .inner()
-                    .clone();
                 let _ = telemetry
                 .record_rollup(
                     env!("CARGO_PKG_VERSION"),
@@ -630,23 +667,10 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 )
                 .await;
             }
-            if let Some(session_id) = resumed_onboarding_session_id.as_deref() {
-                if pending_onboarding_game_ids.contains(&game.id) {
-                    finish_resumed_onboarding_game(
-                        &app,
-                        &pool,
-                        sessions.inner(),
-                        session_id,
-                        &game.id,
-                        &reconcile_result,
-                    )
-                    .await;
-                }
-            }
-            let recovery_outcome = match reconcile_result {
+            let recovery_outcome = match &reconcile_result {
             Ok(result) => {
                 crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(Box::new(
-                    result,
+                    result.clone(),
                 ))
             }
             Err(error) => {
@@ -660,21 +684,78 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 )
             }
         };
-            let completed_result = match &recovery_outcome {
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(result) => {
-                Some((**result).clone())
-            }
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(_) => None,
-        };
-            disk_reconcile_state.finish_initial_recovery(
+            let accepted = disk_reconcile_state.finish_initial_recovery(
                 &game.id,
                 recovery_generation,
                 recovery_outcome,
             );
-            if let Some(result) = completed_result {
-                if let Err(error) = app.emit("disk_reconcile:result", result) {
-                    log::warn!("Could not emit startup disk reconcile result: {error}");
+            if accepted {
+                if let (Ok(result), Some(current_game)) = (
+                    &reconcile_result,
+                    config
+                        .get_settings()
+                        .games
+                        .into_iter()
+                        .find(|current| current.id == game.id),
+                ) {
+                    disk_reconcile_state.with_initial_recovery_owner(
+                        &game.id,
+                        recovery_generation,
+                        &current_game.mod_path,
+                        &current_game.instance_path.join("d3dx.ini"),
+                        || {
+                            if let Err(error) = app.emit("disk_reconcile:result", result) {
+                                log::warn!("Could not emit startup disk reconcile result: {error}");
+                            }
+                        },
+                    );
                 }
+            }
+            if let Some(session_id) = resumed_onboarding_session_id.as_deref() {
+                if pending_onboarding_game_ids.contains(&game.id) {
+                    let _settlement_guard = disk_reconcile_state.activation_guard().await;
+                    let owner_current = accepted
+                        && config
+                            .get_settings()
+                            .games
+                            .into_iter()
+                            .find(|current| current.id == game.id)
+                            .is_some_and(|current| {
+                                disk_reconcile_state
+                                    .with_initial_recovery_owner(
+                                        &game.id,
+                                        recovery_generation,
+                                        &current.mod_path,
+                                        &current.instance_path.join("d3dx.ini"),
+                                        || (),
+                                    )
+                                    .is_some()
+                            });
+                    let rejected_result = Err(crate::shared::errors::AppError::Cancelled);
+                    finish_resumed_onboarding_game(
+                        &app,
+                        &pool,
+                        sessions.inner(),
+                        session_id,
+                        &game.id,
+                        if owner_current {
+                            &reconcile_result
+                        } else {
+                            &rejected_result
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+
+        // Retention must not compete with the foreground baseline or hide open recovery tasks.
+        match crate::modules::workspace::adapters::sqlite::task::purge_old_tasks(&pool).await {
+            Ok(purged) => {
+                log::info!("background: task log cleanup completed purged={purged}");
+            }
+            Err(error) => {
+                log::warn!("background: task log cleanup failed: {error}");
             }
         }
 
@@ -702,7 +783,10 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
                 watcher_state.inner(),
                 disk_reconcile_state.inner(),
                 mutation_coordinator.inner(),
-                &game_id,
+                StartupRecoveryOwner {
+                    game_id: &game_id,
+                    generation: None,
+                },
             )
             .await;
             finish_resumed_onboarding_game(
@@ -717,6 +801,33 @@ pub fn run_startup_reconcile(app: tauri::AppHandle) {
             if let Err(error) = reconcile_result {
                 log::warn!("startup: resumed onboarding indexing failed for {game_id}: {error}");
             }
+        }
+    });
+}
+
+/// Recursive deletion starts only after setup yields to the native event loop.
+pub fn run_deferred_staging_cleanup(app: tauri::AppHandle) {
+    let staging_root = match app.path().app_data_dir() {
+        Ok(path) => path.join("import-staging"),
+        Err(error) => {
+            log::warn!("ready: staging cleanup path unavailable: {error}");
+            return;
+        }
+    };
+    tauri::async_runtime::spawn(async move {
+        match tauri::async_runtime::spawn_blocking(move || {
+            crate::modules::ingestion::api::import_batch::staging::cleanup_deferred_staging(
+                &staging_root,
+            )
+        })
+        .await
+        {
+            Ok(Ok(removed)) if removed > 0 => {
+                log::info!("ready: removed {removed} detached staging payload(s)")
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => log::warn!("ready: deferred staging cleanup failed: {error}"),
+            Err(error) => log::error!("ready: deferred staging cleanup worker failed: {error}"),
         }
     });
 }

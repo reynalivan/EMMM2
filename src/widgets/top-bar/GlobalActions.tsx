@@ -18,6 +18,7 @@ import { useActiveGame } from '@/entities/game';
 import { applyDiskReconcileResult } from '@/features/file-watcher';
 import { LiquidSurface } from '@/shared/ui/liquid';
 import type { SafetyFilter } from '@/shared/ui/components/ui/SafetyFilterControl';
+import { LaunchMenuTargetContext } from '@/shared/ui/components/layout/LaunchMenuTargetContext';
 
 interface GlobalActionsProps {
   launchBar?: ReactNode;
@@ -46,6 +47,7 @@ export default function GlobalActions({
     activeGame ? Boolean(state.diskReconcileByGame[activeGame.id]?.progress) : false,
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [launchMenuTarget, setLaunchMenuTarget] = useState<HTMLLIElement | null>(null);
   const refreshInFlight = useRef(false);
 
   const runFullReconcile = async () => {
@@ -139,7 +141,9 @@ export default function GlobalActions({
           </button>
         )}
         {/* Launch Bar (Epic 10) */}
-        {launchBar}
+        <LaunchMenuTargetContext.Provider value={launchMenuTarget}>
+          {launchBar}
+        </LaunchMenuTargetContext.Provider>
       </div>
 
       {/* Mobile Menu Dropdown */}
@@ -210,6 +214,7 @@ export default function GlobalActions({
 
               <li
                 id="topbar-more-launch-portal"
+                ref={setLaunchMenuTarget}
                 className="block w-full min-w-0 max-w-full empty:hidden"
               />
 

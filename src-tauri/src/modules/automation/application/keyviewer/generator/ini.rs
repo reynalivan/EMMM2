@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::modules::automation::application::keyviewer::matcher::MatchResult;
+use crate::modules::automation::application::keyviewer::models::KeyViewerPanel;
 use crate::modules::games::domain::models::GameType;
 use crate::shared::errors::AppError;
 
@@ -9,11 +9,11 @@ use super::keybind_text::keybind_file_name;
 
 fn text_api_namespace(game_type: GameType) -> Result<&'static str, AppError> {
     match game_type {
-        GameType::GIMI => Ok("GIMIv8"),
-        GameType::SRMI => Ok("SRMIv1"),
-        GameType::WWMI => Ok("WWMIv1"),
-        GameType::ZZMI => Ok("ZZMIv1"),
-        GameType::EFMI => Err(AppError::Validation(
+        GameType::Gimi => Ok("GIMIv8"),
+        GameType::Srmi => Ok("SRMIv1"),
+        GameType::Wwmi => Ok("WWMIv1"),
+        GameType::Zzmi => Ok("ZZMIv1"),
+        GameType::Efmi => Err(AppError::Validation(
             "KeyViewer text overlay is not supported by the installed EFMI profile".to_string(),
         )),
     }
@@ -56,8 +56,8 @@ const OVERLAY_STATUS_LEFT: f32 = -0.96;
 const OVERLAY_STATUS_RIGHT: f32 = -0.30;
 const OVERLAY_PANEL_LEFT: f32 = -0.96;
 const OVERLAY_PANEL_RIGHT: f32 = -0.56;
-const OVERLAY_STATUS_TOP: f32 = 0.36;
-const OVERLAY_STATUS_BOTTOM: f32 = 0.24;
+const OVERLAY_STATUS_TOP: f32 = 0.92;
+const OVERLAY_STATUS_BOTTOM: f32 = 0.46;
 const OVERLAY_PANEL_TOP: f32 = -0.24;
 const OVERLAY_PANEL_BOTTOM: f32 = -0.92;
 const OVERLAY_TEXT_ALIGNMENT_LEFT: u8 = 0;
@@ -65,7 +65,7 @@ const OVERLAY_VERTICAL_ANCHOR_BOTTOM: u8 = 3;
 const OVERLAY_STATUS_SCALE: f32 = 1.00;
 const OVERLAY_CHARACTER_SCALE: f32 = 0.92;
 /// Bumped when generated overlay output changes so existing overlays are republished.
-pub const KEYVIEWER_LAYOUT_REVISION: u8 = 6;
+pub const KEYVIEWER_LAYOUT_REVISION: u8 = 7;
 
 fn text_box_data(left: f32, top: f32, right: f32, bottom: f32, scale: f32) -> String {
     format!(
@@ -117,24 +117,24 @@ fn resource_path(resource_root: &str, relative: &str) -> Result<String, AppError
 /// per-frame flags. Rendering happens before the `post` resets, so a detected
 /// character disappears on the next frame it is no longer rendered.
 pub fn generate_keyviewer_ini(
-    matches: &[MatchResult],
+    panels: &[KeyViewerPanel],
     toggle_key: &str,
     game_type: GameType,
 ) -> Result<String, AppError> {
-    generate_keyviewer_ini_for_resources(matches, toggle_key, game_type, "")
+    generate_keyviewer_ini_for_resources(panels, toggle_key, game_type, "")
 }
 
 /// Generate an entrypoint with independently configurable KeyViewer panels and
 /// preset status banner.
 pub fn generate_keyviewer_ini_with_options(
-    matches: &[MatchResult],
+    panels: &[KeyViewerPanel],
     toggle_key: &str,
     game_type: GameType,
     keyviewer_enabled: bool,
     preset_status_overlay_enabled: bool,
 ) -> Result<String, AppError> {
     generate_keyviewer_ini_for_resources_with_options(
-        matches,
+        panels,
         toggle_key,
         game_type,
         "",
@@ -147,13 +147,13 @@ pub fn generate_keyviewer_ini_with_options(
 /// `generations/` directory. The caller publishes that directory from a
 /// complete staging tree before refreshing the entrypoint.
 pub fn generate_keyviewer_ini_for_resources(
-    matches: &[MatchResult],
+    panels: &[KeyViewerPanel],
     toggle_key: &str,
     game_type: GameType,
     resource_root: &str,
 ) -> Result<String, AppError> {
     generate_keyviewer_ini_for_resources_with_options(
-        matches,
+        panels,
         toggle_key,
         game_type,
         resource_root,
@@ -165,7 +165,7 @@ pub fn generate_keyviewer_ini_for_resources(
 /// Generate an entrypoint that reads resources from a stable directory while
 /// independently controlling the KeyViewer and preset status panels.
 pub fn generate_keyviewer_ini_for_resources_with_options(
-    matches: &[MatchResult],
+    panels: &[KeyViewerPanel],
     toggle_key: &str,
     game_type: GameType,
     resource_root: &str,
@@ -183,7 +183,10 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
         None
     };
     if keyviewer_enabled {
-        for sentinel in matches.iter().flat_map(|result| result.sentinels.iter()) {
+        for sentinel in panels
+            .iter()
+            .flat_map(|panel| panel.match_result.sentinels.iter())
+        {
             validate_sentinel(&sentinel.hash)?;
         }
     }
@@ -205,7 +208,7 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
     }
 
     if keyviewer_enabled {
-        for index in 0..matches.len() {
+        for index in 0..panels.len() {
             lines.push(format!("global {} = 0", detection_variable(index)));
         }
     }
@@ -229,7 +232,8 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
     }
 
     if keyviewer_enabled {
-        for (match_index, result) in matches.iter().enumerate() {
+        for (match_index, panel) in panels.iter().enumerate() {
+            let result = &panel.match_result;
             for (sentinel_index, sentinel) in result.sentinels.iter().enumerate() {
                 lines.push(format!(
                     "[TextureOverride_EMMMv1_{}_{}_S{sentinel_index}]",
@@ -252,7 +256,7 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
         "run = CommandList_EMMMv1_Render".to_string(),
     ]);
     if keyviewer_enabled {
-        for index in 0..matches.len() {
+        for index in 0..panels.len() {
             lines.push(format!("post {} = 0", detection_variable(index)));
         }
     }
@@ -270,7 +274,7 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
 
     if keyviewer_enabled {
         lines.push("if $emmm_kv_active == 1".to_string());
-        for (match_index, _) in matches.iter().enumerate() {
+        for (match_index, _) in panels.iter().enumerate() {
             lines.push(format!("    if {} == 1", detection_variable(match_index)));
             lines.push(format!(
                 "        Resource\\{text_namespace}\\Text = ref {}",
@@ -300,7 +304,7 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
     }
 
     if keyviewer_enabled {
-        for box_index in 0..matches.len() {
+        for box_index in 0..panels.len() {
             lines.push(format!("[{}]", keyviewer_box_resource(box_index)));
             lines.push("type = StructuredBuffer".to_string());
             lines.push("array = 1".to_string());
@@ -323,7 +327,7 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
     }
 
     if keyviewer_enabled {
-        for (index, _) in matches.iter().enumerate() {
+        for (index, _) in panels.iter().enumerate() {
             lines.push(format!("[{}]", keyviewer_resource(index)));
             lines.push("type = buffer".to_string());
             lines.push("format = R8_UINT".to_string());
@@ -343,10 +347,10 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
 
 pub fn write_keyviewer_ini(
     output_path: &Path,
-    matches: &[MatchResult],
+    panels: &[KeyViewerPanel],
     toggle_key: &str,
     game_type: GameType,
 ) -> Result<(), AppError> {
-    let content = generate_keyviewer_ini(matches, toggle_key, game_type)?;
+    let content = generate_keyviewer_ini(panels, toggle_key, game_type)?;
     atomic_write(output_path, &content)
 }

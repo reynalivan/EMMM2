@@ -15,7 +15,7 @@ async fn test_config_save_and_load() {
     let service = ConfigService::new_for_test(pool.clone());
 
     let settings = service.get_settings();
-    assert_eq!(settings.theme, "dark");
+    assert_eq!(settings.theme, "onyx");
 
     let mut next_settings = settings.clone();
     next_settings.theme = "light".to_string();
@@ -69,7 +69,7 @@ async fn test_games_persist_in_db() {
     settings.games.push(GameConfig {
         id: "test-game-1".into(),
         name: "Test Game".into(),
-        game_type: emmm_lib::modules::games::api::testing::domain::models::GameType::GIMI,
+        game_type: emmm_lib::modules::games::api::testing::domain::models::GameType::Gimi,
         instance_path: PathBuf::from("C:\\Importer"),
         mod_path: PathBuf::from("C:\\Mods"),
         ready_to_move_path: None,

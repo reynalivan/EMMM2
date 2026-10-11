@@ -10,7 +10,9 @@ use crate::modules::collections::domain::collection::{
 };
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskProjection;
-use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathUpdate;
+use crate::modules::reconciliation::application::disk_reconcile::types::{
+    DiskReconcilePathUpdate, DiskReconcilePhase,
+};
 
 use super::index::DbIndex;
 use super::keys::root_key;
@@ -101,7 +103,7 @@ async fn prepare_identity_transitions(
     load_metrics: &mut ProjectionLoadMetrics,
     initial: &DbIndex,
     state: &mut ProjectionWriteState<'_>,
-) -> Result<IdentityTransitionState, AppError> {
+) -> Result<(IdentityTransitionState, Option<DbIndex>), AppError> {
     let mut transitions = IdentityTransitionState::default();
     let object_identities = disk_object_identities(projection);
     let disk_mod_keys = projection
@@ -291,7 +293,25 @@ async fn prepare_identity_transitions(
         transitions.mod_final_ids.insert(temp_id, final_id);
     }
 
-    Ok(transitions)
+    // Object staging already loaded this snapshot; only mod staging invalidates it.
+    let staged_index = if transitions.original_mods.is_empty() {
+        after_object_changes
+    } else {
+        drop(after_object_changes);
+        Some(
+            load_index(
+                &mut *conn,
+                game_id,
+                projection,
+                mods_path,
+                scope_root_keys,
+                scoped,
+                load_metrics,
+            )
+            .await?,
+        )
+    };
+    Ok((transitions, staged_index))
 }
 
 async fn finalize_mod_reference_transitions(
@@ -320,6 +340,7 @@ pub(crate) struct ProjectionWriteRequest<'a> {
     pub change_summary: &'a mut ChangeSummaryBuilder,
     pub protected_object_keys: &'a HashSet<String>,
     pub protected_mod_keys: &'a HashSet<String>,
+    pub on_progress: Option<&'a (dyn Fn(DiskReconcilePhase, u64, Option<u64>) + Sync)>,
 }
 
 async fn load_index(
@@ -351,11 +372,23 @@ struct ProjectionLoadMetrics {
 /// What the write passes touched, so the caller can refresh the runtime
 /// projection for exactly those objects instead of rebuilding the whole game.
 pub(crate) struct ProjectionWriteOutcome {
+    pub(crate) timings: ProjectionWriteTimings,
     pub(crate) objects_changed: bool,
     pub(crate) folders_changed: bool,
     pub(crate) touched_object_ids: HashSet<String>,
     pub(crate) db_object_rows_loaded: usize,
     pub(crate) db_mod_rows_loaded: usize,
+}
+
+#[derive(Default)]
+pub(crate) struct ProjectionWriteTimings {
+    pub(crate) initial_index: std::time::Duration,
+    pub(crate) identity: std::time::Duration,
+    pub(crate) objects: std::time::Duration,
+    pub(crate) mods: std::time::Duration,
+    /// A subset of `mods`, not an additional phase to add to the total.
+    pub(crate) metadata_within_mods: std::time::Duration,
+    pub(crate) finalization: std::time::Duration,
 }
 
 pub(crate) async fn reconcile_projection_in_tx(
@@ -379,6 +412,8 @@ pub(crate) async fn reconcile_projection_in_tx(
     let mut ordered_scope_root_keys = scope_root_keys.iter().cloned().collect::<Vec<_>>();
     ordered_scope_root_keys.sort_unstable();
     let mut load_metrics = ProjectionLoadMetrics::default();
+    let mut timings = ProjectionWriteTimings::default();
+    let index_started = std::time::Instant::now();
     let initial_index = load_index(
         &mut *conn,
         game_id,
@@ -389,9 +424,11 @@ pub(crate) async fn reconcile_projection_in_tx(
         &mut load_metrics,
     )
     .await?;
+    timings.initial_index = index_started.elapsed();
     let mods_root = mods_path.to_string_lossy().to_string();
 
     let mut state = ProjectionWriteState {
+        metadata_read_time: std::time::Duration::ZERO,
         path_updates: request.path_updates,
         collection_reference_impact: request.collection_reference_impact,
         change_summary: request.change_summary,
@@ -403,7 +440,8 @@ pub(crate) async fn reconcile_projection_in_tx(
         folders_changed: false,
     };
 
-    let identity_transitions = prepare_identity_transitions(
+    let identity_started = std::time::Instant::now();
+    let (identity_transitions, refreshed_index) = prepare_identity_transitions(
         &mut *conn,
         game_id,
         projection,
@@ -415,26 +453,10 @@ pub(crate) async fn reconcile_projection_in_tx(
         &mut state,
     )
     .await?;
-    let refreshed_index = if identity_transitions.original_objects.is_empty()
-        && identity_transitions.original_mods.is_empty()
-    {
-        None
-    } else {
-        Some(
-            load_index(
-                &mut *conn,
-                game_id,
-                projection,
-                mods_path,
-                &ordered_scope_root_keys,
-                scoped,
-                &mut load_metrics,
-            )
-            .await?,
-        )
-    };
+    timings.identity = identity_started.elapsed();
     let index = refreshed_index.as_ref().unwrap_or(&initial_index);
 
+    let objects_started = std::time::Instant::now();
     let resolved_objects = apply_disk_objects(
         &mut *conn,
         game_id,
@@ -444,6 +466,8 @@ pub(crate) async fn reconcile_projection_in_tx(
         &mut state,
     )
     .await?;
+    timings.objects = objects_started.elapsed();
+    let mods_started = std::time::Instant::now();
     apply_disk_mods(
         &mut *conn,
         ModPassInput {
@@ -454,10 +478,17 @@ pub(crate) async fn reconcile_projection_in_tx(
             index,
             resolved_objects: &resolved_objects,
             identity_transitions: &identity_transitions,
+            on_progress: request.on_progress,
         },
         &mut state,
     )
     .await?;
+    timings.mods = mods_started.elapsed();
+    timings.metadata_within_mods = state.metadata_read_time;
+    let finalization_started = std::time::Instant::now();
+    if let Some(report) = request.on_progress {
+        report(DiskReconcilePhase::Finalizing, 0, None);
+    }
     finalize_mod_reference_transitions(&mut *conn, &identity_transitions).await?;
     let prune_scope = PruneScope {
         scope_root_keys: &scope_root_keys,
@@ -480,8 +511,10 @@ pub(crate) async fn reconcile_projection_in_tx(
         &identity_transitions.collection_ids_to_refresh,
     )
     .await?;
+    timings.finalization = finalization_started.elapsed();
 
     Ok(ProjectionWriteOutcome {
+        timings,
         objects_changed: state.objects_changed,
         folders_changed: state.folders_changed,
         touched_object_ids: state.touched_object_ids,

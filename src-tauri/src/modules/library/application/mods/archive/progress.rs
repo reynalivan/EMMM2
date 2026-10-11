@@ -1,4 +1,4 @@
-use super::types::{ExtractionEvent, ExtractionResult};
+use super::types::ExtractionEvent;
 use std::time::Instant;
 use tauri::ipc::Channel;
 
@@ -20,19 +20,5 @@ pub(super) fn emit_throttled_progress(
             total_files,
         });
         *last_emit = Instant::now();
-    }
-}
-
-pub(super) fn aborted_result(archive_name: String, files_extracted: usize) -> ExtractionResult {
-    ExtractionResult {
-        archive_name,
-        dest_paths: Vec::new(),
-        files_extracted,
-        mod_count: 0,
-        success: false,
-        error: None,
-        aborted: true,
-        collisions: Vec::new(),
-        sync_warning: None,
     }
 }

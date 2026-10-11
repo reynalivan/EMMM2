@@ -92,11 +92,12 @@ export function setModDecision(
   return next;
 }
 
-function chooseWinnerFromPaths(
+export function chooseConflictModSetWinner(
   decisions: ConflictDecisions,
-  modPaths: string[],
+  conflictSet: ConflictModSet,
   keepPath: string,
 ): Map<string, ModDecision> {
+  const { modPaths } = conflictSet;
   if (!modPaths.includes(keepPath)) {
     throw new Error('The selected winner is not part of this conflict');
   }
@@ -106,22 +107,6 @@ function chooseWinnerFromPaths(
     next.set(path, path === keepPath ? 'keep' : 'disable');
   }
   return next;
-}
-
-export function chooseConflictWinner(
-  decisions: ConflictDecisions,
-  conflict: ConflictInfo,
-  keepPath: string,
-): Map<string, ModDecision> {
-  return chooseWinnerFromPaths(decisions, conflict.mod_paths, keepPath);
-}
-
-export function chooseConflictModSetWinner(
-  decisions: ConflictDecisions,
-  conflictSet: ConflictModSet,
-  keepPath: string,
-): Map<string, ModDecision> {
-  return chooseWinnerFromPaths(decisions, conflictSet.modPaths, keepPath);
 }
 
 export function summarizeConflictResolution(

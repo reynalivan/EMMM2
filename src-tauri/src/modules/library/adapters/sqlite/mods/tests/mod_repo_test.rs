@@ -19,7 +19,7 @@ async fn exact_runtime_scope_distinguishes_leaf_from_parent_toggle() {
         &GameRow {
             id: "g_runtime_scope".into(),
             name: "Runtime Scope".into(),
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: temp.path().join("game").to_string_lossy().into_owned(),
             mods_path: Some(mods_root.clone()),
             ready_to_move_path: None,
@@ -100,7 +100,7 @@ async fn test_mod_repo_crud() {
     let game = GameRow {
         id: "g1".into(),
         name: "Game 1".into(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         path: "C:\\Game1".into(),
         mods_path: Some("C:".into()),
         ready_to_move_path: None,
@@ -172,7 +172,7 @@ async fn update_child_paths_matches_unicode_prefix_with_ascii_case_variants() {
     let game = GameRow {
         id: "g_unicode".into(),
         name: "Game Unicode".into(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         path: "C:\\GameUnicode".into(),
         mods_path: Some("C:".into()),
         ready_to_move_path: None,
@@ -255,7 +255,7 @@ async fn test_repo_mod_status_consistency() {
     let game = GameRow {
         id: "g_consist".into(),
         name: "Game Consist".into(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         path: "C:\\GameConsist".into(),
         mods_path: Some("C:".into()),
         ready_to_move_path: None,
@@ -372,7 +372,7 @@ async fn seed_same_relative_mod_in_two_games(pool: &SqlitePool) {
             &GameRow {
                 id: game_id.into(),
                 name: game_id.into(),
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: mods_root.into(),
                 mods_path: Some(mods_root.into()),
                 ready_to_move_path: None,

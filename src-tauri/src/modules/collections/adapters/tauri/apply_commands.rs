@@ -25,12 +25,15 @@ pub async fn apply_collection(
     game_id: String,
     collection_id: String,
     ignore_missing: Option<bool>,
+    recovery_id: Option<String>,
 ) -> Result<ApplyResult, AppError> {
     let _admission = crate::modules::mutation::api::admit_immutable_mutation(
         &game_id,
         crate::modules::mutation::api::ImmutableMutationKind::CollectionApply,
     )?;
     let started_at = std::time::Instant::now();
+    let telemetry =
+        crate::modules::system::application::telemetry::capture_background_telemetry(&app);
     let settings = config.get_settings();
     let diagnostics_enabled = settings.diagnostics.telemetry_enabled;
     let game = settings
@@ -109,8 +112,11 @@ pub async fn apply_collection(
                 .to_string(),
         )
     })?;
+    if let Some(id) = &recovery_id {
+        crate::modules::system::api::validate_file_lock_recovery_for_game(id, &game_id)?;
+    }
 
-    let mut result = collection::apply_collection_durable(
+    let mut result = collection::apply_collection_durable_with_recovery(
         collection::ApplyCollectionRequest {
             pool: pool.inner(),
             game_id: &game_id,
@@ -122,6 +128,7 @@ pub async fn apply_collection(
             settings,
         },
         op_lock.inner(),
+        recovery_id,
     )
     .await;
 
@@ -155,7 +162,7 @@ pub async fn apply_collection(
 
     drop(mutation_lease);
     record_collection_operation(
-        &app,
+        &telemetry,
         diagnostics_enabled,
         crate::modules::system::application::telemetry::TelemetryOperation::CollectionApply,
         result.is_ok(),
@@ -185,6 +192,8 @@ pub async fn restore_last_changes(
         crate::modules::mutation::api::ImmutableMutationKind::CollectionApply,
     )?;
     let started_at = std::time::Instant::now();
+    let telemetry =
+        crate::modules::system::application::telemetry::capture_background_telemetry(&app);
     let runtime =
         crate::modules::collections::adapters::sqlite::runtime::get(pool.inner(), &game_id)
             .await?
@@ -251,7 +260,7 @@ pub async fn restore_last_changes(
     );
     drop(mutation_lease);
     record_collection_operation(
-        &app,
+        &telemetry,
         diagnostics_enabled,
         crate::modules::system::application::telemetry::TelemetryOperation::Restore,
         true,

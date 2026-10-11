@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ComponentProps, HTMLAttributes } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TopBar } from './index';
 
@@ -29,7 +29,11 @@ vi.mock('@/entities/game', () => ({
 }));
 
 vi.mock('@/shared/api/tauri/bindings', () => ({
-  commands: { launchGame: vi.fn(), retryRuntimeSync: mockRetryRuntimeSync },
+  commands: {
+    launchGame: vi.fn(),
+    retryRuntimeSync: mockRetryRuntimeSync,
+    getOnboardingIndexingBackgroundStatus: vi.fn().mockResolvedValue([]),
+  },
 }));
 vi.mock('./GameSelector', () => ({ default: () => null }));
 vi.mock('./ContextControls', () => ({ default: () => null }));
@@ -38,16 +42,23 @@ vi.mock('@/shared/ui/liquid', () => ({
   LiquidSurface: ({
     children,
     className,
+    liquidRole: _liquidRole,
+    contentClassName: _contentClassName,
     ...props
-  }: {
-    children: ReactNode;
-    className?: string;
-  }) => (
+  }: HTMLAttributes<HTMLDivElement> & { liquidRole?: string; contentClassName?: string }) => (
     <div className={className} {...props}>
       {children}
     </div>
   ),
 }));
+
+async function renderTopBar(props: ComponentProps<typeof TopBar> = {}) {
+  let view!: ReturnType<typeof render>;
+  await act(async () => {
+    view = render(<TopBar {...props} />);
+  });
+  return view;
+}
 
 describe('TopBar app menu', () => {
   beforeEach(() => {
@@ -57,8 +68,8 @@ describe('TopBar app menu', () => {
     runtimeSyncByGame = {};
   });
 
-  it('navigates to Mod Inbox from the app menu', () => {
-    render(<TopBar />);
+  it('navigates to Mod Inbox from the app menu', async () => {
+    await renderTopBar();
 
     fireEvent.click(screen.getByTitle('App Menu'));
     fireEvent.click(screen.getByTestId('nav-mod-inbox'));
@@ -66,8 +77,8 @@ describe('TopBar app menu', () => {
     expect(mockSetWorkspaceView).toHaveBeenCalledWith('mod-inbox');
   });
 
-  it('includes Discover and Downloads in the dashboard action order', () => {
-    render(<TopBar />);
+  it('includes Discover and Downloads in the dashboard action order', async () => {
+    await renderTopBar();
 
     fireEvent.click(screen.getByTitle('App Menu'));
 
@@ -88,9 +99,9 @@ describe('TopBar app menu', () => {
     ]);
   });
 
-  it('keeps the back action inside the app menu', () => {
+  it('keeps the back action inside the app menu', async () => {
     workspaceView = 'mods';
-    render(<TopBar />);
+    await renderTopBar();
 
     expect(screen.queryByTitle('Back to Dashboard')).not.toBeInTheDocument();
 
@@ -102,8 +113,8 @@ describe('TopBar app menu', () => {
     expect(mockSetWorkspaceView).toHaveBeenCalledWith('dashboard');
   });
 
-  it('renders the app menu outside the topbar clipping surface', () => {
-    render(<TopBar />);
+  it('renders the app menu outside the topbar clipping surface', async () => {
+    await renderTopBar();
 
     fireEvent.click(screen.getByTitle('App Menu'));
 
@@ -112,8 +123,8 @@ describe('TopBar app menu', () => {
     expect(overlay.parentElement).toHaveClass('fixed');
   });
 
-  it('publishes the app-menu state while the menu is open', () => {
-    render(<TopBar />);
+  it('publishes the app-menu state while the menu is open', async () => {
+    await renderTopBar();
 
     fireEvent.click(screen.getByTitle('App Menu'));
     expect(mockSetAppMenuOpen).toHaveBeenCalledWith(true);
@@ -122,9 +133,9 @@ describe('TopBar app menu', () => {
     expect(mockSetAppMenuOpen).toHaveBeenCalledWith(false);
   });
 
-  it('shows collection controls only in Mods Manager', () => {
+  it('shows collection controls only in Mods Manager', async () => {
     const contextControls = <span>Collection controls</span>;
-    const { rerender } = render(<TopBar contextControls={contextControls} />);
+    const { rerender } = await renderTopBar({ contextControls });
 
     expect(screen.queryByText('Collection controls')).not.toBeInTheDocument();
 
@@ -140,9 +151,9 @@ describe('TopBar app menu', () => {
     expect(document.getElementById('topbar-actions-portal')).toHaveClass('xl:ml-auto');
   });
 
-  it('uses the top bar title for Discover', () => {
+  it('uses the top bar title for Discover', async () => {
     workspaceView = 'browser';
-    render(<TopBar />);
+    await renderTopBar();
 
     expect(screen.getByText('Discover')).toBeInTheDocument();
   });
@@ -160,15 +171,17 @@ describe('TopBar app menu', () => {
       },
     };
     mockRetryRuntimeSync.mockResolvedValue(5);
-    render(<TopBar />);
+    await renderTopBar();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    });
 
     await waitFor(() => expect(mockRetryRuntimeSync).toHaveBeenCalledWith('game-1'));
     expect(screen.getByTestId('topbar-center')).toBeInTheDocument();
   });
 
-  it('does not expose the internal focus validation message for a manual reload', () => {
+  it('does not expose the internal focus validation message for a manual reload', async () => {
     activeGame = { id: 'game-1' };
     runtimeSyncByGame = {
       'game-1': {
@@ -180,7 +193,7 @@ describe('TopBar app menu', () => {
       },
     };
 
-    render(<TopBar />);
+    await renderTopBar();
 
     expect(screen.getByRole('status')).toHaveAttribute('title', 'Manual reload required');
   });

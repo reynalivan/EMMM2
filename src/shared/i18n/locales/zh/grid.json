@@ -76,6 +76,8 @@
     "bulk_delete_confirm_btn": "全部移动到回收站"
   },
   "card": {
+    "conflict_group_label": "{{name}}，文件夹名称冲突",
+    "open_conflict": "查看冲突",
     "aria_label_enabled": "{{name}}，已启用",
     "aria_label_disabled": "{{name}}，已禁用",
     "mod_pack": "模组包",

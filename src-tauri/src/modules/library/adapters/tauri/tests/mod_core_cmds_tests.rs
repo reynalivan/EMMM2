@@ -6,6 +6,98 @@ use crate::modules::library::application::mods::trash;
 use std::fs;
 use tempfile::TempDir;
 
+#[cfg(windows)]
+#[test]
+fn regression_ini_editor_rejects_disabled_alias_junction_escape() {
+    use std::os::windows::process::CommandExt;
+    let tmp = TempDir::new().unwrap();
+    let folder = tmp.path().join("Mods/Skin");
+    let outside = tmp.path().join("DISABLED Mods/Skin");
+    fs::create_dir_all(&folder).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("external.ini"), "[Constants]").unwrap();
+    let link = folder.join("linked");
+    let script = format!(
+        "New-Item -ItemType Junction -Path '{}' -Target '{}' | Out-Null",
+        link.display().to_string().replace('\'', "''"),
+        outside.display().to_string().replace('\'', "''")
+    );
+    let result = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(0x08000000)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(resolve_ini_editor_path(&folder, "linked/external.ini").is_err());
+}
+
+#[test]
+fn regression_create_folder_rejects_replaced_staging() {
+    let tmp = TempDir::new().unwrap();
+    let prepared = prepare_folder_create(tmp.path(), "Variants").unwrap();
+    prepared.prepare().unwrap();
+    let owned = tmp.path().join("OwnedStage");
+    fs::rename(&prepared.stage, &owned).unwrap();
+    fs::create_dir(&prepared.stage).unwrap();
+    assert!(prepared.promote().is_err());
+    assert!(prepared.stage.is_dir());
+    assert!(owned.is_dir());
+    assert!(!prepared.target.exists());
+}
+
+#[test]
+fn regression_create_folder_rollback_preserves_replacement_target() {
+    let tmp = TempDir::new().unwrap();
+    let prepared = prepare_folder_create(tmp.path(), "Variants").unwrap();
+    prepared.prepare().unwrap();
+    prepared.promote().unwrap();
+    let owned = tmp.path().join("OwnedTarget");
+    fs::rename(&prepared.target, &owned).unwrap();
+    fs::create_dir(&prepared.target).unwrap();
+    assert!(prepared.rollback().is_err());
+    assert!(prepared.target.is_dir());
+    assert!(owned.is_dir());
+    assert!(!prepared.stage.exists());
+}
+
+#[test]
+fn create_folder_never_overwrites_a_raced_destination() {
+    let tmp = TempDir::new().unwrap();
+    let prepared = prepare_folder_create(tmp.path(), "Variants").unwrap();
+    prepared.prepare().unwrap();
+    fs::create_dir(&prepared.target).unwrap();
+    let sentinel = prepared.target.join("foreign.txt");
+    fs::write(&sentinel, b"foreign").unwrap();
+    assert!(prepared.promote().is_err());
+    prepared.rollback().unwrap();
+    assert!(!prepared.stage.exists());
+    assert_eq!(fs::read(sentinel).unwrap(), b"foreign");
+}
+
+#[test]
+fn create_folder_preserves_foreign_staging_after_parent_replacement() {
+    let tmp = TempDir::new().unwrap();
+    let parent = tmp.path().join("Object");
+    fs::create_dir(&parent).unwrap();
+    let prepared = prepare_folder_create(&parent, "Variants").unwrap();
+    prepared.prepare().unwrap();
+    let owned = tmp.path().join("OwnedParent");
+    fs::rename(&parent, &owned).unwrap();
+    fs::create_dir(&parent).unwrap();
+    fs::create_dir(&prepared.stage).unwrap();
+    let sentinel = prepared.stage.join("foreign.txt");
+    fs::write(&sentinel, b"foreign").unwrap();
+    assert!(prepared.promote().is_err());
+    assert!(prepared.rollback().is_err());
+    assert_eq!(fs::read(sentinel).unwrap(), b"foreign");
+    assert!(owned.join(prepared.stage.file_name().unwrap()).is_dir());
+    assert!(!prepared.target.exists());
+}
+
 #[test]
 fn ini_editor_path_accepts_existing_ini_file() {
     let tmp = TempDir::new().unwrap();
@@ -61,6 +153,10 @@ fn create_folder_stages_and_promotes_one_new_directory() {
     prepared.prepare().unwrap();
     assert!(prepared.stage.is_dir());
     assert!(!prepared.target.exists());
+    assert_eq!(
+        prepared.journal_step().unwrap().expected_identity,
+        Some(prepared.owned_stage().unwrap().identity().to_string())
+    );
 
     prepared.promote().unwrap();
     assert!(prepared.target.is_dir());

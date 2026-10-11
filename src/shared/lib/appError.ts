@@ -5,9 +5,10 @@ type StructuredError = {
   payload?: unknown;
 };
 
-type FileInUsePayload = {
+export type FileInUsePayload = {
   path: string;
   processes: string[];
+  recoveryId?: string;
 };
 
 type MissingModsPayload = {
@@ -69,6 +70,25 @@ function normalizeStructuredError(value: unknown): StructuredError | null {
   return { type, payload };
 }
 
+/** Identifies a failed diagnostic before any recovery mutation was attempted. */
+export class FileLockDiagnosticError extends Error {
+  private constructor(readonly cause: unknown) {
+    super(formatAppError(cause));
+    this.name = 'FileLockDiagnosticError';
+  }
+
+  static fromIo(error: unknown): FileLockDiagnosticError | null {
+    let structured = normalizeStructuredError(error);
+    while (
+      structured &&
+      ['App', 'Collection', 'RuntimeState', 'Metadata'].includes(structured.type)
+    ) {
+      structured = normalizeStructuredError(structured.payload);
+    }
+    return structured?.type === 'Io' ? new FileLockDiagnosticError(error) : null;
+  }
+}
+
 export function isExplorerSnapshotExpired(error: unknown): boolean {
   return normalizeStructuredError(error)?.type === 'ExplorerSnapshotExpired';
 }
@@ -128,6 +148,7 @@ function formatStructuredPayload(error: StructuredError): string | null {
       return typeof error.payload === 'object' && error.payload
         ? `Batch rename partially failed: ${String((error.payload as Record<string, unknown>).succeeded ?? 0)} succeeded, ${String((error.payload as Record<string, unknown>).failed ?? 0)} failed`
         : 'Batch rename partially failed';
+    case 'FileLock':
     case 'FileInUse':
       return typeof error.payload === 'object' && error.payload
         ? `File is in use: ${String((error.payload as Record<string, unknown>).path ?? '')}`
@@ -172,7 +193,10 @@ export function archiveErrorKindFromStoredMessage(message: string | null): Archi
 
 export function extractFileInUsePayload(error: unknown): FileInUsePayload | null {
   const structured = normalizeStructuredError(error);
-  if (!structured || !['FileInUse', 'PathBusy'].includes(structured.type)) {
+  if (structured && ['App', 'Collection', 'RuntimeState', 'Metadata'].includes(structured.type)) {
+    return extractFileInUsePayload(structured.payload);
+  }
+  if (!structured || !['FileInUse', 'PathBusy', 'FileLock'].includes(structured.type)) {
     return null;
   }
 
@@ -181,6 +205,11 @@ export function extractFileInUsePayload(error: unknown): FileInUsePayload | null
   }
 
   const payload = structured.payload as Record<string, unknown>;
+  if (structured.type === 'FileLock') {
+    return typeof payload.path === 'string' && typeof payload.recovery_id === 'string'
+      ? { path: payload.path, processes: [], recoveryId: payload.recovery_id }
+      : null;
+  }
   if (structured.type === 'PathBusy') {
     return typeof payload.path === 'string' ? { path: payload.path, processes: [] } : null;
   }

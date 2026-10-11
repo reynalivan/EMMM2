@@ -60,20 +60,30 @@ export function ImportBatchWizardDestinationPanel({
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
   );
-  const suggestions = useMemo(
-    () =>
-      [...item.destinationSuggestions].sort(
-        (a, b) => b.confidencePercentage - a.confidencePercentage,
-      ),
-    [item.destinationSuggestions],
-  );
+  const suggestions = item.destinationSuggestions;
   const proposed = suggestions[0] ?? null;
+  const selectedSuggestion = suggestions.find((suggestion) => {
+    if (item.destinationObjectId) return suggestion.objectId === item.destinationObjectId;
+    if (item.destinationPath) return suggestion.targetPath === item.destinationPath;
+    return (
+      suggestion.kind === 'create_canonical' &&
+      item.selectedEntryKey !== null &&
+      suggestion.canonicalEntryKey === item.selectedEntryKey
+    );
+  });
+  const hasPersistedDestination = Boolean(
+    item.destinationObjectId || item.destinationPath || item.selectedEntryKey,
+  );
+  const displayedSuggestion = selectedSuggestion ?? (hasPersistedDestination ? null : proposed);
   const selectedObject = item.destinationObjectId
     ? (objectById.get(item.destinationObjectId) ?? null)
-    : proposed?.objectId
-      ? (objectById.get(proposed.objectId) ?? null)
+    : displayedSuggestion?.objectId
+      ? (objectById.get(displayedSuggestion.objectId) ?? null)
       : null;
-  const selectedName = selectedObject?.name ?? proposed?.folderName ?? null;
+  const selectedName =
+    selectedObject?.name ??
+    displayedSuggestion?.folderName ??
+    destinationFolderName(item.destinationPath);
   const suggestionByObjectId = new Map(
     suggestions.flatMap((suggestion) =>
       suggestion.objectId ? [[suggestion.objectId, suggestion] as const] : [],
@@ -180,8 +190,8 @@ export function ImportBatchWizardDestinationPanel({
           </span>
           <span className="block truncate text-[11px] text-base-content/50">
             {selectedObject?.object_type ??
-              (proposed
-                ? t(`match_methods.${effectiveMatchMethod(proposed)}`)
+              (displayedSuggestion
+                ? t(`match_methods.${effectiveMatchMethod(displayedSuggestion)}`)
                 : t('destination.search_hint'))}
           </span>
         </span>
@@ -309,6 +319,16 @@ function confidenceBadgeClass(tier: ConfidenceTier): string {
   if (tier === 'medium') return 'badge-warning';
   if (tier === 'low') return 'badge-info';
   return 'badge-ghost';
+}
+
+function destinationFolderName(path: string | null): string | null {
+  if (!path) return null;
+  return (
+    path
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() ?? path
+  );
 }
 
 function effectiveMatchMethod(

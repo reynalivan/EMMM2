@@ -57,6 +57,8 @@ pub struct ApplyContext {
     pub restrict_current_state_to_target_scope: bool,
     pub(crate) prepared_renames: Option<super::steps::batch_rename::PreparedCollectionRenames>,
     pub(crate) mutation_guard: Option<crate::modules::mutation::coordinator::MutationGuard>,
+    pub(crate) lock_recovery_id: Option<String>,
+    pub(crate) source_root_proof: Option<crate::platform::fs::file_utils::FilesystemIdentityProof>,
 
     pub mods_enabled: usize,
     pub mods_disabled: usize,
@@ -112,6 +114,8 @@ impl ApplyContext {
             runtime_path_rewrites: Vec::new(),
             prepared_renames: None,
             mutation_guard: None,
+            lock_recovery_id: None,
+            source_root_proof: None,
             mods_enabled: 0,
             mods_disabled: 0,
         }
@@ -139,8 +143,19 @@ pub async fn execute(
                 return Err(error);
             }
             if let Some(guard) = ctx.mutation_guard.take() {
+                let receipt_operation_id = guard.operation_id().map(str::to_string);
                 guard.mark_db_committed().map_err(mutation_error)?;
                 guard.commit().map_err(mutation_error)?;
+                if let Some(operation_id) = receipt_operation_id {
+                    if let Err(error) = crate::modules::mutation::api::delete_projection_receipt(
+                        &ctx.pool,
+                        &operation_id,
+                    )
+                    .await
+                    {
+                        log::warn!("Collection projection receipt cleanup failed: {error}");
+                    }
+                }
             }
             crate::modules::library::application::apply_progress::finish(
                 &ctx.game_id,
@@ -165,6 +180,25 @@ async fn finalize_apply(
     task_id: &str,
     expected_status: TaskStatus,
 ) -> Result<(), CollectionError> {
+    let _root_pin = if let Some(proof) = ctx.source_root_proof.as_ref() {
+        proof.validate(&ctx.mods_path).map_err(mutation_error)?;
+        let pin = crate::platform::fs::rename::PinnedDirectory::open(&ctx.mods_path)
+            .map_err(|error| CollectionError::Io(error.to_string()))?;
+        if pin.identity() != proof.identity() {
+            return Err(CollectionError::Io(
+                "Collection Mods root changed before finalization".into(),
+            ));
+        }
+        Some(pin)
+    } else {
+        None
+    };
+    let receipt = ctx
+        .mutation_guard
+        .as_ref()
+        .map(|guard| guard.collection_projection_receipt())
+        .transpose()
+        .map_err(mutation_error)?;
     let outcome: Result<(), sqlx::Error> = async {
         let mut tx = ctx.pool.begin().await?;
         if ctx.finalize_active_collection {
@@ -176,6 +210,14 @@ async fn finalize_apply(
             .await?;
         }
         finalize_task_snapshot(ctx, &mut tx, task_id, expected_status).await?;
+        if let Some(receipt) = &receipt {
+            crate::modules::mutation::api::insert_projection_receipt_tx(&mut tx, receipt).await?;
+        }
+        if let Some(proof) = ctx.source_root_proof.as_ref() {
+            proof
+                .validate(&ctx.mods_path)
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        }
         tx.commit().await
     }
     .await;
@@ -268,6 +310,10 @@ async fn execute_inner(
             },
         ));
     }
+    let source_root =
+        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&ctx.mods_path)
+            .map_err(mutation_error)?;
+    ctx.source_root_proof = Some(source_root.clone());
 
     if ctx.runtime_target_state.is_none() {
         super::steps::validate_collection::validate(ctx).await?;
@@ -291,18 +337,35 @@ async fn execute_inner(
     super::steps::resolve_current_state::resolve(ctx).await?;
     super::steps::resolve_current_state::compute_diff(ctx);
     let steps = super::steps::batch_rename::prepare(ctx).await?;
+    let original_recovery_scope =
+        crate::modules::mutation::api::original_file_lock_scope(&steps).map_err(mutation_error)?;
+    if let Some(id) = ctx.lock_recovery_id.as_deref() {
+        crate::modules::system::api::validate_file_lock_recovery_for_game(id, &ctx.game_id)
+            .map_err(mutation_error)?;
+        crate::modules::system::api::validate_file_lock_replay_scope(id, &original_recovery_scope)
+            .map_err(mutation_error)?;
+    }
     ctx.mutation_started = !steps.is_empty();
     if let Some(coordinator) = mutation_coordinator.filter(|_| !steps.is_empty()) {
+        source_root
+            .validate(&ctx.mods_path)
+            .map_err(mutation_error)?;
         ctx.mutation_guard = Some(
             coordinator
-                .begin_operation_under_lock(crate::modules::mutation::journal::OperationPlan::new(
-                    "collection-apply",
-                    &ctx.game_id,
-                    steps,
-                ))
+                .begin_operation_under_lock(
+                    crate::modules::mutation::journal::OperationPlan::new(
+                        crate::modules::mutation::api::COLLECTION_APPLY_OPERATION_KIND,
+                        &ctx.game_id,
+                        steps,
+                    )
+                    .with_source_epoch(source_root.identity().to_string()),
+                )
                 .map_err(mutation_error)?,
         );
     }
+    source_root
+        .validate(&ctx.mods_path)
+        .map_err(mutation_error)?;
 
     crate::modules::library::application::apply_progress::update(
         &ctx.game_id,
@@ -311,7 +374,15 @@ async fn execute_inner(
         ctx.to_enable.len() + ctx.to_disable.len(),
         None,
     );
-    super::steps::batch_rename::rename(ctx).await?;
+    if let Err(error) = super::steps::batch_rename::rename(ctx).await {
+        if ctx.mutation_started {
+            return Err(error);
+        }
+        return Err(bind_collection_file_lock_scope(
+            error,
+            &original_recovery_scope,
+        ));
+    }
 
     crate::modules::library::application::apply_progress::update(
         &ctx.game_id,
@@ -341,6 +412,23 @@ async fn execute_inner(
 
 fn mutation_error(error: crate::shared::errors::AppError) -> CollectionError {
     CollectionError::Io(error.to_string())
+}
+
+fn bind_collection_file_lock_scope(
+    error: CollectionError,
+    scope: &[(PathBuf, String)],
+) -> CollectionError {
+    use crate::shared::errors::AppError;
+    let app_error = match error {
+        CollectionError::FileLock { path, recovery_id } => AppError::FileLock { path, recovery_id },
+        CollectionError::PathBusy { path } => AppError::PathBusy { path },
+        other => return other,
+    };
+    match crate::modules::system::api::bind_file_lock_scope(app_error, scope) {
+        AppError::FileLock { path, recovery_id } => CollectionError::FileLock { path, recovery_id },
+        AppError::PathBusy { path } => CollectionError::PathBusy { path },
+        other => CollectionError::Io(other.to_string()),
+    }
 }
 
 #[cfg(test)]

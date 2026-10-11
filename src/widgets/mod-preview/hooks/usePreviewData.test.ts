@@ -6,12 +6,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createWrapper } from '../../../tests/testing/test-utils';
 import { useAppStore } from '@/app/store';
 import { useToastStore } from '@/shared/ui/toast';
+import { detailsKeys, thumbnailKeys } from '@/entities/mod';
 import {
-  useModInfo,
   useModIniDocuments,
   usePreviewImages,
   useSavePreviewImage,
   useRemovePreviewImage,
+  useRestorePreviewImage,
   useClearPreviewImages,
   useWriteModIni,
   useUpdateModInfoDetails,
@@ -34,20 +35,6 @@ describe('usePreviewData hooks', () => {
     useToastStore.setState({ toasts: [] });
   });
 
-  it('fetches mod info when folder path is provided', async () => {
-    vi.mocked(invoke).mockResolvedValue({ actual_name: 'Mod A' });
-
-    const { result } = renderHook(() => useModInfo('E:/Mods/ModA'), {
-      wrapper: createWrapper,
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('read_mod_info', {
-      gameId: 'game-1',
-      folderPath: 'E:/Mods/ModA',
-    });
-  });
-
   it('fetches all ini documents in one request', async () => {
     vi.mocked(invoke).mockResolvedValue([
       { filename: 'config.ini', document: { mode: 'Structured', raw_lines: [] } },
@@ -64,15 +51,20 @@ describe('usePreviewData hooks', () => {
     });
   });
 
-  it('fetches ordered preview images', async () => {
-    vi.mocked(invoke).mockResolvedValue(['E:/Mods/ModA/preview_custom.png']);
+  it('fetches ordered preview images including reversible visibility', async () => {
+    const entries = [
+      { path: 'E:/Mods/ModA/preview_custom.png', is_hidden: false },
+      { path: 'E:/Mods/ModA/texture.png', is_hidden: true },
+    ];
+    vi.mocked(invoke).mockResolvedValue(entries);
 
     const { result } = renderHook(() => usePreviewImages('E:/Mods/ModA'), {
       wrapper: createWrapper,
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invoke).toHaveBeenCalledWith('list_mod_preview_images', {
+    expect(result.current.data).toEqual(entries);
+    expect(invoke).toHaveBeenCalledWith('list_mod_preview_images_with_visibility', {
       gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
     });
@@ -148,6 +140,7 @@ describe('usePreviewData hooks', () => {
     const { result } = renderHook(() => useSavePreviewImage(), { wrapper: createWrapper });
 
     await result.current.mutateAsync({
+      gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       objectName: 'Keqing',
       imageData: [1, 2, 3],
@@ -161,7 +154,7 @@ describe('usePreviewData hooks', () => {
     });
   });
 
-  it('removes one preview image with mutation', async () => {
+  it('hides one preview image with mutation', async () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useRemovePreviewImage(), { wrapper: createWrapper });
@@ -175,6 +168,45 @@ describe('usePreviewData hooks', () => {
       gameId: 'game-1',
       folderPath: 'E:/Mods/ModA',
       imagePath: 'E:/Mods/ModA/preview_keqing.png',
+    });
+  });
+
+  it('restores a hidden image through the typed visibility command', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRestorePreviewImage(), { wrapper: createWrapper });
+
+    await result.current.mutateAsync({
+      folderPath: 'E:/Mods/ModA',
+      imagePath: 'E:/Mods/ModA/texture.png',
+    });
+
+    expect(invoke).toHaveBeenCalledWith('set_mod_preview_image_hidden', {
+      gameId: 'game-1',
+      folderPath: 'E:/Mods/ModA',
+      imagePath: 'E:/Mods/ModA/texture.png',
+      hidden: false,
+    });
+  });
+
+  it('invalidates the grid thumbnail after changing preview visibility', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+    const thumbnailKey = thumbnailKeys.folder('E:/Mods/ModA', 'game-1');
+    const previewImagesKey = detailsKeys.previewImages('E:/Mods/ModA');
+    queryClient.setQueryData(thumbnailKey, 'cached.webp');
+    queryClient.setQueryData(previewImagesKey, []);
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRemovePreviewImage(), { wrapper });
+
+    await result.current.mutateAsync({
+      folderPath: 'E:/Mods/ModA',
+      imagePath: 'E:/Mods/ModA/preview_custom.png',
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryState(thumbnailKey)?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState(previewImagesKey)?.isInvalidated).toBe(true);
     });
   });
 
@@ -199,6 +231,8 @@ describe('usePreviewData hooks', () => {
       React.createElement(QueryClientProvider, { client: queryClient }, children);
 
     vi.mocked(invoke).mockResolvedValue([]);
+    const thumbnailKey = thumbnailKeys.folder('E:/Mods/ModA', 'game-1');
+    queryClient.setQueryData(thumbnailKey, 'cached.webp');
 
     const { result } = renderHook(
       () => ({
@@ -209,17 +243,21 @@ describe('usePreviewData hooks', () => {
     );
 
     await waitFor(() => expect(result.current.images.isSuccess).toBe(true));
-    const before = countInvokes('list_mod_preview_images');
+    const before = countInvokes('list_mod_preview_images_with_visibility');
 
     await act(async () => {
       await result.current.save.mutateAsync({
+        gameId: 'game-1',
         folderPath: 'E:/Mods/ModA',
         objectName: 'Keqing',
         imageData: [1, 2, 3],
       });
     });
 
-    await waitFor(() => expect(countInvokes('list_mod_preview_images')).toBeGreaterThan(before));
+    await waitFor(() =>
+      expect(countInvokes('list_mod_preview_images_with_visibility')).toBeGreaterThan(before),
+    );
+    expect(queryClient.getQueryState(thumbnailKey)?.isInvalidated).toBe(true);
   });
 
   it('mutation error is exposed to caller', async () => {

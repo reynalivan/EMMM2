@@ -1,5 +1,6 @@
 use super::{
-    validate_dir_in_configured_roots, validate_mod_toggle_paths, validate_mods_root, validate_path,
+    validate_dir_in_configured_roots, validate_mod_target_path, validate_mod_toggle_paths,
+    validate_mods_root, validate_path, ModFolderIdentityProof,
 };
 use crate::modules::settings::application::config::{ConfigService, GameConfig};
 use std::fs;
@@ -13,7 +14,7 @@ async fn config_with_game(mod_path: &std::path::Path) -> ConfigService {
     settings.games.push(GameConfig {
         id: "game-1".to_string(),
         name: "Test Game".to_string(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         instance_path: mod_path.to_path_buf(),
         mod_path: mod_path.to_path_buf(),
         ready_to_move_path: None,
@@ -89,7 +90,7 @@ async fn most_specific_canonical_root_owns_nested_targets() {
     settings.games.push(GameConfig {
         id: "game-2".to_string(),
         name: "Nested Game".to_string(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         instance_path: target.clone(),
         mod_path: inner_root,
         ready_to_move_path: None,
@@ -118,7 +119,7 @@ async fn rejects_identical_canonical_roots_with_different_owners() {
     settings.games.push(GameConfig {
         id: "game-2".to_string(),
         name: "Duplicate Root Game".to_string(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         instance_path: target.clone(),
         mod_path: mods_root,
         ready_to_move_path: None,
@@ -152,7 +153,7 @@ async fn unique_inner_root_wins_over_ambiguous_outer_roots() {
     settings.games.push(GameConfig {
         id: "game-2".to_string(),
         name: "Duplicate Outer Root".to_string(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         instance_path: tmp.path().join("GameTwo"),
         mod_path: outer_root,
         ready_to_move_path: None,
@@ -166,7 +167,7 @@ async fn unique_inner_root_wins_over_ambiguous_outer_roots() {
     settings.games.push(GameConfig {
         id: "game-3".to_string(),
         name: "Nested Game".to_string(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         instance_path: tmp.path().join("GameThree"),
         mod_path: inner_root,
         ready_to_move_path: None,
@@ -256,4 +257,145 @@ async fn bulk_toggle_keeps_missing_items_local_but_rejects_the_mods_root() {
         root_error,
         crate::shared::errors::AppError::Security(_)
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn mod_target_guard_rejects_the_mods_root_but_accepts_a_child_folder() {
+    let tmp = TempDir::new().unwrap();
+    let mods_root = tmp.path().join("Mods");
+    let child = mods_root.join("Character");
+    fs::create_dir_all(&child).unwrap();
+    let config = config_with_game(&mods_root).await;
+
+    let root_error = validate_mod_target_path(&config, "game-1", &mods_root.to_string_lossy())
+        .expect_err("a destructive mod operation must not target the configured root");
+    assert!(matches!(
+        root_error,
+        crate::shared::errors::AppError::Security(_)
+    ));
+
+    let validated = validate_mod_target_path(&config, "game-1", &child.to_string_lossy())
+        .expect("a child mod folder remains a valid target");
+    assert_eq!(validated.as_ref(), child.canonicalize().unwrap());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn image_target_identity_rejects_a_folder_renamed_while_waiting() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("Mods");
+    let folder = root.join("Original");
+    fs::create_dir_all(&folder).unwrap();
+    let config = config_with_game(&root).await;
+    let selected = validate_path(&config, "game-1", "Original").unwrap();
+    let proof = ModFolderIdentityProof::capture(&config, &selected).unwrap();
+
+    fs::rename(&folder, root.join("Moved")).unwrap();
+
+    assert!(proof.validate(&config).is_err());
+    assert!(
+        !folder.exists(),
+        "a refused image write must not recreate the old path"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn image_target_identity_rejects_a_replacement_folder() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("Mods");
+    let folder = root.join("Original");
+    fs::create_dir_all(&folder).unwrap();
+    let config = config_with_game(&root).await;
+    let selected = validate_path(&config, "game-1", "Original").unwrap();
+    let proof = ModFolderIdentityProof::capture(&config, &selected).unwrap();
+
+    fs::rename(&folder, root.join("Moved")).unwrap();
+    fs::create_dir(&folder).unwrap();
+    let image = folder.join("preview_custom.png");
+    fs::write(&image, b"replacement-owned").unwrap();
+
+    assert!(proof.validate(&config).is_err());
+    assert_eq!(fs::read(&image).unwrap(), b"replacement-owned");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn image_target_identity_rejects_a_reconfigured_game_root() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("Mods");
+    let folder = root.join("Original");
+    fs::create_dir_all(&folder).unwrap();
+    let config = config_with_game(&root).await;
+    let selected = validate_path(&config, "game-1", "Original").unwrap();
+    let proof = ModFolderIdentityProof::capture(&config, &selected).unwrap();
+
+    let next_root = tmp.path().join("NextMods");
+    fs::create_dir_all(next_root.join("Original")).unwrap();
+    let recovered_config = config_with_game(&next_root).await;
+
+    assert!(proof.validate(&recovered_config).is_err());
+    assert!(folder.exists());
+    assert!(!folder.join("preview_custom.png").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn image_target_identity_rejects_a_replaced_root_at_the_same_path() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("Mods");
+    fs::create_dir_all(root.join("Original")).unwrap();
+    let config = config_with_game(&root).await;
+    let selected = validate_path(&config, "game-1", "Original").unwrap();
+    let proof = ModFolderIdentityProof::capture(&config, &selected).unwrap();
+
+    fs::rename(&root, tmp.path().join("MovedMods")).unwrap();
+    fs::create_dir_all(root.join("Original")).unwrap();
+
+    assert!(proof.validate(&config).is_err());
+    assert!(!root.join("Original/preview_custom.png").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn image_target_identity_accepts_content_changes_in_the_original_folder() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("Mods");
+    let folder = root.join("Original");
+    fs::create_dir_all(&folder).unwrap();
+    let config = config_with_game(&root).await;
+    let selected = validate_path(&config, "game-1", "Original").unwrap();
+    let proof = ModFolderIdentityProof::capture(&config, &selected).unwrap();
+
+    fs::write(folder.join("mod.ini"), b"[Constants]\n$value = 1\n").unwrap();
+
+    proof.validate(&config).unwrap();
+}
+
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn image_target_identity_rejects_the_original_folder_linked_back_from_outside() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("Mods");
+    let folder = root.join("Original");
+    let outside = tmp.path().join("Outside");
+    fs::create_dir_all(&folder).unwrap();
+    let config = config_with_game(&root).await;
+    let selected = validate_path(&config, "game-1", "Original").unwrap();
+    let proof = ModFolderIdentityProof::capture(&config, &selected).unwrap();
+
+    fs::rename(&folder, &outside).unwrap();
+    let junction = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&folder)
+        .arg(&outside)
+        .output()
+        .unwrap();
+    assert!(
+        junction.status.success(),
+        "owned junction fixture must create"
+    );
+    let result = proof.validate(&config);
+    fs::remove_dir(&folder).unwrap();
+
+    assert!(
+        result.is_err(),
+        "a stable identity cannot authorize an escaped folder"
+    );
+    assert!(!outside.join("preview_custom.png").exists());
 }

@@ -7,6 +7,7 @@ import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committe
 import { useAppStore } from '@/app/store';
 import { toast } from '@/shared/ui/toast';
 import { closeWorkspaceDialog } from '@/features/workspace-runtime';
+import { FileLockRecoveryCancelled, runWithFileLockRecovery } from '@/features/workspace-runtime';
 import { useWorkspaceRuntimeSelector } from '@/features/workspace-runtime';
 import { validateFolderConflictDrafts } from './folderConflictValidation';
 import {
@@ -30,6 +31,7 @@ export default function FolderConflictManager() {
   const { t } = useTranslation('folder_grid');
   const activeGameId = useAppStore((state) => state.activeGameId);
   const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
+  const requestedGroupId = dialogState.kind === 'folderConflicts' ? dialogState.groupId : undefined;
   const conflictsByGame = useAppStore((state) => state.folderConflictsByGame);
   const reportsByGame = useAppStore((state) => state.folderConflictReportsByGame);
   const report = activeGameId ? (reportsByGame[activeGameId] ?? null) : null;
@@ -40,7 +42,9 @@ export default function FolderConflictManager() {
   const applyConflictActionResult = useApplyFolderConflictActionResult();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const [selectedId, setSelectedId] = useState<string | null>(groups[0]?.group_id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    requestedGroupId ?? groups[0]?.group_id ?? null,
+  );
   const [completedGroups, setCompletedGroups] = useState<CompletedFolderConflict[]>([]);
   const previousGroupsRef = useRef(groups);
   const queueGameIdRef = useRef(activeGameId);
@@ -83,6 +87,10 @@ export default function FolderConflictManager() {
       if (dialog?.open) dialog.close();
     };
   }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (isDialogOpen && requestedGroupId) setSelectedId(requestedGroupId);
+  }, [isDialogOpen, requestedGroupId]);
 
   useEffect(() => {
     if (queueGameIdRef.current !== activeGameId) {
@@ -266,7 +274,9 @@ export default function FolderConflictManager() {
     setSubmitting(true);
     try {
       for (const candidate of pendingTrashCandidates) {
-        const result = await commands.trashFolderConflictCandidate(selectedGameId, candidate.path);
+        const result = await runWithFileLockRecovery(selectedGameId, (recoveryId) =>
+          commands.trashFolderConflictCandidate(selectedGameId, candidate.path, recoveryId),
+        );
         notifyCommittedMutationSyncWarning(result);
         if (
           result.reconcile &&
@@ -279,13 +289,17 @@ export default function FolderConflictManager() {
       }
 
       if (renamePlanCandidates.length > 1) {
-        const result = await commands.resolveFolderNameConflict(
-          selectedGameId,
-          selectedGroup.group_id,
-          renamePlanCandidates.map((candidate) => ({
-            path: candidate.path,
-            base_name: selectedDrafts[candidate.path],
-          })),
+        const renames = renamePlanCandidates.map((candidate) => ({
+          path: candidate.path,
+          base_name: selectedDrafts[candidate.path],
+        }));
+        const result = await runWithFileLockRecovery(selectedGameId, (recoveryId) =>
+          commands.resolveFolderNameConflict(
+            selectedGameId,
+            selectedGroup.group_id,
+            renames,
+            recoveryId,
+          ),
         );
         if (applyConflictActionResult(result, selectedGroup.group_id)) {
           resolvedGroupIdRef.current = selectedGroup.group_id;
@@ -293,6 +307,7 @@ export default function FolderConflictManager() {
       }
       setErrors({});
     } catch (error) {
+      if (error instanceof FileLockRecoveryCancelled) return;
       toast.error(t('conflict_manager.apply_failed', { error: formatAppError(error) }));
     } finally {
       setSubmitting(false);
@@ -407,6 +422,9 @@ export default function FolderConflictManager() {
             {!resolvedExternally && !loadingDetails && !detailsError && selected && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="mb-4">
+                  <h3 className="mb-1 font-semibold text-base-content">
+                    {t('conflict_manager.this_conflict')}
+                  </h3>
                   <p className="text-sm font-medium text-base-content/80">
                     {t('conflict_manager.keep_name_instruction')}
                   </p>

@@ -9,7 +9,7 @@ use crate::shared::errors::ScannerError;
 #[derive(Debug, Clone)]
 pub struct MasterDb {
     pub entries: Vec<DbEntry>,
-    /// Pre-computed: for each entry, the combined set of name + tags tokens.
+    /// Pre-computed name, declared/skin alias and catalog-tag tokens per entry.
     pub(crate) keywords: Vec<(usize, HashSet<String>)>,
     /// Pre-computed separately so direct-name support does not normalize every
     /// candidate's name and aliases during matching.
@@ -32,6 +32,12 @@ impl MasterDb {
                 entry
                     .aliases
                     .iter()
+                    .chain(
+                        entry
+                            .custom_skins
+                            .iter()
+                            .flat_map(|skin| skin.aliases.iter()),
+                    )
                     .flat_map(|alias| normalizer::preprocess_text(alias))
                     .collect()
             })

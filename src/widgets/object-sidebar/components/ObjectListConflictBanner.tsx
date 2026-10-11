@@ -24,7 +24,7 @@ export default function ObjectListConflictBanner({
       </span>
       <button
         className="text-[10px] text-warning font-semibold hover:underline shrink-0"
-        onClick={openFolderConflictManagerDialog}
+        onClick={() => openFolderConflictManagerDialog()}
       >
         {t('item.resolve')}
       </button>

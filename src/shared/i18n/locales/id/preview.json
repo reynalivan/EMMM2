@@ -5,7 +5,7 @@
   },
   "folder_conflict": {
     "title": "Konflik nama folder",
-    "description": "Mod ini hanya dapat dibaca sampai identity folder duplikat diselesaikan.",
+    "description": "Folder-folder terpisah ini memiliki nama mod yang sama. Selesaikan konflik untuk mengeditnya.",
     "enabled": "Aktif",
     "disabled": "Nonaktif",
     "resolve": "Selesaikan konflik"
@@ -61,8 +61,11 @@
     "menu": {
       "paste": "Tempel gambar dari clipboard",
       "import": "Impor gambar pratinjau",
-      "remove_current": "Hapus gambar pratinjau saat ini",
-      "clear_all": "Hapus semua gambar pratinjau",
+      "remove_current": "Sembunyikan gambar pratinjau saat ini",
+      "clear_all": "Sembunyikan semua gambar pratinjau",
+      "show_hidden": "Tampilkan gambar pratinjau tersembunyi",
+      "hide_hidden": "Sembunyikan gambar pratinjau tersembunyi",
+      "restore_current": "Pulihkan gambar pratinjau saat ini",
       "thumbnail_imported": "Gambar pratinjau berhasil diimpor."
     },
     "image_alt": "Gambar pratinjau",
@@ -70,14 +73,17 @@
     "no_image_in_clipboard": "Tidak ada gambar di clipboard.",
     "thumbnail_pasted": "Gambar pratinjau ditempel.",
     "paste_error": "Gagal menempel gambar pratinjau: {{error}}",
-    "thumbnail_removed": "Gambar pratinjau dihapus.",
-    "remove_error": "Gagal menghapus gambar pratinjau: {{error}}",
-    "all_thumbnails_cleared": "Semua gambar pratinjau dihapus.",
-    "clear_all_error": "Gagal menghapus semua gambar pratinjau: {{error}}",
-    "remove_confirm_message": "Hapus gambar pratinjau yang dipilih?",
-    "clear_all_confirm_message": "Hapus semua gambar pratinjau dari mod ini?",
+    "thumbnail_removed": "Gambar pratinjau disembunyikan.",
+    "remove_error": "Gagal menyembunyikan gambar pratinjau: {{error}}",
+    "all_thumbnails_cleared": "Semua gambar pratinjau disembunyikan.",
+    "clear_all_error": "Gagal menyembunyikan semua gambar pratinjau: {{error}}",
+    "remove_confirm_message": "Sembunyikan gambar pratinjau yang dipilih? File tetap disimpan. Anda dapat memulihkannya melalui Tampilkan gambar pratinjau tersembunyi.",
+    "clear_all_confirm_message": "Sembunyikan semua gambar pratinjau dari mod ini? File tetap disimpan dan dapat dipulihkan.",
+    "thumbnail_restored": "Gambar pratinjau dipulihkan.",
+    "restore_error": "Gagal memulihkan gambar pratinjau: {{error}}",
+    "hidden_image": "Gambar pratinjau tersembunyi",
     "no_thumbnail_selected": "Tidak ada gambar pratinjau yang dipilih.",
-    "no_thumbnails_to_clear": "Tidak ada gambar pratinjau untuk dihapus.",
+    "no_thumbnails_to_clear": "Tidak ada gambar pratinjau yang terlihat untuk disembunyikan.",
     "import_error": "Gagal mengimpor gambar pratinjau: {{error}}"
   },
   "ini_editor": {

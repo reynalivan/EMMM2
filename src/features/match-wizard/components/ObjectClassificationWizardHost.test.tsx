@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   CanonicalClassificationCatalogEntry,
@@ -45,11 +45,19 @@ vi.mock('@/shared/lib/queryRefresh', () => ({ publishQueryScopes: mocks.publishQ
 vi.mock('@/shared/ui/components/ui/VirtualList', () => ({
   default: ({
     items,
+    getItemKey,
     renderItem,
   }: {
     items: unknown[];
+    getItemKey: (item: unknown) => string;
     renderItem: (item: unknown) => ReactNode;
-  }) => <div>{items.map(renderItem)}</div>,
+  }) => (
+    <div>
+      {items.map((item) => (
+        <Fragment key={getItemKey(item)}>{renderItem(item)}</Fragment>
+      ))}
+    </div>
+  ),
 }));
 
 const ayaka: CanonicalClassificationCatalogEntry = {
@@ -195,5 +203,200 @@ describe('ObjectClassificationWizardHost', () => {
         }),
       ),
     );
+  });
+
+  it('keeps the newest launch when earlier catalog requests finish later', async () => {
+    renderHost();
+    const resolvers: Array<(entries: CanonicalClassificationCatalogEntry[]) => void> = [];
+    mocks.listCanonicalClassificationCatalog.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const firstItem = previewItem('object-first', 'First launch', null);
+    const secondItem = previewItem('object-second', 'Second launch', null);
+    act(() => {
+      openObjectClassificationWizard({
+        gameId: 'game-1',
+        objectIds: [],
+        initialItems: [firstItem],
+      });
+      openObjectClassificationWizard({
+        gameId: 'game-2',
+        objectIds: [],
+        initialItems: [secondItem],
+      });
+    });
+
+    await act(async () => resolvers[1]([raiden]));
+    expect(await screen.findByText('Second launch')).toBeInTheDocument();
+    await act(async () => resolvers[0]([ayaka]));
+
+    expect(screen.getByText('Second launch')).toBeInTheDocument();
+    expect(screen.queryByText('First launch')).not.toBeInTheDocument();
+  });
+
+  it('ignores errors from a superseded launch', async () => {
+    renderHost();
+    const resolvers: Array<{
+      resolve: (entries: CanonicalClassificationCatalogEntry[]) => void;
+      reject: (error: Error) => void;
+    }> = [];
+    mocks.listCanonicalClassificationCatalog.mockImplementation(
+      () => new Promise((resolve, reject) => resolvers.push({ resolve, reject })),
+    );
+    const firstComplete = vi.fn();
+    act(() => {
+      openObjectClassificationWizard({
+        gameId: 'game-1',
+        objectIds: [],
+        initialItems: [previewItem('object-old', 'Old launch', null)],
+        onComplete: firstComplete,
+      });
+      openObjectClassificationWizard({
+        gameId: 'game-2',
+        objectIds: [],
+        initialItems: [previewItem('object-current', 'Current launch', null)],
+      });
+    });
+
+    await act(async () => resolvers[1].resolve([raiden]));
+    expect(await screen.findByText('Current launch')).toBeInTheDocument();
+    await act(async () => resolvers[0].reject(new Error('stale failure')));
+
+    expect(screen.getByText('Current launch')).toBeInTheDocument();
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(firstComplete).toHaveBeenCalledWith('cancelled');
+  });
+
+  it('cancels incoming launches during apply and preserves the applied callback', async () => {
+    renderHost();
+    let resolveApply!: (result: {
+      applied: number;
+      childModsUpdated: number;
+      aliasesChanged: boolean;
+      disabledObjects: number;
+      disableWarning: null;
+    }) => void;
+    mocks.applyObjectClassificationBatch.mockReturnValue(
+      new Promise((resolve) => {
+        resolveApply = resolve;
+      }),
+    );
+    const firstComplete = vi.fn();
+    const firstItem = previewItem('object-first', 'First launch', null);
+    act(() =>
+      openObjectClassificationWizard({
+        gameId: 'game-1',
+        objectIds: [],
+        initialItems: [firstItem],
+        onComplete: firstComplete,
+      }),
+    );
+    await screen.findByText('First launch');
+    fireEvent.focus(screen.getByRole('combobox', { name: 'classification_catalog_search_label' }));
+    fireEvent.click(screen.getByRole('option', { name: /classification_manual/ }));
+    fireEvent.click(screen.getByLabelText('classification_select_row:First launch'));
+    fireEvent.click(screen.getByRole('button', { name: 'classification_apply_selected:1' }));
+
+    const secondComplete = vi.fn();
+    act(() =>
+      openObjectClassificationWizard({
+        gameId: 'game-2',
+        objectIds: [],
+        initialItems: [previewItem('object-current', 'Current launch', null)],
+        onComplete: secondComplete,
+      }),
+    );
+    const cancelButton = screen.getByRole('button', { name: 'common:actions.cancel' });
+    expect(cancelButton).toBeDisabled();
+    expect(secondComplete).toHaveBeenCalledWith('cancelled');
+
+    await act(async () =>
+      resolveApply({
+        applied: 1,
+        childModsUpdated: 0,
+        aliasesChanged: false,
+        disabledObjects: 0,
+        disableWarning: null,
+      }),
+    );
+
+    expect(firstComplete).toHaveBeenCalledWith('applied');
+    expect(screen.queryByRole('dialog', { name: 'classification_title' })).not.toBeInTheDocument();
+  });
+
+  it('does not clear the newer launch busy state when an earlier ignore completes', async () => {
+    renderHost();
+    let resolveIgnore!: () => void;
+    act(() =>
+      openObjectClassificationWizard({
+        gameId: 'game-1',
+        objectIds: [],
+        initialItems: [previewItem('object-old', 'Old suggestion', null)],
+        onIgnore: () =>
+          new Promise<void>((resolve) => {
+            resolveIgnore = resolve;
+          }),
+      }),
+    );
+    await screen.findByText('Old suggestion');
+    fireEvent.click(screen.getByRole('button', { name: 'classification_ignore_suggestion' }));
+
+    let resolveCatalog!: (entries: CanonicalClassificationCatalogEntry[]) => void;
+    mocks.listCanonicalClassificationCatalog.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCatalog = resolve;
+      }),
+    );
+    act(() =>
+      openObjectClassificationWizard({
+        gameId: 'game-2',
+        objectIds: [],
+        initialItems: [previewItem('object-current', 'Current launch', null)],
+      }),
+    );
+    const cancelButton = screen.getByRole('button', { name: 'common:actions.cancel' });
+    await act(async () => resolveIgnore());
+
+    expect(cancelButton).toBeDisabled();
+    await act(async () => resolveCatalog([raiden]));
+    expect(await screen.findByText('Current launch')).toBeInTheDocument();
+    expect(cancelButton).toBeEnabled();
+  });
+
+  it('does not toast an ignore failure after its launch is superseded', async () => {
+    renderHost();
+    let rejectIgnore!: (error: Error) => void;
+    act(() =>
+      openObjectClassificationWizard({
+        gameId: 'game-1',
+        objectIds: [],
+        initialItems: [previewItem('object-old', 'Old suggestion', null)],
+        onIgnore: () =>
+          new Promise<void>((_, reject) => {
+            rejectIgnore = reject;
+          }),
+      }),
+    );
+    await screen.findByText('Old suggestion');
+    fireEvent.click(screen.getByRole('button', { name: 'classification_ignore_suggestion' }));
+
+    act(() =>
+      openObjectClassificationWizard({
+        gameId: 'game-2',
+        objectIds: [],
+        initialItems: [previewItem('object-current', 'Current launch', null)],
+      }),
+    );
+    await screen.findByText('Current launch');
+    await act(async () => {
+      rejectIgnore(new Error('obsolete ignore failure'));
+      await Promise.resolve();
+    });
+
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(screen.getByText('Current launch')).toBeInTheDocument();
   });
 });

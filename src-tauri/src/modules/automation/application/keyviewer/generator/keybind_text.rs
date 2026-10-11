@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::modules::automation::application::keyviewer::matcher::MatchResult;
+use crate::modules::automation::application::keyviewer::models::KeyViewerPanel;
+pub use crate::modules::automation::application::keyviewer::models::SourceKeyBinding;
 use crate::modules::library::application::ini::document::KeyBinding;
 use crate::shared::errors::AppError;
 
@@ -13,13 +13,6 @@ const TRUNCATION_MARKER: &str = "... (truncated; see the EMMM preview for the fu
 const MAX_HEADING_BYTES: usize = 512;
 const MAX_FOOTER_BYTES: usize = 256;
 const NO_SWITCHER_KEY_MESSAGE: &str = "No switcher key on this mod";
-
-/// A keybinding associated with its source mod name for display in the overlay.
-#[derive(Debug, Clone)]
-pub struct SourceKeyBinding {
-    pub mod_name: String,
-    pub keybinds: Vec<KeyBinding>,
-}
 
 /// The deterministic filename for one matching character's generated text.
 pub fn keybind_file_name(index: usize) -> String {
@@ -156,18 +149,17 @@ pub fn generate_keybind_text(
 /// Generate and write one deterministic text file for every matched object.
 pub fn write_keybind_files(
     output_dir: &Path,
-    matches: &[MatchResult],
-    sources_per_object: &HashMap<String, Vec<SourceKeyBinding>>,
+    panels: &[KeyViewerPanel],
     overlay_toggle_key: &str,
 ) -> Result<Vec<PathBuf>, AppError> {
     let mut written_files = Vec::new();
 
-    for (index, match_result) in matches.iter().enumerate() {
-        let sources = sources_per_object
-            .get(&match_result.object_name)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let content = generate_keybind_text(&match_result.object_name, sources, overlay_toggle_key);
+    for (index, panel) in panels.iter().enumerate() {
+        let content = generate_keybind_text(
+            &panel.match_result.object_name,
+            &panel.sources,
+            overlay_toggle_key,
+        );
         let file_path = output_dir.join(keybind_file_name(index));
         atomic_write(&file_path, &content)?;
         written_files.push(file_path);

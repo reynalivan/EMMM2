@@ -1,7 +1,9 @@
 use crate::modules::duplicates::domain::dup_scan::{DupScanGroup, DupScanReport};
 use crate::modules::workspace::domain::conflicts::WhitelistEntry;
 use crate::shared::errors::ScannerError;
+use crate::shared::path_key::exact_location_key_for_path;
 use sqlx::{Row, SqlitePool};
+use std::path::Path;
 
 pub async fn persist_completed_report(
     pool: &SqlitePool,
@@ -13,11 +15,12 @@ pub async fn persist_completed_report(
         .execute(&mut *transaction)
         .await?;
     sqlx::query(
-        "INSERT INTO dedup_jobs (id, game_id, status, completed_at) \
-         VALUES (?, ?, 'completed', CURRENT_TIMESTAMP)",
+        "INSERT INTO dedup_jobs (id, game_id, root_path, status, completed_at) \
+         VALUES (?, ?, ?, 'completed', CURRENT_TIMESTAMP)",
     )
     .bind(&report.scan_id)
     .bind(&report.game_id)
+    .bind(&report.root_path)
     .execute(&mut *transaction)
     .await?;
 
@@ -60,8 +63,8 @@ pub async fn load_latest_completed_report(
     pool: &SqlitePool,
     game_id: &str,
 ) -> Result<Option<DupScanReport>, ScannerError> {
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT jobs.id, games.mods_path \
+    let row: Option<(String, Option<String>, String)> = sqlx::query_as(
+        "SELECT jobs.id, jobs.root_path, games.mods_path \
          FROM dedup_jobs jobs \
          JOIN games ON games.id = jobs.game_id \
          WHERE jobs.game_id = ? AND jobs.status = 'completed' \
@@ -70,7 +73,13 @@ pub async fn load_latest_completed_report(
     .bind(game_id)
     .fetch_optional(pool)
     .await?;
-    let Some((scan_id, root_path)) = row else {
+    let Some((scan_id, stored_root_path, configured_root_path)) = row else {
+        return Ok(None);
+    };
+    if !report_root_matches_current_root(stored_root_path.as_deref(), &configured_root_path) {
+        return Ok(None);
+    }
+    let Some(root_path) = stored_root_path else {
         return Ok(None);
     };
 
@@ -102,10 +111,11 @@ pub async fn load_pending_group(
     game_id: &str,
     group_id: &str,
 ) -> Result<Option<DupScanGroup>, ScannerError> {
-    let group_json: Option<String> = sqlx::query_scalar(
-        "SELECT groups.reasons_json \
+    let row: Option<(String, Option<String>, String)> = sqlx::query_as(
+        "SELECT groups.reasons_json, jobs.root_path, games.mods_path \
          FROM dedup_groups groups \
          JOIN dedup_jobs jobs ON jobs.id = groups.job_id \
+         JOIN games ON games.id = jobs.game_id \
          WHERE groups.id = ? AND jobs.game_id = ? \
            AND jobs.status = 'completed' AND groups.resolution_status = 'pending'",
     )
@@ -114,9 +124,22 @@ pub async fn load_pending_group(
     .fetch_optional(pool)
     .await?;
 
-    group_json
-        .map(|json| serde_json::from_str(&json).map_err(ScannerError::from))
-        .transpose()
+    let Some((group_json, stored_root_path, configured_root_path)) = row else {
+        return Ok(None);
+    };
+    if !report_root_matches_current_root(stored_root_path.as_deref(), &configured_root_path) {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::from_str(&group_json)?))
+}
+
+fn report_root_matches_current_root(stored_root: Option<&str>, configured_root: &str) -> bool {
+    stored_root.is_some_and(|root| {
+        !root.is_empty()
+            && !configured_root.is_empty()
+            && exact_location_key_for_path(Path::new(root))
+                == exact_location_key_for_path(Path::new(configured_root))
+    })
 }
 
 pub async fn get_duplicate_whitelist_pairs(

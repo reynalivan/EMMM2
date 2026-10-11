@@ -52,13 +52,11 @@ async fn rollback_conflict_rename_plan(
 ) -> Result<(), AppError> {
     let suppressor = state.suppressor.clone();
     let plan = plan.clone();
-    tokio::task::spawn_blocking(move || {
-        crate::modules::library::application::mods::core_ops::rollback_folder_conflict_rename_plan(
+    crate::modules::library::application::mods::core_ops::rollback_folder_conflict_rename_plan_with_retry(
             &suppressor,
             &plan,
         )
-    })
-    .await?
+    .await
 }
 
 fn mark_conflict_steps_rolled_back(
@@ -187,6 +185,7 @@ pub async fn resolve_folder_name_conflict(
     game_id: String,
     group_id: String,
     renames: Vec<FolderConflictRename>,
+    recovery_id: Option<String>,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -297,7 +296,9 @@ pub async fn resolve_folder_name_conflict(
                 .with_expected_identity(Some(expected_identity))
             },
         )
-        .collect();
+        .collect::<Vec<_>>();
+    let original_recovery_scope =
+        crate::modules::mutation::api::original_file_lock_scope(&journal_steps)?;
     let operation_guard = op_lock
         .acquire_operation(
             crate::modules::mutation::api::OperationPlan::new(
@@ -331,20 +332,32 @@ pub async fn resolve_folder_name_conflict(
                 .zip(&source_proofs)
                 .try_for_each(|(path, proof)| proof.validate(path))
         })
+        .and_then(|()| match recovery_id.as_deref() {
+            Some(id) => crate::modules::system::api::validate_file_lock_recovery_for_paths(
+                id,
+                &validated
+                    .iter()
+                    .map(|path| path.to_path_buf())
+                    .collect::<Vec<_>>(),
+            ),
+            None => Ok(()),
+        })
     {
         mutation_lease.abort_unapplied()?;
         return Err(error);
     }
-    let apply_result = tokio::task::spawn_blocking(move || {
-        crate::modules::library::application::mods::core_ops::apply_folder_conflict_rename_plan(
+    let apply_result = crate::modules::library::application::mods::core_ops::apply_folder_conflict_rename_plan_with_retry(
             &suppressor,
             &apply_plan,
         )
-    })
-    .await?;
+    .await;
     if let Err(error) = apply_result {
         if rename_plan.is_rolled_back() {
             mark_conflict_steps_rolled_back(mutation_lease, rewrites.len())?;
+            return Err(crate::modules::system::api::bind_file_lock_scope(
+                error,
+                &original_recovery_scope,
+            ));
         } else {
             mutation_lease.fail(error.to_string())?;
         }
@@ -433,6 +446,7 @@ pub async fn trash_folder_conflict_candidate(
     op_lock: State<'_, MutationCoordinator>,
     game_id: String,
     path: String,
+    recovery_id: Option<String>,
 ) -> Result<FolderConflictMutationResult, AppError> {
     let _admission = crate::modules::mutation::api::admit_immutable_mutation(
         &game_id,
@@ -522,15 +536,25 @@ pub async fn trash_folder_conflict_candidate(
         )
         .and_then(|()| root_proof.validate(&mods_root))
         .and_then(|()| source_proof.validate(&validated))
+        .and_then(|()| match recovery_id.as_deref() {
+            Some(id) => crate::modules::system::api::validate_file_lock_recovery_for_paths(
+                id,
+                &[validated.to_path_buf()],
+            ),
+            None => Ok(()),
+        })
     {
         mutation_lease.abort_unapplied()?;
         return Err(error);
     }
-    if let Err(error) = prepared.execute(&state) {
+    if let Err(error) = prepared.execute_with_retry(&state).await {
         mutation_lease.mark_step_rolled_back(0)?;
         mutation_lease.begin_rollback()?;
         mutation_lease.finish_rollback()?;
-        return Err(error);
+        return Err(crate::modules::system::api::bind_file_lock_scope(
+            error,
+            &[(validated.to_path_buf(), source_proof.identity().to_string())],
+        ));
     }
     mutation_lease.mark_step_applied(0)?;
     let reconcile = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
@@ -551,7 +575,7 @@ pub async fn trash_folder_conflict_candidate(
                 Err(error) => error,
             };
             mutation_lease.begin_rollback()?;
-            if let Err(rollback_error) = prepared.rollback(&state) {
+            if let Err(rollback_error) = prepared.rollback_with_retry(&state).await {
                 let combined = format!("{error}; conflict trash rollback failed: {rollback_error}");
                 mutation_lease.fail(combined.clone())?;
                 return Err(AppError::Io(combined));

@@ -43,6 +43,16 @@ async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
     persist_projected_state(&ctx.pool, &collection.id, &[old_mod], &[object], &old_state)
         .await
         .expect("persist old state");
+    let persisted_object_ref_key: String =
+        sqlx::query_scalar("SELECT object_ref_key FROM collection_objects WHERE collection_id = ?")
+            .bind(&collection.id)
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("load persisted object reference key");
+    assert_eq!(
+        persisted_object_ref_key,
+        crate::shared::path_key::folder_path_key("AINOZ", None)
+    );
 
     handle_mod_moved_or_renamed(&ctx.pool, "game-1", "AINOZ/Old Mod", "AINOZ/New Mod", None)
         .await
@@ -194,6 +204,44 @@ async fn object_runtime_prefix_toggle_does_not_rewrite_saved_collection_referenc
 
     assert_eq!(impact.affected_collection_count, 0);
     assert_eq!(collection_mods[0].mod_path, "AINOZ/Blue");
+}
+
+#[tokio::test]
+async fn object_rename_rewrites_legacy_display_path_reference() {
+    let ctx = init_test_db().await;
+    seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
+    seed_ainoz_object(&ctx.pool, "object-1", "game-1").await;
+    let collection = collection::create(&ctx.pool, "collection-1", "game-1", "Preset", true, false)
+        .await
+        .expect("create collection");
+    sqlx::query(
+        "INSERT INTO collection_objects (collection_id, object_ref_key, object_id, object_display_name, is_enabled) VALUES (?, 'AINOZ', 'object-1', 'AINOZ', 1)",
+    )
+    .bind(&collection.id)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed legacy collection reference");
+
+    let mut tx = ctx.pool.begin().await.expect("begin transaction");
+    let impact = handle_object_renamed_tx(&mut tx, "game-1", "AINOZ", "Alice")
+        .await
+        .expect("rewrite legacy object reference");
+    tx.commit().await.expect("commit transaction");
+
+    let rewritten: (String, String) = sqlx::query_as(
+        "SELECT object_ref_key, object_display_name FROM collection_objects WHERE collection_id = ?",
+    )
+    .bind(&collection.id)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("load rewritten reference");
+    assert_eq!(
+        rewritten.0,
+        crate::shared::path_key::folder_path_key("Alice", None)
+    );
+    assert_eq!(rewritten.1, "Alice");
+    assert_eq!(impact.affected_collection_count, 1);
+    assert_eq!(impact.affected_collection_names, vec!["Preset"]);
 }
 
 #[tokio::test]

@@ -15,6 +15,7 @@
   },
   "conflict_manager": {
     "title": "Konflik nama folder",
+    "this_conflict": "Konflik ini",
     "keep_name_instruction": "Pilih satu folder untuk mempertahankan nama dasarnya saat ini.",
     "remaining_instruction": "Pilih Ubah Nama atau Tandai ke Trash untuk setiap folder lainnya.",
     "banner": "{{count}} konflik nama folder perlu diselesaikan. Mod lain tetap tersinkron.",

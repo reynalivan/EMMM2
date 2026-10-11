@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "hotkey-notice",
+  "description": "Least-privilege capability for the transient native hotkey notice",
+  "windows": ["hotkey-notice"],
+  "webviews": ["hotkey-notice"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-hotkey-notice-read"
+  ]
+}

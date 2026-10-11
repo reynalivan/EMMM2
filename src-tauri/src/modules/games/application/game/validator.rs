@@ -36,6 +36,13 @@ fn validate_instance_with_launcher_requirement(
         )));
     }
 
+    if !raw_path.is_dir() {
+        return Err(AppError::Validation(format!(
+            "Game instance path is not a directory: {}",
+            raw_path.display()
+        )));
+    }
+
     let mut warnings: Vec<String> = Vec::new();
 
     let (path, mods_path) = resolve_instance_paths(raw_path)?;

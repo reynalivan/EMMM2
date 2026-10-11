@@ -7,7 +7,7 @@ use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::shared::errors::AppError;
 
 pub(super) async fn record_collection_operation(
-    app: &AppHandle,
+    telemetry: &Option<crate::modules::system::application::telemetry::TelemetryStore>,
     enabled: bool,
     operation: crate::modules::system::application::telemetry::TelemetryOperation,
     succeeded: bool,
@@ -16,10 +16,9 @@ pub(super) async fn record_collection_operation(
     if !enabled || !succeeded {
         return;
     }
-    let telemetry = app
-        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
-        .inner()
-        .clone();
+    let Some(telemetry) = telemetry else {
+        return;
+    };
     let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
         operation,
         crate::modules::system::application::telemetry::TelemetryOutcome::Success,

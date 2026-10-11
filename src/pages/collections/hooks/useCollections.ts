@@ -14,19 +14,18 @@ import { useTranslation } from 'react-i18next';
 import { toast } from '@/shared/ui/toast';
 import { collectionKeys } from '@/entities/collection';
 import { commands } from '../../../shared/api/tauri/bindings';
+import { extractMissingModsPayload, formatAppError } from '../../../shared/lib/appError';
 import {
-  extractFileInUsePayload,
-  extractMissingModsPayload,
-  formatAppError,
-} from '../../../shared/lib/appError';
-import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
+  cancelRuntimeDescriptorQueries,
+  publishRuntimeDescriptor,
+} from '@/shared/lib/queryRefresh';
 import {
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '@/features/workspace-runtime';
 import { mergeRuntimeEffectDescriptors } from '@/features/workspace-runtime';
 import { applyRuntimeEffects } from '@/features/workspace-runtime';
-import { openWorkspaceFileInUseDialog } from '@/features/workspace-runtime';
+import { openFileInUseRetryDialog } from '@/features/workspace-runtime';
 import type { RuntimeEffectDescriptor } from '../../../shared/lib/runtimeEffects';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 import type {
@@ -48,6 +47,7 @@ async function publishCollectionMutation(
   queryClient: QueryClient,
   descriptor: RuntimeEffectDescriptor,
 ): Promise<void> {
+  await cancelRuntimeDescriptorQueries(queryClient, descriptor);
   applyRuntimeEffects(queryClient, descriptor);
   await publishRuntimeDescriptor(queryClient, descriptor, 'active');
 }
@@ -278,11 +278,14 @@ export function useApplyCollection() {
       gameId,
       collectionId,
       ignoreMissing,
+      recoveryId,
     }: {
       gameId: string;
       collectionId: string;
       ignoreMissing?: boolean;
-    }) => commands.applyCollection(gameId, collectionId, ignoreMissing ?? false),
+      recoveryId?: string;
+    }) =>
+      commands.applyCollection(gameId, collectionId, ignoreMissing ?? false, recoveryId ?? null),
 
     onSuccess: async (result: ApplyResult) => {
       notifyCommittedMutationSyncWarning(result);
@@ -314,13 +317,7 @@ export function useApplyCollection() {
     },
 
     onError: (err: unknown, variables) => {
-      const fileInUse = extractFileInUsePayload(err);
-      if (fileInUse) {
-        openWorkspaceFileInUseDialog({
-          path: fileInUse.path,
-          processes: fileInUse.processes,
-          onRetry: () => mutation.mutate(variables),
-        });
+      if (openFileInUseRetryDialog(err, variables, mutation.mutateAsync)) {
         return;
       }
 

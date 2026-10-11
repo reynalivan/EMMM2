@@ -24,6 +24,27 @@ fn candidate_for(path: PathBuf, display_name: &str) -> ModCandidate {
     }
 }
 
+#[test]
+fn mmr_exact_skin_alias_is_seeded_before_a_competing_asset_name() {
+    let temp = TempDir::new().unwrap();
+    let folder = temp.path().join("Moonlit Princess");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("Moonlit.dds"), "fixture").unwrap();
+    let db = MasterDb::from_json(r#"{"entries":[
+        {"name":"Ayaka","object_type":"Character","custom_skins":[{"name":"User","aliases":["Moonlit Princess"]}]},
+        {"name":"Moonlit","object_type":"Character"}
+    ]}"#).unwrap();
+    let result = match_folder_quick(
+        &candidate_for(folder.clone(), "Moonlit Princess"),
+        &db,
+        &scan_folder_content(&folder, 3),
+        &IniTokenizationConfig::default().prepare(),
+        &AiRerankConfig::default(),
+    );
+    assert_eq!(result.status, MatchStatus::AutoMatched);
+    assert_eq!(result.best.unwrap().name, "Ayaka");
+}
+
 fn quick_test_db() -> MasterDb {
     MasterDb::new(vec![
         DbEntry {

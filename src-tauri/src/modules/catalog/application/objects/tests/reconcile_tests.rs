@@ -21,7 +21,7 @@ async fn setup() -> SqlitePool {
         &TestGameFixture {
             id: GAME,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "C:\\Game",
             mods_path: Some("C:\\Game\\Mods"),
         },
@@ -289,7 +289,7 @@ async fn objects_in_different_games_never_merge() {
         &TestGameFixture {
             id: "g2",
             name: "Other Game",
-            game_type: GameType::SRMI,
+            game_type: GameType::Srmi,
             path: "C:\\Other",
             mods_path: Some("C:\\Other\\Mods"),
         },

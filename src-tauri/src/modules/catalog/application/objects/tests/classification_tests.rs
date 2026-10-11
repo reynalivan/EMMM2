@@ -9,7 +9,7 @@ async fn setup_classification_fixture() -> sqlx::SqlitePool {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/",
             mods_path: Some("/Mods"),
         },
@@ -271,7 +271,7 @@ async fn classification_batch_preflights_every_item_before_writing_any_item() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: mods_root.to_str().unwrap(),
             mods_path: Some(mods_root.to_str().unwrap()),
         },
@@ -359,7 +359,7 @@ async fn classification_batch_preview_keeps_requested_order_after_batched_lookup
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: mods_root.to_str().unwrap(),
             mods_path: Some(mods_root.to_str().unwrap()),
         },
@@ -427,7 +427,7 @@ async fn classification_batch_revalidates_canonical_identity_against_master_db()
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: mods_root.to_str().unwrap(),
             mods_path: Some(mods_root.to_str().unwrap()),
         },

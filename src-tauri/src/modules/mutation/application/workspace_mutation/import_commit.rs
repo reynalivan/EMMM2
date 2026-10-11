@@ -1,3 +1,6 @@
+use crate::modules::ingestion::application::import_batch::placement::{
+    append_target_subpath, resolve_existing_object_directory,
+};
 use crate::modules::ingestion::application::import_batch::types::{
     CommitImportBatchInput, ImportBatchReport, ImportDecision, ImportFlow, ImportItem,
     ImportItemStatus, SourceFingerprint,
@@ -47,11 +50,245 @@ impl MoveJournalEntry {
 
 struct PlannedMove {
     source_proof: crate::platform::fs::file_utils::FilesystemIdentityProof,
+    source_root_proof: Option<SourceRootProof>,
+    destination_proof: DestinationAncestryProof,
     item: ImportItem,
     source: PathBuf,
     object_dir: PathBuf,
     target: PathBuf,
     creates_object: bool,
+}
+
+#[derive(Debug)]
+struct SourceRootProof {
+    path: PathBuf,
+    proof: crate::platform::fs::file_utils::FilesystemIdentityProof,
+}
+
+impl SourceRootProof {
+    fn capture(root: &Path, source: &Path) -> Result<Option<Self>, AppError> {
+        let root = match root.canonicalize() {
+            Ok(root) => crate::shared::path_key::physical_namespace_path(&root)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let source = crate::shared::path_key::physical_namespace_path(source)?;
+        if source == root || !source.starts_with(&root) {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            proof: crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?,
+            path: root,
+        }))
+    }
+
+    fn validate(&self) -> Result<(), AppError> {
+        self.proof.validate(&self.path)
+    }
+
+    fn pin(&self) -> Result<crate::platform::fs::rename::PinnedDirectory, AppError> {
+        let pin = crate::platform::fs::rename::PinnedDirectory::open(&self.path)?;
+        if pin.identity() != self.proof.identity() {
+            return Err(AppError::Security(
+                "Import source root changed before publication".to_string(),
+            ));
+        }
+        Ok(pin)
+    }
+}
+
+#[derive(Debug)]
+struct DestinationAncestryProof {
+    root: PathBuf,
+    existing_ancestors: Vec<(
+        PathBuf,
+        crate::platform::fs::file_utils::FilesystemIdentityProof,
+    )>,
+}
+
+#[derive(Debug, Default)]
+struct DestinationDirectoryPins {
+    directories: BTreeMap<PathBuf, crate::platform::fs::rename::PinnedDirectory>,
+}
+
+impl DestinationDirectoryPins {
+    fn get_parent(
+        &self,
+        target: &Path,
+    ) -> Result<&crate::platform::fs::rename::PinnedDirectory, AppError> {
+        let parent = target
+            .parent()
+            .ok_or_else(|| AppError::Validation("Import destination has no parent".to_string()))?;
+        let parent = crate::shared::path_key::physical_namespace_path(parent)?;
+        self.directories.get(&parent).ok_or_else(|| {
+            AppError::Internal(format!(
+                "Import destination parent is not pinned: {}",
+                parent.display()
+            ))
+        })
+    }
+}
+
+impl DestinationAncestryProof {
+    fn capture(root: &Path, target: &Path) -> Result<Self, AppError> {
+        let root = crate::shared::path_key::physical_namespace_path(&root.canonicalize()?)?;
+        let target = crate::shared::path_key::physical_namespace_path(target)?;
+        if target == root || !target.starts_with(&root) {
+            return Err(AppError::Security(format!(
+                "Import destination escapes the configured mods path: {}",
+                target.display()
+            )));
+        }
+        let mut existing_ancestors = Vec::new();
+        let mut reached_root = false;
+        for ancestor in target.parent().into_iter().flat_map(Path::ancestors) {
+            if !ancestor.starts_with(&root) {
+                break;
+            }
+            if ancestor.exists() {
+                let canonical =
+                    crate::shared::path_key::physical_namespace_path(&ancestor.canonicalize()?)?;
+                if canonical != ancestor {
+                    return Err(AppError::Security(format!(
+                        "Import destination ancestor is rebound: {}",
+                        ancestor.display()
+                    )));
+                }
+                existing_ancestors.push((
+                    ancestor.to_path_buf(),
+                    crate::platform::fs::file_utils::FilesystemIdentityProof::capture(ancestor)?,
+                ));
+            }
+            if ancestor == root {
+                reached_root = true;
+                break;
+            }
+        }
+        if !reached_root {
+            return Err(AppError::Security(
+                "Import destination is not covered by the configured mods path".to_string(),
+            ));
+        }
+        Ok(Self {
+            root,
+            existing_ancestors,
+        })
+    }
+
+    fn validate(&self, target: &Path) -> Result<(), AppError> {
+        let target = crate::shared::path_key::physical_namespace_path(target)?;
+        if target == self.root || !target.starts_with(&self.root) {
+            return Err(AppError::Security(format!(
+                "Import destination escapes the configured mods path: {}",
+                target.display()
+            )));
+        }
+        for (ancestor, proof) in &self.existing_ancestors {
+            proof.validate(ancestor)?;
+            let canonical =
+                crate::shared::path_key::physical_namespace_path(&ancestor.canonicalize()?)?;
+            if canonical != *ancestor {
+                return Err(AppError::Security(format!(
+                    "Import destination ancestor binding changed: {}",
+                    ancestor.display()
+                )));
+            }
+        }
+        ensure_target_under_root(&self.root, &target, true)
+    }
+
+    fn prepare_parent(
+        &self,
+        target: &Path,
+        pins: &mut DestinationDirectoryPins,
+        created_directories: &mut Vec<PathBuf>,
+    ) -> Result<(), AppError> {
+        self.validate(target)?;
+        let target = crate::shared::path_key::physical_namespace_path(target)?;
+        let target_parent = target
+            .parent()
+            .ok_or_else(|| AppError::Validation("Import destination has no parent".to_string()))?;
+        let relative = target_parent.strip_prefix(&self.root).map_err(|_| {
+            AppError::Security("Import destination escaped its captured root".to_string())
+        })?;
+        let mut current = self.root.clone();
+        self.pin_existing(&current, pins)?;
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                return Err(AppError::Security(
+                    "Import destination contains a non-normal component".to_string(),
+                ));
+            };
+            let next = current.join(name);
+            if pins.directories.contains_key(&next) {
+                current = next;
+                continue;
+            }
+            if self
+                .existing_ancestors
+                .iter()
+                .any(|(ancestor, _)| ancestor == &next)
+            {
+                self.pin_existing(&next, pins)?;
+            } else {
+                if next.exists() {
+                    return Err(AppError::Io(format!(
+                        "Import destination ancestor appeared after planning: {}",
+                        next.display()
+                    )));
+                }
+                let parent = pins.directories.get(&current).ok_or_else(|| {
+                    AppError::Internal("Import destination parent pin is missing".to_string())
+                })?;
+                let pinned = parent.create_child(name)?;
+                if pinned.path() != next {
+                    return Err(AppError::Internal(
+                        "Created import directory resolved to an unexpected path".to_string(),
+                    ));
+                }
+                created_directories.push(next.clone());
+                pins.directories.insert(next.clone(), pinned);
+            }
+            current = next;
+        }
+        self.validate(target.as_path())
+    }
+
+    fn pin_existing(
+        &self,
+        path: &Path,
+        pins: &mut DestinationDirectoryPins,
+    ) -> Result<(), AppError> {
+        let expected = self
+            .existing_ancestors
+            .iter()
+            .find_map(|(ancestor, proof)| (ancestor == path).then_some(proof))
+            .ok_or_else(|| {
+                AppError::Io(format!(
+                    "Import destination ancestor was not captured: {}",
+                    path.display()
+                ))
+            })?;
+        if let Some(pinned) = pins.directories.get(path) {
+            if pinned.identity() != expected.identity() {
+                return Err(AppError::Io(format!(
+                    "Pinned import destination identity changed: {}",
+                    path.display()
+                )));
+            }
+            return Ok(());
+        }
+        let pinned = crate::platform::fs::rename::PinnedDirectory::open(path)?;
+        if pinned.identity() != expected.identity() {
+            return Err(AppError::Io(format!(
+                "Import destination changed while it was being pinned: {}",
+                path.display()
+            )));
+        }
+        expected.validate(path)?;
+        pins.directories.insert(path.to_path_buf(), pinned);
+        Ok(())
+    }
 }
 
 pub fn fingerprint_matches(expected: &SourceFingerprint, current: &SourceFingerprint) -> bool {
@@ -264,13 +501,38 @@ pub async fn commit_import_batch(
             failed: recovered_failures,
         });
     }
+    let staging_root = app.path().app_data_dir()?.join("import-staging");
+    let ready_to_move_root = if batch.flow == ImportFlow::ReadyToMove {
+        Some(
+            crate::modules::ingestion::api::import_batch::ready_to_move::resolve_mod_inbox_root(
+                app,
+                pool,
+                &batch.game_id,
+                None,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let mut plans = Vec::with_capacity(selected_ids.len());
     for item in batch
         .items
         .iter()
         .filter(|item| selected_ids.contains(&item.id))
     {
-        plans.push(resolve_plan(pool, &batch, item, master_db, &canonical_root).await?);
+        plans.push(
+            resolve_plan(
+                pool,
+                &batch,
+                item,
+                master_db,
+                &canonical_root,
+                &staging_root,
+                ready_to_move_root.as_deref(),
+            )
+            .await?,
+        );
     }
     validate_unique_targets(&plans)?;
     for plan in &plans {
@@ -311,6 +573,10 @@ pub async fn commit_import_batch(
     validate_import_root(&root_proof, &canonical_root, Path::new(&current_root))?;
     for plan in &plans {
         plan.source_proof.validate(&plan.source)?;
+        if let Some(proof) = &plan.source_root_proof {
+            proof.validate()?;
+        }
+        plan.destination_proof.validate(&plan.target)?;
     }
     let operation_guard = operation_lock
         .acquire_operation(
@@ -321,12 +587,18 @@ pub async fn commit_import_batch(
                     .iter()
                     .enumerate()
                     .map(|(sequence, plan)| {
-                        crate::modules::mutation::api::PlannedStep::rename(
+                        let step = crate::modules::mutation::api::PlannedStep::rename(
                             sequence as u32,
                             plan.source.clone(),
                             plan.target.clone(),
                         )
-                        .with_expected_identity(Some(plan.source_proof.identity().to_string()))
+                        .with_expected_identity(Some(plan.source_proof.identity().to_string()));
+                        match &plan.source_root_proof {
+                            Some(proof) => {
+                                step.with_source_root_identity(proof.proof.identity().to_string())
+                            }
+                            None => step,
+                        }
                     })
                     .collect(),
             )
@@ -347,6 +619,20 @@ pub async fn commit_import_batch(
     {
         mutation_lease.abort_unapplied()?;
         return Err(error);
+    }
+    for plan in &plans {
+        if let Err(error) = plan.source_proof.validate(&plan.source).and_then(|_| {
+            plan.source_root_proof
+                .as_ref()
+                .map_or(Ok(()), SourceRootProof::validate)
+        }) {
+            mutation_lease.abort_unapplied()?;
+            return Err(error);
+        }
+        if let Err(error) = plan.destination_proof.validate(&plan.target) {
+            mutation_lease.abort_unapplied()?;
+            return Err(error);
+        }
     }
     let target_manifest_index = app
         .try_state::<crate::modules::ingestion::application::import_batch::target_manifest_index::TargetManifestIndexState>()
@@ -735,6 +1021,30 @@ async fn apply_item_classification(
     crate::modules::catalog::application::objects::classification::ClassificationWriteResult,
     AppError,
 > {
+    if item.decision != ImportDecision::CreateCanonical {
+        if item.destination_object_id.as_deref() != Some(object_id.as_str()) {
+            return Err(AppError::Validation(format!(
+                "Import item '{}' no longer points at destination object '{}'",
+                item.id, object_id
+            )));
+        }
+        let (owner_game_id, _) =
+            crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(
+                pool, &object_id,
+            )
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Destination object '{object_id}'")))?;
+        if owner_game_id != game_id {
+            return Err(AppError::Security(
+                "Destination object belongs to a different game".to_string(),
+            ));
+        }
+        return Ok(crate::modules::catalog::application::objects::classification::ClassificationWriteResult {
+            object_id,
+            child_mods_updated: 0,
+            aliases_changed: false,
+        });
+    }
     crate::modules::catalog::application::objects::classification::apply_object_classification(
         pool,
         crate::modules::catalog::application::objects::classification::ObjectClassificationInput {
@@ -836,7 +1146,6 @@ async fn recover_interrupted_commits(
             .iter()
             .flat_map(|(_, source, target)| [source.as_path(), target.as_path()]),
     );
-    let mut changed_paths = Vec::new();
     for (item, source, target) in &paths {
         match (source.exists(), target.exists()) {
             (true, false) => {
@@ -851,23 +1160,7 @@ async fn recover_interrupted_commits(
                 .await?;
             }
             (false, true) => {
-                if let Some(parent) = source.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                crate::platform::fs::file_utils::rename_cross_drive_fallback(target, source)?;
-                changed_paths.extend([
-                    source.to_string_lossy().into_owned(),
-                    target.to_string_lossy().into_owned(),
-                ]);
-                crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
-                    pool,
-                    &item.id,
-                    ImportItemStatus::Ready,
-                    None,
-                    Some("recovered_ready"),
-                    None,
-                )
-                .await?;
+                mark_unproven_recovery_target(pool, &item.id, target).await?;
             }
             (true, true) => {
                 crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
@@ -898,18 +1191,26 @@ async fn recover_interrupted_commits(
         pool, &batch.id,
     )
     .await?;
-    if !changed_paths.is_empty() {
-        crate::modules::reconciliation::application::disk_reconcile::emit::run_internal_disk_reconcile_with_path_hints_under_lease(
-            app,
-            pool,
-            &batch.game_id,
-            changed_paths,
-            Vec::new(),
-            &lease,
-        )
-        .await?;
-    }
     drop(lease);
+    Ok(())
+}
+
+async fn mark_unproven_recovery_target(
+    pool: &sqlx::SqlitePool,
+    item_id: &str,
+    target: &Path,
+) -> Result<(), AppError> {
+    crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
+        pool,
+        item_id,
+        ImportItemStatus::Failed,
+        Some(&target.to_string_lossy()),
+        Some("recovery_requires_repair"),
+        Some(
+            "The interrupted import destination exists without durable ownership proof. It was left unchanged; inspect the destination and run workspace repair before retrying.",
+        ),
+    )
+    .await?;
     Ok(())
 }
 
@@ -1238,6 +1539,8 @@ async fn resolve_plan(
     item: &ImportItem,
     master_db: &MasterDb,
     mods_root: &Path,
+    staging_root: &Path,
+    ready_to_move_root: Option<&Path>,
 ) -> Result<PlannedMove, AppError> {
     let source = Path::new(
         item.staging_path
@@ -1253,6 +1556,16 @@ async fn resolve_plan(
     })?;
     let physical_name = physical_import_name(&item.planned_name);
     let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&source)?;
+    let source_root_proof = if item.staging_path.is_some() {
+        SourceRootProof::capture(staging_root, &source)?
+    } else if batch.flow == ImportFlow::ReadyToMove {
+        match ready_to_move_root {
+            Some(root) => SourceRootProof::capture(root, &source)?,
+            None => None,
+        }
+    } else {
+        None
+    };
     crate::modules::library::application::mods::core_ops::validate_folder_name_component(
         &physical_name,
     )?;
@@ -1262,8 +1575,11 @@ async fn resolve_plan(
     let placement_dir = append_target_subpath(&object_dir, batch.target_subpath.as_deref())?;
     let target = placement_dir.join(physical_name);
     ensure_target_under_root(mods_root, &target, true)?;
+    let destination_proof = DestinationAncestryProof::capture(mods_root, &target)?;
     Ok(PlannedMove {
         source_proof,
+        source_root_proof,
+        destination_proof,
         item: item.clone(),
         source,
         object_dir,
@@ -1287,26 +1603,8 @@ async fn resolve_object_dir(
                 "Specific-target confirmation no longer points at its owning object".to_string(),
             ));
         }
-        let (game_id, folder_path) =
-            crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(
-                pool, object_id,
-            )
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("Destination object '{object_id}'")))?;
-        if game_id != batch.game_id {
-            return Err(AppError::Security(
-                "Destination object belongs to a different game".to_string(),
-            ));
-        }
-        let folder_path = folder_path.ok_or_else(|| {
-            AppError::Validation("Destination object has no folder path".to_string())
-        })?;
-        let raw = PathBuf::from(folder_path);
-        let resolved = if raw.is_absolute() {
-            raw
-        } else {
-            mods_root.join(raw)
-        };
+        let resolved =
+            resolve_existing_object_directory(pool, &batch.game_id, object_id, mods_root).await?;
         let canonical = resolved.canonicalize().map_err(|error| {
             AppError::Validation(format!("Destination object is unavailable: {error}"))
         })?;
@@ -1339,23 +1637,6 @@ async fn resolve_object_dir(
         )?;
         Ok((mods_root.join(&entry.name), true))
     }
-}
-
-fn append_target_subpath(root: &Path, subpath: Option<&str>) -> Result<PathBuf, AppError> {
-    let Some(subpath) = subpath.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Ok(root.to_path_buf());
-    };
-    let relative = Path::new(subpath);
-    if relative.is_absolute()
-        || relative
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err(AppError::Security(
-            "Import target subpath must contain only normal relative path segments".to_string(),
-        ));
-    }
-    Ok(root.join(relative))
 }
 
 fn ensure_target_under_root(
@@ -1535,29 +1816,83 @@ async fn execute_moves(
     created_directories: &mut Vec<PathBuf>,
     _collision_ids: &mut BTreeSet<String>,
 ) -> Result<(), AppError> {
+    let mut destination_pins = DestinationDirectoryPins::default();
+    let mut source_root_pins = Vec::with_capacity(plans.len());
     for plan in plans {
         plan.source_proof.validate(&plan.source)?;
+        source_root_pins.push(match &plan.source_root_proof {
+            Some(proof) => {
+                proof.validate()?;
+                Some(proof.pin()?)
+            }
+            None => None,
+        });
+        plan.destination_proof.validate(&plan.target)?;
         if plan.target.exists() {
             return Err(AppError::Validation(format!(
                 "target_changed: destination '{}' became occupied during commit",
                 plan.target.display()
             )));
         }
-        if !plan.object_dir.exists() {
-            std::fs::create_dir(&plan.object_dir)?;
-            created_directories.push(plan.object_dir.clone());
+        plan.destination_proof.prepare_parent(
+            &plan.target,
+            &mut destination_pins,
+            created_directories,
+        )?;
+    }
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
+    for (plan, source_root_pin) in plans.iter().zip(&source_root_pins) {
+        plan.source_proof.validate(&plan.source)?;
+        if let Some(proof) = &plan.source_root_proof {
+            proof.validate()?;
+            if source_root_pin
+                .as_ref()
+                .is_none_or(|pin| pin.identity() != proof.proof.identity())
+            {
+                return Err(AppError::Security(
+                    "Import source root changed before publication".to_string(),
+                ));
+            }
         }
-        let parent = plan
-            .target
-            .parent()
-            .ok_or_else(|| AppError::Validation("Import destination has no parent".to_string()))?;
-        if !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-            created_directories.push(parent.to_path_buf());
+        plan.destination_proof.validate(&plan.target)?;
+        let destination_parent = destination_pins.get_parent(&plan.target)?;
+        let direct = retry_budget
+            .run(|| {
+                std::future::ready(publish_import_source_once(
+                    plan,
+                    destination_parent,
+                    || {},
+                    || {},
+                ))
+            })
+            .await;
+        match direct {
+            Ok(()) => {
+                journal.push(MoveJournalEntry::from_owned_move(
+                    plan.source.clone(),
+                    plan.target.clone(),
+                    &plan.source_proof,
+                    &plan.source_proof,
+                ));
+                continue;
+            }
+            Err(error) if matches!(error.raw_os_error(), Some(17 | 18)) => {}
+            Err(error) => {
+                return Err(crate::platform::fs::retry::map_file_error_with_identity(
+                    &plan.source,
+                    plan.source_proof.identity(),
+                    "publish imported folder",
+                    error,
+                ))
+            }
         }
-        match crate::platform::fs::file_utils::rename_cross_drive_fallback_tracked(
+        // Cross-volume copy/publication can already own a target when it fails;
+        // it runs once and keeps that committed evidence in the journal.
+        match crate::platform::fs::file_utils::rename_cross_drive_fallback_owned_into(
             &plan.source,
             &plan.target,
+            destination_parent,
+            &plan.source_proof,
         ) {
             Ok(target_proof) => journal.push(MoveJournalEntry::from_owned_move(
                 plan.source.clone(),
@@ -1569,16 +1904,74 @@ async fn execute_moves(
                 if let Some(target_proof) = error.target_proof() {
                     journal.push(MoveJournalEntry::from_owned_move(
                         plan.source.clone(),
-                        plan.target.clone(),
+                        error
+                            .target_path()
+                            .unwrap_or(plan.target.as_path())
+                            .to_path_buf(),
                         &plan.source_proof,
                         target_proof,
                     ));
                 }
-                return Err(error.into_io_error().into());
+                let target_owned = error.target_is_owned();
+                let error = error.into_io_error();
+                return Err(if target_owned {
+                    AppError::Io(format!("Import publication requires recovery: {error}"))
+                } else {
+                    crate::platform::fs::retry::map_file_error_with_identity(
+                        &plan.source,
+                        plan.source_proof.identity(),
+                        "publish imported folder",
+                        error,
+                    )
+                });
             }
         }
     }
     Ok(())
+}
+
+fn publish_import_source_once(
+    plan: &PlannedMove,
+    destination_parent: &crate::platform::fs::rename::PinnedDirectory,
+    before_source_binding: impl FnOnce(),
+    before_publication: impl FnOnce(),
+) -> std::io::Result<()> {
+    plan.source_proof
+        .validate(&plan.source)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    if let Some(proof) = &plan.source_root_proof {
+        proof
+            .validate()
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+    }
+    plan.destination_proof
+        .validate(&plan.target)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    before_source_binding();
+    let source_parent = crate::platform::fs::rename::PinnedDirectory::open(
+        plan.source
+            .parent()
+            .ok_or_else(|| std::io::Error::other("Import source has no parent"))?,
+    )?;
+    let source_name = plan
+        .source
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("Import source has no filename"))?;
+    let owned_source = crate::platform::fs::rename::PinnedDirectory::open_for_rename(
+        &source_parent.stable_path().join(source_name),
+    )?;
+    if owned_source.identity() != plan.source_proof.identity() {
+        return Err(std::io::Error::other(
+            "Import source changed while binding publication",
+        ));
+    }
+    before_publication();
+    owned_source.rename_into(
+        destination_parent,
+        plan.target
+            .file_name()
+            .ok_or_else(|| std::io::Error::other("Import destination has no filename"))?,
+    )
 }
 
 fn import_mutation_suppression_paths(
@@ -1742,6 +2135,7 @@ pub(super) async fn finalize_ready_to_move_archives(
         let parent = source.parent().ok_or_else(|| {
             AppError::Validation("Mod Inbox source has no parent directory".to_string())
         })?;
+        let canonical_inbox = parent.canonicalize()?;
         let processed = parent.join("Processed");
         std::fs::create_dir_all(&processed)?;
         let canonical_processed = processed.canonicalize()?;
@@ -1753,7 +2147,7 @@ pub(super) async fn finalize_ready_to_move_archives(
             .and_then(|state| state.processed_source_path)
             .map(PathBuf::from)
             .unwrap_or_else(|| collision_safe_file(&processed, file_name));
-        validate_processed_target(&canonical_processed, &target)?;
+        validate_processed_target(&canonical_inbox, &canonical_processed, &target)?;
 
         match (source.exists(), target.exists()) {
             (false, true) => {}
@@ -1796,7 +2190,17 @@ pub(super) async fn finalize_ready_to_move_archives(
     Ok(())
 }
 
-fn validate_processed_target(processed_root: &Path, target: &Path) -> Result<(), AppError> {
+pub(super) fn validate_processed_target(
+    inbox_root: &Path,
+    processed_root: &Path,
+    target: &Path,
+) -> Result<(), AppError> {
+    if processed_root.parent() != Some(inbox_root) {
+        return Err(AppError::Security(format!(
+            "Processed folder escaped the Mod Inbox: {}",
+            processed_root.display()
+        )));
+    }
     let parent = target.parent().ok_or_else(|| {
         AppError::Validation("Processed target has no parent directory".to_string())
     })?;
@@ -2020,3 +2424,7 @@ mod tests {
             .contains("an identical payload is now installed"));
     }
 }
+
+#[cfg(test)]
+#[path = "import_commit_tests.rs"]
+mod import_commit_tests;

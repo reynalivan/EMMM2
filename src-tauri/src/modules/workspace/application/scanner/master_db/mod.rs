@@ -5,6 +5,11 @@
 
 use crate::shared::errors::ScannerError;
 
+mod pack_swap;
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
 use std::path::Path;
 
 use crate::modules::games::application::game::schema_loader;

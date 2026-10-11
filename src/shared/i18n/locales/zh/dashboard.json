@@ -83,6 +83,8 @@
     "no_game": "未选择游戏"
   },
   "keys": {
+    "loading": "正在加载活跃按键映射",
+    "load_error": "按键映射不可用。请重试索引或返回主页后重试。",
     "title": "活跃按键映射",
     "table_mod": "模组",
     "table_section": "部分",

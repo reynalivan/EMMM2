@@ -6,12 +6,14 @@
 //! - `HotkeyState` for debounce/cooldown + `switch_lock` mutual exclusion
 //!
 //! OS integration is owned by `manager.rs` through Tauri's global-shortcut
-//! plugin; reload chords are replayed through `reload.rs` only after the shared
+//! plugin. Safe Mode and preset actions operate on the selected game regardless
+//! of foreground application; overlay/reload chords are replayed through `reload.rs` only after the shared
 //! system game detector confirms the game window is focused.
 
 pub mod cycle_preset;
 pub mod focus;
 pub mod manager;
+pub mod notice;
 pub mod reload;
 pub mod safe_mode;
 
@@ -61,7 +63,7 @@ impl HotkeyAction {
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 /// Hotkey configuration — persisted in AppSettings.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct HotkeyConfig {
     /// Whether hotkeys are globally enabled.
     pub enabled: bool,
@@ -77,6 +79,9 @@ pub struct HotkeyConfig {
     /// Whether the preset status banner is rendered in the generated overlay.
     #[serde(default)]
     pub preset_status_overlay_enabled: bool,
+    /// Whether a transient native notice may be shown over the focused game.
+    #[serde(default)]
+    pub game_notification_overlay_enabled: bool,
 }
 
 fn default_safe_mode_key() -> String {
@@ -104,6 +109,7 @@ impl Default for HotkeyConfig {
             prev_preset: default_prev_preset_key(),
             toggle_overlay: default_overlay_key(),
             preset_status_overlay_enabled: false,
+            game_notification_overlay_enabled: false,
         }
     }
 }
@@ -111,7 +117,7 @@ impl Default for HotkeyConfig {
 const HOTKEY_MUTATION_COOLDOWN: Duration = Duration::from_millis(500);
 
 /// KeyViewer-specific configuration — persisted in AppSettings.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct KeyViewerConfig {
     /// Whether KeyViewer generation is enabled.
     pub enabled: bool,

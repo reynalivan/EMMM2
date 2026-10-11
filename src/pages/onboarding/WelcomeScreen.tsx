@@ -16,7 +16,7 @@ import AuroraBackground from './components/welcome/AuroraBackground';
 import SmartDemoStrip from './components/welcome/SmartDemoStrip';
 import AnimatedLogo from './components/welcome/AnimatedLogo';
 import { useOnboardingDiskProgress } from './hooks/useOnboardingDiskProgress';
-import { formatEstimatedDuration, type IndexingProgress } from './utils/indexingProgress';
+import { formatElapsedDuration } from './utils/indexingProgress';
 import type {
   DiskReconcileStatus,
   DiskReconcilePhase,
@@ -28,6 +28,12 @@ type Screen = 'welcome' | 'auto-detect' | 'manual' | 'result';
 
 const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
 const RECONCILE_PHASE_COUNT = 4;
+const SNAPSHOT_PHASE_ORDER: Record<OnboardingIndexingSnapshotProgress['phase'], number> = {
+  Metadata: 0,
+  Classifying: 1,
+  Ready: 2,
+  Rechecking: 3,
+};
 
 function isAppliedReconcileStatus(status: DiskReconcileStatus): boolean {
   return status === 'Applied' || status === 'AppliedWithFolderConflicts';
@@ -89,29 +95,31 @@ export default function WelcomeScreen({
   const [isScanning, setIsScanning] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [isActivatingFirstGame, setIsActivatingFirstGame] = useState(false);
-  const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
   const [snapshotProgress, setSnapshotProgress] =
     useState<OnboardingIndexingSnapshotProgress | null>(null);
-  const [isRecheckingSnapshot, setIsRecheckingSnapshot] = useState(false);
   const indexingSessionRef = useRef<string | null>(null);
   const indexingGameIdRef = useRef<string | null>(null);
   const indexingInFlightRef = useRef(false);
+  const snapshotListenerReadyRef = useRef<Promise<void> | null>(null);
+  const subscribeSnapshotRef = useRef<(() => Promise<void>) | null>(null);
+  const lastSnapshotRef = useRef<OnboardingIndexingSnapshotProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
   const [isDemoPaused, setIsDemoPaused] = useState(false);
   const [shareDiagnostics, setShareDiagnostics] = useState(true);
   const prefersReduced = usePrefersReducedMotion();
-  const diskProgress = useOnboardingDiskProgress(isIndexing, detectedGames[0]?.id ?? null);
+  const {
+    progress: diskProgress,
+    start: startDiskProgress,
+    stop: stopDiskProgress,
+  } = useOnboardingDiskProgress();
 
   useEffect(() => {
     if (!diskProgress) return;
-    const isTerminal =
-      diskProgress.current.phase === 'Completed' || diskProgress.current.phase === 'Failed';
-    if (isTerminal) {
-      setIsRecheckingSnapshot(false);
-    }
+    const isScanningPhase =
+      diskProgress.phase === 'DiscoveringRoots' || diskProgress.phase === 'ScanningRoots';
     setSnapshotProgress((current) =>
-      current?.phase === 'Rechecking' && !isTerminal ? current : null,
+      current?.phase === 'Rechecking' && isScanningPhase ? current : null,
     );
   }, [diskProgress]);
 
@@ -119,23 +127,44 @@ export default function WelcomeScreen({
     let mounted = true;
     let unlisten: (() => void) | undefined;
 
-    void listen<OnboardingIndexingSnapshotProgress>(
-      'onboarding_indexing:snapshot_progress',
-      ({ payload }) => {
-        if (!mounted || !indexingInFlightRef.current) return;
-        if (indexingSessionRef.current && indexingSessionRef.current !== payload.session_id) return;
-        if (payload.game_id !== indexingGameIdRef.current) return;
-        indexingSessionRef.current = payload.session_id;
-        setIsRecheckingSnapshot(payload.phase === 'Rechecking');
-        setSnapshotProgress(payload);
-      },
-    ).then((stop) => {
-      if (mounted) unlisten = stop;
-      else stop();
-    });
+    const subscribe = () => {
+      const ready = listen<OnboardingIndexingSnapshotProgress>(
+        'onboarding_indexing:snapshot_progress',
+        ({ payload }) => {
+          if (!mounted || !indexingInFlightRef.current) return;
+          if (!indexingSessionRef.current || indexingSessionRef.current !== payload.session_id)
+            return;
+          if (payload.game_id !== indexingGameIdRef.current) return;
+          const previous = lastSnapshotRef.current;
+          if (previous) {
+            if (SNAPSHOT_PHASE_ORDER[payload.phase] < SNAPSHOT_PHASE_ORDER[previous.phase]) return;
+            if (
+              payload.phase === previous.phase &&
+              (payload.elapsed_ms < previous.elapsed_ms ||
+                payload.completed_roots < previous.completed_roots ||
+                payload.folders_classified < previous.folders_classified)
+            )
+              return;
+          }
+          lastSnapshotRef.current = payload;
+          setSnapshotProgress(payload);
+        },
+      ).then((stop) => {
+        if (mounted) unlisten = stop;
+        else stop();
+      });
+      snapshotListenerReadyRef.current = ready;
+      void ready.catch((error: unknown) => {
+        if (mounted) console.error('Failed to subscribe to onboarding preparation progress', error);
+      });
+      return ready;
+    };
+    subscribeSnapshotRef.current = subscribe;
+    void subscribe();
 
     return () => {
       mounted = false;
+      subscribeSnapshotRef.current = null;
       unlisten?.();
     };
   }, []);
@@ -223,23 +252,26 @@ export default function WelcomeScreen({
   };
 
   const handleFinalize = async (games: GameConfig[]) => {
+    if (indexingInFlightRef.current) return;
     let sessionId: string | null = null;
     let handedOffToBackground = false;
     try {
       setError(null);
       setIsIndexing(true);
       setSnapshotProgress(null);
-      setIsRecheckingSnapshot(false);
+      lastSnapshotRef.current = null;
       indexingInFlightRef.current = true;
       indexingGameIdRef.current = games[0]?.id ?? null;
-      const total = Math.max(1, games.length);
-      const completedDurationsMs: number[] = [];
-      setIndexingProgress({
-        completed: 0,
-        total,
-        currentGame: games[0]?.name ?? null,
-        completedDurationsMs,
-      });
+
+      const snapshotReady = snapshotListenerReadyRef.current ?? subscribeSnapshotRef.current?.();
+      if (!snapshotReady) throw new Error('Onboarding preparation listener is not mounted');
+      try {
+        await snapshotReady;
+      } catch (listenerError) {
+        snapshotListenerReadyRef.current = null;
+        throw listenerError;
+      }
+      if (!indexingInFlightRef.current) return;
 
       if (shareDiagnostics) {
         await commands.setTelemetryEnabled(true);
@@ -259,15 +291,10 @@ export default function WelcomeScreen({
         throw new Error('At least one game is required for onboarding indexing');
       }
 
+      await startDiskProgress(currentSessionId, firstGame.id);
+
       // Make the initial game usable before leaving onboarding. The remaining
       // games retain the same one-at-a-time filesystem worker in the backend.
-      setIndexingProgress({
-        completed: 0,
-        total,
-        currentGame: firstGame.name,
-        completedDurationsMs: [],
-      });
-      const startedAt = performance.now();
       const firstResult = await commands.reconcileOnboardingIndexingGame(
         currentSessionId,
         firstGame.id,
@@ -275,13 +302,6 @@ export default function WelcomeScreen({
       if (!isAppliedReconcileStatus(firstResult.status)) {
         throw new Error(t('onboarding:indexing.first_game_not_ready', { game: firstGame.name }));
       }
-      completedDurationsMs.push(performance.now() - startedAt);
-      setIndexingProgress({
-        completed: 1,
-        total,
-        currentGame: firstGame.name,
-        completedDurationsMs: [...completedDurationsMs],
-      });
 
       // The dashboard owns the rest of the user-visible lifecycle. Clearing
       // this reference avoids cancelling the backend worker during navigation.
@@ -302,12 +322,11 @@ export default function WelcomeScreen({
       setError(formatAppError(err));
       setIsIndexing(false);
       setIsActivatingFirstGame(false);
-      setIndexingProgress(null);
     } finally {
+      stopDiskProgress();
       indexingInFlightRef.current = false;
       indexingGameIdRef.current = null;
       setSnapshotProgress(null);
-      setIsRecheckingSnapshot(false);
       setIsActivatingFirstGame(false);
       const activeSessionId = sessionId ?? indexingSessionRef.current;
       indexingSessionRef.current = null;
@@ -536,43 +555,37 @@ export default function WelcomeScreen({
 
   // == Indexing State ==
   if (isIndexing) {
-    const progress = indexingProgress ?? {
-      completed: 0,
-      total: 1,
-      currentGame: null,
-      completedDurationsMs: [],
-    };
     const activeGame = detectedGames[0];
     const activeDiskProgress =
-      !isActivatingFirstGame && diskProgress?.current.game_id === activeGame?.id
-        ? diskProgress
-        : null;
+      !isActivatingFirstGame && diskProgress?.game_id === activeGame?.id ? diskProgress : null;
     const isPreparing =
       !isActivatingFirstGame &&
       (snapshotProgress?.phase === 'Metadata' || snapshotProgress?.phase === 'Classifying');
-    const isRechecking =
-      !isActivatingFirstGame && (isRecheckingSnapshot || snapshotProgress?.phase === 'Rechecking');
+    const isRechecking = !isActivatingFirstGame && snapshotProgress?.phase === 'Rechecking';
     const snapshotRootProgress = isPreparing ? snapshotProgress : null;
-    const diskRootProgress = activeDiskProgress?.current;
-    const totalRoots = isActivatingFirstGame
+    const diskRootProgress = activeDiskProgress;
+    const totalUnits = isActivatingFirstGame
       ? 0
       : snapshotRootProgress
         ? snapshotRootProgress.total_roots
         : (diskRootProgress?.total_units ?? 0);
-    const completedRoots = isActivatingFirstGame
+    const completedUnits = isActivatingFirstGame
       ? 0
       : snapshotRootProgress
         ? snapshotRootProgress.completed_roots
         : (diskRootProgress?.completed_units ?? 0);
-    const hasDeterminateProgress = totalRoots > 0;
+    const isProjecting = activeDiskProgress?.phase === 'Projecting';
+    const hasDeterminateProgress =
+      totalUnits > 0 &&
+      (isPreparing || activeDiskProgress?.phase === 'ScanningRoots' || isProjecting);
     const progressPercent = hasDeterminateProgress
-      ? Math.round((completedRoots / totalRoots) * 100)
+      ? Math.round((completedUnits / totalUnits) * 100)
       : null;
-    const gameName = activeGame?.name ?? progress.currentGame ?? '';
+    const gameName = activeGame?.name ?? '';
     const activeRoot = displayRootName(
       snapshotRootProgress?.current_root ?? diskRootProgress?.current_root,
     );
-    const activityKey = activityTranslationKey(activeDiskProgress?.current.phase, activeRoot);
+    const activityKey = activityTranslationKey(activeDiskProgress?.phase, activeRoot);
     const activityText = isActivatingFirstGame
       ? t('onboarding:indexing.activity.activating_first_game')
       : isPreparing
@@ -583,7 +596,7 @@ export default function WelcomeScreen({
           ? t('onboarding:indexing.preparation.rechecking')
           : t(`onboarding:indexing.activity.${activityKey}`, {
               folder: activeRoot,
-              step: reconcileStep(activeDiskProgress?.current.phase),
+              step: reconcileStep(activeDiskProgress?.phase),
               total: RECONCILE_PHASE_COUNT,
             });
     const progressLabel = isPreparing
@@ -619,10 +632,15 @@ export default function WelcomeScreen({
               <span className="text-sm font-medium text-base-content/70">{progressLabel}</span>
               {hasDeterminateProgress && (
                 <span className="text-sm font-semibold text-base-content">
-                  {t('onboarding:indexing.folders_complete', {
-                    completed: completedRoots,
-                    total: totalRoots,
-                  })}
+                  {t(
+                    isProjecting
+                      ? 'onboarding:indexing.mods_complete'
+                      : 'onboarding:indexing.folders_complete',
+                    {
+                      completed: completedUnits,
+                      total: totalUnits,
+                    },
+                  )}
                 </span>
               )}
             </div>
@@ -633,8 +651,8 @@ export default function WelcomeScreen({
                 role="progressbar"
                 aria-label={progressLabel}
                 aria-valuemin={0}
-                aria-valuemax={totalRoots}
-                aria-valuenow={completedRoots}
+                aria-valuemax={totalUnits}
+                aria-valuenow={completedUnits}
               >
                 <div
                   className="absolute bottom-0 left-0 top-0 bg-primary transition-[width] duration-150 ease-out motion-reduce:transition-none"
@@ -653,7 +671,7 @@ export default function WelcomeScreen({
               <p className="text-sm font-semibold text-base-content">
                 {t('onboarding:indexing.game_progress', {
                   current: 1,
-                  total: snapshotProgress?.total_games || progress.total,
+                  total: snapshotProgress?.total_games || detectedGames.length,
                   game: gameName,
                 })}
               </p>
@@ -671,7 +689,7 @@ export default function WelcomeScreen({
                   )}
                   <p>
                     {t('onboarding:indexing.elapsed', {
-                      duration: formatEstimatedDuration(snapshotProgress.elapsed_ms),
+                      duration: formatElapsedDuration(snapshotProgress.elapsed_ms),
                     })}
                   </p>
                 </div>

@@ -102,7 +102,7 @@ async fn create_batch_is_read_only_and_rename_changes_only_the_plan() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -165,9 +165,9 @@ async fn import_rejects_sources_inside_any_configured_game_workspace() {
                 id,
                 name,
                 game_type: if id == "gimi" {
-                    crate::modules::games::domain::models::GameType::GIMI
+                    crate::modules::games::domain::models::GameType::Gimi
                 } else {
-                    crate::modules::games::domain::models::GameType::SRMI
+                    crate::modules::games::domain::models::GameType::Srmi
                 },
                 path: mods_path.to_str().unwrap(),
                 mods_path: Some(mods_path.to_str().unwrap()),
@@ -209,7 +209,7 @@ async fn classification_requires_awaiting_category_and_keeps_user_metadata_autho
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -295,7 +295,7 @@ async fn multi_root_archive_becomes_one_batch_item_per_mod_root_without_moving_a
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -365,7 +365,7 @@ async fn identical_archives_stage_one_representative_and_keep_the_duplicate_sour
         &TestGameFixture {
             id: "gimi-archive-dedup",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods/character"),
         },
@@ -472,7 +472,7 @@ async fn target_with_extra_files_requires_review_then_keeps_a_separate_name() {
         &TestGameFixture {
             id: "gimi-target-review",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: root.path().to_str().unwrap(),
             mods_path: Some(mods_root.to_str().unwrap()),
         },
@@ -630,6 +630,233 @@ async fn target_with_extra_files_requires_review_then_keeps_a_separate_name() {
 }
 
 #[tokio::test]
+async fn folder_validation_failure_settles_the_item_and_allows_retry() {
+    let context = init_test_db().await;
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("Ayaka");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(
+        source.join("merged.ini"),
+        b"[TextureOverrideBody]\nhash = abc\n",
+    )
+    .unwrap();
+    let executable = source.join("installer.exe");
+    std::fs::write(&executable, b"blocked payload").unwrap();
+    let batch = create_staging_test_batch(
+        &context.pool,
+        &source,
+        ImportFlow::AutoImport,
+        ImportSourceKind::Folder,
+    )
+    .await;
+    let staging = root.path().join("app-staging");
+
+    let error = super::staging::stage_import_batch_sources(&context.pool, &batch.id, &staging)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        crate::shared::errors::AppError::Security(_)
+    ));
+    let failed = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        &context.pool,
+        &batch.id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(failed.status, super::types::ImportBatchStatus::Partial);
+    assert_eq!(failed.items[0].status, ImportItemStatus::Failed);
+    assert!(source.exists());
+
+    std::fs::remove_file(executable).unwrap();
+    let retried = super::staging::stage_import_batch_sources(&context.pool, &batch.id, &staging)
+        .await
+        .unwrap();
+    assert_eq!(
+        retried.status,
+        super::types::ImportBatchStatus::AwaitingReview
+    );
+    assert_eq!(retried.items[0].status, ImportItemStatus::Staged);
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn archive_hash_failure_settles_the_item_and_allows_retry() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let context = init_test_db().await;
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("locked.zip");
+    let file = std::fs::File::create(&archive).unwrap();
+    let mut writer = zip::ZipWriter::new(file);
+    writer
+        .start_file("Ayaka/merged.ini", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer
+        .write_all(b"[TextureOverrideBody]\nhash = abc\n")
+        .unwrap();
+    writer.finish().unwrap();
+    let batch = create_staging_test_batch(
+        &context.pool,
+        &archive,
+        ImportFlow::AutoImport,
+        ImportSourceKind::ArchiveRoot,
+    )
+    .await;
+    let staging = root.path().join("app-staging");
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0)
+        .open(&archive)
+        .unwrap();
+
+    let error = super::staging::stage_import_batch_sources(&context.pool, &batch.id, &staging)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, crate::shared::errors::AppError::Io(_)));
+    let failed = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        &context.pool,
+        &batch.id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(failed.status, super::types::ImportBatchStatus::Partial);
+    assert_eq!(failed.items[0].status, ImportItemStatus::Failed);
+    assert!(archive.exists());
+
+    drop(lock);
+    let retried = super::staging::stage_import_batch_sources(&context.pool, &batch.id, &staging)
+        .await
+        .unwrap();
+    assert_eq!(
+        retried.status,
+        super::types::ImportBatchStatus::AwaitingReview
+    );
+    assert_eq!(retried.items[0].status, ImportItemStatus::Staged);
+}
+
+#[tokio::test]
+async fn ready_to_move_copy_cancellation_stops_before_the_next_file_and_keeps_source() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let context = init_test_db().await;
+    let root = tempfile::tempdir().unwrap();
+    let pack = root.path().join("pack");
+    let mod_root = pack.join("Ayaka");
+    std::fs::create_dir_all(&mod_root).unwrap();
+    std::fs::write(
+        mod_root.join("merged.ini"),
+        b"[TextureOverrideBody]\nhash = abc\n",
+    )
+    .unwrap();
+    std::fs::write(mod_root.join("a.buf"), [1_u8; 128]).unwrap();
+    std::fs::write(mod_root.join("z.buf"), [2_u8; 128]).unwrap();
+    let batch = create_staging_test_batch(
+        &context.pool,
+        &pack,
+        ImportFlow::ReadyToMove,
+        ImportSourceKind::ReadyToMove,
+    )
+    .await;
+    let state = super::extraction_state::ImportExtractionState::default();
+    let lease = state.acquire(&batch.id).unwrap();
+    let cancel_token = lease.cancel_token();
+    let cancellation = cancel_token.clone();
+    let progress_seen = Arc::new(AtomicBool::new(false));
+    let progress_for_channel = progress_seen.clone();
+    let on_progress = tauri::ipc::Channel::new(move |_| {
+        progress_for_channel.store(true, Ordering::SeqCst);
+        cancellation.store(true, Ordering::SeqCst);
+        Ok(())
+    });
+    let staging = root.path().join("app-staging");
+
+    let outcome = super::staging::stage_import_batch_sources_with_options(
+        &context.pool,
+        &batch.id,
+        &staging,
+        &crate::modules::library::application::mods::archive::StagingExtractOptions {
+            cancel_token: Some(cancel_token),
+            on_progress: Some(on_progress),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    assert!(matches!(
+        outcome,
+        Err(crate::shared::errors::AppError::Cancelled)
+    ));
+    assert!(progress_seen.load(Ordering::SeqCst));
+    assert!(mod_root.join("a.buf").exists());
+    assert!(mod_root.join("z.buf").exists());
+    let copied_files = walkdir::WalkDir::new(staging.join(&batch.id))
+        .into_iter()
+        .map(|entry| entry.unwrap())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(copied_files, ["a.buf"]);
+    let cancelled = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
+        &context.pool,
+        &batch.id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(cancelled.status, super::types::ImportBatchStatus::Analyzing);
+    assert_eq!(cancelled.items[0].status, ImportItemStatus::Discovered);
+    drop(lease);
+    let cancellation = state.cancel_and_wait(&batch.id).await;
+    assert!(super::staging::cleanup_batch_staging(&staging, &batch.id).unwrap());
+    assert!(!staging.join(&batch.id).exists());
+    assert!(mod_root.join("z.buf").exists());
+    drop(cancellation);
+}
+
+async fn create_staging_test_batch(
+    db: &sqlx::SqlitePool,
+    source: &std::path::Path,
+    flow: ImportFlow,
+    source_kind: ImportSourceKind,
+) -> super::types::ImportBatch {
+    insert_test_game(
+        db,
+        &TestGameFixture {
+            id: "gimi",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    create_import_batch(
+        db,
+        CreateImportBatchInput {
+            game_id: "gimi".to_string(),
+            flow,
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            sources: vec![ImportSourceInput {
+                path: source.to_string_lossy().into_owned(),
+                source_kind: Some(source_kind),
+            }],
+        },
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
 async fn failed_archive_staging_can_be_retried_after_the_source_is_repaired() {
     let context = init_test_db().await;
     insert_test_game(
@@ -637,7 +864,7 @@ async fn failed_archive_staging_can_be_retried_after_the_source_is_repaired() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -697,7 +924,7 @@ async fn recovered_analysis_retry_removes_crash_staging_before_new_uuid_tree() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -767,7 +994,7 @@ async fn cancelled_staging_does_not_mark_the_item_failed_or_batch_partial() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -835,7 +1062,7 @@ async fn ready_to_move_nested_folder_pack_stages_one_item_per_detected_root() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -844,6 +1071,7 @@ async fn ready_to_move_nested_folder_pack_stages_one_item_per_detected_root() {
     .unwrap();
     let root = tempfile::tempdir().unwrap();
     let pack = root.path().join("Downloaded Pack");
+    let source_modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     for mod_name in ["Ayaka", "Raiden"] {
         let mod_root = pack.join("wrapped").join(mod_name);
         std::fs::create_dir_all(&mod_root).unwrap();
@@ -852,6 +1080,12 @@ async fn ready_to_move_nested_folder_pack_stages_one_item_per_detected_root() {
             "[TextureOverrideBody]\nhash = abc\n",
         )
         .unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(mod_root.join("merged.ini"))
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(source_modified))
+            .unwrap();
     }
     let batch = create_import_batch(
         &context.pool,
@@ -891,6 +1125,14 @@ async fn ready_to_move_nested_folder_pack_stages_one_item_per_detected_root() {
             .collect::<std::collections::BTreeSet<_>>(),
         std::collections::BTreeSet::from(["DISABLED Ayaka", "DISABLED Raiden"])
     );
+    for item in &staged.items {
+        let copied_ini =
+            std::path::Path::new(item.staging_path.as_deref().unwrap()).join("merged.ini");
+        assert_eq!(
+            copied_ini.metadata().unwrap().modified().unwrap(),
+            source_modified
+        );
+    }
     assert!(pack.exists(), "staging must not mutate the inbox source");
 }
 
@@ -953,7 +1195,7 @@ async fn mod_inbox_selected_batch_reserves_only_selected_entries() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -1009,7 +1251,7 @@ async fn processed_mod_inbox_groups_pack_children_under_one_source_history() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },
@@ -1098,7 +1340,7 @@ async fn processed_delete_preflights_every_source_before_recycling_anything() {
         &TestGameFixture {
             id: "gimi",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods"),
         },

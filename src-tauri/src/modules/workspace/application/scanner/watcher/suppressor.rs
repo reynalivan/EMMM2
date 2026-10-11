@@ -17,7 +17,7 @@ use notify::event::{ModifyKind, RenameMode};
 use notify::EventKind;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -26,14 +26,57 @@ const MAX_EXPECTED_RENAME_EDGES: usize = 8192;
 
 type UnprovenRenameObserver = Arc<dyn Fn(&[PathBuf], bool) + Send + Sync>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct WatcherSession {
     generation: u64,
+    binding: WatcherBinding,
+    identity_cache_validity: Arc<AtomicBool>,
+    work_wake: Arc<tokio::sync::Notify>,
+}
+
+/// Filesystem evidence only; capturing a binding never creates a live session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct WatcherBinding {
     canonical_root: String,
     canonical_runtime_config: Option<String>,
     root_path: PathBuf,
-    root_identity: Option<String>,
+    pub(super) root_identity: Option<String>,
+    runtime_parent_identity: Option<String>,
 }
+
+impl WatcherBinding {
+    pub(super) fn capture(root: &Path, runtime_config_path: Option<&Path>) -> Self {
+        Self {
+            canonical_root: rename_location_key(root),
+            canonical_runtime_config: runtime_config_path.map(rename_location_key),
+            root_path: root.to_path_buf(),
+            root_identity: crate::platform::fs::file_utils::filesystem_identity(root),
+            runtime_parent_identity: runtime_config_path
+                .and_then(Path::parent)
+                .and_then(crate::platform::fs::file_utils::filesystem_identity),
+        }
+    }
+}
+
+impl WatcherBinding {
+    pub(super) fn matches_coverage(&self, evidence: &Self) -> bool {
+        evidence.root_identity.is_some()
+            && (evidence.canonical_runtime_config.is_none()
+                || evidence.runtime_parent_identity.is_some())
+            && self.canonical_root == evidence.canonical_root
+            && self.canonical_runtime_config == evidence.canonical_runtime_config
+            && self.root_identity == evidence.root_identity
+            && self.runtime_parent_identity == evidence.runtime_parent_identity
+    }
+}
+
+impl PartialEq for WatcherSession {
+    fn eq(&self, other: &Self) -> bool {
+        self.generation == other.generation && self.binding == other.binding
+    }
+}
+
+impl Eq for WatcherSession {}
 
 impl WatcherSession {
     pub(super) fn new_with_runtime_config(
@@ -43,10 +86,9 @@ impl WatcherSession {
     ) -> Self {
         Self {
             generation,
-            canonical_root: rename_location_key(root),
-            canonical_runtime_config: runtime_config_path.map(rename_location_key),
-            root_path: root.to_path_buf(),
-            root_identity: crate::platform::fs::file_utils::filesystem_identity(root),
+            binding: WatcherBinding::capture(root, runtime_config_path),
+            identity_cache_validity: Arc::new(AtomicBool::new(true)),
+            work_wake: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -54,13 +96,54 @@ impl WatcherSession {
         self.generation
     }
 
+    pub(crate) fn identity_cache_validity(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.identity_cache_validity)
+    }
+
+    /// Signal the resource's single receiver; dirty generations remain the demand.
+    pub(crate) fn request_work(&self) {
+        self.work_wake.notify_one();
+    }
+
+    pub(crate) async fn wait_for_work(&self) {
+        self.work_wake.notified().await;
+    }
+
     pub(crate) fn covers_root(&self, root: &Path) -> bool {
-        self.canonical_root == rename_location_key(root)
+        self.binding.canonical_root == rename_location_key(root)
     }
 
     pub(crate) fn covers(&self, root: &Path, runtime_config_path: Option<&Path>) -> bool {
         self.covers_root(root)
-            && self.canonical_runtime_config == runtime_config_path.map(rename_location_key)
+            && self.binding.canonical_runtime_config == runtime_config_path.map(rename_location_key)
+            && self.runtime_parent_matches(runtime_config_path)
+    }
+
+    pub(crate) fn runtime_parent_matches(&self, runtime_config_path: Option<&Path>) -> bool {
+        match runtime_config_path {
+            None => self.binding.runtime_parent_identity.is_none(),
+            Some(path) => {
+                self.binding.runtime_parent_identity.is_some()
+                    && self.binding.runtime_parent_identity
+                        == path
+                            .parent()
+                            .and_then(crate::platform::fs::file_utils::filesystem_identity)
+            }
+        }
+    }
+
+    pub(crate) fn matches_current_binding(
+        &self,
+        root: &Path,
+        runtime_config: Option<&Path>,
+    ) -> bool {
+        let evidence = WatcherBinding::capture(root, runtime_config);
+        self.binding.root_path == evidence.root_path && self.matches_binding_evidence(&evidence)
+    }
+
+    pub(super) fn matches_binding_evidence(&self, evidence: &WatcherBinding) -> bool {
+        self.binding.matches_coverage(evidence)
+            && self.identity_cache_validity.load(Ordering::Acquire)
     }
 }
 
@@ -192,9 +275,9 @@ enum LineageProof {
 
 fn lineage_proof(edges: &[PendingRenameEcho], index: usize) -> LineageProof {
     let first = &edges[index];
-    if first.owner.root_identity.is_none()
-        || crate::platform::fs::file_utils::filesystem_identity(&first.owner.root_path)
-            != first.owner.root_identity
+    if first.owner.binding.root_identity.is_none()
+        || crate::platform::fs::file_utils::filesystem_identity(&first.owner.binding.root_path)
+            != first.owner.binding.root_identity
     {
         return LineageProof::Unproven;
     }
@@ -340,6 +423,7 @@ fn release_unproven(
             if let Some(observer) = edge.on_unproven {
                 observer(&[edge.old_path, edge.new_path], coverage_lost);
             }
+            edge.owner.request_work();
         }
     }
 }
@@ -577,6 +661,30 @@ impl WatcherSuppressor {
 
     pub(crate) fn discard_expected_rename_echoes(&self, evidence: &TrustedWatcherMutationEvidence) {
         self.remove_rename_echoes(|edge| edge.belongs_to(evidence), false);
+    }
+
+    #[cfg(feature = "watcher-verification")]
+    pub(crate) fn verification_echo_observed(
+        &self,
+        evidence: &TrustedWatcherMutationEvidence,
+    ) -> bool {
+        lock(&self.expected_rename_echoes)
+            .edges
+            .iter()
+            .any(|edge| edge.belongs_to(evidence) && edge.on_unproven.is_some())
+    }
+
+    #[cfg(feature = "watcher-verification")]
+    pub(crate) fn verification_echo_deadline(
+        &self,
+        evidence: &TrustedWatcherMutationEvidence,
+    ) -> Option<Instant> {
+        lock(&self.expected_rename_echoes)
+            .edges
+            .iter()
+            .filter(|edge| edge.belongs_to(evidence))
+            .map(|edge| edge.expires_at)
+            .min()
     }
 
     pub(crate) fn retain_expected_rename_echoes<'a>(
@@ -874,6 +982,13 @@ impl WatcherSuppressor {
         }
     }
 
+    fn wake_after_suppression(&self) {
+        let owner = lock(&self.repair).owner.clone();
+        if let Some(owner) = owner {
+            owner.request_work();
+        }
+    }
+
     fn increment(&self) {
         self.guard_depth.fetch_add(1, Ordering::AcqRel);
     }
@@ -903,6 +1018,9 @@ impl SuppressionGuard {
 impl Drop for SuppressionGuard {
     fn drop(&mut self) {
         self.suppressor.decrement();
+        if !self.suppressor.load(Ordering::Acquire) {
+            self.suppressor.wake_after_suppression();
+        }
     }
 }
 
@@ -914,6 +1032,7 @@ pub struct PathSuppressionGuard {
 impl Drop for PathSuppressionGuard {
     fn drop(&mut self) {
         self.suppressor.release_scoped(&self.keys);
+        self.suppressor.wake_after_suppression();
     }
 }
 
@@ -1546,6 +1665,8 @@ mod tests {
 
     #[test]
     fn rapid_reverse_lineage_consumes_all_delayed_echoes_without_repair() {
+        // This stresses lineage, not wall-clock expiry; parallel filesystem load can exceed the production TTL.
+        const STRESS_ECHO_WINDOW: Duration = Duration::from_secs(300);
         let temp = tempfile::tempdir().expect("tempdir");
         let enabled = temp.path().join("Alice");
         let disabled = temp.path().join("DISABLED Alice");
@@ -1561,6 +1682,11 @@ mod tests {
                 (&disabled, &enabled)
             };
             let evidence = record_rename(&suppressor, &session, old_path, new_path);
+            lock(&suppressor.expected_rename_echoes)
+                .edges
+                .last_mut()
+                .expect("recorded stress echo")
+                .expires_at = Instant::now() + STRESS_ECHO_WINDOW;
             std::fs::rename(old_path, new_path).expect("rename");
             assert!(suppressor.commit_expected_rename_echoes(&evidence));
             renames.push([old_path.clone(), new_path.clone()]);

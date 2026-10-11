@@ -113,6 +113,7 @@ function FolderListRowInner({
             : t(pendingDesiredEnabled ? 'common:status.enabled' : 'common:status.disabled'),
         };
   const inactiveReasonText = formatWorkspaceReason(t, item.inactive_reason);
+  const isConflictGroup = Boolean(hasFolderNameConflict && item.conflict_group_id);
   const contextActions = useModContextMenuActions(item);
   const contextItems = useModContextMenuItems({
     folder: actionItem,
@@ -179,10 +180,22 @@ function FolderListRowInner({
         id={`grid-item-${item.path}`}
         onClick={handleClick}
         onContextMenu={handleContextClick}
+        tabIndex={isConflictGroup ? 0 : undefined}
+        role={isConflictGroup ? 'gridcell' : undefined}
+        aria-label={
+          isConflictGroup ? t('card.conflict_group_label', { name: item.display_name }) : undefined
+        }
+        onKeyDown={(event) => {
+          if (isConflictGroup && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            event.stopPropagation();
+            onActivate?.(item.path);
+          }
+        }}
         className={`
         group flex h-full items-center gap-3 rounded-md border p-2 cursor-pointer transition-[background-color,border-color] duration-150
         ${item.display_mode === 'internal_assets' ? 'opacity-50' : ''}
-        ${!item.is_effectively_active ? 'opacity-[0.65] grayscale-[0.8]' : ''}
+        ${!isConflictGroup && !item.is_effectively_active ? 'opacity-[0.65] grayscale-[0.8]' : ''}
         ${
           isActive
             ? 'border-primary/60 bg-primary/10'
@@ -211,30 +224,32 @@ function FolderListRowInner({
           )}
 
           {/* Bulk selection stays centered over the thumbnail in the compact row layout. */}
-          <div
-            className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-150
+          {!isConflictGroup && (
+            <div
+              className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center transition-opacity duration-150
               ${isSelected ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
-          >
-            <input
-              type="checkbox"
-              className="pointer-events-auto checkbox checkbox-primary checkbox-xs border shadow-sm bg-base-100"
-              checked={isSelected}
-              onChange={(e) => {
-                e.stopPropagation();
-                const isShift =
-                  e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey;
-                toggleSelection(item.path, true, isShift);
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
+            >
+              <input
+                type="checkbox"
+                className="pointer-events-auto checkbox checkbox-primary checkbox-xs border shadow-sm bg-base-100"
+                checked={isSelected}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  const isShift =
+                    e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey;
+                  toggleSelection(item.path, true, isShift);
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
         </div>
 
         <div className="min-w-0 flex-1 flex items-center gap-3">
           <div
             className={`text-sm font-medium truncate leading-tight flex-1
             ${isActive || isSelected ? 'text-primary' : 'text-base-content/80'}
-            ${!displayedSwitchPolicy.checked ? 'line-through text-base-content/50' : ''}
+            ${!isConflictGroup && !displayedSwitchPolicy.checked ? 'line-through text-base-content/50' : ''}
             ${!item.is_effectively_active && displayedSwitchPolicy.checked ? 'text-base-content/55' : ''}`}
           >
             {item.display_name}
@@ -289,59 +304,65 @@ function FolderListRowInner({
             </div>
           )}
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (mutationsDisabled) {
-                  return;
-                }
-                onToggleFavorite?.(item);
-              }}
-              className={`rounded-full p-1 transition-[color,opacity] duration-150
+          {isConflictGroup ? (
+            <span className="shrink-0 text-xs font-medium text-warning">
+              {t('card.open_conflict')}
+            </span>
+          ) : (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (mutationsDisabled) {
+                    return;
+                  }
+                  onToggleFavorite?.(item);
+                }}
+                className={`rounded-full p-1 transition-[color,opacity] duration-150
                  ${
                    item.is_favorite
                      ? 'text-warning opacity-100'
                      : 'text-base-content/45 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 hover:text-warning'
                  }
                `}
-              title={t(item.is_favorite ? 'card.unfavorite' : 'card.favorite')}
-              disabled={mutationsDisabled}
-            >
-              <Star
-                size={16}
-                className={`drop-shadow-sm ${item.is_favorite ? 'fill-current' : ''}`}
-              />
-            </button>
-            <label
-              className="flex items-center gap-1.5 cursor-pointer"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <WorkspaceSwitchControl
-                node={item}
-                policy={displayedSwitchPolicy}
-                isPending={switchDisabled}
-                isBusy={isSwitchBusy}
-                size="xs"
-                ariaLabel={t('common:actions.toggle')}
-                onToggle={() => {
-                  if (!switchDisabled) {
-                    onToggleEnabled?.(item);
-                  }
-                }}
-              />
-              <WorkspaceSwitchLabel
-                node={actionItem}
-                policy={displayedSwitchPolicy}
-                className="text-[10px] font-semibold text-base-content/40 hidden sm:inline"
-              />
-              {inactiveReasonText && !displayedSwitchPolicy.checked && (
-                <span className="hidden text-[10px] text-warning/70 sm:inline">
-                  {inactiveReasonText}
-                </span>
-              )}
-            </label>
-          </div>
+                title={t(item.is_favorite ? 'card.unfavorite' : 'card.favorite')}
+                disabled={mutationsDisabled}
+              >
+                <Star
+                  size={16}
+                  className={`drop-shadow-sm ${item.is_favorite ? 'fill-current' : ''}`}
+                />
+              </button>
+              <label
+                className="flex items-center gap-1.5 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <WorkspaceSwitchControl
+                  node={item}
+                  policy={displayedSwitchPolicy}
+                  isPending={switchDisabled}
+                  isBusy={isSwitchBusy}
+                  size="xs"
+                  ariaLabel={t('common:actions.toggle')}
+                  onToggle={() => {
+                    if (!switchDisabled) {
+                      onToggleEnabled?.(item);
+                    }
+                  }}
+                />
+                <WorkspaceSwitchLabel
+                  node={actionItem}
+                  policy={displayedSwitchPolicy}
+                  className="text-[10px] font-semibold text-base-content/40 hidden sm:inline"
+                />
+                {inactiveReasonText && !displayedSwitchPolicy.checked && (
+                  <span className="hidden text-[10px] text-warning/70 sm:inline">
+                    {inactiveReasonText}
+                  </span>
+                )}
+              </label>
+            </div>
+          )}
         </div>
       </div>
     </ContextMenu>

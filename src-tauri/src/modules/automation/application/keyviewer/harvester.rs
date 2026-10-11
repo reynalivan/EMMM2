@@ -77,15 +77,6 @@ pub struct HarvestedTarget {
     pub file_path: PathBuf,
 }
 
-/// Legacy raw-hash view retained for scanner callers that do not create
-/// runtime observers. The KeyViewer pipeline uses [`HarvestedTarget`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HarvestedHash {
-    pub hash: String,
-    pub section_name: String,
-    pub file_path: PathBuf,
-}
-
 #[derive(Debug, Default)]
 struct OverrideSection {
     name: String,
@@ -237,41 +228,6 @@ fn section_is_position(section_name: &str) -> bool {
         .is_some_and(|name| name.ends_with("position"))
 }
 
-/// Harvest raw resource hashes from a single INI. This compatibility helper
-/// intentionally does not infer a resource type and must not feed KeyViewer.
-pub fn harvest_hashes_from_ini(file_path: &Path) -> Result<Vec<HarvestedHash>, AppError> {
-    let bytes = fs::read(file_path)?;
-    let (text, _, _) =
-        crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
-    Ok(harvest_hashes_from_text(&text, file_path))
-}
-
-fn harvest_hashes_from_text(text: &str, file_path: &Path) -> Vec<HarvestedHash> {
-    let mut results = Vec::new();
-    let mut current_section: Option<String> = None;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            current_section = TEXTURE_OVERRIDE_SECTION_RE
-                .captures(trimmed)
-                .map(|captures| captures[1].to_string())
-                .filter(|name| !is_denylisted(name));
-            continue;
-        }
-        let Some(section_name) = current_section.as_ref() else {
-            continue;
-        };
-        if let Some(captures) = HASH_RE.captures(trimmed) {
-            results.push(HarvestedHash {
-                hash: captures[1].to_ascii_lowercase(),
-                section_name: section_name.clone(),
-                file_path: file_path.to_path_buf(),
-            });
-        }
-    }
-    results
-}
-
 /// Harvest observer-ready, typed targets from one INI file.
 pub fn harvest_targets_from_ini(
     file_path: &Path,
@@ -314,27 +270,6 @@ fn harvest_targets_from_text(
     targets
 }
 
-/// Compatibility hash map for callers that need the raw scanner inventory.
-pub fn harvest_hashes_from_mod(
-    mod_path: &Path,
-) -> Result<HashMap<String, Vec<HarvestedHash>>, AppError> {
-    let mut hash_map: HashMap<String, Vec<HarvestedHash>> = HashMap::new();
-    for ini_path in list_ini_files(mod_path)? {
-        match harvest_hashes_from_ini(&ini_path) {
-            Ok(hashes) => {
-                for hash in hashes {
-                    hash_map.entry(hash.hash.clone()).or_default().push(hash);
-                }
-            }
-            Err(error) => log::warn!(
-                "[keyviewer] Failed to harvest hashes from {}: {error}",
-                ini_path.display()
-            ),
-        }
-    }
-    Ok(hash_map)
-}
-
 /// Everything one pass over a mod's INI files yields.
 #[derive(Debug, Clone, Default)]
 pub struct ModHarvest {
@@ -365,7 +300,15 @@ struct CachedModHarvest {
     harvest: Arc<ModHarvest>,
 }
 
-type IniFileContents = Vec<(PathBuf, Vec<u8>)>;
+type IniContentDigest = sha2::digest::Output<Sha256>;
+
+struct IniFileContent {
+    path: PathBuf,
+    bytes: Vec<u8>,
+    content_digest: IniContentDigest,
+}
+
+type IniFileContents = Vec<IniFileContent>;
 type IniSnapshot = (Vec<IniFileSnapshot>, IniFileContents);
 
 /// A sync already has to enumerate the effective INI files, but it should not
@@ -399,7 +342,14 @@ pub(crate) fn harvest_cache_metrics() -> HarvestCacheMetrics {
 }
 
 #[cfg(test)]
-static HARVEST_READ_COUNTS: LazyLock<Mutex<HashMap<String, usize>>> =
+#[derive(Default)]
+struct HarvestIoCounts {
+    reads: usize,
+    digests: usize,
+}
+
+#[cfg(test)]
+static HARVEST_READ_COUNTS: LazyLock<Mutex<HashMap<String, HarvestIoCounts>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn cache_path_key(path: &Path) -> String {
@@ -410,11 +360,12 @@ fn cache_path_key(path: &Path) -> String {
 
 #[cfg(test)]
 fn record_harvest_read(path: &Path) {
-    *HARVEST_READ_COUNTS
+    HARVEST_READ_COUNTS
         .lock()
         .expect("KeyViewer harvest read counter lock poisoned")
         .entry(cache_path_key(path))
-        .or_default() += 1;
+        .or_default()
+        .reads += 1;
 }
 
 #[cfg(test)]
@@ -423,8 +374,33 @@ pub(crate) fn harvest_read_count(path: &Path) -> usize {
         .lock()
         .expect("KeyViewer harvest read counter lock poisoned")
         .get(&cache_path_key(path))
-        .copied()
+        .map(|counts| counts.reads)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+pub(crate) fn harvest_digest_count(path: &Path) -> usize {
+    HARVEST_READ_COUNTS
+        .lock()
+        .expect("KeyViewer harvest read counter lock poisoned")
+        .get(&cache_path_key(path))
+        .map(|counts| counts.digests)
+        .unwrap_or_default()
+}
+
+fn ini_content_digest(path: &Path, bytes: &[u8]) -> IniContentDigest {
+    #[cfg(test)]
+    {
+        HARVEST_READ_COUNTS
+            .lock()
+            .expect("KeyViewer harvest read counter lock poisoned")
+            .entry(cache_path_key(path))
+            .or_default()
+            .digests += 1;
+    }
+    #[cfg(not(test))]
+    let _ = path;
+    Sha256::digest(bytes)
 }
 
 fn snapshot_ini_files(ini_files: &[PathBuf]) -> Result<IniSnapshot, std::io::Error> {
@@ -435,13 +411,18 @@ fn snapshot_ini_files(ini_files: &[PathBuf]) -> Result<IniSnapshot, std::io::Err
         #[cfg(test)]
         record_harvest_read(path);
         let bytes = fs::read(path)?;
+        let content_digest = ini_content_digest(path, &bytes);
         snapshots.push(IniFileSnapshot {
             path: path.clone(),
             len: metadata.len(),
             modified: metadata.modified().ok(),
-            content_digest: format!("{:x}", Sha256::digest(&bytes)),
+            content_digest: format!("{content_digest:x}"),
         });
-        contents.push((path.clone(), bytes));
+        contents.push(IniFileContent {
+            path: path.clone(),
+            bytes,
+            content_digest,
+        });
     }
     Ok((snapshots, contents))
 }
@@ -471,11 +452,25 @@ pub fn retain_cached_mods<'a>(
 /// caller-provided change signal is authoritative even when file metadata was
 /// preserved by a copy or restore operation.
 pub fn invalidate_cached_mod(mod_path: &Path) {
-    let mod_path = cache_path_key(mod_path);
-    HARVEST_CACHE
+    invalidate_cached_mods([mod_path]);
+}
+
+/// Discard all capability variants for the lexical old/new paths in one scope.
+/// Normalize and deduplicate before taking the cache lock; other roots stay warm.
+pub fn invalidate_cached_mods<'a>(mod_paths: impl IntoIterator<Item = &'a Path>) {
+    let mod_paths: HashSet<_> = mod_paths.into_iter().map(cache_path_key).collect();
+    if mod_paths.is_empty() {
+        return;
+    }
+    let mut cache = HARVEST_CACHE
         .lock()
-        .expect("KeyViewer harvest cache lock poisoned")
-        .retain(|key, _| key.mod_path != mod_path);
+        .expect("KeyViewer harvest cache lock poisoned");
+    if mod_paths.len() == 1 {
+        let changed_path = mod_paths.iter().next().expect("one deduplicated path");
+        cache.retain(|key, _| key.mod_path != *changed_path);
+    } else {
+        cache.retain(|key, _| !mod_paths.contains(&key.mod_path));
+    }
 }
 
 /// Evict every parsed INI snapshot below a composition root that is no longer
@@ -587,23 +582,31 @@ fn harvest_ini_files(
                     return None;
                 }
             };
-            Some((ini_path, bytes))
+            let content_digest = ini_content_digest(&ini_path, &bytes);
+            Some(IniFileContent {
+                path: ini_path,
+                bytes,
+                content_digest,
+            })
         })
         .collect();
     Ok(harvest_ini_contents(contents, capabilities))
 }
 
 fn harvest_ini_contents(
-    contents: Vec<(PathBuf, Vec<u8>)>,
+    contents: IniFileContents,
     capabilities: &HarvestCapabilities,
 ) -> ModHarvest {
     use crate::modules::library::application::ini::document;
 
     let mut harvest = ModHarvest::default();
-    for (ini_path, bytes) in contents {
-        harvest
-            .ini_fingerprints
-            .push(format!("{:x}", Sha256::digest(&bytes)));
+    for IniFileContent {
+        path: ini_path,
+        bytes,
+        content_digest,
+    } in contents
+    {
+        harvest.ini_fingerprints.push(format!("{content_digest:x}"));
         let (text, _, _) = document::decode_ini_bytes(&bytes);
         harvest
             .targets
@@ -617,18 +620,160 @@ fn harvest_ini_contents(
     harvest
 }
 
-/// Harvest key bindings only for compatibility callers.
-pub fn harvest_keybinds_from_mod(
-    mod_path: &Path,
-) -> Result<Vec<crate::modules::library::application::ini::document::KeyBinding>, AppError> {
-    let ini_files = list_ini_files(mod_path)?;
-    let mut all_keybinds = Vec::new();
-    for ini_path in ini_files {
-        if let Ok(doc) =
-            crate::modules::library::application::ini::document::read_ini_document(&ini_path)
-        {
-            all_keybinds.extend(doc.key_bindings);
+#[cfg(test)]
+#[path = "harvest_dispatch_benchmark.rs"]
+mod dispatch_benchmark;
+
+#[cfg(test)]
+mod cache_benchmark {
+    use super::*;
+    use std::time::Instant;
+    use tempfile::TempDir;
+
+    fn fixture_cache(roots: &[PathBuf]) -> HashMap<HarvestCacheKey, CachedModHarvest> {
+        let prefixes: Vec<_> = roots
+            .iter()
+            .map(|root| format!("{}/", cache_path_key(root)))
+            .collect();
+        HARVEST_CACHE
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(key, _)| {
+                prefixes
+                    .iter()
+                    .any(|prefix| key.mod_path.starts_with(prefix))
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
+
+    fn assert_same_cache(
+        left: &HashMap<HarvestCacheKey, CachedModHarvest>,
+        right: &HashMap<HarvestCacheKey, CachedModHarvest>,
+    ) {
+        assert_eq!(left.len(), right.len());
+        for (key, left_value) in left {
+            let right_value = right.get(key).expect("identical cache key set");
+            assert_eq!(left_value.files, right_value.files);
+            assert!(Arc::ptr_eq(&left_value.harvest, &right_value.harvest));
         }
     }
-    Ok(all_keybinds)
+
+    #[test]
+    #[ignore = "manual actual-cache two-game invalidation/harvest benchmark"]
+    fn benchmark_actual_cache_batch_invalidation() {
+        const MODS_PER_GAME: usize = 2_048;
+        const PAIRS: usize = 5;
+        let fixture = TempDir::new().unwrap();
+        let roots = [
+            fixture.path().join("GameA/Mods"),
+            fixture.path().join("GameB/Mods"),
+        ];
+        let capabilities = [
+            HarvestCapabilities::from_callback_slots(["vb0"]),
+            HarvestCapabilities::from_callback_slots(["ib"]),
+        ];
+        let mut paths = Vec::with_capacity(MODS_PER_GAME);
+        let content = format!(
+            "[TextureOverrideBody]\nhash = df65bb00\nvb0 = ResourceBody\nib = ResourceIndex\n[KeyBody]\nkey = CTRL+K\n{}",
+            "; representative resource configuration padding\n".repeat(80)
+        );
+        for (game_index, root) in roots.iter().enumerate() {
+            for mod_index in 0..MODS_PER_GAME {
+                let path = root.join(format!(
+                    "Group{:02}/Nested/Mod{mod_index:04}",
+                    mod_index % 16
+                ));
+                fs::create_dir_all(&path).unwrap();
+                fs::write(path.join("mod.ini"), &content).unwrap();
+                for capability in &capabilities {
+                    harvest_mod(&path, capability).unwrap();
+                }
+                if game_index == 0 {
+                    paths.push(path);
+                }
+            }
+        }
+        let baseline = fixture_cache(&roots);
+        assert_eq!(baseline.len(), MODS_PER_GAME * 4);
+        let capacity = HARVEST_CACHE.lock().unwrap().capacity();
+        for (case, scope) in [("one_mod", &paths[..1]), ("root", paths.as_slice())] {
+            for pair in 0..PAIRS {
+                let mut expected_cache = None;
+                let mut expected_output: Option<Vec<Arc<ModHarvest>>> = None;
+                let modes = if pair % 2 == 0 {
+                    [false, true]
+                } else {
+                    [true, false]
+                };
+                for batch in modes {
+                    {
+                        let mut cache = HARVEST_CACHE.lock().unwrap();
+                        cache.extend(baseline.clone());
+                    }
+                    let started = Instant::now();
+                    if batch {
+                        invalidate_cached_mods(
+                            scope.iter().chain(scope.iter()).map(PathBuf::as_path),
+                        );
+                    } else {
+                        // Preserve the pre-batch production algorithm exactly.
+                        for path in scope.iter().chain(scope.iter()) {
+                            let key = cache_path_key(path);
+                            HARVEST_CACHE
+                                .lock()
+                                .unwrap()
+                                .retain(|entry, _| entry.mod_path != key);
+                        }
+                    }
+                    let invalidation_us = started.elapsed().as_secs_f64() * 1_000_000.0;
+                    let remaining = fixture_cache(&roots);
+                    assert_eq!(
+                        remaining.len(),
+                        baseline.len() - scope.len() * capabilities.len()
+                    );
+                    assert_eq!(cached_entry_count_for_root(&roots[1]), MODS_PER_GAME * 2);
+                    for (key, value) in &remaining {
+                        assert!(Arc::ptr_eq(&baseline[key].harvest, &value.harvest));
+                    }
+                    if let Some(expected) = &expected_cache {
+                        assert_same_cache(expected, &remaining);
+                    } else {
+                        expected_cache = Some(remaining);
+                    }
+                    let started = Instant::now();
+                    let output: Vec<_> = scope
+                        .iter()
+                        .map(|path| harvest_mod(path, &capabilities[0]).unwrap())
+                        .collect();
+                    let harvest_us = started.elapsed().as_secs_f64() * 1_000_000.0;
+                    if let Some(expected) = &expected_output {
+                        for (left, right) in expected.iter().zip(&output) {
+                            assert_eq!(left.targets, right.targets);
+                            assert_eq!(left.keybinds, right.keybinds);
+                            assert_eq!(left.ini_fingerprints, right.ini_fingerprints);
+                        }
+                    } else {
+                        expected_output = Some(output);
+                    }
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "case": case, "pair": pair + 1, "batch": batch,
+                            "fixture_entries": baseline.len(), "cache_capacity": capacity,
+                            "ini_bytes_per_mod": content.len(), "scope_mods": scope.len(),
+                            "input_paths": scope.len() * 2,
+                            "retain_passes": if batch { 1 } else { scope.len() * 2 },
+                            "invalidation_us": invalidation_us, "harvest_us": harvest_us,
+                            "invalidation_and_harvest_us": invalidation_us + harvest_us,
+                            "allocation_measurement": "not instrumented",
+                            "exact_cache_and_harvest_parity": true
+                        })
+                    );
+                }
+            }
+        }
+        evict_cached_root_by_key(&cache_path_key(fixture.path()));
+    }
 }

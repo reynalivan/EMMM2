@@ -754,7 +754,9 @@ describe('Client settings smoke — isolated native UI controls', () => {
         (settings) => !settings.games.some((game) => game.name === QA_RENAMED_GAME),
       );
       expect((await readSettings()).games.some((game) => game.id === baseGameId)).toBe(true);
-      expect(await fs.readFile(path.join(fixtures[1].root, 'd3dx.ini'), 'utf8')).toBe('[Main]\n');
+      expect(await fs.readFile(path.join(fixtures[1].root, 'd3dx.ini'), 'utf8')).toBe(
+        '[Include]\ninclude_recursive = Mods\ninclude = Core/GIMI/main.ini\n',
+      );
     },
   );
 

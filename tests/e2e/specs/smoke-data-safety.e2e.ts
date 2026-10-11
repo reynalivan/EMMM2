@@ -8,6 +8,7 @@ import {
   type MockGame,
 } from '../support/fixtures.js';
 import { seedGameAndOpenDashboard } from '../support/app.js';
+import { reconcile } from '../support/data.js';
 import { invokeInApp } from '../support/ipc.js';
 
 /** Minimal shapes for the command return values this smoke asserts on. */
@@ -37,6 +38,10 @@ describe('TC-00 Smoke — Data-Safety Paths', () => {
     await removeMockGame(game);
   });
 
+  beforeEach(async () => {
+    await reconcile(gameId);
+  });
+
   it('TC-00-01: Toggle off/on renames DISABLED prefix on disk, no file lost', async () => {
     const objectDir = path.join(game.modsPath, 'Raiden');
     const modPath = await addMockMod(game, 'Raiden', 'SkinA');
@@ -45,6 +50,9 @@ describe('TC-00 Smoke — Data-Safety Paths', () => {
       gameId,
       paths: [modPath],
       enable: false,
+      operationId: 'smoke-data-safety-disable',
+      intentRevision: 1,
+      expectedIdentities: null,
     });
     expect(off.failures.length).toBe(0);
 
@@ -54,10 +62,17 @@ describe('TC-00 Smoke — Data-Safety Paths', () => {
     // File integrity: contents survive the rename.
     expect(await listDir(path.join(objectDir, 'DISABLED SkinA'))).toContain('mod.ini');
 
+    // The first committed mutation stages watcher work. Settle it before
+    // submitting the inverse mutation so the test mirrors UI action sequencing.
+    await reconcile(gameId);
+
     const on = await invokeInApp<BulkResult>('bulk_toggle_mods', {
       gameId,
       paths: [path.join(objectDir, 'DISABLED SkinA')],
       enable: true,
+      operationId: 'smoke-data-safety-enable',
+      intentRevision: 2,
+      expectedIdentities: null,
     });
     expect(on.failures.length).toBe(0);
 

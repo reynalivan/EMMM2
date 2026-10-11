@@ -45,6 +45,7 @@ export default function FolderCardThumbnail({
   onToggleSelection,
 }: FolderCardThumbnailProps) {
   const { t } = useTranslation(['grid']);
+  const isConflictGroup = Boolean(hasNamingConflict && folder.conflict_group_id);
 
   return (
     <div className="aspect-square bg-base-300/50 relative group overflow-hidden flex items-center justify-center">
@@ -94,29 +95,34 @@ export default function FolderCardThumbnail({
         </div>
       )}
 
-      {!isSwitchChecked && (
+      {!isConflictGroup && !isSwitchChecked && (
         <div className="absolute inset-0 flex items-center justify-center bg-overlay-mask z-10 pointer-events-none">
           <PowerOff size={24} className="text-base-content/90 drop-shadow-sm" />
         </div>
       )}
 
-      <button
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleFavorite();
-        }}
-        className={`absolute top-1.5 right-8 z-10 rounded-full p-1 transition-[color,opacity,transform] duration-150
+      {!isConflictGroup && (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleFavorite();
+          }}
+          className={`absolute top-1.5 right-8 z-10 rounded-full p-1 transition-[color,opacity,transform] duration-150
            ${
              folder.is_favorite
                ? 'text-warning opacity-100'
                : 'text-base-content/45 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 hover:text-warning'
            }
          `}
-        title={t(folder.is_favorite ? 'card.unfavorite' : 'card.favorite')}
-        disabled={mutationsDisabled}
-      >
-        <Star size={16} className={`drop-shadow-sm ${folder.is_favorite ? 'fill-current' : ''}`} />
-      </button>
+          title={t(folder.is_favorite ? 'card.unfavorite' : 'card.favorite')}
+          disabled={mutationsDisabled}
+        >
+          <Star
+            size={16}
+            className={`drop-shadow-sm ${folder.is_favorite ? 'fill-current' : ''}`}
+          />
+        </button>
+      )}
 
       {folder.is_misplaced && (
         <div
@@ -163,22 +169,24 @@ export default function FolderCardThumbnail({
         </div>
       )}
 
-      <div
-        className={`absolute right-1.5 top-1.5 z-20 transition-opacity duration-150
+      {!isConflictGroup && (
+        <div
+          className={`absolute right-1.5 top-1.5 z-20 transition-opacity duration-150
           ${isSelected ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
-      >
-        <input
-          type="checkbox"
-          className="checkbox checkbox-primary border-2 shadow-sm bg-base-100"
-          checked={isSelected}
-          onChange={(event) => {
-            event.stopPropagation();
-            const isShift = event.nativeEvent instanceof MouseEvent && event.nativeEvent.shiftKey;
-            onToggleSelection(isShift);
-          }}
-          onClick={(event) => event.stopPropagation()}
-        />
-      </div>
+        >
+          <input
+            type="checkbox"
+            className="checkbox checkbox-primary border-2 shadow-sm bg-base-100"
+            checked={isSelected}
+            onChange={(event) => {
+              event.stopPropagation();
+              const isShift = event.nativeEvent instanceof MouseEvent && event.nativeEvent.shiftKey;
+              onToggleSelection(isShift);
+            }}
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

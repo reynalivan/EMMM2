@@ -17,6 +17,14 @@ const mocks = vi.hoisted(() => {
     getImportBatch: vi.fn(),
     getObjectsCmd: vi.fn(),
     listImportBatches: vi.fn(),
+    retryObjectIdentitySuggestions: vi.fn().mockResolvedValue(undefined),
+    previewImportLibraryReadiness: vi.fn().mockResolvedValue({
+      reviewStarted: false,
+      items: [],
+      highCount: 0,
+      mediumCount: 0,
+    }),
+    markImportBatchReviewStarted: vi.fn().mockResolvedValue(undefined),
     toastError: vi.fn(),
   };
 });
@@ -42,6 +50,9 @@ vi.mock('../../shared/api/tauri/bindings', () => ({
     getImportBatch: mocks.getImportBatch,
     getObjectsCmd: mocks.getObjectsCmd,
     listImportBatches: mocks.listImportBatches,
+    retryObjectIdentitySuggestions: mocks.retryObjectIdentitySuggestions,
+    previewImportLibraryReadiness: mocks.previewImportLibraryReadiness,
+    markImportBatchReviewStarted: mocks.markImportBatchReviewStarted,
   },
 }));
 vi.mock('@/app/store', () => ({
@@ -113,7 +124,8 @@ function batch(status: ImportBatch['status']): ImportBatch {
 }
 
 async function resumeImport(): Promise<void> {
-  fireEvent.click(await screen.findByRole('button', { name: 'resume_import' }));
+  const resumeButton = await screen.findByRole('button', { name: 'resume_import' });
+  await act(async () => fireEvent.click(resumeButton));
 }
 
 describe('ImportBatchWizardHost archive analysis', () => {
@@ -131,7 +143,9 @@ describe('ImportBatchWizardHost archive analysis', () => {
     mocks.analyzeImportBatchWithOptions.mockImplementation(
       () => new Promise<ImportBatch>((resolve) => (resolveAnalysis = resolve)),
     );
-    render(<ImportBatchWizardHost />);
+    await act(async () => {
+      render(<ImportBatchWizardHost />);
+    });
 
     await resumeImport();
 
@@ -170,7 +184,9 @@ describe('ImportBatchWizardHost archive analysis', () => {
       .mockImplementationOnce(
         () => new Promise<ImportBatch>((resolve) => (resolveRetry = resolve)),
       );
-    render(<ImportBatchWizardHost />);
+    await act(async () => {
+      render(<ImportBatchWizardHost />);
+    });
 
     await resumeImport();
 

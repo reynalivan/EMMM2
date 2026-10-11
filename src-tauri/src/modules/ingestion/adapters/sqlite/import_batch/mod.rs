@@ -1,13 +1,20 @@
 use crate::modules::ingestion::application::import_batch::types::{
-    AnalysisResult, CanonicalSuggestion, CategorySuggestion, ConfidenceTier, DestinationSuggestion,
-    ImportBatch, ImportBatchStatus, ImportContentKind, ImportDecision, ImportDiagnostic,
-    ImportFlow, ImportItem, ImportItemStatus, ImportMatchStatus, ImportPackageShape,
-    ImportSourceKind, MatchEvidence, PayloadManifestSummary, ReviewGate, ReviewReasonCode,
-    SourceFingerprint, StableCategory, TargetComparison, TargetComparisonOutcome, TargetMode,
+    AnalysisResult, CanonicalSuggestion, CategorySuggestion, ConfidenceTier, DestinationKind,
+    DestinationSuggestion, ImportBatch, ImportBatchStatus, ImportContentKind, ImportDecision,
+    ImportDiagnostic, ImportFlow, ImportItem, ImportItemStatus, ImportMatchStatus,
+    ImportPackageShape, ImportSourceKind, MatchEvidence, PayloadManifestSummary, ReviewGate,
+    ReviewReasonCode, SourceFingerprint, StableCategory, TargetComparison, TargetComparisonOutcome,
+    TargetMode,
 };
 use sqlx::{Row, SqliteConnection, SqlitePool};
 use std::path::Path;
 use std::str::FromStr;
+
+fn should_store_destination(suggestion: &DestinationSuggestion) -> bool {
+    suggestion.kind == DestinationKind::SpecificTarget
+        || suggestion.confidence_percentage > 0
+        || suggestion.object_id.is_none()
+}
 
 #[derive(Debug, Clone)]
 pub struct CreateImportBatchRecord {
@@ -655,7 +662,7 @@ pub(crate) async fn apply_analysis_result(
     let stored_destinations = analysis
         .destination_suggestions
         .iter()
-        .filter(|suggestion| suggestion.confidence_percentage > 0 || suggestion.object_id.is_none())
+        .filter(|suggestion| should_store_destination(suggestion))
         .collect::<Vec<_>>();
     let destination_json = serde_json::to_string(&stored_destinations).map_err(|error| {
         decode_error(format!("could not encode destination suggestions: {error}"))
@@ -816,7 +823,7 @@ pub async fn store_match_suggestions(
     })?;
     let stored_destinations = destinations
         .iter()
-        .filter(|suggestion| suggestion.confidence_percentage > 0 || suggestion.object_id.is_none())
+        .filter(|suggestion| should_store_destination(suggestion))
         .collect::<Vec<_>>();
     let destination_json = serde_json::to_string(&stored_destinations).map_err(|error| {
         decode_error(format!("could not encode destination suggestions: {error}"))
@@ -838,7 +845,8 @@ pub async fn store_match_suggestions(
         .filter(|suggestion| {
             review_gate.is_empty() && suggestion.match_status == ImportMatchStatus::AutoMatched
         })
-        .and_then(|_| stored_destinations.first().copied());
+        .and_then(|_| stored_destinations.first().copied())
+        .filter(|suggestion| suggestion.confidence_tier == ConfidenceTier::High);
     let (confidence, tier) = canonical
         .first()
         .map(|suggestion| {

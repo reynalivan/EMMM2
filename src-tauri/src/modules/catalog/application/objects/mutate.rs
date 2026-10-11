@@ -49,32 +49,49 @@ fn validate_remote_thumbnail_url(value: &str) -> Result<reqwest::Url, AppError> 
     Ok(url)
 }
 
-async fn ensure_remote_thumbnail_host_is_public(url: &reqwest::Url) -> Result<(), AppError> {
+fn validate_remote_thumbnail_addresses(
+    addresses: Vec<std::net::SocketAddr>,
+) -> Result<Vec<std::net::SocketAddr>, AppError> {
+    if addresses.is_empty()
+        || addresses
+            .iter()
+            .any(|address| is_disallowed_thumbnail_address(address.ip()))
+    {
+        return Err(invalid_remote_thumbnail_url(
+            "local network addresses are not allowed",
+        ));
+    }
+    Ok(addresses)
+}
+
+async fn resolve_remote_thumbnail_host(
+    url: &reqwest::Url,
+) -> Result<Option<(String, Vec<std::net::SocketAddr>)>, AppError> {
     let host = url
         .host_str()
         .ok_or_else(|| invalid_remote_thumbnail_url("a host is required"))?;
     let normalized_host = host.trim_start_matches('[').trim_end_matches(']');
     if normalized_host.parse::<std::net::IpAddr>().is_ok() {
-        return Ok(());
+        return Ok(None);
     }
     let port = url.port_or_known_default().unwrap_or(443);
-    let mut addresses = tokio::net::lookup_host((normalized_host, port))
+    let addresses = tokio::net::lookup_host((normalized_host, port))
         .await
         .map_err(|error| invalid_remote_thumbnail_url(format!("host lookup failed: {error}")))?;
-    if addresses.any(|address| is_disallowed_thumbnail_address(address.ip())) {
-        return Err(invalid_remote_thumbnail_url(
-            "local network addresses are not allowed",
-        ));
-    }
-    Ok(())
+    let addresses = validate_remote_thumbnail_addresses(addresses.collect())?;
+    Ok(Some((normalized_host.to_string(), addresses)))
 }
 
 async fn fetch_remote_thumbnail(url: &str) -> Result<Vec<u8>, AppError> {
     let url = validate_remote_thumbnail_url(url)?;
-    ensure_remote_thumbnail_host_is_public(&url).await?;
-    let client = reqwest::Client::builder()
+    let resolved_host = resolve_remote_thumbnail_host(&url).await?;
+    let mut client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(REMOTE_THUMBNAIL_TIMEOUT)
+        .timeout(REMOTE_THUMBNAIL_TIMEOUT);
+    if let Some((host, addresses)) = resolved_host {
+        client = client.resolve_to_addrs(&host, &addresses);
+    }
+    let client = client
         .build()
         .map_err(|error| AppError::Io(format!("Failed to prepare thumbnail download: {error}")))?;
     let response = client
@@ -262,75 +279,64 @@ pub async fn prepare_object_thumbnail(
 }
 
 pub struct PreparedObjectDelete {
-    source: std::path::PathBuf,
-    quarantine: std::path::PathBuf,
+    trash_move: crate::modules::library::api::mods::trash::PreparedTrashMove,
 }
 
 impl PreparedObjectDelete {
     pub fn suppression_paths(&self) -> [std::path::PathBuf; 2] {
-        [self.source.clone(), self.quarantine.clone()]
+        [
+            self.source_path().to_path_buf(),
+            self.quarantine_path().to_path_buf(),
+        ]
     }
 
     pub fn source_path(&self) -> &std::path::Path {
-        &self.source
+        self.trash_move.source()
     }
 
     pub fn quarantine_path(&self) -> &std::path::Path {
-        &self.quarantine
+        self.trash_move.quarantine()
     }
 
     pub fn journal_step(&self) -> crate::modules::mutation::journal::PlannedStep {
         crate::modules::mutation::journal::PlannedStep::quarantine(
             0,
-            self.source.clone(),
-            self.quarantine.clone(),
+            self.source_path().to_path_buf(),
+            self.quarantine_path().to_path_buf(),
         )
+        .with_expected_identity(Some(self.trash_move.expected_identity().to_string()))
     }
 
     pub fn execute(
         &self,
         watcher: &crate::modules::workspace::application::scanner::watcher::WatcherState,
     ) -> Result<(), AppError> {
-        let _guard = watcher
-            .suppressor
-            .suppress_paths([self.source.as_path(), self.quarantine.as_path()]);
-        std::fs::rename(&self.source, &self.quarantine).map_err(AppError::from)
+        self.trash_move.execute(watcher)
+    }
+
+    pub async fn execute_with_retry(
+        &self,
+        watcher: &crate::modules::workspace::api::scanner::watcher::WatcherState,
+    ) -> Result<(), AppError> {
+        self.trash_move.execute_with_retry(watcher).await
     }
 
     pub fn rollback(
         &self,
         watcher: &crate::modules::workspace::application::scanner::watcher::WatcherState,
     ) -> Result<(), AppError> {
-        let _guard = watcher
-            .suppressor
-            .suppress_paths([self.source.as_path(), self.quarantine.as_path()]);
-        let source_exists = self.source.exists();
-        let quarantine_exists = self.quarantine.exists();
-        if source_exists && quarantine_exists {
-            return Err(AppError::Io(format!(
-                "Object delete rollback found both source and quarantine paths: {} and {}",
-                self.source.display(),
-                self.quarantine.display()
-            )));
-        }
-        if source_exists {
-            return Ok(());
-        }
-        if !quarantine_exists {
-            return Err(AppError::Io(format!(
-                "Object delete rollback source is missing: {}",
-                self.quarantine.display()
-            )));
-        }
-        std::fs::rename(&self.quarantine, &self.source).map_err(AppError::from)
+        self.trash_move.rollback(watcher)
+    }
+
+    pub async fn rollback_with_retry(
+        &self,
+        watcher: &crate::modules::workspace::api::scanner::watcher::WatcherState,
+    ) -> Result<(), AppError> {
+        self.trash_move.rollback_with_retry(watcher).await
     }
 
     pub fn finalize(&self) -> Result<(), AppError> {
-        if self.quarantine.exists() {
-            crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&self.quarantine)
-                .map_err(|error| AppError::Io(error.to_string()))?;
-        }
-        Ok(())
+        self.trash_move.finalize()
     }
 }
 
@@ -362,9 +368,9 @@ pub async fn prepare_object_delete(
     if !source.exists() {
         return Ok(None);
     }
-    let quarantine =
-        source.with_file_name(format!(".emmm-object-delete-{}", Uuid::new_v4().simple()));
-    Ok(Some(PreparedObjectDelete { source, quarantine }))
+    Ok(Some(PreparedObjectDelete {
+        trash_move: crate::modules::library::api::mods::trash::prepare_trash_move(&source)?,
+    }))
 }
 
 pub async fn create_object_cmd_inner(
@@ -771,7 +777,8 @@ pub async fn delete_object(
 
 #[cfg(test)]
 mod thumbnail_url_tests {
-    use super::validate_remote_thumbnail_url;
+    use super::{validate_remote_thumbnail_addresses, validate_remote_thumbnail_url};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     #[test]
     fn remote_thumbnail_urls_reject_unsafe_origins() {
@@ -790,5 +797,26 @@ mod thumbnail_url_tests {
     fn remote_thumbnail_urls_allow_public_http_and_https() {
         assert!(validate_remote_thumbnail_url("https://example.com/thumbnail.png").is_ok());
         assert!(validate_remote_thumbnail_url("http://example.com/thumbnail.png").is_ok());
+    }
+
+    #[test]
+    fn remote_thumbnail_address_validation_requires_only_public_addresses() {
+        let public_address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        assert_eq!(
+            validate_remote_thumbnail_addresses(vec![public_address])
+                .expect("public address is valid"),
+            vec![public_address]
+        );
+
+        for addresses in [
+            Vec::new(),
+            vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 443)],
+            vec![
+                public_address,
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443),
+            ],
+        ] {
+            assert!(validate_remote_thumbnail_addresses(addresses).is_err());
+        }
     }
 }

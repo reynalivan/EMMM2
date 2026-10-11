@@ -50,7 +50,9 @@ impl TelemetryExporter {
     /// Sends each queued counter delta once. Failures are recorded locally and
     /// are retried at the next lifecycle attempt, never in a tight loop.
     pub async fn export_scheduled(&self, store: &TelemetryStore) {
-        if !self.is_configured()
+        let store = store.capture();
+        if !store.is_current()
+            || !self.is_configured()
             || !store
                 .should_attempt_scheduled_export(Utc::now())
                 .await
@@ -64,6 +66,9 @@ impl TelemetryExporter {
             Err(_) => return,
         };
 
+        if !store.is_current() {
+            return;
+        }
         let result = if rollups.is_empty() {
             Ok(())
         } else {

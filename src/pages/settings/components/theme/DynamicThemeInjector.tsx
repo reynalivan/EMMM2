@@ -1,9 +1,8 @@
 import React, { useEffect } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useCustomTheme, useSettings } from '@/entities/settings';
+import { useCustomTheme, useResolvedTheme } from '@/entities/settings';
 import { type CustomTheme } from '../../../../shared/api/tauri/bindings';
-
-const BUILTIN_THEME_IDS = new Set(['onyx', 'light', 'system']);
+import { BUILTIN_THEMES } from '@/shared/lib/themeOptions';
 
 /**
  * DynamicThemeInjector
@@ -11,9 +10,8 @@ const BUILTIN_THEME_IDS = new Set(['onyx', 'light', 'system']);
  * Injects custom CSS variables into the document head when a non-builtin theme is selected.
  */
 export const DynamicThemeInjector: React.FC = () => {
-  const { settings } = useSettings();
-  const theme = settings?.theme;
-  const isBuiltin = !theme || BUILTIN_THEME_IDS.has(theme);
+  const theme = useResolvedTheme();
+  const isBuiltin = BUILTIN_THEMES.some((builtin) => builtin === theme);
   const { data: customTheme, isError } = useCustomTheme(isBuiltin ? null : theme);
 
   useEffect(() => {
@@ -57,12 +55,6 @@ function generateThemeCss(theme: CustomTheme): string {
   if (config.colors) {
     for (const [key, value] of Object.entries(config.colors)) {
       css += `  --color-${key}: ${value};\n`;
-      // Handle DaisyUI specifics if needed (though we use Tailwind 4 variables mostly)
-      if (key === 'primary') css += `  --p: ${value};\n`;
-      if (key === 'secondary') css += `  --s: ${value};\n`;
-      if (key === 'accent') css += `  --a: ${value};\n`;
-      if (key === 'neutral') css += `  --n: ${value};\n`;
-      if (key === 'base-100') css += `  --b1: ${value};\n`;
     }
   }
 

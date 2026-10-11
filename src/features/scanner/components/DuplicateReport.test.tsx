@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '../../../tests/testing/test-utils';
+import { act, render, screen, fireEvent, waitFor } from '../../../tests/testing/test-utils';
 import DuplicateReport from './DuplicateReport';
 import * as hooks from '../hooks/useDedup';
 import type { DupScanReport, DupScanGroup, DuplicateSelection } from '@/entities/workspace';
@@ -297,6 +297,49 @@ describe('DuplicateReport', () => {
       });
     });
 
+    it.each(['game', 'scan'])(
+      'discards selections and closes confirmation when the %s changes',
+      (changed) => {
+        const { rerender } = render(<DuplicateReport gameId="genshin" />);
+        fireEvent.click(screen.getByTestId('keep-a-group-1'));
+        fireEvent.click(screen.getByRole('button', { name: /Apply 1 Action/i }));
+        expect(screen.getByTestId('resolution-modal')).toHaveStyle('display: block');
+
+        mockDedupReport({
+          data: {
+            ...mockReport,
+            gameId: changed === 'game' ? 'other-game' : 'genshin',
+            scanId: 'scan-2',
+          },
+          isLoading: false,
+          error: null,
+        });
+        rerender(<DuplicateReport gameId={changed === 'game' ? 'other-game' : 'genshin'} />);
+
+        expect(screen.getByRole('button', { name: /Apply 0 Actions/i })).toBeDisabled();
+        expect(screen.getByTestId('resolution-modal')).toHaveStyle('display: none');
+      },
+    );
+
+    it('rejects confirmation if selected groups no longer produce any requests', () => {
+      const mutate = vi.fn();
+      mockResolveDuplicates({ isPending: false, mutate });
+      const { rerender } = render(<DuplicateReport />);
+      fireEvent.click(screen.getByTestId('keep-a-group-1'));
+      fireEvent.click(screen.getByRole('button', { name: /Apply 1 Action/i }));
+      mockDedupReport({
+        data: { ...mockReport, groups: [{ ...mockGroup, groupId: 'replacement-group' }] },
+        isLoading: false,
+        error: null,
+      });
+      rerender(<DuplicateReport />);
+
+      fireEvent.click(screen.getByTestId('confirm-button'));
+
+      expect(mutate).not.toHaveBeenCalled();
+      expect(toast.warning).toHaveBeenCalled();
+    });
+
     it('filters groups based on confidence score when activeFilter prop changes', () => {
       const filterReport: DupScanReport = {
         ...mockReport,
@@ -440,11 +483,13 @@ describe('DuplicateReport', () => {
           errors: { groupId: string; action: string; message: string }[];
         }) => void;
       };
-      options.onSuccess?.({
-        total: 1,
-        successful: 0,
-        failed: 1,
-        errors: [{ groupId: 'group-1', action: 'keepA', message: 'Folder changed on disk' }],
+      act(() => {
+        options.onSuccess?.({
+          total: 1,
+          successful: 0,
+          failed: 1,
+          errors: [{ groupId: 'group-1', action: 'keepA', message: 'Folder changed on disk' }],
+        });
       });
 
       await waitFor(() => {

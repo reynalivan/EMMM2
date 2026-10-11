@@ -37,5 +37,4 @@ pub struct ReconcileModRow {
     pub safety_source: Option<String>,
     pub object_type: Option<String>,
     pub filesystem_identity: Option<String>,
-    pub size_bytes: i64,
 }

@@ -7,7 +7,7 @@ use crate::modules::library::application::ini::encoding::{
 use crate::shared::errors::AppError;
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -63,11 +63,71 @@ fn rotate_backups(file_path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-fn write_synced(path: &Path, bytes: &[u8]) -> Result<(), AppError> {
-    let mut file = File::create(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    Ok(())
+fn open_save_file(path: &Path, create_new: bool) -> std::io::Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).create_new(create_new);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            DELETE, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+            FILE_SHARE_READ,
+        };
+        options
+            .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() || fs::symlink_metadata(path)?.file_type().is_symlink() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "INI save requires a regular non-linked file",
+        ));
+    }
+    #[cfg(not(windows))]
+    file.try_lock()?;
+    Ok(file)
+}
+
+fn rename_save_file(
+    file: &File,
+    source: &Path,
+    target: &Path,
+    parent: &crate::platform::fs::rename::PinnedDirectory,
+) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        let _ = source;
+        crate::platform::fs::rename::rename_handle_into(
+            file,
+            parent,
+            target.file_name().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid INI destination")
+            })?,
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let expected = file.metadata()?;
+            let actual = fs::symlink_metadata(source)?;
+            if (expected.dev(), expected.ino()) != (actual.dev(), actual.ino()) {
+                return Err(std::io::Error::other(
+                    "INI source ownership changed during save",
+                ));
+            }
+        }
+        crate::platform::fs::rename::rename_no_replace_into(
+            source,
+            parent,
+            target.file_name().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid INI destination")
+            })?,
+        )
+    }
 }
 
 fn validate_updates(
@@ -101,8 +161,10 @@ fn restore_after_failed_commit(
     recovery: &Path,
     temp: &Path,
     commit_error: std::io::Error,
+    source_file: &File,
+    parent: &crate::platform::fs::rename::PinnedDirectory,
 ) -> Result<(), AppError> {
-    match fs::rename(recovery, target) {
+    match rename_save_file(source_file, recovery, target, parent) {
         Ok(()) => {
             if let Err(cleanup_error) = fs::remove_file(temp) {
                 log::warn!(
@@ -110,15 +172,37 @@ fn restore_after_failed_commit(
                     temp.display()
                 );
             }
-            Err(AppError::Io(format!(
-                "INI commit failed and the original was restored: {commit_error}"
-            )))
+            Err(crate::platform::fs::retry::map_file_error(
+                target,
+                "commit INI (original restored)",
+                commit_error,
+            ))
         }
         Err(restore_error) => Err(AppError::Io(format!(
             "INI commit failed ({commit_error}); automatic restore also failed ({restore_error}). Recovery file: {}",
             recovery.display()
         ))),
     }
+}
+
+fn finish_ini_commit(
+    source_file: &File,
+    temp_file: File,
+    target: &Path,
+    backup: &Path,
+    temp: &Path,
+    parent: &crate::platform::fs::rename::PinnedDirectory,
+    backup_validation: std::io::Result<()>,
+) -> Result<(), AppError> {
+    if let Err(error) = backup_validation {
+        drop(temp_file);
+        return restore_after_failed_commit(target, backup, temp, error, source_file, parent);
+    }
+    if let Err(error) = rename_save_file(&temp_file, temp, target, parent) {
+        drop(temp_file);
+        return restore_after_failed_commit(target, backup, temp, error, source_file, parent);
+    }
+    Ok(())
 }
 
 pub fn save_ini_with_updates(
@@ -136,7 +220,20 @@ pub fn save_ini_with_updates(
         return Ok(());
     }
 
-    let current_bytes = fs::read(&document.file_path)?;
+    let parent_path = document
+        .file_path
+        .parent()
+        .ok_or_else(|| AppError::Validation("INI has no parent directory".to_string()))?;
+    let parent = crate::platform::fs::rename::PinnedDirectory::open(parent_path)?;
+    let file_path = parent.stable_path().join(
+        document
+            .file_path
+            .file_name()
+            .ok_or_else(|| AppError::Validation("INI has no filename".to_string()))?,
+    );
+    let current_bytes = fs::read(&file_path).map_err(|error| {
+        crate::platform::fs::retry::map_file_error(&file_path, "read INI before save", error)
+    })?;
     let current_hash = source_fingerprint(&current_bytes);
     if current_hash != expected_source_hash || current_hash != document.source_hash {
         return Err(AppError::Validation(
@@ -154,30 +251,65 @@ pub fn save_ini_with_updates(
         return Ok(());
     }
 
-    let temp_path = unique_sibling(&document.file_path, "tmp")?;
-    write_synced(&temp_path, &output)?;
-
-    rotate_backups(&document.file_path)?;
-    let backup_path = backup_path_for(&document.file_path)?;
-    write_synced(&backup_path, &current_bytes)?;
-
-    let recovery_path = unique_sibling(&document.file_path, "recover")?;
-    if let Err(error) = fs::rename(&document.file_path, &recovery_path) {
-        let _ = fs::remove_file(&temp_path);
-        return Err(error.into());
+    let mut source_file = open_save_file(&file_path, false).map_err(|error| {
+        crate::platform::fs::retry::map_file_error(&file_path, "acquire INI save ownership", error)
+    })?;
+    let mut protected_bytes = Vec::new();
+    source_file
+        .read_to_end(&mut protected_bytes)
+        .map_err(|error| {
+            crate::platform::fs::retry::map_file_error(&file_path, "read protected INI", error)
+        })?;
+    if source_fingerprint(&protected_bytes) != current_hash {
+        return Err(AppError::Validation(
+            "INI changed before save ownership could be acquired; reload it before saving"
+                .to_string(),
+        ));
     }
 
-    if let Err(error) = fs::rename(&temp_path, &document.file_path) {
-        return restore_after_failed_commit(&document.file_path, &recovery_path, &temp_path, error);
+    let temp_path = unique_sibling(&file_path, "tmp")?;
+    let mut temp_file = open_save_file(&temp_path, true)?;
+    temp_file.write_all(&output)?;
+    temp_file.sync_all()?;
+
+    rotate_backups(&file_path)?;
+    let backup_path = backup_path_for(&file_path)?;
+    source_file.sync_all()?;
+    if let Err(error) = rename_save_file(&source_file, &file_path, &backup_path, &parent) {
+        drop(temp_file);
+        if let Err(cleanup_error) = fs::remove_file(&temp_path) {
+            log::warn!(
+                "Failed to remove rejected INI temp {}: {cleanup_error}",
+                temp_path.display()
+            );
+        }
+        return Err(crate::platform::fs::retry::map_file_error(
+            &file_path,
+            "retain INI backup",
+            error,
+        ));
     }
 
-    if let Err(error) = fs::remove_file(&recovery_path) {
-        log::warn!(
-            "INI save committed but old recovery file {} could not be removed: {error}",
-            recovery_path.display()
-        );
-    }
-    Ok(())
+    // Retain the original inode as the backup, including writes through old
+    // handles on platforms where file locks are advisory.
+    let validation = fs::read(&backup_path).and_then(|bytes| {
+        if source_fingerprint(&bytes) == current_hash {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(
+                "INI changed during save; concurrent bytes preserved",
+            ))
+        }
+    });
+    finish_ini_commit(
+        &source_file,
+        temp_file,
+        &file_path,
+        &backup_path,
+        &temp_path,
+        &parent,
+        validation,
+    )
 }
 
 #[cfg(test)]

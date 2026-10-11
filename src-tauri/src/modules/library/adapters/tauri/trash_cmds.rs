@@ -2,7 +2,7 @@ use crate::modules::library::application::mods::trash;
 use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
-use crate::platform::fs::guard::validate_path;
+use crate::platform::fs::guard::validate_mod_target_path;
 use crate::shared::errors::AppError;
 use tauri::{AppHandle, Manager};
 
@@ -12,6 +12,7 @@ pub async fn delete_mod(
     app: AppHandle,
     path: String,
     game_id: String,
+    recovery_id: Option<String>,
 ) -> Result<trash::DeleteModResult, AppError> {
     let config = app.state::<ConfigService>();
     let pool = app.state::<sqlx::SqlitePool>();
@@ -28,7 +29,10 @@ pub async fn delete_mod(
     // `game_id` is required: it names the mods root the path must sit inside.
     // Without it the delete used to skip containment entirely and trash any
     // absolute path the caller sent.
-    let validated = validate_path(&config, &game_id, &path)?;
+    let validated = validate_mod_target_path(&config, &game_id, &path)?;
+    if let Some(id) = &recovery_id {
+        crate::modules::system::api::validate_file_lock_recovery(id, &validated)?;
+    }
     let source_proof =
         crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&validated)?;
     let root = config
@@ -83,11 +87,15 @@ pub async fn delete_mod(
         )
         .and_then(|()| root_proof.validate(&root))
         .and_then(|()| source_proof.validate(&validated))
+        .and_then(|()| match &recovery_id {
+            Some(id) => crate::modules::system::api::validate_file_lock_recovery(id, &validated),
+            None => Ok(()),
+        })
     {
         mutation_lease.abort_unapplied()?;
         return Err(error);
     }
-    if let Err(error) = prepared.execute(&state) {
+    if let Err(error) = prepared.execute_with_retry(&state).await {
         mutation_lease.mark_step_rolled_back(0)?;
         mutation_lease.begin_rollback()?;
         mutation_lease.finish_rollback()?;
@@ -112,7 +120,7 @@ pub async fn delete_mod(
                 Err(error) => error,
             };
             mutation_lease.begin_rollback()?;
-            if let Err(rollback_error) = prepared.rollback(&state) {
+            if let Err(rollback_error) = prepared.rollback_with_retry(&state).await {
                 let combined = format!("{error}; delete rollback failed: {rollback_error}");
                 mutation_lease.fail(combined.clone())?;
                 return Err(AppError::Io(combined));

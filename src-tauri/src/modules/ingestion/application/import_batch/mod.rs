@@ -5,6 +5,7 @@ pub mod gamebanana;
 pub mod mod_inbox;
 pub mod mod_inbox_watcher;
 pub mod payload_manifest;
+pub(crate) mod placement;
 pub mod preview;
 pub mod ready_to_move;
 pub mod relocation;
@@ -14,6 +15,9 @@ pub mod types;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod placement_tests;
 
 fn is_cancelled(cancel_token: &Option<std::sync::Arc<std::sync::atomic::AtomicBool>>) -> bool {
     cancel_token

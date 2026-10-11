@@ -71,6 +71,66 @@ impl PreparedObjectSwitch {
         })
     }
 
+    pub(crate) async fn execute_with_budget(
+        &self,
+        watcher: &WatcherState,
+        budget: &mut crate::platform::fs::retry::RetryBudget,
+    ) -> Result<ObjectSwitchOutcome, AppError> {
+        let paths = self
+            .plan
+            .as_ref()
+            .map(|plan| vec![plan.old_path(), plan.new_path()])
+            .unwrap_or_else(|| vec![self.current_path.as_path()]);
+        let _suppression = watcher.suppressor.suppress_paths(paths);
+        if let Some(plan) = &self.plan {
+            plan.apply_async("object folder", budget).await?;
+        }
+        Ok(ObjectSwitchOutcome {
+            object_id: self.object_id.clone(),
+            original_path: self.original_path.clone(),
+            next_path: self
+                .plan
+                .as_ref()
+                .map(|plan| plan.new_path())
+                .unwrap_or(&self.current_path)
+                .to_string_lossy()
+                .into_owned(),
+        })
+    }
+
+    pub async fn execute_with_retry(
+        &self,
+        watcher: &WatcherState,
+    ) -> Result<ObjectSwitchOutcome, AppError> {
+        self.execute_with_budget(
+            watcher,
+            &mut crate::platform::fs::retry::RetryBudget::default(),
+        )
+        .await
+    }
+
+    pub(crate) async fn rollback_with_budget(
+        &self,
+        watcher: &WatcherState,
+        budget: &mut crate::platform::fs::retry::RetryBudget,
+    ) -> Result<(), AppError> {
+        let Some(plan) = &self.plan else {
+            return Ok(());
+        };
+        let _suppression = watcher
+            .suppressor
+            .suppress_paths([plan.old_path(), plan.new_path()]);
+        plan.rollback_async("object folder", budget).await
+    }
+
+    pub async fn rollback_with_retry(&self, watcher: &WatcherState) -> Result<(), AppError> {
+        self.rollback_with_budget(
+            watcher,
+            &mut crate::platform::fs::retry::RetryBudget::default(),
+        )
+        .await
+    }
+
     pub fn rollback(&self, watcher: &WatcherState) -> Result<(), AppError> {
         let Some(plan) = &self.plan else {
             return Ok(());
@@ -111,7 +171,15 @@ fn prepare_resolved_object_root_switch(
         .join(object_folder_path)
         .to_string_lossy()
         .into_owned();
-    let plan = plan_toggle_rename(&current_path, enable)?;
+    let mut plan = plan_toggle_rename(&current_path, enable)?;
+    if let Some(plan) = plan.as_mut() {
+        plan.set_namespace_proof(std::sync::Arc::new(
+            crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+                Path::new(mods_path),
+                &[plan.old_path().to_path_buf(), plan.new_path().to_path_buf()],
+            )?,
+        ));
+    }
     Ok(PreparedObjectSwitch {
         object_id: object_id.to_string(),
         original_path,
@@ -200,7 +268,7 @@ pub async fn toggle_object_root_service(
     // it derives from each mod's own folder name (see
     // `disk_reconcile::helpers::load_runtime_mod_metadata`), and the UI
     // derives EffectivelyDisabled from the ancestor chain.
-    let Some(next_absolute_path) = toggle_object_root_on_disk(current_path, enable)? else {
+    let Some(plan) = plan_toggle_rename(current_path, enable)? else {
         // Already in the requested state: the caller's reconcile re-syncs any
         // DB drift; a no-op needs nothing else.
         return Ok(ObjectSwitchOutcome {
@@ -209,6 +277,12 @@ pub async fn toggle_object_root_service(
             next_path: current_absolute_path,
         });
     };
+    plan.apply_async(
+        "object folder",
+        &mut crate::platform::fs::retry::RetryBudget::default(),
+    )
+    .await?;
+    let next_absolute_path = plan.new_path();
 
     Ok(ObjectSwitchOutcome {
         object_id: object_id.to_string(),

@@ -17,7 +17,7 @@ import { isEditableKeyboardTarget } from '@/shared/lib/isEditableKeyboardTarget'
 export default function FolderGrid() {
   const rootRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
-  const folderGrid = useFolderGrid();
+  const folderGrid = useFolderGrid(rootRef);
   const {
     previousFolders,
     hasMorePreviousFolders,
@@ -25,6 +25,8 @@ export default function FolderGrid() {
     loadMorePreviousFolders,
     sortedFolders,
     totalMatching,
+    displayedMatching,
+    hasSelectedFolderConflict,
     isLoading,
     isRefreshing,
     isError,
@@ -109,7 +111,10 @@ export default function FolderGrid() {
     mutationsDisabled,
   } = useFolderGridViewModel({ sortedFolders, sourceUnavailableMessage, recoveryStatus });
   const effectiveMutationsDisabled =
-    mutationsDisabled || bulkMutationPending || isExplorerSearchPending;
+    mutationsDisabled ||
+    bulkMutationPending ||
+    isExplorerSearchPending ||
+    hasSelectedFolderConflict;
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -231,7 +236,7 @@ export default function FolderGrid() {
       />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-2">
-        <FolderGridFooter visibleCount={totalMatching} />
+        <FolderGridFooter visibleCount={displayedMatching ?? totalMatching} />
       </div>
 
       <FolderGridSyncToast recoveryStatus={recoveryStatus} />
@@ -283,7 +288,7 @@ export default function FolderGrid() {
         onUpdateInfo={handleBulkTagRequest}
         onMoveToObject={handleBulkMoveToObject}
         mutationsDisabled={effectiveMutationsDisabled}
-        toggleDisabled={mutationsDisabled || isExplorerSearchPending}
+        toggleDisabled={mutationsDisabled || isExplorerSearchPending || hasSelectedFolderConflict}
       />
 
       {/* Drag Overlay */}

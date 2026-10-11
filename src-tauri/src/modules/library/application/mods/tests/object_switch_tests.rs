@@ -17,7 +17,7 @@ async fn object_switch_reports_rewrite_when_db_disabled_but_disk_enabled() {
         &TestGameFixture {
             id: "g_object_switch_rewrite",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_object_switch_rewrite",
             mods_path: Some(mods_path.to_str().unwrap()),
         },
@@ -87,7 +87,7 @@ async fn preparing_object_switch_does_not_heal_the_stored_path() {
         &TestGameFixture {
             id: "g_object_switch_prepare",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_object_switch_prepare",
             mods_path: Some(mods_path.to_str().unwrap()),
         },
@@ -142,7 +142,7 @@ async fn preparing_object_switch_rejects_an_object_from_another_game() {
             &TestGameFixture {
                 id,
                 name: "ZZZ",
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 path: if id == "g_object_switch_owner" {
                     "/game_object_switch_owner"
                 } else {
@@ -196,7 +196,7 @@ async fn preparing_object_switch_rejects_a_stored_path_outside_the_mods_root() {
         &TestGameFixture {
             id: "g_object_switch_containment",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_object_switch_containment",
             mods_path: Some(mods_path.to_str().unwrap()),
         },

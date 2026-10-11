@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { QueryObserver } from '@tanstack/react-query';
 import { useToastStore } from '@/shared/ui/toast';
 import { queryClient } from '@/shared/lib/queryClient';
 import { settingsKeys } from '@/entities/settings';
+import type { CollectionRuntimeDescriptor, CollectionSummary } from '@/entities/collection';
 import type {
   DiskReconcileResult,
   FolderNameConflictGroup,
@@ -82,9 +84,29 @@ function settingsSnapshot(overrides: Partial<AppSettings> = {}): AppSettings {
   };
 }
 
+function collectionPrefetchReply(
+  command: string,
+): CollectionRuntimeDescriptor | CollectionSummary[] | undefined {
+  if (command === 'list_collections') return [];
+  if (command !== 'get_collection_runtime_descriptor') return undefined;
+  return {
+    game_id: 'genshin',
+    active_collection_id: null,
+    active_collection_name: null,
+    runtime_status: 'clean',
+    missing_count: 0,
+    safety: { is_safe: true, is_safety_classified: true },
+    counts: { active_mod_count: 0, object_count: 0, enabled_object_count: 0 },
+    last_changes: null,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockImplementation((command) =>
+    Promise.resolve(collectionPrefetchReply(command)),
+  );
   queryClient.clear();
   useAppStore.setState(initialState, true);
   useToastStore.setState({ toasts: [] });
@@ -92,6 +114,182 @@ beforeEach(() => {
 
 describe('useAppStore smoke net', () => {
   describe('startup recovery', () => {
+    it('refreshes cold reads exactly once after the current startup baseline is ready', async () => {
+      let releaseOld!: (value: string) => void;
+      const oldRead = new Promise<string>((resolve) => {
+        releaseOld = resolve;
+      });
+      const read = vi
+        .fn<() => Promise<string>>()
+        .mockImplementationOnce(() => oldRead)
+        .mockResolvedValue('current-baseline');
+      const observer = new QueryObserver(queryClient, {
+        queryKey: ['dashboard-stats', 'genshin'],
+        queryFn: read,
+      });
+      const unsubscribe = observer.subscribe(() => undefined);
+      const settings = settingsSnapshot({ active_game_id: 'genshin' });
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') return Promise.resolve(settings);
+        if (command === 'set_active_game')
+          return Promise.resolve({ game_id: 'genshin', generation: 7, phase: 'syncing', settings });
+        return Promise.resolve(null);
+      });
+      try {
+        await useAppStore.getState().initStore();
+        await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
+        const status = {
+          game_id: 'genshin',
+          generation: 7,
+          phase: 'ready' as const,
+          reconcile_revision: 21,
+          runtime_sync_generation: null,
+          error: null,
+        };
+        useAppStore.getState().setGameActivationStatus(status);
+        await waitFor(() =>
+          expect(queryClient.getQueryData(['dashboard-stats', 'genshin'])).toBe('current-baseline'),
+        );
+        expect(useAppStore.getState().startupRecoveryGameId).toBeNull();
+        useAppStore.getState().setGameActivationStatus(status);
+        releaseOld('late-stale-value');
+        await oldRead;
+        expect(read).toHaveBeenCalledTimes(2);
+        expect(queryClient.getQueryData(['dashboard-stats', 'genshin'])).toBe('current-baseline');
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('hydrates settings and provisional selection without waiting for startup activation', async () => {
+      let finishActivation!: (activation: GameActivationResult) => void;
+      const activation = new Promise<GameActivationResult>((resolve) => {
+        finishActivation = resolve;
+      });
+      const settings = settingsSnapshot({ revision: 50, active_game_id: 'genshin' });
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') return Promise.resolve(settings);
+        if (command === 'set_active_game') return activation;
+        return Promise.resolve(null);
+      });
+      let hydrated = false;
+      const initialization = useAppStore
+        .getState()
+        .initStore()
+        .then(() => {
+          hydrated = true;
+        });
+      try {
+        await waitFor(() => expect(hydrated).toBe(true));
+        expect(queryClient.getQueryData(settingsKeys.all)).toEqual(settings);
+        expect(useAppStore.getState().activeGameId).toBeNull();
+        expect(useAppStore.getState().requestedGameId).toBe('genshin');
+        expect(useAppStore.getState().startupRecoveryGameId).toBe('genshin');
+        await useAppStore.getState().initStore();
+        expect(
+          vi.mocked(invoke).mock.calls.filter(([command]) => command === 'set_active_game'),
+        ).toHaveLength(1);
+      } finally {
+        finishActivation({ game_id: 'genshin', generation: 8, phase: 'syncing', settings });
+        await initialization;
+        await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
+        expect(useAppStore.getState().startupRecoveryGameId).toBe('genshin');
+      }
+    });
+
+    it('does not let a delayed startup receipt replace a newer explicit selection', async () => {
+      let finishActivation!: (activation: GameActivationResult) => void;
+      const activation = new Promise<GameActivationResult>((resolve) => {
+        finishActivation = resolve;
+      });
+      const settings = settingsSnapshot({ revision: 50, active_game_id: 'genshin' });
+      vi.mocked(invoke).mockImplementation((command, args) => {
+        if (command === 'get_settings') return Promise.resolve(settings);
+        if (command === 'set_active_game') {
+          if ((args as { gameId: string }).gameId === 'genshin') return activation;
+          return Promise.resolve({
+            game_id: 'new-game',
+            generation: 9,
+            phase: 'syncing',
+            settings: settingsSnapshot({ revision: 51, active_game_id: 'new-game' }),
+          });
+        }
+        return Promise.resolve(null);
+      });
+      let hydrated = false;
+      const initialization = useAppStore
+        .getState()
+        .initStore()
+        .then(() => {
+          hydrated = true;
+        });
+      try {
+        await waitFor(() => expect(hydrated).toBe(true));
+        await useAppStore.getState().setActiveGameId('new-game', { deferWorkspacePrefetch: true });
+        expect(useAppStore.getState().startupRecoveryGameId).toBeNull();
+      } finally {
+        finishActivation({ game_id: 'genshin', generation: 8, phase: 'syncing', settings });
+        await initialization;
+      }
+      expect(useAppStore.getState().activeGameId).toBe('new-game');
+      expect(queryClient.getQueryData<AppSettings>(settingsKeys.all)?.revision).toBe(51);
+    });
+
+    it('preserves an early ready event over its delayed syncing receipt', async () => {
+      let finishActivation!: (activation: GameActivationResult) => void;
+      const activation = new Promise<GameActivationResult>((resolve) => {
+        finishActivation = resolve;
+      });
+      const settings = settingsSnapshot({ active_game_id: 'genshin' });
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') return Promise.resolve(settings);
+        if (command === 'set_active_game') return activation;
+        return Promise.resolve(null);
+      });
+      const initialization = useAppStore.getState().initStore();
+      await waitFor(() =>
+        expect(vi.mocked(invoke)).toHaveBeenCalledWith('set_active_game', { gameId: 'genshin' }),
+      );
+      useAppStore.getState().setGameActivationStatus({
+        game_id: 'genshin',
+        generation: 8,
+        phase: 'ready',
+        reconcile_revision: 20,
+        runtime_sync_generation: null,
+        error: null,
+      });
+      finishActivation({ game_id: 'genshin', generation: 8, phase: 'syncing', settings });
+      await initialization;
+      await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
+      expect(useAppStore.getState().gameActivationByGame.genshin.phase).toBe('ready');
+    });
+
+    it('surfaces a failed background activation and retries without a dangling startup request', async () => {
+      const settings = settingsSnapshot({ active_game_id: 'genshin' });
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') return Promise.resolve(settings);
+        if (command === 'set_active_game')
+          return Promise.reject(new Error('activation unavailable'));
+        return Promise.resolve(null);
+      });
+      await useAppStore.getState().initStore();
+      await waitFor(() =>
+        expect(useAppStore.getState().gameActivationByGame.genshin?.phase).toBe('failed'),
+      );
+      expect(useAppStore.getState().activeGameId).toBeNull();
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts[toasts.length - 1]?.message).toContain('activation unavailable');
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') return Promise.resolve(settings);
+        if (command === 'set_active_game')
+          return Promise.resolve({ game_id: 'genshin', generation: 9, phase: 'syncing', settings });
+        return Promise.resolve(null);
+      });
+      await useAppStore.getState().initStore();
+      await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
+      expect(useAppStore.getState().requestedGameId).toBeNull();
+    });
+
     it('shares overlapping startup reads and activation until initialization settles', async () => {
       let finishSettings!: (settings: AppSettings) => void;
       const pendingSettings = new Promise<AppSettings>((resolve) => {
@@ -130,12 +328,14 @@ describe('useAppStore smoke net', () => {
       expect(
         vi.mocked(invoke).mock.calls.filter(([command]) => command === 'set_active_game'),
       ).toHaveLength(1);
-      expect(useAppStore.getState().activeGameId).toBe('genshin');
+      await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
     });
 
     it('allows a later initialization after a failed startup read', async () => {
       vi.mocked(invoke).mockRejectedValueOnce(new Error('settings temporarily unavailable'));
-      await useAppStore.getState().initStore();
+      await expect(useAppStore.getState().initStore()).rejects.toThrow(
+        'settings temporarily unavailable',
+      );
       vi.mocked(invoke).mockImplementation((command) => {
         if (command === 'get_settings') return Promise.resolve(settingsSnapshot());
         throw new Error(`Unexpected command: ${command}`);
@@ -149,26 +349,36 @@ describe('useAppStore smoke net', () => {
     });
 
     it('captures source-unavailable recovery before publishing the active game', async () => {
+      const settings = settingsSnapshot({ active_game_id: 'genshin' });
       vi.mocked(listen).mockImplementation(async (event, handler) => {
         if (event === 'disk_reconcile:result') {
           handler({
-            payload: {
+            payload: diskReconcileResult({
               game_id: 'genshin',
+              reconcile_revision: 1,
               status: 'SourceUnavailable',
               error_message: 'Mods drive is unavailable',
               folder_conflicts: [],
               rename_confirmations: [],
-            },
+            }),
           } as never);
         }
         return () => undefined;
       });
-      vi.mocked(invoke).mockResolvedValueOnce({
-        active_game_id: 'genshin',
-        auto_close_launcher: false,
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'get_settings') return Promise.resolve(settings);
+        if (command === 'set_active_game')
+          return Promise.resolve({
+            game_id: 'genshin',
+            generation: 1,
+            phase: 'source_unavailable',
+            settings,
+          });
+        return Promise.resolve(null);
       });
 
       await useAppStore.getState().initStore();
+      await waitFor(() => expect(useAppStore.getState().activeGameId).toBe('genshin'));
 
       const state = useAppStore.getState();
       expect(state.activeGameId).toBe('genshin');
@@ -178,7 +388,7 @@ describe('useAppStore smoke net', () => {
     it('shows a visible toast when startup recovery fails', async () => {
       vi.mocked(invoke).mockRejectedValueOnce(new Error('startup disk scan failed'));
 
-      await useAppStore.getState().initStore();
+      await expect(useAppStore.getState().initStore()).rejects.toThrow('startup disk scan failed');
 
       const toasts = useToastStore.getState().toasts;
       expect(toasts[toasts.length - 1]?.message).toContain('startup disk scan failed');
@@ -260,9 +470,14 @@ describe('useAppStore smoke net', () => {
           return Promise.resolve({ active_game_id: 'genshin', auto_close_launcher: false });
         }
         if (command === 'set_active_game') {
-          return Promise.resolve({ game_id: 'genshin', generation: 1, phase: 'syncing' });
+          return Promise.resolve({
+            game_id: 'genshin',
+            generation: 1,
+            phase: 'syncing',
+            settings: settingsSnapshot({ active_game_id: 'genshin' }),
+          });
         }
-        return pendingPrefetch;
+        return pendingPrefetch.then(() => collectionPrefetchReply(command));
       });
 
       const initializing = useAppStore.getState().initStore();

@@ -22,6 +22,7 @@ fn hotkey_config_defaults() {
     assert_eq!(config.prev_preset, "Shift+F5");
     assert_eq!(config.toggle_overlay, "F7");
     assert!(!config.preset_status_overlay_enabled);
+    assert!(!config.game_notification_overlay_enabled);
 }
 
 #[test]
@@ -32,6 +33,7 @@ fn legacy_hotkey_config_defaults_preset_status_overlay_to_disabled() {
     .expect("legacy hotkey config should deserialize");
 
     assert!(!config.preset_status_overlay_enabled);
+    assert!(!config.game_notification_overlay_enabled);
 }
 
 #[test]

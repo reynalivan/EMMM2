@@ -48,9 +48,8 @@ export default function PreviewConfirmDialogs({
         open={confirmRemoveOpen}
         title={t('preview:gallery.menu.remove_current')}
         message={t('preview:gallery.remove_confirm_message')}
-        confirmLabel={t('common:actions.remove')}
+        confirmLabel={t('preview:gallery.menu.remove_current')}
         cancelLabel={t('common:actions.cancel')}
-        danger
         onCancel={onCancelRemove}
         onConfirm={onConfirmRemove}
       />
@@ -61,7 +60,6 @@ export default function PreviewConfirmDialogs({
         message={t('preview:gallery.clear_all_confirm_message')}
         confirmLabel={t('preview:gallery.menu.clear_all')}
         cancelLabel={t('common:actions.cancel')}
-        danger
         onCancel={onCancelClear}
         onConfirm={onConfirmClear}
       />

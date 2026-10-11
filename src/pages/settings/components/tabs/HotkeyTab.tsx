@@ -13,6 +13,7 @@ import { SettingsRow, SettingsSection } from '../SettingsLayout';
 const DEFAULT_HOTKEYS: HotkeyConfig = {
   enabled: true,
   preset_status_overlay_enabled: false,
+  game_notification_overlay_enabled: false,
   safe_mode: 'F5',
   next_preset: 'Ctrl+F5',
   prev_preset: 'Shift+F5',
@@ -236,6 +237,29 @@ export default function HotkeyTab() {
                 onChange={() =>
                   updateHotkey({
                     preset_status_overlay_enabled: !draftHotkeys.preset_status_overlay_enabled,
+                  })
+                }
+                disabled={isSaving}
+              />
+            }
+          />
+          <SettingsRow
+            label={
+              <label htmlFor="game-notification-overlay-enabled" className="cursor-pointer">
+                {t('settings:hotkeys.game_notice_label')}
+              </label>
+            }
+            description={t('settings:hotkeys.game_notice_desc')}
+            control={
+              <input
+                id="game-notification-overlay-enabled"
+                type="checkbox"
+                className="toggle toggle-primary toggle-sm"
+                checked={draftHotkeys.game_notification_overlay_enabled ?? false}
+                onChange={() =>
+                  updateHotkey({
+                    game_notification_overlay_enabled:
+                      !draftHotkeys.game_notification_overlay_enabled,
                   })
                 }
                 disabled={isSaving}

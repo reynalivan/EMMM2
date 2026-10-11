@@ -71,8 +71,11 @@ describe('waitForGameActivationReady', () => {
     expect(completed).toBe(true);
   });
 
-  it('times out with the last error if activation cannot recover', async () => {
+  it('rejects an unrecoverable activation failure without waiting for the timeout', async () => {
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimer = vi.spyOn(globalThis, 'clearTimeout');
     const ready = waitForGameActivationReady('game-3');
+    const ownedTimeout = timer.mock.results[timer.mock.results.length - 1]?.value;
     const rejection = expect(ready).rejects.toThrow('Watcher unavailable');
     useAppStore.getState().setGameActivationStatus({
       game_id: 'game-3',
@@ -82,8 +85,8 @@ describe('waitForGameActivationReady', () => {
       runtime_sync_generation: null,
       error: 'Watcher unavailable',
     });
-    await vi.runAllTimersAsync();
     await rejection;
+    expect(clearTimer).toHaveBeenCalledWith(ownedTimeout);
   });
 
   it('times out if activation never publishes a status', async () => {

@@ -1,66 +1,11 @@
-use crate::platform::fs::file_utils::rename_cross_drive_fallback;
 use crate::shared::errors::AppError;
 use crate::shared::sync::lock;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 static DISKS_CACHE: std::sync::OnceLock<std::sync::Mutex<sysinfo::Disks>> =
     std::sync::OnceLock::new();
 
 pub(super) const ARCHIVE_DISK_RESERVE_BYTES: u64 = 50 * 1024 * 1024;
-
-pub(super) fn parent_dir_join(parent: &Path, name: &str) -> PathBuf {
-    parent.join(name)
-}
-
-pub(super) fn remove_existing_dest(dest: &Path) -> Result<(), AppError> {
-    if !dest.exists() {
-        return Ok(());
-    }
-
-    crate::platform::fs::recycle_bin::move_path_to_recycle_bin(dest)
-}
-
-pub(super) fn move_to_extracted_dir(archive_path: &Path) -> Result<(), AppError> {
-    let parent = archive_path
-        .parent()
-        .ok_or_else(|| AppError::Internal("Archive has no parent directory".to_string()))?;
-    let extracted_dir = parent.join(".extracted");
-    fs::create_dir_all(&extracted_dir)?;
-
-    let file_name = archive_path
-        .file_name()
-        .ok_or_else(|| AppError::Internal("No filename".to_string()))?;
-    let mut dest = extracted_dir.join(file_name);
-
-    if dest.exists() {
-        let stem = archive_path
-            .file_stem()
-            .map(|value| value.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let ext = archive_path
-            .extension()
-            .map(|value| value.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let mut counter = 2_u32;
-
-        loop {
-            let new_name = if ext.is_empty() {
-                format!("{} ({})", stem, counter)
-            } else {
-                format!("{} ({}).{}", stem, counter, ext)
-            };
-            let candidate = extracted_dir.join(new_name);
-            if !candidate.exists() {
-                dest = candidate;
-                break;
-            }
-            counter += 1;
-        }
-    }
-
-    Ok(rename_cross_drive_fallback(archive_path, &dest)?)
-}
 
 pub(super) fn check_disk_space(mods_dir: &Path, required_space: u64) -> Result<(), AppError> {
     let Some(available_space) = available_disk_space(mods_dir) else {
@@ -100,17 +45,22 @@ fn available_disk_space(path: &Path) -> Option<u64> {
     let mut disks = lock(mutex);
     disks.refresh(true);
 
-    let search_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let search_path = path
+        .ancestors()
+        .find_map(|ancestor| ancestor.canonicalize().ok())?;
 
     let mut available_space = 0_u64;
     let mut matched_len = 0_usize;
     for disk in disks.list() {
-        let mount = disk.mount_point();
-        if !search_path.starts_with(mount) {
+        let mount = disk
+            .mount_point()
+            .canonicalize()
+            .unwrap_or_else(|_| disk.mount_point().to_path_buf());
+        if !mount_contains_path(&search_path, &mount) {
             continue;
         }
 
-        let mount_len = mount.as_os_str().len();
+        let mount_len = mount.components().count();
         if mount_len > matched_len {
             matched_len = mount_len;
             available_space = disk.available_space();
@@ -118,4 +68,69 @@ fn available_disk_space(path: &Path) -> Option<u64> {
     }
 
     (matched_len > 0).then_some(available_space)
+}
+
+#[cfg(not(windows))]
+fn mount_contains_path(path: &Path, mount: &Path) -> bool {
+    path.starts_with(mount)
+}
+
+#[cfg(windows)]
+fn mount_contains_path(path: &Path, mount: &Path) -> bool {
+    use std::path::{Component, Prefix};
+
+    let mut components = path.components();
+    mount.components().all(
+        |mount_component| match (components.next(), mount_component) {
+            (Some(Component::Prefix(path_prefix)), Component::Prefix(mount_prefix)) => {
+                match (path_prefix.kind(), mount_prefix.kind()) {
+                    (
+                        Prefix::Disk(left) | Prefix::VerbatimDisk(left),
+                        Prefix::Disk(right) | Prefix::VerbatimDisk(right),
+                    ) => left.eq_ignore_ascii_case(&right),
+                    (
+                        Prefix::UNC(left_server, left_share)
+                        | Prefix::VerbatimUNC(left_server, left_share),
+                        Prefix::UNC(right_server, right_share)
+                        | Prefix::VerbatimUNC(right_server, right_share),
+                    ) => left_server == right_server && left_share == right_share,
+                    (left, right) => left == right,
+                }
+            }
+            (Some(path_component), mount_component) => path_component == mount_component,
+            (None, _) => false,
+        },
+    )
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disk_space_accepts_verbatim_drive_and_unc_namespaces() {
+        for (path, mount) in [
+            (r"\\?\C:\imports\staging", r"C:\"),
+            (r"C:\imports\staging", r"\\?\C:\"),
+            (r"\\?\UNC\server\share\imports", r"\\server\share\"),
+        ] {
+            assert!(mount_contains_path(Path::new(path), Path::new(mount)));
+        }
+        assert!(!mount_contains_path(
+            Path::new(r"\\?\C:\imports\staging"),
+            Path::new(r"D:\"),
+        ));
+        assert!(!mount_contains_path(
+            Path::new(r"\\?\C:\imports-other\staging"),
+            Path::new(r"C:\imports"),
+        ));
+    }
+
+    #[test]
+    fn disk_space_resolves_real_windows_staging_and_missing_descendants() {
+        let directory = tempfile::tempdir().unwrap();
+        let canonical = directory.path().canonicalize().unwrap();
+        assert!(available_disk_space(&canonical).is_some());
+        assert!(available_disk_space(&canonical.join("missing").join("staging")).is_some());
+    }
 }

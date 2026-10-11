@@ -1,5 +1,5 @@
 import { formatAppError } from '../../../../shared/lib/appError';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Edit2, Trash2, Play, Inbox, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '@/entities/settings';
@@ -17,6 +17,7 @@ import { SettingsSection } from '../SettingsLayout';
 interface PendingSourceChange {
   game: GameConfig;
   inspection: GameModsDirectoryInspection;
+  sessionId: number;
 }
 
 interface SourceChangeSummary {
@@ -46,15 +47,32 @@ export default function GamesTab() {
   const [sourceChangeSummary, setSourceChangeSummary] = useState<SourceChangeSummary | null>(null);
   const [sourceChangePending, setSourceChangePending] = useState(false);
   const [pendingDeleteGameId, setPendingDeleteGameId] = useState<string | null>(null);
+  const editorSession = useRef(0);
 
-  const handleAdd = () => {
-    setEditingGame(null);
+  useEffect(
+    () => () => {
+      editorSession.current += 1;
+    },
+    [],
+  );
+
+  const openGameEditor = (game: GameConfig | null) => {
+    editorSession.current += 1;
+    setEditingGame(game);
+    setPendingSourceChange(null);
+    setSourceConfirmation('');
+    setSourceChangeError(null);
+    setSourceChangeWarning(null);
+    setSourceChangeSummary(null);
     setIsModalOpen(true);
   };
 
-  const handleEdit = (game: GameConfig) => {
-    setEditingGame(game);
-    setIsModalOpen(true);
+  const closeGameEditor = () => {
+    editorSession.current += 1;
+    setIsModalOpen(false);
+    setPendingSourceChange(null);
+    setSourceConfirmation('');
+    setSourceChangeError(null);
   };
 
   const handleDelete = (id: string) => {
@@ -93,6 +111,7 @@ export default function GamesTab() {
     );
     await saveSettingsAsync({ ...refreshed, games });
     applyDiskReconcileResult(applied.reconcile, queryClient, applied.game);
+    if (editorSession.current !== pending.sessionId) return;
     const { object_changes, mod_changes } = applied.reconcile.change_summary;
     setSourceChangeSummary({
       objectsAdded: object_changes.added,
@@ -109,6 +128,7 @@ export default function GamesTab() {
 
   const handleSave = async (game: GameConfig): Promise<boolean> => {
     if (!settings) return false;
+    const sessionId = editorSession.current;
 
     const newGames = [...settings.games];
     const index = newGames.findIndex((g) => g.id === game.id);
@@ -116,14 +136,16 @@ export default function GamesTab() {
     if (index >= 0) {
       if (!pathsEqual(newGames[index].mod_path, game.mod_path)) {
         const inspection = await commands.inspectGameModsDirectory(game.id, game.mod_path);
-        const pending = { game, inspection };
+        const pending = { game, inspection, sessionId };
         if (
           inspection.summary.classification === 'Matching' ||
           inspection.summary.classification === 'NewLibrary'
         ) {
           setSourceChangePending(true);
-          setSourceChangeWarning(null);
-          setSourceChangeSummary(null);
+          if (editorSession.current === sessionId) {
+            setSourceChangeWarning(null);
+            setSourceChangeSummary(null);
+          }
           try {
             await applySourceChange(pending, false, null);
           } finally {
@@ -131,9 +153,11 @@ export default function GamesTab() {
           }
           return true;
         }
-        setPendingSourceChange(pending);
-        setSourceConfirmation('');
-        setSourceChangeError(null);
+        if (editorSession.current === sessionId) {
+          setPendingSourceChange(pending);
+          setSourceConfirmation('');
+          setSourceChangeError(null);
+        }
         return false;
       }
       newGames[index] = game;
@@ -158,11 +182,11 @@ export default function GamesTab() {
         classification === 'Empty',
         classification === 'Different' ? sourceConfirmation : null,
       );
-      setPendingSourceChange(null);
-      setSourceConfirmation('');
-      setIsModalOpen(false);
+      if (editorSession.current === pendingSourceChange.sessionId) closeGameEditor();
     } catch (error) {
-      setSourceChangeError(formatAppError(error));
+      if (editorSession.current === pendingSourceChange.sessionId) {
+        setSourceChangeError(formatAppError(error));
+      }
     } finally {
       setSourceChangePending(false);
     }
@@ -180,7 +204,7 @@ export default function GamesTab() {
           <button
             className="btn btn-primary btn-sm gap-2 whitespace-nowrap"
             data-testid="games-add"
-            onClick={handleAdd}
+            onClick={() => openGameEditor(null)}
             disabled={sourceChangePending}
           >
             <Plus size={18} /> {t('settings:games.add')}
@@ -258,7 +282,7 @@ export default function GamesTab() {
                     </button>
                     <button
                       className="btn btn-ghost btn-sm join-item"
-                      onClick={() => handleEdit(game)}
+                      onClick={() => openGameEditor(game)}
                       disabled={sourceChangePending}
                       title={t('settings:games.actions.edit')}
                     >
@@ -299,7 +323,7 @@ export default function GamesTab() {
 
       <GameFormModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeGameEditor}
         onSave={handleSave}
         initialData={editingGame}
         existingModPaths={settings.games

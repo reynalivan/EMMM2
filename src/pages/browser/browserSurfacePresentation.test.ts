@@ -46,6 +46,19 @@ describe('browser surface presentation', () => {
     ).toEqual({ visibility: 'hidden', focus: 'dom', leftInsetPx: 0 });
   });
 
+  it('hides native browser content while a global hotkey notice is visible', () => {
+    expect(
+      getBrowserSurfacePresentation({
+        activeSidePanel: null,
+        availableWidth: 1200,
+        hasBlockingOverlay: false,
+        isAppMenuOpen: false,
+        isChromeTrayOpen: false,
+        hasHotkeyNotice: true,
+      }),
+    ).toEqual({ visibility: 'hidden', focus: 'dom', leftInsetPx: 0 });
+  });
+
   it('uses a full panel when the remaining browser viewport would be too narrow', () => {
     expect(getBrowserSidePanelLayout('downloads', 959)).toBe('full');
     expect(getBrowserSidePanelLayout('downloads', 960)).toBe('docked');

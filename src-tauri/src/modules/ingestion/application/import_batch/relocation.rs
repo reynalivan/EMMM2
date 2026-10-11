@@ -67,6 +67,7 @@ pub async fn preview_relocation_batch(
                 object_id: object.id,
                 name: object.name,
                 folder_name,
+                folder_path: object.folder_path,
                 canonical_entry_key: object.matched_entry_key,
                 aliases: object.matched_alias_name.into_iter().collect(),
                 category: object_category,

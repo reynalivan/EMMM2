@@ -414,23 +414,7 @@ fn staging_root(app_data_dir: &Path) -> PathBuf {
 }
 
 pub(crate) fn replace_active_pack(app_data_dir: &Path, staging: &Path) -> Result<(), ScannerError> {
-    let active = CatalogPack::root(app_data_dir);
-    let backup = app_data_dir.join(format!(".catalog-pack-backup-{}", Uuid::new_v4()));
-    let had_active_pack = active.exists();
-    if had_active_pack {
-        std::fs::rename(&active, &backup)?;
-    }
-    if let Err(error) = std::fs::rename(staging, &active) {
-        if had_active_pack {
-            let _ = std::fs::rename(&backup, &active);
-        }
-        return Err(ScannerError::Io(format!(
-            "Could not activate the validated catalog pack: {error}"
-        )));
-    }
-    if had_active_pack {
-        std::fs::remove_dir_all(backup)?;
-    }
+    super::pack_swap::PackSwap::begin(app_data_dir, staging)?.commit();
     Ok(())
 }
 

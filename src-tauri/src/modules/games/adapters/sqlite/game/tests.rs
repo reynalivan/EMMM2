@@ -13,7 +13,7 @@ async fn test_game_crud() {
     let game = GameRow {
         id: "test-id".into(),
         name: "Test Game".into(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         path: "C:\\Game".into(),
         mods_path: Some("C:\\Mods".into()),
         ready_to_move_path: Some("C:\\Downloads\\mods\\Test Game".into()),
@@ -48,7 +48,7 @@ async fn test_count_games() {
     let game = GameRow {
         id: "g1".into(),
         name: "Game 1".into(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         path: "C:\\Game1".into(),
         mods_path: Some("C:\\Mods".into()),
         ready_to_move_path: None,
@@ -70,7 +70,7 @@ async fn test_xxmi_managed_launch_fields_round_trip() {
     let game = GameRow {
         id: "wwmi".into(),
         name: "WWMI".into(),
-        game_type: crate::modules::games::domain::models::GameType::WWMI,
+        game_type: crate::modules::games::domain::models::GameType::Wwmi,
         path: "C:\\XXMI\\WWMI".into(),
         mods_path: Some("C:\\XXMI\\WWMI\\Mods".into()),
         ready_to_move_path: None,
@@ -96,7 +96,7 @@ async fn test_get_mod_path() {
     let game = GameRow {
         id: "g2".into(),
         name: "Game 2".into(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         path: "C:\\Game2".into(),
         mods_path: Some("C:\\CustomModPath".into()),
         ready_to_move_path: None,

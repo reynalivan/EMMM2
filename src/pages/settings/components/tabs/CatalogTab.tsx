@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, FileArchive, FolderOpen, RefreshCw, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveGame } from '@/entities/game';
 import { useAppStore } from '@/app/store';
 import { commands } from '@/shared/api/tauri/bindings';
-import { publishQueryScopes } from '@/shared/lib/queryRefresh';
+import { formatAppError } from '@/shared/lib/appError';
+import { refreshCatalogQueries } from '../../lib/catalogQueries';
 import type {
   CatalogImportPreview,
   CatalogPackRefreshResult,
@@ -28,6 +29,16 @@ export default function CatalogTab() {
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [githubUrl, setGithubUrl] = useState('');
   const [catalogPreview, setCatalogPreview] = useState<CatalogImportPreview | null>(null);
+  const previewToken = catalogPreview?.stagingToken;
+  useEffect(() => {
+    if (!previewToken) return;
+    return () => {
+      // The backend serializes discard after any in-progress installation.
+      void commands.discardCatalogImport(previewToken).catch((error: unknown) => {
+        console.warn('Catalog preview cleanup failed:', formatAppError(error));
+      });
+    };
+  }, [previewToken]);
 
   const catalogPackQuery = useQuery<CatalogPackStatus>({
     queryKey: catalogPackKeys.status,
@@ -50,8 +61,10 @@ export default function CatalogTab() {
   const refreshCatalogMutation = useMutation<CatalogPackRefreshResult, unknown>({
     mutationFn: () => commands.refreshCatalogPack(),
     networkMode: 'always',
+    onMutate: () => setCatalogError(null),
     onSuccess: async () => {
-      await publishQueryScopes(queryClient, ['catalogPack']);
+      setCatalogUpdate(null);
+      await refreshCatalogQueries(queryClient);
     },
     onError: () => setCatalogError(t('general.catalog_assets.invalid')),
   });
@@ -73,7 +86,7 @@ export default function CatalogTab() {
         available_version: result.version,
         release_notes: null,
       });
-      await publishQueryScopes(queryClient, ['catalogPack']);
+      await refreshCatalogQueries(queryClient);
     },
     onError: () => setCatalogError(t('general.catalog_assets.update_install_failed')),
   });
@@ -93,16 +106,26 @@ export default function CatalogTab() {
     },
     onError: () => setCatalogError(t('general.catalog_assets.local_preview_failed')),
   });
-  const installCatalogImportMutation = useMutation<CatalogPackRefreshResult, unknown>({
-    mutationFn: () => commands.installCatalogImport(catalogPreview?.stagingToken ?? ''),
+  const installCatalogImportMutation = useMutation<CatalogPackRefreshResult, unknown, string>({
+    mutationFn: (token) => commands.installCatalogImport(token),
     networkMode: 'always',
     onMutate: () => setCatalogError(null),
     onSuccess: async () => {
       setCatalogPreview(null);
       setGithubUrl('');
-      await publishQueryScopes(queryClient, ['catalogPack']);
+      setCatalogUpdate(null);
+      await refreshCatalogQueries(queryClient);
     },
-    onError: () => setCatalogError(t('general.catalog_assets.install_failed')),
+    onError: async (error) => {
+      setCatalogError(`${t('general.catalog_assets.install_failed')}: ${formatAppError(error)}`);
+      await refreshCatalogQueries(queryClient);
+    },
+  });
+  const discardCatalogImportMutation = useMutation<void, unknown, string>({
+    mutationFn: (token) => commands.discardCatalogImport(token),
+    networkMode: 'always',
+    onSuccess: () => setCatalogPreview(null),
+    onError: (error) => setCatalogError(formatAppError(error)),
   });
   const resetIdentityDismissalsMutation = useMutation<void, unknown>({
     mutationFn: () => commands.resetObjectIdentitySuggestionDismissals(activeGameId ?? ''),
@@ -128,7 +151,18 @@ export default function CatalogTab() {
   const isImportPending =
     previewGithubImportMutation.isPending ||
     previewLocalImportMutation.isPending ||
-    installCatalogImportMutation.isPending;
+    installCatalogImportMutation.isPending ||
+    discardCatalogImportMutation.isPending;
+  const isCatalogPending =
+    isImportPending ||
+    refreshCatalogMutation.isPending ||
+    checkCatalogUpdateMutation.isPending ||
+    installCatalogUpdateMutation.isPending;
+  const closeCatalogPreview = () => {
+    if (catalogPreview && !isImportPending) {
+      discardCatalogImportMutation.mutate(catalogPreview.stagingToken);
+    }
+  };
   const catalogStatus =
     catalogPack?.state === 'ready'
       ? t('general.catalog_assets.installed', {
@@ -158,7 +192,7 @@ export default function CatalogTab() {
             <button
               type="button"
               className="btn btn-sm btn-primary gap-2"
-              disabled={refreshCatalogMutation.isPending}
+              disabled={isCatalogPending || !!catalogPreview}
               onClick={() => refreshCatalogMutation.mutate()}
             >
               <RefreshCw
@@ -191,7 +225,7 @@ export default function CatalogTab() {
             <input
               aria-label={t('general.catalog_assets.github_url_label')}
               className="input input-bordered input-sm min-w-64 flex-1"
-              disabled={isImportPending}
+              disabled={isCatalogPending || !!catalogPreview}
               onChange={(event) => setGithubUrl(event.target.value)}
               placeholder={t('general.catalog_assets.github_url_placeholder')}
               type="url"
@@ -199,7 +233,7 @@ export default function CatalogTab() {
             />
             <button
               className="btn btn-sm btn-primary gap-2"
-              disabled={!githubUrl.trim() || isImportPending}
+              disabled={!githubUrl.trim() || isCatalogPending || !!catalogPreview}
               onClick={() => previewGithubImportMutation.mutate()}
               type="button"
             >
@@ -220,7 +254,7 @@ export default function CatalogTab() {
             </div>
             <button
               className="btn btn-sm btn-ghost gap-2"
-              disabled={isImportPending}
+              disabled={isCatalogPending || !!catalogPreview}
               onClick={() => previewLocalImportMutation.mutate()}
               type="button"
             >
@@ -257,9 +291,7 @@ export default function CatalogTab() {
             <button
               type="button"
               className="btn btn-sm btn-ghost gap-2"
-              disabled={
-                checkCatalogUpdateMutation.isPending || installCatalogUpdateMutation.isPending
-              }
+              disabled={isCatalogPending || !!catalogPreview}
               onClick={() => checkCatalogUpdateMutation.mutate()}
             >
               <RefreshCw
@@ -272,7 +304,7 @@ export default function CatalogTab() {
               <button
                 type="button"
                 className="btn btn-sm btn-primary gap-2"
-                disabled={installCatalogUpdateMutation.isPending}
+                disabled={isCatalogPending || !!catalogPreview}
                 onClick={() => installCatalogUpdateMutation.mutate()}
               >
                 <Download
@@ -287,7 +319,7 @@ export default function CatalogTab() {
           </div>
         </div>
         <p className="mt-3 text-xs text-base-content/60" aria-live="polite">
-          {catalogError ||
+          {(!catalogPreview && catalogError) ||
             (catalogUpdate?.state === 'update_available'
               ? t('general.catalog_assets.update_available', {
                   version: catalogUpdate.available_version,
@@ -301,7 +333,11 @@ export default function CatalogTab() {
         <dialog
           aria-labelledby="catalog-import-review-title"
           className="modal modal-open"
-          onClose={() => setCatalogPreview(null)}
+          onClose={closeCatalogPreview}
+          onCancel={(event) => {
+            event.preventDefault();
+            closeCatalogPreview();
+          }}
           open
         >
           <div className="modal-box max-w-xl">
@@ -343,19 +379,24 @@ export default function CatalogTab() {
                 {t('general.catalog_assets.github_replaces')}
               </p>
             )}
+            {catalogError && (
+              <p className="mt-4 text-sm text-error" role="alert">
+                {catalogError}
+              </p>
+            )}
             <div className="modal-action">
               <button
                 className="btn btn-ghost"
-                disabled={installCatalogImportMutation.isPending}
-                onClick={() => setCatalogPreview(null)}
+                disabled={isImportPending}
+                onClick={closeCatalogPreview}
                 type="button"
               >
                 {t('common:actions.cancel')}
               </button>
               <button
                 className="btn btn-primary gap-2"
-                disabled={installCatalogImportMutation.isPending}
-                onClick={() => installCatalogImportMutation.mutate()}
+                disabled={isImportPending}
+                onClick={() => installCatalogImportMutation.mutate(catalogPreview.stagingToken)}
                 type="button"
               >
                 <Download
@@ -367,7 +408,7 @@ export default function CatalogTab() {
             </div>
           </div>
           <form className="modal-backdrop" method="dialog">
-            <button type="button" onClick={() => setCatalogPreview(null)}>
+            <button type="button" disabled={isImportPending} onClick={closeCatalogPreview}>
               {t('common:actions.close')}
             </button>
           </form>

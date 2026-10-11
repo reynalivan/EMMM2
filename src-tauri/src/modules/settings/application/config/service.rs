@@ -166,6 +166,12 @@ impl ConfigService {
                     "Use the active-game command to change the active game safely".to_string(),
                 ));
             }
+            if new_settings.diagnostics.telemetry_enabled != current.diagnostics.telemetry_enabled {
+                return Err(AppError::Validation(
+                    "Use the diagnostics consent command to change anonymous diagnostics safely"
+                        .to_string(),
+                ));
+            }
             ensure_unique_game_ids(&new_settings)?;
             ensure_existing_mod_paths_unchanged(current, &new_settings)?;
             let has_api_key = current.ai.has_api_key;

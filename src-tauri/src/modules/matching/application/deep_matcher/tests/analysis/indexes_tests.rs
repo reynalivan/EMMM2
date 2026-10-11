@@ -99,3 +99,15 @@ fn test_index_build_empty_db_safe() {
     assert!(indexes.token_idf("anything", 0).is_finite());
     assert!(indexes.hash_idf("deadbeef", 0).is_finite());
 }
+
+#[test]
+fn mmr_malformed_unicode_hashes_are_ignored_without_panicking() {
+    for invalid in ["1234567é1234567", "😺😺😺😺", "1234567890abcdeg"] {
+        assert_eq!(normalize_hash(invalid), None);
+    }
+    assert_eq!(
+        normalize_hash(" 0x12345678ABCDEF90 "),
+        Some("abcdef90".to_string())
+    );
+    assert_eq!(normalize_hash("ABCDEF90"), Some("abcdef90".to_string()));
+}

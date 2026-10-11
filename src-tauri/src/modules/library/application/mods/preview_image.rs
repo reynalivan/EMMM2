@@ -162,8 +162,12 @@ pub fn remove_preview_image(mod_root: &Path, image_path: &Path) -> Result<(), Ap
         ));
     }
 
-    crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&canonical_target)?;
-    ThumbnailCache::invalidate(&canonical_target);
+    crate::platform::images::preview_visibility::set_hidden(
+        mod_root,
+        std::slice::from_ref(&canonical_target),
+        true,
+    )?;
+    ThumbnailCache::invalidate_folder(&canonical_root.to_string_lossy());
     Ok(())
 }
 
@@ -180,21 +184,13 @@ pub fn clear_preview_images(mod_root: &Path) -> Result<Vec<String>, AppError> {
         unique.insert(path);
     }
 
-    let mut removed = Vec::new();
-    for path in unique {
-        if !path.exists() {
-            continue;
-        }
-        if !path.is_file() || !is_image_file(&path) {
-            continue;
-        }
-
-        crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&path)?;
-        ThumbnailCache::invalidate(&path);
-        removed.push(path.to_string_lossy().to_string());
-    }
-
-    Ok(removed)
+    let images: Vec<_> = unique.into_iter().collect();
+    crate::platform::images::preview_visibility::set_hidden(mod_root, &images, true)?;
+    ThumbnailCache::invalidate_folder(&mod_root.to_string_lossy());
+    Ok(images
+        .iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect())
 }
 
 #[cfg(test)]

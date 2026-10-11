@@ -1,6 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GameType } from '@/entities/game';
+import type { GameConfig } from '@/entities/game';
+import { open } from '@tauri-apps/plugin-dialog';
 import GameFormModal from './GameFormModal';
 
 vi.mock('../../../shared/lib/hooks/useDialogSync', () => ({ useDialogSync: vi.fn() }));
@@ -10,7 +12,38 @@ vi.mock('react-i18next', async (importOriginal) => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+const gameA: GameConfig = {
+  id: 'game-a',
+  name: 'Game A',
+  game_type: GameType.GIMI,
+  mod_path: 'E:/GameA/Mods',
+  game_exe: 'E:/GameA/Game.exe',
+  loader_exe: null,
+  launch_args: null,
+};
+const gameB: GameConfig = {
+  ...gameA,
+  id: 'game-b',
+  name: 'Game B',
+  mod_path: 'E:/GameB/Mods',
+  game_exe: 'E:/GameB/Game.exe',
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('GameFormModal', () => {
+  beforeEach(() => {
+    vi.mocked(open).mockReset();
+  });
+
   it.each(['E:/GIMI/Mods', 'e:/gimi/mods', 'E:\\GIMI\\Mods\\'])(
     'blocks submission when the mods directory duplicates %s',
     async (modPath) => {
@@ -182,4 +215,155 @@ describe('GameFormModal', () => {
       }),
     );
   });
+
+  it('prevents native dialog cancellation while a save is pending', async () => {
+    const save = deferred<boolean>();
+    const onSave = vi.fn(() => save.promise);
+    const onClose = vi.fn();
+    const view = render(
+      <GameFormModal
+        isOpen
+        onClose={onClose}
+        onSave={onSave}
+        initialData={gameA}
+        existingModPaths={[]}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('game-form-submit'));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(view.container.querySelector('dialog')!, cancel);
+    try {
+      expect(cancel.defaultPrevented).toBe(true);
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => save.resolve(false));
+    }
+  });
+
+  it('prevents native cancellation during source migration', async () => {
+    const view = render(
+      <GameFormModal
+        isOpen
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        initialData={gameA}
+        existingModPaths={[]}
+        isSourceMigrationPending
+      />,
+    );
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(view.container.querySelector('dialog')!, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeDisabled());
+  });
+
+  it.each(['success', 'failure'] as const)(
+    'keeps the replacement game draft when the previous save finishes with %s',
+    async (result) => {
+      const save = deferred<boolean>();
+      const onSave = vi.fn(() => save.promise);
+      const onClose = vi.fn();
+      const tree = (game: GameConfig, isOpen = true) => (
+        <GameFormModal
+          isOpen={isOpen}
+          onClose={onClose}
+          onSave={onSave}
+          initialData={game}
+          existingModPaths={[]}
+        />
+      );
+      const view = render(tree(gameA));
+      await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeEnabled());
+      fireEvent.click(screen.getByTestId('game-form-submit'));
+      await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ id: gameA.id, name: gameA.name }),
+      );
+
+      view.rerender(tree(gameA, false));
+      view.rerender(tree(gameB));
+      fireEvent.change(screen.getByPlaceholderText('games.form.name_placeholder'), {
+        target: { value: 'Game B draft' },
+      });
+      await act(async () => {
+        if (result === 'success') save.resolve(true);
+        else save.reject(new Error('Game A failed'));
+      });
+
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByPlaceholderText('games.form.name_placeholder')).toHaveValue(
+        'Game B draft',
+      );
+      expect(screen.queryByText('Game A failed')).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeEnabled());
+    },
+  );
+
+  it('keeps a new save pending when an older game save completes', async () => {
+    const saveA = deferred<boolean>();
+    const saveB = deferred<boolean>();
+    const onSave = vi.fn().mockReturnValueOnce(saveA.promise).mockReturnValueOnce(saveB.promise);
+    const onClose = vi.fn();
+    const tree = (game: GameConfig) => (
+      <GameFormModal
+        isOpen
+        onClose={onClose}
+        onSave={onSave}
+        initialData={game}
+        existingModPaths={[]}
+      />
+    );
+    const view = render(tree(gameA));
+    await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('game-form-submit'));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    view.rerender(tree(gameB));
+    await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('game-form-submit'));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+
+    await act(async () => saveA.resolve(true));
+    try {
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByTestId('game-form-submit')).toBeDisabled();
+      const cancel = new Event('cancel', { cancelable: true });
+      fireEvent(view.container.querySelector('dialog')!, cancel);
+      expect(cancel.defaultPrevented).toBe(true);
+    } finally {
+      await act(async () => saveB.resolve(true));
+    }
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['games.form.path_placeholder', 'E:/OldPicker/Mods', gameB.mod_path],
+    ['games.form.exe_placeholder', 'E:/OldPicker/Game.exe', gameB.game_exe],
+  ])(
+    'ignores a late picker result for %s after replacing the game',
+    async (placeholder, selected, expected) => {
+      const picker = deferred<string | null>();
+      vi.mocked(open).mockReturnValueOnce(picker.promise);
+      const tree = (game: GameConfig) => (
+        <GameFormModal
+          isOpen
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          initialData={game}
+          existingModPaths={[]}
+        />
+      );
+      const view = render(tree(gameA));
+      fireEvent.click(
+        screen.getByPlaceholderText(placeholder).parentElement!.querySelector('button')!,
+      );
+      expect(open).toHaveBeenCalledOnce();
+      view.rerender(tree(gameB));
+      expect(screen.getByPlaceholderText(placeholder)).toHaveValue(expected);
+      await act(async () => picker.resolve(selected));
+      expect(screen.getByPlaceholderText(placeholder)).toHaveValue(expected);
+    },
+  );
 });

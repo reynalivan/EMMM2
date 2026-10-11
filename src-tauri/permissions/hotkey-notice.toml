@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-hotkey-notice-read"
+description = "Allows the native hotkey notice window to read and acknowledge its current notice"
+commands.allow = ["get_hotkey_notice", "hotkey_notice_ready"]

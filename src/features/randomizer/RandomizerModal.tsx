@@ -95,6 +95,20 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   const previewRevisionRef = useRef(0);
   const recentModIdsRef = useRef<Record<string, string[]>>({});
 
+  const selectableProposals = proposals.filter(
+    (proposal) => !lockedObjectIds.has(proposal.object_id),
+  );
+  const selectedProposals = selectableProposals.filter((proposal) =>
+    selectedModIds.has(proposal.mod_id),
+  );
+
+  const invalidatePreview = useCallback(() => {
+    previewRevisionRef.current += 1;
+    setPreview(null);
+    setReviewing(false);
+    setWarningsAcknowledged(false);
+  }, []);
+
   const handleRoll = useCallback(async () => {
     const session = sessionRef.current;
     const revision = ++rollRevisionRef.current;
@@ -105,9 +119,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     const requestedSafetyFilter = safetyFilter;
     setLoading(true);
     setError(null);
-    setPreview(null);
-    setWarningsAcknowledged(false);
-    previewRevisionRef.current += 1;
+    invalidatePreview();
 
     try {
       const res = await commands.suggestRandomMods({
@@ -126,7 +138,13 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
         setRolledScope(requestedScope);
         setRolledSafetyFilter(requestedSafetyFilter);
         // Default to all checked
-        setSelectedModIds(new Set(res.map((r) => r.mod_id)));
+        setSelectedModIds(
+          new Set(
+            res
+              .filter((proposal) => !lockedObjectIds.has(proposal.object_id))
+              .map((proposal) => proposal.mod_id),
+          ),
+        );
         const nextRecent = { ...recentModIdsRef.current };
         for (const proposal of res) {
           nextRecent[proposal.object_id] = [
@@ -150,7 +168,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
         setLoading(false);
       }
     }
-  }, [gameId, lockedObjectIds, safetyFilter, scope, t]);
+  }, [gameId, invalidatePreview, lockedObjectIds, safetyFilter, scope, t]);
 
   useEffect(() => {
     sessionRef.current += 1;
@@ -167,12 +185,9 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     setRolledScope(null);
     setRolledSafetyFilter(null);
     setLockedObjectIds(new Set());
-    setPreview(null);
-    setReviewing(false);
-    setWarningsAcknowledged(false);
-    previewRevisionRef.current += 1;
+    invalidatePreview();
     recentModIdsRef.current = {};
-  }, [gameId, open]);
+  }, [gameId, invalidatePreview, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -183,12 +198,9 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     setRolledScope(null);
     setRolledSafetyFilter(null);
     setLockedObjectIds(new Set());
-    setPreview(null);
-    setReviewing(false);
-    setWarningsAcknowledged(false);
-    previewRevisionRef.current += 1;
+    invalidatePreview();
     setError(null);
-  }, [open, safetyFilter, scope]);
+  }, [invalidatePreview, open, safetyFilter, scope]);
 
   useEffect(() => {
     if (!open) return;
@@ -230,28 +242,26 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     if (!open) return;
   }, [open]);
 
-  const toggleSelection = (modId: string) => {
+  const toggleSelection = (proposal: RandomModProposal) => {
+    if (lockedObjectIds.has(proposal.object_id) || applying) return;
     const next = new Set(selectedModIds);
-    if (next.has(modId)) {
-      next.delete(modId);
+    if (next.has(proposal.mod_id)) {
+      next.delete(proposal.mod_id);
     } else {
-      next.add(modId);
+      next.add(proposal.mod_id);
     }
     setSelectedModIds(next);
-    setPreview(null);
-    setWarningsAcknowledged(false);
-    previewRevisionRef.current += 1;
+    invalidatePreview();
   };
 
   const toggleAll = () => {
-    if (selectedModIds.size === proposals.length) {
+    if (applying) return;
+    if (selectedProposals.length === selectableProposals.length) {
       setSelectedModIds(new Set()); // Deselect all
     } else {
-      setSelectedModIds(new Set(proposals.map((r) => r.mod_id))); // Select all
+      setSelectedModIds(new Set(selectableProposals.map((proposal) => proposal.mod_id)));
     }
-    setPreview(null);
-    setWarningsAcknowledged(false);
-    previewRevisionRef.current += 1;
+    invalidatePreview();
   };
 
   const toggleKeepCurrent = (proposal: RandomModProposal) => {
@@ -267,9 +277,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
       else next.delete(proposal.mod_id);
       return next;
     });
-    setPreview(null);
-    setWarningsAcknowledged(false);
-    previewRevisionRef.current += 1;
+    invalidatePreview();
   };
 
   const toggleScopeCategory = (category: StableCategory) => {
@@ -282,7 +290,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   };
 
   const handleReview = async () => {
-    if (selectedModIds.size === 0 || !rolledScope || !rolledSafetyFilter) return;
+    if (selectedProposals.length === 0 || !rolledScope || !rolledSafetyFilter) return;
     const session = sessionRef.current;
     const revision = ++previewRevisionRef.current;
     setReviewing(true);
@@ -290,9 +298,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     try {
       const result = await commands.previewRandomizedLoadout({
         game_id: gameId,
-        mod_ids: proposals
-          .filter((proposal) => selectedModIds.has(proposal.mod_id))
-          .map((proposal) => proposal.mod_id),
+        mod_ids: selectedProposals.map((proposal) => proposal.mod_id),
         safety_filter: rolledSafetyFilter,
         scope: rolledScope,
       });
@@ -310,7 +316,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
   };
 
   const handleApply = async () => {
-    if (selectedModIds.size === 0 || !rolledScope || !rolledSafetyFilter || !preview) return;
+    if (selectedProposals.length === 0 || !rolledScope || !rolledSafetyFilter || !preview) return;
     if (
       (preview.unsafe_mod_names.length > 0 || preview.runtime_conflicts.length > 0) &&
       !warningsAcknowledged
@@ -323,9 +329,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     try {
       const result = await commands.applyRandomizedLoadout({
         game_id: gameId,
-        mod_ids: proposals
-          .filter((proposal) => selectedModIds.has(proposal.mod_id))
-          .map((proposal) => proposal.mod_id),
+        mod_ids: selectedProposals.map((proposal) => proposal.mod_id),
         safety_filter: rolledSafetyFilter,
         scope: rolledScope,
         preview_fingerprint: preview.fingerprint,
@@ -360,16 +364,17 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
     }
   };
 
-  const hasSelections = selectedModIds.size > 0;
+  const hasSelections = selectedProposals.length > 0;
   const hasResults = proposals.length > 0;
-  const allSelected = proposals.length > 0 && selectedModIds.size === proposals.length;
+  const allSelected =
+    selectableProposals.length > 0 && selectedProposals.length === selectableProposals.length;
   const hasScope = scope.categories.length > 0 || scope.include_unclassified;
   const hasWarnings =
     !!preview && (preview.unsafe_mod_names.length > 0 || preview.runtime_conflicts.length > 0);
 
   return (
     <dialog ref={dialogRef} className="modal bg-overlay-mask backdrop-blur-sm" onClose={onClose}>
-      <div className="modal-box w-11/12 max-w-2xl relative border border-base-300 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="modal-box w-11/12 max-w-2xl relative border border-base-300 overflow-y-auto flex flex-col max-h-[90vh]">
         <button
           className="btn btn-sm btn-circle absolute right-2 top-2 z-10"
           onClick={onClose}
@@ -432,21 +437,25 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
           ) : hasResults ? (
             <div className="space-y-2">
               <div className="flex justify-between items-center px-2 py-1 bg-base-300/30 rounded-lg mb-2">
-                <button className="btn btn-xs btn-ghost gap-2" onClick={toggleAll}>
+                <button
+                  className="btn btn-xs btn-ghost gap-2"
+                  onClick={toggleAll}
+                  disabled={applying || selectableProposals.length === 0}
+                >
                   {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
                   {allSelected ? t('randomizer.deselect_all') : t('randomizer.select_all')}
                 </button>
                 <span className="text-xs opacity-60">
                   {t('randomizer.selection_status', {
-                    selected: selectedModIds.size,
+                    selected: selectedProposals.length,
                     total: proposals.length,
                   })}
                 </span>
               </div>
 
               {proposals.map((proposal) => {
-                const isSelected = selectedModIds.has(proposal.mod_id);
                 const isLocked = lockedObjectIds.has(proposal.object_id);
+                const isSelected = !isLocked && selectedModIds.has(proposal.mod_id);
                 return (
                   <div
                     key={proposal.mod_id}
@@ -455,7 +464,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
                         ? 'bg-primary/10 border-primary/30'
                         : 'bg-base-100 border-base-300 opacity-60 hover:opacity-100'
                     }`}
-                    onClick={() => toggleSelection(proposal.mod_id)}
+                    onClick={() => toggleSelection(proposal)}
                   >
                     <div className="text-primary mt-1">
                       {isSelected ? <CheckSquare size={20} /> : <Square size={20} />}
@@ -533,8 +542,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
                 disabled={applying}
                 onChange={(event) => {
                   setBackupEnabled(event.target.checked);
-                  setPreview(null);
-                  previewRevisionRef.current += 1;
+                  invalidatePreview();
                 }}
               />
               <span className="label-text">{t('randomizer.backup_enabled')}</span>
@@ -545,8 +553,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
                 value={backupName}
                 onChange={(event) => {
                   setBackupName(event.target.value);
-                  setPreview(null);
-                  previewRevisionRef.current += 1;
+                  invalidatePreview();
                 }}
                 placeholder={t('randomizer.backup_name_placeholder')}
                 disabled={applying}
@@ -639,7 +646,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
                 {!applying && <Check size={18} />}
                 {applying
                   ? t('randomizer.applying')
-                  : t('randomizer.confirm_apply', { count: selectedModIds.size })}
+                  : t('randomizer.confirm_apply', { count: selectedProposals.length })}
               </button>
             ) : (
               <button
@@ -658,7 +665,7 @@ export default function RandomizerModal({ open, onClose, gameId }: RandomizerMod
                 {!reviewing && <Check size={18} />}
                 {reviewing
                   ? t('randomizer.reviewing')
-                  : t('randomizer.review_changes', { count: selectedModIds.size })}
+                  : t('randomizer.review_changes', { count: selectedProposals.length })}
               </button>
             ))}
         </div>

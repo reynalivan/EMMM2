@@ -9,6 +9,7 @@ import {
   useModIniDocuments,
   usePreviewImages,
   useRemovePreviewImage,
+  useRestorePreviewImage,
   useSavePreviewImage,
   useUpdateModInfoDetails,
   useWriteModIni,
@@ -48,16 +49,20 @@ interface PreviewRuntimeState {
   previewError: unknown | null;
   retryPreview: () => Promise<unknown>;
   iniDocuments: PreviewIniDocument[];
+  iniDocumentsUpdatedAt: number;
   images: string[];
+  hiddenImagePaths: Set<string>;
+  hasVisibleImages: boolean;
   previewImagesQuery: ReturnType<typeof usePreviewImages>;
   updateModInfo: ReturnType<typeof useUpdateModInfoDetails>;
   savePreviewImage: ReturnType<typeof useSavePreviewImage>;
   removePreviewImage: ReturnType<typeof useRemovePreviewImage>;
   clearPreviewImages: ReturnType<typeof useClearPreviewImages>;
+  restorePreviewImage: ReturnType<typeof useRestorePreviewImage>;
   writeModIni: ReturnType<typeof useWriteModIni>;
 }
 
-export function usePreviewRuntime(): PreviewRuntimeState {
+export function usePreviewRuntime(showHiddenImages = false): PreviewRuntimeState {
   const structureQuery = useWorkspaceStructure();
   const workspace = structureQuery.data;
   const currentSelection = useWorkspaceSelectionInput();
@@ -113,6 +118,7 @@ export function usePreviewRuntime(): PreviewRuntimeState {
   const savePreviewImage = useSavePreviewImage();
   const removePreviewImage = useRemovePreviewImage();
   const clearPreviewImages = useClearPreviewImages();
+  const restorePreviewImage = useRestorePreviewImage();
   const writeModIni = useWriteModIni();
 
   const iniDocuments = useMemo(
@@ -124,7 +130,23 @@ export function usePreviewRuntime(): PreviewRuntimeState {
     [iniDocumentsQuery.data],
   );
 
-  const images = useMemo(() => previewImagesQuery.data ?? [], [previewImagesQuery.data]);
+  const images = useMemo(
+    () =>
+      (previewImagesQuery.data ?? [])
+        .filter((image) => showHiddenImages || !image.is_hidden)
+        .map((image) => image.path),
+    [previewImagesQuery.data, showHiddenImages],
+  );
+  const hiddenImagePaths = useMemo(
+    () =>
+      new Set(
+        (previewImagesQuery.data ?? [])
+          .filter((image) => image.is_hidden)
+          .map((image) => image.path),
+      ),
+    [previewImagesQuery.data],
+  );
+  const hasVisibleImages = (previewImagesQuery.data ?? []).some((image) => !image.is_hidden);
 
   return {
     activeGameId,
@@ -141,12 +163,16 @@ export function usePreviewRuntime(): PreviewRuntimeState {
     previewError,
     retryPreview: previewQuery.refetch,
     iniDocuments,
+    iniDocumentsUpdatedAt: iniDocumentsQuery.dataUpdatedAt,
     images,
+    hiddenImagePaths,
+    hasVisibleImages,
     previewImagesQuery,
     updateModInfo,
     savePreviewImage,
     removePreviewImage,
     clearPreviewImages,
+    restorePreviewImage,
     writeModIni,
   };
 }

@@ -233,7 +233,7 @@ fn hash_similarity(
         .filter(|path| left.get(**path) == right.get(**path))
         .count();
     let score = same as f64 / shared.len() as f64;
-    (score, score == 1.0 && left.len() == right.len())
+    (score, left == right)
 }
 
 fn set_overlap_score(left: &BTreeSet<String>, right: &BTreeSet<String>) -> f64 {
@@ -272,3 +272,7 @@ fn build_signal(key: &str, detail: &str, score: f64) -> DupScanSignal {
         score: (score * 100.0).round().clamp(0.0, 100.0) as u8,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/dedup_signals_tests.rs"]
+mod tests;

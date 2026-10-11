@@ -133,7 +133,6 @@ export function resolveDemoCommand(name: string, _args: unknown[]): DemoCommandR
         })),
       );
     case 'listModIniFiles':
-    case 'listModPreviewImages':
       return handled([]);
     case 'analyzeModHealth':
       return handled(demoModHealth);

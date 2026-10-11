@@ -4,7 +4,7 @@ import i18next from 'i18next';
 import { useActiveGame } from '@/entities/game';
 import { modHealthKeys, type ModViewerExternalReview } from '@/entities/mod';
 import { commands, type DiskReconcileResult } from '@/shared/api/tauri/bindings';
-import { canonicalPathKey } from '@/shared/lib/pathKey';
+import { identityPathKey } from '@/shared/lib/pathKey';
 import { toast } from '@/shared/ui/toast';
 import {
   diffModViewerManifests,
@@ -13,6 +13,8 @@ import {
 } from './modViewerExternalReview';
 
 const MAX_SNAPSHOTS = 8;
+let nextLaunchId = 0;
+const analysisGenerations = new WeakMap<ModViewerSnapshot, number>();
 
 export interface ModViewerLaunchReceiptData {
   game_id: string;
@@ -25,10 +27,10 @@ export interface ModViewerLaunchReceiptData {
 }
 
 interface ModViewerSnapshot {
+  launchId: number;
   gameId: string;
   folderPath: string;
   manifest: ModViewerManifestFile[];
-  launchedAt: number;
 }
 
 interface StoredModViewerExternalReview extends ModViewerExternalReview {
@@ -62,9 +64,9 @@ function matchingSnapshotIndex(
   gameId: string,
   folderPath: string,
 ): number {
-  const expected = canonicalPathKey(folderPath);
+  const expected = identityPathKey(folderPath);
   return snapshots.findIndex(
-    (snapshot) => snapshot.gameId === gameId && canonicalPathKey(snapshot.folderPath) === expected,
+    (snapshot) => snapshot.gameId === gameId && identityPathKey(snapshot.folderPath) === expected,
   );
 }
 
@@ -78,22 +80,16 @@ export function recordModViewerLaunchSnapshot(
 ): void {
   const snapshots = snapshotsFor(queryClient);
   const existingIndex = matchingSnapshotIndex(snapshots, receipt.game_id, receipt.mod_folder);
-  if (existingIndex >= 0) {
-    snapshots.splice(existingIndex, 1);
-  }
-
-  snapshots.push({
+  const nextSnapshots = snapshots.filter((_, index) => index !== existingIndex);
+  nextSnapshots.push({
+    launchId: ++nextLaunchId,
     gameId: receipt.game_id,
     folderPath: receipt.mod_folder,
     manifest: receipt.file_manifest.map(toManifestFile),
-    launchedAt: Date.now(),
   });
-  const bounded = snapshots.slice(-MAX_SNAPSHOTS);
+  const bounded = nextSnapshots.slice(-MAX_SNAPSHOTS);
   queryClient.setQueryData(modHealthKeys.viewerSnapshots(), bounded);
-  queryClient.removeQueries({
-    queryKey: modHealthKeys.viewerReview(receipt.game_id, receipt.mod_folder),
-    exact: true,
-  });
+  queryClient.setQueryData(modHealthKeys.viewerReview(receipt.game_id, receipt.mod_folder), null);
 }
 
 export function dismissModViewerExternalReview(
@@ -104,13 +100,12 @@ export function dismissModViewerExternalReview(
   const snapshots = snapshotsFor(queryClient);
   const index = matchingSnapshotIndex(snapshots, gameId, folderPath);
   if (index >= 0) {
-    snapshots.splice(index, 1);
-    queryClient.setQueryData(modHealthKeys.viewerSnapshots(), snapshots);
+    queryClient.setQueryData(
+      modHealthKeys.viewerSnapshots(),
+      snapshots.filter((_, snapshotIndex) => snapshotIndex !== index),
+    );
   }
-  queryClient.removeQueries({
-    queryKey: modHealthKeys.viewerReview(gameId, folderPath),
-    exact: true,
-  });
+  queryClient.setQueryData(modHealthKeys.viewerReview(gameId, folderPath), null);
 }
 
 export function useModViewerExternalReview(folderPath: string | null | undefined) {
@@ -156,11 +151,24 @@ export async function reconcileModViewerExternalReviews(
 
   await Promise.all(
     relevantSnapshots.map(async (snapshot) => {
+      const analysisGeneration = (analysisGenerations.get(snapshot) ?? 0) + 1;
+      analysisGenerations.set(snapshot, analysisGeneration);
+      const isCurrentLaunch = () =>
+        snapshotsFor(queryClient).some(
+          (current) =>
+            current.launchId === snapshot.launchId &&
+            analysisGenerations.get(snapshot) === analysisGeneration &&
+            current.gameId === snapshot.gameId &&
+            identityPathKey(current.folderPath) === identityPathKey(snapshot.folderPath),
+        );
       try {
         const report = (await commands.analyzeModHealth(
           snapshot.gameId,
           snapshot.folderPath,
         )) as ModHealthManifestReport;
+        if (!isCurrentLaunch()) {
+          return;
+        }
         queryClient.setQueryData(
           modHealthKeys.report(snapshot.gameId, snapshot.folderPath),
           report,
@@ -170,6 +178,10 @@ export async function reconcileModViewerExternalReviews(
           report.file_manifest.map(toManifestFile),
         );
         if (changes.length === 0) {
+          queryClient.setQueryData(
+            modHealthKeys.viewerReview(snapshot.gameId, snapshot.folderPath),
+            null,
+          );
           return;
         }
 
@@ -185,16 +197,21 @@ export async function reconcileModViewerExternalReviews(
           ...review,
           fingerprint: reviewFingerprint(review),
         };
+        if (!isCurrentLaunch()) {
+          return;
+        }
         const reviewKey = modHealthKeys.viewerReview(snapshot.gameId, snapshot.folderPath);
         const previous = queryClient.getQueryData<StoredModViewerExternalReview>(reviewKey);
         queryClient.setQueryData(reviewKey, next);
-        if (previous?.fingerprint !== next.fingerprint) {
+        if (isCurrentLaunch() && previous?.fingerprint !== next.fingerprint) {
           toast.info(
             i18next.t('preview:mod_health.external_review.toast', { count: review.changes.length }),
           );
         }
       } catch (error) {
-        console.warn('[ModHealth] External change review could not be refreshed:', error);
+        if (isCurrentLaunch()) {
+          console.warn('[ModHealth] External change review could not be refreshed:', error);
+        }
       }
     }),
   );

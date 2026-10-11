@@ -2,11 +2,13 @@ use crate::modules::automation::application::hotkeys::HotkeyConfig;
 use crate::modules::automation::application::keyviewer::generator;
 use crate::modules::automation::application::keyviewer::harvester;
 use crate::modules::automation::application::keyviewer::matcher;
+use crate::modules::automation::application::keyviewer::models::KeyViewerPanel;
 use crate::modules::matching::application::deep_matcher::models::types::{
     RuntimeResourceKind, RuntimeTarget,
 };
 use crate::modules::reconciliation::api::ActivationAuthority;
 use crate::modules::system::domain::mod_path::ModFolderPath;
+use crate::modules::workspace::api::is_effectively_enabled_path;
 use crate::shared::errors::AppError;
 use sha2::{Digest, Sha256};
 use sqlx::{QueryBuilder, Row, Sqlite, SqlitePool};
@@ -15,6 +17,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use walkdir::WalkDir;
+
+use super::keyviewer_publication::{
+    entrypoint_uses_generation, generation_resources_match, is_content_generation_id,
+    is_current_emmm_entrypoint, is_legacy_generation_id, manifest_path, published_artifact_matches,
+    read_manifest, select_generation_id, ExpectedKeyViewerResources, KeyViewerManifest,
+    KEYVIEWER_MANIFEST_VERSION, KEYVIEWER_RESOURCE_ROOT,
+};
+
+#[cfg(test)]
+#[path = "runtime_preflight_tests.rs"]
+mod runtime_preflight_tests;
 
 static KEYVIEWER_SYNC_LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     OnceLock::new();
@@ -32,10 +45,7 @@ const KNOWN_LEGACY_KEYVIEWER_SHA256: &str =
     "8741313bbaaae887483c7b3b6a5e7777d23145754f762efc5beaaa6a636c5579";
 const LEGACY_KEYVIEWER_BACKUP_SUFFIX: &str = ".emmm-legacy-backup";
 
-const KEYVIEWER_MANIFEST_FILE: &str = "manifest.json";
 const KEYVIEWER_MIGRATION_JOURNAL_FILE: &str = "duplicate-migration.json";
-const KEYVIEWER_RESOURCE_ROOT: &str = "generations";
-const KEYVIEWER_MANIFEST_VERSION: u8 = 2;
 // A complete per-game composition is required to publish an atomic KeyViewer
 // artifact. Bound the number of warm games rather than the number of mods: a
 // per-game mod cap makes every incremental update degrade to a full rebuild as
@@ -149,6 +159,7 @@ pub enum RuntimeSyncPublication {
     Published,
     Unchanged,
     Skipped,
+    Superseded,
     FailedBeforePublish,
 }
 
@@ -207,6 +218,9 @@ pub struct RuntimeSyncResult {
 }
 
 impl RuntimeSyncResult {
+    pub fn is_superseded(&self) -> bool {
+        self.publication == RuntimeSyncPublication::Superseded
+    }
     /// Preserve a failed sync as an explicit outcome for diagnostics while
     /// allowing mutation/reconcile callers to keep their retry semantics.
     pub fn ensure_success(self) -> Result<Self, AppError> {
@@ -231,6 +245,9 @@ impl RuntimeSyncResult {
     /// includes a manual reload outcome: persistence succeeded, but the user
     /// still needs to reload 3DMigoto before the game can consume the snapshot.
     pub fn diagnostic_message(&self) -> Option<String> {
+        if self.is_superseded() {
+            return Some("Runtime synchronization was superseded by a newer request; pending work is retained".to_string());
+        }
         self.failure.clone().or_else(|| match &self.reload {
             RuntimeReloadOutcome::NeedsManualReload { binding, reason } => {
                 let instruction = binding.as_deref().map_or_else(
@@ -242,15 +259,6 @@ impl RuntimeSyncResult {
             RuntimeReloadOutcome::NotRequired | RuntimeReloadOutcome::ReloadSent { .. } => None,
         })
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct KeyViewerManifest {
-    version: u8,
-    fingerprint: String,
-    /// Kept for compatibility with older manifests; the active resources now
-    /// always live directly under `.emmm_data/generations/`.
-    generation_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -485,19 +493,35 @@ fn path_is_within(path: &Path, root: &Path) -> bool {
     canonical_or_original(path).starts_with(canonical_or_original(root))
 }
 
+fn importer_configuration_entries(
+    importer_root: &Path,
+    configured_mods_root: &Path,
+) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> {
+    let mods_root = canonical_or_original(configured_mods_root);
+    WalkDir::new(importer_root)
+        .follow_links(false)
+        .max_depth(5)
+        .into_iter()
+        .filter_entry(move |entry| {
+            let requires_containment_check = entry.file_type().is_dir()
+                || entry.file_type().is_symlink()
+                || entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("ini"));
+            !requires_containment_check
+                || !canonical_or_original(entry.path()).starts_with(&mods_root)
+        })
+}
+
 fn runtime_preflight_snapshot(
     importer_root: &Path,
     configured_mods_root: &Path,
 ) -> Option<RuntimePreflightSnapshot> {
     let mut files = Vec::new();
-    for entry in WalkDir::new(importer_root)
-        .follow_links(false)
-        .max_depth(5)
-        .into_iter()
-    {
+    for entry in importer_configuration_entries(importer_root, configured_mods_root) {
         let entry = entry.ok()?;
         if !entry.file_type().is_file()
-            || path_is_within(entry.path(), configured_mods_root)
             || !entry
                 .path()
                 .extension()
@@ -532,7 +556,7 @@ fn runtime_preflight_cache_key(
     game_type: crate::modules::games::domain::models::GameType,
 ) -> String {
     format!(
-        "{}|{}|{game_type:?}",
+        "{}|{}|{game_type}",
         crate::shared::path_key::canonical_path_key_for_path(importer_root),
         crate::shared::path_key::canonical_path_key_for_path(configured_mods_root),
     )
@@ -595,11 +619,11 @@ fn read_runtime_preflight_uncached(
     game_type: crate::modules::games::domain::models::GameType,
 ) -> Result<RuntimePreflight, AppError> {
     let expected_namespace = match game_type {
-        crate::modules::games::domain::models::GameType::GIMI => "GIMIv8",
-        crate::modules::games::domain::models::GameType::SRMI => "SRMIv1",
-        crate::modules::games::domain::models::GameType::ZZMI => "ZZMIv1",
-        crate::modules::games::domain::models::GameType::WWMI => "WWMIv1",
-        crate::modules::games::domain::models::GameType::EFMI => {
+        crate::modules::games::domain::models::GameType::Gimi => "GIMIv8",
+        crate::modules::games::domain::models::GameType::Srmi => "SRMIv1",
+        crate::modules::games::domain::models::GameType::Zzmi => "ZZMIv1",
+        crate::modules::games::domain::models::GameType::Wwmi => "WWMIv1",
+        crate::modules::games::domain::models::GameType::Efmi => {
             return Err(AppError::Validation(
                 "RuntimeCapabilitiesUnsupported: EFMI has no KeyViewer renderer profile"
                     .to_string(),
@@ -678,11 +702,7 @@ fn read_runtime_preflight_uncached(
     let mut renderer_available = false;
     let mut callback_slots = HashSet::new();
     let mut inspected_files = 0usize;
-    for entry in WalkDir::new(&importer_root)
-        .follow_links(false)
-        .max_depth(5)
-        .into_iter()
-    {
+    for entry in importer_configuration_entries(&importer_root, &configured_mods_root) {
         let entry = entry.map_err(|error| {
             AppError::Io(format!(
                 "Could not inspect importer configuration under {}: {error}",
@@ -690,7 +710,6 @@ fn read_runtime_preflight_uncached(
             ))
         })?;
         if !entry.file_type().is_file()
-            || path_is_within(entry.path(), &configured_mods_root)
             || !entry
                 .path()
                 .extension()
@@ -791,13 +810,6 @@ struct EnabledRuntimeMod {
     folder_path: ModFolderPath,
 }
 
-fn stored_mod_path_is_enabled(folder_path: &str) -> bool {
-    !folder_path
-        .split(['/', '\\'])
-        .filter(|component| !component.is_empty())
-        .any(crate::modules::workspace::domain::normalizer::is_disabled_folder)
-}
-
 async fn load_enabled_runtime_mods(
     pool: &SqlitePool,
     game_id: &str,
@@ -813,7 +825,7 @@ async fn load_enabled_runtime_mods(
         .filter_map(|row| {
             let id = row.get::<String, _>("id");
             let folder_path = row.get::<String, _>("folder_path");
-            stored_mod_path_is_enabled(&folder_path).then_some(EnabledRuntimeMod {
+            is_effectively_enabled_path(&folder_path).then_some(EnabledRuntimeMod {
                 id,
                 folder_path: ModFolderPath::from_stored(folder_path),
             })
@@ -904,7 +916,7 @@ async fn load_enabled_runtime_mods_for_roots(
         .filter_map(|row| {
             let id = row.get::<String, _>("id");
             let folder_path = row.get::<String, _>("folder_path");
-            stored_mod_path_is_enabled(&folder_path).then_some(EnabledRuntimeMod {
+            is_effectively_enabled_path(&folder_path).then_some(EnabledRuntimeMod {
                 id,
                 folder_path: ModFolderPath::from_stored(folder_path),
             })
@@ -1124,6 +1136,25 @@ async fn prepare_scoped_mod_composition(
         latest_changes.insert(change.mod_id.clone(), change);
     }
     let changed_mods = latest_changes.len();
+    let invalidation_started = std::time::Instant::now();
+    let mut invalidated_paths = Vec::with_capacity(changed_mods.saturating_mul(2));
+    for (index, (mod_id, change)) in latest_changes.iter().enumerate() {
+        if composition_checkpoint_due(index)
+            && !composition_checkpoint(is_current, game_id, "scoped_invalidation", index)?
+        {
+            return Ok(Some(cache_lease.into_prepared(CompositionMode::Scoped, 0)));
+        }
+        if let Some(previous) = cache.mods.get(mod_id) {
+            invalidated_paths.push(previous.folder_path.resolve(mods_root));
+        }
+        invalidated_paths.push(change.folder_path.resolve(mods_root));
+    }
+    harvester::invalidate_cached_mods(invalidated_paths.iter().map(PathBuf::as_path));
+    log::debug!(
+        "RuntimeHarvestInvalidation game_id={game_id} mode=scoped input_paths={} elapsed_us={}",
+        invalidated_paths.len(),
+        invalidation_started.elapsed().as_micros()
+    );
     let mut harvested_mods = 0;
     for (index, (mod_id, change)) in latest_changes.into_iter().enumerate() {
         if !composition_checkpoint(is_current, game_id, "scoped_harvest", index)? {
@@ -1131,11 +1162,7 @@ async fn prepare_scoped_mod_composition(
                 cache_lease.into_prepared(CompositionMode::Scoped, harvested_mods),
             ));
         }
-        if let Some(previous) = cache.mods.remove(&mod_id) {
-            harvester::invalidate_cached_mod(&previous.folder_path.resolve(mods_root));
-        }
-        let absolute_path = change.folder_path.resolve(mods_root);
-        harvester::invalidate_cached_mod(&absolute_path);
+        cache.mods.remove(&mod_id);
         if change.outcome == RuntimeModOutcome::Enabled {
             let harvest = harvest_runtime_mod(mods_root, &change.folder_path, capabilities).await?;
             cache.mods.insert(
@@ -1208,17 +1235,6 @@ async fn prepare_scoped_roots_composition(
             cache_lease.into_prepared(CompositionMode::ScopedRoots, 0),
         ));
     }
-    for (index, mod_id) in affected_ids.into_iter().enumerate() {
-        if !composition_checkpoint(is_current, game_id, "scoped_roots_remove", index)? {
-            return Ok(Some(
-                cache_lease.into_prepared(CompositionMode::ScopedRoots, 0),
-            ));
-        }
-        if let Some(previous) = cache.mods.remove(&mod_id) {
-            harvester::invalidate_cached_mod(&previous.folder_path.resolve(mods_root));
-        }
-    }
-
     let enabled_mods = load_enabled_runtime_mods_for_roots(pool, game_id, &root_keys).await?;
     let harvested_mods = enabled_mods.len();
     if !composition_checkpoint(is_current, game_id, "scoped_roots_load", 0)? {
@@ -1226,16 +1242,50 @@ async fn prepare_scoped_roots_composition(
             cache_lease.into_prepared(CompositionMode::ScopedRoots, 0),
         ));
     }
+    let invalidation_started = std::time::Instant::now();
+    let mut invalidated_paths = Vec::new();
+    for (index, mod_id) in affected_ids.iter().enumerate() {
+        if composition_checkpoint_due(index)
+            && !composition_checkpoint(is_current, game_id, "scoped_roots_invalidation", index)?
+        {
+            return Ok(Some(
+                cache_lease.into_prepared(CompositionMode::ScopedRoots, 0),
+            ));
+        }
+        if let Some(previous) = cache.mods.get(mod_id) {
+            invalidated_paths.push(previous.folder_path.resolve(mods_root));
+        }
+    }
+    for (index, entry) in enabled_mods.iter().enumerate() {
+        if composition_checkpoint_due(index)
+            && !composition_checkpoint(is_current, game_id, "scoped_roots_invalidation", index)?
+        {
+            return Ok(Some(
+                cache_lease.into_prepared(CompositionMode::ScopedRoots, 0),
+            ));
+        }
+        if let Some(previous) = cache.mods.get(&entry.id) {
+            invalidated_paths.push(previous.folder_path.resolve(mods_root));
+        }
+        invalidated_paths.push(entry.folder_path.resolve(mods_root));
+    }
+    harvester::invalidate_cached_mods(invalidated_paths.iter().map(PathBuf::as_path));
+    log::debug!("RuntimeHarvestInvalidation game_id={game_id} mode=scoped_roots input_paths={} elapsed_us={}", invalidated_paths.len(), invalidation_started.elapsed().as_micros());
+    for (index, mod_id) in affected_ids.into_iter().enumerate() {
+        if !composition_checkpoint(is_current, game_id, "scoped_roots_remove", index)? {
+            return Ok(Some(
+                cache_lease.into_prepared(CompositionMode::ScopedRoots, 0),
+            ));
+        }
+        cache.mods.remove(&mod_id);
+    }
     for (index, entry) in enabled_mods.into_iter().enumerate() {
         if !composition_checkpoint(is_current, game_id, "scoped_roots_harvest", index)? {
             return Ok(Some(
                 cache_lease.into_prepared(CompositionMode::ScopedRoots, index),
             ));
         }
-        if let Some(previous) = cache.mods.remove(&entry.id) {
-            harvester::invalidate_cached_mod(&previous.folder_path.resolve(mods_root));
-        }
-        harvester::invalidate_cached_mod(&entry.folder_path.resolve(mods_root));
+        cache.mods.remove(&entry.id);
         let harvest = harvest_runtime_mod(mods_root, &entry.folder_path, capabilities).await?;
         cache.mods.insert(
             entry.id,
@@ -1588,10 +1638,10 @@ fn commit_if_current_sync_revision<T>(
     }
 }
 
-fn superseded_sync_result(cause: OverlaySyncCause) -> RuntimeSyncResult {
+pub(crate) fn superseded_sync_result(cause: OverlaySyncCause) -> RuntimeSyncResult {
     RuntimeSyncResult {
         cause,
-        publication: RuntimeSyncPublication::Skipped,
+        publication: RuntimeSyncPublication::Superseded,
         reload: RuntimeReloadOutcome::NotRequired,
         failure: None,
     }
@@ -1601,7 +1651,9 @@ fn publication_status(result: &RuntimeSyncResult) -> RuntimeSyncPublicationStatu
     match result.publication {
         RuntimeSyncPublication::Published => RuntimeSyncPublicationStatus::Published,
         RuntimeSyncPublication::Unchanged => RuntimeSyncPublicationStatus::Unchanged,
-        RuntimeSyncPublication::Skipped => RuntimeSyncPublicationStatus::Skipped,
+        RuntimeSyncPublication::Skipped | RuntimeSyncPublication::Superseded => {
+            RuntimeSyncPublicationStatus::Skipped
+        }
         RuntimeSyncPublication::FailedBeforePublish => RuntimeSyncPublicationStatus::Failed,
     }
 }
@@ -1698,48 +1750,12 @@ pub fn keyviewer_runtime_diagnostics(
     })
 }
 
-fn manifest_path(emmm_data_dir: &Path) -> PathBuf {
-    emmm_data_dir.join(KEYVIEWER_MANIFEST_FILE)
-}
-
-fn read_manifest(emmm_data_dir: &Path) -> Option<KeyViewerManifest> {
-    let content = std::fs::read_to_string(manifest_path(emmm_data_dir)).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
-fn entrypoint_uses_generation(content: &[u8], generation_id: &str) -> bool {
-    let content = String::from_utf8_lossy(content);
-    let prefix = format!("filename = {KEYVIEWER_RESOURCE_ROOT}/{generation_id}/");
-    content.contains(&format!("{prefix}status/")) || content.contains(&format!("{prefix}keybinds/"))
-}
-
-fn published_artifact_matches(emmm_data_dir: &Path, entrypoint: &Path, fingerprint: &str) -> bool {
-    let Some(manifest) = read_manifest(emmm_data_dir) else {
-        return false;
-    };
-    if manifest.version != KEYVIEWER_MANIFEST_VERSION || manifest.fingerprint != fingerprint {
-        return false;
-    }
-    let Ok(content) = std::fs::read(entrypoint) else {
-        return false;
-    };
-    if !is_current_emmm_entrypoint(&content) {
-        return false;
-    }
-    emmm_data_dir
-        .join(KEYVIEWER_RESOURCE_ROOT)
-        .join(&manifest.generation_id)
-        .is_dir()
-        && entrypoint_uses_generation(&content, &manifest.generation_id)
-}
-
 #[allow(clippy::too_many_arguments)] // These are independent immutable fingerprint inputs.
 fn runtime_input_fingerprint(
     ctx: &PostApplyContext,
     importer_root: &Path,
     preflight: &RuntimePreflight,
-    matches: &[matcher::MatchResult],
-    sources_per_object: &HashMap<String, Vec<generator::SourceKeyBinding>>,
+    panels: &[KeyViewerPanel],
     status: &generator::StatusFields,
     ini_fingerprints: &[String],
     catalog_manifest_checksum: &str,
@@ -1783,16 +1799,17 @@ fn runtime_input_fingerprint(
             .map(|slot| format!("callback={slot}")),
     );
 
-    let mut rendered_matches = matches
+    let mut rendered_matches = panels
         .iter()
-        .map(|entry| format!("match={entry:?}"))
+        .map(|panel| format!("match={:?}", panel.match_result))
         .collect::<Vec<_>>();
     rendered_matches.sort_unstable();
     inputs.extend(rendered_matches);
 
-    let mut rendered_sources = sources_per_object
+    let mut rendered_sources = panels
         .iter()
-        .map(|(name, sources)| format!("sources={name}:{sources:?}"))
+        .enumerate()
+        .map(|(index, panel)| format!("sources={index}:{:?}", panel.sources))
         .collect::<Vec<_>>();
     rendered_sources.sort_unstable();
     inputs.extend(rendered_sources);
@@ -1811,21 +1828,6 @@ fn runtime_input_fingerprint(
         hasher.update(b"\n");
     }
     format!("{:x}", hasher.finalize())
-}
-
-fn catalog_manifest_checksum(app_data_dir: &Path) -> String {
-    let manifest = app_data_dir
-        .join(
-            crate::modules::workspace::application::scanner::master_db::asset_pack::PACK_DIRECTORY,
-        )
-        .join(
-            crate::modules::workspace::application::scanner::master_db::asset_pack::MANIFEST_FILE,
-        );
-    match std::fs::read(&manifest) {
-        Ok(content) => format!("{:x}", Sha256::digest(content)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "missing".to_string(),
-        Err(error) => format!("unreadable:{:?}", error.kind()),
-    }
 }
 
 /// Read only the persisted active preset label for the status banner. Building
@@ -1918,38 +1920,11 @@ fn cleanup_inactive_generation_children(emmm_data_dir: &Path) -> Result<(), AppE
     Ok(())
 }
 
-fn is_content_generation_id(name: &str) -> bool {
-    name.len() == 65
-        && name.starts_with('g')
-        && name[1..]
-            .chars()
-            .all(|character| character.is_ascii_hexdigit())
-}
-
-fn is_legacy_generation_id(name: &str) -> bool {
-    let Some(value) = name.strip_prefix('g') else {
-        return false;
-    };
-    let mut parts = value.split('-');
-    matches!(
-        (parts.next(), parts.next(), parts.next(), parts.next()),
-        (Some(milliseconds), Some(process_id), Some(sequence), None)
-            if milliseconds.parse::<u128>().is_ok()
-                && process_id.parse::<u32>().is_ok()
-                && sequence.parse::<u64>().is_ok()
-    )
-}
-
 /// Keep one published generation on disk. Cleanup is only called after the
 /// game has stopped or the newly published snapshot was successfully reloaded;
 /// a manual-reload result keeps the previous folder until it is safe to remove.
 fn should_cleanup_generations(reload: &RuntimeReloadOutcome, game_stopped: bool) -> bool {
     game_stopped || matches!(reload, RuntimeReloadOutcome::ReloadSent { .. })
-}
-
-fn is_current_emmm_entrypoint(content: &[u8]) -> bool {
-    let content = String::from_utf8_lossy(content).to_ascii_lowercase();
-    content.contains("namespace = emmmv1") && content.contains("emmm-artifact: keyviewer v1")
 }
 
 fn is_known_legacy_entrypoint(content: &[u8]) -> bool {
@@ -2052,6 +2027,26 @@ fn is_disabled_include_path(path: &std::path::Path) -> bool {
     })
 }
 
+fn keyviewer_include_entries(
+    root: &Path,
+) -> impl Iterator<Item = Result<walkdir::DirEntry, walkdir::Error>> {
+    const DISABLED_PREFIX: &[u8] = b"DISABLED";
+    let root_disabled = is_disabled_include_path(root);
+    WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(move |entry| {
+            !root_disabled
+                && (!entry.file_type().is_dir()
+                    || !entry
+                        .file_name()
+                        .to_string_lossy()
+                        .as_bytes()
+                        .get(..DISABLED_PREFIX.len())
+                        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(DISABLED_PREFIX)))
+        })
+}
+
 fn duplicate_keyviewer_entrypoints(
     runtime_include_roots: &[PathBuf],
     primary_mods_root: &Path,
@@ -2061,13 +2056,10 @@ fn duplicate_keyviewer_entrypoints(
     let mut seen_paths = HashSet::new();
     let mut duplicates = Vec::new();
     for root in runtime_include_roots {
-        for entry in WalkDir::new(root)
-            .follow_links(false)
-            .into_iter()
+        for entry in keyviewer_include_entries(root)
             .filter_map(Result::ok)
             .filter(|entry| entry.file_type().is_file())
             .filter(|entry| entry.file_name().eq_ignore_ascii_case("KeyViewer.ini"))
-            .filter(|entry| !is_disabled_include_path(entry.path()))
         {
             let normalized = normalized_windows_path(entry.path());
             if normalized == expected || !seen_paths.insert(normalized) {
@@ -2454,6 +2446,10 @@ async fn run_post_apply_tasks_with_options(
     activation_authority: Option<ActivationAuthority>,
     request: RuntimeSyncRequest,
 ) -> Result<PostApplyPublication, AppError> {
+    if super::readonly_audit::is_active() {
+        log::info!("Read-only audit: runtime artifact publication skipped");
+        return Ok(PostApplyPublication::Skipped);
+    }
     let total_started = std::time::Instant::now();
     let pool = &ctx.pool;
     let game_id = &ctx.game_id;
@@ -2559,8 +2555,7 @@ async fn run_post_apply_tasks_with_options(
 
     // Harvest: one pass per mod for both hashes and keybinds.
     let harvest_started = std::time::Instant::now();
-    let mut occurrence_counts = HashMap::new();
-    let mut hash_to_mod_path = HashMap::new();
+    let mut target_to_mod_path = HashMap::new();
     let mut mod_harvests = HashMap::new();
     let mut effective_ini_fingerprints = Vec::new();
     let harvest_capabilities = harvester::HarvestCapabilities::from_callback_slots(
@@ -2646,9 +2641,8 @@ async fn run_post_apply_tasks_with_options(
         );
 
         for target in &harvest.targets {
-            *occurrence_counts.entry(target.hash.clone()).or_insert(0) += 1;
-            hash_to_mod_path
-                .entry(target.hash.clone())
+            target_to_mod_path
+                .entry(matcher::SentinelIdentity::from(target))
                 .or_insert_with(Vec::new)
                 .push(stored_path.clone());
         }
@@ -2656,17 +2650,28 @@ async fn run_post_apply_tasks_with_options(
     }
     let harvest_ms = harvest_started.elapsed().as_millis();
 
+    let catalog_started = std::time::Instant::now();
     let (entries, catalog_diagnostic, catalog_checksum) = match catalog_app_data_dir(pool).await {
         Ok(catalog_dir) => {
-            let checksum = catalog_manifest_checksum(&catalog_dir);
-            match crate::modules::workspace::application::scanner::master_db::load_catalog_keyviewer_entries(
-            &catalog_dir,
-            game_type as i32,
-        ) {
-            Ok(catalog_entries) => {
-                let has_runtime_targets = !catalog_entries.is_empty();
-                let entries = kv_entries_from_catalog(catalog_entries, &runtime_preflight);
-                let diagnostic = entries.is_empty().then_some(
+            let (catalog_entries, checksum) = tokio::task::spawn_blocking(move || {
+                use crate::modules::workspace::api::scanner::master_db::asset_pack::CatalogPack;
+                match CatalogPack::load(&catalog_dir) {
+                    Ok(pack) => (
+                        pack.keyviewer_entries_for(game_type as i32),
+                        pack.manifest_checksum().to_string(),
+                    ),
+                    Err(error) => (Err(error), "unavailable".to_string()),
+                }
+            })
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!("Runtime catalog worker failed: {error}"))
+            })?;
+            match catalog_entries {
+                Ok(catalog_entries) => {
+                    let has_runtime_targets = !catalog_entries.is_empty();
+                    let entries = kv_entries_from_catalog(catalog_entries, &runtime_preflight);
+                    let diagnostic = entries.is_empty().then_some(
                     if has_runtime_targets {
                         "CallbackUnsupported: catalog targets do not match active checktextureoverride slots"
                             .to_string()
@@ -2675,17 +2680,17 @@ async fn run_post_apply_tasks_with_options(
                             .to_string()
                     },
                 );
-                (entries, diagnostic, checksum)
+                    (entries, diagnostic, checksum)
+                }
+                Err(error) => {
+                    let kind = if error.to_string().contains("not installed") {
+                        "CatalogMissing"
+                    } else {
+                        "CatalogInvalid"
+                    };
+                    (Vec::new(), Some(format!("{kind}: {error}")), checksum)
+                }
             }
-            Err(error) => {
-                let kind = if error.to_string().contains("not installed") {
-                    "CatalogMissing"
-                } else {
-                    "CatalogInvalid"
-                };
-                (Vec::new(), Some(format!("{kind}: {error}")), checksum)
-            }
-        }
         }
         Err(error) => (
             Vec::new(),
@@ -2693,24 +2698,24 @@ async fn run_post_apply_tasks_with_options(
             "unavailable".to_string(),
         ),
     };
+    let catalog_load_ms = catalog_started.elapsed().as_millis();
     if let Some(diagnostic) = catalog_diagnostic.as_deref() {
         log::warn!(
             "[post_apply] {diagnostic}; catalog character labels are unavailable, but eligible mods can use the hash-based fallback"
         );
     }
 
-    // Match
-    let config = matcher::MatchConfig;
-    let active_hashes: HashSet<String> = occurrence_counts.keys().cloned().collect();
-    let mut matches = matcher::match_objects(&entries, &active_hashes, &occurrence_counts, &config);
+    let matching_started = std::time::Instant::now();
+    let active_targets = target_to_mod_path.keys().cloned().collect();
+    let matches = matcher::match_objects(&entries, &active_targets);
 
     // Catalog matches have a verified character identity. Keep their mod paths
     // out of the fallback so one mod cannot render both a character panel and
     // an unverified mod panel for the same harvested evidence.
     let mut catalog_matched_mods = HashSet::new();
     for matched in &matches {
-        for hash in &matched.matched_hashes {
-            if let Some(mod_paths) = hash_to_mod_path.get(hash) {
+        for target in &matched.matched_targets {
+            if let Some(mod_paths) = target_to_mod_path.get(target) {
                 catalog_matched_mods.extend(mod_paths.iter().cloned());
             }
         }
@@ -2722,8 +2727,8 @@ async fn run_post_apply_tasks_with_options(
     // are rendered for it instead of showing unrelated controls.
     let mut matched_objects_per_mod = HashMap::new();
     for matched in &matches {
-        for hash in &matched.matched_hashes {
-            if let Some(mod_paths) = hash_to_mod_path.get(hash) {
+        for target in &matched.matched_targets {
+            if let Some(mod_paths) = target_to_mod_path.get(target) {
                 for mod_path in mod_paths {
                     matched_objects_per_mod
                         .entry(mod_path.clone())
@@ -2733,13 +2738,13 @@ async fn run_post_apply_tasks_with_options(
             }
         }
     }
-    let mut sources_per_object = HashMap::new();
-    for m in &matches {
+    let mut panels = Vec::with_capacity(matches.len());
+    for m in matches {
         let mut object_sources = Vec::new();
         let mut seen_mod_paths = HashSet::new();
 
-        for matched_hash in &m.matched_hashes {
-            if let Some(mod_paths) = hash_to_mod_path.get(matched_hash) {
+        for matched_target in &m.matched_targets {
+            if let Some(mod_paths) = target_to_mod_path.get(matched_target) {
                 for mp in mod_paths {
                     if seen_mod_paths.insert(mp) {
                         if let Some(harvest) = mod_harvests.get(mp) {
@@ -2772,7 +2777,10 @@ async fn run_post_apply_tasks_with_options(
                 }
             }
         }
-        sources_per_object.insert(m.object_name.clone(), object_sources);
+        panels.push(KeyViewerPanel {
+            match_result: m,
+            sources: object_sources,
+        });
     }
 
     // A catalog is enrichment, not a prerequisite. Fallback keeps only
@@ -2808,17 +2816,26 @@ async fn run_post_apply_tasks_with_options(
             .iter()
             .map(|sentinel| sentinel.hash.clone())
             .collect();
-        sources_per_object.insert(panel.name.clone(), panel.sources);
-        matches.push(matcher::MatchResult {
-            object_name: panel.name,
-            object_type: "Mod".to_string(),
-            score: 0.0,
-            matched_hashes,
-            sentinels: panel.sentinels,
-            confidence: matcher::MatchConfidence::Low,
+        let matched_targets = panel
+            .sentinels
+            .iter()
+            .map(matcher::SentinelIdentity::from)
+            .collect();
+        panels.push(KeyViewerPanel {
+            sources: panel.sources,
+            match_result: matcher::MatchResult {
+                object_name: panel.name,
+                object_type: "Mod".to_string(),
+                score: 0.0,
+                matched_hashes,
+                matched_targets,
+                sentinels: panel.sentinels,
+                confidence: matcher::MatchConfidence::Low,
+            },
         });
     }
 
+    let matching_ms = matching_started.elapsed().as_millis();
     let publish_started = std::time::Instant::now();
     if !runtime_sync_request_is_current(
         game_id,
@@ -2869,6 +2886,10 @@ async fn run_post_apply_tasks_with_options(
     let mut status = generator::StatusFields {
         safe_mode: ctx.safe_mode,
         preset_name,
+        keyviewer_enabled: ctx.keyviewer_enabled,
+        reload_binding: generator::discover_reload_key(&importer_root.join("d3dx.ini"))
+            .ok()
+            .map(|config| config.reload_config_key),
     };
 
     // Override with fields from the mutation source if provided
@@ -2882,13 +2903,29 @@ async fn run_post_apply_tasks_with_options(
         &ctx,
         &importer_root,
         &runtime_preflight,
-        &matches,
-        &sources_per_object,
+        &panels,
         &status,
         &effective_ini_fingerprints,
         &catalog_checksum,
     );
-    if !force_publish && published_artifact_matches(&emmm_data_dir, &entrypoint, &fingerprint) {
+    let expected_resources = ExpectedKeyViewerResources {
+        panels: &panels,
+        toggle_key: &ctx.hotkeys.toggle_overlay,
+        keyviewer_enabled: ctx.keyviewer_enabled,
+        status_text: ctx
+            .hotkeys
+            .preset_status_overlay_enabled
+            .then(|| generator::generate_status_text(&status, &ctx.hotkeys)),
+        game_type,
+    };
+    if !force_publish
+        && published_artifact_matches(
+            &emmm_data_dir,
+            &entrypoint,
+            &fingerprint,
+            &expected_resources,
+        )
+    {
         if !runtime_sync_request_is_current(
             game_id,
             expected_sync_revision,
@@ -2897,7 +2934,7 @@ async fn run_post_apply_tasks_with_options(
             return Ok(PostApplyPublication::Skipped);
         }
         log::info!(
-            "[post_apply] KeyViewer inputs unchanged game={game_id} preflight_ms={preflight_ms} harvest_ms={harvest_ms} publish_ms={} total_ms={}",
+            "[post_apply] KeyViewer inputs unchanged game={game_id} preflight_ms={preflight_ms} harvest_ms={harvest_ms} catalog_load_ms={catalog_load_ms} matching_ms={matching_ms} publish_ms={} total_ms={}",
             publish_started.elapsed().as_millis(),
             total_started.elapsed().as_millis(),
         );
@@ -2914,28 +2951,17 @@ async fn run_post_apply_tasks_with_options(
     // Stage one immutable content-addressed generation. The entrypoint is the
     // only runtime pointer and is replaced last, so a crash cannot expose a
     // half-written resource tree or create a no-artifact window.
-    let generation_id = format!("g{fingerprint}");
+    let generation_id = select_generation_id(&emmm_data_dir, &fingerprint, &expected_resources);
     let generations_dir = emmm_data_dir.join(KEYVIEWER_RESOURCE_ROOT);
     let generation_dir = generations_dir.join(&generation_id);
+    let kv_ini_content = expected_resources.entrypoint_text(&generation_id)?;
     let staging_artifacts = generator::create_staging_directory(&generation_dir)?;
-    let resource_root = format!("{KEYVIEWER_RESOURCE_ROOT}/{generation_id}");
-    let kv_ini_content = generator::generate_keyviewer_ini_for_resources_with_options(
-        &matches,
-        &ctx.hotkeys.toggle_overlay,
-        game_type,
-        &resource_root,
-        ctx.keyviewer_enabled,
-        ctx.hotkeys.preset_status_overlay_enabled,
-    )?;
     let staging_keybinds = staging_artifacts.join("keybinds").join("active");
     let staging_status = staging_artifacts.join("status");
     if ctx.keyviewer_enabled {
-        if let Err(write_error) = generator::write_keybind_files(
-            &staging_keybinds,
-            &matches,
-            &sources_per_object,
-            &ctx.hotkeys.toggle_overlay,
-        ) {
+        if let Err(write_error) =
+            generator::write_keybind_files(&staging_keybinds, &panels, &ctx.hotkeys.toggle_overlay)
+        {
             return Err(cleanup_staging_after_error(&staging_artifacts, write_error));
         }
     }
@@ -2955,10 +2981,22 @@ async fn run_post_apply_tasks_with_options(
     })?;
     let previous_manifest = std::fs::read_to_string(manifest_path(&emmm_data_dir)).ok();
     let publish = || -> Result<(), AppError> {
-        if generation_dir.is_dir() {
+        if generation_dir.exists() {
+            if !generation_resources_match(&generation_dir, &expected_resources) {
+                return Err(cleanup_staging_after_error(
+                    &staging_artifacts,
+                    AppError::Validation(
+                        "KeyViewer generation changed during publication; retry synchronization"
+                            .to_string(),
+                    ),
+                ));
+            }
             std::fs::remove_dir_all(&staging_artifacts)?;
         } else if let Err(error) = std::fs::rename(&staging_artifacts, &generation_dir) {
-            return Err(error.into());
+            return Err(cleanup_staging_after_error(
+                &staging_artifacts,
+                error.into(),
+            ));
         }
         let migrated_entrypoints = migrate_duplicate_keyviewer_entrypoints(
             &runtime_preflight.runtime_include_roots,
@@ -3014,7 +3052,7 @@ async fn run_post_apply_tasks_with_options(
     }
 
     log::info!(
-        "[post_apply] Completed game={game_id} preflight_ms={preflight_ms} harvest_ms={harvest_ms} publish_ms={} total_ms={}",
+        "[post_apply] Completed game={game_id} preflight_ms={preflight_ms} harvest_ms={harvest_ms} catalog_load_ms={catalog_load_ms} matching_ms={matching_ms} publish_ms={} total_ms={}",
         publish_started.elapsed().as_millis(),
         total_started.elapsed().as_millis(),
     );
@@ -3125,7 +3163,12 @@ async fn request_overlay_sync_for_game_with_request(
 ) -> Result<RuntimeSyncResult, AppError> {
     let revision = request_sync_revision_with_request(game_id, request)?;
     let lock = sync_lock_for_game(game_id)?;
+    let lock_wait_started = std::time::Instant::now();
     let _guard = lock.lock().await;
+    log::debug!(
+        "RuntimeSync game_id={game_id} revision={revision} game_lock_wait_ms={}",
+        lock_wait_started.elapsed().as_millis()
+    );
     if !is_current_sync_revision(game_id, revision)? {
         return Ok(superseded_sync_result(cause));
     }
@@ -3166,7 +3209,12 @@ pub async fn request_overlay_sync_with_context(
     let game_id = context.game_id.clone();
     let revision = request_sync_revision(&game_id)?;
     let lock = sync_lock_for_game(&game_id)?;
+    let lock_wait_started = std::time::Instant::now();
     let _guard = lock.lock().await;
+    log::debug!(
+        "RuntimeSync game_id={game_id} revision={revision} game_lock_wait_ms={}",
+        lock_wait_started.elapsed().as_millis()
+    );
     if !is_current_sync_revision(&game_id, revision)? {
         return Ok(superseded_sync_result(cause));
     }
@@ -3213,7 +3261,12 @@ async fn request_overlay_sync_for_game_at_revision(
         return Ok(superseded_sync_result(cause));
     };
     let lock = sync_lock_for_game(game_id)?;
+    let lock_wait_started = std::time::Instant::now();
     let _guard = lock.lock().await;
+    log::debug!(
+        "RuntimeSync game_id={game_id} revision={revision} game_lock_wait_ms={}",
+        lock_wait_started.elapsed().as_millis()
+    );
     if !is_current_sync_revision(game_id, revision)? {
         return Ok(superseded_sync_result(cause));
     }
@@ -3333,6 +3386,15 @@ async fn synchronize_overlay_context(
     activation_authority: Option<ActivationAuthority>,
     request: RuntimeSyncRequest,
 ) -> Result<RuntimeSyncResult, AppError> {
+    if super::readonly_audit::is_active() {
+        log::info!("Read-only audit: runtime publication, reload and generation cleanup skipped");
+        return Ok(RuntimeSyncResult {
+            cause,
+            publication: RuntimeSyncPublication::Skipped,
+            reload: RuntimeReloadOutcome::NotRequired,
+            failure: None,
+        });
+    }
     let game_id = context.game_id.clone();
     let emmm_data_dir = context.mods_path.join(".emmm_data");
     let publication_started = std::time::Instant::now();
@@ -3372,14 +3434,26 @@ async fn synchronize_overlay_context(
         }
     };
     let publication_ms = publication_started.elapsed().as_millis();
+    if !runtime_sync_request_is_current(
+        &game_id,
+        expected_sync_revision,
+        activation_authority.as_ref(),
+    )? {
+        return Ok(superseded_sync_result(cause));
+    }
 
-    let reload_started = std::time::Instant::now();
-    let reload = if matches!(
-        publication,
-        RuntimeSyncPublication::Published | RuntimeSyncPublication::Skipped
-    ) && reload_settings
+    let game_stopped = reload_settings
         .as_ref()
-        .is_some_and(|settings| settings.active_game_id.as_deref() == Some(game_id.as_str()))
+        .is_some_and(|settings| game_is_confirmed_stopped(settings, &game_id));
+    let reload_started = std::time::Instant::now();
+    let reload = if !game_stopped
+        && matches!(
+            publication,
+            RuntimeSyncPublication::Published | RuntimeSyncPublication::Skipped
+        )
+        && reload_settings
+            .as_ref()
+            .is_some_and(|settings| settings.active_game_id.as_deref() == Some(game_id.as_str()))
     {
         let settings = reload_settings
             .as_ref()
@@ -3411,11 +3485,19 @@ async fn synchronize_overlay_context(
     };
     let reload_ms = reload_started.elapsed().as_millis();
 
-    let game_stopped = reload_settings
-        .as_ref()
-        .is_some_and(|settings| game_is_confirmed_stopped(settings, &game_id));
     if should_cleanup_generations(&reload, game_stopped) {
-        if let Err(error) = cleanup_generation_siblings(&emmm_data_dir) {
+        let cleanup = || cleanup_generation_siblings(&emmm_data_dir);
+        let cleanup_result = match expected_sync_revision {
+            Some(revision) => commit_if_current_sync_revision(
+                &game_id,
+                revision,
+                activation_authority.as_ref(),
+                cleanup,
+            )
+            .map(|_| ()),
+            None => cleanup(),
+        };
+        if let Err(error) = cleanup_result {
             // Cleanup is intentionally deferred maintenance. It must never
             // turn a valid current snapshot into a failed synchronization.
             log::warn!("KeyViewer generation cleanup was deferred: {error}");
@@ -3445,33 +3527,6 @@ async fn synchronize_overlay_context(
         result.publication,
     );
     Ok(result)
-}
-
-/// Compatibility wrapper for callers that only need the publication attempt.
-pub async fn trigger_overlay_refresh_for_game(
-    pool: &SqlitePool,
-    config: &crate::modules::settings::application::config::ConfigService,
-    game_id: &str,
-) -> Result<(), AppError> {
-    request_overlay_sync_for_game(pool, config, game_id, OverlaySyncCause::SettingsChanged)
-        .await
-        .and_then(RuntimeSyncResult::ensure_success)
-        .map(|_| ())
-}
-
-/// Convenience function to trigger a full overlay artifact regeneration for the active game.
-/// Useful when settings (hotkeys or classification keywords) change without a mod mutation.
-pub async fn trigger_overlay_refresh(
-    pool: &SqlitePool,
-    config: &crate::modules::settings::application::config::ConfigService,
-) -> Result<(), AppError> {
-    let game_id = config
-        .with_settings(|settings| settings.active_game_id.clone())
-        .ok_or_else(|| AppError::Internal("No active game".to_string()))?;
-    request_overlay_sync_for_game(pool, config, &game_id, OverlaySyncCause::SettingsChanged)
-        .await
-        .and_then(RuntimeSyncResult::ensure_success)
-        .map(|_| ())
 }
 
 #[cfg(test)]
@@ -3509,8 +3564,6 @@ mod tests {
     }
 
     fn install_gimi_runtime_catalog(app_data_dir: &Path) {
-        use sha2::Digest;
-
         let catalog = r#"{
             "entries": [{
                 "name": "Arlecchino",
@@ -3528,6 +3581,10 @@ mod tests {
                 }]
             }]
         }"#;
+        install_gimi_catalog_json(app_data_dir, catalog);
+    }
+
+    fn install_gimi_catalog_json(app_data_dir: &Path, catalog: &str) {
         let pack_dir = app_data_dir.join("asset-pack");
         std::fs::create_dir_all(&pack_dir).expect("create fixture catalog directory");
         std::fs::write(pack_dir.join("gimi.json"), catalog).expect("write fixture catalog");
@@ -3615,7 +3672,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: game_id,
                 name: "GIMI",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: &importer_path,
                 mods_path: Some(&mods_path),
             },
@@ -3660,6 +3717,230 @@ mod tests {
             third_ini,
             capabilities: harvester::HarvestCapabilities::from_callback_slots(["vb0"]),
         }
+    }
+
+    async fn overlay_fixture(game_id: &str) -> CompositionFixture {
+        let fixture = composition_fixture(game_id).await;
+        let importer = fixture.mods_root.parent().unwrap();
+        let core = importer.join("Core/GIMI");
+        std::fs::create_dir_all(&core).unwrap();
+        std::fs::write(
+            importer.join("d3dx.ini"),
+            "[Include]\ninclude_recursive = Mods\ninclude = Core/GIMI/main.ini\n",
+        )
+        .unwrap();
+        std::fs::write(
+            core.join("main.ini"),
+            "namespace = GIMIv8\nResourceText = null\nResourceTextParams = null\n[CommandListPrintText]\nchecktextureoverride = vb0\nchecktextureoverride = ib\nchecktextureoverride = ps-t0\n",
+        )
+        .unwrap();
+        fixture
+    }
+
+    fn overlay_context(fixture: &CompositionFixture) -> PostApplyContext {
+        PostApplyContext {
+            pool: fixture.pool.clone(),
+            game_id: fixture.game_id.clone(),
+            mods_path: fixture.mods_root.clone(),
+            hotkeys: HotkeyConfig {
+                preset_status_overlay_enabled: true,
+                ..HotkeyConfig::default()
+            },
+            keyviewer_enabled: true,
+            safe_mode: false,
+            status_fields: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn keyviewer_matches_only_the_observed_catalog_draw_context() {
+        let fixture = overlay_fixture("kv-draw-context").await;
+        std::fs::write(
+            &fixture.first_ini,
+            "[TextureOverrideFirst]\nhash = a1b2c3d4\nib = ResourceIndex\nmatch_first_index = 0\n[KeyGeneric]\nkey = F1\n",
+        )
+        .unwrap();
+        let entries = [0, 100].into_iter().enumerate().map(|(index, first_index)| {
+            serde_json::json!({
+                "name": if index == 0 { "Character A" } else { "Character B" },
+                "object_type": "Character",
+                "runtime_targets": [{
+                    "variant": "Default", "resource_kind": "index_buffer",
+                    "hash": "a1b2c3d4", "slot": "ib", "match_first_index": first_index,
+                    "provenance": { "source_repo": "fixture", "commit": "fixture", "path": "hash.json" }
+                }]
+            })
+        }).collect::<Vec<_>>();
+        install_gimi_catalog_json(
+            fixture._temp.path(),
+            &serde_json::json!({ "entries": entries }).to_string(),
+        );
+        run_post_apply_tasks(overlay_context(&fixture))
+            .await
+            .unwrap();
+        let entrypoint =
+            std::fs::read_to_string(fixture.mods_root.join(".emmm_data/KeyViewer.ini")).unwrap();
+        assert!(entrypoint.contains("TextureOverride_EMMMv1_Character_A_"));
+        assert!(!entrypoint.contains("TextureOverride_EMMMv1_Character_B_"));
+        let text = std::fs::read_to_string(
+            published_generation_dir(&fixture.mods_root).join("keybinds/active/character_000.txt"),
+        )
+        .unwrap();
+        assert!(text.contains("Key: F1"));
+        fixture.pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn keyviewer_keeps_distinct_sources_for_duplicate_panel_names() {
+        for catalog_collision in [false, true] {
+            let fixture = overlay_fixture(&format!("kv-panel-names-{catalog_collision}")).await;
+            let panel_name = if catalog_collision {
+                "Arlecchino"
+            } else {
+                "SharedMod"
+            };
+            if catalog_collision {
+                install_gimi_runtime_catalog(fixture._temp.path());
+                std::fs::write(&fixture.first_ini,
+                    "[TextureOverrideFirstPosition]\nhash = a1b2c3d4\nvb0 = ResourceFirst\n[KeyGeneric]\nkey = F1\n",
+                ).unwrap();
+            }
+            for (index, parent) in ["First", "Second"].into_iter().enumerate() {
+                if catalog_collision && index == 0 {
+                    continue;
+                }
+                let folder_path = format!("{parent}/{panel_name}");
+                let directory = fixture.mods_root.join(&folder_path);
+                std::fs::create_dir_all(&directory).unwrap();
+                std::fs::write(directory.join("mod.ini"), format!(
+                    "[TextureOverrideFixturePosition]\nhash = {:08x}\nvb0 = ResourcePosition\n[KeyGeneric]\nkey = F{}\n",
+                    0x44444444 + index, index + 1,
+                )).unwrap();
+                crate::test_utils::insert_test_mod(
+                    &fixture.pool,
+                    &crate::test_utils::TestModFixture {
+                        id: &format!("{}-shared-{index}", fixture.game_id),
+                        game_id: &fixture.game_id,
+                        object_id: None,
+                        actual_name: panel_name,
+                        folder_path: &folder_path,
+                        status: crate::modules::games::domain::models::ItemStatus::Enabled,
+                        is_safe: true,
+                        object_type: Some("Other"),
+                        mods_path: Some(&fixture.mods_root.to_string_lossy()),
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            run_post_apply_tasks(overlay_context(&fixture))
+                .await
+                .unwrap();
+            let texts = std::fs::read_dir(
+                published_generation_dir(&fixture.mods_root).join("keybinds/active"),
+            )
+            .unwrap()
+            .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
+            .filter(|text| text.starts_with(&format!("{panel_name}\n")))
+            .collect::<Vec<_>>();
+            assert_eq!(texts.len(), 2);
+            assert_eq!(
+                texts.iter().filter(|text| text.contains("Key: F1")).count(),
+                1
+            );
+            assert_eq!(
+                texts.iter().filter(|text| text.contains("Key: F2")).count(),
+                1
+            );
+            fixture.pool.close().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn keyviewer_repairs_missing_and_corrupt_resources_without_changing_inputs() {
+        let fixture = overlay_fixture("kv-resource-repair").await;
+        run_post_apply_tasks(overlay_context(&fixture))
+            .await
+            .unwrap();
+        let entrypoint_path = fixture.mods_root.join(".emmm_data/KeyViewer.ini");
+        let expected_ini = std::fs::read_to_string(&entrypoint_path).unwrap();
+        let existing_generation = published_generation_dir(&fixture.mods_root);
+        std::fs::write(
+            &entrypoint_path,
+            expected_ini.replace("$emmm_kv_detect_000 = 1", "$emmm_kv_detect_000 = 0"),
+        )
+        .unwrap();
+        assert_eq!(
+            run_post_apply_tasks_with_options(
+                overlay_context(&fixture),
+                false,
+                None,
+                None,
+                RuntimeSyncRequest::Full,
+            )
+            .await
+            .unwrap(),
+            PostApplyPublication::Published
+        );
+        assert_eq!(
+            std::fs::read_to_string(&entrypoint_path).unwrap(),
+            expected_ini
+        );
+        assert_eq!(
+            published_generation_dir(&fixture.mods_root),
+            existing_generation
+        );
+        for force_publish in [false, true] {
+            let previous = published_generation_dir(&fixture.mods_root);
+            let manifest_before = read_manifest(&fixture.mods_root.join(".emmm_data")).unwrap();
+            std::fs::remove_file(previous.join("keybinds/active/character_000.txt")).unwrap();
+            std::fs::write(
+                previous.join("keybinds/active/character_001.txt"),
+                "corrupt",
+            )
+            .unwrap();
+            std::fs::remove_file(previous.join("status/runtime_status.txt")).unwrap();
+            let publication = run_post_apply_tasks_with_options(
+                overlay_context(&fixture),
+                force_publish,
+                None,
+                None,
+                RuntimeSyncRequest::Full,
+            )
+            .await
+            .unwrap();
+            assert_eq!(publication, PostApplyPublication::Published);
+            let repaired = published_generation_dir(&fixture.mods_root);
+            assert_ne!(previous, repaired);
+            assert!(repaired.join("keybinds/active/character_000.txt").is_file());
+            assert!(
+                std::fs::read_to_string(repaired.join("keybinds/active/character_001.txt"))
+                    .unwrap()
+                    .contains("No switcher key on this mod")
+            );
+            assert!(repaired.join("status/runtime_status.txt").is_file());
+            assert_eq!(
+                std::fs::read_to_string(previous.join("keybinds/active/character_001.txt"))
+                    .unwrap(),
+                "corrupt"
+            );
+            let manifest_after = read_manifest(&fixture.mods_root.join(".emmm_data")).unwrap();
+            assert_eq!(manifest_before.fingerprint, manifest_after.fingerprint);
+            assert_eq!(
+                run_post_apply_tasks_with_options(
+                    overlay_context(&fixture),
+                    false,
+                    None,
+                    None,
+                    RuntimeSyncRequest::Full,
+                )
+                .await
+                .unwrap(),
+                PostApplyPublication::Unchanged
+            );
+            assert_eq!(repaired, published_generation_dir(&fixture.mods_root));
+        }
+        fixture.pool.close().await;
     }
 
     async fn seed_composition_cache(fixture: &CompositionFixture) -> PreparedModComposition {
@@ -3924,8 +4205,7 @@ mod tests {
         let mut aggregation_samples = Vec::with_capacity(7);
         for _ in 0..7 {
             let started = std::time::Instant::now();
-            let mut occurrence_counts = HashMap::new();
-            let mut hash_to_mod_path = HashMap::new();
+            let mut target_to_mod_path = HashMap::new();
             let mut mod_harvests = HashMap::new();
             let mut fingerprints = Vec::new();
             for contribution in cache.mods.values() {
@@ -3934,20 +4214,14 @@ mod tests {
                     fingerprints.push(format!("{}:{fingerprint}", path.as_stored()));
                 }
                 for target in &contribution.harvest.targets {
-                    *occurrence_counts.entry(target.hash.clone()).or_insert(0) += 1;
-                    hash_to_mod_path
-                        .entry(target.hash.clone())
+                    target_to_mod_path
+                        .entry(matcher::SentinelIdentity::from(target))
                         .or_insert_with(Vec::new)
                         .push(path.clone());
                 }
                 mod_harvests.insert(path.clone(), Arc::clone(&contribution.harvest));
             }
-            std::hint::black_box((
-                occurrence_counts,
-                hash_to_mod_path,
-                mod_harvests,
-                fingerprints,
-            ));
+            std::hint::black_box((target_to_mod_path, mod_harvests, fingerprints));
             aggregation_samples.push(started.elapsed());
         }
 
@@ -4416,7 +4690,7 @@ mod tests {
         assert!(runtime_sync_request_is_current(game_id, Some(newer), None).unwrap());
         assert!(matches!(
             superseded_sync_result(OverlaySyncCause::EffectiveIniChanged).publication,
-            RuntimeSyncPublication::Skipped
+            RuntimeSyncPublication::Superseded
         ));
     }
 
@@ -4640,6 +4914,119 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn superseded_stopped_game_preserves_legacy_resources_without_a_manifest() {
+        let fixture = overlay_fixture("stale-stopped-game-keeps-resources").await;
+        let data = fixture.mods_root.join(".emmm_data");
+        let legacy = data.join("keybinds/active/legacy.txt");
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, "owned legacy resource").unwrap();
+        let old_generation = data.join("generations/gen-123/keep.txt");
+        std::fs::create_dir_all(old_generation.parent().unwrap()).unwrap();
+        std::fs::write(&old_generation, "owned old generation").unwrap();
+        let settings = crate::modules::settings::application::config::AppSettings {
+            active_game_id: Some(fixture.game_id.clone()),
+            games: vec![crate::modules::settings::application::config::GameConfig {
+                id: fixture.game_id.clone(),
+                name: "GIMI".into(),
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
+                instance_path: fixture.mods_root.parent().unwrap().to_path_buf(),
+                mod_path: fixture.mods_root.clone(),
+                ready_to_move_path: None,
+                launch_mode: Default::default(),
+                game_exe: Some(fixture._temp.path().join("never-running-owned-fixture.exe")),
+                loader_exe: None,
+                xxmi_launcher_exe: None,
+                launch_args: None,
+                warnings: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        assert!(game_is_confirmed_stopped(&settings, &fixture.game_id));
+        let older = reserve_overlay_sync_revision(&fixture.game_id).unwrap();
+        reserve_overlay_sync_revision(&fixture.game_id).unwrap();
+        let result = synchronize_overlay_context(
+            overlay_context(&fixture),
+            OverlaySyncCause::Startup,
+            Some(settings),
+            Some(older),
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_superseded());
+        assert_eq!(
+            std::fs::read_to_string(&legacy).unwrap(),
+            "owned legacy resource"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&old_generation).unwrap(),
+            "owned old generation"
+        );
+        fixture.pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn stopped_game_publication_does_not_require_a_manual_reload_binding() {
+        let fixture = overlay_fixture("stopped-game-no-manual-reload").await;
+        let mut settings = crate::modules::settings::application::config::AppSettings {
+            active_game_id: Some(fixture.game_id.clone()),
+            games: vec![crate::modules::settings::application::config::GameConfig {
+                id: fixture.game_id.clone(),
+                name: "GIMI".to_string(),
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
+                instance_path: fixture.mods_root.parent().unwrap().to_path_buf(),
+                mod_path: fixture.mods_root.clone(),
+                ready_to_move_path: None,
+                launch_mode: Default::default(),
+                game_exe: Some(fixture._temp.path().join(format!(
+                    "emmm-stopped-{}.exe",
+                    uuid::Uuid::new_v4().simple()
+                ))),
+                loader_exe: None,
+                xxmi_launcher_exe: None,
+                launch_args: None,
+                warnings: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        assert!(game_is_confirmed_stopped(&settings, &fixture.game_id));
+        let result = synchronize_overlay_context(
+            overlay_context(&fixture),
+            OverlaySyncCause::Startup,
+            Some(settings.clone()),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.publication, RuntimeSyncPublication::Published);
+        assert_eq!(result.reload, RuntimeReloadOutcome::NotRequired);
+        assert!(!result.needs_manual_reload());
+        assert!(result.diagnostic_message().is_none());
+        assert!(fixture.mods_root.join(".emmm_data/KeyViewer.ini").is_file());
+        settings.games[0].game_exe = None;
+        assert!(!game_is_confirmed_stopped(&settings, &fixture.game_id));
+        let unknown_game_result = synchronize_overlay_context(
+            overlay_context(&fixture),
+            OverlaySyncCause::Recovery,
+            Some(settings),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            unknown_game_result.publication,
+            RuntimeSyncPublication::Published
+        );
+        assert!(unknown_game_result.needs_manual_reload());
+        fixture.pool.close().await;
+    }
+
     #[test]
     fn runtime_diagnostics_explain_when_generation_cleanup_is_disabled() {
         let game_id = "runtime-diagnostics-without-executable";
@@ -4647,7 +5034,7 @@ mod tests {
             games: vec![crate::modules::settings::application::config::GameConfig {
                 id: game_id.to_string(),
                 name: "GIMI".to_string(),
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 instance_path: PathBuf::from("C:/Game"),
                 mod_path: PathBuf::from("C:/Game/Mods"),
                 ready_to_move_path: None,
@@ -4699,7 +5086,7 @@ mod tests {
             games: vec![crate::modules::settings::application::config::GameConfig {
                 id: "game".to_string(),
                 name: "GIMI".to_string(),
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 instance_path: PathBuf::from("C:/New"),
                 mod_path: new_mods.clone(),
                 ready_to_move_path: None,
@@ -4750,10 +5137,18 @@ mod tests {
         let generation_id = format!("g{}", "a".repeat(64));
         let generation = emmm_data.join(KEYVIEWER_RESOURCE_ROOT).join(&generation_id);
         std::fs::create_dir_all(generation.join("status")).unwrap();
+        std::fs::write(generation.join("status/runtime_status.txt"), "fixture").unwrap();
+        let resources = ExpectedKeyViewerResources {
+            panels: &[],
+            toggle_key: "F7",
+            keyviewer_enabled: false,
+            status_text: Some("fixture".to_string()),
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
+        };
         let entrypoint = emmm_data.join("KeyViewer.ini");
         std::fs::write(
             &entrypoint,
-            format!("; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\nfilename = generations/{generation_id}/status/runtime_status.txt\n"),
+            resources.entrypoint_text(&generation_id).unwrap(),
         )
         .unwrap();
         let manifest = KeyViewerManifest {
@@ -4767,11 +5162,17 @@ mod tests {
         )
         .unwrap();
 
-        assert!(published_artifact_matches(&emmm_data, &entrypoint, "abc"));
+        assert!(published_artifact_matches(
+            &emmm_data,
+            &entrypoint,
+            "abc",
+            &resources
+        ));
         assert!(!published_artifact_matches(
             &emmm_data,
             &entrypoint,
-            "different"
+            "different",
+            &resources,
         ));
     }
 
@@ -4830,6 +5231,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn readonly_audit_preserves_disabled_keyviewer_entrypoint_and_generations() {
+        let ctx = crate::test_utils::init_test_db().await;
+        let root = TempDir::new().unwrap();
+        let mods = root.path().join("Mods");
+        let data = mods.join(".emmm_data");
+        let stale = data.join("generations.staging.audit/status");
+        std::fs::create_dir_all(&stale).unwrap();
+        let entrypoint = data.join("KeyViewer.ini");
+        let manifest = manifest_path(&data);
+        let entrypoint_bytes = b"; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\n";
+        let manifest_bytes = b"existing manifest must remain unchanged";
+        std::fs::write(&entrypoint, entrypoint_bytes).unwrap();
+        std::fs::write(&manifest, manifest_bytes).unwrap();
+        std::fs::write(stale.join("keep.txt"), b"keep").unwrap();
+        crate::test_utils::insert_test_game(
+            &ctx.pool,
+            &crate::test_utils::TestGameFixture {
+                id: "audit-game",
+                name: "GIMI",
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
+                path: &root.path().to_string_lossy(),
+                mods_path: Some(&mods.to_string_lossy()),
+            },
+        )
+        .await
+        .unwrap();
+        let settings = crate::modules::settings::application::config::AppSettings {
+            active_game_id: Some("audit-game".to_string()),
+            games: vec![crate::modules::settings::application::config::GameConfig {
+                id: "audit-game".to_string(),
+                name: "GIMI".to_string(),
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
+                instance_path: root.path().to_path_buf(),
+                mod_path: mods.clone(),
+                ready_to_move_path: None,
+                launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+                game_exe: Some(root.path().join("missing-game.exe")),
+                loader_exe: None,
+                xxmi_launcher_exe: None,
+                launch_args: None,
+                warnings: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let context = PostApplyContext {
+            pool: ctx.pool,
+            game_id: "audit-game".to_string(),
+            mods_path: mods,
+            hotkeys: HotkeyConfig::default(),
+            keyviewer_enabled: false,
+            safe_mode: false,
+            status_fields: None,
+        };
+        let result = super::super::readonly_audit::with_test_audit(synchronize_overlay_context(
+            context.clone(),
+            OverlaySyncCause::Startup,
+            Some(settings),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        ))
+        .await
+        .unwrap();
+        assert_eq!(result.publication, RuntimeSyncPublication::Skipped);
+        assert_eq!(result.reload, RuntimeReloadOutcome::NotRequired);
+        assert!(result.failure.is_none());
+        super::super::readonly_audit::with_test_audit(run_post_apply_tasks(context))
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&entrypoint).unwrap(), entrypoint_bytes);
+        assert_eq!(std::fs::read(&manifest).unwrap(), manifest_bytes);
+        assert!(stale.join("keep.txt").is_file());
+        assert!(!data.join("KeyViewer.ini.emmm-disabled").exists());
+    }
+
+    #[tokio::test]
     async fn missing_mods_root_is_not_created_by_post_apply() {
         let ctx = crate::test_utils::init_test_db().await;
         let temp = TempDir::new().unwrap();
@@ -4868,7 +5345,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "game-status-only",
                 name: "GIMI",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: &game_path,
                 mods_path: Some(&mods_path),
             },
@@ -4962,7 +5439,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "game-mod-fallback",
                 name: "GIMI",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: &game_path,
                 mods_path: Some(&mods_path),
             },
@@ -5049,7 +5526,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "unclassified-keyviewer",
                 name: "GIMI",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: &importer_path,
                 mods_path: Some(&mods_path),
             },
@@ -5118,7 +5595,7 @@ mod tests {
             std::fs::read_to_string(generation.join("status").join("runtime_status.txt")).unwrap();
         assert_eq!(
             status_text,
-            "Safe: Off [F8] | Preset: None [SHIFT+F8] [CTRL+F8]"
+            "Safe Mode: OFF | Toggle: F8\nCollection: None\nPrevious: SHIFT+F8 | Next: CTRL+F8\nKeyViewer: ON | Toggle: F9\nReload config: manual reload required"
         );
 
         pool.close().await;
@@ -5339,7 +5816,7 @@ mod tests {
         let preflight = read_runtime_preflight(
             temp.path(),
             &mods,
-            crate::modules::games::domain::models::GameType::GIMI,
+            crate::modules::games::domain::models::GameType::Gimi,
         )
         .unwrap();
 
@@ -5374,7 +5851,7 @@ mod tests {
         let preflight = read_runtime_preflight(
             temp.path(),
             &mods,
-            crate::modules::games::domain::models::GameType::GIMI,
+            crate::modules::games::domain::models::GameType::Gimi,
         )
         .unwrap();
 
@@ -5406,13 +5883,13 @@ mod tests {
         let first = read_runtime_preflight(
             temp.path(),
             &mods,
-            crate::modules::games::domain::models::GameType::GIMI,
+            crate::modules::games::domain::models::GameType::Gimi,
         )
         .unwrap();
         let second = read_runtime_preflight(
             temp.path(),
             &mods,
-            crate::modules::games::domain::models::GameType::GIMI,
+            crate::modules::games::domain::models::GameType::Gimi,
         )
         .unwrap();
         assert_eq!(first, second);
@@ -5425,7 +5902,7 @@ mod tests {
         let changed = read_runtime_preflight(
             temp.path(),
             &mods,
-            crate::modules::games::domain::models::GameType::GIMI,
+            crate::modules::games::domain::models::GameType::Gimi,
         )
         .unwrap();
         assert!(!changed.callback_slots.contains("vb0"));
@@ -5449,7 +5926,7 @@ mod tests {
         let error = read_runtime_preflight(
             temp.path(),
             &wrong_mods,
-            crate::modules::games::domain::models::GameType::GIMI,
+            crate::modules::games::domain::models::GameType::Gimi,
         )
         .unwrap_err();
         assert!(error.to_string().contains("RuntimeModsRootMismatch"));

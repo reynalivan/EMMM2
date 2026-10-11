@@ -114,8 +114,15 @@ fn write_info_json(mod_path: &Path, info: &ModInfo) -> Result<(), MetadataError>
     let json = serde_json::to_string_pretty(info)
         .map_err(|error| MetadataError::Validation(format!("Failed to serialize: {error}")))?;
     let info_path = mod_path.join("info.json");
-    crate::platform::fs::atomic_file::atomic_write(&info_path, json.as_bytes())
-        .map_err(|error| MetadataError::Io(error.to_string()))
+    crate::platform::fs::atomic_file::atomic_write(&info_path, json.as_bytes()).map_err(|error| {
+        match error {
+            crate::shared::errors::AppError::FileLock { path, recovery_id } => {
+                MetadataError::FileLock { path, recovery_id }
+            }
+            crate::shared::errors::AppError::PathBusy { path } => MetadataError::PathBusy { path },
+            other => MetadataError::Io(other.to_string()),
+        }
+    })
 }
 
 /// Read and parse info.json from a mod folder.
@@ -124,11 +131,11 @@ fn write_info_json(mod_path: &Path, info: &ModInfo) -> Result<(), MetadataError>
 /// Returns `Err` if the file exists but is malformed.
 pub fn read_info_json(mod_path: &Path) -> Result<Option<ModInfo>, MetadataError> {
     let info_path = mod_path.join("info.json");
-    if !info_path.exists() {
-        return Ok(None);
-    }
-
-    let content = fs::read_to_string(&info_path)?;
+    let content = match fs::read_to_string(&info_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
     let info: ModInfo = serde_json::from_str(&content)
         .map_err(|e| MetadataError::Validation(format!("Failed to parse info.json: {e}")))?;
 

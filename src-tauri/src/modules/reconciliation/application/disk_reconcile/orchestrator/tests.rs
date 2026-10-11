@@ -949,7 +949,7 @@ async fn seed_game_row(pool: &sqlx::SqlitePool, game_id: &str, mods_path: &std::
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: mods_path.parent().unwrap().to_string_lossy().as_ref(),
             mods_path: Some(mods_path.to_string_lossy().as_ref()),
         },

@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 /// Valid image extensions for thumbnail detection.
 /// The one image-extension set for the whole crate. Other modules must
 /// reuse this rather than restating it.
-pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+pub use crate::platform::images::IMAGE_EXTENSIONS;
 
 /// Find the best thumbnail image for a mod folder.
 ///
@@ -28,13 +28,38 @@ pub fn find_thumbnail(mod_path: &Path) -> Option<PathBuf> {
         return None;
     }
 
-    // Priority 1: Check root for "preview.*"
-    if let Some(preview) = find_preview_in_root(mod_path) {
-        return Some(preview);
-    }
+    list_preview_images(mod_path)
+        .into_iter()
+        .min_by(|left, right| {
+            thumbnail_priority(mod_path, left)
+                .cmp(&thumbnail_priority(mod_path, right))
+                .then_with(|| left.cmp(right))
+        })
+}
 
-    // Priority 2: Any image within depth 3
-    find_image_recursive(mod_path, 3)
+fn thumbnail_priority(root: &Path, path: &Path) -> (u8, u8) {
+    let stem = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_lowercase();
+    if path.parent() != Some(root) || !stem.starts_with("preview") {
+        return (2, 0);
+    }
+    let weight = match path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_lowercase()
+        .as_str()
+    {
+        "png" => 0,
+        "jpg" | "jpeg" => 1,
+        "webp" => 2,
+        "gif" => 3,
+        _ => 4,
+    };
+    (u8::from(stem != "preview_custom"), weight)
 }
 
 /// List preview images for gallery rendering with deterministic ordering.
@@ -44,6 +69,27 @@ pub fn find_thumbnail(mod_path: &Path) -> Option<PathBuf> {
 /// 2. other `preview*` in root
 /// 3. fallback to all images up to depth 3 (if no root `preview*` exists)
 pub fn list_preview_images(mod_path: &Path) -> Vec<PathBuf> {
+    let entries = match crate::platform::images::preview_visibility::apply_visibility(
+        mod_path,
+        list_all_preview_images(mod_path),
+    ) {
+        Ok(entries) => entries,
+        Err(error) => {
+            log::warn!(
+                "Could not read preview visibility for {}: {error}",
+                mod_path.display()
+            );
+            return Vec::new();
+        }
+    };
+    entries
+        .into_iter()
+        .filter(|entry| !entry.is_hidden)
+        .map(|entry| entry.path)
+        .collect()
+}
+
+pub fn list_all_preview_images(mod_path: &Path) -> Vec<PathBuf> {
     if !mod_path.exists() || !mod_path.is_dir() {
         return Vec::new();
     }
@@ -93,78 +139,6 @@ pub fn list_preview_images(mod_path: &Path) -> Vec<PathBuf> {
         .collect();
     fallback.sort();
     fallback
-}
-
-/// Search root directory for files starting with "preview".
-fn find_preview_in_root(mod_path: &Path) -> Option<PathBuf> {
-    let entries: Vec<PathBuf> = std::fs::read_dir(mod_path)
-        .ok()?
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file())
-        .collect();
-
-    fn ext_weight(path: &Path) -> usize {
-        match path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase()
-            .as_str()
-        {
-            "png" => 0,
-            "jpg" | "jpeg" => 1,
-            "webp" => 2,
-            "gif" => 3,
-            _ => 99,
-        }
-    }
-
-    let mut custom_cands = Vec::new();
-    let mut other_cands = Vec::new();
-
-    for path in &entries {
-        let Some(stem) = path.file_stem().map(|s| s.to_string_lossy().to_lowercase()) else {
-            continue;
-        };
-        let Some(ext) = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase())
-        else {
-            continue;
-        };
-
-        if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
-            if stem == "preview_custom" {
-                custom_cands.push(path.clone());
-            } else if stem.starts_with("preview") {
-                other_cands.push(path.clone());
-            }
-        }
-    }
-
-    custom_cands.sort_by_key(|p| ext_weight(p));
-    other_cands.sort_by_key(|p| ext_weight(p));
-
-    custom_cands
-        .into_iter()
-        .next()
-        .or_else(|| other_cands.into_iter().next())
-}
-
-/// Search recursively up to max_depth for any image file.
-fn find_image_recursive(mod_path: &Path, max_depth: usize) -> Option<PathBuf> {
-    let mut images: Vec<PathBuf> = WalkDir::new(mod_path)
-        .max_depth(max_depth)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .map(|e| e.into_path())
-        .filter(|path| path.is_file() && is_image_file(path))
-        .collect();
-    images.sort();
-    images.into_iter().next()
 }
 
 /// Check if a file has an image extension.

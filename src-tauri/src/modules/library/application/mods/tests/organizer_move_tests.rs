@@ -16,9 +16,20 @@ fn normalized_path(path: &str) -> String {
 }
 
 fn prepared_move(source: &Path, target: &Path) -> PreparedOrganizerMove {
+    let destination = target.parent().unwrap();
+    let anchor = destination.ancestors().find(|path| path.is_dir()).unwrap();
+    let (target_namespace_proof, target_scope_path) =
+        capture_move_destination_scope(source.parent().unwrap(), destination).unwrap();
     PreparedOrganizerMove {
-        target_anchor: target.parent().unwrap().to_path_buf(),
-        target_proof: FilesystemIdentityProof::capture(target.parent().unwrap()).unwrap(),
+        namespace_proof: crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+            source.parent().unwrap(),
+            &[source.to_path_buf()],
+        )
+        .unwrap(),
+        target_namespace_proof,
+        target_scope_path,
+        target_anchor: anchor.to_path_buf(),
+        target_proof: FilesystemIdentityProof::capture(anchor).unwrap(),
         renames: vec![PreparedOrganizerRename {
             source_proof: FilesystemIdentityProof::capture(source).unwrap(),
             old_path: source.to_path_buf(),
@@ -29,25 +40,317 @@ fn prepared_move(source: &Path, target: &Path) -> PreparedOrganizerMove {
         }],
         primary_results: vec!["target".into()],
         target_base_path: target.parent().unwrap().to_path_buf(),
-        target_base_requires_creation: false,
+        target_base_requires_creation: !destination.exists(),
     }
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn organizer_missing_destination_does_not_adopt_a_raced_ancestor_junction() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    let source = root.join("Source");
+    let outside = fixture.path().join("Outside");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(source.join("mesh.buf"), b"owned source").unwrap();
+    let prepared = prepared_move(&source, &root.join("Group/Target/Source"));
+    create_junction(&root.join("Group"), &outside);
+
+    assert!(execute_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .is_err());
+    assert_eq!(
+        std::fs::read(source.join("mesh.buf")).unwrap(),
+        b"owned source"
+    );
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn organizer_missing_destination_does_not_adopt_a_raced_directory() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    let source = root.join("Source");
+    let destination = root.join("Target");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("mesh.buf"), b"owned source").unwrap();
+    let prepared = prepared_move(&source, &destination.join("Source"));
+    std::fs::create_dir(&destination).unwrap();
+    std::fs::write(destination.join("external.txt"), b"external target").unwrap();
+
+    assert!(execute_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .is_err());
+    assert_eq!(
+        std::fs::read(source.join("mesh.buf")).unwrap(),
+        b"owned source"
+    );
+    assert_eq!(
+        std::fs::read(destination.join("external.txt")).unwrap(),
+        b"external target"
+    );
+    assert!(!destination.join("Source").exists());
+}
+
+#[tokio::test]
+async fn organizer_creates_owned_nested_destinations_and_preserves_source_identity() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    let source = root.join("Source");
+    let target = root.join("Group/Target/Source");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("mesh.buf"), b"owned source").unwrap();
+    let identity = FilesystemIdentityProof::capture(&source).unwrap();
+    let prepared = prepared_move(&source, &target);
+
+    execute_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .unwrap();
+    identity.validate(&target).unwrap();
+    assert_eq!(
+        std::fs::read(target.join("mesh.buf")).unwrap(),
+        b"owned source"
+    );
+    assert!(!source.exists());
+}
+
+#[tokio::test]
+async fn organizer_only_enable_preserves_each_sibling_parent_when_moving_to_a_container() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    let source = root.join("Source");
+    let target = root.join("Target/Container/Source");
+    let sibling = root.join("Target/Sibling");
+    let disabled_sibling = root.join("Target/DISABLED Sibling");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::create_dir(&sibling).unwrap();
+    std::fs::write(source.join("mesh.buf"), b"selected source").unwrap();
+    std::fs::write(sibling.join("mesh.buf"), b"owned sibling").unwrap();
+    let sibling_proof = FilesystemIdentityProof::capture(&sibling).unwrap();
+    let mut prepared = prepared_move(&source, &target);
+    prepared.namespace_proof = crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+        &root,
+        &[source.clone(), sibling.clone()],
+    )
+    .unwrap();
+    prepared.renames.push(PreparedOrganizerRename {
+        source_proof: sibling_proof.clone(),
+        old_path: sibling.clone(),
+        new_path: disabled_sibling.clone(),
+        old_rel: "Target/Sibling".into(),
+        new_rel: "Target/DISABLED Sibling".into(),
+        target_object_id: "object".into(),
+    });
+
+    execute_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read(target.join("mesh.buf")).unwrap(),
+        b"selected source"
+    );
+    assert_eq!(
+        std::fs::read(disabled_sibling.join("mesh.buf")).unwrap(),
+        b"owned sibling"
+    );
+    sibling_proof.validate(&disabled_sibling).unwrap();
+    assert!(!target.parent().unwrap().join("DISABLED Sibling").exists());
+    assert!(!source.exists());
+    assert!(!sibling.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn organizer_retained_created_destination_rejects_reparenting_before_retry() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    let source = root.join("Source");
+    let destination = root.join("Group/Target");
+    let outside = fixture.path().join("Outside");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(source.join("mesh.buf"), b"owned source").unwrap();
+    let prepared = prepared_move(&source, &destination.join("Source"));
+    let pins = std::sync::Arc::new(pin_organizer_destination(&prepared).unwrap());
+    let identity = FilesystemIdentityProof::capture(&destination).unwrap();
+    let moved = outside.join("Target");
+    std::fs::rename(&destination, &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, &destination).unwrap();
+
+    let result = rename_organizer_step(
+        &prepared,
+        &prepared.renames[0],
+        &identity,
+        Some(pins),
+        false,
+        &mut crate::platform::fs::retry::RetryBudget::default(),
+    )
+    .await;
+    assert!(result.is_err());
+    assert_eq!(
+        std::fs::read(source.join("mesh.buf")).unwrap(),
+        b"owned source"
+    );
+    assert_eq!(std::fs::read_dir(&moved).unwrap().count(), 0);
+}
+
 #[test]
-fn organizer_move_does_not_overwrite_a_destination_created_after_preparation() {
+fn organizer_destination_rejects_a_retained_folder_under_a_replaced_ancestor() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    let parent = root.join("Target");
+    let destination = parent.join("Container");
+    std::fs::create_dir_all(&destination).unwrap();
+    let identity = FilesystemIdentityProof::capture(&destination).unwrap();
+    let (proof, scope) = capture_move_destination_scope(&root, &destination).unwrap();
+    let parked = fixture.path().join("ParkedTarget");
+    std::fs::rename(&parent, &parked).unwrap();
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::rename(parked.join("Container"), &destination).unwrap();
+
+    identity.validate(&destination).unwrap();
+    assert!(proof.validate_paths(&[scope]).is_err());
+}
+
+#[cfg(windows)]
+fn create_junction(link: &Path, target: &Path) {
+    use std::os::windows::process::CommandExt;
+    let result = std::process::Command::new("cmd.exe")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .creation_flags(0x08000000)
+        .output()
+        .expect("create owned junction");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn organizer_preparation_rejects_an_outside_destination_junction() {
+    let fixture = TempDir::new().unwrap();
+    let mods_root = fixture.path().join("Mods");
+    let object_root = mods_root.join("Target");
+    let outside = fixture.path().join("Outside");
+    std::fs::create_dir_all(&object_root).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    create_junction(&object_root.join("Linked"), &outside);
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let root_text = mods_root.to_string_lossy().to_string();
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "junction-game",
+            name: "Junction",
+            game_type: GameType::Gimi,
+            path: &root_text,
+            mods_path: Some(&root_text),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "junction-target",
+            game_id: "junction-game",
+            name: "Target",
+            folder_path: "Target",
+            object_type: "Other",
+        },
+    )
+    .await
+    .unwrap();
+
+    let prepared = prepare_move_mods_to_object(
+        &pool,
+        MoveModsToObjectParams {
+            game_id: "junction-game",
+            folder_paths: &[],
+            target_object_id: "junction-target",
+            target_subpath: Some("Linked"),
+            status: None,
+        },
+    )
+    .await;
+
+    assert!(matches!(prepared, Err(AppError::Security(_))));
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn organizer_target_discovery_does_not_follow_junctions() {
+    let fixture = TempDir::new().unwrap();
+    let mods_root = fixture.path().join("Mods");
+    let object_root = mods_root.join("Target");
+    let outside = fixture.path().join("Outside");
+    std::fs::create_dir_all(object_root.join("Container")).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    create_junction(&object_root.join("Linked"), &outside);
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let root_text = mods_root.to_string_lossy().to_string();
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "target-game",
+            name: "Targets",
+            game_type: GameType::Gimi,
+            path: &root_text,
+            mods_path: Some(&root_text),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "target-object",
+            game_id: "target-game",
+            name: "Target",
+            folder_path: "Target",
+            object_type: "Other",
+        },
+    )
+    .await
+    .unwrap();
+
+    let targets = crate::modules::library::application::mods::organizer_targets::list_move_targets_for_object_service(
+        &pool, "target-game", "target-object",
+    ).await.unwrap();
+
+    assert_eq!(targets.len(), 2);
+    assert!(targets
+        .iter()
+        .any(|target| target.target_subpath.as_deref() == Some("Container")));
+    assert!(!targets
+        .iter()
+        .any(|target| target.target_subpath.as_deref() == Some("Linked")));
+}
+
+#[tokio::test]
+async fn organizer_move_does_not_overwrite_a_destination_created_after_preparation() {
     let root = TempDir::new().unwrap();
     let source = root.path().join("source");
     let target = root.path().join("target");
     std::fs::create_dir(&source).unwrap();
     let prepared = prepared_move(&source, &target);
     std::fs::create_dir(&target).unwrap();
-    assert!(execute_prepared_move(&WatcherState::new(), &prepared).is_err());
+    assert!(execute_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .is_err());
     assert!(source.is_dir());
     assert!(target.is_dir());
 }
 
-#[test]
-fn organizer_move_rejects_a_replaced_source_after_preparation() {
+#[tokio::test]
+async fn organizer_move_rejects_a_replaced_source_after_preparation() {
     let root = TempDir::new().unwrap();
     let source = root.path().join("source");
     let target = root.path().join("target");
@@ -55,22 +358,28 @@ fn organizer_move_rejects_a_replaced_source_after_preparation() {
     let prepared = prepared_move(&source, &target);
     std::fs::rename(&source, root.path().join("original")).unwrap();
     std::fs::create_dir(&source).unwrap();
-    assert!(execute_prepared_move(&WatcherState::new(), &prepared).is_err());
+    assert!(execute_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .is_err());
     assert!(source.is_dir());
     assert!(!target.exists());
 }
 
-#[test]
-fn organizer_rollback_rejects_a_replaced_destination() {
+#[tokio::test]
+async fn organizer_rollback_rejects_a_replaced_destination() {
     let root = TempDir::new().unwrap();
     let source = root.path().join("source");
     let target = root.path().join("target");
     std::fs::create_dir(&source).unwrap();
     let prepared = prepared_move(&source, &target);
-    execute_prepared_move(&WatcherState::new(), &prepared).unwrap();
+    execute_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .unwrap();
     std::fs::rename(&target, root.path().join("original")).unwrap();
     std::fs::create_dir(&target).unwrap();
-    assert!(rollback_prepared_move(&WatcherState::new(), &prepared).is_err());
+    assert!(rollback_prepared_move(&WatcherState::new(), &prepared)
+        .await
+        .is_err());
     assert!(target.is_dir());
     assert!(!source.exists());
 }
@@ -96,7 +405,7 @@ async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_
         &TestGameFixture {
             id: "game",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: &mods_root_text,
             mods_path: Some(&mods_root_text),
         },
@@ -167,7 +476,7 @@ async fn organizer_move_leaves_projection_and_collection_reference_for_terminal_
             games: vec![GameConfig {
                 id: "game".to_string(),
                 name: "Game".to_string(),
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 instance_path: PathBuf::from(mods_root),
                 mod_path: PathBuf::from(mods_root),
                 ready_to_move_path: None,

@@ -15,7 +15,7 @@ async fn test_whitelist_pairs() {
     let game = GameRow {
         id: "g1".into(),
         name: "Game 1".into(),
-        game_type: crate::modules::games::domain::models::GameType::GIMI,
+        game_type: crate::modules::games::domain::models::GameType::Gimi,
         path: "C:\\Game1".into(),
         mods_path: Some("C:\\Mods".into()),
         ready_to_move_path: None,
@@ -89,7 +89,7 @@ async fn test_update_group_status() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/",
             mods_path: Some("/Mods"),
         },
@@ -156,7 +156,7 @@ async fn completed_report_round_trips_per_game() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/game",
             mods_path: Some("/game/Mods"),
         },
@@ -225,10 +225,60 @@ async fn completed_report_round_trips_per_game() {
 
     assert_eq!(loaded.scan_id, report.scan_id);
     assert_eq!(loaded.root_path, report.root_path);
+    assert!(load_pending_group(&pool, "g1", "scan-g1:group-1")
+        .await
+        .unwrap()
+        .is_some());
     assert_eq!(
         serde_json::to_value(loaded.groups).unwrap(),
         serde_json::to_value(report.groups).unwrap()
     );
+
+    sqlx::query("UPDATE games SET mods_path = ? WHERE id = ?")
+        .bind("/game/DISABLED Mods")
+        .bind("g1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        load_latest_completed_report(&pool, "g1")
+            .await
+            .unwrap()
+            .is_none(),
+        "enabled and DISABLED roots are distinct physical locations"
+    );
+    assert!(load_pending_group(&pool, "g1", "scan-g1:group-1")
+        .await
+        .unwrap()
+        .is_none());
+
+    sqlx::query("UPDATE games SET mods_path = ? WHERE id = ?")
+        .bind("/game")
+        .bind("g1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        load_latest_completed_report(&pool, "g1")
+            .await
+            .unwrap()
+            .is_none(),
+        "a report from a previous Mods root must not be shown for the new root"
+    );
+    assert!(
+        load_pending_group(&pool, "g1", "scan-g1:group-1")
+            .await
+            .unwrap()
+            .is_none(),
+        "a stale group must not remain available to the resolver"
+    );
+
+    sqlx::query("UPDATE games SET mods_path = ? WHERE id = ?")
+        .bind("/game/Mods")
+        .bind("g1")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     update_group_status(&pool, "scan-g1:group-1", "resolved", true)
         .await

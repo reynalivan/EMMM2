@@ -1,4 +1,5 @@
-/// Every object's `(matched_entry_key, custom_skins)` pair that carries both.
+/// Every object for one game type's `(matched_entry_key, custom_skins)` pair
+/// that carries both.
 ///
 /// Feeds the MasterDB loader, which folds the user's own aliases into the
 /// bundled entries so the matcher can see them. Returns the raw JSON: parsing
@@ -6,14 +7,19 @@
 /// the same way the listing query drops it.
 pub async fn get_user_alias_blobs(
     pool: &sqlx::SqlitePool,
+    game_type: i32,
 ) -> Result<Vec<(String, String)>, sqlx::Error> {
     use sqlx::Row;
     let rows = sqlx::query(
-        "SELECT matched_entry_key, custom_skins FROM objects
-         WHERE matched_entry_key IS NOT NULL
-           AND custom_skins IS NOT NULL
-           AND json_valid(custom_skins) = 1",
+        "SELECT o.matched_entry_key, o.custom_skins
+         FROM objects o
+         JOIN games g ON g.id = o.game_id
+         WHERE g.game_type = ?
+           AND o.matched_entry_key IS NOT NULL
+           AND o.custom_skins IS NOT NULL
+           AND json_valid(o.custom_skins) = 1",
     )
+    .bind(game_type)
     .fetch_all(pool)
     .await?;
 

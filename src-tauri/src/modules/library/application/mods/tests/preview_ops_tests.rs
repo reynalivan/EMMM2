@@ -1,4 +1,31 @@
 use super::*;
+
+fn visible_preview_images(mod_root: &std::path::Path) -> Result<Vec<String>, AppError> {
+    Ok(list_mod_preview_images_with_visibility_inner(mod_root)?
+        .into_iter()
+        .filter(|image| !image.is_hidden)
+        .map(|image| image.path)
+        .collect())
+}
+
+#[test]
+fn regression_hidden_fallback_remains_restorable_after_preview_import() {
+    let temp = tempfile::tempdir().unwrap();
+    let asset = temp.path().join("texture.png");
+    std::fs::write(&asset, b"asset").unwrap();
+    remove_mod_preview_image_inner(temp.path(), asset.to_str().unwrap()).unwrap();
+    std::fs::write(temp.path().join("preview_imported.webp"), b"preview").unwrap();
+    let gallery = list_mod_preview_images_with_visibility_inner(temp.path()).unwrap();
+    assert!(gallery
+        .iter()
+        .any(|entry| entry.path.ends_with("texture.png") && entry.is_hidden));
+    set_mod_preview_image_hidden_inner(temp.path(), asset.to_str().unwrap(), false).unwrap();
+    let gallery = list_mod_preview_images_with_visibility_inner(temp.path()).unwrap();
+    assert!(gallery
+        .iter()
+        .any(|entry| entry.path.ends_with("texture.png") && !entry.is_hidden));
+    assert_eq!(std::fs::read(asset).unwrap(), b"asset");
+}
 use crate::platform::fs::operation_lock::OperationLock;
 use std::fs;
 use std::time::{Duration, Instant};
@@ -55,7 +82,7 @@ fn details_command_bridge_smoke() {
     assert!(updated.contains("$swapvar = 1"));
     assert!(mod_dir.join("config.ini.bak").exists());
 
-    let images = list_mod_preview_images_inner(&mod_dir).unwrap();
+    let images = visible_preview_images(&mod_dir).unwrap();
     assert_eq!(images.len(), 1);
     assert!(images[0].ends_with("preview_custom.png"));
 
@@ -149,6 +176,20 @@ fn details_command_reads_and_writes_nested_ini() {
 }
 
 #[test]
+fn normalize_thumbnail_rejects_images_that_exceed_the_dimension_limit() {
+    use image::{DynamicImage, ImageFormat};
+    use std::io::Cursor;
+
+    let image = DynamicImage::new_rgba8(2_049, 1);
+    let mut encoded = Vec::new();
+    image
+        .write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
+        .unwrap();
+
+    assert!(normalize_thumbnail_png(&encoded).is_err());
+}
+
+#[test]
 fn details_command_reads_all_ini_documents_with_relative_filenames() {
     let tmp = TempDir::new().unwrap();
     let mod_dir = tmp.path().join("ModA");
@@ -178,11 +219,13 @@ fn details_command_remove_and_clear_preview_images() {
 
     let target = mod_dir.join("preview_custom.png");
     remove_mod_preview_image_inner(&mod_dir, &target.to_string_lossy()).unwrap();
-    assert!(!target.exists());
+    assert!(target.exists());
+    assert_eq!(visible_preview_images(&mod_dir).unwrap().len(), 1);
 
     let cleared = clear_mod_preview_images_inner(&mod_dir).unwrap();
     assert_eq!(cleared.len(), 1);
-    assert!(!mod_dir.join("preview_custom_1.png").exists());
+    assert!(mod_dir.join("preview_custom_1.png").exists());
+    assert!(visible_preview_images(&mod_dir).unwrap().is_empty());
 }
 
 // Covers: TC-19-010 (Scan depth to 3 subfolders)
@@ -213,7 +256,7 @@ fn details_command_list_preview_images_scan_depth() {
     fs::create_dir(&d3).unwrap();
     fs::write(d3.join("v4.png"), "img").unwrap();
 
-    let list = list_mod_preview_images_inner(&mod_dir).unwrap();
+    let list = visible_preview_images(&mod_dir).unwrap();
 
     let paths: Vec<String> = list;
 

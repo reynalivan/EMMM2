@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ModInfoUpdate } from '@/entities/game-object';
-import { detailsKeys } from '@/entities/mod';
+import { detailsKeys, thumbnailKeys } from '@/entities/mod';
 import { commands, sparse } from '../../../shared/api/tauri/bindings';
 import { useAppStore } from '@/app/store';
 import { publishQueryInvalidations, publishQueryScopes } from '@/shared/lib/queryRefresh';
@@ -39,6 +39,7 @@ export interface WriteModIniInput {
 }
 
 export interface SavePreviewImageInput {
+  gameId: string;
   folderPath: string;
   objectName: string;
   imageData: number[];
@@ -87,18 +88,6 @@ function publishIniRuntimeRefresh(queryClient: QueryClient): void {
   void publishQueryScopes(queryClient, ['workspaceViewModel', 'collectionRuntime', 'conflicts']);
 }
 
-export function useModInfo(folderPath?: string | null) {
-  const normalizedPath = normalizeFolderPath(folderPath);
-  const gameId = useActiveGameId();
-
-  return useQuery({
-    queryKey: detailsKeys.modInfo(normalizedPath ?? ''),
-    queryFn: () => commands.readModInfo(gameId, normalizedPath ?? ''),
-    enabled: !!normalizedPath && !!gameId,
-    staleTime: 10_000,
-  });
-}
-
 export function useModIniDocuments(folderPath?: string | null) {
   const normalizedPath = normalizeFolderPath(folderPath);
   const gameId = useActiveGameId();
@@ -117,7 +106,7 @@ export function usePreviewImages(folderPath?: string | null) {
 
   return useQuery({
     queryKey: detailsKeys.previewImages(normalizedPath ?? ''),
-    queryFn: () => commands.listModPreviewImages(gameId, normalizedPath ?? ''),
+    queryFn: () => commands.listModPreviewImagesWithVisibility(gameId, normalizedPath ?? ''),
     enabled: !!normalizedPath && !!gameId,
     staleTime: 10_000,
   });
@@ -145,12 +134,20 @@ export function useWriteModIni() {
 }
 
 export function useSavePreviewImage() {
-  const gameId = useActiveGameId();
   const invalidate = useDetailsInvalidator();
   return useMutation({
     mutationFn: (input: SavePreviewImageInput) =>
-      commands.saveModPreviewImage(gameId, input.folderPath, input.objectName, input.imageData),
-    onSuccess: (_result, input) => invalidate([detailsKeys.previewImages(input.folderPath)]),
+      commands.saveModPreviewImage(
+        input.gameId,
+        input.folderPath,
+        input.objectName,
+        input.imageData,
+      ),
+    onSuccess: (_result, input) =>
+      invalidate([
+        detailsKeys.previewImages(input.folderPath),
+        thumbnailKeys.folder(input.folderPath, input.gameId),
+      ]),
   });
 }
 
@@ -160,7 +157,11 @@ export function useRemovePreviewImage() {
   return useMutation({
     mutationFn: (input: RemovePreviewImageInput) =>
       commands.removeModPreviewImage(gameId, input.folderPath, input.imagePath),
-    onSuccess: (_result, input) => invalidate([detailsKeys.previewImages(input.folderPath)]),
+    onSuccess: (_result, input) =>
+      invalidate([
+        detailsKeys.previewImages(input.folderPath),
+        thumbnailKeys.folder(input.folderPath, gameId),
+      ]),
   });
 }
 
@@ -170,7 +171,25 @@ export function useClearPreviewImages() {
   return useMutation({
     mutationFn: (input: ClearPreviewImagesInput) =>
       commands.clearModPreviewImages(gameId, input.folderPath),
-    onSuccess: (_result, input) => invalidate([detailsKeys.previewImages(input.folderPath)]),
+    onSuccess: (_result, input) =>
+      invalidate([
+        detailsKeys.previewImages(input.folderPath),
+        thumbnailKeys.folder(input.folderPath, gameId),
+      ]),
+  });
+}
+
+export function useRestorePreviewImage() {
+  const gameId = useActiveGameId();
+  const invalidate = useDetailsInvalidator();
+  return useMutation({
+    mutationFn: (input: RemovePreviewImageInput) =>
+      commands.setModPreviewImageHidden(gameId, input.folderPath, input.imagePath, false),
+    onSuccess: (_result, input) =>
+      invalidate([
+        detailsKeys.previewImages(input.folderPath),
+        thumbnailKeys.folder(input.folderPath, gameId),
+      ]),
   });
 }
 

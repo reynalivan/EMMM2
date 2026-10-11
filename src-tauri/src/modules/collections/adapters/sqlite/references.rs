@@ -131,22 +131,24 @@ pub async fn stage_object_reference(
     conn: &mut SqliteConnection,
     game_id: &str,
     old_ref_key: &str,
+    legacy_old_ref: &str,
     staged_ref_key: &str,
 ) -> Result<Vec<(String, String)>, CollectionError> {
     let references = sqlx::query_as(
         r#"SELECT c.id, c.name
            FROM collection_objects co
            JOIN collections c ON c.id = co.collection_id
-           WHERE c.game_id = ? AND co.object_ref_key = ?"#,
+           WHERE c.game_id = ? AND (co.object_ref_key = ? OR co.object_ref_key = ?)"#,
     )
     .bind(game_id)
     .bind(old_ref_key)
+    .bind(legacy_old_ref)
     .fetch_all(&mut *conn)
     .await?;
     sqlx::query(
         r#"UPDATE collection_objects
            SET object_ref_key = ?
-           WHERE object_ref_key = ?
+           WHERE (object_ref_key = ? OR object_ref_key = ?)
              AND EXISTS (
                  SELECT 1 FROM collections c
                  WHERE c.id = collection_objects.collection_id AND c.game_id = ?
@@ -154,6 +156,7 @@ pub async fn stage_object_reference(
     )
     .bind(staged_ref_key)
     .bind(old_ref_key)
+    .bind(legacy_old_ref)
     .bind(game_id)
     .execute(&mut *conn)
     .await?;
@@ -445,6 +448,7 @@ pub async fn rewrite_object_references(
     conn: &mut SqliteConnection,
     game_id: &str,
     old_ref_key: &str,
+    legacy_old_ref: &str,
     new_ref_key: &str,
     new_display_name: &str,
 ) -> Result<Vec<(String, String)>, CollectionError> {
@@ -452,16 +456,17 @@ pub async fn rewrite_object_references(
         r#"SELECT c.id, c.name
            FROM collection_objects co
            JOIN collections c ON c.id = co.collection_id
-           WHERE c.game_id = ? AND co.object_ref_key = ?"#,
+           WHERE c.game_id = ? AND (co.object_ref_key = ? OR co.object_ref_key = ?)"#,
     )
     .bind(game_id)
     .bind(old_ref_key)
+    .bind(legacy_old_ref)
     .fetch_all(&mut *conn)
     .await?;
     sqlx::query(
         r#"UPDATE collection_objects
            SET object_ref_key = ?, object_display_name = ?
-           WHERE object_ref_key = ?
+           WHERE (object_ref_key = ? OR object_ref_key = ?)
              AND EXISTS (
                  SELECT 1 FROM collections c
                  WHERE c.id = collection_objects.collection_id AND c.game_id = ?
@@ -470,6 +475,7 @@ pub async fn rewrite_object_references(
     .bind(new_ref_key)
     .bind(new_display_name)
     .bind(old_ref_key)
+    .bind(legacy_old_ref)
     .bind(game_id)
     .execute(&mut *conn)
     .await?;

@@ -22,7 +22,7 @@ vi.mock('@/app/store', () => ({
   useAppStore: (selector: (value: typeof state) => unknown) => selector(state),
 }));
 
-vi.mock('./useFolderMutations', () => ({
+vi.mock('@/features/mod-runtime', () => ({
   useActiveConflicts: () => ({ data: [] }),
 }));
 

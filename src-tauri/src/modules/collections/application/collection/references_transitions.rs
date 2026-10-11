@@ -38,9 +38,14 @@ pub(crate) async fn stage_identity_path_transitions_tx(
             ".emmm-reconcile-collection-object-stage-{}",
             uuid::Uuid::new_v4()
         );
-        for (id, name) in
-            collection::stage_object_reference(&mut *conn, game_id, &old_ref_key, &staged_ref_key)
-                .await?
+        for (id, name) in collection::stage_object_reference(
+            &mut *conn,
+            game_id,
+            &old_ref_key,
+            &rewrite.from,
+            &staged_ref_key,
+        )
+        .await?
         {
             affected.insert(id, name);
         }

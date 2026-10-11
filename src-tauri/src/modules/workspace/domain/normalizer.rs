@@ -95,6 +95,15 @@ pub fn is_disabled_folder(name: &str) -> bool {
     DISABLED_DETECT_RE.is_match(name)
 }
 
+/// A terminal folder can retain enabled DB status under a disabled ancestor.
+/// Stored paths accept both Windows and normalized separators, including legacy rows.
+pub(crate) fn is_effectively_enabled_path(folder_path: &str) -> bool {
+    !folder_path
+        .split(['/', '\\'])
+        .filter(|component| !component.is_empty())
+        .any(is_disabled_folder)
+}
+
 /// Common noise words to strip from names before matching.
 const NOISE_SKIPWORDS: &[&str] = &[
     "mod", "mods", "skin", "fix", "update", "ver", "version", "v", "by", "disabled",

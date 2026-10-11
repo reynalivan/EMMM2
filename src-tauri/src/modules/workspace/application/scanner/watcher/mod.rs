@@ -10,22 +10,31 @@
 //!
 //! # Covers: EC-2.06 (Watcher Suppression), TC-2.4-02
 
+use crate::modules::workspace::adapters::notify::identity_cache::WatcherIdentityCache;
 use crate::shared::errors::ScannerError;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache};
+use notify_debouncer_full::{new_debouncer_opt, DebounceEventResult, Debouncer};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+mod activation_snapshot;
 mod event_filter;
 mod events;
+mod registration;
 mod suppressor;
 
+pub(crate) use activation_snapshot::onboarding_snapshot_requires_repair;
+#[cfg(test)]
+use event_filter::is_runtime_config_path;
+#[cfg(test)]
 pub(crate) use event_filter::{should_keep_event_path, should_keep_structural_event_path};
+use event_filter::{DirectoryFact, EventPolicy, WatcherCoverage};
 pub use events::{ModWatchEvent, WatchEventPayload};
+pub(crate) use registration::register_watcher_candidate;
 pub(crate) use suppressor::ExpectedRenameEcho;
 pub use suppressor::{PathSuppressionGuard, SuppressionGuard, WatcherSession, WatcherSuppressor};
 
@@ -37,8 +46,11 @@ const WATCH_EVENT_OVERFLOW_ERROR: &str =
     "Watcher event buffer overflowed; a full disk reconcile is required";
 const WATCH_BACKEND_RESCAN_REQUIRED: &str =
     "Watcher backend reported lost events; a full disk reconcile is required";
+#[cfg(windows)]
+const WATCH_IDENTITY_CACHE_FAILED: &str =
+    "Watcher directory identities could not be maintained; retry indexing to verify disk state";
 
-pub type ModWatcher = Debouncer<RecommendedWatcher, RecommendedCache>;
+pub type ModWatcher = Debouncer<RecommendedWatcher, WatcherIdentityCache>;
 pub(crate) type WatchObservation =
     Arc<dyn Fn(&[std::path::PathBuf], Option<&EventKind>, bool) + Send + Sync>;
 
@@ -49,7 +61,11 @@ pub struct WatchEventReceiver {
 }
 
 impl WatchEventReceiver {
-    async fn recv(&mut self) -> Option<ModWatchEvent> {
+    pub(crate) fn is_closed(&self) -> bool {
+        self.receiver.is_closed()
+    }
+
+    pub(crate) async fn recv(&mut self) -> Option<ModWatchEvent> {
         if let Some(event) = self.pending.take() {
             return Some(event);
         }
@@ -62,7 +78,9 @@ impl WatchEventReceiver {
         Some(event)
     }
 
-    fn try_recv(&mut self) -> Result<ModWatchEvent, tokio::sync::mpsc::error::TryRecvError> {
+    pub(crate) fn try_recv(
+        &mut self,
+    ) -> Result<ModWatchEvent, tokio::sync::mpsc::error::TryRecvError> {
         if let Some(event) = self.pending.take() {
             return Ok(event);
         }
@@ -70,6 +88,19 @@ impl WatchEventReceiver {
             return Ok(ModWatchEvent::Error(WATCH_EVENT_OVERFLOW_ERROR.to_string()));
         }
         self.receiver.try_recv()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_channel() -> (tokio::sync::mpsc::Sender<ModWatchEvent>, Self) {
+        let (sender, receiver) = tokio::sync::mpsc::channel(WATCH_EVENT_BUFFER_CAPACITY);
+        (
+            sender,
+            Self {
+                receiver,
+                overflowed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                pending: None,
+            },
+        )
     }
 }
 
@@ -85,12 +116,18 @@ pub struct WatcherState {
 }
 
 struct InactiveWatcher {
-    root_key: String,
-    root_identity: Option<String>,
-    runtime_config_key: Option<String>,
+    binding: suppressor::WatcherBinding,
     session: WatcherSession,
     watcher: ModWatcher,
     receiver: WatchEventReceiver,
+}
+
+impl InactiveWatcher {
+    fn matches_binding(&self, evidence: &suppressor::WatcherBinding) -> bool {
+        self.binding.matches_coverage(evidence)
+            && self.session.matches_binding_evidence(evidence)
+            && !self.receiver.is_closed()
+    }
 }
 
 impl WatcherState {
@@ -129,9 +166,19 @@ impl WatcherState {
         *current = Some(session.clone());
     }
 
-    pub fn invalidate_session(&self) {
-        self.session_generation.fetch_add(1, Ordering::AcqRel);
+    pub(crate) fn publish_registered_session(&self, session: &WatcherSession) -> bool {
         let mut current = crate::shared::sync::lock(&self.current_session);
+        if !self.registration_generation_is_current(session) {
+            return false;
+        }
+        self.suppressor.begin_session(session);
+        *current = Some(session.clone());
+        true
+    }
+
+    pub fn invalidate_session(&self) {
+        let mut current = crate::shared::sync::lock(&self.current_session);
+        self.session_generation.fetch_add(1, Ordering::AcqRel);
         if let Some(session) = current.take() {
             self.suppressor.invalidate_session(&session);
         }
@@ -139,6 +186,10 @@ impl WatcherState {
 
     pub fn is_current_session(&self, session: &WatcherSession) -> bool {
         crate::shared::sync::lock(&self.current_session).as_ref() == Some(session)
+    }
+
+    pub(crate) fn registration_generation_is_current(&self, session: &WatcherSession) -> bool {
+        self.session_generation.load(Ordering::Acquire) == session.generation()
     }
 
     pub(crate) fn current_session_for_root(&self, root: &Path) -> Option<WatcherSession> {
@@ -177,19 +228,21 @@ impl WatcherState {
         root: &Path,
         runtime_config_path: Option<&Path>,
     ) -> Option<u64> {
-        let root_key = crate::shared::path_key::exact_location_key_for_path(root);
-        let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
-        let runtime_config_key =
-            runtime_config_path.map(crate::shared::path_key::exact_location_key_for_path);
+        self.inactive_session_for_coverage(game_id, root, runtime_config_path)
+            .map(|session| session.generation())
+    }
+
+    pub(crate) fn inactive_session_for_coverage(
+        &self,
+        game_id: &str,
+        root: &Path,
+        runtime_config_path: Option<&Path>,
+    ) -> Option<WatcherSession> {
+        let evidence = suppressor::WatcherBinding::capture(root, runtime_config_path);
         crate::shared::sync::lock(&self.inactive_watchers)
             .get(game_id)
-            .filter(|watcher| {
-                root_identity.is_some()
-                    && watcher.root_key == root_key
-                    && watcher.root_identity == root_identity
-                    && watcher.runtime_config_key == runtime_config_key
-            })
-            .map(|watcher| watcher.session.generation())
+            .filter(|watcher| watcher.matches_binding(&evidence))
+            .map(|watcher| watcher.session.clone())
     }
 
     pub(crate) fn install_inactive_watcher(
@@ -204,10 +257,7 @@ impl WatcherState {
         crate::shared::sync::lock(&self.inactive_watchers).insert(
             game_id,
             InactiveWatcher {
-                root_key: crate::shared::path_key::exact_location_key_for_path(root),
-                root_identity: crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root),
-                runtime_config_key: runtime_config_path
-                    .map(crate::shared::path_key::exact_location_key_for_path),
+                binding: suppressor::WatcherBinding::capture(root, runtime_config_path),
                 session,
                 watcher,
                 receiver,
@@ -221,17 +271,12 @@ impl WatcherState {
         root: &Path,
         runtime_config_path: Option<&Path>,
     ) -> Option<(WatcherSession, ModWatcher, WatchEventReceiver)> {
-        let root_key = crate::shared::path_key::exact_location_key_for_path(root);
-        let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
-        let runtime_config_key =
-            runtime_config_path.map(crate::shared::path_key::exact_location_key_for_path);
+        let evidence = suppressor::WatcherBinding::capture(root, runtime_config_path);
         let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
-        if watchers.get(game_id).is_none_or(|watcher| {
-            root_identity.is_none()
-                || watcher.root_key != root_key
-                || watcher.root_identity != root_identity
-                || watcher.runtime_config_key != runtime_config_key
-        }) {
+        if watchers
+            .get(game_id)
+            .is_none_or(|watcher| !watcher.matches_binding(&evidence))
+        {
             return None;
         }
         let watcher = watchers.remove(game_id)?;
@@ -244,17 +289,11 @@ impl WatcherState {
         root: &Path,
         runtime_config_path: Option<&Path>,
     ) -> bool {
-        let root_key = crate::shared::path_key::exact_location_key_for_path(root);
-        let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(root);
-        let runtime_config_key =
-            runtime_config_path.map(crate::shared::path_key::exact_location_key_for_path);
+        let evidence = suppressor::WatcherBinding::capture(root, runtime_config_path);
         let mut watchers = crate::shared::sync::lock(&self.inactive_watchers);
-        let mismatched = watchers.get(game_id).is_some_and(|watcher| {
-            root_identity.is_none()
-                || watcher.root_key != root_key
-                || watcher.root_identity != root_identity
-                || watcher.runtime_config_key != runtime_config_key
-        });
+        let mismatched = watchers
+            .get(game_id)
+            .is_some_and(|watcher| !watcher.matches_binding(&evidence));
         if mismatched {
             watchers.remove(game_id);
         }
@@ -270,46 +309,22 @@ impl Default for WatcherState {
 
 // ── Event classification ──────────────────────────────────────────────
 
-/// A rename side that survives filtering and suppression.
-fn is_runtime_config_path(path: &Path, runtime_config_path: Option<&Path>) -> bool {
-    runtime_config_path.is_some_and(|expected| {
-        let (Ok(path), Ok(expected)) = (
-            crate::shared::path_key::physical_namespace_path(path),
-            crate::shared::path_key::physical_namespace_path(expected),
-        ) else {
-            return false;
-        };
-        path.to_string_lossy()
-            .eq_ignore_ascii_case(&expected.to_string_lossy())
-    })
-}
-
-fn keep_side(
-    path: &Path,
-    watcher_path: &Path,
-    runtime_config_path: Option<&Path>,
-    suppressor: &WatcherSuppressor,
-) -> bool {
-    (should_keep_event_path(path, watcher_path)
-        || is_runtime_config_path(path, runtime_config_path))
-        && !suppressor.is_path_suppressed(path)
-}
-
-fn keep_structural_side(
-    path: &Path,
-    watcher_path: &Path,
-    runtime_config_path: Option<&Path>,
-    suppressor: &WatcherSuppressor,
-) -> bool {
-    (should_keep_structural_event_path(path, watcher_path)
-        || is_runtime_config_path(path, runtime_config_path))
-        && !suppressor.is_path_suppressed(path)
-}
-
+#[cfg(test)]
 fn classify_event_with_runtime_config(
     event: &Event,
     watcher_path: &Path,
     runtime_config_path: Option<&Path>,
+    suppressor: &WatcherSuppressor,
+    session: &WatcherSession,
+    send: &impl Fn(ModWatchEvent),
+) {
+    let policy = WatcherCoverage::new(watcher_path, runtime_config_path).policy(event);
+    classify_event_with_policy(event, &policy, suppressor, session, send);
+}
+
+fn classify_event_with_policy(
+    event: &Event,
+    policy: &EventPolicy,
     suppressor: &WatcherSuppressor,
     session: &WatcherSession,
     send: &impl Fn(ModWatchEvent),
@@ -335,6 +350,19 @@ fn classify_event_with_runtime_config(
     }
 
     let path_str = |p: &Path| p.to_string_lossy().to_string();
+    let keep_structural = |index: usize| {
+        policy.endpoints[index].structural && !suppressor.is_path_suppressed(&event.paths[index])
+    };
+    let keep_content = |index: usize| {
+        let path = &event.paths[index];
+        let endpoint = policy.endpoints[index];
+        !suppressor.is_path_suppressed(path)
+            && endpoint.keeps_content(
+                endpoint
+                    .needs_directory_fact
+                    .then(|| DirectoryFact::capture(path)),
+            )
+    };
 
     match event.kind {
         // Stitched rename: paths = [from, to]. Judge each side on its own —
@@ -344,10 +372,7 @@ fn classify_event_with_runtime_config(
         {
             let from = &event.paths[0];
             let to = &event.paths[1];
-            match (
-                keep_structural_side(from, watcher_path, runtime_config_path, suppressor),
-                keep_structural_side(to, watcher_path, runtime_config_path, suppressor),
-            ) {
+            match (keep_structural(0), keep_structural(1)) {
                 (true, true) => send(ModWatchEvent::Renamed {
                     from: path_str(from),
                     to: path_str(to),
@@ -360,15 +385,15 @@ fn classify_event_with_runtime_config(
 
         // Unstitched halves (the counterpart never arrived in the window).
         EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
-            for p in &event.paths {
-                if keep_structural_side(p, watcher_path, runtime_config_path, suppressor) {
+            for (index, p) in event.paths.iter().enumerate() {
+                if keep_structural(index) {
                     send(ModWatchEvent::Removed(path_str(p)));
                 }
             }
         }
         EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
-            for p in &event.paths {
-                if keep_structural_side(p, watcher_path, runtime_config_path, suppressor) {
+            for (index, p) in event.paths.iter().enumerate() {
+                if keep_structural(index) {
                     send(ModWatchEvent::Created(path_str(p)));
                 }
             }
@@ -378,9 +403,7 @@ fn classify_event_with_runtime_config(
         // while lifecycle waits forever for another filesystem event. Request
         // a full reconcile unless this path is intentionally suppressed.
         EventKind::Modify(ModifyKind::Name(RenameMode::Any)) => {
-            if event.paths.iter().any(|path| {
-                keep_structural_side(path, watcher_path, runtime_config_path, suppressor)
-            }) {
+            if (0..event.paths.len()).any(keep_structural) {
                 send(ModWatchEvent::Error(
                     WATCH_BACKEND_RESCAN_REQUIRED.to_string(),
                 ));
@@ -389,22 +412,22 @@ fn classify_event_with_runtime_config(
         EventKind::Modify(ModifyKind::Name(_)) => {}
 
         EventKind::Create(_) => {
-            for p in &event.paths {
-                if keep_side(p, watcher_path, runtime_config_path, suppressor) {
+            for (index, p) in event.paths.iter().enumerate() {
+                if keep_content(index) {
                     send(ModWatchEvent::Created(path_str(p)));
                 }
             }
         }
         EventKind::Modify(_) => {
-            for p in &event.paths {
-                if keep_side(p, watcher_path, runtime_config_path, suppressor) {
+            for (index, p) in event.paths.iter().enumerate() {
+                if keep_content(index) {
                     send(ModWatchEvent::Modified(path_str(p)));
                 }
             }
         }
         EventKind::Remove(_) => {
-            for p in &event.paths {
-                if keep_structural_side(p, watcher_path, runtime_config_path, suppressor) {
+            for (index, p) in event.paths.iter().enumerate() {
+                if keep_structural(index) {
                     send(ModWatchEvent::Removed(path_str(p)));
                 }
             }
@@ -475,11 +498,38 @@ pub(crate) fn watch_mod_directory_with_runtime_config_and_observer(
     let (tx, rx) = tokio::sync::mpsc::channel(WATCH_EVENT_BUFFER_CAPACITY);
     let overflowed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let callback_overflowed = overflowed.clone();
-    let watcher_path = path.to_path_buf();
     let runtime_config_path = runtime_config_path.map(Path::to_path_buf);
-    let callback_runtime_config_path = runtime_config_path.clone();
+    let coverage = WatcherCoverage::new(path, runtime_config_path.as_deref());
 
-    let mut debouncer = notify_debouncer_full::new_debouncer(
+    let runtime_parent = runtime_config_path
+        .as_deref()
+        .filter(|config| !config.starts_with(path))
+        .map(|config| {
+            config.parent().ok_or_else(|| {
+                ScannerError::Validation("Runtime config has no parent directory".to_string())
+            })
+        })
+        .transpose()?
+        .filter(|parent| parent.is_dir());
+    #[cfg(windows)]
+    let cache = WatcherIdentityCache::for_roots(
+        std::iter::once((path.to_path_buf(), RecursiveMode::Recursive))
+            .chain(runtime_parent.map(|parent| (parent.to_path_buf(), RecursiveMode::NonRecursive)))
+            .collect(),
+        session.identity_cache_validity(),
+    );
+    #[cfg(not(windows))]
+    let cache = WatcherIdentityCache::new();
+    #[cfg(windows)]
+    let diagnostics = cache.diagnostics();
+    #[cfg(windows)]
+    let callback_diagnostics = Arc::clone(&diagnostics);
+
+    #[cfg(windows)]
+    let registration_started = std::time::Instant::now();
+    #[cfg(windows)]
+    let watcher_generation = session.generation();
+    let mut debouncer = new_debouncer_opt::<_, RecommendedWatcher, WatcherIdentityCache>(
         DEBOUNCE_TIMEOUT,
         None,
         move |result: DebounceEventResult| {
@@ -488,9 +538,22 @@ pub(crate) fn watch_mod_directory_with_runtime_config_and_observer(
                     callback_overflowed.store(true, Ordering::Release);
                 }
             };
+            #[cfg(windows)]
+            if let Some(kind) = callback_diagnostics.take_failure() {
+                if let Some(observer) = observer.as_ref() {
+                    observer(&[], None, true);
+                }
+                send(ModWatchEvent::Error(format!(
+                    "{WATCH_IDENTITY_CACHE_FAILED}: {kind:?}"
+                )));
+            }
             match result {
                 Ok(events) => {
                     for debounced in &events {
+                        let policy = coverage.policy(&debounced.event);
+                        if !policy.authority_relevant {
+                            continue;
+                        }
                         if let Some(observer) = observer.as_ref() {
                             observer(
                                 &debounced.event.paths,
@@ -498,14 +561,20 @@ pub(crate) fn watch_mod_directory_with_runtime_config_and_observer(
                                 debounced.event.need_rescan(),
                             );
                         }
-                        classify_event_with_runtime_config(
+                        let emitted = std::cell::Cell::new(false);
+                        classify_event_with_policy(
                             &debounced.event,
-                            &watcher_path,
-                            callback_runtime_config_path.as_deref(),
+                            &policy,
                             &is_suppressed,
                             &session,
-                            &send,
+                            &|event| {
+                                emitted.set(true);
+                                send(event);
+                            },
                         );
+                        if !emitted.get() {
+                            session.request_work();
+                        }
                     }
                 }
                 Err(errors) => {
@@ -518,21 +587,26 @@ pub(crate) fn watch_mod_directory_with_runtime_config_and_observer(
                 }
             }
         },
+        cache,
+        notify::Config::default(),
     )?;
 
     debouncer.watch(path, RecursiveMode::Recursive)?;
-    if let Some(runtime_config_path) = runtime_config_path {
-        if !runtime_config_path.starts_with(path) {
-            let parent = runtime_config_path.parent().ok_or_else(|| {
-                ScannerError::Validation(format!(
-                    "Runtime config has no parent directory: {}",
-                    runtime_config_path.display()
-                ))
-            })?;
-            if parent.is_dir() {
-                debouncer.watch(parent, RecursiveMode::NonRecursive)?;
-            }
+    if let Some(parent) = runtime_parent {
+        debouncer.watch(parent, RecursiveMode::NonRecursive)?;
+    }
+    #[cfg(windows)]
+    {
+        if let Some(kind) = diagnostics.failure() {
+            return Err(ScannerError::Validation(format!(
+                "{WATCH_IDENTITY_CACHE_FAILED}: {kind:?}"
+            )));
         }
+        log::info!("watcher registration session={} policy=directories elapsed_ms={} directory_id_reads={} entries_visited={} cached_directories={}",
+            watcher_generation, registration_started.elapsed().as_millis(),
+            diagnostics.directory_id_reads.load(Ordering::Relaxed),
+            diagnostics.entries_visited.load(Ordering::Relaxed),
+            diagnostics.cached_directories.load(Ordering::Relaxed));
     }
 
     Ok((

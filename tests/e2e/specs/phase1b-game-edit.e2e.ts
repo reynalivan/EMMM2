@@ -72,6 +72,9 @@ describe('Fase 1b — Game Edit / Remove / Auto-detect', () => {
     const xxmiRoot = path.join(os.tmpdir(), `EMMM_XXMI_${Date.now()}`);
     const instance = await createMockGame('AutoDetect', path.join(xxmiRoot, 'GIMI'));
     try {
+      const launcherPath = path.join(xxmiRoot, 'Resources', 'Bin', 'XXMI Launcher.exe');
+      await fs.mkdir(path.dirname(launcherPath), { recursive: true });
+      await fs.writeFile(launcherPath, 'fake-exe');
       const detected = await invokeInApp<GameConfig[]>('auto_detect_games', {
         rootPath: xxmiRoot,
       });

@@ -16,6 +16,14 @@ struct OnboardingSnapshotTelemetryState {
     preparation_started_at: Option<Instant>,
 }
 
+fn onboarding_progress_run_id(session_id: &str, game_id: &str, attempt: u64) -> String {
+    if attempt == 0 {
+        format!("{session_id}:{game_id}")
+    } else {
+        format!("{session_id}:{game_id}:{attempt}")
+    }
+}
+
 fn snapshot_rechecking_progress(
     session_id: String,
     game_id: String,
@@ -250,6 +258,50 @@ pub async fn inspect_game_mods_directory(
     .await
 }
 
+#[derive(Clone, Copy)]
+enum SourceWatcherScope {
+    Active,
+    Inactive,
+}
+
+#[derive(Clone, Copy)]
+struct SourceWatcherTarget<'a> {
+    game_id: &'a str,
+    mods_root: &'a Path,
+    runtime_config_path: &'a Path,
+}
+
+async fn restart_source_watcher<'a, F, Fut>(
+    watcher: &crate::modules::workspace::api::scanner::watcher::WatcherState,
+    selected_game_id: Option<&str>,
+    target: SourceWatcherTarget<'a>,
+    install: F,
+) -> Result<(), crate::shared::errors::ScannerError>
+where
+    F: FnOnce(SourceWatcherScope, SourceWatcherTarget<'a>) -> Fut,
+    Fut: std::future::Future<Output = Result<(), crate::shared::errors::ScannerError>>,
+{
+    let scope = if selected_game_id == Some(target.game_id) {
+        SourceWatcherScope::Active
+    } else {
+        SourceWatcherScope::Inactive
+    };
+    match scope {
+        SourceWatcherScope::Active => {
+            watcher.invalidate_session();
+            *crate::shared::sync::lock(&watcher.watcher) = None;
+        }
+        SourceWatcherScope::Inactive => {
+            watcher.discard_inactive_watcher_unless_coverage(
+                target.game_id,
+                target.mods_root,
+                Some(target.runtime_config_path),
+            );
+        }
+    }
+    install(scope, target).await
+}
+
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
@@ -289,19 +341,58 @@ pub async fn apply_game_mods_directory(
         operation_guard.op_guard(),
     )
     .await?;
-    watcher.invalidate_session();
-    *crate::shared::sync::lock(&watcher.watcher) = None;
     drop(operation_guard);
     drop(game_guard);
-    if let Err(error) =
-        crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
-            app.clone(),
-            watcher.inner(),
-            pool.inner().clone(),
-            result.game.mod_path.to_string_lossy().into_owned(),
-            game_id,
-        )
-    {
+    let selected_game_id = config.get_settings().active_game_id;
+    let runtime_config_path = result.game.instance_path.join("d3dx.ini");
+    let app_for_watcher = &app;
+    let pool_for_watcher = pool.inner();
+    let watcher_for_restart = watcher.inner();
+    let activation_for_restart = &_activation_guard;
+    let restart = restart_source_watcher(
+        watcher.inner(),
+        selected_game_id.as_deref(),
+        SourceWatcherTarget {
+            game_id: &game_id,
+            mods_root: &result.game.mod_path,
+            runtime_config_path: &runtime_config_path,
+        },
+        |scope, target| async move {
+            match scope {
+                SourceWatcherScope::Active => {
+                    crate::modules::workspace::api::start_watcher(
+                        app_for_watcher.clone(),
+                        watcher_for_restart,
+                        pool_for_watcher.clone(),
+                        target.mods_root.to_string_lossy().into_owned(),
+                        target.game_id.into(),
+                    )
+                    .await
+                }
+                SourceWatcherScope::Inactive => {
+                    crate::modules::workspace::api::start_inactive_watcher_with_activation_guard(
+                        app_for_watcher,
+                        watcher_for_restart,
+                        target.game_id,
+                        target.mods_root,
+                        Some(target.runtime_config_path),
+                        activation_for_restart,
+                        crate::modules::workspace::api::WatcherInstallScope::InactiveOnly,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        crate::shared::errors::ScannerError::Validation(
+                            "The game selection changed before inactive watcher registration"
+                                .into(),
+                        )
+                    })
+                    .map(|_| ())
+                }
+            }
+        },
+    )
+    .await;
+    if let Err(error) = restart {
         let warning = format!("The mods watcher could not restart: {error}");
         log::warn!("{warning}");
         result.watcher_warning = Some(warning);
@@ -546,7 +637,7 @@ pub async fn reconcile_disk_state_cmd(
     let telemetry = app
         .state::<crate::modules::system::application::telemetry::TelemetryStore>()
         .inner()
-        .clone();
+        .capture();
     // Opening Mods can race the workspace query which starts initial recovery.
     // Reuse that single pass instead of queueing a second full scan behind it.
     if should_wait_for_initial_recovery(
@@ -679,7 +770,7 @@ pub async fn begin_onboarding_indexing(
     let telemetry_sink = diagnostics_enabled
         .then(|| {
             app.try_state::<crate::modules::system::application::telemetry::TelemetrySink>()
-                .map(|sink| sink.inner().clone())
+                .map(|sink| sink.inner().capture())
         })
         .flatten();
     let phase_state = Arc::new(Mutex::new(HashMap::<
@@ -783,9 +874,10 @@ async fn reconcile_onboarding_indexing_game_impl(
         .telemetry_enabled
         .then(|| {
             app.try_state::<crate::modules::system::application::telemetry::TelemetrySink>()
-                .map(|sink| sink.inner().clone())
+                .map(|sink| sink.inner().capture())
         })
         .flatten();
+    let _application_work = sessions.hold_for_application(session_id);
     let prepared = match sessions.consume(session_id, game_id).await {
         Ok(prepared) => prepared,
         Err(AppError::NotFound(_))
@@ -827,11 +919,14 @@ async fn reconcile_onboarding_indexing_game_impl(
             snapshot_rechecking_progress(session_id.to_string(), game_id.to_string()),
         )?;
     }
-    let progress_reporter = std::sync::Arc::new(DiskReconcileProgressReporter::new(
-        app.clone(),
-        game_id.to_string(),
-        DiskReconcileReason::OnboardingCompleted,
-    ));
+    let progress_reporter = std::sync::Arc::new(
+        DiskReconcileProgressReporter::new(
+            app.clone(),
+            game_id.to_string(),
+            DiskReconcileReason::OnboardingCompleted,
+        )
+        .with_run_id(onboarding_progress_run_id(session_id, game_id, 0)),
+    );
     let context = DiskReconcileContext {
         pool,
         config,
@@ -851,6 +946,9 @@ async fn reconcile_onboarding_indexing_game_impl(
     // publishing once here and immediately rebuilding the same large library.
     // Background games are likewise published only when they become active.
     .defer_overlay_sync();
+    if let Some(work) = &_application_work {
+        work.ensure_not_cancelled()?;
+    }
     if let Some(lease) = &snapshot_lease {
         request = request.with_precomputed_discovery(lease.discovery());
     }
@@ -859,6 +957,7 @@ async fn reconcile_onboarding_indexing_game_impl(
         context.clone(),
         request,
         game_id,
+        _application_work.as_ref(),
     )
     .await
     {
@@ -894,6 +993,12 @@ async fn reconcile_onboarding_indexing_game_impl(
         }
     };
 
+    log::info!(
+        "onboarding apply timing game_id={} apply_wall_ms={}",
+        game_id,
+        apply_started_at.elapsed().as_millis()
+    );
+    let handoff_started = Instant::now();
     // The watcher stayed alive until the transaction completed. A late event
     // invalidates the preflight snapshot, so settle with the generic full path.
     let changed_during_apply = match snapshot_lease.as_ref() {
@@ -921,8 +1026,19 @@ async fn reconcile_onboarding_indexing_game_impl(
             snapshot_rechecking_progress(session_id.to_string(), game_id.to_string()),
         )?;
         let recheck_started_at = Instant::now();
+        let recheck_context = DiskReconcileContext {
+            progress_reporter: Some(std::sync::Arc::new(
+                DiskReconcileProgressReporter::new(
+                    app.clone(),
+                    game_id.to_string(),
+                    DiskReconcileReason::OnboardingCompleted,
+                )
+                .with_run_id(onboarding_progress_run_id(session_id, game_id, 1)),
+            )),
+            ..context
+        };
         result = match reconcile_onboarding_with_foreground_priority(
-            context,
+            recheck_context,
             DiskReconcileRequest::manual(
                 game_id.to_string(),
                 DiskReconcileReason::OnboardingCompleted,
@@ -931,6 +1047,7 @@ async fn reconcile_onboarding_indexing_game_impl(
             )
             .defer_overlay_sync(),
             game_id,
+            _application_work.as_ref(),
         )
         .await
         {
@@ -1007,15 +1124,17 @@ async fn reconcile_onboarding_indexing_game_impl(
                 let runtime_config_path = game.instance_path.join("d3dx.ini");
                 // Reuse the held activation guard; the unguarded wrapper's
                 // try_lock would always skip this onboarding handoff.
-                match crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
+                match crate::modules::workspace::api::start_inactive_watcher_with_activation_guard(
                     app,
                     watcher,
                     game_id,
                     &game.mod_path,
                     Some(&runtime_config_path),
                     &_activation_guard,
-                    crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly,
-                ) {
+                    crate::modules::workspace::api::WatcherInstallScope::InactiveOnly,
+                )
+                .await
+                {
                     Ok(Some(watcher_session)) => {
                         let observed_generation = disk_reconcile_state
                             .authority_event_generation(game_id, watcher_session)
@@ -1023,14 +1142,15 @@ async fn reconcile_onboarding_indexing_game_impl(
                         if !lease.observed_changes_during_apply().await
                             && lease.journal_allows_game_snapshot(operation_lock, game_id)
                         {
-                            background_handoff_trusted = disk_reconcile_state.mark_authority_reconciled(
-                                game_id,
-                                &game.mod_path,
-                                watcher_session,
-                                observed_generation,
-                                &result,
-                                &[],
-                            );
+                            background_handoff_trusted = disk_reconcile_state
+                                .mark_authority_reconciled(
+                                    game_id,
+                                    &game.mod_path,
+                                    watcher_session,
+                                    observed_generation,
+                                    &result,
+                                    &[],
+                                );
                         }
                     }
                     Ok(None) => {}
@@ -1082,6 +1202,12 @@ async fn reconcile_onboarding_indexing_game_impl(
     if !result.status.applied() {
         recovery_guard.complete_unapplied(&result);
     }
+    log::info!(
+        "onboarding handoff timing game_id={} handoff_wall_ms={} rechecked={}",
+        game_id,
+        handoff_started.elapsed().as_millis(),
+        changed_during_apply
+    );
     Ok(result)
 }
 
@@ -1111,15 +1237,16 @@ async fn start_onboarding_recheck_watcher(
                 ))
             })?
     } else {
-        crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
+        crate::modules::workspace::api::start_inactive_watcher_with_activation_guard(
             app,
             watcher,
             game_id,
             &game.mod_path,
             Some(&runtime_config_path),
             &_activation_guard,
-            crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly,
+            crate::modules::workspace::api::WatcherInstallScope::InactiveOnly,
         )
+        .await
         .map_err(|error| {
             AppError::Io(format!(
                 "Could not watch '{game_id}' before indexing: {error}"
@@ -1150,6 +1277,7 @@ async fn reconcile_onboarding_with_foreground_priority(
     context: crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileContext<'_>,
     request: crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileRequest,
     game_id: &str,
+    work: Option<&crate::modules::reconciliation::application::disk_reconcile::onboarding_session::OnboardingWorkGuard>,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileResult,
     AppError,
@@ -1160,6 +1288,9 @@ async fn reconcile_onboarding_with_foreground_priority(
 
     let mut request = request;
     loop {
+        if let Some(work) = work {
+            work.ensure_not_cancelled()?;
+        }
         if let Some(result) = try_reconcile_disk_state_for_prewarm(context.clone(), request).await?
         {
             return Ok(result);
@@ -1280,6 +1411,220 @@ mod tests {
         OnboardingIndexingBackgroundPhase,
     };
     use crate::modules::system::application::app::post_apply::RuntimeSyncRequest;
+    use std::path::Path;
+
+    #[test]
+    fn onboarding_progress_recheck_has_a_new_owned_pass_id() {
+        assert_eq!(
+            super::onboarding_progress_run_id("session", "game", 0),
+            "session:game"
+        );
+        assert_eq!(
+            super::onboarding_progress_run_id("session", "game", 1),
+            "session:game:1"
+        );
+        assert_eq!(
+            super::onboarding_progress_run_id("session", "game", 2),
+            "session:game:2"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inactive_source_rebind_preserves_active_session_and_native_receiver() {
+        inactive_source_fixture(true).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inactive_source_cached_coverage_preserves_active_session_and_native_receiver() {
+        inactive_source_fixture(false).await;
+    }
+
+    async fn inactive_source_fixture(rebind_root: bool) {
+        use crate::modules::workspace::api::scanner::watcher::{
+            watch_mod_directory_with_runtime_config, ModWatchEvent, WatcherState,
+        };
+        let temp = tempfile::tempdir().expect("temp");
+        let active_root = temp.path().join("A/Mods");
+        let old_root = temp.path().join("BOld/Mods");
+        let new_root = temp.path().join("BNew/Mods");
+        for root in [&active_root, &old_root, &new_root] {
+            std::fs::create_dir_all(root).expect("root");
+        }
+        let runtime_a = active_root.parent().expect("importer").join("d3dx.ini");
+        let runtime_old_b = old_root.parent().expect("importer").join("d3dx.ini");
+        let runtime_new_b = new_root.parent().expect("importer").join("d3dx.ini");
+        let target_root = if rebind_root { &new_root } else { &old_root };
+        let target_runtime = if rebind_root {
+            &runtime_new_b
+        } else {
+            &runtime_old_b
+        };
+        let factory_calls = std::sync::atomic::AtomicUsize::new(0);
+        let watcher = WatcherState::new();
+        let active_session =
+            watcher.prepare_session_with_runtime_config(&active_root, Some(&runtime_a));
+        let (active, mut receiver) = watch_mod_directory_with_runtime_config(
+            &active_root,
+            Some(&runtime_a),
+            watcher.suppressor.clone(),
+            active_session.clone(),
+        )
+        .expect("active A");
+        watcher.publish_session(&active_session);
+        *crate::shared::sync::lock(&watcher.watcher) = Some(active);
+        let old_session =
+            watcher.prepare_session_with_runtime_config(&old_root, Some(&runtime_old_b));
+        let (old, old_receiver) = watch_mod_directory_with_runtime_config(
+            &old_root,
+            Some(&runtime_old_b),
+            watcher.suppressor.clone(),
+            old_session.clone(),
+        )
+        .expect("inactive B");
+        let original_inactive_generation = old_session.generation();
+        watcher.install_inactive_watcher(
+            "B".into(),
+            &old_root,
+            Some(&runtime_old_b),
+            old_session,
+            old,
+            old_receiver,
+        );
+        let state = crate::modules::reconciliation::api::disk_reconcile::orchestrator::DiskReconcileState::new();
+        let _activation_guard = state.activation_guard().await;
+        state.begin_authority_session_with_coverage("A", &active_root, &active_session);
+        let mut baseline = source_baseline("A");
+        state.record_result("A", &mut baseline);
+        assert!(state.mark_authority_reconciled(
+            "A",
+            &active_root,
+            active_session.generation(),
+            0,
+            &baseline,
+            &[]
+        ));
+        super::restart_source_watcher(
+            &watcher,
+            Some("A"),
+            super::SourceWatcherTarget {
+                game_id: "B",
+                mods_root: target_root,
+                runtime_config_path: target_runtime,
+            },
+            |scope, target| {
+                let watcher = &watcher;
+                let state = &state;
+                let factory_calls = &factory_calls;
+                async move {
+                    assert!(matches!(scope, super::SourceWatcherScope::Inactive));
+                    if watcher
+                        .inactive_watcher_session(
+                            target.game_id,
+                            target.mods_root,
+                            Some(target.runtime_config_path),
+                        )
+                        .is_some()
+                    {
+                        return Ok(());
+                    }
+                    factory_calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                    let session = watcher.prepare_session_with_runtime_config(
+                        target.mods_root,
+                        Some(target.runtime_config_path),
+                    );
+                    let root = target.mods_root.to_path_buf();
+                    let runtime = target.runtime_config_path.to_path_buf();
+                    let suppressor = watcher.suppressor.clone();
+                    let candidate = session.clone();
+                    let (inactive, inactive_receiver) = tokio::task::spawn_blocking(move || {
+                        watch_mod_directory_with_runtime_config(
+                            &root,
+                            Some(&runtime),
+                            suppressor,
+                            candidate,
+                        )
+                    })
+                    .await
+                    .expect("registration task")?;
+                    state.begin_authority_session_with_coverage(
+                        target.game_id,
+                        target.mods_root,
+                        &session,
+                    );
+                    watcher.install_inactive_watcher(
+                        target.game_id.into(),
+                        target.mods_root,
+                        Some(target.runtime_config_path),
+                        session,
+                        inactive,
+                        inactive_receiver,
+                    );
+                    Ok(())
+                }
+            },
+        )
+        .await
+        .expect("source watcher rebind");
+        assert!(
+            watcher.is_current_session(&active_session),
+            "inactive source repair must preserve the active session"
+        );
+        assert!(crate::shared::sync::lock(&watcher.watcher).is_some());
+        assert!(matches!(state.authority_catch_up("A", &active_root, active_session.generation()), crate::modules::reconciliation::api::disk_reconcile::orchestrator::AuthorityCatchUp::Clean { .. }));
+        let installed = watcher
+            .inactive_watcher_session("B", target_root, Some(target_runtime))
+            .expect("target root and native runtime parent are covered");
+        if rebind_root {
+            assert!(watcher
+                .inactive_watcher_session("B", &old_root, Some(&runtime_old_b))
+                .is_none());
+            assert_ne!(installed, original_inactive_generation);
+            assert_eq!(factory_calls.load(std::sync::atomic::Ordering::Acquire), 1);
+        } else {
+            assert_eq!(installed, original_inactive_generation);
+            assert_eq!(factory_calls.load(std::sync::atomic::Ordering::Acquire), 0);
+        }
+        let event_path = active_root.join("still-active.ini");
+        std::fs::write(&event_path, "[Constants]\n").expect("active event");
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                let event = receiver
+                    .recv()
+                    .await
+                    .expect("active event receiver remains open");
+                if matches!(event, ModWatchEvent::Created(path) if Path::new(&path) == event_path) {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("active receiver observes after inactive rebind");
+    }
+
+    fn source_baseline(game_id: &str) -> DiskReconcileResult {
+        DiskReconcileResult {
+            game_id: game_id.into(),
+            reconcile_revision: 0,
+            reason: DiskReconcileReason::ManualRepair,
+            status: DiskReconcileStatus::Applied,
+            scan_scope: DiskReconcileScanScope::Full,
+            folder_conflicts: Vec::new(),
+            rename_confirmations: Vec::new(),
+            error_message: None,
+            changed_roots: Vec::new(),
+            objects_changed: false,
+            folders_changed: false,
+            collections_changed: false,
+            runtime_file_changed: false,
+            thumbnail_roots: Vec::new(),
+            cleared_selection_paths: Vec::new(),
+            path_updates: Vec::new(),
+            collection_reference_impact: Default::default(),
+            change_summary: Default::default(),
+            pending_runtime_effects: Default::default(),
+            warnings: Vec::new(),
+        }
+    }
 
     #[test]
     fn clean_focus_snapshot_preserves_revision_without_replaying_changes() {

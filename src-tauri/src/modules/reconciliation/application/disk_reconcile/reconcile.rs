@@ -11,8 +11,7 @@ use crate::modules::collections::domain::collection::CollectionReferenceImpact;
 use crate::modules::reconciliation::application::disk_reconcile::change_summary::ChangeSummaryBuilder;
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
     collect_scoped_disk_discovery_with_progress,
-    collect_trusted_scoped_disk_discovery_with_progress, DiskProjectionError, DiskSizeScan,
-    DiskSnapshotProgress,
+    collect_trusted_scoped_disk_discovery_with_progress, DiskProjectionError, DiskSnapshotProgress,
 };
 use crate::modules::reconciliation::application::disk_reconcile::identity_conflicts::detect_folder_name_conflicts_from_census;
 use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcilePathHint;
@@ -381,37 +380,6 @@ pub async fn reconcile_disk_projection(
             let snapshot_path = mods_path.to_path_buf();
             let snapshot_roots = changed_roots.clone();
             let snapshot_progress = progress_reporter.clone();
-            let size_scan = if matches!(reason, DiskReconcileReason::OnboardingCompleted) {
-                None
-            } else {
-                let mods_root = mods_path.to_string_lossy();
-                let mod_scope_root_keys = changed_roots
-                    .iter()
-                    .map(|root| crate::shared::path_key::folder_path_key(root, Some(&mods_root)))
-                    .collect::<Vec<_>>();
-                let known_mod_paths = if trusted_mutation_scope && requested_scoped {
-                    crate::modules::library::adapters::sqlite::mods::get_folder_paths_for_roots(
-                        pool,
-                        game_id,
-                        &mod_scope_root_keys,
-                    )
-                    .await?
-                } else {
-                    crate::modules::library::adapters::sqlite::mods::get_folder_paths_for_game(
-                        pool, game_id,
-                    )
-                    .await?
-                };
-                let known_mod_keys = known_mod_paths
-                    .into_iter()
-                    .map(|path| crate::shared::path_key::folder_path_key(&path, None))
-                    .collect();
-                Some(DiskSizeScan::incremental(
-                    mods_path,
-                    known_mod_keys,
-                    changed_paths,
-                ))
-            };
             let snapshot = tokio::task::spawn_blocking(move || {
                 let on_progress = |progress: DiskSnapshotProgress| {
                     if let Some(reporter) = &snapshot_progress {
@@ -427,7 +395,6 @@ pub async fn reconcile_disk_projection(
                     collect_trusted_scoped_disk_discovery_with_progress(
                         &snapshot_path,
                         &snapshot_roots,
-                        size_scan.as_ref(),
                         Some(&on_progress),
                     )
                 } else {
@@ -435,7 +402,6 @@ pub async fn reconcile_disk_projection(
                         &snapshot_path,
                         &snapshot_roots,
                         requested_scoped,
-                        size_scan.as_ref(),
                         Some(&on_progress),
                     )
                 }
@@ -587,6 +553,11 @@ pub async fn reconcile_disk_projection(
             .await?;
         }
 
+        let report_projection_progress = |phase, completed, total| {
+            if let Some(reporter) = &progress_reporter {
+                reporter.emit(phase, completed, total, None);
+            }
+        };
         let write_outcome = reconcile_projection_in_tx(
             &mut tx,
             ProjectionWriteRequest {
@@ -602,10 +573,12 @@ pub async fn reconcile_disk_projection(
                 change_summary: &mut change_summary,
                 protected_object_keys: &protected_object_keys,
                 protected_mod_keys: &protected_mod_keys,
+                on_progress: Some(&report_projection_progress),
             },
         )
         .await?;
 
+        let read_model_started = std::time::Instant::now();
         if scoped {
             crate::modules::workspace::adapters::sqlite::runtime_projection::refresh_projection_for_object_ids_tx(
                 &mut tx,
@@ -617,7 +590,21 @@ pub async fn reconcile_disk_projection(
             crate::modules::workspace::adapters::sqlite::runtime_projection::rebuild_game_projection_tx(&mut tx, game_id)
                 .await?;
         }
+        let read_model_time = read_model_started.elapsed();
+        let commit_started = std::time::Instant::now();
         tx.commit().await?;
+        log::info!(
+            "disk projection phases game_id={} initial_index_us={} identity_us={} objects_us={} mods_us={} metadata_within_mods_us={} finalization_us={} read_model_us={} commit_us={}",
+            game_id,
+            write_outcome.timings.initial_index.as_micros(),
+            write_outcome.timings.identity.as_micros(),
+            write_outcome.timings.objects.as_micros(),
+            write_outcome.timings.mods.as_micros(),
+            write_outcome.timings.metadata_within_mods.as_micros(),
+            write_outcome.timings.finalization.as_micros(),
+            read_model_time.as_micros(),
+            commit_started.elapsed().as_micros(),
+        );
         let db_projection_ms = projection_started
             .elapsed()
             .as_millis()

@@ -1,18 +1,18 @@
 use crate::modules::library::application::ini::document::IniDocument;
 use crate::modules::library::application::mods::preview_ops::{
     clear_mod_preview_images_inner, ensure_image_size, list_mod_ini_files_inner,
-    list_mod_preview_images_inner, read_mod_ini_documents_inner, read_mod_ini_inner,
-    remove_mod_preview_image_inner, resolve_image_path, save_mod_preview_image_inner,
-    write_mod_ini_locked_inner,
+    read_mod_ini_documents_inner, read_mod_ini_inner, remove_mod_preview_image_inner,
+    resolve_image_path, save_mod_preview_image_inner, write_mod_ini_locked_inner,
 };
 use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
-use crate::platform::fs::guard::validate_path;
+use crate::platform::fs::guard::{validate_path, ModFolderIdentityProof};
 use crate::shared::errors::AppError;
 use tauri::State;
 
 pub use crate::modules::library::application::mods::preview_ops::IniDocumentEntry;
+pub use crate::modules::library::application::mods::preview_ops::ModPreviewImage;
 pub use crate::modules::library::application::mods::preview_ops::{IniFileEntry, IniLineUpdate};
 
 #[specta::specta]
@@ -110,13 +110,50 @@ pub async fn write_mod_ini(
 
 #[specta::specta]
 #[tauri::command]
-pub async fn list_mod_preview_images(
+pub async fn list_mod_preview_images_with_visibility(
     config: State<'_, ConfigService>,
     game_id: String,
     folder_path: String,
-) -> Result<Vec<String>, AppError> {
+) -> Result<Vec<ModPreviewImage>, AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
-    list_mod_preview_images_inner(&mod_root)
+    crate::modules::library::application::mods::preview_ops::list_mod_preview_images_with_visibility_inner(&mod_root)
+}
+
+#[specta::specta]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn set_mod_preview_image_hidden(
+    app: tauri::AppHandle,
+    config: State<'_, ConfigService>,
+    pool: State<'_, sqlx::SqlitePool>,
+    op_lock: State<'_, MutationCoordinator>,
+    watcher: State<'_, WatcherState>,
+    game_id: String,
+    folder_path: String,
+    image_path: String,
+    hidden: bool,
+) -> Result<(), AppError> {
+    let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    let image = resolve_image_path(&mod_root, &image_path)?;
+    let folder_proof = ModFolderIdentityProof::capture(&config, &mod_root)?;
+    let image_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&image)?;
+    let preflight_paths = [mod_root.to_string_lossy().to_string()];
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(&app, pool.inner(), &game_id, Some(&preflight_paths)).await?;
+    let lock = op_lock
+        .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
+        .await?;
+    crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
+    folder_proof.validate(&config)?;
+    image_proof.validate(&image)?;
+    let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
+    crate::modules::library::application::mods::preview_ops::set_mod_preview_image_hidden_inner(
+        &mod_root,
+        &image.to_string_lossy(),
+        hidden,
+    )?;
+    drop(guard);
+    drop(lock);
+    Ok(())
 }
 
 #[specta::specta]
@@ -136,6 +173,7 @@ pub async fn save_mod_preview_image(
     ensure_image_size(&image_data)?;
 
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    let folder_proof = ModFolderIdentityProof::capture(&config, &mod_root)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
@@ -148,6 +186,7 @@ pub async fn save_mod_preview_image(
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
+    folder_proof.validate(&config)?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let saved = save_mod_preview_image_inner(&mod_root, &object_name, &image_data)?;
     drop(lock);
@@ -169,6 +208,9 @@ pub async fn remove_mod_preview_image(
     image_path: String,
 ) -> Result<(), AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    let folder_proof = ModFolderIdentityProof::capture(&config, &mod_root)?;
+    let image = resolve_image_path(&mod_root, &image_path)?;
+    let image_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&image)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
@@ -177,11 +219,12 @@ pub async fn remove_mod_preview_image(
         Some(&preflight_paths),
     )
     .await?;
-    resolve_image_path(&mod_root, &image_path)?;
     let lock = op_lock
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
+    folder_proof.validate(&config)?;
+    image_proof.validate(&image)?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     remove_mod_preview_image_inner(&mod_root, &image_path)?;
     crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate_folder(
@@ -205,6 +248,7 @@ pub async fn clear_mod_preview_images(
     folder_path: String,
 ) -> Result<Vec<String>, AppError> {
     let mod_root = validate_path(&config, &game_id, &folder_path)?;
+    let folder_proof = ModFolderIdentityProof::capture(&config, &mod_root)?;
     let preflight_paths = [mod_root.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
@@ -217,6 +261,7 @@ pub async fn clear_mod_preview_images(
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
+    folder_proof.validate(&config)?;
     let guard = watcher.suppressor.suppress_paths([mod_root.as_ref()]);
     let removed = clear_mod_preview_images_inner(&mod_root)?;
     crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate_folder(

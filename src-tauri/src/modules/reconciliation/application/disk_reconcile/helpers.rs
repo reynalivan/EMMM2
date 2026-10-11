@@ -13,6 +13,33 @@ pub struct RuntimeModMetadata {
     pub status: ItemStatus,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(super) struct DiskModMetadata {
+    pub(super) actual_name: Option<String>,
+    info_is_safe: Option<bool>,
+}
+
+pub(super) fn observe_runtime_mod_metadata(mod_path: &Path) -> DiskModMetadata {
+    match crate::modules::library::application::mods::info_json::read_info_json(mod_path) {
+        Ok(Some(info)) => {
+            let info_name = info.actual_name.trim();
+            DiskModMetadata {
+                actual_name: (!info_name.is_empty()).then(|| info_name.to_string()),
+                info_is_safe: Some(info.is_safe),
+            }
+        }
+        Ok(None) => DiskModMetadata::default(),
+        Err(error) => {
+            log::warn!(
+                "Disk Reconcile failed to read info.json for '{}': {}",
+                mod_path.display(),
+                error
+            );
+            DiskModMetadata::default()
+        }
+    }
+}
+
 /// A mod's status comes from its own folder name only. A disabled parent object
 /// must never cascade into its children: re-enabling the object has to restore
 /// exactly the per-mod states the user left behind.
@@ -22,30 +49,29 @@ pub fn load_runtime_mod_metadata(
     safe_mode_keywords: &[String],
     existing_manual_safe: Option<bool>,
 ) -> RuntimeModMetadata {
-    let mut actual_name = normalize_display_name(raw_folder_name).into_owned();
-    let mut info_is_safe = None;
+    let observation = observe_runtime_mod_metadata(mod_path);
+    derive_runtime_mod_metadata(
+        &observation,
+        raw_folder_name,
+        safe_mode_keywords,
+        existing_manual_safe,
+    )
+}
 
-    match crate::modules::library::application::mods::info_json::read_info_json(mod_path) {
-        Ok(Some(info)) => {
-            let info_name = info.actual_name.trim();
-            if !info_name.is_empty() {
-                actual_name = info_name.to_string();
-            }
-            info_is_safe = Some(info.is_safe);
-        }
-        Ok(None) => {}
-        Err(error) => {
-            log::warn!(
-                "Disk Reconcile failed to read info.json for '{}': {}",
-                mod_path.display(),
-                error
-            );
-        }
-    }
+pub(super) fn derive_runtime_mod_metadata(
+    observation: &DiskModMetadata,
+    raw_folder_name: &str,
+    safe_mode_keywords: &[String],
+    existing_manual_safe: Option<bool>,
+) -> RuntimeModMetadata {
+    let actual_name = observation
+        .actual_name
+        .clone()
+        .unwrap_or_else(|| normalize_display_name(raw_folder_name).into_owned());
 
     // The latest explicit in-app classification is authoritative. info.json is
     // only the first-index fallback for folders that have no remembered choice.
-    let (is_safe, safety_source) = match existing_manual_safe.or(info_is_safe) {
+    let (is_safe, safety_source) = match existing_manual_safe.or(observation.info_is_safe) {
         Some(value) => (value, SAFETY_SOURCE_MANUAL),
         None => classify_safety(&actual_name, safe_mode_keywords),
     };
@@ -60,7 +86,9 @@ pub fn load_runtime_mod_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::load_runtime_mod_metadata;
+    use super::{
+        derive_runtime_mod_metadata, load_runtime_mod_metadata, observe_runtime_mod_metadata,
+    };
     use crate::modules::games::domain::models::ItemStatus;
 
     #[test]
@@ -93,5 +121,38 @@ mod tests {
         let metadata = load_runtime_mod_metadata(temp.path(), "Blue Dress", &[], Some(true));
 
         assert!(metadata.is_safe);
+    }
+
+    #[test]
+    fn disk_observation_uses_the_current_manual_choice_when_policy_is_derived() {
+        let temp = tempfile::tempdir().expect("metadata fixture");
+        std::fs::write(
+            temp.path().join("info.json"),
+            r#"{"actual_name":"  Disk Name  ","is_safe":false}"#,
+        )
+        .expect("disk metadata");
+        let observation = observe_runtime_mod_metadata(temp.path());
+        let metadata =
+            derive_runtime_mod_metadata(&observation, "DISABLED Folder Name", &[], Some(true));
+        assert_eq!(metadata.actual_name, "Disk Name");
+        assert!(metadata.is_safe);
+        assert_eq!(metadata.safety_source, "manual");
+        assert_eq!(metadata.status, ItemStatus::Disabled);
+    }
+
+    #[test]
+    fn observed_invalid_json_keeps_folder_fallback_and_does_not_hide_validation() {
+        let temp = tempfile::tempdir().expect("metadata fixture");
+        std::fs::write(
+            temp.path().join("info.json"),
+            r#"{"actual_name":"Disk Name","is_safe":false,"tags":42}"#,
+        )
+        .expect("invalid metadata");
+        let observation = observe_runtime_mod_metadata(temp.path());
+        let metadata =
+            derive_runtime_mod_metadata(&observation, "DISABLED Folder Name", &[], Some(true));
+        assert_eq!(metadata.actual_name, "Folder Name");
+        assert!(metadata.is_safe);
+        assert_eq!(metadata.status, ItemStatus::Disabled);
     }
 }

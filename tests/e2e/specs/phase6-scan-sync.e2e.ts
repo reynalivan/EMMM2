@@ -68,12 +68,12 @@ describe('Fase 6 — Scan / Sync / Match', () => {
           items: [
             {
               objectId: object!.id,
-              category: 'Other',
-              subCategory: null,
-              metadata: {},
-              canonicalEntryKey: null,
-              canonicalAlias: null,
-              confidencePercentage: null,
+              decision: {
+                kind: 'manual',
+                category: 'Other',
+                subCategory: null,
+                metadata: {},
+              },
               fingerprint: preview[0].fingerprint,
             },
           ],

@@ -87,7 +87,6 @@ function CategoryDistributionChart({
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <ChartGradients />
                 <Pie
                   data={categoryDistribution}
                   cx="50%"

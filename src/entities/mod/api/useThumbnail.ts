@@ -15,13 +15,6 @@ import { commands } from '@/shared/api/tauri/bindings';
 import { thumbnailKeys } from '../model/queryKeys';
 
 /**
- * Query key factory for thumbnail cache.
- *
- * Keys are identity-based (DISABLED prefix stripped, case-folded), matching
- * the backend thumbnail cache: an enable/disable rename resolves to the same
- * cached entry instead of a skeleton flash + regeneration.
- */
-/**
  * Lazily fetch the cached WebP thumbnail for a single mod folder.
  *
  * @param gameId - The ID of the currently active game

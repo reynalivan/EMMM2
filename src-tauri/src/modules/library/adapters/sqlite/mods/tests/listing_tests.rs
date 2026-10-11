@@ -2,15 +2,6 @@ use super::*;
 use crate::modules::games::adapters::sqlite::game::{upsert_game, GameRow};
 use crate::modules::games::domain::models::{GameType, ItemStatus};
 
-#[test]
-fn effective_enabled_path_checks_every_runtime_component() {
-    assert!(is_effectively_enabled_path("Amber/Blue Dress"));
-    assert!(!is_effectively_enabled_path("DISABLED Amber/Blue Dress"));
-    assert!(!is_effectively_enabled_path("Amber/DISABLED_Blue Dress"));
-    assert!(!is_effectively_enabled_path("Amber/DISABLEDBlueDress"));
-    assert!(!is_effectively_enabled_path("amber/disabled-blue"));
-}
-
 #[tokio::test]
 async fn enabled_queries_exclude_rows_under_disabled_ancestors() {
     let context = crate::test_utils::init_test_db().await;
@@ -20,7 +11,7 @@ async fn enabled_queries_exclude_rows_under_disabled_ancestors() {
         &GameRow {
             id: "g_effective".into(),
             name: "Effective".into(),
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "C:/Game".into(),
             mods_path: Some("C:/Package/Mods".into()),
             ready_to_move_path: None,

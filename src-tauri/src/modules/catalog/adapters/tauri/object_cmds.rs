@@ -177,7 +177,7 @@ async fn rollback_object_delete(
         let _ = lease.fail(message.clone());
         return AppError::Io(message);
     }
-    if let Err(error) = prepared.rollback(watcher) {
+    if let Err(error) = prepared.rollback_with_retry(watcher).await {
         let message = format!("{original_error}; object delete rollback failed: {error}");
         let _ = lease.fail(message.clone());
         return AppError::Io(message);
@@ -463,14 +463,15 @@ pub async fn delete_object_cmd(
     id: String,
     force: bool,
     app: tauri::AppHandle,
-    pool: State<'_, sqlx::SqlitePool>,
     state: State<'_, crate::modules::workspace::application::scanner::watcher::WatcherState>,
     disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
+    recovery_id: Option<String>,
 ) -> Result<
     crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationResult,
     AppError,
 > {
+    let pool = app.state::<sqlx::SqlitePool>();
     let (game_id, folder_path) =
         crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(
             pool.inner(),
@@ -540,7 +541,15 @@ pub async fn delete_object_cmd(
     let suppression = state
         .suppressor
         .suppress_paths(prepared.suppression_paths());
-    if let Err(error) = prepared.execute(&state) {
+    if let Some(id) = &recovery_id {
+        if let Err(error) =
+            crate::modules::system::api::validate_file_lock_recovery(id, prepared.source_path())
+        {
+            mutation_lease.abort_unapplied()?;
+            return Err(error);
+        }
+    }
+    if let Err(error) = prepared.execute_with_retry(&state).await {
         let error = rollback_object_delete(
             &app,
             pool.inner(),

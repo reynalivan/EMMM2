@@ -61,6 +61,26 @@ fn test_read_info_json_malformed() {
     assert!(result.is_err());
 }
 
+#[test]
+fn read_info_json_preserves_non_not_found_io_errors() {
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir(tmp.path().join("info.json")).unwrap();
+    assert!(matches!(
+        read_info_json(tmp.path()),
+        Err(MetadataError::Io(_))
+    ));
+}
+
+#[test]
+fn read_info_json_preserves_invalid_utf8_errors() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("info.json"), [0xff, 0xfe]).unwrap();
+    assert!(matches!(
+        read_info_json(tmp.path()),
+        Err(MetadataError::Io(_))
+    ));
+}
+
 // Covers: DI-4.03 (partial update merges, not overwrites)
 #[test]
 fn test_update_info_json_merge() {

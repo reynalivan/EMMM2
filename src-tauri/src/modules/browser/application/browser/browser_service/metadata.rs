@@ -156,7 +156,8 @@ pub async fn record_history(
     sqlx::query(
         "INSERT INTO browser_history (url, hostname, title, favicon, visit_count, last_visited_at)
          VALUES (?, ?, ?, ?, 1, ?)
-         ON CONFLICT(url) DO UPDATE SET hostname = excluded.hostname, title = excluded.title,
+         ON CONFLICT(url) DO UPDATE SET hostname = excluded.hostname,
+         title = COALESCE(NULLIF(excluded.title, ''), browser_history.title),
          favicon = COALESCE(excluded.favicon, browser_history.favicon),
          visit_count = browser_history.visit_count + 1, last_visited_at = excluded.last_visited_at",
     )
@@ -167,6 +168,10 @@ pub async fn record_history(
     .bind(now)
     .execute(db)
     .await?;
+    prune_history(db).await
+}
+
+async fn prune_history(db: &SqlitePool) -> Result<(), BrowserError> {
     sqlx::query(
         "DELETE FROM browser_history WHERE url IN (
             SELECT url FROM browser_history ORDER BY last_visited_at DESC LIMIT -1 OFFSET 1000
@@ -184,12 +189,22 @@ pub async fn update_history_metadata(
     title: &str,
 ) -> Result<(), BrowserError> {
     let url = canonical_http_url(url)?;
-    sqlx::query("UPDATE browser_history SET title = ? WHERE url = ?")
-        .bind(title.trim())
-        .bind(url)
-        .execute(db)
-        .await?;
-    Ok(())
+    let hostname = tauri::Url::parse(&url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_owned))
+        .unwrap_or_default();
+    sqlx::query(
+        "INSERT INTO browser_history (url, hostname, title, visit_count, last_visited_at)
+         VALUES (?, ?, ?, 0, ?)
+         ON CONFLICT(url) DO UPDATE SET title = excluded.title",
+    )
+    .bind(url)
+    .bind(hostname)
+    .bind(title.trim())
+    .bind(Utc::now().timestamp())
+    .execute(db)
+    .await?;
+    prune_history(db).await
 }
 
 pub async fn list_history(
@@ -308,6 +323,35 @@ fn canonical_http_url(raw: &str) -> Result<String, BrowserError> {
 mod tests {
     use super::*;
     use crate::test_utils::init_test_db;
+
+    #[tokio::test]
+    async fn history_title_survives_both_callback_orders_and_revisits() {
+        for title_first in [true, false] {
+            let db = init_test_db().await.pool;
+            let url = "https://example.com/stable-title";
+            if title_first {
+                update_history_metadata(&db, url, "Stable title")
+                    .await
+                    .unwrap();
+                record_history(&db, url, None, None).await.unwrap();
+            } else {
+                record_history(&db, url, None, None).await.unwrap();
+                update_history_metadata(&db, url, "Stable title")
+                    .await
+                    .unwrap();
+            }
+            let entry = list_history(&db, 10).await.unwrap().remove(0);
+            assert_eq!(entry.title, "Stable title");
+            assert_eq!(entry.visit_count, 1);
+            update_history_metadata(&db, url, "Revisited title")
+                .await
+                .unwrap();
+            record_history(&db, url, None, None).await.unwrap();
+            let entry = list_history(&db, 10).await.unwrap().remove(0);
+            assert_eq!(entry.title, "Revisited title");
+            assert_eq!(entry.visit_count, 2);
+        }
+    }
 
     #[tokio::test]
     async fn bookmarks_and_history_are_isolated_metadata() {

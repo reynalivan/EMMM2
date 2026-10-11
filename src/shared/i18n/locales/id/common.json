@@ -41,6 +41,7 @@
     "dismiss": "Abaikan"
   },
   "errors": {
+    "import_location_changed": "Tujuan impor berubah. Pilih kembali folder sebelum mengimpor.",
     "explorer_snapshot_expired": "Daftar folder telah berubah. Muat ulang lalu pilih mod kembali.",
     "no_active_game": "Tidak ada game aktif yang dipilih",
     "scan_failed": "Pemindaian gagal",
@@ -85,7 +86,24 @@
     "description": "Tutup aplikasi atau jendela yang masih memakai \"{{folderName}}\", lalu coba lagi.",
     "windows_explorer": "Windows Explorer",
     "hint": "Kunci file biasanya berasal dari jendela Explorer, editor teks, atau alat yang memantau folder.",
-    "folder_fallback": "folder ini"
+    "folder_fallback": "folder ini",
+    "still_locked": "Folder masih digunakan. Lepaskan kuncinya lalu coba lagi, atau batalkan operasi ini.",
+    "unknown_holder": "Windows tidak dapat mengenali pemegang kunci. Periksa game, Explorer, antivirus, atau alat pengindeks.",
+    "refresh_processes": "Perbarui proses",
+    "close_app": "Tutup aplikasi",
+    "force_terminate": "Paksa hentikan",
+    "confirm_terminate": "Hentikan aplikasi ini",
+    "keep_app": "Biarkan aplikasi terbuka",
+    "terminate_confirmation": "Paksa hentikan {{name}} (PID {{pid}})? Pekerjaan yang belum disimpan bisa hilang. Hanya proses ini yang akan dihentikan.",
+    "process_pid": "PID {{pid}}",
+    "working": "Sedang diproses… Harap tunggu.",
+    "process_action_done": "Tindakan proses selesai. Coba operasi kembali setelah folder tidak terkunci.",
+    "retry_blocked": "Jenis kegagalan berubah. Batalkan dan perbarui folder sebelum memulai operasi baru.",
+    "context_changed": "Game aktif berubah. Batalkan dan mulai operasi kembali di workspace yang sesuai.",
+    "scan_partial": "Hanya sebagian folder yang dapat diperiksa. Proses lain mungkin masih memegang kunci.",
+    "scan_unknown": "Tidak ada proses yang dikenali; folder mungkin masih terkunci.",
+    "scan_unavailable": "Deteksi proses tidak tersedia. Tutup aplikasi yang menggunakan folder ini lalu coba lagi.",
+    "scan_failed": "Deteksi proses gagal. Perbarui daftar proses atau lepaskan kunci folder secara manual."
   },
   "workspace": {
     "reason": {

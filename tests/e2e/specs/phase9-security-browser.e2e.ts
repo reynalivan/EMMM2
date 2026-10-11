@@ -13,11 +13,12 @@ import type { GameObject } from '../../../src/shared/api/tauri/bindings.gen.js';
  */
 describe('Fase 9 — Security, Themes & Browser', () => {
   let game: MockGame;
+  let gameId: string;
   let objectId: string;
 
   before(async () => {
     game = await createMockGame('Phase9');
-    const gameId = await seedGameAndOpenDashboard(game);
+    gameId = await seedGameAndOpenDashboard(game);
     objectId = await createObject(gameId, 'PinnedObject');
   });
 
@@ -42,14 +43,14 @@ describe('Fase 9 — Security, Themes & Browser', () => {
   });
 
   it('TC-47-01: Browser homepage round-trips and downloads list is queryable', async () => {
-    const original = await invokeInApp<string>('browser_get_homepage');
+    const original = await invokeInApp<string>('browser_get_homepage', { gameId });
 
-    await invokeInApp('browser_set_homepage', { url: 'https://gamebanana.com/' });
-    const updated = await invokeInApp<string>('browser_get_homepage');
+    await invokeInApp('browser_set_homepage', { gameId, url: 'https://gamebanana.com/' });
+    const updated = await invokeInApp<string>('browser_get_homepage', { gameId });
     expect(updated).toBe('https://gamebanana.com/');
 
     // Restore original homepage.
-    await invokeInApp('browser_set_homepage', { url: original });
+    await invokeInApp('browser_set_homepage', { gameId, url: original });
 
     const downloads = await invokeInApp<unknown[]>('browser_list_downloads');
     expect(Array.isArray(downloads)).toBe(true);

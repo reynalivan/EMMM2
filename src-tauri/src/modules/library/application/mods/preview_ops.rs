@@ -25,13 +25,27 @@ pub struct IniLineUpdate {
 }
 
 const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+const MAX_THUMBNAIL_DIMENSION: u32 = 2_048;
+const MAX_THUMBNAIL_DECODE_BYTES: u64 = 32 * 1024 * 1024;
+
+fn image_too_large_error() -> AppError {
+    AppError::Metadata(MetadataError::Validation(
+        "Image too large. Max 10MB.".to_string(),
+    ))
+}
 
 /// Rejects oversized pasted/saved preview images.
 pub fn ensure_image_size(image_data: &[u8]) -> Result<(), AppError> {
     if image_data.len() > MAX_IMAGE_BYTES {
-        return Err(AppError::Metadata(MetadataError::Validation(
-            "Image too large. Max 10MB.".to_string(),
-        )));
+        return Err(image_too_large_error());
+    }
+    Ok(())
+}
+
+/// Rejects an oversized image before loading its bytes into memory.
+pub fn ensure_image_file_size(path: &Path) -> Result<(), AppError> {
+    if std::fs::metadata(path)?.len() > MAX_IMAGE_BYTES as u64 {
+        return Err(image_too_large_error());
     }
     Ok(())
 }
@@ -40,11 +54,23 @@ pub fn ensure_image_size(image_data: &[u8]) -> Result<(), AppError> {
 /// Keeping this here makes clipboard and object-creation imports share the same
 /// size limit, decoder validation, and durable PNG representation.
 pub fn normalize_thumbnail_png(image_data: &[u8]) -> Result<Vec<u8>, AppError> {
-    use image::ImageFormat;
+    use image::{ImageFormat, ImageReader, Limits};
     use std::io::Cursor;
 
     ensure_image_size(image_data)?;
-    let image = image::load_from_memory(image_data).map_err(|error| {
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_THUMBNAIL_DIMENSION);
+    limits.max_image_height = Some(MAX_THUMBNAIL_DIMENSION);
+    limits.max_alloc = Some(MAX_THUMBNAIL_DECODE_BYTES);
+    let mut reader = ImageReader::new(Cursor::new(image_data))
+        .with_guessed_format()
+        .map_err(|error| {
+            AppError::Metadata(MetadataError::Validation(format!(
+                "Invalid image data: {error}"
+            )))
+        })?;
+    reader.limits(limits);
+    let image = reader.decode().map_err(|error| {
         AppError::Metadata(MetadataError::Validation(format!(
             "Invalid image data: {error}"
         )))
@@ -220,18 +246,50 @@ pub async fn write_mod_ini_locked_inner(
     write_mod_ini_inner(mod_root, file_name, expected_source_hash, line_updates)
 }
 
-pub fn list_mod_preview_images_inner(mod_root: &Path) -> Result<Vec<String>, AppError> {
-    if !mod_root.exists() || !mod_root.is_dir() {
-        return Err(AppError::Metadata(MetadataError::Validation(format!(
-            "Invalid mod folder: {}",
-            mod_root.display()
-        ))));
-    }
+#[derive(Debug, Clone, Serialize, specta::Type)]
+pub struct ModPreviewImage {
+    pub path: String,
+    pub is_hidden: bool,
+}
 
-    Ok(thumbnail::list_preview_images(mod_root)
+pub fn list_mod_preview_images_with_visibility_inner(
+    mod_root: &Path,
+) -> Result<Vec<ModPreviewImage>, AppError> {
+    if !mod_root.is_dir() {
+        return Err(AppError::Validation(
+            "Selected preview folder is unavailable".to_string(),
+        ));
+    }
+    Ok(
+        crate::platform::images::preview_visibility::apply_visibility(
+            mod_root,
+            thumbnail::list_all_preview_images(mod_root),
+        )?
         .into_iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect())
+        .map(|entry| ModPreviewImage {
+            is_hidden: entry.is_hidden,
+            path: entry.path.to_string_lossy().to_string(),
+        })
+        .collect(),
+    )
+}
+
+pub fn set_mod_preview_image_hidden_inner(
+    mod_root: &Path,
+    image_path: &str,
+    hidden: bool,
+) -> Result<(), AppError> {
+    let image = resolve_image_path(mod_root, image_path)?;
+    if !thumbnail::is_image_file(&image) {
+        return Err(AppError::Validation(
+            "Only preview images have visibility settings".to_string(),
+        ));
+    }
+    crate::platform::images::preview_visibility::set_hidden(mod_root, &[image], hidden)?;
+    crate::platform::images::thumbnail_cache::ThumbnailCache::invalidate_folder(
+        &mod_root.to_string_lossy(),
+    );
+    Ok(())
 }
 
 pub fn save_mod_preview_image_inner(

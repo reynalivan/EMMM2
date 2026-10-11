@@ -8,7 +8,9 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { listen } from '@tauri-apps/api/event';
 import { commands } from '../../../shared/api/tauri/bindings';
-import { extractFileInUsePayload, formatAppError } from '../../../shared/lib/appError';
+import { formatAppError } from '../../../shared/lib/appError';
+import { openFileInUseRetryDialog } from './fileInUseRetry';
+import { queryClient as applicationQueryClient } from '@/shared/lib/queryClient';
 import { toast } from '@/shared/ui/toast';
 import i18next from '@/shared/lib/i18n';
 import { useAppStore } from '@/app/store';
@@ -32,7 +34,6 @@ import {
 import {
   openFolderConflictManagerDialog,
   openRenameConfirmationDialog,
-  openWorkspaceFileInUseDialog,
 } from '../state/workspaceDialogs';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 import { modHealthKeys } from '@/entities/mod';
@@ -550,7 +551,7 @@ export function executeWorkspaceSwitch(
   return (async () => {
     try {
       void ensureWorkspaceProjectionListener();
-      const result = await commands.executeWorkspaceSwitch(input, intentRevision);
+      const result = await commands.executeWorkspaceSwitch(input, intentRevision, null);
       if (isWorkspaceGameCurrent(input.game_id)) {
         notifyCommittedMutationSyncWarning(result);
       }
@@ -563,9 +564,33 @@ export function executeWorkspaceSwitch(
         return null;
       }
 
-      const fileInUse = extractFileInUsePayload(error);
-      if (fileInUse) {
-        openWorkspaceFileInUseDialog({ path: fileInUse.path, processes: fileInUse.processes });
+      if (
+        openFileInUseRetryDialog(
+          error,
+          { input },
+          async ({
+            input: retryInput,
+            recoveryId,
+          }: {
+            input: WorkspaceSwitchInput;
+            recoveryId?: string;
+          }) => {
+            const result = await commands.executeWorkspaceSwitch(
+              retryInput,
+              nextWorkspaceIntentRevision(),
+              recoveryId ?? null,
+            );
+            if (result.status !== 'applied' && result.status !== 'noop') {
+              throw new Error(i18next.t('common:file_in_use.retry_blocked'));
+            }
+            notifyCommittedMutationSyncWarning(result);
+            await applyWorkspaceSwitchEffects(applicationQueryClient, result, 'folderSwitch', {
+              gameId: retryInput.game_id,
+            });
+            return result;
+          },
+        )
+      ) {
         return null;
       }
 
@@ -590,6 +615,7 @@ export function executeWorkspaceObjectBulkSwitch(
         objectIds,
         desiredEnabled,
         intentRevision,
+        null,
       );
       if (isWorkspaceGameCurrent(gameId)) {
         notifyCommittedMutationSyncWarning(result);
@@ -599,9 +625,36 @@ export function executeWorkspaceObjectBulkSwitch(
       if (!isWorkspaceGameCurrent(gameId)) {
         return null;
       }
-      const fileInUse = extractFileInUsePayload(error);
-      if (fileInUse) {
-        openWorkspaceFileInUseDialog({ path: fileInUse.path, processes: fileInUse.processes });
+      if (
+        openFileInUseRetryDialog(
+          error,
+          { gameId, objectIds, desiredEnabled },
+          async ({
+            recoveryId,
+          }: {
+            gameId: string;
+            objectIds: string[];
+            desiredEnabled: boolean;
+            recoveryId?: string;
+          }) => {
+            const result = await commands.executeWorkspaceObjectBulkSwitch(
+              gameId,
+              objectIds,
+              desiredEnabled,
+              nextWorkspaceIntentRevision(),
+              recoveryId ?? null,
+            );
+            if (result.status !== 'applied' && result.status !== 'noop') {
+              throw new Error(i18next.t('common:file_in_use.retry_blocked'));
+            }
+            notifyCommittedMutationSyncWarning(result);
+            await applyWorkspaceSwitchEffects(applicationQueryClient, result, 'objectSwitch', {
+              gameId,
+            });
+            return result;
+          },
+        )
+      ) {
         return null;
       }
 

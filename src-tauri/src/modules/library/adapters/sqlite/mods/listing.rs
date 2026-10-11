@@ -4,23 +4,17 @@ use std::collections::{HashMap, HashSet};
 
 use super::types::{ModSubtreeEntry, ReconcileModRow};
 use crate::modules::system::domain::mod_path::ModFolderPath;
+use crate::modules::workspace::api::is_effectively_enabled_path;
 use crate::shared::path_key::folder_path_key;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use std::path::Path;
-
-fn is_effectively_enabled_path(folder_path: &str) -> bool {
-    !folder_path
-        .split(['/', '\\'])
-        .filter(|component| !component.is_empty())
-        .any(crate::modules::workspace::domain::normalizer::is_disabled_folder)
-}
 
 pub async fn get_rows_for_reconcile(
     conn: &mut sqlx::SqliteConnection,
     game_id: &str,
 ) -> Result<Vec<ReconcileModRow>, sqlx::Error> {
     sqlx::query_as::<_, ReconcileModRow>(
-        "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity, size_bytes FROM mods WHERE game_id = ?",
+        "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity FROM mods WHERE game_id = ?",
     )
     .bind(game_id)
     .fetch_all(&mut *conn)
@@ -74,7 +68,7 @@ pub async fn get_rows_for_reconcile_scope(
 
     for keys in root_keys.chunks(ROOT_CHUNK_SIZE) {
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity, size_bytes FROM mods WHERE game_id = ",
+            "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity FROM mods WHERE game_id = ",
         );
         query.push_bind(game_id);
         push_root_key_predicate(&mut query, keys, "folder_path_key");
@@ -91,7 +85,7 @@ pub async fn get_rows_for_reconcile_scope(
 
     for identities in filesystem_identities.chunks(IDENTITY_CHUNK_SIZE) {
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity, size_bytes FROM mods WHERE game_id = ",
+            "SELECT id, folder_path, folder_path_key, actual_name, status, object_id, COALESCE(is_safe, 1) as is_safe, safety_source, object_type, filesystem_identity FROM mods WHERE game_id = ",
         );
         query.push_bind(game_id);
         query.push(" AND filesystem_identity IN (");
@@ -114,23 +108,6 @@ pub async fn get_rows_for_reconcile_scope(
     }
 
     Ok(rows)
-}
-
-pub async fn get_folder_paths_for_roots(
-    pool: &SqlitePool,
-    game_id: &str,
-    root_keys: &[String],
-) -> Result<Vec<String>, sqlx::Error> {
-    const ROOT_CHUNK_SIZE: usize = 250;
-    let mut paths = Vec::new();
-    for roots in root_keys.chunks(ROOT_CHUNK_SIZE) {
-        let mut query =
-            QueryBuilder::<Sqlite>::new("SELECT folder_path FROM mods WHERE game_id = ");
-        query.push_bind(game_id);
-        push_root_key_predicate(&mut query, roots, "folder_path_key");
-        paths.extend(query.build_query_scalar::<String>().fetch_all(pool).await?);
-    }
-    Ok(paths)
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

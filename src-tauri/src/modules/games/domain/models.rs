@@ -7,15 +7,15 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GameType {
-    GIMI = 0,
-    SRMI = 1,
-    WWMI = 2,
-    ZZMI = 3,
-    EFMI = 4,
+    Gimi = 0,
+    Srmi = 1,
+    Wwmi = 2,
+    Zzmi = 3,
+    Efmi = 4,
 }
 
 // serde_repr serializes this enum as its numeric discriminant, but the specta
-// derive would export the variant *names* ("GIMI" | ...) — a wire-format lie.
+// derive would export the variant *names* ("Gimi" | ...) — a wire-format lie.
 // Delegate to u8 so the generated TS sees `number`, matching serde_repr.
 impl specta::Type for GameType {
     fn inline(
@@ -75,11 +75,11 @@ impl FromStr for ItemStatus {
 impl fmt::Display for GameType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GameType::GIMI => write!(f, "GIMI"),
-            GameType::SRMI => write!(f, "SRMI"),
-            GameType::WWMI => write!(f, "WWMI"),
-            GameType::ZZMI => write!(f, "ZZMI"),
-            GameType::EFMI => write!(f, "EFMI"),
+            GameType::Gimi => write!(f, "GIMI"),
+            GameType::Srmi => write!(f, "SRMI"),
+            GameType::Wwmi => write!(f, "WWMI"),
+            GameType::Zzmi => write!(f, "ZZMI"),
+            GameType::Efmi => write!(f, "EFMI"),
         }
     }
 }
@@ -89,11 +89,11 @@ impl FromStr for GameType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "GIMI" => Ok(GameType::GIMI),
-            "SRMI" => Ok(GameType::SRMI),
-            "WWMI" => Ok(GameType::WWMI),
-            "ZZMI" => Ok(GameType::ZZMI),
-            "EFMI" => Ok(GameType::EFMI),
+            "GIMI" => Ok(GameType::Gimi),
+            "SRMI" => Ok(GameType::Srmi),
+            "WWMI" => Ok(GameType::Wwmi),
+            "ZZMI" => Ok(GameType::Zzmi),
+            "EFMI" => Ok(GameType::Efmi),
             _ => Err(format!("Unknown game type: {s}")),
         }
     }
@@ -103,31 +103,31 @@ impl GameType {
     /// Every supported game, in discriminant order. The single roster — callers
     /// that need "all games" must iterate this rather than restate the list.
     pub const ALL: [GameType; 5] = [
-        GameType::GIMI,
-        GameType::SRMI,
-        GameType::WWMI,
-        GameType::ZZMI,
-        GameType::EFMI,
+        GameType::Gimi,
+        GameType::Srmi,
+        GameType::Wwmi,
+        GameType::Zzmi,
+        GameType::Efmi,
     ];
 
     pub fn display_name(&self) -> &'static str {
         match self {
-            GameType::GIMI => "GIMI",
-            GameType::SRMI => "SRMI",
-            GameType::WWMI => "WWMI",
-            GameType::ZZMI => "ZZMI",
-            GameType::EFMI => "EFMI",
+            GameType::Gimi => "GIMI",
+            GameType::Srmi => "SRMI",
+            GameType::Wwmi => "WWMI",
+            GameType::Zzmi => "ZZMI",
+            GameType::Efmi => "EFMI",
         }
     }
 
     /// The lowercase code used to name bundled resource files (schemas, MasterDB).
     pub fn resource_code(&self) -> &'static str {
         match self {
-            GameType::GIMI => "gimi",
-            GameType::SRMI => "srmi",
-            GameType::WWMI => "wwmi",
-            GameType::ZZMI => "zzmi",
-            GameType::EFMI => "efmi",
+            GameType::Gimi => "gimi",
+            GameType::Srmi => "srmi",
+            GameType::Wwmi => "wwmi",
+            GameType::Zzmi => "zzmi",
+            GameType::Efmi => "efmi",
         }
     }
 

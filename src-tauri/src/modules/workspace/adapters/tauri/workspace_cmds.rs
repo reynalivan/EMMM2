@@ -337,9 +337,15 @@ pub async fn execute_workspace_switch(
     app: tauri::AppHandle,
     input: WorkspaceSwitchInput,
     intent_revision: Option<u64>,
+    recovery_id: Option<String>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
-    execute_workspace_switch_request(app, WorkspaceSwitchRequest::Single(input), intent_revision)
-        .await
+    execute_workspace_switch_request(
+        app,
+        WorkspaceSwitchRequest::Single(input),
+        intent_revision,
+        recovery_id,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -350,6 +356,7 @@ pub async fn execute_workspace_object_bulk_switch(
     object_ids: Vec<String>,
     desired_enabled: bool,
     intent_revision: Option<u64>,
+    recovery_id: Option<String>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
     execute_workspace_switch_request(
         app,
@@ -359,6 +366,7 @@ pub async fn execute_workspace_object_bulk_switch(
             desired_enabled,
         },
         intent_revision,
+        recovery_id,
     )
     .await
 }
@@ -563,6 +571,7 @@ async fn execute_workspace_switch_request(
     app: tauri::AppHandle,
     mut request: WorkspaceSwitchRequest,
     intent_revision: Option<u64>,
+    recovery_id: Option<String>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
     let command_started_at = Instant::now();
     let source_epoch = projection_source_epoch(&app.state::<ConfigService>(), request.game_id())?;
@@ -580,6 +589,7 @@ async fn execute_workspace_switch_request(
             &source_epoch,
             object_ownership.as_ref(),
             command_started_at,
+            recovery_id.as_deref(),
         )
         .await?;
         if result.status
@@ -616,6 +626,7 @@ async fn execute_workspace_switch_request_once(
     expected_epoch: &str,
     object_ownership: Option<&ObjectSwitchOwnership>,
     command_started_at: Instant,
+    recovery_id: Option<&str>,
 ) -> Result<WorkspaceSwitchResult, AppError> {
     let config = app.state::<ConfigService>();
     let pool = app.state::<sqlx::SqlitePool>();
@@ -742,7 +753,7 @@ async fn execute_workspace_switch_request_once(
             ownership.validate_request(&request, config.inner())?;
             ownership.validate_prepared(&prepared)?;
         }
-        let result = prepared.execute(&app, &watcher_state);
+        let result = prepared.execute(&app, &watcher_state).await;
         if diagnostics_enabled {
             log::debug!(
                 "workspace switch span outcome=exempt game_id={} source_epoch={} intent_revision={:?} admission_us={} game_lease_wait_us={} prepare_us={} execute_us={} total_us={}",
@@ -853,7 +864,7 @@ async fn execute_workspace_switch_request_once(
                 ownership.validate_request(&request, config.inner())?;
                 ownership.validate_prepared(&prepared)?;
             }
-            return prepared.execute(&app, &watcher_state);
+            return prepared.execute(&app, &watcher_state).await;
         }
         if !trusted_toggle_scope(&scope, &mods_root) && crate::modules::reconciliation::application::disk_reconcile::emit::conflicts_intersect_paths(
         &preflight.folder_conflicts,
@@ -883,6 +894,8 @@ async fn execute_workspace_switch_request_once(
         })
         .collect::<Vec<_>>();
     let journal_started_at = Instant::now();
+    let original_recovery_scope =
+        crate::modules::mutation::api::original_file_lock_scope(&journal_steps)?;
     let operation_guard = op_lock
         .acquire_operation(
             crate::modules::mutation::api::OperationPlan::new(
@@ -935,7 +948,16 @@ async fn execute_workspace_switch_request_once(
         mutation_lease.finish_rollback()?;
         return Ok(superseded_switch_result());
     }
-    if let Err(error) = scope.validate_identities() {
+    let retry_validation = scope
+        .validate_identities()
+        .and_then(|()| match recovery_id {
+            Some(id) => crate::modules::system::api::validate_file_lock_replay_scope(
+                id,
+                &original_recovery_scope,
+            ),
+            None => Ok(()),
+        });
+    if let Err(error) = retry_validation {
         mutation_lease.begin_rollback()?;
         let settlements = scope
             .renames
@@ -998,7 +1020,7 @@ async fn execute_workspace_switch_request_once(
         mutation_lease.abort_unapplied()?;
         return Err(error);
     }
-    let mut result = match prepared.execute_with_outcome(&app, &watcher_state) {
+    let mut result = match prepared.execute_with_outcome(&app, &watcher_state).await {
         Ok(result) => result,
         Err(PreparedWorkspaceExecutionError::Apply(error)) => {
             if let Some(evidence) = &expected_echo_evidence {
@@ -1015,7 +1037,10 @@ async fn execute_workspace_switch_request_once(
                 .collect::<Vec<_>>();
             mutation_lease.settle_steps(&settlements)?;
             mutation_lease.finish_rollback()?;
-            return Err(error);
+            return Err(crate::modules::system::api::bind_file_lock_scope(
+                error,
+                &original_recovery_scope,
+            ));
         }
         Err(PreparedWorkspaceExecutionError::Compensation(error)) => {
             if let Some(evidence) = &expected_echo_evidence {
@@ -1056,7 +1081,7 @@ async fn execute_workspace_switch_request_once(
                     .discard_expected_rename_echoes(evidence);
             }
             let rollback_started = mutation_lease.begin_rollback();
-            let rollback_result = prepared.rollback(&watcher_state);
+            let rollback_result = prepared.rollback(&watcher_state).await;
             if let Err(rollback_error) = rollback_result {
                 let message = format!(
                     "Storage verification or commit failed: {error}; filesystem rollback failed: {rollback_error}"
@@ -1358,7 +1383,7 @@ mod tests {
             &TestGameFixture {
                 id: "game",
                 name: "Game",
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 path: temp.path().to_str().unwrap(),
                 mods_path: root.to_str(),
             },
@@ -1447,7 +1472,7 @@ mod tests {
             &TestGameFixture {
                 id: "game",
                 name: "Game",
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 path: temp.path().to_str().unwrap(),
                 mods_path: root.to_str(),
             },

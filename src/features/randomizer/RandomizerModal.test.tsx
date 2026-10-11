@@ -35,6 +35,8 @@ vi.mock('react-i18next', () => ({
         'randomizer.backup_reused': `Reused ${String(vars?.name)}`,
         'randomizer.review_title': 'Changes to apply',
         'randomizer.reviewing': 'Reviewing...',
+        'randomizer.keep_current': 'Keep current',
+        'randomizer.keeping_current': 'Keeping current',
         'common:actions.close': 'Close',
       };
       if (key === 'randomizer.selection_status') {
@@ -107,6 +109,14 @@ function previewResponse() {
       disable_count: 0,
     })),
   };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 function mockCommands(runtime = activeRuntime) {
@@ -320,8 +330,144 @@ describe('RandomizerModal', () => {
     });
   });
 
-  it('requires a non-empty scope before Roll', () => {
+  it.each(['Select All', 'row selection'])(
+    'keeps locked objects out of %s, review and apply',
+    async (selection) => {
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'suggest_random_mods') {
+          return Promise.resolve([
+            { ...proposals[0], active_mod_names: ['Current Hu Tao'] },
+            proposals[1],
+          ]);
+        }
+        if (command === 'get_collection_runtime_state') return Promise.resolve(emptyRuntime);
+        if (command === 'preview_randomized_loadout') return Promise.resolve(previewResponse());
+        if (command === 'apply_randomized_loadout') {
+          return Promise.resolve({
+            impact: { rewrites: [], cleared_selection_paths: [], refresh_scopes: [] },
+            backup: null,
+            sync_warning: null,
+          });
+        }
+        return Promise.resolve(null);
+      });
+      render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+      await rollRandomizer();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep current' }));
+      if (selection === 'Select All') {
+        fireEvent.click(screen.getByText('Kazuha Samurai Skin'));
+        fireEvent.click(screen.getByRole('button', { name: 'Select All' }));
+      } else {
+        fireEvent.click(screen.getByText('Hu Tao Galaxy Skin'));
+      }
+
+      expect(screen.getByRole('button', { name: 'Keeping current' })).toBeInTheDocument();
+      expect(screen.getByText('1 of 2 selected')).toBeInTheDocument();
+      await reviewAndApply();
+
+      expect(invoke).toHaveBeenCalledWith('preview_randomized_loadout', {
+        input: expect.objectContaining({ mod_ids: ['mod-b'] }),
+      });
+      expect(invoke).toHaveBeenCalledWith('apply_randomized_loadout', {
+        input: expect.objectContaining({ mod_ids: ['mod-b'] }),
+      });
+    },
+  );
+
+  it.each(['selection', 'backup name', 'backup toggle', 'reroll'])(
+    'settles a pending review when %s invalidates it',
+    async (change) => {
+      const pendingPreview = createDeferred<ReturnType<typeof previewResponse>>();
+      vi.mocked(invoke).mockImplementation((command) => {
+        if (command === 'suggest_random_mods') return Promise.resolve(proposals);
+        if (command === 'get_collection_runtime_state') return Promise.resolve(activeRuntime);
+        if (command === 'preview_randomized_loadout') return pendingPreview.promise;
+        return Promise.resolve(null);
+      });
+      render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+      await rollRandomizer();
+      fireEvent.click(screen.getByRole('button', { name: /review changes/i }));
+      expect(screen.getByRole('button', { name: 'Reviewing...' })).toBeDisabled();
+
+      await act(async () => {
+        if (change === 'selection') fireEvent.click(screen.getByText('Hu Tao Galaxy Skin'));
+        if (change === 'backup name') {
+          fireEvent.change(screen.getByDisplayValue(/^Backup before shuffle/), {
+            target: { value: 'Changed backup' },
+          });
+        }
+        if (change === 'backup toggle') {
+          fireEvent.click(screen.getByRole('checkbox', { name: /backup currently active/i }));
+        }
+        if (change === 'reroll') {
+          fireEvent.click(screen.getByRole('button', { name: 'Reroll All' }));
+        }
+      });
+      expect(screen.getByRole('button', { name: /review changes/i })).toBeEnabled();
+
+      await act(async () => pendingPreview.resolve(previewResponse()));
+      expect(screen.queryByText('Changes to apply')).not.toBeInTheDocument();
+    },
+  );
+
+  it('does not let an invalidated review settle a newer request', async () => {
+    const firstPreview = createDeferred<ReturnType<typeof previewResponse>>();
+    const secondPreview = createDeferred<ReturnType<typeof previewResponse>>();
+    let previewCount = 0;
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === 'suggest_random_mods') return Promise.resolve(proposals);
+      if (command === 'get_collection_runtime_state') return Promise.resolve(emptyRuntime);
+      if (command === 'preview_randomized_loadout') {
+        return ++previewCount === 1 ? firstPreview.promise : secondPreview.promise;
+      }
+      return Promise.resolve(null);
+    });
     render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+    await rollRandomizer();
+    fireEvent.click(screen.getByRole('button', { name: /review changes/i }));
+    fireEvent.click(screen.getByText('Hu Tao Galaxy Skin'));
+    fireEvent.click(screen.getByRole('button', { name: /review changes/i }));
+
+    await act(async () => firstPreview.resolve(previewResponse()));
+    expect(screen.getByRole('button', { name: 'Reviewing...' })).toBeDisabled();
+    expect(screen.queryByText('Changes to apply')).not.toBeInTheDocument();
+
+    await act(async () => secondPreview.resolve(previewResponse()));
+    expect(screen.getByText('Changes to apply')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm & Apply (1)' })).toBeEnabled();
+  });
+
+  it('ignores a previous session review while the new game review is pending', async () => {
+    const firstPreview = createDeferred<ReturnType<typeof previewResponse>>();
+    const secondPreview = createDeferred<ReturnType<typeof previewResponse>>();
+    let previewCount = 0;
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === 'suggest_random_mods') return Promise.resolve(proposals);
+      if (command === 'get_collection_runtime_state') return Promise.resolve(emptyRuntime);
+      if (command === 'preview_randomized_loadout') {
+        return ++previewCount === 1 ? firstPreview.promise : secondPreview.promise;
+      }
+      return Promise.resolve(null);
+    });
+    const { rerender } = render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+    await rollRandomizer();
+    fireEvent.click(screen.getByRole('button', { name: /review changes/i }));
+    rerender(<RandomizerModal open onClose={vi.fn()} gameId="g-2" />);
+    await rollRandomizer();
+    fireEvent.click(screen.getByRole('button', { name: /review changes/i }));
+
+    await act(async () => firstPreview.resolve(previewResponse()));
+    expect(screen.getByRole('button', { name: 'Reviewing...' })).toBeDisabled();
+    expect(screen.queryByText('Changes to apply')).not.toBeInTheDocument();
+
+    await act(async () => secondPreview.resolve(previewResponse()));
+    expect(screen.getByText('Changes to apply')).toBeInTheDocument();
+  });
+
+  it('requires a non-empty scope before Roll', async () => {
+    await act(async () => {
+      render(<RandomizerModal open onClose={vi.fn()} gameId="g-1" />);
+    });
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Character' }));
 

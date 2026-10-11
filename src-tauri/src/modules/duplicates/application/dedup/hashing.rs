@@ -22,18 +22,18 @@ pub(crate) struct HashProfile {
     pub mesh_hashes: BTreeMap<String, String>,
 }
 
-pub(crate) fn hash_snapshot(snapshot: &ModSnapshot) -> HashProfile {
+pub(crate) fn hash_snapshot(snapshot: &ModSnapshot) -> Result<HashProfile, ScannerError> {
     hash_snapshot_with_identity_mode(snapshot, false)
 }
 
-pub(crate) fn hash_snapshot_full(snapshot: &ModSnapshot) -> HashProfile {
+pub(crate) fn hash_snapshot_full(snapshot: &ModSnapshot) -> Result<HashProfile, ScannerError> {
     hash_snapshot_with_identity_mode(snapshot, true)
 }
 
 fn hash_snapshot_with_identity_mode(
     snapshot: &ModSnapshot,
     require_full_identity: bool,
-) -> HashProfile {
+) -> Result<HashProfile, ScannerError> {
     let mut profile = HashProfile::default();
     for file in &snapshot.files {
         let is_texture = file.extension == TEXTURE_EXT;
@@ -44,9 +44,7 @@ fn hash_snapshot_with_identity_mode(
         } else {
             full_blake3_hash(&file.abs_path)
         };
-        let Ok(identity_hash) = identity_hash else {
-            continue;
-        };
+        let identity_hash = identity_hash?;
 
         profile
             .file_hashes
@@ -69,7 +67,7 @@ fn hash_snapshot_with_identity_mode(
                 .insert(file.rel_path.clone(), identity_hash);
         }
     }
-    profile
+    Ok(profile)
 }
 
 pub(super) fn full_blake3_hash(path: &Path) -> Result<String, ScannerError> {

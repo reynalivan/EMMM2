@@ -8,14 +8,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
+use super::harvester::HarvestedTarget;
+
 use crate::modules::matching::application::deep_matcher::models::types::{
     RuntimeResourceKind, RuntimeTarget, RuntimeTargetProvenance,
 };
-
-/// Kept as a small compatibility contract for the post-apply call site.
-/// Runtime eligibility no longer has a score or a sentinel-count knob.
-#[derive(Debug, Clone, Default)]
-pub struct MatchConfig;
 
 /// A flattened catalog entry used only by KeyViewer.
 #[derive(Debug, Clone)]
@@ -73,13 +70,8 @@ impl RuntimeSentinel {
         )
     }
 
-    pub fn stable_key(&self) -> (String, RuntimeResourceKind, String, Option<u32>) {
-        (
-            self.hash.clone(),
-            self.resource_kind,
-            self.callback_slot.clone(),
-            self.match_first_index,
-        )
+    pub fn stable_key(&self) -> SentinelIdentity {
+        SentinelIdentity::from(self)
     }
 }
 
@@ -91,6 +83,7 @@ pub struct MatchResult {
     /// Number of catalog targets found in enabled mods, retained for preview.
     pub score: f32,
     pub matched_hashes: Vec<String>,
+    pub matched_targets: Vec<SentinelIdentity>,
     /// Every observer in the selected resource tier is OR-ed into one panel.
     pub sentinels: Vec<RuntimeSentinel>,
     pub confidence: MatchConfidence,
@@ -162,7 +155,7 @@ fn catalog_target_owners(entries: &[KvObjectEntry]) -> HashMap<SentinelIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct SentinelIdentity {
+pub struct SentinelIdentity {
     hash: String,
     resource_kind: RuntimeResourceKind,
     callback_slot: String,
@@ -180,7 +173,18 @@ impl From<&RuntimeSentinel> for SentinelIdentity {
     }
 }
 
-/// Match active resource hashes against catalog identities.
+impl From<&HarvestedTarget> for SentinelIdentity {
+    fn from(target: &HarvestedTarget) -> Self {
+        Self {
+            hash: target.hash.to_ascii_lowercase(),
+            resource_kind: target.resource_kind,
+            callback_slot: target.callback_slot.trim().to_ascii_lowercase(),
+            match_first_index: target.match_first_index,
+        }
+    }
+}
+
+/// Match observed typed resource targets against catalog identities.
 ///
 /// A character needs one observed target to establish ownership. A catalog
 /// target shared by multiple character entries is removed unless its full
@@ -188,9 +192,7 @@ impl From<&RuntimeSentinel> for SentinelIdentity {
 /// create two contradictory panels.
 pub fn match_objects(
     entries: &[KvObjectEntry],
-    active_hashes: &HashSet<String>,
-    _occurrence_counts: &HashMap<String, usize>,
-    _config: &MatchConfig,
+    active_targets: &HashSet<SentinelIdentity>,
 ) -> Vec<MatchResult> {
     let owners = catalog_target_owners(entries);
     let mut results = Vec::new();
@@ -198,21 +200,23 @@ pub fn match_objects(
     for entry in entries {
         let mut by_variant: BTreeMap<String, Vec<RuntimeSentinel>> = BTreeMap::new();
         let mut matched_hashes = BTreeSet::new();
+        let mut matched_targets = BTreeSet::new();
         for target in &entry.runtime_targets {
-            let hash = target.hash.to_ascii_lowercase();
-            if !active_hashes.contains(&hash) {
-                continue;
-            }
-            matched_hashes.insert(hash);
             let Some(sentinel) = RuntimeSentinel::from_catalog(target) else {
                 continue;
             };
-            if owners
-                .get(&SentinelIdentity::from(&sentinel))
-                .is_some_and(|names| names.len() > 1)
+            let identity = SentinelIdentity::from(&sentinel);
+            if !active_targets.contains(&identity)
+                || (sentinel.resource_kind == RuntimeResourceKind::IndexBuffer
+                    && sentinel.match_first_index.is_none())
             {
                 continue;
             }
+            if owners.get(&identity).is_some_and(|names| names.len() > 1) {
+                continue;
+            }
+            matched_hashes.insert(sentinel.hash.clone());
+            matched_targets.insert(identity);
             by_variant
                 .entry(target.variant.clone())
                 .or_default()
@@ -242,6 +246,7 @@ pub fn match_objects(
             object_type: entry.object_type.clone(),
             score,
             matched_hashes,
+            matched_targets: matched_targets.into_iter().collect(),
             sentinels,
             confidence: if score >= 4.0 {
                 MatchConfidence::Excellent

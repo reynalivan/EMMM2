@@ -11,7 +11,8 @@ vi.mock('@/app/store', () => ({
   useAppStore: (selector: (value: typeof state) => unknown) => selector(state),
 }));
 
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQuery: vi.fn(),
 }));
 

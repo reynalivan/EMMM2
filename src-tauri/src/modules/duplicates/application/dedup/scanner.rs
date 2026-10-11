@@ -13,7 +13,7 @@ use super::grouping::{build_groups, ScoredPair};
 use super::hashing::{hash_snapshot, hash_snapshot_full, HashProfile};
 use super::signals::aggregate_signals;
 use super::snapshot::{collect_snapshot, ModSnapshot};
-use crate::shared::path_key::canonical_path_key_for_path;
+use crate::shared::path_key::exact_location_key_for_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +35,7 @@ pub struct DedupScanOutcome {
 struct ExactClusterCompression {
     cluster_by_index: Vec<Option<usize>>,
     spanning_pairs: Vec<(usize, usize)>,
+    isolated_exact_pairs: HashSet<(usize, usize)>,
     initial_profiles: HashMap<usize, HashProfile>,
     full_profiles: HashMap<usize, HashProfile>,
 }
@@ -79,7 +80,7 @@ pub async fn scan_duplicates_for_candidates(
         .into_iter()
         .map(|(id, folder_path, is_safe)| {
             let absolute = folder_path.resolve(mods_root);
-            (canonical_path_key_for_path(&absolute), (id, is_safe))
+            (exact_location_key_for_path(&absolute), (id, is_safe))
         })
         .collect();
     let whitelist_pairs = fetch_whitelist_pairs(db, game_id).await?;
@@ -94,7 +95,7 @@ pub async fn scan_duplicates_for_candidates(
             whitelist_pairs,
         )
     })
-    .await?;
+    .await??;
 
     Ok(outcome)
 }
@@ -105,20 +106,20 @@ fn run_pipeline_blocking(
     total_folders: usize,
     path_to_mod_id: HashMap<String, (String, bool)>,
     whitelist_pairs: HashSet<(String, String)>,
-) -> DedupScanOutcome {
+) -> Result<DedupScanOutcome, ScannerError> {
     // Each snapshot is an independent folder walk + per-file stat + INI read.
     // The hashing phase below is already parallel; this is the heavier half.
     let snapshots: Vec<ModSnapshot> = candidates
         .par_iter()
-        .filter_map(|candidate| collect_snapshot(candidate).ok())
-        .collect();
+        .map(collect_snapshot)
+        .collect::<Result<_, _>>()?;
 
     if is_cancelled(&cancel_flag) {
-        return cancelled(total_folders);
+        return Ok(cancelled(total_folders));
     }
 
     let exact_compression =
-        build_exact_cluster_compression(&snapshots, &path_to_mod_id, &whitelist_pairs);
+        build_exact_cluster_compression(&snapshots, &path_to_mod_id, &whitelist_pairs)?;
     let mut candidate_pairs = phase1_candidate_filtering_without_exact_cliques(
         &snapshots,
         &exact_compression.cluster_by_index,
@@ -133,7 +134,7 @@ fn run_pipeline_blocking(
         &whitelist_pairs,
     );
     if is_cancelled(&cancel_flag) {
-        return cancelled(total_folders);
+        return Ok(cancelled(total_folders));
     }
 
     let pair_indices: HashSet<usize> = candidate_pairs.iter().flat_map(|(a, b)| [*a, *b]).collect();
@@ -143,15 +144,14 @@ fn run_pipeline_blocking(
         .copied()
         .filter(|index| !hash_profiles.contains_key(index))
         .collect();
-    hash_profiles.extend(
-        missing_initial_indices
-            .par_iter()
-            .map(|index| (*index, hash_snapshot(&snapshots[*index])))
-            .collect::<HashMap<_, _>>(),
-    );
+    let missing_initial_profiles: HashMap<usize, HashProfile> = missing_initial_indices
+        .par_iter()
+        .map(|index| hash_snapshot(&snapshots[*index]).map(|profile| (*index, profile)))
+        .collect::<Result<_, _>>()?;
+    hash_profiles.extend(missing_initial_profiles);
 
     if is_cancelled(&cancel_flag) {
-        return cancelled(total_folders);
+        return Ok(cancelled(total_folders));
     }
 
     let preliminary_pairs: Vec<ScoredPair> = candidate_pairs
@@ -179,12 +179,14 @@ fn run_pipeline_blocking(
         .copied()
         .filter(|index| !full_hash_profiles.contains_key(index))
         .collect();
-    full_hash_profiles.extend(
-        missing_full_indices
-            .par_iter()
-            .map(|index| (*index, hash_snapshot_full(&snapshots[*index])))
-            .collect::<HashMap<_, _>>(),
-    );
+    let missing_full_profiles: HashMap<usize, HashProfile> = missing_full_indices
+        .par_iter()
+        .map(|index| hash_snapshot_full(&snapshots[*index]).map(|profile| (*index, profile)))
+        .collect::<Result<_, _>>()?;
+    full_hash_profiles.extend(missing_full_profiles);
+    if is_cancelled(&cancel_flag) {
+        return Ok(cancelled(total_folders));
+    }
     let scored_pairs: Vec<ScoredPair> = preliminary_pairs
         .into_iter()
         .filter_map(|pair| {
@@ -204,11 +206,20 @@ fn run_pipeline_blocking(
         })
         .collect();
 
-    DedupScanOutcome {
-        status: DedupScanStatus::Completed,
-        groups: build_groups(&snapshots, &scored_pairs, &path_to_mod_id),
-        total_folders,
+    let groups = build_groups(
+        &snapshots,
+        &scored_pairs,
+        &path_to_mod_id,
+        &exact_compression.isolated_exact_pairs,
+    );
+    if is_cancelled(&cancel_flag) {
+        return Ok(cancelled(total_folders));
     }
+    Ok(DedupScanOutcome {
+        status: DedupScanStatus::Completed,
+        groups,
+        total_folders,
+    })
 }
 
 /// Compress a complete graph of content-identical candidates into a spanning
@@ -218,7 +229,7 @@ fn build_exact_cluster_compression(
     snapshots: &[ModSnapshot],
     path_to_mod_id: &HashMap<String, (String, bool)>,
     whitelist_pairs: &HashSet<(String, String)>,
-) -> ExactClusterCompression {
+) -> Result<ExactClusterCompression, ScannerError> {
     let mut compression = ExactClusterCompression {
         cluster_by_index: vec![None; snapshots.len()],
         ..Default::default()
@@ -227,7 +238,7 @@ fn build_exact_cluster_compression(
         .iter()
         .map(|snapshot| {
             path_to_mod_id
-                .get(&canonical_path_key_for_path(&snapshot.candidate.path))
+                .get(&exact_location_key_for_path(&snapshot.candidate.path))
                 .map(|(mod_id, _)| mod_id.as_str())
         })
         .collect();
@@ -236,16 +247,18 @@ fn build_exact_cluster_compression(
     for layout_group in structurally_equivalent_groups(snapshots) {
         let initial_profiles: Vec<(usize, HashProfile)> = layout_group
             .par_iter()
-            .map(|index| (*index, hash_snapshot(&snapshots[*index])))
-            .collect();
+            .map(|index| hash_snapshot(&snapshots[*index]).map(|profile| (*index, profile)))
+            .collect::<Result<_, _>>()?;
         let initial_match_groups = matching_profile_groups(&initial_profiles);
         compression.initial_profiles.extend(initial_profiles);
 
         for initial_match_group in initial_match_groups {
             let full_profiles: Vec<(usize, HashProfile)> = initial_match_group
                 .par_iter()
-                .map(|index| (*index, hash_snapshot_full(&snapshots[*index])))
-                .collect();
+                .map(|index| {
+                    hash_snapshot_full(&snapshots[*index]).map(|profile| (*index, profile))
+                })
+                .collect::<Result<_, _>>()?;
             let exact_groups = matching_profile_groups(&full_profiles);
             compression.full_profiles.extend(full_profiles);
 
@@ -253,6 +266,11 @@ fn build_exact_cluster_compression(
                 for (members, edges) in
                     exact_components_after_whitelist(&exact_group, &mod_ids, whitelist_pairs)
                 {
+                    if component_has_whitelisted_pair(&members, &mod_ids, whitelist_pairs) {
+                        compression
+                            .isolated_exact_pairs
+                            .extend(edges.iter().copied());
+                    }
                     for index in members {
                         compression.cluster_by_index[index] = Some(next_cluster_id);
                     }
@@ -263,7 +281,7 @@ fn build_exact_cluster_compression(
         }
     }
 
-    compression
+    Ok(compression)
 }
 
 fn structurally_equivalent_groups(snapshots: &[ModSnapshot]) -> Vec<Vec<usize>> {
@@ -405,6 +423,16 @@ fn exact_components_after_whitelist(
             }
         }
 
+        if component_has_whitelisted_pair(&component_members, mod_ids, whitelist_pairs) {
+            component_edges.clear();
+            for (position, &left) in component_members.iter().enumerate() {
+                for &right in &component_members[position + 1..] {
+                    if !pair_is_whitelisted(left, right, mod_ids, whitelist_pairs) {
+                        component_edges.push((left.min(right), left.max(right)));
+                    }
+                }
+            }
+        }
         components.push((component_members, component_edges));
     }
 
@@ -423,6 +451,17 @@ fn pair_is_whitelisted(
     whitelist_pairs.contains(&canonical_pair(left_id, right_id))
 }
 
+fn component_has_whitelisted_pair(
+    members: &[usize],
+    mod_ids: &[Option<&str>],
+    whitelist_pairs: &HashSet<(String, String)>,
+) -> bool {
+    let member_ids: HashSet<&str> = members.iter().filter_map(|index| mod_ids[*index]).collect();
+    whitelist_pairs.iter().any(|(left, right)| {
+        left != right && member_ids.contains(left.as_str()) && member_ids.contains(right.as_str())
+    })
+}
+
 fn apply_whitelist_filter(
     candidate_pairs: Vec<(usize, usize)>,
     snapshots: &[ModSnapshot],
@@ -432,8 +471,8 @@ fn apply_whitelist_filter(
     candidate_pairs
         .into_iter()
         .filter(|(left_index, right_index)| {
-            let left_path = canonical_path_key_for_path(&snapshots[*left_index].candidate.path);
-            let right_path = canonical_path_key_for_path(&snapshots[*right_index].candidate.path);
+            let left_path = exact_location_key_for_path(&snapshots[*left_index].candidate.path);
+            let right_path = exact_location_key_for_path(&snapshots[*right_index].candidate.path);
 
             let Some((left_id, _)) = path_to_mod_id.get(&left_path) else {
                 return true;

@@ -20,6 +20,9 @@ macro_rules! emmm_collect_commands {
             crate::modules::system::adapters::tauri::app_cmds::get_pending_crash_report,
             crate::modules::system::adapters::tauri::app_cmds::discard_pending_crash_report,
             crate::modules::system::adapters::tauri::app_cmds::record_native_error_metric,
+            crate::modules::system::adapters::tauri::file_lock_cmds::get_file_lock_info,
+            crate::modules::system::adapters::tauri::file_lock_cmds::control_file_lock_process,
+            crate::modules::system::adapters::tauri::file_lock_cmds::dismiss_file_lock_recovery,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_dashboard_stats,
             crate::modules::dashboard::adapters::tauri::dashboard_cmds::get_active_keybindings,
             crate::modules::workspace::adapters::tauri::workspace_cmds::get_workspace_structure,
@@ -51,6 +54,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::catalog::adapters::tauri::master_db_cmds::preview_catalog_github_import,
             crate::modules::catalog::adapters::tauri::master_db_cmds::preview_catalog_local_import,
             crate::modules::catalog::adapters::tauri::master_db_cmds::install_catalog_import,
+            crate::modules::catalog::adapters::tauri::master_db_cmds::discard_catalog_import,
             crate::modules::catalog::adapters::tauri::master_db_cmds::get_object_identity_suggestion_status,
             crate::modules::catalog::adapters::tauri::master_db_cmds::list_object_identity_suggestions,
             crate::modules::catalog::adapters::tauri::master_db_cmds::retry_object_identity_suggestions,
@@ -102,7 +106,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::library::adapters::tauri::preview_cmds::read_mod_ini,
             crate::modules::library::adapters::tauri::preview_cmds::read_mod_ini_documents,
             crate::modules::library::adapters::tauri::preview_cmds::write_mod_ini,
-            crate::modules::library::adapters::tauri::preview_cmds::list_mod_preview_images,
+            crate::modules::library::adapters::tauri::preview_cmds::list_mod_preview_images_with_visibility,
+            crate::modules::library::adapters::tauri::preview_cmds::set_mod_preview_image_hidden,
             crate::modules::library::adapters::tauri::preview_cmds::save_mod_preview_image,
             crate::modules::library::adapters::tauri::preview_cmds::remove_mod_preview_image,
             crate::modules::library::adapters::tauri::preview_cmds::clear_mod_preview_images,
@@ -150,10 +155,7 @@ macro_rules! emmm_collect_commands {
             crate::modules::settings::adapters::tauri::settings_cmds::clear_old_thumbnails,
             crate::modules::system::adapters::tauri::theme_cmds::list_custom_themes,
             crate::modules::system::adapters::tauri::theme_cmds::load_custom_theme,
-            crate::modules::system::adapters::tauri::theme_cmds::save_custom_theme,
-            crate::modules::system::adapters::tauri::theme_cmds::delete_custom_theme,
             crate::modules::system::adapters::tauri::theme_cmds::import_custom_theme,
-            crate::modules::system::adapters::tauri::theme_cmds::export_custom_theme,
             crate::modules::system::adapters::tauri::theme_cmds::export_custom_theme_template,
             crate::modules::catalog::adapters::tauri::object_cmds::get_objects_cmd,
             crate::modules::catalog::adapters::tauri::object_cmds::get_category_counts_cmd,
@@ -198,6 +200,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::updates::adapters::tauri::update_cmds::install_app_update,
             crate::modules::automation::adapters::tauri::hotkey_cmds::save_hotkey_configuration,
             crate::modules::automation::adapters::tauri::hotkey_cmds::get_reload_key,
+            crate::modules::automation::adapters::tauri::hotkey_notice::get_hotkey_notice,
+            crate::modules::automation::adapters::tauri::hotkey_notice::hotkey_notice_ready,
             modules::browser::adapters::tauri::tauri::browser_open_tab,
             modules::browser::adapters::tauri::tauri::browser_navigate,
             modules::browser::adapters::tauri::tauri::browser_go_back,
@@ -245,6 +249,7 @@ macro_rules! emmm_collect_commands {
 #[cfg(not(test))]
 pub fn run() {
     let builder = tauri_specta::Builder::<tauri::Wry>::new().commands(emmm_collect_commands!());
+    let application_handler = builder.invoke_handler();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -301,6 +306,11 @@ pub fn run() {
         .manage(crate::modules::mutation::coordinator::MutationCoordinator::unconfigured())
         .setup(move |app| {
             let app_handle = app.handle();
+            crate::modules::system::application::app::readonly_audit::initialize_bootstrap_guards(
+                &app.config().identifier,
+                &app_handle.path().app_data_dir()?,
+            )?;
+            crate::modules::workspace::application::scanner::master_db::catalog_import::start_cleanup(app_handle);
 
             crate::modules::system::application::app::bootstrap::center_window_if_offscreen(app_handle);
 
@@ -362,13 +372,26 @@ pub fn run() {
             config_service.set_ai_key_status(has_ai_api_key);
             app.manage(credential_store);
             app.manage(config_service);
+            let recovery_app = app_handle.clone();
+            crate::modules::system::api::file_lock::initialize_file_lock_contexts(move || {
+                recovery_app.state::<crate::modules::settings::api::config::ConfigService>().with_settings(|settings| {
+                    settings.active_game().map(|game| crate::modules::system::api::file_lock::FileLockGameSnapshot {
+                        game_id: game.id.clone(), root: game.mod_path.clone(),
+                    })
+                })
+            });
             let telemetry_store =
-                crate::modules::system::application::telemetry::TelemetryStore::new(pool_ref.inner().clone());
+                crate::modules::system::application::telemetry::TelemetryStore::new(
+                    pool_ref.inner().clone(),
+                    app_handle.state::<crate::modules::settings::application::config::ConfigService>()
+                        .with_settings(|settings| settings.diagnostics.telemetry_enabled),
+                );
             app.manage(telemetry_store.clone());
             app.manage(crate::modules::system::application::telemetry::TelemetrySink::start(
                 telemetry_store.clone(),
             ));
             if let Some(previous_session) = previous_session {
+                let telemetry_store = telemetry_store.capture();
                 let diagnostics_enabled = app_handle
                     .state::<crate::modules::settings::application::config::ConfigService>()
                     .get_settings()
@@ -444,6 +467,12 @@ pub fn run() {
 
             let config_ref: tauri::State<'_, crate::modules::settings::application::config::ConfigService> = app.state();
             let hotkey_config = config_ref.get_settings().hotkeys;
+            if crate::modules::system::application::app::readonly_audit::is_active() {
+                crate::modules::system::application::app::readonly_audit::ensure_disabled_hotkeys(
+                    hotkey_config.enabled,
+                )?;
+            }
+            app.manage(crate::modules::automation::adapters::tauri::hotkey_notice::HotkeyNoticeController::default());
             app.manage(crate::modules::system::application::app::bootstrap::init_hotkey_manager(
                 app_handle,
                 &hotkey_config,
@@ -458,12 +487,23 @@ pub fn run() {
         .manage(crate::modules::duplicates::api::DupScanState::new())
         .manage(crate::modules::library::adapters::tauri::mod_bulk_cmds::BulkCancelState::new())
         .manage(crate::modules::workspace::application::scanner::master_db::MasterDbCache::default())
-        .invoke_handler(builder.invoke_handler())
+        .invoke_handler(move |invoke| {
+            if crate::modules::system::application::app::readonly_audit::is_active()
+                && !crate::modules::system::application::app::readonly_audit::command_allowed_during_audit(
+                    invoke.message.command(),
+                )
+            {
+                invoke.resolver.reject("Command blocked by read-only startup audit");
+                return true;
+            }
+            application_handler(invoke)
+        })
         .build(tauri::generate_context!())
         .expect("error while building application")
         .run(|app, event| {
             match event {
                 tauri::RunEvent::Ready => {
+                    crate::modules::system::application::app::bootstrap::run_deferred_staging_cleanup(app.clone());
                     // The native shortcut manager is ready when the event loop
                     // starts. Retry once here so a transient startup failure
                     // cannot leave global hotkeys permanently disabled.

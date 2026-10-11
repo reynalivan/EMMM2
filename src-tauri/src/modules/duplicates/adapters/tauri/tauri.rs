@@ -12,40 +12,59 @@ use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::modules::workspace::domain::conflicts::WhitelistEntry;
 use crate::platform::fs::guard;
 use crate::shared::errors::AppError;
-use std::path::Path;
+use crate::shared::sync::lock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::Channel;
 use tauri::State;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub struct DupScanState {
-    pub(crate) is_running: Arc<AtomicBool>,
-    pub(crate) cancel_flag: Arc<AtomicBool>,
+    active: Arc<Mutex<Option<ActiveScan>>>,
+}
+
+struct ActiveScan {
+    cancel_flag: Arc<AtomicBool>,
+    committing: bool,
 }
 
 impl DupScanState {
     pub fn new() -> Self {
         Self {
-            is_running: Arc::new(AtomicBool::new(false)),
-            cancel_flag: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub fn try_start(&self) -> Result<(), AppError> {
-        self.is_running
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .map_err(|_| AppError::Validation("Duplicate scan already running".to_string()))
-            .map(|_| ())
+    fn try_start(&self) -> Result<RunningGuard, AppError> {
+        let mut active = lock(&self.active);
+        if active.is_some() {
+            return Err(AppError::Validation(
+                "Duplicate scan already running".to_string(),
+            ));
+        }
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        *active = Some(ActiveScan {
+            cancel_flag: Arc::clone(&cancel_flag),
+            committing: false,
+        });
+        Ok(RunningGuard {
+            active: Arc::clone(&self.active),
+            cancel_flag,
+        })
     }
 
-    pub fn reset_cancel(&self) {
-        self.cancel_flag.store(false, Ordering::SeqCst);
-    }
-
-    pub fn cancel(&self) {
-        self.cancel_flag.store(true, Ordering::SeqCst);
+    fn cancel(&self) -> Result<(), AppError> {
+        let active = lock(&self.active);
+        if let Some(scan) = active.as_ref() {
+            if scan.committing {
+                return Err(AppError::Validation(
+                    "Duplicate scan is saving its report; wait for it to finish".to_string(),
+                ));
+            }
+            scan.cancel_flag.store(true, Ordering::SeqCst);
+        }
+        Ok(())
     }
 }
 
@@ -65,41 +84,36 @@ pub async fn dup_scan_start(
     db: State<'_, sqlx::SqlitePool>,
     on_event: Channel<DupScanEvent>,
 ) -> Result<(), AppError> {
-    let mods_path = Path::new(&mods_root);
-    if !mods_path.exists() {
-        return Err(AppError::NotFound(format!(
-            "Mods path does not exist: {mods_root}"
-        )));
-    }
-    if !mods_path.is_dir() {
+    let config = app.state::<ConfigService>();
+    let mods_root = guard::validate_mods_root(&config, &game_id, &mods_root)?;
+    if !mods_root.is_dir() {
         return Err(AppError::Validation(format!(
-            "Mods path is not a directory: {mods_root}"
+            "Mods path is not a directory: {}",
+            mods_root.display()
         )));
     }
 
-    state.try_start()?;
-    state.reset_cancel();
+    let running_guard = state.try_start()?;
 
     let scan_id = dup_scan_build_scan_id();
-    let cancel_flag = Arc::clone(&state.cancel_flag);
-    let running_flag = Arc::clone(&state.is_running);
+    let cancel_flag = running_guard.cancel_flag();
     let mods_root_for_task = mods_root.clone();
     let game_id_for_task = game_id.clone();
     let db_for_task = db.inner().clone();
-    let app_for_task = app.clone();
+    let telemetry =
+        crate::modules::system::application::telemetry::capture_background_telemetry(&app);
 
     tokio::spawn(async move {
-        let _running_guard = RunningGuard::new(running_flag);
-
-        let candidates = match walker::scan_mod_folders(Path::new(&mods_root_for_task)) {
+        let candidates = match walker::scan_mod_folders(&mods_root_for_task) {
             Ok(items) => items,
             Err(error) => {
                 crate::modules::system::application::telemetry::record_background_failure(
-                    &app_for_task,
+                    &telemetry,
                     &AppError::Scanner(error.clone()),
                 )
                 .await;
                 let message = error.to_string();
+                drop(running_guard);
                 let _ = on_event.send(DupScanEvent::Failed {
                     scan_id,
                     processed_folders: 0,
@@ -120,7 +134,7 @@ pub async fn dup_scan_start(
 
         let outcome =
             match crate::modules::duplicates::application::dedup::scanner::scan_duplicates_for_candidates(
-                Path::new(&mods_root_for_task),
+                &mods_root_for_task,
                 candidates,
                 &game_id_for_task,
                 &db_for_task,
@@ -131,11 +145,12 @@ pub async fn dup_scan_start(
                 Ok(data) => data,
                 Err(error) => {
                     crate::modules::system::application::telemetry::record_background_failure(
-                        &app_for_task,
+                        &telemetry,
                         &AppError::Scanner(error.clone()),
                     )
                     .await;
                     let message = error.to_string();
+                    drop(running_guard);
                     let _ = on_event.send(DupScanEvent::Failed {
                         scan_id,
                         processed_folders: 0,
@@ -149,6 +164,7 @@ pub async fn dup_scan_start(
 
         match outcome.status {
             DedupScanStatus::Cancelled => {
+                drop(running_guard);
                 let _ = on_event.send(DupScanEvent::Cancelled {
                     scan_id,
                     processed_folders: 0,
@@ -157,6 +173,16 @@ pub async fn dup_scan_start(
             }
             DedupScanStatus::Completed => {
                 let final_total = outcome.total_folders;
+
+                if !running_guard.begin_commit() {
+                    drop(running_guard);
+                    let _ = on_event.send(DupScanEvent::Cancelled {
+                        scan_id,
+                        processed_folders: final_total,
+                        total_folders: final_total,
+                    });
+                    return;
+                }
 
                 let _ = on_event.send(DupScanEvent::Progress {
                     scan_id: scan_id.clone(),
@@ -181,13 +207,14 @@ pub async fn dup_scan_start(
                 let report = DupScanReport {
                     scan_id: scan_id.clone(),
                     game_id: game_id_for_task,
-                    root_path: mods_root_for_task,
+                    root_path: mods_root_for_task.to_string_lossy().into_owned(),
                     total_groups: groups.len(),
                     total_members,
                     groups,
                 };
 
                 if let Err(error) = dedup::persist_completed_report(&db_for_task, &report).await {
+                    drop(running_guard);
                     let _ = on_event.send(DupScanEvent::Failed {
                         scan_id,
                         processed_folders: final_total,
@@ -197,6 +224,7 @@ pub async fn dup_scan_start(
                     return;
                 }
 
+                drop(running_guard);
                 let _ = on_event.send(DupScanEvent::Finished {
                     scan_id,
                     total_groups: report.total_groups,
@@ -212,8 +240,7 @@ pub async fn dup_scan_start(
 #[tauri::command]
 #[specta::specta]
 pub async fn dup_scan_cancel(state: State<'_, DupScanState>) -> Result<(), AppError> {
-    state.cancel();
-    Ok(())
+    state.cancel()
 }
 
 #[tauri::command]
@@ -235,18 +262,40 @@ fn dup_scan_build_scan_id() -> String {
 }
 
 struct RunningGuard {
-    running_flag: Arc<AtomicBool>,
+    active: Arc<Mutex<Option<ActiveScan>>>,
+    cancel_flag: Arc<AtomicBool>,
 }
 
 impl RunningGuard {
-    fn new(running_flag: Arc<AtomicBool>) -> Self {
-        Self { running_flag }
+    fn cancel_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.cancel_flag)
+    }
+
+    // The same lock orders cancellation against the report's commit boundary.
+    fn begin_commit(&self) -> bool {
+        let mut active = lock(&self.active);
+        let Some(scan) = active.as_mut() else {
+            return false;
+        };
+        if !Arc::ptr_eq(&scan.cancel_flag, &self.cancel_flag)
+            || self.cancel_flag.load(Ordering::SeqCst)
+        {
+            return false;
+        }
+        scan.committing = true;
+        true
     }
 }
 
 impl Drop for RunningGuard {
     fn drop(&mut self) {
-        self.running_flag.store(false, Ordering::SeqCst);
+        let mut active = lock(&self.active);
+        if active
+            .as_ref()
+            .is_some_and(|scan| Arc::ptr_eq(&scan.cancel_flag, &self.cancel_flag))
+        {
+            *active = None;
+        }
     }
 }
 
@@ -343,4 +392,76 @@ pub async fn remove_ignored_pair(
     dedup::delete_whitelist_entry(db.inner(), &entry_id)
         .await
         .map_err(|e| AppError::Db(format!("Failed to remove ignored pair: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DupScanState;
+    use crate::modules::settings::application::config::{ConfigService, GameConfig};
+    use crate::platform::fs::guard::validate_mods_root;
+    use crate::shared::errors::AppError;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn accepted_cancellation_prevents_report_commit() {
+        let state = DupScanState::new();
+        let scan = state.try_start().unwrap();
+        state.cancel().unwrap();
+        assert!(!scan.begin_commit());
+    }
+
+    #[test]
+    fn cancellation_is_rejected_after_report_commit_begins() {
+        let state = DupScanState::new();
+        let scan = state.try_start().unwrap();
+        assert!(scan.begin_commit());
+        assert!(state.cancel().is_err());
+        assert!(state.try_start().is_err());
+        drop(scan);
+        assert!(state.try_start().is_ok());
+    }
+
+    #[test]
+    fn a_new_scan_does_not_inherit_the_previous_cancellation_token() {
+        let state = DupScanState::new();
+        let first = state.try_start().unwrap();
+        let previous_token = first.cancel_flag();
+        state.cancel().unwrap();
+        drop(first);
+        let next = state.try_start().unwrap();
+        assert!(!next.cancel_flag().load(std::sync::atomic::Ordering::SeqCst));
+        assert!(previous_token.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(next.begin_commit());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn scan_root_must_match_the_configured_game_root() {
+        let temp = TempDir::new().unwrap();
+        let mods_root = temp.path().join("Mods");
+        let child = mods_root.join("Character");
+        fs::create_dir_all(&child).unwrap();
+        let pool = crate::test_utils::init_test_db().await.pool;
+        let config = ConfigService::new_for_test_async(pool).await;
+        let mut settings = config.get_settings();
+        settings.games.push(GameConfig {
+            id: "game-1".to_string(),
+            name: "Test Game".to_string(),
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
+            instance_path: temp.path().join("Game"),
+            mod_path: mods_root,
+            ready_to_move_path: None,
+            launch_mode: crate::modules::games::domain::models::LaunchMode::Standalone,
+            game_exe: None,
+            loader_exe: None,
+            xxmi_launcher_exe: None,
+            launch_args: None,
+            warnings: Vec::new(),
+        });
+        config.save_settings(settings).unwrap();
+
+        let error = validate_mods_root(&config, "game-1", &child.to_string_lossy())
+            .expect_err("a scanner cannot run from a child of the configured Mods root");
+        assert!(matches!(error, AppError::Security(_)));
+    }
 }

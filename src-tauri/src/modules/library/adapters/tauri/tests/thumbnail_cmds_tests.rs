@@ -214,7 +214,7 @@ async fn test_get_filtered_objects_unsafe() {
         &crate::test_utils::TestGameFixture {
             id: "test_game",
             name: "Test",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/",
             mods_path: Some("/mods"),
         },

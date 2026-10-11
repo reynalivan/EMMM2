@@ -3,7 +3,7 @@
 use crate::modules::collections::adapters::sqlite as collection;
 use crate::modules::collections::application::collection::preview_tree::resolve_preview_terminal_metadata;
 use crate::modules::collections::domain::collection::{CollectionMod, CollectionObject};
-use crate::modules::workspace::domain::normalizer::is_disabled_folder;
+pub(crate) use crate::modules::workspace::api::is_effectively_enabled_path as is_mod_effectively_active;
 use crate::shared::errors::CollectionError;
 use sqlx::{SqliteConnection, SqlitePool};
 use std::collections::HashMap;
@@ -14,20 +14,7 @@ fn is_object_enabled(path_key: Option<&str>) -> bool {
         return true;
     };
 
-    !path_key
-        .split(['/', '\\'])
-        .filter(|segment| !segment.is_empty())
-        .any(is_disabled_folder)
-}
-
-/// `mods.status` records a terminal folder's own prefix. A row can therefore
-/// retain status=enabled while an ancestor is disabled; only the stored path
-/// describes whether it participates in the live runtime.
-pub(crate) fn is_mod_effectively_active(mod_path: &str) -> bool {
-    !mod_path
-        .split(['/', '\\'])
-        .filter(|segment| !segment.is_empty())
-        .any(is_disabled_folder)
+    is_mod_effectively_active(path_key)
 }
 
 pub(crate) async fn load_live_runtime_state(
@@ -267,14 +254,23 @@ pub(crate) async fn live_runtime_matches_collection_tx(
     let live_object_states = live_objects
         .into_iter()
         .filter_map(|object| {
-            object
-                .path_key
-                .map(|path_key| (path_key.clone(), is_object_enabled(Some(path_key.as_str()))))
+            object.path_key.map(|path_key| {
+                (
+                    crate::shared::path_key::folder_path_key(&path_key, None),
+                    is_object_enabled(Some(path_key.as_str())),
+                )
+            })
         })
         .collect::<HashMap<_, _>>();
     let collection_object_states = collection_members
         .object_states
         .into_iter()
+        .map(|(path_key, is_enabled)| {
+            (
+                crate::shared::path_key::folder_path_key(&path_key, None),
+                is_enabled,
+            )
+        })
         .collect::<HashMap<_, _>>();
 
     Ok(live_object_states == collection_object_states)

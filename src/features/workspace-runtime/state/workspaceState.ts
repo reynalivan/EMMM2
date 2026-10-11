@@ -15,13 +15,15 @@ export type WorkspaceDuplicateTarget = Pick<
 export interface WorkspaceFileInUseDialogData {
   path: string;
   processes: string[];
-  onRetry?: () => void;
+  recoveryId?: string;
+  onRetry?: (recoveryId?: string) => Promise<unknown>;
+  onDismiss?: () => Promise<void>;
 }
 
 export type WorkspaceDialogState =
   | { kind: 'none' }
   | { kind: 'previewUnsavedChanges' }
-  | { kind: 'folderConflicts' }
+  | { kind: 'folderConflicts'; groupId?: string }
   | { kind: 'renameConfirmations' }
   | { kind: 'sourceRecovery' }
   | { kind: 'fileInUse'; data: WorkspaceFileInUseDialogData }

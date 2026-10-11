@@ -9,7 +9,7 @@ use crate::test_utils::{
 fn switch_refresh_scopes_include_collections_for_unsaved_runtime_counts() {
     let scopes = default_switch_refresh_scopes();
 
-    assert!(scopes.contains(&WorkspaceRefreshScope::CollectionsChanged));
+    assert!(scopes.contains(&WorkspaceRefreshScope::Collections));
 }
 
 #[test]
@@ -39,7 +39,7 @@ async fn resolves_stale_disabled_cache_path_to_enabled_disk_sibling() {
         &TestGameFixture {
             id: "g_switch_resolve_enabled",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_switch_resolve_enabled",
             mods_path: Some(mods_path.to_str().unwrap()),
         },
@@ -105,7 +105,7 @@ async fn resolves_stale_enabled_cache_path_to_disabled_disk_sibling() {
         &TestGameFixture {
             id: "g_switch_resolve_disabled",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_switch_resolve_disabled",
             mods_path: Some(mods_path.to_str().unwrap()),
         },

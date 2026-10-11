@@ -18,7 +18,7 @@ async fn seed_game_object_mod(
         &TestGameFixture {
             id: "game-1",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: mods_path.parent().unwrap().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },

@@ -39,17 +39,19 @@ export function GameIndexingOverlay({
   const { t } = useTranslation('layout');
   const failed = phase === 'failed' || phase === 'source_unavailable';
   const rootName = displayRootName(progress?.current_root ?? snapshotProgress?.current_root);
-  const totalRoots = progress?.total_units ?? snapshotProgress?.total_roots ?? null;
-  const completedRoots = Math.min(
-    progress?.completed_units ?? snapshotProgress?.completed_roots ?? 0,
-    totalRoots ?? 0,
+  const totalUnits = progress ? progress.total_units : (snapshotProgress?.total_roots ?? null);
+  const completedUnits = Math.min(
+    progress ? progress.completed_units : (snapshotProgress?.completed_roots ?? 0),
+    totalUnits ?? 0,
   );
-  const hasDeterminateProgress = totalRoots !== null && totalRoots > 0;
+  const hasDeterminateProgress = totalUnits !== null && totalUnits > 0;
   const scanning = progress
     ? progress.phase === 'ScanningRoots'
     : snapshotProgress?.phase === 'Metadata' || snapshotProgress?.phase === 'Classifying';
+  const projecting = progress?.phase === 'Projecting';
+  const measured = hasDeterminateProgress && (scanning || projecting);
   const progressPercent = hasDeterminateProgress
-    ? Math.round((completedRoots / totalRoots) * 100)
+    ? Math.round((completedUnits / totalUnits) * 100)
     : null;
   const activity = progress
     ? progress.phase === 'ScanningRoots'
@@ -119,24 +121,29 @@ export function GameIndexingOverlay({
               <span className="text-xs font-medium text-base-content/70">
                 {t('game_selector.indexing.activation.progress_label')}
               </span>
-              {hasDeterminateProgress && (
+              {measured && (
                 <span className="text-xs font-semibold text-base-content">
-                  {t('game_selector.indexing.activation.folders_complete', {
-                    completed: completedRoots,
-                    total: totalRoots,
-                  })}
+                  {t(
+                    projecting
+                      ? 'game_selector.indexing.activation.mods_complete'
+                      : 'game_selector.indexing.activation.folders_complete',
+                    {
+                      completed: completedUnits,
+                      total: totalUnits,
+                    },
+                  )}
                 </span>
               )}
             </div>
 
-            {hasDeterminateProgress && progressPercent !== null && scanning ? (
+            {measured && progressPercent !== null ? (
               <div
                 className="h-2 overflow-hidden rounded-full bg-base-300/80"
                 role="progressbar"
                 aria-label={t('game_selector.indexing.activation.progress_label')}
                 aria-valuemin={0}
-                aria-valuemax={totalRoots ?? undefined}
-                aria-valuenow={completedRoots}
+                aria-valuemax={totalUnits ?? undefined}
+                aria-valuenow={completedUnits}
               >
                 <div
                   className="h-full bg-primary transition-[width] duration-150 ease-out motion-reduce:transition-none"
@@ -153,9 +160,7 @@ export function GameIndexingOverlay({
               </div>
             )}
 
-            {hasDeterminateProgress && scanning && (
-              <p className="text-xs text-base-content/70">{activity}</p>
-            )}
+            {measured && <p className="text-xs text-base-content/70">{activity}</p>}
             {snapshotProgress && snapshotProgress.folders_classified > 0 && (
               <p className="text-xs text-base-content/60">
                 {t('game_selector.indexing.activation.folders_classified', {

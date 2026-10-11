@@ -43,7 +43,7 @@ async fn setup_workspace_fixture(
         &TestGameFixture {
             id: "game_workspace",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: mods_root.path().to_string_lossy().as_ref(),
             mods_path: Some(mods_path.to_string_lossy().as_ref()),
         },

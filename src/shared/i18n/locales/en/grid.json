@@ -80,6 +80,8 @@
     "corrupt": "Corrupt"
   },
   "card": {
+    "conflict_group_label": "{{name}}, folder name conflict",
+    "open_conflict": "Review conflict",
     "aria_label_enabled": "{{name}}, enabled",
     "aria_label_disabled": "{{name}}, disabled",
     "mod_pack": "Mod Pack",

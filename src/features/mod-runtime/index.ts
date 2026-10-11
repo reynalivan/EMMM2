@@ -12,4 +12,3 @@ export * from './hooks/useFolderMutations';
 export * from './hooks/useModContextMenuItems';
 export { default as ActiveModContextDialog } from './modals/ActiveModContextDialog';
 export { default as BulkTagModal } from './modals/BulkTagModal';
-export * from './utils/folderMutationPayloads';

@@ -12,10 +12,13 @@ import { useAppStore } from '@/app/store';
 const pinObject = vi.fn();
 const updateObject = vi.fn();
 const bulkSetModSafety = vi.fn();
+const bulkToggleFavorite = vi.fn();
+const notifyCommittedMutationSyncWarning = vi.fn();
 const buildRuntimeMutationDescriptor = vi.fn();
 const publishRuntimeDescriptor = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
+const toastWarning = vi.fn();
 const executeWorkspaceObjectBulkSwitch = vi.fn();
 const applyWorkspaceSwitchEffects = vi.fn();
 const setObjectBulkPendingDesired = vi.fn();
@@ -28,7 +31,7 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {
     pinObject: (...args: unknown[]) => pinObject(...args),
     updateObjectCmd: (...args: unknown[]) => updateObject(...args),
-    bulkToggleFavorite: vi.fn(),
+    bulkToggleFavorite: (...args: unknown[]) => bulkToggleFavorite(...args),
     bulkSetModSafety: (...args: unknown[]) => bulkSetModSafety(...args),
   },
 }));
@@ -37,6 +40,7 @@ vi.mock('@/shared/ui/toast', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),
+    warning: (...args: unknown[]) => toastWarning(...args),
   },
 }));
 
@@ -64,13 +68,27 @@ vi.mock('@/features/workspace-runtime', async (importOriginal) => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) =>
+      options?.count === undefined ? key : `${key} (${options.count})`,
+  }),
   // `hooks/bulkToastMessages` pulls in the i18n singleton, which needs this plugin.
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 vi.mock('@/shared/lib/queryRefresh', () => ({
   publishRuntimeDescriptor: (...args: unknown[]) => publishRuntimeDescriptor(...args),
+}));
+
+vi.mock('../../../shared/lib/committedMutationWarning', () => ({
+  notifyCommittedMutationSyncWarning: (...args: unknown[]) =>
+    notifyCommittedMutationSyncWarning(...args),
+}));
+
+vi.mock('../../../shared/lib/hooks/bulkToastMessages', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../shared/lib/hooks/bulkToastMessages')>()),
+  formatBulkFailureMessage: (failures: { path: string }[], action: string) =>
+    `${action}: ${failures.map((failure) => failure.path).join(', ')}`,
 }));
 
 vi.mock('@/features/workspace-runtime/optimistic/descriptorBuilders', () => ({
@@ -191,6 +209,90 @@ describe('handleBulkSafe', () => {
     expect(buildRuntimeMutationDescriptor).toHaveBeenCalledWith('safetyClassification');
     expect(publishRuntimeDescriptor).toHaveBeenCalled();
   });
+
+  it('reports only committed successes and the returned item failures', async () => {
+    const result = {
+      success: ['Ayaka'],
+      failures: [{ path: 'Yelan', error: 'permission denied' }],
+      sync_warning: { kind: 'ProjectionPending', message: 'Waiting for synchronization' },
+    };
+    bulkSetModSafety.mockResolvedValue(result);
+
+    await setup().current.handleBulkSafe(new Set(['a', 'b']), true);
+
+    expect(toastSuccess).toHaveBeenCalledWith('objects:toasts.mark_safe (1)');
+    expect(toastError).toHaveBeenCalledWith('safety: Yelan');
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(result);
+    expect(publishRuntimeDescriptor).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim success when all folder mutations fail', async () => {
+    bulkSetModSafety.mockResolvedValue({
+      success: [],
+      failures: [{ path: 'Ayaka', error: 'permission denied' }],
+    });
+
+    await setup().current.handleBulkSafe(new Set(['a']), false);
+
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith('safety: Ayaka');
+  });
+
+  it('suppresses all feedback when the active game changes before completion', async () => {
+    let complete!: (value: { success: string[]; failures: never[] }) => void;
+    bulkSetModSafety.mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const pending = setup().current.handleBulkSafe(new Set(['a']), true);
+    useAppStore.setState({ activeGameId: 'game-2' });
+    complete({ success: ['Ayaka'], failures: [] });
+    await pending;
+
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+    expect(notifyCommittedMutationSyncWarning).not.toHaveBeenCalled();
+  });
+
+  it('suppresses a rejected command error after a game switch', async () => {
+    bulkSetModSafety.mockImplementation(async () => {
+      useAppStore.setState({ activeGameId: 'game-2' });
+      throw new Error('not writable');
+    });
+
+    await setup().current.handleBulkSafe(new Set(['a']), true);
+
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('still reports committed results when the trailing refresh fails', async () => {
+    const result = { success: ['Ayaka'], failures: [], sync_warning: null };
+    bulkSetModSafety.mockResolvedValue(result);
+    publishRuntimeDescriptor.mockRejectedValueOnce(new Error('refresh unavailable'));
+
+    await setup().current.handleBulkSafe(new Set(['a']), true);
+
+    expect(toastSuccess).toHaveBeenCalledWith('objects:toasts.mark_safe (1)');
+    expect(toastError).not.toHaveBeenCalled();
+    expect(toastWarning).toHaveBeenCalledWith('common:reconcile.runtime_effects_pending');
+    expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledWith(result);
+  });
+});
+
+describe('handleBulkFavorite', () => {
+  it('reports returned failures without a success toast', async () => {
+    bulkToggleFavorite.mockResolvedValue({
+      success: [],
+      failures: [{ path: 'Yelan', error: 'missing folder' }],
+    });
+
+    await setup().current.handleBulkFavorite(new Set(['b']), true);
+
+    expect(bulkToggleFavorite).toHaveBeenCalledWith('game-1', ['Yelan'], true);
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith('favorite: Yelan');
+  });
 });
 
 describe('object enable batch', () => {
@@ -226,7 +328,10 @@ describe('object enable batch', () => {
     executeWorkspaceObjectBulkSwitch.mockResolvedValue(objectSwitchResult);
     applyWorkspaceSwitchEffects.mockResolvedValue(undefined);
 
-    await setup().current.handleBulkEnable(new Set(['a', 'b']));
+    const hook = setup();
+    await act(async () => {
+      await hook.current.handleBulkEnable(new Set(['a', 'b']));
+    });
 
     expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledTimes(1);
     expect(executeWorkspaceObjectBulkSwitch).toHaveBeenCalledWith(
@@ -248,7 +353,10 @@ describe('object enable batch', () => {
       runtime_sync_generation: null,
     });
 
-    await setup().current.handleBulkEnable(new Set(['a', 'b']));
+    const hook = setup();
+    await act(async () => {
+      await hook.current.handleBulkEnable(new Set(['a', 'b']));
+    });
 
     expect(applyWorkspaceSwitchEffects).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();

@@ -11,6 +11,12 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 
+const BULK_DELETE_YIELD_INTERVAL: usize = 32;
+
+fn should_yield_after(processed_count: usize) -> bool {
+    processed_count > 0 && processed_count.is_multiple_of(BULK_DELETE_YIELD_INTERVAL)
+}
+
 #[derive(Debug, Clone)]
 pub struct PreparedBulkDelete {
     items: Vec<PreparedTrashMove>,
@@ -47,7 +53,7 @@ pub fn prepare_bulk_delete(paths: &[ValidatedPath]) -> Result<PreparedBulkDelete
     })
 }
 
-pub fn execute_prepared_bulk_delete(
+pub async fn execute_prepared_bulk_delete(
     app: &AppHandle,
     state: &WatcherState,
     prepared: &PreparedBulkDelete,
@@ -72,6 +78,7 @@ pub fn execute_prepared_bulk_delete(
     let progress_interval = std::cmp::max(1, total / 10);
     let mut cancelled = false;
     let mut processed_count = 0;
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
     for (index, item) in prepared.items.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             cancelled = true;
@@ -90,7 +97,7 @@ pub fn execute_prepared_bulk_delete(
                 },
             );
         }
-        match item.execute(state) {
+        match item.execute_async(state, &mut retry_budget).await {
             Ok(()) => {
                 success.push(item.source().to_string_lossy().into_owned());
                 applied_sequences.push(index as u32);
@@ -101,6 +108,9 @@ pub fn execute_prepared_bulk_delete(
             }),
         }
         processed_count += 1;
+        if should_yield_after(processed_count) {
+            tokio::task::yield_now().await;
+        }
     }
     let _ = app.emit(
         "bulk-progress",
@@ -130,16 +140,17 @@ pub fn execute_prepared_bulk_delete(
     }
 }
 
-pub fn rollback_prepared_bulk_delete(
+pub async fn rollback_prepared_bulk_delete(
     state: &WatcherState,
     prepared: &PreparedBulkDelete,
     applied_sequences: &[u32],
 ) -> Result<(), AppError> {
     let applied = applied_sequences.iter().copied().collect::<HashSet<_>>();
     let mut failures = Vec::new();
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
     for (sequence, item) in prepared.items.iter().enumerate().rev() {
         if applied.contains(&(sequence as u32)) {
-            if let Err(error) = item.rollback(state) {
+            if let Err(error) = item.rollback_async(state, &mut retry_budget).await {
                 failures.push(error.to_string());
             }
         }
@@ -237,6 +248,9 @@ pub async fn bulk_delete(
             }),
         }
         processed_count += 1;
+        if should_yield_after(processed_count) {
+            tokio::task::yield_now().await;
+        }
     }
 
     let _ = app.emit(
@@ -263,4 +277,18 @@ pub async fn bulk_delete(
         Vec::new(),
     )
     .with_execution_state(cancelled, processed_count, total))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_yield_after;
+
+    #[test]
+    fn bulk_delete_yields_after_each_completed_batch() {
+        assert!(!should_yield_after(0));
+        assert!(!should_yield_after(31));
+        assert!(should_yield_after(32));
+        assert!(should_yield_after(64));
+        assert!(!should_yield_after(65));
+    }
 }

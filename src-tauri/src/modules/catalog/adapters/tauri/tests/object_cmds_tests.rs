@@ -21,7 +21,7 @@ async fn setup_test_db() -> (TempDir, SqlitePool, String) {
         &crate::test_utils::TestGameFixture {
             id: &game_id,
             name: "Test Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/",
             mods_path: Some(&mods_path.to_string_lossy()),
         },

@@ -102,8 +102,10 @@ export default function IniEditorSection({
                 className="btn btn-primary btn-xs"
                 disabled={isSaving || !canEdit || Object.keys(fieldErrors).length > 0}
                 onClick={async () => {
-                  await onSave();
-                  setIsEditing(false);
+                  const saved = await onSave();
+                  if (saved !== false) {
+                    setIsEditing(false);
+                  }
                 }}
                 title={t('preview:ini_editor.save_changes')}
               >

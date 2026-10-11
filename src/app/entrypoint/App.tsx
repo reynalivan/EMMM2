@@ -21,6 +21,7 @@ import { CrashRecoveryDialog } from '@/shared/ui/components/ui/CrashRecoveryDial
 import { AppShell } from '@/widgets/app-shell';
 import { GameIndexingOverlay, TopBar } from '@/widgets/top-bar';
 import { ExternalChangeHandler } from '@/features/file-watcher';
+import { HotkeyNoticeHost } from '@/features/hotkey-feedback';
 import { ImportBatchWizardHost } from '@/features/import-batches';
 import { ObjectClassificationWizardHost } from '@/features/match-wizard';
 import { LaunchBar } from '@/widgets/launch-bar';
@@ -89,6 +90,7 @@ function AppRouter() {
       .then((tasks: PipelineTask[]) => {
         if (tasks && (tasks as PipelineTask[]).length > 0) {
           setPendingTasks(tasks as PipelineTask[]);
+          dismissSplash();
         } else {
           checkConfigStatus();
         }
@@ -154,7 +156,7 @@ function AppRouter() {
             }
 
             navigate('/dashboard', { replace: true });
-            void useAppStore.getState().initStore();
+            void useAppStore.getState().initStore().catch(console.error);
           }}
         />
       </div>
@@ -205,6 +207,7 @@ export function DashboardWorkspace() {
   const selectedObjectFolderPath = useAppStore((state) => state.selectedObjectFolderPath);
   const activeGameId = useAppStore((state) => state.activeGameId);
   const requestedGameId = useAppStore((state) => state.requestedGameId);
+  const startupRecoveryGameId = useAppStore((state) => state.startupRecoveryGameId);
   const { games } = useActiveGame();
   const backgroundIndexingStatus = useBackgroundIndexingStatus();
   const { switchGame } = useGameSwitch();
@@ -218,11 +221,21 @@ export function DashboardWorkspace() {
       ? (state.diskReconcileByGame[selectedGameId]?.progress ?? null)
       : null,
   );
-  const phase = requestedGameId !== null ? 'syncing' : (activation?.phase ?? 'syncing');
+  const provisionalStartup =
+    requestedGameId !== null && activeGameId === null && startupRecoveryGameId === requestedGameId;
+  const phase =
+    requestedGameId !== null && (!provisionalStartup || activation?.phase === 'ready')
+      ? 'syncing'
+      : (activation?.phase ?? 'syncing');
   const gameWorkspaceView =
     workspaceView !== 'settings' && workspaceView !== 'browser' && workspaceView !== 'downloads';
+  const canReadDashboard =
+    workspaceView === 'dashboard' &&
+    phase === 'syncing' &&
+    startupRecoveryGameId === selectedGameId &&
+    (requestedGameId === null || provisionalStartup);
   const loadingPage =
-    !isDemoMode && selectedGameId && gameWorkspaceView && phase !== 'ready' ? (
+    !isDemoMode && selectedGameId && gameWorkspaceView && phase !== 'ready' && !canReadDashboard ? (
       <GameIndexingOverlay
         gameName={selectedGame?.name ?? selectedGameId}
         progress={progress}
@@ -305,6 +318,7 @@ export default function App() {
       {!isDemoMode && (
         <>
           <DownloadConfirmationHost />
+          <HotkeyNoticeHost />
           <FolderConflictManager />
           <RenameConfirmationManager />
           <FileInUseDialog />

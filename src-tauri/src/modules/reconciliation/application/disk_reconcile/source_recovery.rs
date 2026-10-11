@@ -509,7 +509,6 @@ mod tests {
             safety_source: None,
             object_type: Some("Other".to_string()),
             filesystem_identity: identity.map(str::to_string),
-            size_bytes: 0,
         }
     }
 
@@ -536,7 +535,6 @@ mod tests {
             raw_name: path.to_string(),
             absolute_path: std::path::PathBuf::from(path),
             filesystem_identity: identity.map(str::to_string),
-            size_bytes: None,
         }
     }
 
@@ -766,7 +764,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "game-1",
                 name: "Game",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: old_root.path().to_string_lossy().as_ref(),
                 mods_path: Some(old_root.path().to_string_lossy().as_ref()),
             },
@@ -842,7 +840,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "game-1",
                 name: "Game",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: old_root.path().to_string_lossy().as_ref(),
                 mods_path: Some(old_root.path().to_string_lossy().as_ref()),
             },
@@ -928,7 +926,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "game-1",
                 name: "Game",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: old_root.path().to_string_lossy().as_ref(),
                 mods_path: Some(old_root.path().to_string_lossy().as_ref()),
             },
@@ -1019,7 +1017,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "game-1",
                 name: "Game",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: old_root.path().to_string_lossy().as_ref(),
                 mods_path: Some(old_root.path().to_string_lossy().as_ref()),
             },

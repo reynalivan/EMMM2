@@ -94,7 +94,7 @@ fn resolves_an_existing_instance_config_before_mods_parent() {
     let game = GameConfig {
         id: "g1".into(),
         name: "Game".into(),
-        game_type: GameType::GIMI,
+        game_type: GameType::Gimi,
         instance_path: package_root.clone(),
         mod_path: package_root.join("Mods"),
         ready_to_move_path: None,

@@ -1,35 +1,85 @@
 import {
-  getWebInstrumentations,
   initializeFaro,
   TransportItemType,
   type BeforeSendHook,
   type EventEvent,
-  type Instrumentation,
 } from '@grafana/faro-web-sdk';
-import { createReactRouterV7Options, ReactIntegration } from '@grafana/faro-react';
-import {
-  createRoutesFromChildren,
-  matchRoutes,
-  Routes,
-  useLocation,
-  useNavigationType,
-} from 'react-router-dom';
-import { TracingInstrumentation } from '@grafana/faro-web-tracing';
 
 const APP_NAME = 'emmm-desktop';
 const FARO_URL = import.meta.env.VITE_GRAFANA_FARO_URL?.trim();
 const FARO_API_KEY = import.meta.env.VITE_GRAFANA_FARO_API_KEY?.trim();
 const APP_VERSION = import.meta.env.VITE_APP_VERSION?.trim() || 'unknown';
 const FARO_SESSION_SAMPLING_RATE = 0.1;
-const FARO_TRACING_ENABLED = import.meta.env.VITE_GRAFANA_FARO_TRACING_ENABLED === 'true';
+const SESSION_SAMPLED = Math.random() < FARO_SESSION_SAMPLING_RATE;
+const DIAGNOSTIC_EVENT = 'emmm_frontend_error';
+const APP_METADATA = {
+  name: APP_NAME,
+  version: APP_VERSION,
+  environment: import.meta.env.DEV ? 'development' : 'production',
+};
+const DIAGNOSTIC_OPERATIONS = new Set([
+  'app_bootstrap',
+  'react_render',
+  'unhandled_rejection',
+  'window_error',
+]);
+const DIAGNOSTIC_ERROR_CODES = new Set([
+  'type_error',
+  'range_error',
+  'syntax_error',
+  'error',
+  'ipc_error',
+  'unknown_error',
+  'none',
+  'validation',
+  'io',
+  'database',
+  'network',
+  'conflict',
+  'timeout',
+  'cancelled',
+  'panic',
+  'invariant',
+  'permission',
+  'not_found',
+  'unsupported',
+  'external',
+  'unknown',
+]);
+
+function isDiagnosticAttributes(
+  attributes: Record<string, string> | undefined,
+): attributes is Record<string, string> {
+  return Boolean(
+    attributes &&
+    DIAGNOSTIC_OPERATIONS.has(attributes.operation) &&
+    DIAGNOSTIC_ERROR_CODES.has(attributes.error_code) &&
+    (/^[a-f0-9]{8}$/.test(attributes.fingerprint) ||
+      (attributes.operation === 'app_bootstrap' &&
+        attributes.fingerprint === 'native-abnormal-exit')),
+  );
+}
 
 const privacyFilter: BeforeSendHook = (item) => {
-  if (item.type !== TransportItemType.EVENT) return item;
+  if (item.type !== TransportItemType.EVENT) return null;
 
   const event = item.payload as EventEvent;
-  if (event.name === 'route_change' || event.name === 'faro.navigation') return null;
+  const attributes = event.attributes;
+  if (event.name !== DIAGNOSTIC_EVENT || !isDiagnosticAttributes(attributes)) return null;
 
-  return item;
+  return {
+    type: TransportItemType.EVENT,
+    payload: {
+      name: DIAGNOSTIC_EVENT,
+      timestamp: event.timestamp,
+      attributes: {
+        operation: attributes.operation,
+        error_code: attributes.error_code,
+        fingerprint: attributes.fingerprint,
+      },
+    },
+    meta: { app: APP_METADATA },
+  };
 };
 
 export type FrontendTelemetryOperation =
@@ -79,56 +129,32 @@ function stableHash(value: string): string {
 function ensureFaro(): FaroClient | null {
   if (faro || !FARO_URL) return faro;
 
-  const instrumentations: Instrumentation[] = [
-    ...getWebInstrumentations({
-      captureConsole: false,
-      enablePerformanceInstrumentation: false,
-      enableContentSecurityPolicyInstrumentation: false,
-    }),
-    new ReactIntegration({
-      router: createReactRouterV7Options({
-        createRoutesFromChildren,
-        matchRoutes,
-        Routes,
-        useLocation,
-        useNavigationType,
-      }),
-    }),
-  ];
-  if (FARO_TRACING_ENABLED) instrumentations.push(new TracingInstrumentation());
-
   faro = initializeFaro({
     url: FARO_URL,
     apiKey: FARO_API_KEY || undefined,
-    app: {
-      name: APP_NAME,
-      version: APP_VERSION,
-      environment: import.meta.env.DEV ? 'development' : 'production',
-    },
-    sessionTracking: {
-      samplingRate: FARO_SESSION_SAMPLING_RATE,
-      persistent: false,
-    },
-    // Avoid Faro's default browser/page metadata; the app only needs anonymous diagnostics.
+    app: APP_METADATA,
+    paused: true,
+    batching: { enabled: false },
+    sessionTracking: { enabled: false, persistent: false },
     metas: [],
-    // React Router integration can otherwise attach route and URL fields to route-change events.
     beforeSend: privacyFilter,
-    instrumentations,
+    instrumentations: [],
   });
   faro.pause();
   return faro;
 }
 
 function emitToFaro(diagnostic: FrontendDiagnostic): boolean {
-  const client = ensureFaro();
-  if (!client) return false;
-
-  client.api.pushError(new Error(`EMMM diagnostic: ${diagnostic.errorCode}`));
-  client.api.pushEvent('emmm_frontend_error', {
+  const attributes = {
     operation: diagnostic.operation,
     error_code: diagnostic.errorCode,
     fingerprint: diagnostic.fingerprint,
-  });
+  };
+  if (!isDiagnosticAttributes(attributes)) return false;
+  const client = ensureFaro();
+  if (!client) return false;
+
+  client.api.pushEvent(DIAGNOSTIC_EVENT, attributes);
   return true;
 }
 
@@ -159,7 +185,7 @@ export function reportFrontendError(
   );
   const diagnostic = { operation, errorCode, fingerprint };
 
-  if (telemetryEnabled) emitToFaro(diagnostic);
+  if (telemetryEnabled && SESSION_SAMPLED) emitToFaro(diagnostic);
   if (options.promptUser) diagnosticListeners.forEach((listener) => listener(diagnostic));
   return diagnostic;
 }

@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { applyDiskReconcileResult, useDiskReconcileCoordinator } from './useFileWatcher';
 import { isPreviewAffected } from '../utils/reconcileSelection';
@@ -1316,5 +1316,188 @@ describe('useDiskReconcileCoordinator', () => {
     });
     expect(toast.warning).toHaveBeenCalledTimes(2);
     now.mockRestore();
+  });
+
+  describe('background recovery after a failed watcher refresh', () => {
+    let eventHandlers: Record<string, MockEventHandler>;
+
+    beforeEach(() => {
+      eventHandlers = {};
+      vi.mocked(listen).mockImplementation((event, callback) => {
+        eventHandlers[event] = callback as MockEventHandler;
+        return Promise.resolve(vi.fn());
+      });
+      const state = useAppStore.getState();
+      vi.mocked(state.applyFolderConflictReconcileResult).mockImplementation((result) => {
+        if (
+          result.reconcile_revision <= (state.diskReconcileByGame[result.game_id]?.revision ?? 0)
+        ) {
+          return false;
+        }
+        state.diskReconcileByGame[result.game_id] = {
+          at: 0,
+          pending: false,
+          unavailable: null,
+          progress: null,
+          revision: result.reconcile_revision,
+        };
+        return true;
+      });
+      vi.mocked(state.markDiskReconcilePending).mockImplementation((gameId, pending) => {
+        state.diskReconcileByGame[gameId] = {
+          ...state.diskReconcileByGame[gameId],
+          pending,
+        };
+      });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      vi.mocked(useAppStore.getState().applyFolderConflictReconcileResult)
+        .mockReset()
+        .mockReturnValue(true);
+      vi.mocked(useAppStore.getState().markDiskReconcilePending).mockReset();
+      vi.restoreAllMocks();
+    });
+
+    async function startFailedWatcherRefresh() {
+      const reconcileDiskState = vi.mocked(commands.reconcileDiskStateCmd);
+      reconcileDiskState
+        .mockResolvedValueOnce(createResult({ reconcile_revision: 1 }))
+        .mockRejectedValueOnce(new Error('transient database failure'));
+      const game = createActiveGame();
+      const queryClient = new QueryClient();
+      const hook = renderHook(
+        ({ activeGame }: { activeGame: GameConfig }) =>
+          useDiskReconcileCoordinator(activeGame, queryClient),
+        { initialProps: { activeGame: game } },
+      );
+      const state = useAppStore.getState();
+      await waitFor(() => expect(state.diskReconcileByGame['game-1']?.revision).toBe(1));
+
+      act(() => {
+        eventHandlers['mod_watch:event']({
+          payload: { type: 'Error', game_id: 'game-1', error: 'overflow' },
+        });
+      });
+      await waitFor(() =>
+        expect(state.setDiskReconcileProgress).toHaveBeenCalledWith('game-1', null),
+      );
+      expect(reconcileDiskState).toHaveBeenCalledTimes(2);
+      return { reconcileDiskState, game, queryClient, hook, state };
+    }
+
+    it('settles pending through one authority refresh after independent full recovery', async () => {
+      const { reconcileDiskState, state, hook, queryClient } = await startFailedWatcherRefresh();
+      const authorityRefresh = createDeferred<DiskReconcileResult>();
+      const recovered = createResult({ reconcile_revision: 2, scan_scope: 'Full' });
+      reconcileDiskState.mockReturnValueOnce(authorityRefresh.promise);
+
+      act(() => eventHandlers['disk_reconcile:result']({ payload: recovered }));
+      expect(state.diskReconcileByGame['game-1'].pending).toBe(true);
+      await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(3));
+      expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WatcherBatch', null, true);
+
+      const latestRecovery = createResult({ reconcile_revision: 3, scan_scope: 'Full' });
+      act(() => eventHandlers['disk_reconcile:result']({ payload: latestRecovery }));
+      await act(async () => {
+        authorityRefresh.resolve(latestRecovery);
+        await authorityRefresh.promise;
+      });
+      expect(state.diskReconcileByGame['game-1']).toMatchObject({ revision: 3, pending: false });
+      expect(reconcileDiskState).toHaveBeenCalledTimes(3);
+      hook.unmount();
+      queryClient.clear();
+    });
+
+    it('does not retry its own recovery event when the command response fails', async () => {
+      const { reconcileDiskState, state, hook, queryClient } = await startFailedWatcherRefresh();
+      const authorityRefresh = createDeferred<DiskReconcileResult>();
+      reconcileDiskState.mockReturnValueOnce(authorityRefresh.promise);
+      act(() =>
+        eventHandlers['disk_reconcile:result']({
+          payload: createResult({ reconcile_revision: 2, scan_scope: 'Full' }),
+        }),
+      );
+      act(() =>
+        eventHandlers['disk_reconcile:result']({
+          payload: createResult({ reconcile_revision: 3, scan_scope: 'Full' }),
+        }),
+      );
+      await act(async () => {
+        authorityRefresh.reject(new Error('authority response temporarily unavailable'));
+        await authorityRefresh.promise.catch(() => undefined);
+      });
+      expect(reconcileDiskState).toHaveBeenCalledTimes(3);
+      expect(state.diskReconcileByGame['game-1'].pending).toBe(true);
+      hook.unmount();
+      queryClient.clear();
+    });
+
+    it('retains a later watcher failure until the refresh capturing that failure finishes', async () => {
+      const { reconcileDiskState, state, hook, queryClient } = await startFailedWatcherRefresh();
+      const authorityRefresh = createDeferred<DiskReconcileResult>();
+      const latestFailureRefresh = createDeferred<DiskReconcileResult>();
+      reconcileDiskState
+        .mockReturnValueOnce(authorityRefresh.promise)
+        .mockReturnValueOnce(latestFailureRefresh.promise);
+      const recovery = createResult({ reconcile_revision: 2, scan_scope: 'Full' });
+      act(() => eventHandlers['disk_reconcile:result']({ payload: recovery }));
+      act(() => {
+        eventHandlers['mod_watch:event']({
+          payload: { type: 'Error', game_id: 'game-1', error: 'later overflow' },
+        });
+      });
+      await act(async () => {
+        authorityRefresh.resolve(recovery);
+        await authorityRefresh.promise;
+      });
+      expect(state.diskReconcileByGame['game-1'].pending).toBe(true);
+      expect(reconcileDiskState).toHaveBeenCalledTimes(4);
+      expect(reconcileDiskState).toHaveBeenLastCalledWith('game-1', 'WatcherBatch', null, true);
+      await act(async () => {
+        latestFailureRefresh.resolve(createResult({ reconcile_revision: 3, scan_scope: 'Full' }));
+        await latestFailureRefresh.promise;
+      });
+      expect(state.diskReconcileByGame['game-1'].pending).toBe(false);
+      expect(reconcileDiskState).toHaveBeenCalledTimes(4);
+      hook.unmount();
+      queryClient.clear();
+    });
+
+    it.each(['game switch', 'root switch', 'unmount'] as const)(
+      'does not schedule a background recovery through a listener retained after %s',
+      async (contextChange) => {
+        const { reconcileDiskState, game, hook, queryClient } = await startFailedWatcherRefresh();
+        const previousHandler = eventHandlers['disk_reconcile:result'];
+        if (contextChange === 'unmount') {
+          hook.unmount();
+        } else {
+          reconcileDiskState.mockResolvedValueOnce(
+            createResult({
+              game_id: contextChange === 'game switch' ? 'game-2' : 'game-1',
+              reconcile_revision: 2,
+              scan_scope: 'Full',
+            }),
+          );
+          hook.rerender({
+            activeGame: {
+              ...game,
+              id: contextChange === 'game switch' ? 'game-2' : game.id,
+              mod_path: 'F:/Mods',
+            },
+          });
+        }
+        const expectedRefreshCount = contextChange === 'unmount' ? 2 : 3;
+        await waitFor(() => expect(reconcileDiskState).toHaveBeenCalledTimes(expectedRefreshCount));
+        await act(async () => {
+          previousHandler({ payload: createResult({ reconcile_revision: 3, scan_scope: 'Full' }) });
+          await Promise.resolve();
+        });
+        expect(reconcileDiskState).toHaveBeenCalledTimes(expectedRefreshCount);
+        hook.unmount();
+        queryClient.clear();
+      },
+    );
   });
 });

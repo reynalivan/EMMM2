@@ -1,4 +1,5 @@
 use crate::modules::settings::application::config::ConfigService;
+use crate::platform::fs::file_utils::FilesystemIdentityProof;
 use crate::shared::errors::AppError;
 use std::path::{Component, Path, PathBuf};
 
@@ -49,6 +50,55 @@ impl AsRef<Path> for ValidatedPath {
     }
 }
 
+/// Keeps a selected folder bound to its original game/root across asynchronous waits.
+pub(crate) struct ModFolderIdentityProof {
+    game_id: String,
+    root: PathBuf,
+    folder: PathBuf,
+    root_identity: FilesystemIdentityProof,
+    folder_identity: FilesystemIdentityProof,
+}
+
+impl ModFolderIdentityProof {
+    pub(crate) fn capture(
+        config: &ConfigService,
+        folder: &ValidatedPath,
+    ) -> Result<Self, AppError> {
+        let root = canonical_mods_root(config, folder.owner_game_id())?;
+        if !folder.starts_with(&root) {
+            return Err(AppError::Security(
+                "Game Mods root changed; refresh before retrying".to_string(),
+            ));
+        }
+        if !folder.is_dir() {
+            return Err(AppError::Validation(
+                "Selected mod folder is unavailable".to_string(),
+            ));
+        }
+        Ok(Self {
+            game_id: folder.owner_game_id().to_string(),
+            root_identity: FilesystemIdentityProof::capture(&root)?,
+            folder_identity: FilesystemIdentityProof::capture(folder)?,
+            root,
+            folder: folder.as_ref().to_path_buf(),
+        })
+    }
+
+    pub(crate) fn validate(&self, config: &ConfigService) -> Result<(), AppError> {
+        self.root_identity.validate(&self.root)?;
+        let current_root = canonical_mods_root(config, &self.game_id)?;
+        self.root_identity.validate(&current_root)?;
+        let current_folder = canonicalize_for_guard(&self.folder)?;
+        if !current_folder.starts_with(&current_root) {
+            return Err(AppError::Security(
+                "Selected mod folder escapes the configured Mods root; refresh before retrying"
+                    .to_string(),
+            ));
+        }
+        self.folder_identity.validate(&current_folder)
+    }
+}
+
 /// Resolves a path to its canonical form, reporting failure the same way at
 /// every containment check so the two entry points below stay in step.
 fn canonicalize_for_guard(path: &Path) -> Result<PathBuf, AppError> {
@@ -65,6 +115,25 @@ pub fn validate_path(
 ) -> Result<ValidatedPath, AppError> {
     let canonical_root = canonical_mods_root(config, game_id)?;
     validate_against_root(&canonical_root, game_id, candidate_path)
+}
+
+/// Validates a mod folder that must be a child of the configured Mods root.
+///
+/// Structural mod mutations must never operate on the root itself: moving or
+/// renaming it would make the whole configured mod library unavailable.
+pub fn validate_mod_target_path(
+    config: &ConfigService,
+    game_id: &str,
+    candidate_path: &str,
+) -> Result<ValidatedPath, AppError> {
+    let canonical_root = canonical_mods_root(config, game_id)?;
+    let candidate = validate_against_root(&canonical_root, game_id, candidate_path)?;
+    if candidate.as_ref() == canonical_root {
+        return Err(AppError::Security(
+            "Security Violation: The configured Mods root cannot be a mod target".to_string(),
+        ));
+    }
+    Ok(candidate)
 }
 
 /// Batch form of [`validate_path`]: the mods root is resolved and

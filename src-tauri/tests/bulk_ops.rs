@@ -91,7 +91,7 @@ mod tests {
             &GameRow {
                 id: game_id.to_string(),
                 name: "Test Game".to_string(),
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 path: root.to_string_lossy().to_string(),
                 mods_path: Some(root.to_string_lossy().to_string()),
                 ready_to_move_path: None,

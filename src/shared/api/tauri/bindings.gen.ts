@@ -55,9 +55,33 @@ async discardPendingCrashReport() : Promise<Result<null, AppError>> {
  * Records an IPC failure after the shared frontend command boundary has
  * reduced it to bounded enums. Raw error text is never accepted here.
  */
-async recordNativeErrorMetric(operation: string, errorCode: string) : Promise<Result<null, AppError>> {
+async recordNativeErrorMetric(operation: string, errorCode: string, expectedRevision: number | null) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("record_native_error_metric", { operation, errorCode }) };
+    return { status: "ok", data: await TAURI_INVOKE("record_native_error_metric", { operation, errorCode, expectedRevision }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getFileLockInfo(recoveryId: string) : Promise<Result<FileLockReport, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_file_lock_info", { recoveryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async controlFileLockProcess(recoveryId: string, processRef: string, force: boolean) : Promise<Result<FileLockReport, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("control_file_lock_process", { recoveryId, processRef, force }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async dismissFileLockRecovery(recoveryId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_file_lock_recovery", { recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -121,9 +145,9 @@ async getWorkspacePreview(input: WorkspacePreviewInput) : Promise<Result<Workspa
     else return { status: "error", error: e  as any };
 }
 },
-async executeWorkspaceSwitch(input: WorkspaceSwitchInput, intentRevision: number | null) : Promise<Result<WorkspaceSwitchResult, AppError>> {
+async executeWorkspaceSwitch(input: WorkspaceSwitchInput, intentRevision: number | null, recoveryId: string | null) : Promise<Result<WorkspaceSwitchResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_switch", { input, intentRevision }) };
+    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_switch", { input, intentRevision, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -145,9 +169,9 @@ async admitWorkspaceSwitchIntent(gameId: string, targets: WorkspaceSwitchTarget[
     else return { status: "error", error: e  as any };
 }
 },
-async executeWorkspaceObjectBulkSwitch(gameId: string, objectIds: string[], desiredEnabled: boolean, intentRevision: number | null) : Promise<Result<WorkspaceSwitchResult, AppError>> {
+async executeWorkspaceObjectBulkSwitch(gameId: string, objectIds: string[], desiredEnabled: boolean, intentRevision: number | null, recoveryId: string | null) : Promise<Result<WorkspaceSwitchResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_object_bulk_switch", { gameId, objectIds, desiredEnabled, intentRevision }) };
+    return { status: "ok", data: await TAURI_INVOKE("execute_workspace_object_bulk_switch", { gameId, objectIds, desiredEnabled, intentRevision, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -387,6 +411,14 @@ async installCatalogImport(stagingToken: string) : Promise<Result<CatalogPackRef
     else return { status: "error", error: e  as any };
 }
 },
+async discardCatalogImport(stagingToken: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discard_catalog_import", { stagingToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Read the latest cached identity-suggestion state for one game. This command
  * never starts disk inspection; an explicit user action owns that lifecycle.
@@ -555,17 +587,17 @@ async openFolderConflictCandidate(gameId: string, groupId: string, path: string)
     else return { status: "error", error: e  as any };
 }
 },
-async resolveFolderNameConflict(gameId: string, groupId: string, renames: FolderConflictRename[]) : Promise<Result<DiskReconcileResult, AppError>> {
+async resolveFolderNameConflict(gameId: string, groupId: string, renames: FolderConflictRename[], recoveryId: string | null) : Promise<Result<DiskReconcileResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("resolve_folder_name_conflict", { gameId, groupId, renames }) };
+    return { status: "ok", data: await TAURI_INVOKE("resolve_folder_name_conflict", { gameId, groupId, renames, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async trashFolderConflictCandidate(gameId: string, path: string) : Promise<Result<FolderConflictMutationResult, AppError>> {
+async trashFolderConflictCandidate(gameId: string, path: string, recoveryId: string | null) : Promise<Result<FolderConflictMutationResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("trash_folder_conflict_candidate", { gameId, path }) };
+    return { status: "ok", data: await TAURI_INVOKE("trash_folder_conflict_candidate", { gameId, path, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -595,25 +627,25 @@ async listIgnoredObjectConflicts(gameId: string) : Promise<Result<IgnoredConflic
     else return { status: "error", error: e  as any };
 }
 },
-async renameModFolder(folderPath: string, newName: string, gameId: string) : Promise<Result<RenameResult, AppError>> {
+async renameModFolder(folderPath: string, newName: string, gameId: string, recoveryId: string | null) : Promise<Result<RenameResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("rename_mod_folder", { folderPath, newName, gameId }) };
+    return { status: "ok", data: await TAURI_INVOKE("rename_mod_folder", { folderPath, newName, gameId, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async bulkToggleMods(gameId: string, paths: string[], enable: boolean, operationId: string, intentRevision: number | null, expectedIdentities: ([string, string])[] | null) : Promise<Result<BulkResult, AppError>> {
+async bulkToggleMods(gameId: string, paths: string[], enable: boolean, operationId: string, intentRevision: number | null, expectedIdentities: ([string, string])[] | null, recoveryIds: string[] | null) : Promise<Result<BulkResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("bulk_toggle_mods", { gameId, paths, enable, operationId, intentRevision, expectedIdentities }) };
+    return { status: "ok", data: await TAURI_INVOKE("bulk_toggle_mods", { gameId, paths, enable, operationId, intentRevision, expectedIdentities, recoveryIds }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async bulkDeleteMods(gameId: string, paths: string[], operationId: string) : Promise<Result<BulkResult, AppError>> {
+async bulkDeleteMods(gameId: string, paths: string[], operationId: string, recoveryIds: string[] | null) : Promise<Result<BulkResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("bulk_delete_mods", { gameId, paths, operationId }) };
+    return { status: "ok", data: await TAURI_INVOKE("bulk_delete_mods", { gameId, paths, operationId, recoveryIds }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -759,9 +791,9 @@ async listMoveTargetsForObject(gameId: string, objectId: string) : Promise<Resul
     else return { status: "error", error: e  as any };
 }
 },
-async moveModsToObject(input: MoveModsToObjectInput) : Promise<Result<BulkResult, AppError>> {
+async moveModsToObject(input: MoveModsToObjectInput, recoveryIds: string[] | null) : Promise<Result<BulkResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("move_mods_to_object", { input }) };
+    return { status: "ok", data: await TAURI_INVOKE("move_mods_to_object", { input, recoveryIds }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -794,9 +826,9 @@ async deleteModThumbnail(gameId: string, folderPath: string) : Promise<Result<nu
     else return { status: "error", error: e  as any };
 }
 },
-async deleteMod(path: string, gameId: string) : Promise<Result<DeleteModResult, AppError>> {
+async deleteMod(path: string, gameId: string, recoveryId: string | null) : Promise<Result<DeleteModResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_mod", { path, gameId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_mod", { path, gameId, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -842,9 +874,17 @@ async writeModIni(gameId: string, folderPath: string, fileName: string, expected
     else return { status: "error", error: e  as any };
 }
 },
-async listModPreviewImages(gameId: string, folderPath: string) : Promise<Result<string[], AppError>> {
+async listModPreviewImagesWithVisibility(gameId: string, folderPath: string) : Promise<Result<ModPreviewImage[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_mod_preview_images", { gameId, folderPath }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_mod_preview_images_with_visibility", { gameId, folderPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setModPreviewImageHidden(gameId: string, folderPath: string, imagePath: string, hidden: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_mod_preview_image_hidden", { gameId, folderPath, imagePath, hidden }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1236,33 +1276,9 @@ async loadCustomTheme(id: string) : Promise<Result<CustomTheme, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async saveCustomTheme(theme: CustomTheme) : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("save_custom_theme", { theme }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async deleteCustomTheme(id: string) : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_custom_theme", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async importCustomTheme() : Promise<Result<CustomTheme | null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("import_custom_theme") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async exportCustomTheme(id: string) : Promise<Result<string | null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("export_custom_theme", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1308,9 +1324,9 @@ async updateObjectCmd(id: string, updates: UpdateObjectInput) : Promise<Result<n
     else return { status: "error", error: e  as any };
 }
 },
-async deleteObjectCmd(id: string, force: boolean) : Promise<Result<CommittedMutationResult, AppError>> {
+async deleteObjectCmd(id: string, force: boolean, recoveryId: string | null) : Promise<Result<CommittedMutationResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_object_cmd", { id, force }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_object_cmd", { id, force, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1364,9 +1380,9 @@ async saveCurrentRuntimeAsCollection(gameId: string, name: string) : Promise<Res
     else return { status: "error", error: e  as any };
 }
 },
-async applyCollection(gameId: string, collectionId: string, ignoreMissing: boolean | null) : Promise<Result<ApplyResult, AppError>> {
+async applyCollection(gameId: string, collectionId: string, ignoreMissing: boolean | null, recoveryId: string | null) : Promise<Result<ApplyResult, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("apply_collection", { gameId, collectionId, ignoreMissing }) };
+    return { status: "ok", data: await TAURI_INVOKE("apply_collection", { gameId, collectionId, ignoreMissing, recoveryId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1607,9 +1623,8 @@ async installAppUpdate(onProgress: TAURI_CHANNEL<AppUpdateProgress>) : Promise<R
 /**
  * Validate and commit runtime-control settings without persisting a partial
  * shortcut while OS registration is still allowed to fail. Every configured
- * action, including the KeyViewer toggle, is registered while enabled and is
- * dispatched only when the shared game detector reports the active game in
- * the foreground.
+ * action is registered while enabled. Workspace actions dispatch globally;
+ * only KeyViewer input replay requires the active game in the foreground.
  */
 async saveHotkeyConfiguration(expectedRevision: number, hotkeys: HotkeyConfig, keyviewer: KeyViewerConfig) : Promise<Result<SaveSettingsResult, AppError>> {
     try {
@@ -1626,12 +1641,28 @@ async saveHotkeyConfiguration(expectedRevision: number, hotkeys: HotkeyConfig, k
  * Toggling from the app moves folders on disk but cannot tell a running game
  * to re-read them: the reload keystroke has to be pressed while the game has
  * focus, so the UI names the key instead of replaying it into whatever window
- * happens to be in front. The in-game hotkey path replays it directly because
- * there the game IS focused (`services::hotkeys::reload`).
+ * happens to be in front. Global workspace hotkeys only replay reload input
+ * when the shared game detector confirms the selected game is focused.
  */
 async getReloadKey() : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_reload_key") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getHotkeyNotice() : Promise<Result<HotkeyNotice | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_hotkey_notice") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hotkeyNoticeReady(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hotkey_notice_ready", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2067,7 +2098,7 @@ export type AnalyzeImportBatchOptions = { batchId: string; password: string | nu
  * Unified error type for Tauri command boundaries.
  * Each domain error converts into this for consistent frontend handling.
  */
-export type AppError = { type: "RuntimeState"; payload: RuntimeStateError } | { type: "Collection"; payload: CollectionError } | { type: "Metadata"; payload: MetadataError } | { type: "Browser"; payload: BrowserError } | { type: "Scanner"; payload: ScannerError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } |
+export type AppError = { type: "FileLock"; payload: { path: string; recovery_id: string } } | { type: "RuntimeState"; payload: RuntimeStateError } | { type: "Collection"; payload: CollectionError } | { type: "Metadata"; payload: MetadataError } | { type: "Browser"; payload: BrowserError } | { type: "Scanner"; payload: ScannerError } | { type: "Security"; payload: string } | { type: "NotFound"; payload: string } | { type: "Internal"; payload: string } | { type: "Db"; payload: string } | { type: "Validation"; payload: string } |
 /**
  * The bounded in-memory explorer snapshot backing a cursor or symbolic
  * selection is no longer available. Frontends may safely reload the
@@ -2159,7 +2190,7 @@ export type CategorySuggestion = { category: StableCategory; subCategory: string
 /**
  * Errors specific to collection operations.
  */
-export type CollectionError = { NotFound: { id: string } } | { DuplicateName: { name: string } } | { MissingMods: { count: number; paths: string[] } } | { Validation: string } | { Db: string } | { RuntimeState: RuntimeStateError } | { Io: string } | { FileInUse: { path: string; processes: string[] } } | { PathBusy: { path: string } }
+export type CollectionError = { FileLock: { path: string; recovery_id: string } } | { NotFound: { id: string } } | { DuplicateName: { name: string } } | { MissingMods: { count: number; paths: string[] } } | { Validation: string } | { Db: string } | { RuntimeState: RuntimeStateError } | { Io: string } | { FileInUse: { path: string; processes: string[] } } | { PathBusy: { path: string } }
 /**
  * A single mod member of a collection (from `collection_mods`).
  */
@@ -2388,6 +2419,9 @@ export type ExtractionEvent =
  * One file has been extracted (or skipped as directory).
  */
 { event: "fileProgress"; data: { fileName: string; fileIndex: number; totalFiles: number } }
+export type FileLockDiscoveryStatus = "complete" | "partial" | "unknown" | "unavailable" | "failed"
+export type FileLockProcess = { process_ref: string; pid: number; name: string; executable: string | null; started_at: string; application_type: number; session_id: number; service: string | null; can_close: boolean; can_terminate: boolean; unavailable_reason: string | null }
+export type FileLockReport = { recovery_id: string; path: string; status: FileLockDiscoveryStatus; message: string | null; processes: FileLockProcess[]; action_outcome: string | null }
 export type FilterDef = { key: string; label: string; options: string[] }
 export type FolderConflictMutationResult = { reconcile: DiskReconcileResult | null; sync_warning: CommittedMutationSyncWarning | null }
 /**
@@ -2476,7 +2510,13 @@ safe_mode?: string; next_preset?: string; prev_preset?: string; toggle_overlay?:
 /**
  * Whether the preset status banner is rendered in the generated overlay.
  */
-preset_status_overlay_enabled?: boolean }
+preset_status_overlay_enabled?: boolean;
+/**
+ * Whether a transient native notice may be shown over the focused game.
+ */
+game_notification_overlay_enabled?: boolean }
+export type HotkeyNotice = { id: string; sequence: number; settings_revision: number; game_id: string; game_name: string; mods_path: string; root_identity: string; created_at_ms: number; expires_at_ms: number; kind: HotkeyNoticeKind; previous_collection: string | null; collection: string | null; safe_mode: boolean; message: string | null; runtime_generation: number | null; runtime_status: RuntimeSyncStatus | null; reload_binding: string | null; hotkeys: HotkeyConfig; keyviewer_enabled: boolean; language: string; theme: string }
+export type HotkeyNoticeKind = "collection_applied" | "safe_mode_changed" | "no_presets" | "failed"
 export type IgnoredConflict = { id: string; game_id: string; object_id: string; object_name: string | null; mod_ids: string; mod_names?: string[]; created_at: string }
 export type ImportBatch = { id: string; gameId: string; flow: ImportFlow; targetMode: TargetMode; targetObjectId: string | null; targetSubpath: string | null; status: ImportBatchStatus; sourceArchivePath: string | null; items: ImportItem[]; createdAt: string; updatedAt: string }
 export type ImportBatchReport = { batchId: string; moved: number; reallocated: number; createdCanonicalFolders: number; skipped: number; collisions: number; metadataPending: number; failed: number }
@@ -2547,7 +2587,7 @@ export type MemberKind = "mod" | "object"
 /**
  * Errors specific to Metadata operations.
  */
-export type MetadataError = { Security: string } | { NotFound: string } | { Io: string } | { Db: string } | { Validation: string }
+export type MetadataError = { FileLock: { path: string; recovery_id: string } } | { PathBusy: { path: string } } | { Security: string } | { NotFound: string } | { Io: string } | { Db: string } | { Validation: string }
 export type ModAssetEntry = { relative_path: string; size_bytes: number; source_files: string[] }
 export type ModAssetManifest = { referenced: ModAssetEntry[]; inactive_only: ModAssetEntry[]; orphan: ModAssetEntry[]; external_reference: ModAssetEntry[]; counts: ModAssetManifestCounts }
 export type ModAssetManifestCounts = { referenced: number; inactive_only: number; orphan: number; external_reference: number }
@@ -2574,6 +2614,7 @@ export type ModInfo = { actual_name?: string; author?: string; description?: str
  * Partial update struct — only fields that are `Some` will be updated.
  */
 export type ModInfoUpdate = { actual_name: string | null; author: string | null; description: string | null; version: string | null; tags: string[] | null; tags_add: string[] | null; tags_remove: string[] | null; is_safe: boolean | null; is_favorite: boolean | null; is_pinned: boolean | null; is_auto_sync: boolean | null; preset_name_add: string[] | null; preset_name_remove: string[] | null; metadata: Partial<{ [key in string]: string }> | null }
+export type ModPreviewImage = { path: string; is_hidden: boolean }
 export type ModViewerLaunchReceipt = { game_id: string; mod_folder: string; file_manifest: ModFileManifestEntry[] }
 export type MoveModsToObjectInput = { game_id: string; folder_paths: string[]; target_object_id: string; target_subpath: string | null; status: string | null }
 export type NewlineStyle = "Lf" | "CrLf"
@@ -2675,7 +2716,10 @@ export type RuntimeSafetySummary = { is_safe: boolean; is_safety_classified: boo
  */
 export type RuntimeStateError = { NoModsPath: { game_id: string } } | { GameNotFound: { game_id: string } } | { Db: string } | { Collection: CollectionError }
 export type RuntimeStatus = "clean" | "modified" | "unsaved"
+export type RuntimeSyncPhase = "queued" | "running" | "succeeded" | "needs_manual_reload" | "failed"
 export type RuntimeSyncPublicationStatus = "published" | "unchanged" | "skipped" | "failed"
+export type RuntimeSyncReloadStatus = "not_required" | "sent" | "manual"
+export type RuntimeSyncStatus = { game_id: string; generation: number; phase: RuntimeSyncPhase; cause: string; message: string | null; reload_status?: RuntimeSyncReloadStatus | null; reload_binding?: string | null }
 /**
  * A catalog-declared 3DMigoto target used by runtime features.
  */

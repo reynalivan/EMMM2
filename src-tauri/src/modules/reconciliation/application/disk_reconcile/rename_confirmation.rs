@@ -833,7 +833,6 @@ mod tests {
                 .to_string(),
             absolute_path: PathBuf::from("E:/Mods").join(path),
             filesystem_identity: identity.map(str::to_string),
-            size_bytes: None,
         }
     }
 
@@ -853,7 +852,6 @@ mod tests {
             safety_source: None,
             object_type: Some("Other".to_string()),
             filesystem_identity: identity.map(str::to_string),
-            size_bytes: 0,
         }
     }
 

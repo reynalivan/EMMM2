@@ -21,6 +21,15 @@ const terminalDownload: BrowserDownloadItem = {
 };
 
 describe('mergeDownloadProgress', () => {
+  it.each(['paused', 'requested'] as const)(
+    'does not change %s into a running transfer',
+    (status) => {
+      const download = { ...terminalDownload, status, bytes_received: 10, can_resume: true };
+      expect(
+        mergeDownloadProgress(download, { id: download.id, bytes_received: 20, bytes_total: 100 }),
+      ).toEqual(download);
+    },
+  );
   it('does not overwrite a terminal download with a late progress event', () => {
     expect(
       mergeDownloadProgress(terminalDownload, {

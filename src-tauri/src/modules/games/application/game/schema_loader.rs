@@ -93,7 +93,7 @@ pub fn default_schema() -> GameSchema {
 /// an unrecognised one falls back to gimi.
 pub fn normalize_game_type(raw: i32) -> String {
     GameType::from_repr(raw)
-        .unwrap_or(GameType::GIMI)
+        .unwrap_or(GameType::Gimi)
         .resource_code()
         .to_string()
 }

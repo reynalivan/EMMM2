@@ -158,9 +158,11 @@ pub async fn delete_processed_sources(
             "One or more Processed sources are stale; refresh and try again".to_string(),
         ));
     }
+    let canonical_root = root.canonicalize()?;
     let processed_root = root.join("Processed").canonicalize().map_err(|error| {
         AppError::Validation(format!("Processed folder is unavailable: {error}"))
     })?;
+    validate_processed_root(&canonical_root, &processed_root)?;
     let targets = selected
         .into_iter()
         .map(|source| {
@@ -334,6 +336,20 @@ fn validate_inbox_entry_containment(root: &Path, canonical_entry: &Path) -> Resu
     }
 }
 
+fn validate_processed_root(
+    canonical_root: &Path,
+    canonical_processed: &Path,
+) -> Result<(), AppError> {
+    if canonical_processed.parent() == Some(canonical_root) {
+        Ok(())
+    } else {
+        Err(AppError::Security(format!(
+            "Processed folder escaped the Mod Inbox: {}",
+            canonical_processed.display()
+        )))
+    }
+}
+
 fn classify_layout(path: &Path, kind: ModInboxEntryKind) -> (ModInboxLayout, u32) {
     if kind == ModInboxEntryKind::Archive {
         return (ModInboxLayout::Unknown, 0);
@@ -428,6 +444,23 @@ mod containment_tests {
     fn rejects_selected_paths_that_are_not_direct_inbox_children() {
         let inbox = tempfile::tempdir().unwrap();
         let error = canonicalize_selected_entry(inbox.path(), "../outside").unwrap_err();
+
+        assert!(matches!(error, AppError::Security(_)));
+    }
+
+    #[test]
+    fn rejects_a_processed_directory_resolved_outside_the_inbox() {
+        let workspace = tempfile::tempdir().unwrap();
+        let inbox = workspace.path().join("inbox");
+        let external = workspace.path().join("external");
+        std::fs::create_dir_all(&inbox).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+
+        let error = validate_processed_root(
+            &inbox.canonicalize().unwrap(),
+            &external.canonicalize().unwrap(),
+        )
+        .unwrap_err();
 
         assert!(matches!(error, AppError::Security(_)));
     }

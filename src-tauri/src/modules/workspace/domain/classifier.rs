@@ -419,14 +419,6 @@ pub fn classify_folder(path: &Path) -> (NodeType, Vec<String>, Vec<String>) {
     classify_folder_with_mode(path, false).unwrap_or((NodeType::ContainerFolder, vec![], vec![]))
 }
 
-/// Returns an authoritative classification for reconcile and source inspection.
-/// Filesystem and lossy decoding failures are returned to the caller.
-pub fn classify_folder_strict(
-    path: &Path,
-) -> Result<(NodeType, Vec<String>, Vec<String>), ClassificationError> {
-    classify_folder_with_mode(path, true)
-}
-
 /// Reuses a strict directory pass when a caller also needs the child folders
 /// for a separate operation, such as building a filesystem census.
 pub(crate) fn classify_folder_strict_from_scan(

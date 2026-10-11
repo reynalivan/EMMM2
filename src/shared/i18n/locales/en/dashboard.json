@@ -84,6 +84,8 @@
   },
   "keys": {
     "title": "Active Key Mapping",
+    "loading": "Loading active key mappings",
+    "load_error": "Key mappings are unavailable. Retry indexing or return to Home to try again.",
     "table_mod": "Mod",
     "table_section": "Section",
     "table_key": "Key",

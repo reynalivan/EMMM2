@@ -48,7 +48,7 @@ export function DownloadItemActions({
   const [isRenaming, setIsRenaming] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  const isTerminal = terminalStatuses.has(item.status);
+  const isTerminal = terminalStatuses.has(item.status) && !item.can_resume;
   const hasLocalFile = isTerminal && Boolean(item.file_path?.trim());
   const menuId = `download-actions-${item.id}`;
   const renameDialogId = `download-rename-${item.id}`;

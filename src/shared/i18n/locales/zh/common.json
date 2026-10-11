@@ -41,6 +41,7 @@
     "dismiss": "忽略"
   },
   "errors": {
+    "import_location_changed": "导入目标已更改。请重新选择文件夹后再导入。",
     "explorer_snapshot_expired": "文件夹列表已更改。请重新加载并再次选择模组。",
     "no_active_game": "未选择活动游戏",
     "scan_failed": "扫描失败",
@@ -85,7 +86,24 @@
     "description": "请关闭仍在使用“{{folderName}}”的应用或窗口，然后重试。",
     "windows_explorer": "Windows 资源管理器",
     "hint": "文件锁通常来自资源管理器窗口、文本编辑器或正在监视该文件夹的工具。",
-    "folder_fallback": "此文件夹"
+    "folder_fallback": "此文件夹",
+    "still_locked": "文件夹仍被占用。解除占用后重试，或取消此操作。",
+    "unknown_holder": "Windows 无法识别占用进程。请检查游戏、资源管理器、杀毒软件或索引工具。",
+    "refresh_processes": "刷新进程",
+    "close_app": "关闭应用",
+    "force_terminate": "强制结束",
+    "confirm_terminate": "结束此应用",
+    "keep_app": "保持应用运行",
+    "terminate_confirmation": "强制结束 {{name}}（PID {{pid}}）？未保存的工作可能丢失。仅会结束此进程。",
+    "process_pid": "PID {{pid}}",
+    "working": "正在处理… 请稍候。",
+    "process_action_done": "进程操作已完成。文件夹解除占用后，请重试操作。",
+    "retry_blocked": "错误类型已改变。请取消并刷新文件夹，然后重新发起操作。",
+    "context_changed": "当前游戏已改变。请取消并在正确的工作区重新发起操作。",
+    "scan_partial": "仅检查了部分文件夹。其他进程可能仍在占用文件。",
+    "scan_unknown": "未识别到进程；文件夹可能仍被占用。",
+    "scan_unavailable": "进程检测不可用。请关闭使用此文件夹的应用后重试。",
+    "scan_failed": "进程检测失败。请刷新进程列表或手动解除文件夹占用。"
   },
   "workspace": {
     "reason": {

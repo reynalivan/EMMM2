@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 import { Play, StopCircle, EyeOff } from 'lucide-react';
 import { useActiveGame } from '@/entities/game';
 import { useCancelDedupScan, useIgnoredPairs, useStartDedupScan } from './hooks/useDedup';
-import type { DupScanEvent } from '@/entities/workspace';
 import DedupFeature from './components/DedupFeature';
 import {
   DuplicateReportApplyButton,
@@ -28,9 +27,6 @@ export default function StorageOptimizerPage() {
   const cancelScan = useCancelDedupScan();
   const scanGameId = useDedupScanStore((state) => state.gameId);
   const storedProgress = useDedupScanStore((state) => state.progress);
-  const startStoredScan = useDedupScanStore((state) => state.startScan);
-  const applyScanEvent = useDedupScanStore((state) => state.applyEvent);
-  const stopStoredScan = useDedupScanStore((state) => state.stopScan);
   const [showIgnoredModal, setShowIgnoredModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const duplicateReportRef = useRef<DuplicateReportHandle>(null);
@@ -41,11 +37,9 @@ export default function StorageOptimizerPage() {
 
   const { data: ignoredPairs } = useIgnoredPairs(activeGame?.id || '');
   const activeGameId = activeGame?.id ?? null;
-  const isScanningOtherGame =
-    storedProgress.isScanning && scanGameId !== null && scanGameId !== activeGameId;
   const progress: DedupScanProgress =
     scanGameId === activeGameId ? storedProgress : IDLE_DEDUP_SCAN_PROGRESS;
-  const isScanning = progress.isScanning;
+  const isScanning = storedProgress.isScanning;
 
   const handleDuplicateActionStateChange = useCallback((next: DuplicateReportActionState) => {
     setDuplicateActionState((current) =>
@@ -55,40 +49,15 @@ export default function StorageOptimizerPage() {
     );
   }, []);
 
-  const handleEvent = useCallback(
-    (event: DupScanEvent) => {
-      if (activeGameId) {
-        applyScanEvent(activeGameId, event);
-      }
-    },
-    [activeGameId, applyScanEvent],
-  );
-
   const handleStartScan = useCallback(() => {
-    if (!activeGame || isScanningOtherGame) return;
-    startStoredScan(activeGame.id);
-
-    startScan.mutate(
-      {
-        gameId: activeGame.id,
-        modsRoot: activeGame.mod_path,
-        onEvent: handleEvent,
-      },
-      {
-        onError: () => stopStoredScan(activeGame.id),
-      },
-    );
-  }, [activeGame, handleEvent, isScanningOtherGame, startScan, startStoredScan, stopStoredScan]);
+    if (!activeGame || isScanning) return;
+    startScan.mutate({ gameId: activeGame.id, modsRoot: activeGame.mod_path });
+  }, [activeGame, isScanning, startScan]);
 
   const handleCancelScan = useCallback(() => {
-    cancelScan.mutate(undefined, {
-      onSettled: () => {
-        if (activeGame) {
-          stopStoredScan(activeGame.id);
-        }
-      },
-    });
-  }, [activeGame, cancelScan, stopStoredScan]);
+    if (!scanGameId || !isScanning || cancelScan.isPending) return;
+    cancelScan.mutate();
+  }, [cancelScan, isScanning, scanGameId]);
 
   return (
     <WorkspacePageFrame
@@ -122,7 +91,6 @@ export default function StorageOptimizerPage() {
           <button
             className="btn btn-primary btn-sm gap-2 whitespace-nowrap"
             onClick={handleStartScan}
-            disabled={isScanningOtherGame}
           >
             <Play size={16} fill="currentColor" />
             <span>{t('scanner:optimizer.start_button')}</span>
@@ -131,6 +99,7 @@ export default function StorageOptimizerPage() {
           <button
             className="btn btn-error btn-outline btn-sm gap-2 whitespace-nowrap"
             onClick={handleCancelScan}
+            disabled={cancelScan.isPending}
           >
             <StopCircle size={16} />
             <span>{t('scanner:optimizer.stop_button')}</span>

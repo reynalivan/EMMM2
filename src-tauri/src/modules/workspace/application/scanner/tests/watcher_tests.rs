@@ -2,9 +2,351 @@ use super::*;
 use std::fs;
 use tempfile::TempDir;
 
+#[test]
+fn ordered_rename_endpoint_policy_preserves_original_event() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    fs::create_dir(&root).unwrap();
+    let runtime = fixture.path().join("d3dx.ini");
+    let visible = root.join("Alice/Blue");
+    let hidden = root.join(".staging/Blue");
+    let outside = fixture.path().join("outside");
+    for (from, to, expected) in [
+        (&visible, &hidden, "removed"),
+        (&hidden, &visible, "created"),
+        (&outside, &visible, "created"),
+        (&visible, &runtime, "renamed"),
+        (&hidden, &outside, "none"),
+    ] {
+        let state = WatcherState::new();
+        let session = state.prepare_session_with_runtime_config(&root, Some(&runtime));
+        let event = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(from.clone())
+            .add_path(to.clone());
+        let original = event.paths.clone();
+        let emitted = std::cell::RefCell::new(Vec::new());
+        classify_event_with_runtime_config(
+            &event,
+            &root,
+            Some(&runtime),
+            &state.suppressor,
+            &session,
+            &|event| emitted.borrow_mut().push(event),
+        );
+        let output = emitted.into_inner();
+        let actual = match output.as_slice() {
+            [ModWatchEvent::Removed(_)] => "removed",
+            [ModWatchEvent::Created(_)] => "created",
+            [ModWatchEvent::Renamed { .. }] => "renamed",
+            [] => "none",
+            _ => panic!("unexpected rename delivery: {output:?}"),
+        };
+        assert_eq!(actual, expected);
+        assert_eq!(event.paths, original);
+    }
+    let state = WatcherState::new();
+    let session = state.begin_session(&root);
+    let to = root.join("Bob/Blue");
+    let event = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+        .add_path(visible.clone())
+        .add_path(to.clone());
+    let original = event.paths.clone();
+    let _guard = state.suppressor.suppress_paths([&visible]);
+    let emitted = std::cell::RefCell::new(Vec::new());
+    classify_event(&event, &root, &state.suppressor, &session, &|event| {
+        emitted.borrow_mut().push(event)
+    });
+    assert!(matches!(emitted.into_inner().as_slice(),
+        [ModWatchEvent::Created(path)] if path == &to.to_string_lossy()));
+    assert_eq!(event.paths, original);
+}
+
+#[test]
+fn binding_evidence_cannot_restore_invalid_live_cache_or_change_generation() {
+    let fixture = TempDir::new().unwrap();
+    let state = WatcherState::new();
+    let session = state.prepare_session(fixture.path());
+    let original_generation = session.generation();
+    let _newer_candidate = state.prepare_session(fixture.path());
+    assert!(session.matches_current_binding(fixture.path(), None));
+    assert_eq!(session.generation(), original_generation);
+    session
+        .identity_cache_validity()
+        .store(false, Ordering::Release);
+    assert!(!session.matches_current_binding(fixture.path(), None));
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn inactive_binding_accepts_equivalent_windows_namespace_without_dropping_backlog() {
+    let fixture = TempDir::new().unwrap();
+    let state = WatcherState::new();
+    let session = state.prepare_session(fixture.path());
+    let generation = session.generation();
+    let _newer_candidate = state.prepare_session(fixture.path());
+    let (native, receiver) =
+        watch_mod_directory(fixture.path(), state.suppressor.clone(), session.clone()).unwrap();
+    state.install_inactive_watcher(
+        "game".into(),
+        fixture.path(),
+        None,
+        session,
+        native,
+        receiver,
+    );
+    let created = fixture.path().join("backlog.ini");
+    fs::write(&created, "[Constants]\n").unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if !crate::shared::sync::lock(&state.inactive_watchers)
+                .get("game")
+                .unwrap()
+                .receiver
+                .receiver
+                .is_empty()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let verbatim = fs::canonicalize(fixture.path()).unwrap();
+    assert_ne!(fixture.path(), verbatim);
+    assert_eq!(
+        state.inactive_watcher_session("game", &verbatim, None),
+        Some(generation)
+    );
+    assert!(!state.discard_inactive_watcher_unless_coverage("game", &verbatim, None));
+    let (adopted, _native, mut receiver) = state
+        .take_inactive_watcher_for_handoff("game", &verbatim, None)
+        .unwrap();
+    assert_eq!(adopted.generation(), generation);
+    assert!(
+        matches!(receiver.try_recv(), Ok(ModWatchEvent::Created(path)) if path == created.to_string_lossy())
+    );
+}
+
+#[test]
+fn configured_runtime_requires_live_parent_identity() {
+    let fixture = TempDir::new().unwrap();
+    let runtime = fixture.path().join("missing/d3dx.ini");
+    let state = WatcherState::new();
+    let session = state.prepare_session_with_runtime_config(fixture.path(), Some(&runtime));
+    assert!(!session.matches_current_binding(fixture.path(), Some(&runtime)));
+    let (native, receiver) = watch_mod_directory_with_runtime_config(
+        fixture.path(),
+        Some(&runtime),
+        state.suppressor.clone(),
+        session.clone(),
+    )
+    .unwrap();
+    state.install_inactive_watcher(
+        "game".into(),
+        fixture.path(),
+        Some(&runtime),
+        session,
+        native,
+        receiver,
+    );
+    assert!(state
+        .inactive_session_for_coverage("game", fixture.path(), Some(&runtime))
+        .is_none());
+    assert!(state
+        .take_inactive_watcher_for_handoff("game", fixture.path(), Some(&runtime))
+        .is_none());
+    assert!(state.discard_inactive_watcher_unless_coverage("game", fixture.path(), Some(&runtime)));
+}
+
+#[test]
+fn watcher_fix_invalid_inactive_cache_is_rejected_before_handoff() {
+    let fixture = TempDir::new().unwrap();
+    let state = WatcherState::new();
+    let session = state.prepare_session(fixture.path());
+    let (native, receiver) = watch_mod_directory(
+        fixture.path(),
+        Arc::clone(&state.suppressor),
+        session.clone(),
+    )
+    .unwrap();
+    session
+        .identity_cache_validity()
+        .store(false, Ordering::Release);
+    state.install_inactive_watcher(
+        "game".into(),
+        fixture.path(),
+        None,
+        session,
+        native,
+        receiver,
+    );
+    assert!(state
+        .inactive_watcher_session("game", fixture.path(), None)
+        .is_none());
+    assert!(state
+        .take_inactive_watcher_for_handoff("game", fixture.path(), None)
+        .is_none());
+    assert!(state.discard_inactive_watcher_unless_coverage("game", fixture.path(), None));
+}
+
+#[tokio::test]
+async fn watcher_fix_runtime_siblings_do_not_reach_authority_observer() {
+    let fixture = TempDir::new().unwrap();
+    let root = fixture.path().join("Mods");
+    fs::create_dir(&root).unwrap();
+    let runtime = fixture.path().join("d3dx.ini");
+    fs::write(&runtime, "[Constants]\nold=1\n").unwrap();
+    let state = WatcherState::new();
+    let session = state.prepare_session_with_runtime_config(&root, Some(&runtime));
+    state.publish_session(&session);
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let output = Arc::clone(&observed);
+    let (native, mut receiver) = watch_mod_directory_with_runtime_config_and_observer(
+        &root,
+        Some(&runtime),
+        Arc::clone(&state.suppressor),
+        session,
+        Some(Arc::new(move |paths, _, _| {
+            output.lock().unwrap().extend_from_slice(paths)
+        })),
+    )
+    .unwrap();
+    let noise = fixture.path().join("irrelevant.log");
+    fs::write(&noise, "importer log").unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .is_err()
+    );
+    assert!(!observed
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path.file_name() == noise.file_name()));
+    fs::write(&runtime, "[Constants]\nchanged=1\n").unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(observed
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path.file_name() == runtime.file_name()));
+    drop(native);
+}
+
 #[cfg(target_os = "windows")]
 #[path = "native_watcher_stress.rs"]
 mod native_stress;
+
+#[tokio::test]
+async fn watcher_fix_suppressed_external_edit_wakes_without_a_second_event() {
+    let fixture = TempDir::new().unwrap();
+    let folder = fixture.path().join("Object/Mod");
+    fs::create_dir_all(&folder).unwrap();
+    let ini = folder.join("external.ini");
+    fs::write(&ini, "[Constants]\nold=1\n").unwrap();
+    let state = WatcherState::new();
+    let session = state.begin_session(fixture.path());
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let output = Arc::clone(&observed);
+    let (native, mut receiver) = watch_mod_directory_with_runtime_config_and_observer(
+        fixture.path(),
+        None,
+        Arc::clone(&state.suppressor),
+        session.clone(),
+        Some(Arc::new(move |paths, _, _| {
+            output.lock().unwrap().extend_from_slice(paths)
+        })),
+    )
+    .unwrap();
+    while tokio::time::timeout(Duration::from_millis(750), receiver.recv())
+        .await
+        .is_ok()
+    {}
+    observed.lock().unwrap().clear();
+    let guard = state.suppressor.suppress_paths([&folder]);
+    fs::write(&ini, "[Constants]\nchanged=1\n").unwrap();
+    tokio::time::timeout(Duration::from_secs(5), session.wait_for_work())
+        .await
+        .unwrap();
+    assert!(observed
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|path| path.file_name() == ini.file_name()));
+    assert!(receiver.try_recv().is_err());
+    drop(guard);
+    tokio::time::timeout(Duration::from_secs(1), session.wait_for_work())
+        .await
+        .unwrap();
+    drop(native);
+}
+
+#[tokio::test]
+async fn watcher_fix_work_wakes_coalesce_and_do_not_cross_sessions() {
+    let fixture = TempDir::new().unwrap();
+    let state = WatcherState::new();
+    let first = state.begin_session(fixture.path());
+    let clone = first.clone();
+    for _ in 0..1000 {
+        clone.request_work();
+    }
+    tokio::time::timeout(Duration::from_secs(1), first.wait_for_work())
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), first.wait_for_work())
+            .await
+            .is_err()
+    );
+    let successor = state.begin_session(fixture.path());
+    first.request_work();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), successor.wait_for_work())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn watcher_fix_unseen_echo_expiry_wakes_only_its_owner() {
+    let fixture = TempDir::new().unwrap();
+    let old = fixture.path().join("Mod");
+    let new = fixture.path().join("DISABLED Mod");
+    fs::create_dir(&old).unwrap();
+    let state = WatcherState::new();
+    let owner = state.begin_session(fixture.path());
+    let evidence = state.suppressor.expect_rename_echoes(
+        "game",
+        &owner,
+        [ExpectedRenameEcho {
+            old_path: old.clone(),
+            new_path: new.clone(),
+            expected_identity: crate::platform::fs::file_utils::filesystem_identity(&old).unwrap(),
+        }],
+    );
+    fs::rename(&old, &new).unwrap();
+    assert!(state.suppressor.commit_expected_rename_echoes(&evidence));
+    let successor = state.begin_session(fixture.path());
+    tokio::time::timeout(Duration::from_secs(13), owner.wait_for_work())
+        .await
+        .unwrap();
+    assert!(state.suppressor.pending_repair(&successor).is_none());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), successor.wait_for_work())
+            .await
+            .is_err()
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[path = "native_file_moves.rs"]
+mod native_file_moves;
 
 #[test]
 fn verified_rename_echo_is_not_delivered_but_pending_and_replacement_events_are() {
@@ -166,6 +508,7 @@ fn inactive_watcher_with_changed_root_identity_cannot_be_adopted() {
     crate::shared::sync::lock(&state.inactive_watchers)
         .get_mut("game-1")
         .expect("inactive watcher")
+        .binding
         .root_identity = Some("retired-root-id".to_string());
 
     assert!(state
@@ -497,22 +840,33 @@ fn importer_d3dx_ini_is_forwarded_without_watching_importer_assets() {
     let d3dx = Path::new(r"E:\Importer\d3dx.ini");
     let state = WatcherState::new();
     let session = state.begin_session(mods_root);
-    let event = Event::new(EventKind::Modify(ModifyKind::Any)).add_path(d3dx.to_path_buf());
-    let emitted = std::cell::RefCell::new(Vec::new());
-
-    classify_event_with_runtime_config(
-        &event,
-        mods_root,
-        Some(d3dx),
-        &state.suppressor,
-        &session,
-        &|event| emitted.borrow_mut().push(event),
-    );
-
-    assert!(matches!(
-        emitted.into_inner().as_slice(),
-        [ModWatchEvent::Modified(path)] if path == &d3dx.to_string_lossy()
-    ));
+    for (kind, expected) in [
+        (ModifyKind::Any, "modified"),
+        (ModifyKind::Name(RenameMode::From), "removed"),
+        (ModifyKind::Name(RenameMode::To), "created"),
+    ] {
+        let event = Event::new(EventKind::Modify(kind)).add_path(d3dx.to_path_buf());
+        let policy = WatcherCoverage::new(mods_root, Some(d3dx)).policy(&event);
+        assert!(policy.authority_relevant);
+        let emitted = std::cell::RefCell::new(Vec::new());
+        classify_event_with_runtime_config(
+            &event,
+            mods_root,
+            Some(d3dx),
+            &state.suppressor,
+            &session,
+            &|event| emitted.borrow_mut().push(event),
+        );
+        let output = emitted.into_inner();
+        let (actual, path) = match output.as_slice() {
+            [ModWatchEvent::Modified(path)] => ("modified", path),
+            [ModWatchEvent::Removed(path)] => ("removed", path),
+            [ModWatchEvent::Created(path)] => ("created", path),
+            _ => panic!("unexpected runtime config event: {output:?}"),
+        };
+        assert_eq!(actual, expected);
+        assert_eq!(path, &d3dx.to_string_lossy());
+    }
 }
 
 // Regression: folders with dots in the name ("Mod v1.2") must not be
@@ -640,16 +994,24 @@ fn replaced_watcher_session_cannot_publish_after_the_current_session_changes() {
 #[test]
 fn watcher_session_coverage_includes_runtime_config_path() {
     let state = WatcherState::new();
-    let mods_root = Path::new(r"E:\Mods");
-    let old_runtime = Path::new(r"E:\GameA\d3dx.ini");
-    let new_runtime = Path::new(r"E:\GameB\d3dx.ini");
-    let session = state.prepare_session_with_runtime_config(mods_root, Some(old_runtime));
+    let fixture = tempfile::tempdir().expect("owned coverage fixture");
+    let mods_root = fixture.path().join("Mods");
+    let old_runtime = fixture.path().join("GameA/d3dx.ini");
+    let new_runtime = fixture.path().join("GameB/d3dx.ini");
+    for directory in [
+        mods_root.as_path(),
+        old_runtime.parent().expect("runtime parent"),
+        new_runtime.parent().expect("runtime parent"),
+    ] {
+        std::fs::create_dir_all(directory).expect("physical coverage directories");
+    }
+    let session = state.prepare_session_with_runtime_config(&mods_root, Some(&old_runtime));
     state.publish_session(&session);
 
     assert!(state
-        .current_session_for_coverage(mods_root, Some(old_runtime))
+        .current_session_for_coverage(&mods_root, Some(&old_runtime))
         .is_some());
     assert!(state
-        .current_session_for_coverage(mods_root, Some(new_runtime))
+        .current_session_for_coverage(&mods_root, Some(&new_runtime))
         .is_none());
 }

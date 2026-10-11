@@ -6,7 +6,6 @@
 mod analyze;
 pub mod classify;
 mod destination;
-mod extract;
 mod extractors;
 mod progress;
 mod security;
@@ -27,13 +26,12 @@ pub(super) fn is_cancelled(cancel_token: &Option<Arc<AtomicBool>>) -> bool {
 
 // Re-export public API
 pub use analyze::{analyze_archive, analyze_archive_with_limits};
-pub use extract::{extract_archive, ExtractOptions};
 pub use security::ArchiveLimits;
 pub use staging::{
     extract_archive_to_staging_with_limits, extract_archive_to_staging_with_options,
     StagingExtractOptions,
 };
-pub use types::{ArchiveAnalysis, ArchiveFormat, ExtractionEvent, ExtractionResult, StagedArchive};
+pub use types::{ArchiveAnalysis, ArchiveFormat, ExtractionEvent, StagedArchive};
 
 /// Extract an archive into app-owned staging without changing the source archive.
 /// Placement remains a separate, explicitly confirmed mutation.

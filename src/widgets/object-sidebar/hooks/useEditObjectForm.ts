@@ -244,6 +244,7 @@ export function useEditObjectForm(
   }, [object, fullDetails, isFolder, isObject, form, isLoadingDetails, isDetailsError]);
 
   const handleSubmit = form.handleSubmit(async (data) => {
+    const gameId = activeGame?.id;
     try {
       const metaStrings: Record<string, string> = {};
       if (data.metadata) {
@@ -288,19 +289,19 @@ export function useEditObjectForm(
         // 1. Rename — capture new path to avoid stale reference
         let currentPath = folder.path;
         if (data.name !== folder.name) {
-          if (!activeGame?.id) throw new Error('No active game selected');
+          if (!gameId) throw new Error('No active game selected');
           const result = await renameMod.mutateAsync({
             folderPath: folder.path,
             newName: data.name,
-            gameId: activeGame.id,
+            gameId,
           });
           currentPath = result.new_path;
         }
 
         // 2. Category
-        if (activeGame && data.object_type) {
+        if (gameId && data.object_type) {
           await updateCategory.mutateAsync({
-            gameId: activeGame.id,
+            gameId,
             folderPath: currentPath,
             category: data.object_type,
           });
@@ -308,16 +309,21 @@ export function useEditObjectForm(
 
         // 3. Thumbnail
         if (thumbnailAction === 'update' && selectedThumbnailPath) {
+          if (!gameId) throw new Error('No active game selected');
           await updateThumbnail.mutateAsync({
+            gameId,
             folderPath: currentPath,
             sourcePath: selectedThumbnailPath,
           });
         } else if (thumbnailAction === 'delete') {
-          await deleteThumbnail.mutateAsync(currentPath);
+          if (!gameId) throw new Error('No active game selected');
+          await deleteThumbnail.mutateAsync({ gameId, folderPath: currentPath });
         }
 
         // 4. Metadata and AutoSync. Safety has its own DB+disk operation.
+        if (!gameId) throw new Error('No active game selected');
         await updateInfo.mutateAsync({
+          gameId,
           folderPath: currentPath,
           update: {
             is_auto_sync: data.is_auto_sync,
@@ -325,9 +331,9 @@ export function useEditObjectForm(
           },
         });
         if (data.is_safe !== folder.is_safe) {
-          if (!activeGame?.id) throw new Error('No active game selected');
+          if (!gameId) throw new Error('No active game selected');
           await toggleSafety.mutateAsync({
-            gameId: activeGame.id,
+            gameId,
             folderPath: currentPath,
             safe: data.is_safe,
           });

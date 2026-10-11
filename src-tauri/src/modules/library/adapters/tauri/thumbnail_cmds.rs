@@ -55,8 +55,10 @@ pub async fn delete_mod_thumbnail(
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
     let guard = watcher.suppressor.suppress_paths([path.as_ref()]);
     if let Some(thumb_path) = find_thumbnail(&path) {
-        crate::platform::fs::recycle_bin::move_path_to_recycle_bin(&thumb_path)?;
-        ThumbnailCache::invalidate(&thumb_path);
+        crate::modules::library::application::mods::preview_image::remove_preview_image(
+            &path,
+            &thumb_path,
+        )?;
     }
 
     // Always invalidate the folder-keyed cache entry regardless of whether a file was found.

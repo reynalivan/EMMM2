@@ -38,6 +38,12 @@ pub(crate) struct FileEntry {
     pub extension: String,
 }
 
+struct IniSignals {
+    headers: BTreeSet<String>,
+    keybindings: BTreeSet<String>,
+    target_hashes: BTreeSet<String>,
+}
+
 pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, ScannerError> {
     let mut files = Vec::new();
     let mut total_size = 0_u64;
@@ -54,8 +60,8 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
                 || (!entry.file_type().is_dir()
                     || !entry.file_name().to_string_lossy().starts_with('.'))
         })
-        .filter_map(|item| item.ok())
     {
+        let entry = entry.map_err(|error| ScannerError::Io(error.to_string()))?;
         if !entry.file_type().is_file() {
             continue;
         }
@@ -66,19 +72,22 @@ pub(crate) fn collect_snapshot(candidate: &ModCandidate) -> Result<ModSnapshot, 
         let rel = path
             .strip_prefix(&candidate.path)
             .map(|value| value.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
+            .map_err(|error| ScannerError::Io(error.to_string()))?;
         let extension = path
             .extension()
             .map(|value| value.to_string_lossy().to_ascii_lowercase())
             .unwrap_or_default();
-        let size = entry.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+        let size = entry
+            .metadata()
+            .map_err(|error| ScannerError::Io(error.to_string()))?
+            .len();
         total_size = total_size.saturating_add(size);
         *extensions.entry(extension.clone()).or_insert(0) += 1;
         if extension == "ini" {
-            let (headers, bindings, hashes) = read_ini_signals(&path);
-            ini_headers.extend(headers);
-            keybindings.extend(bindings);
-            target_hashes.extend(hashes);
+            let signals = read_ini_signals(&path)?;
+            ini_headers.extend(signals.headers);
+            keybindings.extend(signals.keybindings);
+            target_hashes.extend(signals.target_hashes);
         }
 
         files.push(FileEntry {
@@ -125,11 +134,8 @@ fn strip_version(name: &str) -> String {
         .to_lowercase()
 }
 
-fn read_ini_signals(path: &Path) -> (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>) {
-    let bytes = match fs::read(path) {
-        Ok(value) => value,
-        Err(_) => return (BTreeSet::new(), BTreeSet::new(), BTreeSet::new()),
-    };
+fn read_ini_signals(path: &Path) -> Result<IniSignals, ScannerError> {
+    let bytes = fs::read(path)?;
     let (content, _, _) =
         crate::modules::library::application::ini::document::decode_ini_bytes(&bytes);
     let mut headers = BTreeSet::new();
@@ -169,7 +175,11 @@ fn read_ini_signals(path: &Path) -> (BTreeSet<String>, BTreeSet<String>, BTreeSe
         }
     }
 
-    (headers, keybindings, target_hashes)
+    Ok(IniSignals {
+        headers,
+        keybindings,
+        target_hashes,
+    })
 }
 
 fn normalize_name(value: &str) -> String {

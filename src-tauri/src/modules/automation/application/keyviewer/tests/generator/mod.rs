@@ -1,6 +1,5 @@
 //! Unit tests for the file generation pipeline.
 
-use std::collections::HashMap;
 use tempfile::TempDir;
 
 use crate::modules::automation::application::keyviewer::generator::{
@@ -12,6 +11,7 @@ use crate::modules::automation::application::keyviewer::generator::{
 use crate::modules::automation::application::keyviewer::matcher::{
     MatchConfidence, MatchResult, RuntimeSentinel, RuntimeSentinelSource,
 };
+use crate::modules::automation::application::keyviewer::models::KeyViewerPanel;
 use crate::modules::library::application::ini::document::KeyBinding;
 use crate::modules::matching::application::deep_matcher::models::types::RuntimeResourceKind;
 
@@ -27,34 +27,42 @@ fn make_keybinding(section: &str, key: Option<&str>, back: Option<&str>) -> KeyB
     }
 }
 
-fn make_match_result(name: &str, sentinels: &[&str]) -> MatchResult {
-    MatchResult {
-        object_name: name.to_string(),
-        object_type: "Character".to_string(),
-        score: 50.0,
-        matched_hashes: sentinels.iter().map(|s| s.to_string()).collect(),
-        sentinels: sentinels
-            .iter()
-            .map(|hash| RuntimeSentinel {
-                hash: (*hash).to_string(),
-                resource_kind: RuntimeResourceKind::PositionVb,
-                callback_slot: "vb0".to_string(),
-                match_first_index: None,
-                source: RuntimeSentinelSource::Harvest {
-                    section_name: "TextureOverrideFixturePosition".to_string(),
-                    file_path: std::path::PathBuf::from("fixture.ini"),
-                },
-            })
-            .collect(),
-        confidence: MatchConfidence::High,
+fn make_panel(name: &str, sentinels: &[&str]) -> KeyViewerPanel {
+    KeyViewerPanel {
+        sources: Vec::new(),
+        match_result: MatchResult {
+            object_name: name.to_string(),
+            object_type: "Character".to_string(),
+            score: 50.0,
+            matched_hashes: sentinels.iter().map(|s| s.to_string()).collect(),
+            matched_targets: Vec::new(),
+            sentinels: sentinels
+                .iter()
+                .map(|hash| RuntimeSentinel {
+                    hash: (*hash).to_string(),
+                    resource_kind: RuntimeResourceKind::PositionVb,
+                    callback_slot: "vb0".to_string(),
+                    match_first_index: None,
+                    source: RuntimeSentinelSource::Harvest {
+                        section_name: "TextureOverrideFixturePosition".to_string(),
+                        file_path: std::path::PathBuf::from("fixture.ini"),
+                    },
+                })
+                .collect(),
+            confidence: MatchConfidence::High,
+        },
     }
 }
 
-fn generate_keyviewer_ini(matches: &[MatchResult], toggle_key: &str, _legacy_path: &str) -> String {
+fn generate_keyviewer_ini(
+    panels: &[KeyViewerPanel],
+    toggle_key: &str,
+    _legacy_path: &str,
+) -> String {
     generate_keyviewer_ini_for_game(
-        matches,
+        panels,
         toggle_key,
-        crate::modules::games::domain::models::GameType::GIMI,
+        crate::modules::games::domain::models::GameType::Gimi,
     )
     .unwrap()
 }

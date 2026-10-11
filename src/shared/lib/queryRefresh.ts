@@ -1,4 +1,4 @@
-import type { QueryClient } from '@tanstack/react-query';
+import type { Query, QueryClient } from '@tanstack/react-query';
 import type { RuntimeEffectDescriptor, RuntimeRefreshEvent } from './runtimeEffects';
 
 // FE runtime refresh bus only.
@@ -76,6 +76,32 @@ const runtimeEventScopes: Record<RuntimeRefreshEvent, RuntimeRefreshScope[]> = {
 };
 
 const pendingRuntimeRefreshes = new WeakMap<QueryClient, PendingRuntimeRefresh>();
+
+export async function refreshStartupReadModels(
+  queryClient: QueryClient,
+  gameId: string,
+  isCurrent: () => boolean,
+): Promise<void> {
+  const predicate = (query: Query) => {
+    if (!isCurrent()) return false;
+    const [domain, kind, queryGameId] = query.queryKey;
+    if (
+      domain === 'dashboard-stats' ||
+      domain === 'active-keybindings' ||
+      domain === 'conflicts' ||
+      domain === 'object-identity-suggestions'
+    )
+      return kind === gameId;
+    if (domain === 'v2-collection-runtime') return queryGameId === gameId;
+    return domain === 'v2-collections' && kind === 'list' && queryGameId === gameId;
+  };
+  if (!isCurrent()) return;
+  // An initial fetch without cached data is otherwise reused by invalidation.
+  // Cancel first so its late IPC result cannot overwrite the baseline refresh.
+  await queryClient.cancelQueries({ predicate });
+  if (!isCurrent()) return;
+  await queryClient.invalidateQueries({ predicate, refetchType: 'active' }, { throwOnError: true });
+}
 
 function queryKeysForScopes(scopes: Iterable<RuntimeRefreshScope>): Array<readonly unknown[]> {
   const uniqueKeys = new Map<string, readonly unknown[]>();

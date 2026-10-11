@@ -44,8 +44,8 @@ pub async fn set_mod_category(
 }
 
 /// Update the thumbnail for a mod folder.
-/// Copies the source image to `preview.png` (or keeps extension) in the mod folder.
-/// Invalidates cache.
+/// Normalizes the source image into the reserved thumbnail file in the mod folder.
+/// This never reuses the source file name, which could collide with a mod asset.
 pub fn update_mod_thumbnail(
     target_dir: &ValidatedPath,
     source_path: &str,
@@ -57,26 +57,26 @@ pub fn update_mod_thumbnail(
         )));
     }
 
+    crate::modules::library::application::mods::preview_ops::ensure_image_file_size(
+        source_path_obj,
+    )?;
     let source_bytes = std::fs::read(source_path_obj)?;
-    image::load_from_memory(&source_bytes).map_err(|error| {
-        AppError::Metadata(crate::shared::errors::MetadataError::Validation(format!(
-            "Invalid thumbnail image: {error}"
-        )))
-    })?;
+    let normalized =
+        crate::modules::library::application::mods::preview_ops::normalize_thumbnail_png(
+            &source_bytes,
+        )?;
+    let new_thumbnail_path = target_dir.join("preview_custom.png");
 
-    // Determine the new thumbnail path within the mod folder
-    let new_thumbnail_name = source_path_obj
-        .file_name()
-        .ok_or_else(|| AppError::Validation("Invalid source file name".to_string()))?
-        .to_string_lossy()
-        .to_string();
-    let new_thumbnail_path = target_dir.join(&new_thumbnail_name);
-
-    crate::platform::fs::atomic_file::atomic_write(&new_thumbnail_path, &source_bytes)?;
+    crate::platform::fs::atomic_file::atomic_write(&new_thumbnail_path, &normalized)?;
 
     // Invalidate cache for this mod's thumbnail
     ThumbnailCache::invalidate(&new_thumbnail_path);
     ThumbnailCache::invalidate_folder(&target_dir.to_string_lossy());
+    crate::platform::images::preview_visibility::set_hidden(
+        target_dir,
+        std::slice::from_ref(&new_thumbnail_path),
+        false,
+    )?;
 
     Ok(new_thumbnail_path.to_string_lossy().to_string())
 }

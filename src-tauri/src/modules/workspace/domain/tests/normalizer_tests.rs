@@ -1,5 +1,30 @@
 use super::*;
 
+#[test]
+fn effective_enabled_path_checks_every_runtime_component() {
+    for path in [
+        "Amber/Blue Dress",
+        r"Amber\Blue Dress",
+        "//Amber//Blue Dress/",
+        "C:/Mods/Amber/a_disabled_mod",
+        "角色/蓝色",
+        "",
+    ] {
+        assert!(is_effectively_enabled_path(path), "{path}");
+    }
+    for path in [
+        "DISABLED Amber/Blue Dress",
+        "Amber/DISABLED_Blue Dress",
+        "Amber/DISABLEDBlueDress",
+        "amber/disabled-blue",
+        r"C:\Mods\Amber\disabled-blue\Nested",
+        "//Amber//DISABLED Variants/Blue Dress/",
+        "角色/DISABLED 蓝色",
+    ] {
+        assert!(!is_effectively_enabled_path(path), "{path}");
+    }
+}
+
 // Covers: Epic 2 §B.1 — Basic tokenization
 #[test]
 fn test_preprocess_text_basic() {

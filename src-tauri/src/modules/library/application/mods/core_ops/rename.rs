@@ -64,22 +64,38 @@ pub async fn rename_mod_folder_inner(
     // the guard's tail keeps suppressing the async event pair after return.
     let _guard = state.suppressor.suppress_paths([path, new_path.as_path()]);
 
-    crate::platform::fs::file_utils::rename_cross_drive_fallback(path, &new_path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            let processes = crate::platform::fs::locking::get_locking_processes(path);
-            if !processes.is_empty() {
-                return AppError::FileInUse {
-                    path: folder_path.clone(),
-                    processes,
-                };
+    let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(path)?;
+    let parent_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(parent)?;
+    let mut budget = crate::platform::fs::retry::RetryBudget::default();
+    budget
+        .run(|| {
+            let source = path.to_path_buf();
+            let destination = new_path.clone();
+            let source_proof = source_proof.clone();
+            let parent_proof = parent_proof.clone();
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    source_proof
+                        .validate(&source)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    parent_proof
+                        .validate(source.parent().expect("parent checked above"))
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    crate::platform::fs::rename::rename_no_replace(&source, &destination)
+                })
+                .await
+                .map_err(crate::platform::fs::retry::blocking_error)?
             }
-
-            return AppError::PathBusy {
-                path: folder_path.clone(),
-            };
-        }
-        AppError::Io(format!("Failed to rename folder: {e}"))
-    })?;
+        })
+        .await
+        .map_err(|error| {
+            crate::platform::fs::retry::map_file_error_with_identity(
+                path,
+                source_proof.identity(),
+                "rename folder",
+                error,
+            )
+        })?;
 
     update_info_json_name(&new_path, &new_name);
 

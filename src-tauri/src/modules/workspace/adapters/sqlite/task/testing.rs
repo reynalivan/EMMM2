@@ -1,4 +1,39 @@
 use super::*;
+
+#[tokio::test]
+async fn task_log_retention_preserves_old_open_tasks_and_new_settled_tasks() {
+    let context = crate::test_utils::init_test_db().await;
+    let pool = &context.pool;
+    for (id, status, old) in [
+        ("old-pending", TaskStatus::Pending, true),
+        ("old-running", TaskStatus::Running, true),
+        ("old-completed", TaskStatus::Completed, true),
+        ("old-failed", TaskStatus::Failed, true),
+        ("new-completed", TaskStatus::Completed, false),
+    ] {
+        sqlx::query(
+            "INSERT INTO games (id, name, game_type, path, mods_path) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(id)
+        .bind(crate::modules::games::domain::models::GameType::Gimi as i64)
+        .bind(format!("C:/Game/{id}"))
+        .bind(format!("C:/Game/{id}/Mods"))
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO tasks (id, game_id, task_type, status, created_at) VALUES (?, ?, ?, ?, CASE WHEN ? THEN datetime('now', '-20 days') ELSE CURRENT_TIMESTAMP END)")
+            .bind(id).bind(id).bind(TASK_TYPE_APPLY_COLLECTION).bind(status.as_str()).bind(old)
+            .execute(pool).await.unwrap();
+    }
+    assert_eq!(purge_old_tasks(pool).await.unwrap(), 2);
+    let retained: Vec<String> = sqlx::query_scalar("SELECT id FROM tasks ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert_eq!(retained, ["new-completed", "old-pending", "old-running"]);
+    assert_eq!(purge_old_tasks(pool).await.unwrap(), 0);
+}
 /// Create a new pending task in the database and return its ID.
 #[cfg(test)]
 pub async fn create_task(

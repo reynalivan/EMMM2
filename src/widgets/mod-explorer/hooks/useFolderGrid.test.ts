@@ -21,20 +21,15 @@ vi.mock('./folderCache', () => ({
   folderKeys: { all: [] },
 }));
 
-vi.mock('./useFolderMutations', () => ({
-  useImportMods: () => ({ mutate: vi.fn() }),
-  useToggleModSafe: () => ({ mutate: vi.fn() }),
-  useUpdateModInfo: () => ({ mutate: vi.fn() }),
+vi.mock('@/features/mod-runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/mod-runtime')>()),
   useActiveConflicts: () => ({ data: [] }),
 }));
 
 vi.mock('@/features/mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutate: vi.fn() }),
   useBulkDelete: () => ({ mutate: vi.fn() }),
-  useBulkUpdateInfo: () => ({ mutate: vi.fn() }),
-  useBulkSafety: () => ({ mutate: vi.fn() }),
   useBulkFavorite: () => ({ mutate: vi.fn() }),
-  useBulkPin: () => ({ mutate: vi.fn() }),
 }));
 
 const { mockUseWorkspaceViewModel, mockUseWorkspaceExplorerPages, mockListingRevision } =
@@ -176,6 +171,8 @@ describe('useFolderGrid array bounds (TC-14)', () => {
     }));
     useAppStore.setState({
       gridSelection: new Set(),
+      activeGameId: 'test-game',
+      folderConflictsByGame: {},
       selectedModPath: null,
       explorerSearchQuery: '',
       sortField: 'name',
@@ -185,7 +182,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
   });
 
   it('TC-14: handles Shift-Click bounds selection gracefully', () => {
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     // 1. Initial selection
     act(() => {
@@ -209,8 +208,113 @@ describe('useFolderGrid array bounds (TC-14)', () => {
     expect(currentSelection.length).toBe(3);
   });
 
+  it('groups authoritative conflict candidates and opens their existing resolution dialog', () => {
+    useAppStore.setState({
+      workspacePreviewDirty: false,
+      workspaceDialogState: { kind: 'none' },
+      folderConflictsByGame: {
+        'test-game': [
+          {
+            group_id: 'conflict-ab',
+            identity: 'reported-identity',
+            display_name: 'Conflict AB',
+            candidates: ['/Mod A', '/Mod B'].map((path) => ({
+              path,
+              folder_name: path.slice(1),
+              base_name: path.slice(1),
+              is_enabled: true,
+            })),
+          },
+        ],
+      },
+    });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
+
+    expect(result.current.sortedFolders.map((folder) => folder.path)).toEqual([
+      '/Mod A',
+      '/Mod C',
+      '/Mod D',
+    ]);
+    expect(result.current.sortedFolders[0].conflict_group_id).toBe('conflict-ab');
+    act(() => result.current.activateGridItem('/Mod A'));
+
+    expect(useAppStore.getState().workspaceDialogState).toEqual({
+      kind: 'folderConflicts',
+      groupId: 'conflict-ab',
+    });
+    expect(useAppStore.getState().gridSelection).toEqual(new Set());
+  });
+
+  it('keeps symbolic all-matching selection on physical results and blocks selected conflicts', () => {
+    useAppStore.setState({
+      workspacePreviewDirty: false,
+      workspaceDialogState: { kind: 'none' },
+      folderConflictsByGame: {
+        'test-game': [
+          {
+            group_id: 'conflict-ab',
+            identity: 'reported-identity',
+            display_name: 'Conflict AB',
+            candidates: ['/Mod A', '/Mod B'].map((path) => ({
+              path,
+              folder_name: path.slice(1),
+              base_name: path.slice(1),
+              is_enabled: true,
+            })),
+          },
+        ],
+      },
+    });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
+    act(() => result.current.selectAllMatching());
+
+    expect(result.current.totalMatching).toBe(4);
+    expect(result.current.displayedMatching).toBe(3);
+    expect(result.current.selectedCount).toBe(4);
+    expect(result.current.explorerSelection.mode).toBe('all_matching');
+    expect(result.current.hasSelectedFolderConflict).toBe(true);
+  });
+
+  it('does not select a conflict representative through a checkbox or range', () => {
+    useAppStore.setState({
+      workspacePreviewDirty: false,
+      workspaceDialogState: { kind: 'none' },
+      folderConflictsByGame: {
+        'test-game': [
+          {
+            group_id: 'conflict-b',
+            identity: 'reported-identity',
+            display_name: 'Conflict B',
+            candidates: [
+              { path: '/Mod B', folder_name: 'Mod B', base_name: 'Mod B', is_enabled: true },
+            ],
+          },
+        ],
+      },
+    });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
+    act(() => result.current.toggleGridSelection('/Mod B', true));
+    expect(useAppStore.getState().gridSelection).toEqual(new Set());
+    expect(useAppStore.getState().workspaceDialogState).toEqual({
+      kind: 'folderConflicts',
+      groupId: 'conflict-b',
+    });
+    act(() => useAppStore.setState({ workspaceDialogState: { kind: 'none' } }));
+    act(() => result.current.toggleGridSelection('/Mod A', false));
+    act(() => result.current.toggleGridSelection('/Mod C', true, true));
+    expect(useAppStore.getState().gridSelection).toEqual(new Set(['/Mod A', '/Mod C']));
+  });
+
   it('uses the toggle action instance for folder switch pending state', () => {
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     expect(result.current.getFolderPendingDesiredEnabled).toBe(
       result.current.getPendingDesiredEnabled,
@@ -225,7 +329,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.activateGridItem('/Mod B'));
 
@@ -258,7 +364,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.toggleGridSelection('/Mod B', false));
 
@@ -289,7 +397,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.activateGridItem('/Mod B'));
     act(() =>
@@ -308,7 +418,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.toggleGridSelection('/Mod B', false));
     act(() =>
@@ -328,7 +440,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.toggleGridSelection('/Mod B', false));
     expect(useAppStore.getState().gridSelection).toEqual(new Set(['/Mod A']));
@@ -397,7 +511,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.activateGridItem('/Mod B'));
     const queuedTransition = useAppStore.getState().workspacePreviewTransition;
@@ -469,7 +585,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.toggleGridSelection('/Mod B', false));
     act(() => result.current.toggleGridSelection('/Mod C', false));
@@ -501,7 +619,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       workspacePreviewTransition: { kind: 'idle', pendingTarget: null },
       workspaceDialogState: { kind: 'none' },
     });
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
 
     act(() => result.current.toggleGridSelection('/Mod B', false));
     act(() => result.current.toggleGridSelection('/Mod C', false));
@@ -518,7 +638,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
   });
 
   it('clears local all-matching selection after a confirmed activation', async () => {
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
     act(() => result.current.selectAllMatching());
     act(() => {
       useAppStore.setState({
@@ -543,7 +665,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
   });
 
   it('commits an all-matching checkbox exclusion only after confirmation', async () => {
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
     act(() => result.current.selectAllMatching());
     act(() => {
       useAppStore.setState({
@@ -568,7 +692,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
   });
 
   it('keeps all-matching exclusions unchanged when a guarded checkbox transition is cancelled', async () => {
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
     act(() => result.current.selectAllMatching());
     act(() => {
       useAppStore.setState({
@@ -590,7 +716,9 @@ describe('useFolderGrid array bounds (TC-14)', () => {
   });
 
   it('does not restore an all-matching candidate after its search scope changes', async () => {
-    const { result } = renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    const { result } = renderHook(() => useFolderGrid({ current: null }), {
+      wrapper: createWrapper,
+    });
     act(() => result.current.selectAllMatching());
     act(() => {
       useAppStore.setState({
@@ -640,7 +768,7 @@ describe('useFolderGrid array bounds (TC-14)', () => {
       explorerSubPath: 'SkinSelectImpact/Aglaea',
     });
 
-    renderHook(() => useFolderGrid(), { wrapper: createWrapper });
+    renderHook(() => useFolderGrid({ current: null }), { wrapper: createWrapper });
 
     expect(mockUseWorkspaceExplorerPages).toHaveBeenCalledWith(
       expect.objectContaining({

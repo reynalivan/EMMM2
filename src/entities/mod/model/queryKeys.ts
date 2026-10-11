@@ -1,11 +1,11 @@
-import { identityPathKey } from '@/shared/lib/pathKey';
+import { canonicalPathKey, identityPathKey } from '@/shared/lib/pathKey';
 
 export const thumbnailKeys = {
   all: ['thumbnails'] as const,
   folder: (folderPath: string, gameId?: string) =>
     [
       ...thumbnailKeys.all,
-      identityPathKey(folderPath) ?? folderPath,
+      canonicalPathKey(folderPath) ?? folderPath,
       ...(gameId ? [gameId] : []),
     ] as const,
 };

@@ -1,6 +1,9 @@
 use crate::modules::games::domain::models::GameType;
+use crate::modules::mutation::coordinator::{
+    MutationCoordinator, MutationExemption, MutationExemptionGuard,
+};
 use crate::modules::settings::application::config::{AppSettings, ConfigService};
-use crate::platform::fs::guard::validate_path;
+use crate::platform::fs::guard::{validate_path, ModFolderIdentityProof, ValidatedPath};
 use crate::shared::errors::AppError;
 use secrecy::ExposeSecret;
 use std::path::{Path, PathBuf};
@@ -116,61 +119,7 @@ fn validate_mods_roots_unchanged(
 
 #[specta::specta]
 #[tauri::command]
-pub async fn get_settings(
-    app: tauri::AppHandle,
-    state: State<'_, ConfigService>,
-    pool: State<'_, sqlx::SqlitePool>,
-    disk_reconcile_state: State<
-        '_,
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-    >,
-) -> Result<AppSettings, AppError> {
-    let settings = {
-        let _activation_guard = disk_reconcile_state.activation_guard().await;
-        state.get_settings()
-    };
-    if let Some(game) = settings
-        .active_game()
-        .filter(|game| !game.mod_path.as_os_str().is_empty())
-    {
-        // Frontend store initialization fans out into workspace, collection,
-        // and runtime queries. Hold that fan-out until startup recovery has a
-        // terminal result so none of those caches can race the disk scan.
-        let outcome = crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_disk_recovery(
-            &app,
-            pool.inner(),
-            disk_reconcile_state.inner(),
-            &game.id,
-        )
-        .await;
-        match outcome {
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Completed(
-                result,
-            ) => {
-                if result.status
-                    != crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileStatus::Applied
-                {
-                    if let Err(error) = app.emit("disk_reconcile:result", result) {
-                        log::warn!(
-                            "Startup recovery completed but its terminal result could not be emitted: {error}"
-                        );
-                    }
-                }
-            }
-            crate::modules::reconciliation::application::disk_reconcile::orchestrator::InitialRecoveryOutcome::Failed(
-                error,
-            ) => {
-                if state.get_settings().active_game_id.as_deref() != Some(game.id.as_str()) {
-                    return Ok(state.get_settings());
-                }
-                return Err(AppError::Io(format!(
-                    "Disk recovery failed before settings hydration: {error}"
-                )));
-            }
-        }
-    }
-    // Recovery can overlap source-directory repair, which updates the game
-    // path without changing the active ID. Return the post-recovery snapshot.
+pub async fn get_settings(state: State<'_, ConfigService>) -> Result<AppSettings, AppError> {
     Ok(state.get_settings())
 }
 
@@ -258,19 +207,18 @@ pub async fn save_settings(
         }
         _ => None,
     };
-    let watcher_start = runtime_root_changed.then(|| {
-        saved.active_game().map(|game| {
-            crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher(
+    if runtime_root_changed {
+        if let Some(game) = saved.active_game() {
+            let result = crate::modules::workspace::api::start_watcher(
                 app.clone(),
                 watcher.inner(),
                 pool.inner().clone(),
                 game.mod_path.to_string_lossy().into_owned(),
                 game.id.clone(),
             )
-        })
-    });
-    if let Some(result) = watcher_start.flatten() {
-        record_watcher_start_result(result.map_err(AppError::from), &mut sync_warning);
+            .await;
+            record_watcher_start_result(result.map_err(AppError::from), &mut sync_warning);
+        }
     }
     if let (Some(game_id), Some(cause)) = (active_game_id, runtime_sync_cause) {
         crate::modules::reconciliation::api::enqueue_runtime_sync(
@@ -326,16 +274,21 @@ pub async fn set_active_game(
         let restored_generation = disk_reconcile_state
             .begin_activation(previous_game.as_ref().map(|game| game.id.clone()));
         if let Some(previous) = &previous_game {
-            if let Err(restore_error) = crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher_for_activation(
-                app.clone(),
-                watcher.inner(),
-                pool.inner().clone(),
-                previous.mod_path.to_string_lossy().into_owned(),
-                previous.id.clone(),
-                restored_generation,
-            ) {
+            if let Err(restore_error) =
+                crate::modules::workspace::api::start_watcher_for_activation(
+                    app.clone(),
+                    watcher.inner(),
+                    pool.inner().clone(),
+                    previous.mod_path.to_string_lossy().into_owned(),
+                    previous.id.clone(),
+                    restored_generation,
+                    intent,
+                )
+                .await
+            {
                 disk_reconcile_state.reset_initial_recovery(&previous.id);
-                let recovery_generation = disk_reconcile_state.mark_initial_recovery_pending(&previous.id);
+                let recovery_generation =
+                    disk_reconcile_state.mark_initial_recovery_pending(&previous.id);
                 let message = format!(
                     "Could not restore '{}' after active-game persistence failed: {restore_error}",
                     previous.name
@@ -352,21 +305,79 @@ pub async fn set_active_game(
         }
         return Err(error);
     }
+    if let Some(game) = target_game.as_ref().filter(|game| {
+        previous_game
+            .as_ref()
+            .is_some_and(|previous| previous.id == game.id)
+    }) {
+        if crate::modules::workspace::api::try_reuse_active_watcher_for_activation(
+            &app,
+            watcher.inner(),
+            &game.id,
+            &game.mod_path,
+            &game.instance_path.join("d3dx.ini"),
+            generation,
+        ) {
+            return Ok(GameActivationResult {
+                game_id,
+                generation,
+                phase: GameActivationPhase::Ready,
+                settings: state.get_settings(),
+            });
+        }
+        if let Some((recovery_generation, binding)) = disk_reconcile_state
+            .joinable_initial_recovery_binding(
+                &game.id,
+                &game.mod_path,
+                &game.instance_path.join("d3dx.ini"),
+            )
+        {
+            emit_game_activation_status(
+                &app,
+                GameActivationStatus {
+                    game_id: Some(game.id.clone()),
+                    generation,
+                    phase: GameActivationPhase::Syncing,
+                    reconcile_revision: None,
+                    runtime_sync_generation: None,
+                    error: None,
+                },
+            );
+            crate::modules::workspace::api::publish_pending_activation_when_recovered(
+                app.clone(),
+                game.id.clone(),
+                crate::modules::workspace::api::WatcherActivation {
+                    activation_generation: generation,
+                    recovery_generation,
+                },
+                binding,
+            );
+            return Ok(GameActivationResult {
+                game_id,
+                generation,
+                phase: GameActivationPhase::Syncing,
+                settings: state.get_settings(),
+            });
+        }
+    }
     if let Some(previous) = previous_game
         .as_ref()
         .filter(|previous| game_id.as_deref() != Some(previous.id.as_str()))
     {
         let runtime_config_path = previous.instance_path.join("d3dx.ini");
         if previous.mod_path.is_dir() {
-            if let Err(error) = crate::modules::workspace::application::scanner::watcher::lifecycle::start_inactive_watcher_with_activation_guard(
-                &app,
-                watcher.inner(),
-                &previous.id,
-                &previous.mod_path,
-                Some(&runtime_config_path),
-                &_activation_guard,
-                crate::modules::workspace::application::scanner::watcher::lifecycle::WatcherInstallScope::InactiveOnly,
-            ) {
+            if let Err(error) =
+                crate::modules::workspace::api::start_inactive_watcher_with_activation_guard(
+                    &app,
+                    watcher.inner(),
+                    &previous.id,
+                    &previous.mod_path,
+                    Some(&runtime_config_path),
+                    &_activation_guard,
+                    crate::modules::workspace::api::WatcherInstallScope::InactiveOnly,
+                )
+                .await
+            {
                 log::warn!(
                     "Could not preserve inactive watcher continuity for '{}': {error}",
                     previous.id
@@ -376,7 +387,7 @@ pub async fn set_active_game(
     }
     if let Some(game) = &target_game {
         let runtime_config_path = game.instance_path.join("d3dx.ini");
-        if !crate::modules::workspace::application::scanner::watcher::lifecycle::inactive_activation_is_ready(
+        if !crate::modules::workspace::api::inactive_activation_is_ready(
             &app,
             watcher.inner(),
             &game.id,
@@ -416,14 +427,16 @@ pub async fn set_active_game(
             path: game.mod_path.to_string_lossy().into_owned(),
         })
     } else {
-        crate::modules::workspace::application::scanner::watcher::lifecycle::start_watcher_for_activation(
+        crate::modules::workspace::api::start_watcher_for_activation(
             app.clone(),
             watcher.inner(),
             pool.inner().clone(),
             game.mod_path.to_string_lossy().into_owned(),
             game_id.clone(),
             generation,
+            intent,
         )
+        .await
     };
     let reused = match start_result {
         Ok(reused) => reused,
@@ -493,12 +506,23 @@ pub async fn set_telemetry_enabled(
     state: State<'_, ConfigService>,
     telemetry: State<'_, crate::modules::system::application::telemetry::TelemetryStore>,
 ) -> Result<AppSettings, AppError> {
+    persist_telemetry_consent(enabled, state.inner(), telemetry.inner()).await
+}
+
+pub(crate) async fn persist_telemetry_consent(
+    enabled: bool,
+    state: &ConfigService,
+    telemetry: &crate::modules::system::application::telemetry::TelemetryStore,
+) -> Result<AppSettings, AppError> {
+    let change = telemetry.begin_consent_change(enabled).await;
     if !enabled {
-        telemetry.purge_all().await.map_err(|_| {
+        change.purge().await.map_err(|_| {
             AppError::Db("Could not clear queued diagnostics while opting out".to_string())
         })?;
     }
-    state.set_telemetry_enabled(enabled)
+    let saved = state.set_telemetry_enabled(enabled)?;
+    change.commit(enabled);
+    Ok(saved)
 }
 
 #[specta::specta]
@@ -516,15 +540,43 @@ pub async fn launch_mod_viewer(
     game_id: String,
     mod_folder: String,
     config: State<'_, ConfigService>,
+    op_lock: State<'_, MutationCoordinator>,
 ) -> Result<crate::modules::library::api::mod_health::types::ModViewerLaunchReceipt, AppError> {
     let (executable, game_type) = mod_viewer_launch_inputs(&config, &game_id)?;
     ensure_mod_viewer_supports(game_type)?;
     ensure_configured_mod_viewer_executable(&executable)?;
 
-    let requested_mod_folder = mod_folder;
-    let mod_folder = validate_mod_viewer_folder(&config, &game_id, &requested_mod_folder)?;
-    let receipt_game_id = game_id.clone();
-    let receipt_folder = requested_mod_folder.clone();
+    let prepared = prepare_mod_viewer_launch(&config, &op_lock, &game_id, &mod_folder).await?;
+    let disabled_ini = should_pass_disabled_ini(&prepared.folder)?;
+    let mut command = build_mod_viewer_command(&executable, &prepared.folder, disabled_ini);
+    command.spawn().map_err(|error| {
+        AppError::Io(format!(
+            "Failed to start 3DMigoto Mod Viewer: {error}. Check Settings > Integrations."
+        ))
+    })?;
+    Ok(prepared.receipt)
+}
+
+struct PreparedModViewerLaunch {
+    folder: ValidatedPath,
+    receipt: crate::modules::library::api::mod_health::types::ModViewerLaunchReceipt,
+    _lease: MutationExemptionGuard,
+}
+
+async fn prepare_mod_viewer_launch(
+    config: &ConfigService,
+    op_lock: &MutationCoordinator,
+    game_id: &str,
+    requested_mod_folder: &str,
+) -> Result<PreparedModViewerLaunch, AppError> {
+    let mod_folder = validate_mod_viewer_folder(config, game_id, requested_mod_folder)?;
+    let folder_proof = ModFolderIdentityProof::capture(config, &mod_folder)?;
+    let lease = op_lock
+        .acquire_exempt(MutationExemption::ExternalToolLaunch)
+        .await?;
+    folder_proof.validate(config)?;
+    let receipt_game_id = game_id.to_string();
+    let receipt_folder = requested_mod_folder.to_string();
     let receipt_root = mod_folder.clone();
     let receipt = tokio::task::spawn_blocking(move || {
         crate::modules::library::api::mod_health::service::create_mod_viewer_launch_receipt(
@@ -535,15 +587,12 @@ pub async fn launch_mod_viewer(
     })
     .await??;
 
-    let disabled_ini = should_pass_disabled_ini(&mod_folder)?;
-    let mut command = build_mod_viewer_command(&executable, &mod_folder, disabled_ini);
-    command.spawn().map_err(|error| {
-        AppError::Io(format!(
-            "Failed to start 3DMigoto Mod Viewer: {error}. Check Settings > Integrations."
-        ))
-    })?;
-
-    Ok(receipt)
+    folder_proof.validate(config)?;
+    Ok(PreparedModViewerLaunch {
+        folder: mod_folder,
+        receipt,
+        _lease: lease,
+    })
 }
 
 fn build_mod_viewer_command(
@@ -563,8 +612,8 @@ fn validate_mod_viewer_folder(
     config: &ConfigService,
     game_id: &str,
     mod_folder: &str,
-) -> Result<PathBuf, AppError> {
-    let mod_folder = validate_path(config, game_id, mod_folder)?.into_path_buf();
+) -> Result<ValidatedPath, AppError> {
+    let mod_folder = validate_path(config, game_id, mod_folder)?;
     if !mod_folder.is_dir() {
         return Err(AppError::Validation(
             "3DMigoto Mod Viewer target must be a mod folder".to_string(),
@@ -600,8 +649,8 @@ fn mod_viewer_launch_inputs(
 
 fn ensure_mod_viewer_supports(game_type: GameType) -> Result<(), AppError> {
     match game_type {
-        GameType::GIMI | GameType::ZZMI | GameType::WWMI | GameType::SRMI => Ok(()),
-        GameType::EFMI => Err(AppError::Validation(
+        GameType::Gimi | GameType::Zzmi | GameType::Wwmi | GameType::Srmi => Ok(()),
+        GameType::Efmi => Err(AppError::Validation(
             "3DMigoto Mod Viewer is not available for EFMI".to_string(),
         )),
     }
@@ -822,13 +871,92 @@ pub async fn test_ai_connection(
 mod tests {
     use super::{
         build_mod_viewer_command, completed_settings_save, ensure_mod_viewer_supports,
-        hotkey_runtime_inputs_changed, record_watcher_start_result, should_pass_disabled_ini,
-        validate_mod_viewer_folder, validate_mods_roots_unchanged,
+        hotkey_runtime_inputs_changed, prepare_mod_viewer_launch, record_watcher_start_result,
+        should_pass_disabled_ini, validate_mod_viewer_folder, validate_mods_roots_unchanged,
     };
     use crate::modules::games::domain::models::{GameType, LaunchMode};
     use crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile;
     use crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarningKind;
     use crate::modules::settings::application::config::{AppSettings, ConfigService, GameConfig};
+
+    async fn viewer_fixture() -> (tempfile::TempDir, ConfigService, std::path::PathBuf) {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        let folder = root.join("Viewer Mod");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("mod.ini"), "[Constants]\n$active = 1\n").unwrap();
+        let pool = crate::test_utils::init_test_db().await.pool;
+        let config = ConfigService::new_for_test_async(pool).await;
+        let mut settings = config.get_settings();
+        settings.games.push(GameConfig {
+            id: "viewer-game".to_string(),
+            name: "Viewer Game".to_string(),
+            game_type: GameType::Gimi,
+            instance_path: temp.path().to_path_buf(),
+            mod_path: root,
+            ready_to_move_path: None,
+            launch_mode: LaunchMode::Standalone,
+            game_exe: None,
+            loader_exe: None,
+            xxmi_launcher_exe: None,
+            launch_args: None,
+            warnings: Vec::new(),
+        });
+        config.save_settings(settings).unwrap();
+        (temp, config, folder)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn viewer_receipt_retains_the_mutation_lease_until_launch_finishes() {
+        use crate::modules::mutation::coordinator::{MutationCoordinator, MutationExemption};
+        let (_temp, config, folder) = viewer_fixture().await;
+        let coordinator = MutationCoordinator::unconfigured();
+        let prepared = prepare_mod_viewer_launch(
+            &config,
+            &coordinator,
+            "viewer-game",
+            folder.to_str().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(!prepared.receipt.file_manifest.is_empty());
+        assert!(coordinator
+            .acquire_exempt(MutationExemption::LibraryMetadata)
+            .await
+            .is_err());
+        drop(prepared);
+        assert!(coordinator
+            .acquire_exempt(MutationExemption::LibraryMetadata)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn viewer_receipt_refuses_a_folder_renamed_while_waiting_for_the_lease() {
+        use crate::modules::mutation::coordinator::{MutationCoordinator, MutationExemption};
+        use std::future::Future;
+        let (temp, config, folder) = viewer_fixture().await;
+        let coordinator = MutationCoordinator::unconfigured();
+        let mutation = coordinator
+            .acquire_exempt(MutationExemption::LibraryMetadata)
+            .await
+            .unwrap();
+        let requested = folder.to_string_lossy().into_owned();
+        let preparing = prepare_mod_viewer_launch(&config, &coordinator, "viewer-game", &requested);
+        tokio::pin!(preparing);
+        let blocked = std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(preparing.as_mut().poll(cx).is_pending())
+        })
+        .await;
+        assert!(
+            blocked,
+            "receipt scanning must wait for the structural mutation"
+        );
+        std::fs::rename(&folder, temp.path().join("Moved")).unwrap();
+        drop(mutation);
+        assert!(preparing.await.is_err());
+        assert!(!folder.exists());
+    }
 
     #[test]
     fn preset_status_overlay_change_requires_runtime_sync() {
@@ -877,7 +1005,7 @@ mod tests {
         let game = GameConfig {
             id: "game-a".to_string(),
             name: "Game A".to_string(),
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             instance_path: "C:/Games/Importer".into(),
             mod_path: "C:/Games/Importer/Mods".into(),
             ready_to_move_path: None,
@@ -938,14 +1066,14 @@ mod tests {
     #[test]
     fn only_supported_mod_viewer_games_can_launch() {
         for game_type in [
-            GameType::GIMI,
-            GameType::ZZMI,
-            GameType::WWMI,
-            GameType::SRMI,
+            GameType::Gimi,
+            GameType::Zzmi,
+            GameType::Wwmi,
+            GameType::Srmi,
         ] {
             assert!(ensure_mod_viewer_supports(game_type).is_ok());
         }
-        assert!(ensure_mod_viewer_supports(GameType::EFMI).is_err());
+        assert!(ensure_mod_viewer_supports(GameType::Efmi).is_err());
     }
 
     #[test]
@@ -979,7 +1107,7 @@ mod tests {
         settings.games.push(GameConfig {
             id: "game-a".to_string(),
             name: "Game A".to_string(),
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             instance_path: temp.path().to_path_buf(),
             mod_path: mods_root,
             ready_to_move_path: None,

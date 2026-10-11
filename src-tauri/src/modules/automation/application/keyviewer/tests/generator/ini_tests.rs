@@ -1,10 +1,10 @@
 use super::*;
 
-fn generate_keyviewer_ini_with_status(matches: &[MatchResult], resource_root: &str) -> String {
+fn generate_keyviewer_ini_with_status(matches: &[KeyViewerPanel], resource_root: &str) -> String {
     crate::modules::automation::application::keyviewer::generator::generate_keyviewer_ini_for_resources_with_options(
         matches,
         "F7",
-        crate::modules::games::domain::models::GameType::GIMI,
+        crate::modules::games::domain::models::GameType::Gimi,
         resource_root,
         true,
         true,
@@ -26,7 +26,7 @@ fn keyviewer_ini_contains_stable_namespace_and_persistent_toggle() {
 
 #[test]
 fn keyviewer_ini_marks_each_sentinel_with_a_per_frame_flag() {
-    let matches = vec![make_match_result("Albedo", &["aabb1111", "aabb2222"])];
+    let matches = vec![make_panel("Albedo", &["aabb1111", "aabb2222"])];
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
     assert!(ini.contains("[TextureOverride_EMMMv1_Albedo_0_S0]"));
@@ -44,8 +44,8 @@ fn keyviewer_ini_preserves_index_draw_context_on_the_observer() {
     };
     use crate::modules::matching::application::deep_matcher::models::types::RuntimeResourceKind;
 
-    let mut result = make_match_result("Indexed", &["e811d2a1"]);
-    result.sentinels = vec![RuntimeSentinel {
+    let mut result = make_panel("Indexed", &["e811d2a1"]);
+    result.match_result.sentinels = vec![RuntimeSentinel {
         hash: "e811d2a1".to_string(),
         resource_kind: RuntimeResourceKind::IndexBuffer,
         callback_slot: "ib".to_string(),
@@ -62,7 +62,7 @@ fn keyviewer_ini_preserves_index_draw_context_on_the_observer() {
 
 #[test]
 fn keyviewer_ini_renders_before_resetting_detection_flags() {
-    let matches = vec![make_match_result("Albedo", &["aabb1111"])];
+    let matches = vec![make_panel("Albedo", &["aabb1111"])];
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
     let render = ini.find("run = CommandList_EMMMv1_Render").unwrap();
@@ -74,7 +74,7 @@ fn keyviewer_ini_renders_before_resetting_detection_flags() {
 
 #[test]
 fn keyviewer_ini_hides_preset_status_but_keeps_detected_character_panels() {
-    let matches = vec![make_match_result("Albedo", &["aabb1111"])];
+    let matches = vec![make_panel("Albedo", &["aabb1111"])];
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
     assert!(!ini.contains(r"Resource\GIMIv8\Text = ref ResourceEMMM_Status"));
@@ -93,7 +93,7 @@ fn keyviewer_and_preset_status_panels_are_independently_gated() {
     use crate::modules::automation::application::keyviewer::generator::generate_keyviewer_ini_with_options;
     use crate::modules::games::domain::models::GameType;
 
-    let matches = [make_match_result("Albedo", &["aabb1111"])];
+    let matches = [make_panel("Albedo", &["aabb1111"])];
     for (keyviewer_enabled, preset_status_overlay_enabled, expect_keyviewer, expect_status) in [
         (false, false, false, false),
         (true, false, true, false),
@@ -103,7 +103,7 @@ fn keyviewer_and_preset_status_panels_are_independently_gated() {
         let ini = generate_keyviewer_ini_with_options(
             &matches,
             "F7",
-            GameType::GIMI,
+            GameType::Gimi,
             keyviewer_enabled,
             preset_status_overlay_enabled,
         )
@@ -129,10 +129,10 @@ fn keyviewer_and_preset_status_panels_are_independently_gated() {
 
 #[test]
 fn keyviewer_ini_uses_compact_native_scale_and_left_alignment() {
-    let ini = generate_keyviewer_ini_with_status(&[make_match_result("Albedo", &["aabb1111"])], "");
+    let ini = generate_keyviewer_ini_with_status(&[make_panel("Albedo", &["aabb1111"])], "");
 
     assert!(ini.contains(
-        "data = R32_FLOAT  -0.96 0.36 -0.30 0.24  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.00"
+        "data = R32_FLOAT  -0.96 0.92 -0.30 0.46  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  1.00"
     ));
     assert!(ini.contains(
         "data = R32_FLOAT  -0.96 -0.24 -0.56 -0.92  1 1 1 1  0 0 0 0.92  0.02 0.02  0 3  0  0.92"
@@ -142,7 +142,7 @@ fn keyviewer_ini_uses_compact_native_scale_and_left_alignment() {
 #[test]
 fn keyviewer_ini_uses_the_same_viewport_geometry_for_every_match() {
     let matches = (0..4)
-        .map(|index| make_match_result(&format!("Character{index}"), &["aabb1111"]))
+        .map(|index| make_panel(&format!("Character{index}"), &["aabb1111"]))
         .collect::<Vec<_>>();
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
@@ -153,7 +153,7 @@ fn keyviewer_ini_uses_the_same_viewport_geometry_for_every_match() {
 
 #[test]
 fn keyviewer_ini_uses_one_text_file_per_character() {
-    let matches = vec![make_match_result("Albedo", &["aabb1111"])];
+    let matches = vec![make_panel("Albedo", &["aabb1111"])];
     let ini = generate_keyviewer_ini_with_status(&matches, "");
 
     assert!(ini.contains("[ResourceEMMM_KeyViewer_000]"));
@@ -166,7 +166,7 @@ fn keyviewer_ini_uses_one_text_file_per_character() {
 #[test]
 fn keyviewer_ini_allocates_a_panel_for_every_match() {
     let matches = (0..9)
-        .map(|index| make_match_result(&format!("Character{index}"), &["aabb1111"]))
+        .map(|index| make_panel(&format!("Character{index}"), &["aabb1111"]))
         .collect::<Vec<_>>();
     let ini = generate_keyviewer_ini(&matches, "F7", ".emmm_data/keybinds/active");
 
@@ -177,10 +177,8 @@ fn keyviewer_ini_allocates_a_panel_for_every_match() {
 
 #[test]
 fn keyviewer_ini_uses_one_stable_resource_directory() {
-    let ini = generate_keyviewer_ini_with_status(
-        &[make_match_result("Albedo", &["aabb1111"])],
-        "generations",
-    );
+    let ini =
+        generate_keyviewer_ini_with_status(&[make_panel("Albedo", &["aabb1111"])], "generations");
 
     assert!(ini.contains("filename = generations/status/runtime_status.txt"));
     assert!(ini.contains("filename = generations/keybinds/active/character_000.txt"));
@@ -192,13 +190,13 @@ fn keyviewer_ini_uses_the_selected_package_namespace() {
     use crate::modules::games::domain::models::GameType;
 
     for (game_type, namespace) in [
-        (GameType::GIMI, "GIMIv8"),
-        (GameType::WWMI, "WWMIv1"),
-        (GameType::SRMI, "SRMIv1"),
-        (GameType::ZZMI, "ZZMIv1"),
+        (GameType::Gimi, "GIMIv8"),
+        (GameType::Wwmi, "WWMIv1"),
+        (GameType::Srmi, "SRMIv1"),
+        (GameType::Zzmi, "ZZMIv1"),
     ] {
         let ini = generate_keyviewer_ini_for_game(
-            &[make_match_result("Albedo", &["aabb1111"])],
+            &[make_panel("Albedo", &["aabb1111"])],
             "F7",
             game_type,
         )
@@ -212,8 +210,8 @@ fn keyviewer_ini_uses_the_selected_package_namespace() {
 fn keyviewer_ini_rejects_unsupported_profile_and_invalid_sentinel() {
     use crate::modules::games::domain::models::GameType;
 
-    assert!(generate_keyviewer_ini_for_game(&[], "F7", GameType::EFMI).is_err());
-    let invalid = vec![make_match_result("Bad", &["not-a-hash"])];
-    assert!(generate_keyviewer_ini_for_game(&invalid, "F7", GameType::GIMI).is_err());
-    assert!(generate_keyviewer_ini_for_game(&[], "F7\n[Constants]", GameType::GIMI).is_err());
+    assert!(generate_keyviewer_ini_for_game(&[], "F7", GameType::Efmi).is_err());
+    let invalid = vec![make_panel("Bad", &["not-a-hash"])];
+    assert!(generate_keyviewer_ini_for_game(&invalid, "F7", GameType::Gimi).is_err());
+    assert!(generate_keyviewer_ini_for_game(&[], "F7\n[Constants]", GameType::Gimi).is_err());
 }

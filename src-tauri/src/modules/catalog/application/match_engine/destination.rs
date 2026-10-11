@@ -11,6 +11,7 @@ pub struct ExistingDestination {
     pub object_id: String,
     pub name: String,
     pub folder_name: String,
+    pub folder_path: String,
     pub canonical_entry_key: Option<String>,
     pub aliases: Vec<String>,
     pub category: StableCategory,
@@ -20,15 +21,21 @@ impl ExistingDestination {
     pub fn new(
         object_id: impl Into<String>,
         name: impl Into<String>,
-        folder_name: impl Into<String>,
+        folder_path: impl Into<String>,
         canonical_entry_key: Option<String>,
         aliases: Vec<&str>,
         category: StableCategory,
     ) -> Self {
+        let folder_path = folder_path.into();
+        let folder_name = Path::new(&folder_path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| folder_path.clone());
         Self {
             object_id: object_id.into(),
             name: name.into(),
-            folder_name: folder_name.into(),
+            folder_name,
+            folder_path,
             canonical_entry_key,
             aliases: aliases.into_iter().map(str::to_string).collect(),
             category,
@@ -215,7 +222,7 @@ fn existing_suggestion(
         canonical_entry_key: target.canonical_entry_key.clone(),
         folder_name: target.folder_name.clone(),
         target_path: Path::new(mods_root)
-            .join(&target.folder_name)
+            .join(&target.folder_path)
             .to_string_lossy()
             .into_owned(),
         confidence_percentage: score.value,
@@ -270,10 +277,13 @@ fn score_term(
     exact_method: DestinationMatchMethod,
     substring_method: DestinationMatchMethod,
 ) -> DestinationScore {
-    if raw_term.trim().is_empty() {
+    if source_key.is_empty() || raw_term.trim().is_empty() {
         return DestinationScore::none();
     }
     let term = normalized_match_name(raw_term);
+    if term.is_empty() {
+        return DestinationScore::none();
+    }
     if source_key == term {
         return DestinationScore {
             value: 95,

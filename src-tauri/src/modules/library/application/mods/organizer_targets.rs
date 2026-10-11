@@ -36,6 +36,7 @@ pub async fn list_move_targets_for_object_service(
     let object_folder_path = target_obj.folder_path.clone();
     let object_name = target_obj.name.clone();
     let object_root = Path::new(&game_mod_path).join(&object_folder_path);
+    super::organizer_move::capture_move_destination_scope(Path::new(&game_mod_path), &object_root)?;
     let mut targets = vec![WorkspaceMoveTarget {
         object_id: object_id.to_string(),
         object_name: object_name.clone(),
@@ -72,7 +73,14 @@ fn collect_move_targets(
     let entries = std::fs::read_dir(current).map_err(|error| AppError::Io(error.to_string()))?;
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() || is_hidden_dir(&path) || !is_move_container(&path) {
+        let file_type = entry
+            .file_type()
+            .map_err(|error| AppError::Io(error.to_string()))?;
+        if !file_type.is_dir()
+            || file_type.is_symlink()
+            || is_hidden_dir(&path)
+            || !is_move_container(&path)
+        {
             continue;
         }
 

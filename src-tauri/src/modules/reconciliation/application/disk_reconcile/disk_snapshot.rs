@@ -1,13 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
-use walkdir::WalkDir;
 
 use crate::modules::workspace::domain::classifier::{
-    classify_folder_strict, classify_folder_strict_from_scan, scan_folder_strict, NodeType,
+    classify_folder_strict_from_scan, scan_folder_strict, NodeType,
 };
 use crate::modules::workspace::domain::normalizer::{is_disabled_folder, normalize_display_name};
 
@@ -29,68 +30,6 @@ pub struct DiskModEntry {
     pub raw_name: String,
     pub absolute_path: PathBuf,
     pub filesystem_identity: Option<String>,
-    /// `None` when an incremental reconcile did not need to rescan this mod.
-    pub size_bytes: Option<i64>,
-}
-
-/// Restricts size metadata walks to new or changed terminal mods so ordinary
-/// reconciliation never scans an entire library for dashboard statistics.
-#[derive(Debug, Clone, Default)]
-pub struct DiskSizeScan {
-    scan_all: bool,
-    known_mod_keys: HashSet<String>,
-    changed_path_keys: Vec<String>,
-}
-
-impl DiskSizeScan {
-    pub fn incremental(
-        mods_path: &Path,
-        known_mod_keys: HashSet<String>,
-        changed_paths: &[String],
-    ) -> Self {
-        let changed_path_keys = changed_paths
-            .iter()
-            .filter_map(|value| Path::new(value).strip_prefix(mods_path).ok())
-            .filter(|relative| !relative.as_os_str().is_empty())
-            .map(|relative| {
-                crate::shared::path_key::folder_path_key(&relative.to_string_lossy(), None)
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        Self {
-            scan_all: changed_paths
-                .iter()
-                .any(|value| Path::new(value) == mods_path),
-            known_mod_keys,
-            changed_path_keys,
-        }
-    }
-
-    fn should_measure(&self, mod_key: &str) -> bool {
-        self.scan_all
-            || !self.known_mod_keys.contains(mod_key)
-            || self
-                .changed_path_keys
-                .iter()
-                .any(|changed_key| path_key_is_ancestor_or_descendant(mod_key, changed_key))
-    }
-
-    fn size_for(&self, mod_key: &str, path: &Path) -> DiskProjectionResult<Option<i64>> {
-        self.should_measure(mod_key)
-            .then(|| collect_directory_size_bytes(path))
-            .transpose()
-    }
-}
-
-fn path_key_is_ancestor_or_descendant(left: &str, right: &str) -> bool {
-    left == right
-        || left
-            .strip_prefix(right)
-            .is_some_and(|suffix| suffix.starts_with('/'))
-        || right
-            .strip_prefix(left)
-            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 #[derive(Debug, Clone, Default)]
@@ -302,9 +241,113 @@ pub fn collect_disk_identity_census(mods_path: &Path) -> DiskProjectionResult<Di
     collect_disk_identity_census_with_progress(mods_path, None)
 }
 
+// Per-pass limit: normal reconciles hold the shared operation lock, while an
+// onboarding snapshot refresh can run before acquiring that lock.
+const CENSUS_ROOT_PARALLELISM: NonZeroUsize = NonZeroUsize::new(4).unwrap();
+const NORMAL_CHILD_PARALLELISM: NonZeroUsize = NonZeroUsize::new(8).unwrap();
+pub(super) const ONBOARDING_ROOT_PARALLELISM: NonZeroUsize = NonZeroUsize::new(8).unwrap();
+
 fn collect_disk_identity_census_with_progress(
     mods_path: &Path,
     progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
+) -> DiskProjectionResult<DiskIdentityCensus> {
+    collect_disk_identity_census_with_parallelism(mods_path, progress, CENSUS_ROOT_PARALLELISM)
+}
+
+fn collect_census_root(
+    mods_path: &Path,
+    root_path: &Path,
+) -> DiskProjectionResult<Vec<DiskIdentityCensusEntry>> {
+    let mut entries = Vec::new();
+    let mut pending = vec![root_path.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let folder_path = relative_path_string(mods_path, &path)?;
+        entries.push(DiskIdentityCensusEntry {
+            folder_path_key: crate::shared::path_key::folder_path_key(&folder_path, None),
+            folder_path,
+            raw_name: runtime_dir_name(&path),
+            absolute_path: path.clone(),
+        });
+        pending.extend(list_runtime_dirs(&path)?);
+    }
+    Ok(entries)
+}
+
+fn sort_census_entries(entries: &mut [DiskIdentityCensusEntry]) {
+    entries.sort_by_cached_key(|entry| entry.folder_path.to_ascii_lowercase());
+}
+
+fn merge_census_root_results(
+    results: impl IntoIterator<Item = (usize, DiskProjectionResult<Vec<DiskIdentityCensusEntry>>)>,
+    total_roots: usize,
+    completed_root: &(impl Fn(usize) + Sync),
+) -> DiskProjectionResult<Vec<DiskIdentityCensusEntry>> {
+    let mut entries = Vec::new();
+    let mut pending = BTreeMap::new();
+    let mut completed_roots = 0;
+    for (index, result) in results {
+        debug_assert!(index < total_roots);
+        let previous = pending.insert(index, result);
+        debug_assert!(previous.is_none());
+        while let Some(result) = pending.remove(&completed_roots) {
+            entries.extend(result?);
+            completed_roots += 1;
+            completed_root(completed_roots);
+        }
+    }
+    if completed_roots != total_roots {
+        return Err(DiskProjectionError::Failed(format!(
+            "Directory census stopped after {completed_roots} of {total_roots} root completions"
+        )));
+    }
+    Ok(entries)
+}
+
+fn collect_census_roots(
+    roots: &[PathBuf],
+    parallelism: NonZeroUsize,
+    read_root: &(impl Fn(&Path) -> DiskProjectionResult<Vec<DiskIdentityCensusEntry>> + Sync),
+    completed_root: &(impl Fn(usize) + Sync),
+) -> DiskProjectionResult<Vec<DiskIdentityCensusEntry>> {
+    if roots.len() <= 1 || parallelism == NonZeroUsize::MIN {
+        let results = roots
+            .iter()
+            .enumerate()
+            .map(|(index, root)| (index, read_root(root)));
+        return merge_census_root_results(results, roots.len(), completed_root);
+    }
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(parallelism.get().min(roots.len()))
+        .build_scoped(
+            |thread| thread.run(),
+            |pool| {
+                pool.in_place_scope(|scope| {
+                    let (sender, receiver) = std::sync::mpsc::channel();
+                    scope.spawn(move |_| {
+                        // The receiver closes after the indexed merge selects an
+                        // error. Stop remaining jobs without replacing that error.
+                        let _receiver_disconnected = roots
+                            .par_iter()
+                            .enumerate()
+                            .try_for_each_with(sender, |sender, (index, root)| {
+                                sender.send((index, read_root(root)))
+                            });
+                    });
+                    merge_census_root_results(receiver, roots.len(), completed_root)
+                })
+            },
+        )
+        .map_err(|error| {
+            DiskProjectionError::Failed(format!(
+                "Failed to start directory census workers: {error}"
+            ))
+        })?
+}
+
+fn collect_disk_identity_census_with_parallelism(
+    mods_path: &Path,
+    progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
+    parallelism: NonZeroUsize,
 ) -> DiskProjectionResult<DiskIdentityCensus> {
     if !mods_path.exists() || !mods_path.is_dir() {
         return Err(DiskProjectionError::SourceUnavailable(format!(
@@ -326,32 +369,23 @@ fn collect_disk_identity_census_with_progress(
         });
     }
 
-    let mut entries = Vec::new();
-    for (index, root_path) in top_level_paths.iter().enumerate() {
-        let root_name = runtime_dir_name(root_path);
-        let mut pending = vec![root_path.clone()];
-        while let Some(path) = pending.pop() {
-            let folder_path = relative_path_string(mods_path, &path)?;
-            let raw_name = runtime_dir_name(&path);
-            entries.push(DiskIdentityCensusEntry {
-                folder_path_key: crate::shared::path_key::folder_path_key(&folder_path, None),
-                folder_path,
-                raw_name,
-                absolute_path: path.clone(),
-            });
-            pending.extend(list_runtime_dirs(&path)?);
-        }
-        if let Some(progress) = progress {
-            progress(OnboardingDiscoveryProgress {
-                phase: OnboardingDiscoveryPhase::Metadata,
-                completed_roots: index + 1,
-                total_roots,
-                folders_classified: 0,
-                current_root: Some(root_name),
-                is_terminal: index + 1 == total_roots,
-            });
-        }
-    }
+    let mut entries = collect_census_roots(
+        &top_level_paths,
+        parallelism,
+        &|root| collect_census_root(mods_path, root),
+        &|completed_roots| {
+            if let Some(progress) = progress {
+                progress(OnboardingDiscoveryProgress {
+                    phase: OnboardingDiscoveryPhase::Metadata,
+                    completed_roots,
+                    total_roots,
+                    folders_classified: 0,
+                    current_root: Some(runtime_dir_name(&top_level_paths[completed_roots - 1])),
+                    is_terminal: completed_roots == total_roots,
+                });
+            }
+        },
+    )?;
     if total_roots == 0 {
         if let Some(progress) = progress {
             progress(OnboardingDiscoveryProgress {
@@ -364,11 +398,7 @@ fn collect_disk_identity_census_with_progress(
             });
         }
     }
-    entries.sort_by(|left, right| {
-        left.folder_path
-            .to_ascii_lowercase()
-            .cmp(&right.folder_path.to_ascii_lowercase())
-    });
+    sort_census_entries(&mut entries);
 
     Ok(DiskIdentityCensus {
         entries,
@@ -423,11 +453,7 @@ fn collect_disk_identity_census_for_roots(
         });
         pending.extend(list_runtime_dirs(&path)?);
     }
-    entries.sort_by(|left, right| {
-        left.folder_path
-            .to_ascii_lowercase()
-            .cmp(&right.folder_path.to_ascii_lowercase())
-    });
+    sort_census_entries(&mut entries);
 
     Ok(DiskIdentityCensus {
         entries,
@@ -441,11 +467,19 @@ fn collect_terminal_mods(
     object_folder_path_key: &str,
     path: &Path,
     classified_directories: &AtomicUsize,
-    size_scan: Option<&DiskSizeScan>,
 ) -> DiskProjectionResult<()> {
     classified_directories.fetch_add(1, Ordering::Relaxed);
-    let (node_type, _reasons, _warnings) = classify_folder_strict(path)
-        .map_err(|error| DiskProjectionError::Failed(error.to_string()))?;
+    let (node_type, children) = if path.is_dir() {
+        let scan = scan_folder_strict(path)
+            .map_err(|error| DiskProjectionError::Failed(error.to_string()))?;
+        let (node_type, _reasons, _warnings) = classify_folder_strict_from_scan(&scan)
+            .map_err(|error| DiskProjectionError::Failed(error.to_string()))?;
+        (node_type, scan.child_dirs)
+    } else {
+        // The original classifier skipped missing/file paths; the subsequent
+        // directory walk classified those failures as SourceUnavailable.
+        (NodeType::ContainerFolder, list_runtime_dirs(path)?)
+    };
     match node_type {
         NodeType::ModPackRoot | NodeType::FlatModRoot | NodeType::VariantContainer => {
             let folder_path = relative_path_string(mods_path, path)?;
@@ -459,10 +493,6 @@ fn collect_terminal_mods(
                     ))
                 })?;
             let folder_path_key = crate::shared::path_key::folder_path_key(&folder_path, None);
-            let size_bytes = size_scan
-                .map(|scan| scan.size_for(&folder_path_key, path))
-                .transpose()?
-                .flatten();
             mods.push(DiskModEntry {
                 folder_path: folder_path.clone(),
                 folder_path_key,
@@ -470,58 +500,23 @@ fn collect_terminal_mods(
                 raw_name,
                 absolute_path: path.to_path_buf(),
                 filesystem_identity: filesystem_identity(path),
-                size_bytes,
             });
             Ok(())
         }
         NodeType::InternalAssets => Ok(()),
         NodeType::ContainerFolder => {
-            for child_path in list_runtime_dirs(path)? {
+            for child_path in children {
                 collect_terminal_mods(
                     mods,
                     mods_path,
                     object_folder_path_key,
                     &child_path,
                     classified_directories,
-                    size_scan,
                 )?;
             }
             Ok(())
         }
     }
-}
-
-fn collect_directory_size_bytes(path: &Path) -> DiskProjectionResult<i64> {
-    let mut total_bytes = 0_u64;
-    for entry in WalkDir::new(path).follow_links(false) {
-        let entry = entry.map_err(|error| {
-            DiskProjectionError::Failed(format!(
-                "Failed to read file metadata while sizing '{}': {error}",
-                path.display()
-            ))
-        })?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let metadata = entry.metadata().map_err(|error| {
-            DiskProjectionError::Failed(format!(
-                "Failed to read file metadata for '{}': {error}",
-                entry.path().display()
-            ))
-        })?;
-        total_bytes = total_bytes.checked_add(metadata.len()).ok_or_else(|| {
-            DiskProjectionError::Failed(format!(
-                "Storage size overflow while sizing '{}'",
-                path.display()
-            ))
-        })?;
-    }
-    i64::try_from(total_bytes).map_err(|_| {
-        DiskProjectionError::Failed(format!(
-            "Storage size exceeds supported range for '{}'",
-            path.display()
-        ))
-    })
 }
 
 pub fn collect_disk_projection(
@@ -538,14 +533,8 @@ pub fn collect_disk_projection_with_progress(
     scoped: bool,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<DiskProjection> {
-    collect_disk_projection_with_progress_and_stats(
-        mods_path,
-        changed_roots,
-        scoped,
-        progress,
-        None,
-    )
-    .map(|(projection, _)| projection)
+    collect_disk_projection_with_progress_and_stats(mods_path, changed_roots, scoped, progress)
+        .map(|(projection, _)| projection)
 }
 
 fn collect_disk_projection_with_progress_and_stats(
@@ -553,7 +542,64 @@ fn collect_disk_projection_with_progress_and_stats(
     changed_roots: &[String],
     scoped: bool,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
-    size_scan: Option<&DiskSizeScan>,
+) -> DiskProjectionResult<(DiskProjection, usize)> {
+    collect_disk_projection_with_parallelism(
+        mods_path,
+        changed_roots,
+        scoped,
+        progress,
+        NORMAL_CHILD_PARALLELISM,
+    )
+}
+
+fn collect_terminal_mod_children(
+    mods_path: &Path,
+    object_folder_path_key: &str,
+    children: &[PathBuf],
+    classified_directories: &AtomicUsize,
+    parallelism: NonZeroUsize,
+) -> DiskProjectionResult<Vec<DiskModEntry>> {
+    let mut mods = Vec::new();
+    if parallelism == NonZeroUsize::MIN {
+        for child in children {
+            collect_terminal_mods(
+                &mut mods,
+                mods_path,
+                object_folder_path_key,
+                child,
+                classified_directories,
+            )?;
+        }
+    } else {
+        for batch in children.chunks(parallelism.get()) {
+            let branches = batch
+                .par_iter()
+                .map(|child| {
+                    let mut branch = Vec::new();
+                    collect_terminal_mods(
+                        &mut branch,
+                        mods_path,
+                        object_folder_path_key,
+                        child,
+                        classified_directories,
+                    )?;
+                    Ok(branch)
+                })
+                .collect::<DiskProjectionResult<Vec<_>>>()?;
+            for branch in branches {
+                mods.extend(branch);
+            }
+        }
+    }
+    Ok(mods)
+}
+
+fn collect_disk_projection_with_parallelism(
+    mods_path: &Path,
+    changed_roots: &[String],
+    scoped: bool,
+    progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
+    parallelism: NonZeroUsize,
 ) -> DiskProjectionResult<(DiskProjection, usize)> {
     if !mods_path.exists() || !mods_path.is_dir() {
         return Err(DiskProjectionError::SourceUnavailable(format!(
@@ -584,6 +630,9 @@ fn collect_disk_projection_with_progress_and_stats(
     // directory and every ini in it. `par_iter` keeps input order, so the
     // projection lands in the same sequence the serial loop produced.
     let total_roots = target_roots.len();
+    // Existing root parallelism is retained; only spare child slots are distributed.
+    let child_parallelism =
+        NonZeroUsize::new(parallelism.get() / total_roots.max(1)).unwrap_or(NonZeroUsize::MIN);
     if let Some(progress) = progress {
         progress(DiskSnapshotProgress {
             completed_roots: 0,
@@ -619,17 +668,13 @@ fn collect_disk_projection_with_progress_and_stats(
                 filesystem_identity: filesystem_identity(root_path),
             };
 
-            let mut mods = Vec::new();
-            for mod_path in list_runtime_dirs(root_path)? {
-                collect_terminal_mods(
-                    &mut mods,
-                    mods_path,
-                    &object_entry.folder_path_key,
-                    &mod_path,
-                    &classified_directories,
-                    size_scan,
-                )?;
-            }
+            let mods = collect_terminal_mod_children(
+                mods_path,
+                &object_entry.folder_path_key,
+                &list_runtime_dirs(root_path)?,
+                &classified_directories,
+                child_parallelism,
+            )?;
 
             let entry = Ok(Some((object_entry, mods)));
             let completed = completed_roots.fetch_add(1, Ordering::Relaxed) + 1;
@@ -661,17 +706,9 @@ pub fn collect_scoped_disk_discovery_with_progress(
     mods_path: &Path,
     changed_roots: &[String],
     scoped: bool,
-    size_scan: Option<&DiskSizeScan>,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<DiskScopedDiscovery> {
-    collect_scoped_disk_discovery_with_census(
-        mods_path,
-        changed_roots,
-        scoped,
-        size_scan,
-        None,
-        progress,
-    )
+    collect_scoped_disk_discovery_with_census(mods_path, changed_roots, scoped, None, progress)
 }
 
 /// Trusted internal mutations have already validated every source,
@@ -681,7 +718,6 @@ pub fn collect_scoped_disk_discovery_with_progress(
 pub fn collect_trusted_scoped_disk_discovery_with_progress(
     mods_path: &Path,
     changed_roots: &[String],
-    size_scan: Option<&DiskSizeScan>,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<DiskScopedDiscovery> {
     if changed_roots.is_empty() {
@@ -696,13 +732,8 @@ pub fn collect_trusted_scoped_disk_discovery_with_progress(
         .as_millis()
         .min(u128::from(u64::MAX)) as u64;
     let classification_started = std::time::Instant::now();
-    let (projection, classified_directories) = collect_disk_projection_with_progress_and_stats(
-        mods_path,
-        changed_roots,
-        true,
-        progress,
-        size_scan,
-    )?;
+    let (projection, classified_directories) =
+        collect_disk_projection_with_progress_and_stats(mods_path, changed_roots, true, progress)?;
     let classification_ms = classification_started
         .elapsed()
         .as_millis()
@@ -728,7 +759,6 @@ fn collect_scoped_disk_discovery_with_census(
     mods_path: &Path,
     changed_roots: &[String],
     scoped: bool,
-    size_scan: Option<&DiskSizeScan>,
     precomputed_census: Option<DiskIdentityCensus>,
     progress: Option<&(dyn Fn(DiskSnapshotProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<DiskScopedDiscovery> {
@@ -748,7 +778,6 @@ fn collect_scoped_disk_discovery_with_census(
         changed_roots,
         scoped,
         progress,
-        size_scan,
     )?;
     let classification_ms = classification_started
         .elapsed()
@@ -789,7 +818,7 @@ pub fn collect_onboarding_disk_discovery_with_progress(
     mods_path: &Path,
     progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
 ) -> DiskProjectionResult<OnboardingDiskDiscovery> {
-    collect_onboarding_disk_discovery_with_progress_and_gate(mods_path, progress, None)
+    collect_onboarding_disk_discovery_with_progress_and_gate(mods_path, progress, None, None)
 }
 
 /// The gate is held only while a small batch of roots is classified. This
@@ -799,7 +828,25 @@ pub fn collect_onboarding_disk_discovery_with_progress_and_gate(
     mods_path: &Path,
     progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
     gate: Option<&(dyn Fn() -> DiskProjectionResult<Box<dyn Send>> + Send + Sync)>,
+    cancelled: Option<&AtomicBool>,
 ) -> DiskProjectionResult<OnboardingDiskDiscovery> {
+    collect_onboarding_disk_discovery_with_parallelism(
+        mods_path,
+        progress,
+        gate,
+        cancelled,
+        ONBOARDING_ROOT_PARALLELISM,
+    )
+}
+
+pub(super) fn collect_onboarding_disk_discovery_with_parallelism(
+    mods_path: &Path,
+    progress: Option<&(dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
+    gate: Option<&(dyn Fn() -> DiskProjectionResult<Box<dyn Send>> + Send + Sync)>,
+    cancelled: Option<&AtomicBool>,
+    parallelism: NonZeroUsize,
+) -> DiskProjectionResult<OnboardingDiskDiscovery> {
+    check_onboarding_cancelled(cancelled)?;
     if !mods_path.exists() || !mods_path.is_dir() {
         return Err(DiskProjectionError::SourceUnavailable(format!(
             "Disk Reconcile mods path is unavailable: {}",
@@ -833,16 +880,32 @@ pub fn collect_onboarding_disk_discovery_with_progress_and_gate(
     let completed_roots = AtomicUsize::new(0);
     let classified_directories = AtomicUsize::new(0);
     let mut roots = Vec::with_capacity(total_roots);
-    for batch in top_level_paths.chunks(8) {
+    for batch in top_level_paths.chunks(parallelism.get()) {
+        check_onboarding_cancelled(cancelled)?;
         let _permit = gate.map(|acquire| acquire()).transpose()?;
+        let child_parallelism = parallelism.get() / batch.len();
         let scanned = batch
             .par_iter()
             .map(|root_path| {
+                let root_name = runtime_dir_name(root_path);
+                let last_reported_at = Mutex::new(None);
+                let activity = OnboardingTraversalProgress {
+                    progress,
+                    cancelled,
+                    completed_roots: &completed_roots,
+                    classified_directories: &classified_directories,
+                    total_roots,
+                    root_name: &root_name,
+                    last_reported_at: &last_reported_at,
+                };
                 let root = collect_onboarding_root_discovery(
                     mods_path,
                     root_path,
                     &classified_directories,
+                    &activity,
+                    child_parallelism,
                 )?;
+                check_onboarding_cancelled(cancelled)?;
                 let completed = completed_roots.fetch_add(1, Ordering::Relaxed) + 1;
                 if let Some(progress) = progress {
                     progress(OnboardingDiscoveryProgress {
@@ -864,17 +927,13 @@ pub fn collect_onboarding_disk_discovery_with_progress_and_gate(
     let mut projection = DiskProjection::default();
     let mut classification_duration = Duration::ZERO;
     for root in roots {
-        census_duration += root.census_duration;
-        classification_duration += root.classification_duration;
-        census_entries.extend(root.census_entries);
+        census_duration += root.branch.census_duration;
+        classification_duration += root.branch.classification_duration;
+        census_entries.extend(root.branch.census_entries);
         projection.objects.push(root.object);
-        projection.mods.extend(root.mods);
+        projection.mods.extend(root.branch.mods);
     }
-    census_entries.sort_by(|left, right| {
-        left.folder_path
-            .to_ascii_lowercase()
-            .cmp(&right.folder_path.to_ascii_lowercase())
-    });
+    sort_census_entries(&mut census_entries);
     let census_directories = census_entries.len();
 
     Ok(OnboardingDiskDiscovery {
@@ -899,18 +958,73 @@ pub fn collect_onboarding_disk_discovery_with_progress_and_gate(
 }
 
 struct OnboardingRootDiscovery {
-    census_entries: Vec<DiskIdentityCensusEntry>,
     object: DiskObjectEntry,
+    branch: OnboardingBranchDiscovery,
+}
+
+#[derive(Default)]
+struct OnboardingBranchDiscovery {
+    census_entries: Vec<DiskIdentityCensusEntry>,
     mods: Vec<DiskModEntry>,
     census_duration: Duration,
     classification_duration: Duration,
+}
+
+fn check_onboarding_cancelled(cancelled: Option<&AtomicBool>) -> DiskProjectionResult<()> {
+    if cancelled.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+        Err(DiskProjectionError::Failed(
+            "Onboarding indexing was cancelled".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+struct OnboardingTraversalProgress<'a> {
+    progress: Option<&'a (dyn Fn(OnboardingDiscoveryProgress) + Send + Sync)>,
+    cancelled: Option<&'a AtomicBool>,
+    completed_roots: &'a AtomicUsize,
+    classified_directories: &'a AtomicUsize,
+    total_roots: usize,
+    root_name: &'a str,
+    last_reported_at: &'a Mutex<Option<Instant>>,
+}
+
+impl OnboardingTraversalProgress<'_> {
+    fn visit(&self) -> DiskProjectionResult<()> {
+        check_onboarding_cancelled(self.cancelled)?;
+        if self.progress.is_none() {
+            return Ok(());
+        }
+        let mut last_reported_at = self.last_reported_at.lock().map_err(|_| {
+            DiskProjectionError::Failed("Onboarding progress lock was poisoned".to_string())
+        })?;
+        if last_reported_at.is_some_and(|last| last.elapsed() < Duration::from_millis(250)) {
+            return Ok(());
+        }
+        if let Some(progress) = self.progress {
+            progress(OnboardingDiscoveryProgress {
+                phase: OnboardingDiscoveryPhase::Classifying,
+                completed_roots: self.completed_roots.load(Ordering::Relaxed),
+                total_roots: self.total_roots,
+                folders_classified: self.classified_directories.load(Ordering::Relaxed),
+                current_root: Some(self.root_name.to_string()),
+                is_terminal: false,
+            });
+        }
+        *last_reported_at = Some(Instant::now());
+        check_onboarding_cancelled(self.cancelled)
+    }
 }
 
 fn collect_onboarding_root_discovery(
     mods_path: &Path,
     root_path: &Path,
     classified_directories: &AtomicUsize,
+    activity: &OnboardingTraversalProgress<'_>,
+    child_parallelism: usize,
 ) -> DiskProjectionResult<OnboardingRootDiscovery> {
+    check_onboarding_cancelled(activity.cancelled)?;
     let root_name = runtime_dir_name(root_path);
     let object = DiskObjectEntry {
         folder_path: root_name.clone(),
@@ -921,22 +1035,51 @@ fn collect_onboarding_root_discovery(
         filesystem_identity: filesystem_identity(root_path),
     };
     let mut result = OnboardingRootDiscovery {
-        census_entries: vec![census_entry(mods_path, root_path)?],
         object,
-        mods: Vec::new(),
-        census_duration: Duration::ZERO,
-        classification_duration: Duration::ZERO,
+        branch: OnboardingBranchDiscovery {
+            census_entries: vec![census_entry(mods_path, root_path)?],
+            ..Default::default()
+        },
     };
     let object_folder_path_key = result.object.folder_path_key.clone();
-    let root_children = timed_runtime_dirs(root_path, &mut result.census_duration)?;
-    for child_path in root_children {
-        collect_onboarding_folder(
-            &child_path,
-            mods_path,
-            &object_folder_path_key,
-            &mut result,
-            classified_directories,
-        )?;
+    let root_children = timed_runtime_dirs(root_path, &mut result.branch.census_duration)?;
+    if child_parallelism == 1 {
+        for child_path in root_children {
+            collect_onboarding_folder(
+                &child_path,
+                mods_path,
+                &object_folder_path_key,
+                &mut result.branch,
+                classified_directories,
+                activity,
+            )?;
+        }
+    } else {
+        // Spare root slots are shared by immediate children; recursion stays serial.
+        for batch in root_children.chunks(child_parallelism) {
+            check_onboarding_cancelled(activity.cancelled)?;
+            let branches = batch
+                .par_iter()
+                .map(|child_path| {
+                    let mut branch = OnboardingBranchDiscovery::default();
+                    collect_onboarding_folder(
+                        child_path,
+                        mods_path,
+                        &object_folder_path_key,
+                        &mut branch,
+                        classified_directories,
+                        activity,
+                    )?;
+                    Ok(branch)
+                })
+                .collect::<DiskProjectionResult<Vec<_>>>()?;
+            for branch in branches {
+                result.branch.census_entries.extend(branch.census_entries);
+                result.branch.mods.extend(branch.mods);
+                result.branch.census_duration += branch.census_duration;
+                result.branch.classification_duration += branch.classification_duration;
+            }
+        }
     }
     Ok(result)
 }
@@ -945,11 +1088,12 @@ fn collect_onboarding_folder(
     path: &Path,
     mods_path: &Path,
     object_folder_path_key: &str,
-    result: &mut OnboardingRootDiscovery,
+    result: &mut OnboardingBranchDiscovery,
     classified_directories: &AtomicUsize,
+    activity: &OnboardingTraversalProgress<'_>,
 ) -> DiskProjectionResult<()> {
+    check_onboarding_cancelled(activity.cancelled)?;
     result.census_entries.push(census_entry(mods_path, path)?);
-    classified_directories.fetch_add(1, Ordering::Relaxed);
     let scan_started = std::time::Instant::now();
     let scan =
         scan_folder_strict(path).map_err(|error| DiskProjectionError::Failed(error.to_string()))?;
@@ -958,6 +1102,8 @@ fn collect_onboarding_folder(
     let (node_type, _reasons, _warnings) = classify_folder_strict_from_scan(&scan)
         .map_err(|error| DiskProjectionError::Failed(error.to_string()))?;
     result.classification_duration += classification_started.elapsed();
+    classified_directories.fetch_add(1, Ordering::Relaxed);
+    activity.visit()?;
 
     let children = scan.child_dirs;
     match node_type {
@@ -968,12 +1114,12 @@ fn collect_onboarding_folder(
                 path,
             )?);
             for child_path in children {
-                collect_onboarding_census_only(&child_path, mods_path, result)?;
+                collect_onboarding_census_only(&child_path, mods_path, result, activity)?;
             }
         }
         NodeType::InternalAssets => {
             for child_path in children {
-                collect_onboarding_census_only(&child_path, mods_path, result)?;
+                collect_onboarding_census_only(&child_path, mods_path, result, activity)?;
             }
         }
         NodeType::ContainerFolder => {
@@ -984,6 +1130,7 @@ fn collect_onboarding_folder(
                     object_folder_path_key,
                     result,
                     classified_directories,
+                    activity,
                 )?;
             }
         }
@@ -994,11 +1141,13 @@ fn collect_onboarding_folder(
 fn collect_onboarding_census_only(
     path: &Path,
     mods_path: &Path,
-    result: &mut OnboardingRootDiscovery,
+    result: &mut OnboardingBranchDiscovery,
+    activity: &OnboardingTraversalProgress<'_>,
 ) -> DiskProjectionResult<()> {
+    activity.visit()?;
     result.census_entries.push(census_entry(mods_path, path)?);
     for child_path in timed_runtime_dirs(path, &mut result.census_duration)? {
-        collect_onboarding_census_only(&child_path, mods_path, result)?;
+        collect_onboarding_census_only(&child_path, mods_path, result, activity)?;
     }
     Ok(())
 }
@@ -1042,7 +1191,6 @@ fn onboarding_mod_entry(
         raw_name,
         absolute_path: path.to_path_buf(),
         filesystem_identity: filesystem_identity(path),
-        size_bytes: None,
     })
 }
 
@@ -1057,9 +1205,13 @@ pub fn collect_scoped_onboarding_disk_discovery(
     changed_roots: &[String],
 ) -> DiskProjectionResult<OnboardingDiskDiscovery> {
     let discovery =
-        collect_scoped_disk_discovery_with_progress(mods_path, changed_roots, true, None, None)?;
+        collect_scoped_disk_discovery_with_progress(mods_path, changed_roots, true, None)?;
     Ok(OnboardingDiskDiscovery { discovery })
 }
+
+#[cfg(test)]
+#[path = "census_tests.rs"]
+mod census_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1099,7 +1251,7 @@ mod tests {
     }
 
     #[test]
-    fn onboarding_discovery_skips_file_size_measurement() {
+    fn onboarding_discovery_classifies_mods_beside_root_files() {
         let temp = tempfile::tempdir().expect("tempdir should be created");
         let terminal = temp.path().join("Alice").join("Blue Dress");
         std::fs::create_dir_all(&terminal).expect("terminal folder should be created");
@@ -1111,8 +1263,7 @@ mod tests {
 
         let onboarding = collect_onboarding_disk_discovery(temp.path())
             .expect("onboarding discovery should succeed");
-
-        assert_eq!(onboarding.discovery.projection.mods[0].size_bytes, None);
+        assert_eq!(onboarding.discovery.projection.mods.len(), 1);
     }
 
     #[test]
@@ -1143,7 +1294,6 @@ mod tests {
         let onboarding = collect_onboarding_disk_discovery(temp.path())
             .expect("onboarding discovery should succeed");
         assert_eq!(onboarding.discovery.projection.mods.len(), 1);
-        assert_eq!(onboarding.discovery.projection.mods[0].size_bytes, None);
     }
 
     #[test]
@@ -1173,7 +1323,7 @@ mod tests {
 
         let legacy_census = collect_disk_identity_census(temp.path()).expect("legacy census");
         let (legacy_projection, legacy_classified_directories) =
-            collect_disk_projection_with_progress_and_stats(temp.path(), &[], false, None, None)
+            collect_disk_projection_with_progress_and_stats(temp.path(), &[], false, None)
                 .expect("legacy projection");
         let fused = collect_onboarding_disk_discovery(temp.path())
             .expect("fused onboarding discovery")
@@ -1216,7 +1366,6 @@ mod tests {
                         entry.folder_path_key.clone(),
                         entry.object_folder_path_key.clone(),
                         entry.raw_name.clone(),
-                        entry.size_bytes,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1325,65 +1474,6 @@ mod tests {
     }
 
     #[test]
-    fn storage_scan_measures_only_changed_or_new_terminal_mods() {
-        let temp = tempfile::tempdir().expect("tempdir should be created");
-        let blue = temp.path().join("Alice").join("Blue");
-        let red = temp.path().join("Alice").join("Red");
-        std::fs::create_dir_all(&blue).expect("blue folder");
-        std::fs::create_dir_all(&red).expect("red folder");
-        std::fs::write(blue.join("mod.ini"), "[TextureOverrideBlue]\nhash = abc\n")
-            .expect("blue ini");
-        std::fs::write(red.join("mod.ini"), "[TextureOverrideRed]\nhash = def\n").expect("red ini");
-        std::fs::write(red.join("mesh.buf"), [1_u8; 8]).expect("red asset");
-        std::fs::write(temp.path().join("Alice").join("outside.bin"), [2_u8; 64])
-            .expect("object-only asset");
-
-        let changed_file = red.join("mesh.buf").to_string_lossy().to_string();
-        let known_mod_keys = ["Alice/Blue", "Alice/Red"]
-            .into_iter()
-            .map(|path| crate::shared::path_key::folder_path_key(path, None))
-            .collect();
-        let size_scan = DiskSizeScan::incremental(temp.path(), known_mod_keys, &[changed_file]);
-        let discovery = collect_scoped_disk_discovery_with_progress(
-            temp.path(),
-            &[],
-            false,
-            Some(&size_scan),
-            None,
-        )
-        .expect("snapshot should succeed");
-
-        let blue = discovery
-            .projection
-            .mods
-            .iter()
-            .find(|entry| entry.raw_name == "Blue")
-            .expect("blue mod");
-        let red = discovery
-            .projection
-            .mods
-            .iter()
-            .find(|entry| entry.raw_name == "Red")
-            .expect("red mod");
-        assert_eq!(blue.size_bytes, None);
-        assert_eq!(red.size_bytes, Some(40));
-    }
-
-    #[test]
-    fn storage_scan_deduplicates_normalized_changed_paths() {
-        let temp = tempfile::tempdir().expect("tempdir should be created");
-        let changed_path = temp.path().join("Alice").join("Blue").join("mod.ini");
-        let changed_path = changed_path.to_string_lossy().into_owned();
-        let size_scan = DiskSizeScan::incremental(
-            temp.path(),
-            HashSet::new(),
-            &[changed_path.clone(), changed_path],
-        );
-
-        assert_eq!(size_scan.changed_path_keys.len(), 1);
-    }
-
-    #[test]
     fn scoped_discovery_classifies_only_changed_root_after_global_name_census() {
         let temp = tempfile::tempdir().expect("tempdir should be created");
         for object in ["Alice", "Bob", "Carol"] {
@@ -1400,7 +1490,6 @@ mod tests {
             temp.path(),
             &["Alice".to_string()],
             true,
-            None,
             None,
         )
         .expect("scoped discovery should succeed");
@@ -1429,7 +1518,6 @@ mod tests {
         let discovery = collect_trusted_scoped_disk_discovery_with_progress(
             temp.path(),
             &["Alice".to_string()],
-            None,
             None,
         )
         .expect("trusted scoped discovery should succeed");
@@ -1492,7 +1580,7 @@ mod tests {
 
             let started = std::time::Instant::now();
             let cold_full =
-                collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None, None)
+                collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None)
                     .expect("full snapshot should succeed");
             let cold_full_elapsed = started.elapsed();
             let started = std::time::Instant::now();
@@ -1504,7 +1592,6 @@ mod tests {
                 temp.path(),
                 &["Object 000".to_string()],
                 None,
-                None,
             )
             .expect("trusted scoped snapshot should succeed");
             let cold_scoped_elapsed = started.elapsed();
@@ -1514,7 +1601,7 @@ mod tests {
             let mut warm_scoped = Vec::new();
             for _ in 0..5 {
                 let started = std::time::Instant::now();
-                collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None, None)
+                collect_scoped_disk_discovery_with_progress(temp.path(), &[], false, None)
                     .expect("warm full snapshot should succeed");
                 warm_full.push(started.elapsed());
                 let started = std::time::Instant::now();
@@ -1525,7 +1612,6 @@ mod tests {
                 collect_trusted_scoped_disk_discovery_with_progress(
                     temp.path(),
                     &["Object 000".to_string()],
-                    None,
                     None,
                 )
                 .expect("warm trusted scoped snapshot should succeed");

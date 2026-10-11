@@ -8,6 +8,12 @@ import { useDownloads } from '../hooks/useDownloads';
 import { useBrowserLibrary } from '../hooks/useBrowserLibrary';
 import { useWebviewSync } from '../hooks/useWebviewSync';
 import { normalizeBrowserUrl } from '../utils/browserUrl';
+import {
+  retainPendingBrowserNavigation,
+  takePendingBrowserNavigation,
+  type BrowserNavigationUpdate,
+} from '../utils/browserNavigation';
+import { openBrowserTabForSession } from '../utils/openBrowserTab';
 import { BrowserTabBar, BrowserTabContextMenu } from './BrowserTabBar';
 import { BrowserToolbar, BrowserToolbarMenu } from './BrowserToolbar';
 import { DownloadManagerPanel } from './DownloadManagerPanel';
@@ -23,6 +29,7 @@ import { toast } from '@/shared/ui/toast';
 import ConfirmDialog from '@/shared/ui/components/ui/ConfirmDialog';
 import { isDemoMode } from '@/shared/lib/appMode';
 import { useAppStore } from '@/app/store';
+import { useHotkeyNoticeStore } from '@/features/hotkey-feedback';
 import { TopBarActionsPortal } from '@/widgets/top-bar';
 import {
   getBrowserSidePanelLayout,
@@ -85,6 +92,7 @@ export function BrowserPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [decodedText, setDecodedText] = useState<string | null>(null);
   const sessionRestoreRequest = useRef(0);
+  const pendingBrowserNavigationRef = useRef(new Map<string, BrowserNavigationUpdate>());
 
   // Container that the Webview will be placed over
   const browserPageRef = useRef<HTMLDivElement>(null);
@@ -102,7 +110,6 @@ export function BrowserPage() {
     activeTabId,
     recentlyClosedTabs,
     addTab,
-    replaceTab,
     removeTab,
     recordClosedTab,
     removeLastClosedTab,
@@ -118,7 +125,6 @@ export function BrowserPage() {
       activeTabId: state.activeTabId,
       recentlyClosedTabs: state.recentlyClosedTabs,
       addTab: state.addTab,
-      replaceTab: state.replaceTab,
       removeTab: state.removeTab,
       recordClosedTab: state.recordClosedTab,
       removeLastClosedTab: state.removeLastClosedTab,
@@ -143,16 +149,25 @@ export function BrowserPage() {
 
   const activeGameId = useAppStore((state) => state.activeGameId);
   const isAppMenuOpen = useAppStore((state) => state.isAppMenuOpen);
+  const hasHotkeyNotice = useHotkeyNoticeStore((state) => state.notice !== null);
   const browserSurfacePresentation = useMemo(
     () =>
       getBrowserSurfacePresentation({
         activeSidePanel,
         availableWidth: browserContentWidth,
         hasBlockingOverlay,
+        hasHotkeyNotice,
         isAppMenuOpen,
         isChromeTrayOpen: chromeTray.kind !== 'none',
       }),
-    [activeSidePanel, browserContentWidth, chromeTray.kind, hasBlockingOverlay, isAppMenuOpen],
+    [
+      activeSidePanel,
+      browserContentWidth,
+      chromeTray.kind,
+      hasBlockingOverlay,
+      hasHotkeyNotice,
+      isAppMenuOpen,
+    ],
   );
 
   const { activeCount, queuedCount } = useDownloads(activeGameId, {
@@ -189,6 +204,12 @@ export function BrowserPage() {
     [],
   );
 
+  const applyPendingBrowserNavigation = useCallback((label: string) => {
+    const pending = takePendingBrowserNavigation(pendingBrowserNavigationRef.current, label);
+    if (!pending) return;
+    useBrowserStore.getState().updateTab(label, pending);
+  }, []);
+
   const performNavigate = useCallback(
     async (url: string, asNewTab: boolean = false) => {
       setChromeTray({ kind: 'none' });
@@ -197,17 +218,12 @@ export function BrowserPage() {
       try {
         const currentTab = tabs.find((tab) => tab.id === activeTabId);
         if (asNewTab || !currentTab || currentTab.isNewTab) {
-          const label = await commands.browserOpenTab(url, null);
-          const nextTab: BrowserTab = {
-            id: label,
+          const label = await openBrowserTabForSession({
             title: t('tabs.loading'),
             url,
-          };
-          if (!asNewTab && currentTab?.isNewTab) {
-            replaceTab(currentTab.id, nextTab);
-          } else {
-            addTab(nextTab);
-          }
+            replaceTabId: !asNewTab && currentTab?.isNewTab ? currentTab.id : undefined,
+          });
+          if (label) applyPendingBrowserNavigation(label);
         } else if (activeTabId) {
           await commands.browserNavigate(activeTabId, url);
           useBrowserStore.getState().updateTab(activeTabId, { url });
@@ -219,7 +235,7 @@ export function BrowserPage() {
         setIsNavigating(false);
       }
     },
-    [tabs, activeTabId, addTab, replaceTab, t],
+    [tabs, activeTabId, applyPendingBrowserNavigation, t],
   );
 
   const handleNavigate = useCallback(
@@ -299,15 +315,24 @@ export function BrowserPage() {
     commands
       .browserGetSessionTabs(activeGameId)
       .then(async (savedTabs) => {
+        if (
+          cancelled ||
+          requestId !== sessionRestoreRequest.current ||
+          useAppStore.getState().activeGameId !== activeGameId
+        )
+          return;
         if (savedTabs.length === 0) {
           addTab(createNewBrowserTab());
           return;
         }
         for (const savedTab of savedTabs) {
           if (cancelled) return;
-          const label = await commands.browserOpenTab(savedTab.url, null);
-          if (cancelled) return;
-          addTab({ id: label, url: savedTab.url, title: savedTab.title || t('tabs.loading') });
+          const label = await openBrowserTabForSession({
+            url: savedTab.url,
+            title: savedTab.title || t('tabs.loading'),
+          });
+          if (cancelled || !label) return;
+          applyPendingBrowserNavigation(label);
           if (savedTab.active) setActiveTab(label);
         }
       })
@@ -320,7 +345,7 @@ export function BrowserPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeGameId, addTab, setActiveTab, setGameContext, t]);
+  }, [activeGameId, addTab, applyPendingBrowserNavigation, setActiveTab, setGameContext, t]);
 
   useEffect(() => {
     if (isRestoringSession || !activeGameId) return;
@@ -373,7 +398,12 @@ export function BrowserPage() {
         if (title?.trim()) {
           updates.title = title;
         }
-        useBrowserStore.getState().updateTab(label, updates);
+        const store = useBrowserStore.getState();
+        if (store.tabs.some((tab) => tab.id === label)) {
+          store.updateTab(label, updates);
+        } else {
+          retainPendingBrowserNavigation(pendingBrowserNavigationRef.current, label, updates);
+        }
         setNavigationError((current) => (current?.label === label ? null : current));
       },
     );
@@ -506,18 +536,17 @@ export function BrowserPage() {
       }
 
       try {
-        const label = await commands.browserOpenTab(sourceTab.url, null);
-        addTab({
-          id: label,
+        const label = await openBrowserTabForSession({
           title: sourceTab.title || t('tabs.loading'),
           url: sourceTab.url,
         });
+        if (label) applyPendingBrowserNavigation(label);
       } catch (error) {
         console.error('Failed to duplicate Discover tab:', error);
         toast.error(t('tabs.operation_failed'));
       }
     },
-    [addTab, handleNewTab, t, tabs],
+    [applyPendingBrowserNavigation, handleNewTab, t, tabs],
   );
 
   const handleRestoreLastClosedTab = useCallback(async () => {
@@ -525,18 +554,19 @@ export function BrowserPage() {
     if (!lastClosedTab?.url) return;
 
     try {
-      const label = await commands.browserOpenTab(lastClosedTab.url, null);
-      addTab({
-        id: label,
+      const label = await openBrowserTabForSession({
         title: lastClosedTab.title || t('tabs.loading'),
         url: lastClosedTab.url,
       });
-      removeLastClosedTab();
+      if (label) {
+        applyPendingBrowserNavigation(label);
+        removeLastClosedTab();
+      }
     } catch (error) {
       console.error('Failed to restore Discover tab:', error);
       toast.error(t('tabs.operation_failed'));
     }
-  }, [addTab, recentlyClosedTabs, removeLastClosedTab, t]);
+  }, [applyPendingBrowserNavigation, recentlyClosedTabs, removeLastClosedTab, t]);
 
   const handleToggleAdblock = async () => {
     const nextEnabled = !adblockEnabled;

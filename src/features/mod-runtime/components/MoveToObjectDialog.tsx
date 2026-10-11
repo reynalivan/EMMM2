@@ -1,6 +1,6 @@
 import { formatAppError } from '@/shared/lib/appError';
 import type { MoveStatus } from '@/entities/mod';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MoveRight } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -9,6 +9,7 @@ import { toast } from '@/shared/ui/toast';
 import { useActiveGame } from '@/entities/game';
 import type { ObjectSummary } from '@/entities/game-object';
 import type { WorkspaceMoveTarget } from '@/shared/api/tauri/bindings.gen';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 import MoveToObjectDialogPanels from './MoveToObjectDialogPanels';
 
 interface MoveToObjectDialogProps {
@@ -43,7 +44,10 @@ export default function MoveToObjectDialog({
   const [disableAfterMove, setDisableAfterMove] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const dialogId = useId();
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const targetKey = targetModPaths.join('\u0000');
+
+  useDialogSync(dialogRef, isOpen);
 
   const availableObjects = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -172,7 +176,7 @@ export default function MoveToObjectDialog({
 
   return (
     <dialog
-      open={isOpen}
+      ref={dialogRef}
       className="modal modal-bottom sm:modal-middle"
       aria-labelledby={`${dialogId}-title`}
       aria-describedby={`${dialogId}-description`}

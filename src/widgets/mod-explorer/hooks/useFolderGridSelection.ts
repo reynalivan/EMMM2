@@ -12,6 +12,7 @@ import { publishQueryInvalidations } from '@/shared/lib/queryRefresh';
 import { useFolderNavigation } from './useFolderNavigation';
 import { useRangeSelection } from '../../../shared/lib/hooks/useRangeSelection';
 import { normalizeWorkspacePath } from '@/features/workspace-runtime';
+import { openFolderConflictManagerDialog } from '@/features/workspace-runtime';
 
 const getFolderPath = (folder: ModFolder) => folder.path;
 
@@ -59,6 +60,15 @@ export function useFolderGridSelection({
 }: UseFolderGridSelectionOptions) {
   const queryClient = useQueryClient();
   const { anchorId, setAnchorId, getRange } = useRangeSelection(sortedFolders, getFolderPath);
+  const conflictGroupsByPath = useMemo(
+    () =>
+      new Map(
+        sortedFolders.flatMap((folder) =>
+          folder.conflict_group_id ? [[folder.path, folder.conflict_group_id] as const] : [],
+        ),
+      ),
+    [sortedFolders],
+  );
   const visiblePathKeys = useMemo(
     () => new Set(sortedFolders.map((folder) => normalizeWorkspacePath(folder.path))),
     [sortedFolders],
@@ -100,6 +110,11 @@ export function useFolderGridSelection({
 
   const handleActivateItem = useCallback(
     (path: string) => {
+      const conflictGroupId = conflictGroupsByPath.get(path);
+      if (conflictGroupId) {
+        openFolderConflictManagerDialog(conflictGroupId);
+        return;
+      }
       const selectionEffect = createSelectionEffect({ mode: 'explicit', paths: new Set() });
       if (!selectMod(path, isMobile ? 'details' : undefined, selectionEffect)) {
         return;
@@ -113,13 +128,26 @@ export function useFolderGridSelection({
       }
       setAnchorId(path);
     },
-    [createSelectionEffect, isMobile, queryClient, selectMod, selectedModPath, setAnchorId],
+    [
+      conflictGroupsByPath,
+      createSelectionEffect,
+      isMobile,
+      queryClient,
+      selectMod,
+      selectedModPath,
+      setAnchorId,
+    ],
   );
 
   const handleToggleSelection = useCallback(
     (path: string, multi: boolean, isShift?: boolean) => {
+      const conflictGroupId = conflictGroupsByPath.get(path);
+      if (conflictGroupId) {
+        openFolderConflictManagerDialog(conflictGroupId);
+        return;
+      }
       if (isShift) {
-        const range = getRange(path);
+        const range = getRange(path)?.filter((rangePath) => !conflictGroupsByPath.has(rangePath));
         if (range) {
           let nextSelection: WorkspaceExplorerSelectionModel;
           if (selection.mode === 'all_matching') {
@@ -186,23 +214,48 @@ export function useFolderGridSelection({
       }
       setAnchorId(path);
     },
-    [createSelectionEffect, getRange, isMobile, selectMod, selection, setAnchorId, sortedFolders],
+    [
+      conflictGroupsByPath,
+      createSelectionEffect,
+      getRange,
+      isMobile,
+      selectMod,
+      selection,
+      setAnchorId,
+      sortedFolders,
+    ],
   );
 
   const { focusedId, handleKeyDown } = useFolderNavigation({
     items: sortedFolders,
     gridColumns: isGridView ? columnCount : 1,
     getId: (item: ModFolder) => item.path,
-    onNavigate: (item: ModFolder) => handleNavigate(item.folder_name),
+    onNavigate: (item: ModFolder) => {
+      if (item.conflict_group_id) {
+        openFolderConflictManagerDialog(item.conflict_group_id);
+      } else {
+        handleNavigate(item.folder_name);
+      }
+    },
     onSelectionChange: (item: ModFolder, multi: boolean, isShift?: boolean) =>
       handleToggleSelection(item.path, multi, isShift),
     onSelectAll: selectAllMatching,
     onDelete: (items: ModFolder[]) => {
       if (items.length > 0) {
-        handleDeleteRequest(items[0]);
+        if (items[0].conflict_group_id) {
+          openFolderConflictManagerDialog(items[0].conflict_group_id);
+        } else {
+          handleDeleteRequest(items[0]);
+        }
       }
     },
-    onRename: (item: ModFolder) => handleRenameRequest(item),
+    onRename: (item: ModFolder) => {
+      if (item.conflict_group_id) {
+        openFolderConflictManagerDialog(item.conflict_group_id);
+      } else {
+        handleRenameRequest(item);
+      }
+    },
     onGoUp: () => {
       if (currentPath.length > 0) {
         handleBreadcrumbClick(currentPath.length - 2);

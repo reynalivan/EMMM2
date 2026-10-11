@@ -13,11 +13,14 @@ fn ini_signals_scan_the_complete_document_without_comment_headers() {
     content.push_str("\n[TextureOverrideBody]\nhash = 12345678\n");
     fs::write(&ini_path, content).unwrap();
 
-    let (headers, _bindings, hashes) = read_ini_signals(&ini_path);
+    let signals = read_ini_signals(&ini_path).unwrap();
 
-    assert!(headers.contains("[textureoverridebody]"));
-    assert!(hashes.contains("texture:12345678"));
-    assert!(headers.iter().all(|header| !header.starts_with(';')));
+    assert!(signals.headers.contains("[textureoverridebody]"));
+    assert!(signals.target_hashes.contains("texture:12345678"));
+    assert!(signals
+        .headers
+        .iter()
+        .all(|header| !header.starts_with(';')));
 }
 
 #[test]
@@ -32,10 +35,10 @@ fn ini_signals_reject_invalid_or_untyped_hash_values() {
     )
     .unwrap();
 
-    let (_, _, hashes) = read_ini_signals(&ini_path);
+    let signals = read_ini_signals(&ini_path).unwrap();
 
     assert_eq!(
-        hashes,
+        signals.target_hashes,
         std::collections::BTreeSet::from(["shader:0123456789abcdef".to_string()])
     );
 }

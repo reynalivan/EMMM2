@@ -79,6 +79,35 @@ describe('GameIndexingOverlay', () => {
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
+  it('tracks actual mod projection without reusing preparation root totals', () => {
+    render(
+      <GameIndexingOverlay
+        gameName="Star Rail"
+        progress={makeProgress({
+          phase: 'Projecting',
+          completed_units: 64,
+          total_units: 130,
+          current_root: null,
+        })}
+        snapshotProgress={{
+          session_id: 'old',
+          game_id: 'srmi',
+          phase: 'Ready',
+          completed_games: 1,
+          total_games: 1,
+          completed_roots: 1,
+          total_roots: 1,
+          folders_classified: 130,
+          current_root: null,
+          elapsed_ms: 400,
+        }}
+      />,
+    );
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '64');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '130');
+    expect(screen.getByText('64 / 130 mods processed')).toBeInTheDocument();
+  });
+
   it('shows failure and lets the user retry', () => {
     const onRetry = vi.fn();
     render(

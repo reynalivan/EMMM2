@@ -24,6 +24,39 @@ describe('useFolderNavigation', () => {
     expect(result.current.focusedId).toBeNull();
   });
 
+  it.each(['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End'])(
+    'does not focus an item in an empty list for %s',
+    (key) => {
+      const onFocusChange = vi.fn();
+      const onSelectionChange = vi.fn();
+      const { result } = renderHook(() =>
+        useFolderNavigation({ ...defaultProps, items: [], onFocusChange, onSelectionChange }),
+      );
+
+      act(() => {
+        result.current.handleKeyDown(new KeyboardEvent('keydown', { key, shiftKey: true }));
+      });
+
+      expect(result.current.focusedId).toBeNull();
+      expect(onFocusChange).not.toHaveBeenCalled();
+      expect(onSelectionChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it('ignores navigation after the focused item is removed with the last page', () => {
+    const onFocusChange = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ items }) => useFolderNavigation({ ...defaultProps, items, onFocusChange }),
+      { initialProps: { items: mockItems } },
+    );
+    act(() => result.current.setFocusedId(mockItems[0].path));
+    rerender({ items: [] });
+
+    act(() => result.current.handleKeyDown(new KeyboardEvent('keydown', { key: 'Home' })));
+
+    expect(onFocusChange).not.toHaveBeenCalled();
+  });
+
   it.each(['a', 'Backspace', 'Delete', 'ArrowLeft', 'Tab'])(
     'leaves %s to an editing control',
     (key) => {

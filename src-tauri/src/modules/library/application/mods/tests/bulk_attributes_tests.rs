@@ -1,6 +1,69 @@
 use super::*;
 use tempfile::TempDir;
 
+#[tokio::test]
+async fn regression_bulk_info_writes_validated_relative_paths_under_mods_root() {
+    let (pool, _temp, mod_path) = seeded_mod().await;
+    let config =
+        crate::modules::settings::application::config::ConfigService::new_for_test_async(pool)
+            .await;
+    let paths =
+        crate::platform::fs::guard::validate_paths(&config, "g1", &["Alice/Blue".to_string()])
+            .unwrap();
+    let result = bulk_update_info(
+        &paths,
+        info_json::ModInfoUpdate {
+            author: Some("Relative path regression".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.success, vec!["Alice/Blue"]);
+    assert!(result.failures.is_empty());
+    assert_eq!(
+        info_json::read_info_json(Path::new(&mod_path))
+            .unwrap()
+            .unwrap()
+            .author,
+        "Relative path regression"
+    );
+}
+
+#[tokio::test]
+async fn favorite_and_pin_round_trip_relative_paths_in_files_and_database() {
+    let (pool, _temp, mod_path) = seeded_mod().await;
+    let config = crate::modules::settings::application::config::ConfigService::new_for_test_async(
+        pool.clone(),
+    )
+    .await;
+    let paths =
+        crate::platform::fs::guard::validate_paths(&config, "g1", &["Alice/Blue".to_string()])
+            .unwrap();
+    for expected in [true, false] {
+        let favorite = bulk_toggle_favorite(&pool, "g1".to_string(), &paths, expected)
+            .await
+            .unwrap();
+        let pin = bulk_pin(&pool, "g1".to_string(), &paths, expected)
+            .await
+            .unwrap();
+        assert_eq!(favorite.success, vec!["Alice/Blue"]);
+        assert_eq!(pin.success, vec!["Alice/Blue"]);
+        assert!(favorite.failures.is_empty() && pin.failures.is_empty());
+        let info = info_json::read_info_json(Path::new(&mod_path))
+            .unwrap()
+            .unwrap();
+        assert_eq!(info.is_favorite, expected);
+        assert_eq!(info.is_pinned, expected);
+        let stored: (bool, bool) =
+            sqlx::query_as("SELECT is_favorite, is_pinned FROM mods WHERE id = 'm1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored, (expected, expected));
+    }
+}
+
 // A folder that vanished mid-batch must surface as a failure, not be swallowed:
 // its DB flag is already set, so a dropped write error hides a disk/DB mismatch.
 #[test]
@@ -40,7 +103,7 @@ async fn seeded_mod() -> (sqlx::SqlitePool, TempDir, String) {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(mods_root.to_string_lossy().as_ref()),
         },
@@ -81,8 +144,14 @@ async fn seeded_mod() -> (sqlx::SqlitePool, TempDir, String) {
 #[tokio::test]
 async fn bulk_pin_mirrors_the_flag_to_database_and_info_json() {
     let (pool, _temp, mod_path) = seeded_mod().await;
-
-    let result = bulk_pin(&pool, "g1".to_string(), vec![mod_path.clone()], true)
+    let config = crate::modules::settings::application::config::ConfigService::new_for_test_async(
+        pool.clone(),
+    )
+    .await;
+    let paths =
+        crate::platform::fs::guard::validate_paths(&config, "g1", std::slice::from_ref(&mod_path))
+            .unwrap();
+    let result = bulk_pin(&pool, "g1".to_string(), &paths, true)
         .await
         .unwrap();
 
@@ -116,7 +185,14 @@ async fn favorite_file_is_rolled_back_when_database_update_fails() {
     .await
     .unwrap();
 
-    let result = bulk_toggle_favorite(&pool, "g1".to_string(), vec![mod_path.clone()], true).await;
+    let config = crate::modules::settings::application::config::ConfigService::new_for_test_async(
+        pool.clone(),
+    )
+    .await;
+    let paths =
+        crate::platform::fs::guard::validate_paths(&config, "g1", std::slice::from_ref(&mod_path))
+            .unwrap();
+    let result = bulk_toggle_favorite(&pool, "g1".to_string(), &paths, true).await;
 
     assert!(result.is_err());
     assert_eq!(
@@ -141,7 +217,7 @@ async fn bulk_safety_expands_nested_parent_and_supports_unsafe_to_safe_reversal(
         &crate::test_utils::TestGameFixture {
             id: "g-safety",
             name: "Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(mods_root.to_string_lossy().as_ref()),
         },

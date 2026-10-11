@@ -420,6 +420,7 @@ export function useFolderGridBulk({
               action.operation_id,
               snapshot.intentRevision ?? null,
               toggleIdentities ?? null,
+              null,
             )
           : commands.executeWorkspaceExplorerBulk(
               {

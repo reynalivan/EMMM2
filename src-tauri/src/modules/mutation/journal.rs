@@ -9,8 +9,13 @@ use uuid::Uuid;
 use crate::platform::fs::atomic_file::atomic_write;
 use crate::shared::errors::AppError;
 
-const JOURNAL_FORMAT_VERSION: u32 = 3;
-const ACTIVE_STATE_FORMAT_VERSION: u32 = 3;
+const JOURNAL_FORMAT_VERSION: u32 = 4;
+const ACTIVE_STATE_FORMAT_VERSION: u32 = 4;
+
+pub const FOLDER_CREATE_OPERATION_KIND: &str = "folder-create";
+pub const FOLDER_CREATE_STAGE_PREFIX: &str = ".emmm-folder-create-";
+pub const COLLECTION_APPLY_OPERATION_KIND: &str = "collection-apply-receipted";
+pub const LEGACY_COLLECTION_APPLY_OPERATION_KIND: &str = "collection-apply";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationStatus {
@@ -83,6 +88,7 @@ pub struct PlannedStep {
     pub new_path: Option<PathBuf>,
     pub stage_path: Option<PathBuf>,
     pub expected_identity: Option<String>,
+    pub source_root_identity: Option<String>,
 }
 
 impl PlannedStep {
@@ -94,6 +100,7 @@ impl PlannedStep {
             new_path: Some(new_path),
             stage_path: None,
             expected_identity: None,
+            source_root_identity: None,
         }
     }
 
@@ -105,6 +112,7 @@ impl PlannedStep {
             new_path: Some(quarantine),
             stage_path: None,
             expected_identity: None,
+            source_root_identity: None,
         }
     }
 
@@ -122,6 +130,7 @@ impl PlannedStep {
             new_path: Some(target),
             stage_path: Some(backup),
             expected_identity: Some(keeper_identity),
+            source_root_identity: None,
         }
     }
 
@@ -132,6 +141,11 @@ impl PlannedStep {
 
     pub fn with_expected_identity(mut self, expected_identity: Option<String>) -> Self {
         self.expected_identity = expected_identity;
+        self
+    }
+
+    pub fn with_source_root_identity(mut self, source_root_identity: String) -> Self {
+        self.source_root_identity = Some(source_root_identity);
         self
     }
 }
@@ -173,6 +187,8 @@ pub struct OperationStep {
     pub stage_path: Option<PathBuf>,
     #[serde(default)]
     pub expected_identity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root_identity: Option<String>,
     pub status: StepStatus,
 }
 
@@ -375,6 +391,7 @@ impl OperationJournal {
                     new_path: step.new_path,
                     stage_path: step.stage_path,
                     expected_identity: step.expected_identity,
+                    source_root_identity: step.source_root_identity,
                     status: StepStatus::Planned,
                 })
                 .collect(),
@@ -1270,7 +1287,10 @@ fn decode_active_state(
     operation: &Operation,
 ) -> Result<ActiveOperationState, AppError> {
     let snapshot = serde_json::from_slice::<ActiveOperationStateSnapshot>(bytes)?;
-    if !matches!(snapshot.format_version, 1 | 2 | ACTIVE_STATE_FORMAT_VERSION) {
+    if !matches!(
+        snapshot.format_version,
+        1 | 2 | 3 | ACTIVE_STATE_FORMAT_VERSION
+    ) {
         return Err(AppError::Validation(format!(
             "Unsupported mutation progress format version {}",
             snapshot.format_version
@@ -1710,7 +1730,7 @@ fn decode_journal(bytes: &[u8]) -> Result<DecodedJournal, AppError> {
 }
 
 fn validate_snapshot(snapshot: JournalSnapshot) -> Result<DecodedJournal, AppError> {
-    if !matches!(snapshot.format_version, 1 | 2 | JOURNAL_FORMAT_VERSION) {
+    if !matches!(snapshot.format_version, 1 | 2 | 3 | JOURNAL_FORMAT_VERSION) {
         return Err(AppError::Validation(format!(
             "Unsupported mutation journal format version {}",
             snapshot.format_version
@@ -1782,6 +1802,7 @@ fn benchmark_history_operation(index: u32) -> Operation {
             new_path: Some(PathBuf::from(format!("C:/Benchmark/New/{index}"))),
             stage_path: None,
             expected_identity: None,
+            source_root_identity: None,
             status: StepStatus::Applied,
         }],
         database_projection_status: DatabaseProjectionStatus::Committed,
@@ -1830,7 +1851,7 @@ mod disk_revision_format_tests {
 
     #[test]
     fn legacy_snapshot_and_progress_remain_readable() {
-        for legacy_version in [1, 2] {
+        for legacy_version in [1, 2, 3] {
             let operation = Operation {
                 id: Uuid::new_v4().to_string(),
                 kind: "rename-mod".to_string(),
@@ -1845,6 +1866,7 @@ mod disk_revision_format_tests {
                     new_path: Some(PathBuf::from("C:/Mods/New")),
                     stage_path: None,
                     expected_identity: None,
+                    source_root_identity: None,
                     status: StepStatus::Applied,
                 }],
                 database_projection_status: DatabaseProjectionStatus::NotStarted,

@@ -18,7 +18,7 @@ pub async fn ensure_unicode_keys(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let game_mod_paths = load_game_mod_paths(&mut tx).await?;
 
     backfill_mod_keys(&mut tx, &game_mod_paths).await?;
-    backfill_object_keys(&mut tx, &game_mod_paths).await?;
+    backfill_object_keys(&mut tx).await?;
     backfill_collection_keys(&mut tx).await?;
 
     settings::set_setting(&mut *tx, UNICODE_KEY_VERSION_KEY, UNICODE_KEY_VERSION).await?;
@@ -69,26 +69,19 @@ async fn backfill_mod_keys(
     Ok(())
 }
 
-async fn backfill_object_keys(
-    conn: &mut SqliteConnection,
-    game_mod_paths: &HashMap<String, Option<String>>,
-) -> Result<(), sqlx::Error> {
-    let rows = sqlx::query("SELECT id, game_id, name, folder_path FROM objects")
+async fn backfill_object_keys(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+    let rows = sqlx::query("SELECT id, name, folder_path FROM objects")
         .fetch_all(&mut *conn)
         .await?;
 
     for row in rows {
         let id: String = row.try_get("id")?;
-        let game_id: String = row.try_get("game_id")?;
         let name: String = row.try_get("name")?;
         let folder_path: Option<String> = row.try_get("folder_path")?;
-        let mods_path = game_mod_paths
-            .get(&game_id)
-            .and_then(|value| value.as_deref());
         let name_key = canonical_name_key(&name);
         let folder_key = folder_path
             .as_deref()
-            .map(|path| folder_path_key(path, mods_path));
+            .map(|path| folder_path_key(path, None));
 
         sqlx::query("UPDATE objects SET name_key = ?, folder_path_key = ? WHERE id = ?")
             .bind(name_key)
@@ -136,7 +129,7 @@ mod tests {
             .await
             .expect("migrated schema");
         sqlx::query("INSERT INTO games (id, name, game_type, path, mods_path) VALUES ('game', 'Game', ?, 'C:/Game', 'C:/Game/Mods')")
-            .bind(crate::modules::games::domain::models::GameType::GIMI as i64)
+            .bind(crate::modules::games::domain::models::GameType::Gimi as i64)
             .execute(&pool).await.expect("game fixture");
         sqlx::query("INSERT INTO objects (id, game_id, name, folder_path, object_type, name_key, folder_path_key) VALUES ('object', 'game', 'Object', 'Object', 'Character', 'legacy-name', 'legacy-object')")
             .execute(&pool).await.expect("object fixture");
@@ -175,6 +168,24 @@ mod tests {
             after, before,
             "reopening an indexed database must perform no backfill writes"
         );
+    }
+
+    #[tokio::test]
+    async fn object_backfill_uses_the_object_writer_namespace_without_changing_mod_keys() {
+        let pool = legacy_pool().await;
+        ensure_unicode_keys(&pool).await.expect("backfill");
+        let object_key: String =
+            sqlx::query_scalar("SELECT folder_path_key FROM objects WHERE id = 'object'")
+                .fetch_one(&pool)
+                .await
+                .expect("backfilled object key");
+        let mod_key: String =
+            sqlx::query_scalar("SELECT folder_path_key FROM mods WHERE id = 'mod'")
+                .fetch_one(&pool)
+                .await
+                .expect("backfilled mod key");
+        assert_eq!(object_key, folder_path_key("Object", None));
+        assert_eq!(mod_key, folder_path_key("Object/Mod", Some("C:/Game/Mods")));
     }
 
     #[tokio::test]

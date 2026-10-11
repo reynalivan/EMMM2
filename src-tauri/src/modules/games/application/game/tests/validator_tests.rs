@@ -158,6 +158,17 @@ fn test_nonexistent_path() {
     assert!(result.unwrap_err().to_string().contains("does not exist"));
 }
 
+#[test]
+fn agl_rejects_a_regular_file_as_an_instance_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("selected.txt");
+    fs::write(&file, "fixture").unwrap();
+    assert!(
+        validate_instance(&file).is_err(),
+        "an existing file is not a game directory"
+    );
+}
+
 // Smart resolution: selecting /Mods climbs up to the parent
 #[test]
 fn test_smart_mods_folder_correction() {
@@ -225,7 +236,7 @@ fn test_scan_xxmi_partial() {
 
     let results = scan_xxmi_root(&root);
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].game_type, GameType::GIMI);
+    assert_eq!(results[0].game_type, GameType::Gimi);
     assert_eq!(results[0].game_type.display_name(), "GIMI");
 
     let _ = fs::remove_dir_all(&root);
@@ -250,7 +261,7 @@ fn test_xxmi_managed_instance_does_not_require_importer_launcher() {
     let results = scan_xxmi_root(&root);
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].game_type, GameType::WWMI);
+    assert_eq!(results[0].game_type, GameType::Wwmi);
     assert!(
         results[0].warnings.is_empty(),
         "an XXMI-managed importer must not require a launcher in its own folder"

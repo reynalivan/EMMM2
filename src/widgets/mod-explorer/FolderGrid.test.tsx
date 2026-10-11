@@ -33,7 +33,8 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
 
-vi.mock('./hooks/useFolderMutations', () => ({
+vi.mock('@/features/mod-runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/mod-runtime')>()),
   useActiveConflicts: () => ({ data: [] }),
 }));
 

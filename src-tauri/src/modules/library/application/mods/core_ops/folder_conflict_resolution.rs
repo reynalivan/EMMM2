@@ -42,6 +42,7 @@ struct PendingRename {
 #[derive(Debug, Clone)]
 pub struct FolderConflictRenamePlan {
     pending: Vec<PendingRename>,
+    namespace_proof: crate::platform::fs::file_utils::FilesystemNamespaceProof,
 }
 
 impl FolderConflictRenamePlan {
@@ -343,7 +344,209 @@ pub fn plan_folder_conflict_renames(
             })
         })
         .collect::<Result<Vec<_>, AppError>>()?;
-    Ok(FolderConflictRenamePlan { pending })
+    let namespace_proof = crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+        &canonical_root,
+        &pending
+            .iter()
+            .flat_map(|rename| {
+                [
+                    rename.old_path.clone(),
+                    rename.stage_path.clone(),
+                    rename.target_path.clone(),
+                ]
+            })
+            .collect::<Vec<_>>(),
+    )?;
+    Ok(FolderConflictRenamePlan {
+        pending,
+        namespace_proof,
+    })
+}
+
+async fn rename_conflict_step(
+    plan: &FolderConflictRenamePlan,
+    rename: &PendingRename,
+    source: &Path,
+    destination: &Path,
+    budget: &mut crate::platform::fs::retry::RetryBudget,
+) -> Result<(), AppError> {
+    budget
+        .run(|| {
+            let namespace = plan.namespace_proof.clone();
+            let expected = rename.expected_identity.clone();
+            let source = source.to_path_buf();
+            let destination = destination.to_path_buf();
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    namespace
+                        .validate_paths(&[source.clone(), destination.clone()])
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    require_expected_identity(&source, &expected)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    require_free(&destination)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    rename_no_replace(&source, &destination)
+                })
+                .await
+                .map_err(crate::platform::fs::retry::blocking_error)?
+            }
+        })
+        .await
+        .map_err(|error| {
+            crate::platform::fs::retry::map_file_error_with_identity(
+                source,
+                &rename.expected_identity,
+                "rename conflicting folder",
+                error,
+            )
+        })
+}
+
+async fn rollback_pending_with_retry(
+    plan: &FolderConflictRenamePlan,
+    pending: &[PendingRename],
+) -> Result<(), AppError> {
+    let mut budget = crate::platform::fs::retry::RetryBudget::default();
+    let mut failures = Vec::new();
+    for rename in pending {
+        if rename.target_path.exists() && !rename.stage_path.exists() && !rename.old_path.exists() {
+            if let Err(error) = rename_conflict_step(
+                plan,
+                rename,
+                &rename.target_path,
+                &rename.stage_path,
+                &mut budget,
+            )
+            .await
+            {
+                failures.push(error.to_string());
+            }
+        }
+    }
+    for rename in pending.iter().rev() {
+        if rename.stage_path.exists() && !rename.old_path.exists() {
+            if let Err(error) = rename_conflict_step(
+                plan,
+                rename,
+                &rename.stage_path,
+                &rename.old_path,
+                &mut budget,
+            )
+            .await
+            {
+                failures.push(error.to_string());
+            }
+        }
+        if !has_expected_identity(&rename.old_path, &rename.expected_identity)
+            || rename.stage_path.exists()
+            || rename.target_path.exists()
+        {
+            failures.push(format!(
+                "Conflict rollback state could not be verified: {}",
+                rename.old_path.display()
+            ));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Io(format!(
+            "Conflict rollback requires recovery: {}",
+            failures.join("; ")
+        )))
+    }
+}
+
+fn restored_conflict_error(
+    plan: &FolderConflictRenamePlan,
+    rename: &PendingRename,
+    error: AppError,
+) -> AppError {
+    if matches!(
+        &error,
+        AppError::FileLock { .. } | AppError::PathBusy { .. }
+    ) {
+        if let Err(error) = plan
+            .namespace_proof
+            .validate_paths(std::slice::from_ref(&rename.old_path))
+        {
+            return error;
+        }
+        return match crate::modules::system::api::register_file_lock_with_identity(
+            &rename.old_path,
+            &rename.expected_identity,
+        ) {
+            Some(recovery_id) => AppError::FileLock {
+                path: rename.old_path.to_string_lossy().into_owned(),
+                recovery_id,
+            },
+            None => AppError::PathBusy {
+                path: rename.old_path.to_string_lossy().into_owned(),
+            },
+        };
+    }
+    error
+}
+
+pub async fn apply_folder_conflict_rename_plan_with_retry(
+    suppressor: &Arc<WatcherSuppressor>,
+    plan: &FolderConflictRenamePlan,
+) -> Result<Vec<FolderPathRename>, AppError> {
+    let _guard = suppressor.suppress_paths(
+        plan.pending
+            .iter()
+            .flat_map(|rename| [&rename.old_path, &rename.stage_path, &rename.target_path]),
+    );
+    let mut budget = crate::platform::fs::retry::RetryBudget::default();
+    for (index, rename) in plan.pending.iter().enumerate() {
+        if let Err(error) = rename_conflict_step(
+            plan,
+            rename,
+            &rename.old_path,
+            &rename.stage_path,
+            &mut budget,
+        )
+        .await
+        {
+            return match rollback_pending_with_retry(plan, &plan.pending[..index]).await {
+                Ok(()) => Err(restored_conflict_error(plan, rename, error)),
+                Err(rollback) => Err(AppError::Io(format!(
+                    "Conflict staging failed ({error}); rollback requires recovery: {rollback}"
+                ))),
+            };
+        }
+    }
+    for rename in &plan.pending {
+        if let Err(error) = rename_conflict_step(
+            plan,
+            rename,
+            &rename.stage_path,
+            &rename.target_path,
+            &mut budget,
+        )
+        .await
+        {
+            return match rollback_pending_with_retry(plan, &plan.pending).await {
+                Ok(()) => Err(restored_conflict_error(plan, rename, error)),
+                Err(rollback) => Err(AppError::Io(format!(
+                    "Conflict publication failed ({error}); rollback requires recovery: {rollback}"
+                ))),
+            };
+        }
+    }
+    Ok(plan.rewrites())
+}
+
+pub async fn rollback_folder_conflict_rename_plan_with_retry(
+    suppressor: &Arc<WatcherSuppressor>,
+    plan: &FolderConflictRenamePlan,
+) -> Result<(), AppError> {
+    let _guard = suppressor.suppress_paths(
+        plan.pending
+            .iter()
+            .flat_map(|rename| [&rename.old_path, &rename.stage_path, &rename.target_path]),
+    );
+    rollback_pending_with_retry(plan, &plan.pending).await
 }
 
 pub fn apply_folder_conflict_rename_plan(
@@ -752,8 +955,8 @@ mod tests {
         assert!(!production.contains("collect_disk_projection"));
     }
 
-    #[test]
-    fn rollback_restores_every_renamed_folder() {
+    #[tokio::test]
+    async fn rollback_restores_every_renamed_folder() {
         let temp = tempfile::tempdir().unwrap();
         let old_one = temp.path().join("Alice").join("Blue");
         let old_two = temp.path().join("Alice").join("DISABLED Blue");
@@ -779,12 +982,67 @@ mod tests {
         )
         .unwrap();
         let watcher = WatcherState::new();
-        apply_folder_conflict_rename_plan(&watcher.suppressor, &plan).unwrap();
-        rollback_folder_conflict_rename_plan(&watcher.suppressor, &plan).unwrap();
+        apply_folder_conflict_rename_plan_with_retry(&watcher.suppressor, &plan)
+            .await
+            .unwrap();
+        rollback_folder_conflict_rename_plan_with_retry(&watcher.suppressor, &plan)
+            .await
+            .unwrap();
 
         assert!(old_one.is_dir());
         assert!(old_two.is_dir());
         assert!(!new_one.exists());
         assert!(!new_two.exists());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn persistent_conflict_lock_restores_preceding_staging_and_keeps_original_recovery_path()
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("Alice/Blue");
+        let second = temp.path().join("Alice/DISABLED Blue");
+        create_terminal_mod(&first);
+        create_terminal_mod(&second);
+        let group = conflict_group(temp.path());
+        let plan = plan_folder_conflict_renames(
+            temp.path(),
+            "game",
+            &group.group_id,
+            &[
+                FolderConflictRename {
+                    path: first.to_string_lossy().into_owned(),
+                    base_name: "Blue One".into(),
+                },
+                FolderConflictRename {
+                    path: second.to_string_lossy().into_owned(),
+                    base_name: "Blue Two".into(),
+                },
+            ],
+        )
+        .unwrap();
+        let locked = &plan.pending.last().unwrap().old_path;
+        let _handle = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(locked)
+            .unwrap();
+        let error =
+            apply_folder_conflict_rename_plan_with_retry(&WatcherState::new().suppressor, &plan)
+                .await
+                .unwrap_err();
+        let recovery_path = match error {
+            AppError::FileLock { path, .. } | AppError::PathBusy { path } => path,
+            other => panic!("expected structured lock, got {other}"),
+        };
+        assert_eq!(recovery_path, locked.to_string_lossy());
+        assert!(plan.is_rolled_back());
+        assert!(first.join("mod.ini").exists());
+        assert!(second.join("mod.ini").exists());
     }
 }

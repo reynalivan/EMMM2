@@ -12,11 +12,15 @@ import {
 import { gotoWorkspaceView, seedGamesAndOpenDashboard } from '../support/app.js';
 import { getObjects, reconcile, waitForWorkspaceCoreReady } from '../support/data.js';
 import { invokeInApp } from '../support/ipc.js';
+import { listVisiblePreviewImages } from '../support/previewImages.js';
 import type {
+  AppSettings,
   CollectionPreview,
   CollectionRuntimeSnapshot,
   CollectionSummary,
   BulkResult,
+  ModPreviewImage,
+  KeyViewerRuntimeDiagnostics,
 } from '../../../src/shared/api/tauri/bindings.gen.js';
 
 const UI_TIMEOUT = 15_000;
@@ -26,6 +30,7 @@ const BETA = 'QA Beta';
 const GAMMA = 'QA Gamma';
 const MAIN_GAME = 'EMMM QA workspace';
 const OTHER_GAME = 'EMMM QA second game';
+const FALLBACK_MOD = 'Fallback Asset';
 const ARTIFACT_DIRECTORY = path.resolve('logs/client-smoke-20261007/workspace');
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
@@ -217,10 +222,13 @@ describe('Native client workspace controls on owned QA fixtures', function () {
     this.timeout(CASE_TIMEOUT);
     game = await createMockGame('QA_workspace');
     secondGame = await createMockGame('QA_workspace_second');
+    const physicalSecondMods = path.join(secondGame.root, 'PhysicalMods');
+    await fs.rename(secondGame.modsPath, physicalSecondMods);
+    await fs.symlink(physicalSecondMods, secondGame.modsPath, 'junction');
     for (const fixture of [game, secondGame]) {
       await fs.writeFile(
         path.join(fixture.root, 'd3dx.ini'),
-        '[Include]\ninclude_recursive = Mods\n',
+        '[Include]\ninclude_recursive = Mods\ninclude = Core/GIMI/main.ini\n',
       );
     }
     // Initial fixture discovery uses the same pre-onboarding disk layout as native stability specs.
@@ -233,6 +241,7 @@ describe('Native client workspace controls on owned QA fixtures', function () {
       [BETA, 'Rename Source'],
       [path.join(GAMMA, 'DISABLED Parent'), 'Shared'],
       [path.join(GAMMA, 'DISABLED Parent'), 'DISABLED Own Sentinel'],
+      [ALPHA, FALLBACK_MOD],
     ] as const;
     for (const [index, [object, name]] of fixtures.entries()) {
       const mod = await addMockMod(game, object, name);
@@ -244,6 +253,9 @@ describe('Native client workspace controls on owned QA fixtures', function () {
       await fs.writeFile(path.join(mod, 'qa-sentinel.txt'), `${object}/${name}`);
     }
     await fs.writeFile(path.join(previewPath, 'mod.ini'), PREVIEW_INI);
+    const fallbackTextures = path.join(game.modsPath, ALPHA, FALLBACK_MOD, 'Textures');
+    await fs.mkdir(fallbackTextures);
+    await fs.writeFile(path.join(fallbackTextures, 'body.png'), Buffer.from(PNG_BASE64, 'base64'));
     await fs.writeFile(
       path.join(previewPath, 'info.json'),
       JSON.stringify({ author: 'QA Original' }),
@@ -315,11 +327,7 @@ describe('Native client workspace controls on owned QA fixtures', function () {
       await $('[data-testid="dashboard-layout"]').waitForDisplayed({ timeout: UI_TIMEOUT });
     }
     await gotoWorkspaceView('mods');
-    const objectSearch = await $('[data-testid="object-list-search"] input');
-    if ((await objectSearch.getValue()) !== '') await objectSearch.setValue('');
-    const objectPanel = await $('[data-testid="object-list-panel"]');
-    const allFilter = await objectPanel.$('button=All');
-    if (await allFilter.isDisplayed()) await allFilter.click();
+    await waitForWorkspaceCoreReady(gameId, CASE_TIMEOUT);
     await openObject(ALPHA);
     await click('[data-testid="view-grid"]');
     const modSearch = await $('[data-testid="mod-grid-search"] input');
@@ -331,6 +339,24 @@ describe('Native client workspace controls on owned QA fixtures', function () {
     beforeEachFailure = null;
     try {
       await arrangeWorkspace();
+      await browser.execute(() => {
+        const target = window as Window & {
+          __qaModsNotices?: string[];
+        };
+        target.__qaModsNotices = [];
+        const seen = new Set<string>();
+        new MutationObserver(() => {
+          for (const notice of document.querySelectorAll(
+            '.toast [role="alert"], .toast [role="status"]',
+          )) {
+            const text = notice.textContent?.trim();
+            if (text && !seen.has(text) && seen.size < 40) {
+              seen.add(text);
+              target.__qaModsNotices?.push(text);
+            }
+          }
+        }).observe(document.body, { childList: true, subtree: true, characterData: true });
+      });
     } catch (error: unknown) {
       beforeEachFailure =
         error instanceof Error ? error : new Error(`Workspace setup failed: ${String(error)}`);
@@ -346,6 +372,10 @@ describe('Native client workspace controls on owned QA fixtures', function () {
     console.info(
       `WORKSPACE_QA_CASE ${JSON.stringify({ title: test.title, state, duration_ms: test.duration, error })}`,
     );
+    const notices = await browser.execute(
+      () => (window as Window & { __qaModsNotices?: string[] }).__qaModsNotices ?? [],
+    );
+    console.info(`WORKSPACE_QA_NOTICES ${JSON.stringify(notices)}`);
     if (test.state !== 'failed' && !beforeEachFailure && test.state !== undefined) return;
     const directory = ARTIFACT_DIRECTORY;
     await fs.mkdir(directory, { recursive: true });
@@ -431,8 +461,8 @@ describe('Native client workspace controls on owned QA fixtures', function () {
         ],
         not_executed: [
           'Positive mod/image recycle-bin deletion (fixture leaves would escape normal cleanup)',
-          'Drag rectangle and pane resize gestures',
-          'Bulk Move to Object and metadata/safety menus',
+          'Drag rectangle gesture (folder grid has no marquee-selection contract)',
+          'Real clipboard image paste',
         ],
         observed_product_shape: 'Folder rename is inline; no RenameDialog component exists.',
       })}`,
@@ -621,11 +651,33 @@ describe('Native client workspace controls on owned QA fixtures', function () {
   });
 
   it('round-trips Favorite, bulk Pin and Remove Pin on isolated targets', async () => {
+    const infoFlag = async (name: string, flag: 'is_favorite' | 'is_pinned'): Promise<boolean> => {
+      const filename = path.join(game.modsPath, ALPHA, name, 'info.json');
+      if (!(await exists(filename))) return false;
+      const info: unknown = JSON.parse(await fs.readFile(filename, 'utf8'));
+      return (
+        typeof info === 'object' &&
+        info !== null &&
+        flag in info &&
+        Reflect.get(info, flag) === true
+      );
+    };
     const favorite = await card('Bulk A');
     await favorite.moveTo();
     await (await favorite.$('button[title="Favorite"]')).click();
-    await expect(await (await card('Bulk A')).$('button[title="Unfavorite"]')).toBeDisplayed();
-    await (await (await card('Bulk A')).$('button[title="Unfavorite"]')).click();
+    await browser.waitUntil(() => infoFlag('Bulk A', 'is_favorite'), {
+      timeout: UI_TIMEOUT,
+      timeoutMsg: 'Favorite did not persist on disk',
+    });
+    const favorited = await card('Bulk A');
+    await favorited.moveTo();
+    const unfavorite = await favorited.$('button[title="Unfavorite"]');
+    await unfavorite.waitForClickable({ timeout: UI_TIMEOUT });
+    await unfavorite.click();
+    await browser.waitUntil(async () => !(await infoFlag('Bulk A', 'is_favorite')), {
+      timeout: UI_TIMEOUT,
+      timeoutMsg: 'Unfavorite did not persist on disk',
+    });
     await expect(await (await card('Bulk A')).$('button[title="Favorite"]')).toExist();
     await selectCard('Bulk A');
     await selectCard('Bulk B');
@@ -633,26 +685,26 @@ describe('Native client workspace controls on owned QA fixtures', function () {
     await expect(await (await card('Bulk A')).$('input:not([aria-label])')).toBeChecked();
     await expect(await (await card('Bulk B')).$('input:not([aria-label])')).toBeChecked();
     await click('.bulk-action-bar--floating button[title="Pin to Object"]');
-    const pinInfo = async (name: string): Promise<boolean> => {
-      const info: unknown = JSON.parse(
-        await fs.readFile(path.join(game.modsPath, ALPHA, name, 'info.json'), 'utf8'),
-      );
-      return (
-        typeof info === 'object' && info !== null && 'is_pinned' in info && info.is_pinned === true
-      );
-    };
-    await browser.waitUntil(async () => (await pinInfo('Bulk A')) && (await pinInfo('Bulk B')), {
-      timeout: UI_TIMEOUT,
-      timeoutMsg: 'Bulk Pin did not persist both fixture metadata flags',
-    });
+    await browser.waitUntil(
+      async () =>
+        (await infoFlag('Bulk A', 'is_pinned')) && (await infoFlag('Bulk B', 'is_pinned')),
+      {
+        timeout: UI_TIMEOUT,
+        timeoutMsg: 'Bulk Pin did not persist both fixture metadata flags',
+      },
+    );
     await click('.bulk-action-bar--floating button[aria-label="More actions"]');
     await click(
       '//*[contains(concat(" ", normalize-space(@class), " "), " bulk-action-bar--floating ")]//button[normalize-space(.)="Remove Pin"]',
     );
-    await browser.waitUntil(async () => !(await pinInfo('Bulk A')) && !(await pinInfo('Bulk B')), {
-      timeout: UI_TIMEOUT,
-      timeoutMsg: 'Bulk Remove Pin did not persist both fixture metadata flags',
-    });
+    await browser.waitUntil(
+      async () =>
+        !(await infoFlag('Bulk A', 'is_pinned')) && !(await infoFlag('Bulk B', 'is_pinned')),
+      {
+        timeout: UI_TIMEOUT,
+        timeoutMsg: 'Bulk Remove Pin did not persist both fixture metadata flags',
+      },
+    );
     await click('.bulk-action-bar--floating button[aria-label="Clear selection"]');
   });
 
@@ -683,6 +735,30 @@ describe('Native client workspace controls on owned QA fixtures', function () {
     });
     await card('QA 变体 Ω');
     expect(await exists(path.join(game.modsPath, ALPHA, '  QA 变体 Ω  '))).toBe(false);
+  });
+
+  it('creates a folder under an owned configured Mods junction', async () => {
+    await selectGame(OTHER_GAME, secondGameId);
+    const objects = await getObjects(secondGameId);
+    const object = objects.find((entry) => entry.name === 'Second Game Object');
+    if (!object) throw new Error('Junction fixture object is missing');
+    await click(`[data-object-id="${object.id}"]`);
+    await click('[data-testid="add-folder"]');
+    const createdName = 'Junction child';
+    await (
+      await $('dialog[open][aria-labelledby="create-folder-title"] input')
+    ).setValue(createdName);
+    await dialogButton('Add folder');
+    await browser.waitUntil(
+      () => exists(path.join(secondGame.modsPath, 'Second Game Object', createdName)),
+      { timeout: UI_TIMEOUT },
+    );
+    await card(createdName);
+    expect(
+      await fs.readdir(
+        path.join(secondGame.root, 'PhysicalMods', 'Second Game Object', createdName),
+      ),
+    ).toEqual([]);
   });
 
   it('checks inline rename blank, cancel, normalized duplicate and Unicode success', async () => {
@@ -773,12 +849,10 @@ describe('Native client workspace controls on owned QA fixtures', function () {
       await expect(await $('[data-testid="folder-conflict-banner"]')).toHaveText(
         expect.stringContaining('folder name conflict'),
       );
-      // Collision switches remain actions: native no-overwrite rejection opens the resolution UI.
-      await expect(await collision.$('input[type="checkbox"][aria-label]')).toBeEnabled();
+      await expect(
+        await $$('//*[@data-testid="folder-grid"]//*[@role="gridcell"][.//h3[@title="Collision"]]'),
+      ).toHaveLength(1);
       await collision.click();
-      await expect(await $('[data-testid="workspace-right"]')).toHaveText(
-        expect.stringContaining('Folder name conflict'),
-      );
       console.info(
         `WORKSPACE_QA_COLLISION ${JSON.stringify({
           physical_name_conflict: true,
@@ -787,10 +861,10 @@ describe('Native client workspace controls on owned QA fixtures', function () {
             .isExisting(),
         })}`,
       );
-      await switchCard('Collision');
       const resolution = await $('dialog[open][aria-labelledby="folder-conflict-manager-title"]');
       await resolution.waitForDisplayed({ timeout: UI_TIMEOUT });
       await expect(resolution).toHaveText(expect.stringContaining('Collision'));
+      await expect(resolution).toHaveText(expect.stringContaining('This conflict'));
       await (await resolution.$('button[aria-label].btn-circle')).click();
       expect(await fs.readFile(path.join(enabled, 'qa-sentinel.txt'), 'utf8')).toBe(
         'enabled collision sentinel',
@@ -802,6 +876,64 @@ describe('Native client workspace controls on owned QA fixtures', function () {
       // Resolve only this test's duplicate fixture so subsequent independent UI cases can proceed.
       await fs.rename(disabled, path.join(game.modsPath, GAMMA, 'DISABLED Collision Resolved'));
       await reconcile(gameId);
+    }
+  });
+
+  it('moves an explicit bulk selection and persists bulk safety changes', async () => {
+    await selectCard('Bulk A');
+    await selectCard('Bulk B');
+    const bulkBar = await $('.bulk-action-bar--floating');
+    await bulkBar.waitForDisplayed({ timeout: UI_TIMEOUT });
+    await (await bulkBar.$('button[aria-label="More actions"]')).click();
+    await (await bulkBar.$('button=Move to Object...')).click();
+
+    const moveDialog = await $('dialog[open]');
+    await expect(moveDialog).toHaveText(expect.stringContaining('Move to Object'));
+    await (await moveDialog.$(`button=${BETA}`)).click();
+    await (await moveDialog.$('button.btn-primary')).click();
+    const movedPaths = ['Bulk A', 'Bulk B'].map((name) => path.join(game.modsPath, BETA, name));
+    try {
+      await browser.waitUntil(
+        async () => (await Promise.all(movedPaths.map(exists))).every(Boolean),
+        { timeout: CASE_TIMEOUT, timeoutMsg: 'Bulk move did not write every selected fixture mod' },
+      );
+      await expect(await card('Bulk A')).not.toExist();
+
+      await openObject(BETA);
+      await selectCard('Bulk A');
+      await (await visibleElement('button[aria-label="Mark as Safe"]')).click();
+      await browser.waitUntil(
+        async () => {
+          const info = await invokeInApp<{ is_safe?: boolean }>('read_mod_info', {
+            gameId,
+            folderPath: movedPaths[0],
+          });
+          return info.is_safe === true;
+        },
+        {
+          timeout: UI_TIMEOUT,
+          timeoutMsg: 'Bulk safety action did not persist the safe state',
+        },
+      );
+      await (await visibleElement('button[aria-label="Mark as Unsafe"]')).click();
+      await browser.waitUntil(
+        async () => {
+          const info = await invokeInApp<{ is_safe?: boolean }>('read_mod_info', {
+            gameId,
+            folderPath: movedPaths[0],
+          });
+          return info.is_safe === false;
+        },
+        { timeout: UI_TIMEOUT, timeoutMsg: 'Bulk safety action did not persist the unsafe state' },
+      );
+    } finally {
+      for (const name of ['Bulk A', 'Bulk B']) {
+        const source = path.join(game.modsPath, BETA, name);
+        const target = path.join(game.modsPath, ALPHA, name);
+        if (await exists(source)) await fs.rename(source, target);
+      }
+      await reconcile(gameId);
+      await browser.url('http://tauri.localhost/');
     }
   });
 
@@ -932,11 +1064,12 @@ describe('Native client workspace controls on owned QA fixtures', function () {
     expect(await fs.readFile(path.join(previewPath, 'mod.ini'), 'utf8')).toContain(
       'hash = 00000f01',
     );
+    expect(await fs.readFile(path.join(previewPath, 'mod.ini.bak'), 'utf8')).toBe(original);
   });
 
-  it('navigates gallery images, wraps fullscreen navigation and cancels image deletion', async () => {
+  it('navigates gallery images, wraps fullscreen navigation and cancels image hiding', async () => {
     await openPreview('Preview');
-    const images = await invokeInApp<string[]>('list_mod_preview_images', {
+    const images = await listVisiblePreviewImages({
       gameId,
       folderPath: previewPath,
     });
@@ -962,11 +1095,264 @@ describe('Native client workspace controls on owned QA fixtures', function () {
     await (await fullscreen.$('button[aria-label="Close"]')).click();
     await expect(fullscreen).not.toExist();
     await click('button[aria-label="Preview image actions"]');
-    await click('//button[@role="menuitem" and normalize-space(.)="Delete current preview image"]');
+    await click('//button[@role="menuitem" and normalize-space(.)="Hide current preview image"]');
     await dialogButton('Cancel');
-    expect(
-      await invokeInApp<string[]>('list_mod_preview_images', { gameId, folderPath: previewPath }),
-    ).toEqual(images);
+    expect(await listVisiblePreviewImages({ gameId, folderPath: previewPath })).toEqual(images);
+  });
+
+  it('hides and restores preview images through gallery menus without changing any image bytes', async () => {
+    await openPreview('Preview');
+    const imagePaths = await listVisiblePreviewImages({
+      gameId,
+      folderPath: previewPath,
+    });
+    const originalBytes = await Promise.all(imagePaths.map((imagePath) => fs.readFile(imagePath)));
+    await click('button[aria-label="Preview image actions"]');
+    await click('//button[@role="menuitem" and normalize-space(.)="Hide current preview image"]');
+    await dialogButton('Hide current preview image');
+    await browser.waitUntil(
+      async () =>
+        (
+          await invokeInApp<ModPreviewImage[]>('list_mod_preview_images_with_visibility', {
+            gameId,
+            folderPath: previewPath,
+          })
+        ).some((entry) => entry.is_hidden),
+      { timeout: UI_TIMEOUT },
+    );
+    await click('button[aria-label="Preview image actions"]');
+    await click('//button[@role="menuitem" and normalize-space(.)="Show hidden preview images"]');
+    const gallery = await invokeInApp<ModPreviewImage[]>(
+      'list_mod_preview_images_with_visibility',
+      { gameId, folderPath: previewPath },
+    );
+    const hiddenIndex = gallery.findIndex((entry) => entry.is_hidden);
+    if (hiddenIndex < 0) throw new Error('Hidden preview was not available for restoration');
+    await click(`button[aria-label="Go to image ${hiddenIndex + 1}"]`);
+    await click('button[aria-label="Preview image actions"]');
+    await click(
+      '//button[@role="menuitem" and normalize-space(.)="Restore current preview image"]',
+    );
+    await browser.waitUntil(
+      async () =>
+        (
+          await invokeInApp<ModPreviewImage[]>('list_mod_preview_images_with_visibility', {
+            gameId,
+            folderPath: previewPath,
+          })
+        ).every((entry) => !entry.is_hidden),
+      { timeout: UI_TIMEOUT },
+    );
+    for (const [index, imagePath] of imagePaths.entries())
+      expect(await fs.readFile(imagePath)).toEqual(originalBytes[index]);
+  });
+
+  it('clears gallery visibility, persists it after native restart and restores through right-click menus', async () => {
+    await openPreview('Preview');
+    const originalPaths = await listVisiblePreviewImages({
+      gameId,
+      folderPath: previewPath,
+    });
+    expect(originalPaths).toHaveLength(2);
+    const originalBytes = await Promise.all(originalPaths.map((filename) => fs.readFile(filename)));
+    const list = () =>
+      invokeInApp<ModPreviewImage[]>('list_mod_preview_images_with_visibility', {
+        gameId,
+        folderPath: previewPath,
+      });
+    await click('button[aria-label="Preview image actions"]');
+    await click('//button[@role="menuitem" and normalize-space(.)="Hide all preview images"]');
+    await dialogButton('Hide all preview images');
+    await browser.waitUntil(
+      async () => {
+        const entries = await list();
+        return entries.length === originalPaths.length && entries.every((entry) => entry.is_hidden);
+      },
+      { timeout: UI_TIMEOUT, timeoutMsg: 'Clear gallery did not hide every preview' },
+    );
+    expect(await invokeInApp('get_mod_thumbnail', { gameId, folderPath: previewPath })).toBeNull();
+    await browser.reloadSession();
+    await browser.url('http://tauri.localhost/');
+    await $('[data-testid="dashboard-layout"]').waitForDisplayed({ timeout: UI_TIMEOUT });
+    expect(await invokeInApp('plugin:app|identifier')).toBe('com.reynalivan.emmm.e2e');
+    await waitForWorkspaceCoreReady(gameId, CASE_TIMEOUT);
+    const restartReport = await invokeInApp<{ error_code: string } | null>(
+      'get_pending_crash_report',
+    );
+    if (restartReport) {
+      expect(restartReport.error_code).toBe('unknown');
+      const notification = await $('dialog[open][aria-labelledby="crash-report-title"]');
+      await notification.waitForDisplayed({ timeout: UI_TIMEOUT });
+      await (await notification.$('button=Remove report')).click();
+      await expect(notification).not.toExist();
+    }
+    await gotoWorkspaceView('mods');
+    await openObject(ALPHA);
+    await openPreview('Preview');
+    const afterRestart = await list();
+    expect(afterRestart).toHaveLength(originalPaths.length);
+    expect(afterRestart.every((entry) => entry.is_hidden)).toBe(true);
+    await (
+      await $('[role="region"][aria-label="Preview image slider"]')
+    ).click({ button: 'right' });
+    await click(
+      '//div[@role="menu"]//div[@role="menuitem" and normalize-space(.)="Show hidden preview images"]',
+    );
+    await click('button[aria-label="Open fullscreen preview"]');
+    const fullscreen = await $('dialog[open][aria-label="Fullscreen"]');
+    await expect(await fullscreen.$('img[alt="Preview image"]')).toBeDisplayed();
+    await (await fullscreen.$('button[aria-label="Close"]')).click();
+    for (let index = 0; index < originalPaths.length; index += 1) {
+      await click(`button[aria-label="Go to image ${index + 1}"]`);
+      await (
+        await $('[role="region"][aria-label="Preview image slider"]')
+      ).click({ button: 'right' });
+      await click(
+        '//div[@role="menu"]//div[@role="menuitem" and normalize-space(.)="Restore current preview image"]',
+      );
+      await browser.waitUntil(
+        async () => {
+          const entries = await list();
+          return (
+            entries.length === originalPaths.length &&
+            entries.filter((entry) => entry.is_hidden).length === originalPaths.length - index - 1
+          );
+        },
+        { timeout: UI_TIMEOUT },
+      );
+    }
+    for (const [index, filename] of originalPaths.entries()) {
+      expect(await fs.readFile(filename)).toEqual(originalBytes[index]);
+    }
+  });
+
+  it('hides a fallback mod texture without deleting it and retains hidden state through a disk toggle', async () => {
+    const folder = path.join(game.modsPath, ALPHA, FALLBACK_MOD);
+    const relativeImage = path.join('Textures', 'body.png');
+    const original = await fs.readFile(path.join(folder, relativeImage));
+    await openPreview(FALLBACK_MOD);
+    const visible = await listVisiblePreviewImages({
+      gameId,
+      folderPath: folder,
+    });
+    expect(visible).toHaveLength(1);
+    await click('button[aria-label="Preview image actions"]');
+    await click('//button[@role="menuitem" and normalize-space(.)="Hide current preview image"]');
+    await dialogButton('Hide current preview image');
+    await browser.waitUntil(
+      async () => {
+        const entries = await invokeInApp<ModPreviewImage[]>(
+          'list_mod_preview_images_with_visibility',
+          { gameId, folderPath: folder },
+        );
+        return entries.length === 1 && entries[0].is_hidden;
+      },
+      { timeout: UI_TIMEOUT },
+    );
+    await switchCard(FALLBACK_MOD);
+    await assertPrefix(ALPHA, FALLBACK_MOD, false);
+    await browser.waitUntil(
+      async () => {
+        const snapshot = await invokeInApp<{
+          disk_revision: number;
+          projected_revision: number;
+          projection_repair_reason: string | null;
+        }>('get_workspace_switch_snapshot', { gameId });
+        if (snapshot.projection_repair_reason) {
+          throw new Error(
+            `Fallback toggle projection failed: ${snapshot.projection_repair_reason}`,
+          );
+        }
+        return snapshot.projected_revision === snapshot.disk_revision;
+      },
+      { timeout: CASE_TIMEOUT, timeoutMsg: 'Fallback toggle projection did not settle' },
+    );
+    await waitForWorkspaceCoreReady(gameId, CASE_TIMEOUT);
+    const disabledFolder = path.join(game.modsPath, ALPHA, `DISABLED ${FALLBACK_MOD}`);
+    const hidden = await invokeInApp<ModPreviewImage[]>('list_mod_preview_images_with_visibility', {
+      gameId,
+      folderPath: disabledFolder,
+    });
+    expect(hidden).toHaveLength(1);
+    expect(hidden[0].is_hidden).toBe(true);
+    expect(await fs.readFile(path.join(disabledFolder, relativeImage))).toEqual(original);
+    await (
+      await $('[role="region"][aria-label="Preview image slider"]')
+    ).click({ button: 'right' });
+    await click(
+      '//div[@role="menu"]//div[@role="menuitem" and normalize-space(.)="Show hidden preview images"]',
+    );
+    await click('button[aria-label="Preview image actions"]');
+    await click(
+      '//button[@role="menuitem" and normalize-space(.)="Restore current preview image"]',
+    );
+    await browser.waitUntil(
+      async () => {
+        const entries = await invokeInApp<ModPreviewImage[]>(
+          'list_mod_preview_images_with_visibility',
+          { gameId, folderPath: disabledFolder },
+        );
+        return entries.length === 1 && !entries[0].is_hidden;
+      },
+      { timeout: UI_TIMEOUT },
+    );
+    await switchCard(FALLBACK_MOD);
+    await assertPrefix(ALPHA, FALLBACK_MOD, true);
+    expect(await fs.readFile(path.join(folder, relativeImage))).toEqual(original);
+  });
+
+  it('publishes runtime artifacts for a stopped game without a false manual-reload notice', async () => {
+    const originalSettings = await invokeInApp<AppSettings>('get_settings');
+    const originalGame = originalSettings.games.find((entry) => entry.id === gameId);
+    if (!originalGame) throw new Error('Stopped-game fixture configuration is missing');
+    const stoppedExecutable = path.join(game.root, `emmm-stopped-${randomUUID()}.exe`);
+    expect(await exists(stoppedExecutable)).toBe(false);
+    await invokeInApp('save_settings', {
+      settings: {
+        ...originalSettings,
+        games: originalSettings.games.map((entry) =>
+          entry.id === gameId ? { ...entry, game_exe: stoppedExecutable } : entry,
+        ),
+      },
+    });
+    try {
+      await waitForWorkspaceCoreReady(gameId, CASE_TIMEOUT);
+      const before = await invokeInApp<KeyViewerRuntimeDiagnostics>(
+        'get_keyviewer_runtime_diagnostics',
+        { gameId },
+      );
+      await invokeInApp<number>('retry_runtime_sync', { gameId });
+      await browser.waitUntil(
+        async () => {
+          const diagnostics = await invokeInApp<KeyViewerRuntimeDiagnostics>(
+            'get_keyviewer_runtime_diagnostics',
+            { gameId },
+          );
+          return (
+            diagnostics.last_sync_unix_ms !== null &&
+            diagnostics.last_sync_unix_ms !== before.last_sync_unix_ms &&
+            diagnostics.publication === 'published' &&
+            diagnostics.reload === 'not_required'
+          );
+        },
+        { timeout: CASE_TIMEOUT, timeoutMsg: 'Stopped-game runtime publication did not settle' },
+      );
+      expect(await exists(path.join(game.modsPath, '.emmm_data', 'KeyViewer.ini'))).toBe(true);
+      await $('[title="Manual reload required"]').waitForExist({
+        reverse: true,
+        timeout: UI_TIMEOUT,
+      });
+    } finally {
+      const latestSettings = await invokeInApp<AppSettings>('get_settings');
+      await invokeInApp('save_settings', {
+        settings: {
+          ...latestSettings,
+          games: latestSettings.games.map((entry) =>
+            entry.id === gameId ? { ...entry, game_exe: originalGame.game_exe } : entry,
+          ),
+        },
+      });
+    }
   });
 
   it('rejects a blank collection name, cancels and saves a Unicode collection from current state', async () => {

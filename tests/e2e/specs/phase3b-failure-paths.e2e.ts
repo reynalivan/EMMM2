@@ -78,6 +78,7 @@ describe('Fase 3b — Failure & Validation Paths (data-safety)', () => {
     await rejects('bulk_delete_mods', {
       gameId,
       paths: [path.join(objDir, 'RealMod'), path.join(objDir, 'DoesNotExist')],
+      operationId: 'phase3b-delete-invalid-batch',
     });
 
     // Nothing was deleted: the valid mod is untouched on disk.
@@ -87,6 +88,7 @@ describe('Fase 3b — Failure & Validation Paths (data-safety)', () => {
     const res = await invokeInApp<BulkResult>('bulk_delete_mods', {
       gameId,
       paths: [path.join(objDir, 'RealMod')],
+      operationId: 'phase3b-delete-valid-batch',
     });
     expect(res.failures.length).toBe(0);
     expect(await listDir(objDir)).not.toContain('RealMod');

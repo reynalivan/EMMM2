@@ -3,7 +3,7 @@ import type { ConflictInfo } from '@/entities/workspace';
 import {
   buildConflictKey,
   buildConflictModSetKey,
-  chooseConflictWinner,
+  chooseConflictModSetWinner,
   groupConflictsByModSet,
   setModDecision,
   summarizeConflictResolution,
@@ -20,6 +20,10 @@ function conflict(hash: string, modPaths: string[]): ConflictInfo {
     has_conditional_evidence: false,
     evidence: [],
   };
+}
+
+function modSet(item: ConflictInfo) {
+  return groupConflictsByModSet([item])[0];
 }
 
 describe('conflict resolution decisions', () => {
@@ -66,9 +70,9 @@ describe('conflict resolution decisions', () => {
 
   it('keeps one winner and disables the other participants without mutating prior state', () => {
     const existing = new Map([['E:/Mods/Unrelated', 'keep'] as const]);
-    const selected = chooseConflictWinner(
+    const selected = chooseConflictModSetWinner(
       existing,
-      conflict('aaaaaaaa', ['E:/Mods/ModA', 'E:/Mods/ModB']),
+      modSet(conflict('aaaaaaaa', ['E:/Mods/ModA', 'E:/Mods/ModB'])),
       'E:/Mods/ModA',
     );
 
@@ -88,8 +92,8 @@ describe('conflict resolution decisions', () => {
       conflict('bbbbbbbb', ['E:/Mods/ModB', 'E:/Mods/ModC']),
     ];
 
-    const first = chooseConflictWinner(new Map(), conflicts[0], 'E:/Mods/ModA');
-    const second = chooseConflictWinner(first, conflicts[1], 'E:/Mods/ModC');
+    const first = chooseConflictModSetWinner(new Map(), modSet(conflicts[0]), 'E:/Mods/ModA');
+    const second = chooseConflictModSetWinner(first, modSet(conflicts[1]), 'E:/Mods/ModC');
     const summary = summarizeConflictResolution(conflicts, second);
 
     expect(summary.disablePaths).toEqual(['E:/Mods/ModB']);
@@ -102,8 +106,8 @@ describe('conflict resolution decisions', () => {
       conflict('aaaaaaaa', ['E:/Mods/ModA', 'E:/Mods/ModB']),
       conflict('bbbbbbbb', ['E:/Mods/ModB', 'E:/Mods/ModC']),
     ];
-    const first = chooseConflictWinner(new Map(), conflicts[0], 'E:/Mods/ModA');
-    const contradictory = chooseConflictWinner(first, conflicts[1], 'E:/Mods/ModB');
+    const first = chooseConflictModSetWinner(new Map(), modSet(conflicts[0]), 'E:/Mods/ModA');
+    const contradictory = chooseConflictModSetWinner(first, modSet(conflicts[1]), 'E:/Mods/ModB');
 
     expect(summarizeConflictResolution(conflicts, contradictory)).toMatchObject({
       disablePaths: ['E:/Mods/ModC'],
@@ -123,5 +127,17 @@ describe('conflict resolution decisions', () => {
     expect(summarizeConflictResolution(conflicts, decisions).disablePaths).toEqual([
       'E:/Mods/ModB',
     ]);
+  });
+
+  it('rejects a winner outside the mod set without changing existing decisions', () => {
+    const decisions = new Map([['E:/Mods/Unrelated', 'keep'] as const]);
+    expect(() =>
+      chooseConflictModSetWinner(
+        decisions,
+        modSet(conflict('aaaaaaaa', ['E:/Mods/ModA', 'E:/Mods/ModB'])),
+        'E:/Mods/Elsewhere',
+      ),
+    ).toThrow('The selected winner is not part of this conflict');
+    expect(decisions).toEqual(new Map([['E:/Mods/Unrelated', 'keep']]));
   });
 });

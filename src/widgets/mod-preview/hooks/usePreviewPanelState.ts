@@ -1,47 +1,14 @@
-import { formatAppError } from '../../../shared/lib/appError';
-import { useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { validateKeyBinding } from '../utils/keybindingValidator';
-import { toast } from '@/shared/ui/toast';
-import {
-  buildKeyBindSections,
-  getConflictingKeys,
-  toFieldValueMap,
-  toIniWritePayload,
-} from '../utils/previewPanelUtils';
+import { useEffect, useState } from 'react';
 import { useMetadataDraft } from './useMetadataDraft';
+import { useIniEditorState } from './useIniEditorState';
 import {
   dispatchWorkspaceRuntimeEvent,
   useWorkspaceRuntimeSelector,
 } from '@/features/workspace-runtime';
 import { usePreviewRuntime } from './usePreviewRuntime';
 
-function areFieldMapsEqual(left: Record<string, string>, right: Record<string, string>): boolean {
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  if (leftKeys.length !== rightKeys.length) {
-    return false;
-  }
-
-  return leftKeys.every((key) => left[key] === right[key]);
-}
-
-function areStringSetsEqual(left: Set<string>, right: Set<string>): boolean {
-  if (left.size !== right.size) {
-    return false;
-  }
-
-  for (const value of left) {
-    if (!right.has(value)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 export function usePreviewPanelState() {
-  const { t } = useTranslation(['preview', 'common']);
+  const [showHiddenImages, setShowHiddenImages] = useState(false);
   const {
     activeGameId,
     selectedPath,
@@ -57,52 +24,32 @@ export function usePreviewPanelState() {
     previewError,
     retryPreview,
     iniDocuments,
+    iniDocumentsUpdatedAt = 0,
     images,
+    hiddenImagePaths,
+    hasVisibleImages,
     previewImagesQuery,
     updateModInfo,
     savePreviewImage,
     removePreviewImage,
     clearPreviewImages,
+    restorePreviewImage,
     writeModIni,
-  } = usePreviewRuntime();
+  } = usePreviewRuntime(showHiddenImages);
   const dialogState = useWorkspaceRuntimeSelector((state) => state.dialogState);
   const previewTransition = useWorkspaceRuntimeSelector((state) => state.previewTransition);
   const previewDirty = useWorkspaceRuntimeSelector((state) => state.previewDirty);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  const [draftByField, setDraftByField] = useState<Record<string, string>>({});
-  const [initialByField, setInitialByField] = useState<Record<string, string>>({});
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(new Set());
-
-  const keyBindSections = useMemo(() => buildKeyBindSections(iniDocuments), [iniDocuments]);
-  const allKeyBindFields = useMemo(
-    () => keyBindSections.flatMap((group) => group.sections.flatMap((section) => section.fields)),
-    [keyBindSections],
-  );
-
-  const conflictingKeys = useMemo(
-    () => getConflictingKeys(keyBindSections, draftByField),
-    [keyBindSections, draftByField],
-  );
-
-  const changedIniFields = useMemo(() => {
-    return allKeyBindFields
-      .filter((field) => (draftByField[field.id] ?? '') !== (initialByField[field.id] ?? ''))
-      .map((field) => ({
-        label: field.label || field.id,
-        // Field ids are built with single colons (`file:section:kind:line`), so
-        // splitting on '::' returned the whole id and showed it as the filename.
-        filename: field.fileName || 'Unknown INI',
-        oldValue: initialByField[field.id] ?? '',
-        newValue: draftByField[field.id] ?? '',
-      }));
-  }, [allKeyBindFields, draftByField, initialByField]);
-
-  const hasUnsavedEditorChanges = changedIniFields.length > 0;
+  const editor = useIniEditorState({
+    gameId: activeGameId,
+    activePath,
+    documents: iniDocuments,
+    readVersion: iniDocumentsUpdatedAt,
+    onWrite: writeModIni.mutateAsync,
+  });
 
   const metaSource = previewSummary?.mod_info_summary ?? null;
-
   const {
     titleDraft,
     authorDraft,
@@ -131,41 +78,21 @@ export function usePreviewPanelState() {
     },
   });
 
-  const hasUnsavedChanges = hasUnsavedEditorChanges || metadataDirty;
+  const hasUnsavedChanges = editor.hasUnsavedEditorChanges || metadataDirty;
 
   useEffect(() => {
-    if (previewDirty === hasUnsavedChanges) {
-      return;
+    if (previewDirty !== hasUnsavedChanges) {
+      dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_DIRTY_CHANGED', dirty: hasUnsavedChanges });
     }
-
-    dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_DIRTY_CHANGED', dirty: hasUnsavedChanges });
   }, [hasUnsavedChanges, previewDirty]);
 
   useEffect(() => {
     setCurrentImageIndex(0);
-  }, [activePath, images.length]);
+  }, [activePath, images.length, showHiddenImages]);
 
   useEffect(() => {
-    if (hasUnsavedEditorChanges) {
-      return;
-    }
-
-    const nextInitialMap = toFieldValueMap(allKeyBindFields);
-    setInitialByField((prev) => (areFieldMapsEqual(prev, nextInitialMap) ? prev : nextInitialMap));
-    setDraftByField((prev) => (areFieldMapsEqual(prev, nextInitialMap) ? prev : nextInitialMap));
-    setFieldErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-  }, [allKeyBindFields, hasUnsavedEditorChanges]);
-
-  useEffect(() => {
-    const validIds = new Set(keyBindSections.map((section) => section.id));
-    setOpenSectionIds((prev) => {
-      const next = new Set(Array.from(prev).filter((id) => validIds.has(id)));
-      if (next.size === 0) {
-        keyBindSections.forEach((section) => next.add(section.id));
-      }
-      return areStringSetsEqual(prev, next) ? prev : next;
-    });
-  }, [keyBindSections]);
+    setShowHiddenImages(false);
+  }, [activeGameId, activePath]);
 
   const pendingTransition =
     previewTransition.kind === 'pending' &&
@@ -176,116 +103,9 @@ export function usePreviewPanelState() {
 
   const applyPendingTransition = () => {
     if (pendingTransition?.kind === 'collapseSection') {
-      setOpenSectionIds((prev) => {
-        const next = new Set(prev);
-        next.delete(pendingTransition.sectionId);
-        return next;
-      });
-      dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_TRANSITION_CONFIRMED' });
-      return;
+      editor.collapseSection(pendingTransition.sectionId);
     }
-
     dispatchWorkspaceRuntimeEvent({ type: 'PREVIEW_TRANSITION_CONFIRMED' });
-  };
-
-  const saveEditor = async (): Promise<boolean> => {
-    if (!activePath) {
-      return true;
-    }
-
-    const payload = toIniWritePayload(allKeyBindFields, draftByField, initialByField);
-    setFieldErrors(payload.fieldErrors);
-
-    if (Object.keys(payload.fieldErrors).length > 0) {
-      toast.error(t('preview:ini_editor.invalid_values'));
-      return false;
-    }
-
-    const updatesEntries = Object.entries(payload.updatesByFile);
-    if (updatesEntries.length === 0) {
-      return true;
-    }
-
-    try {
-      // Each entry targets a different ini file — write them concurrently.
-      await Promise.all(
-        updatesEntries.map(([fileName, lineUpdates]) => {
-          const expectedSourceHash = allKeyBindFields.find(
-            (field) => field.fileName === fileName,
-          )?.sourceHash;
-          if (!expectedSourceHash) {
-            throw new Error(`Missing source fingerprint for ${fileName}`);
-          }
-          return writeModIni.mutateAsync({
-            folderPath: activePath,
-            fileName,
-            expectedSourceHash,
-            lineUpdates,
-          });
-        }),
-      );
-
-      setInitialByField({ ...draftByField });
-      setDraftByField({ ...draftByField });
-      setFieldErrors({});
-      toast.success(t('preview:ini_editor.saved'));
-      return true;
-    } catch (error) {
-      toast.error(t('preview:ini_editor.save_error', { error: formatAppError(error) }));
-      return false;
-    }
-  };
-
-  const discardEditor = () => {
-    setDraftByField({ ...initialByField });
-    setFieldErrors({});
-  };
-
-  const requestToggleSection = (sectionId: string) => {
-    const isOpen = openSectionIds.has(sectionId);
-    if (isOpen && hasUnsavedEditorChanges) {
-      dispatchWorkspaceRuntimeEvent({
-        type: 'PREVIEW_TRANSITION_REQUESTED',
-        target: { kind: 'collapseSection', sectionId },
-      });
-      return;
-    }
-
-    setOpenSectionIds((prev) => {
-      const next = new Set(prev);
-      if (isOpen) {
-        next.delete(sectionId);
-      } else {
-        next.add(sectionId);
-      }
-      return next;
-    });
-  };
-
-  const updateEditorField = (fieldId: string, value: string) => {
-    setDraftByField((prev) => ({ ...prev, [fieldId]: value }));
-
-    // Live keybinding validation for key/back fields
-    const field = allKeyBindFields.find((f) => f.id === fieldId);
-    if (field && (field.label === 'key' || field.label === 'back')) {
-      const kbError = value.trim() ? validateKeyBinding(value) : null;
-      setFieldErrors((prev) => {
-        if (kbError) {
-          return { ...prev, [fieldId]: kbError };
-        }
-        if (!prev[fieldId]) return prev;
-        const next = { ...prev };
-        delete next[fieldId];
-        return next;
-      });
-    } else {
-      setFieldErrors((prev) => {
-        if (!prev[fieldId]) return prev;
-        const next = { ...prev };
-        delete next[fieldId];
-        return next;
-      });
-    }
   };
 
   return {
@@ -301,6 +121,10 @@ export function usePreviewPanelState() {
     previewError,
     retryPreview,
     images,
+    hiddenImagePaths,
+    hasVisibleImages,
+    showHiddenImages,
+    setShowHiddenImages,
     currentImageIndex,
     setCurrentImageIndex,
     titleDraft,
@@ -314,18 +138,19 @@ export function usePreviewPanelState() {
     isMetadataEditing,
     setMetadataEditing,
     metadataDirty,
-    keyBindSections,
-    openSectionIds,
-    draftByField,
-    fieldErrors,
-    conflictingKeys,
-    hasUnsavedEditorChanges,
-    changedIniFields,
+    keyBindSections: editor.keyBindSections,
+    openSectionIds: editor.openSectionIds,
+    draftByField: editor.draftByField,
+    fieldErrors: editor.fieldErrors,
+    conflictingKeys: editor.conflictingKeys,
+    hasUnsavedEditorChanges: editor.hasUnsavedEditorChanges,
+    changedIniFields: editor.changedIniFields,
     changedMetadataFields,
     updateModInfo,
     savePreviewImage,
     removePreviewImage,
     clearPreviewImages,
+    restorePreviewImage,
     writeModIni,
     previewImagesQuery,
     showUnsavedModal,
@@ -333,9 +158,9 @@ export function usePreviewPanelState() {
     applyPendingTransition,
     saveMetadata,
     discardMetadata,
-    saveEditor,
-    discardEditor,
-    requestToggleSection,
-    updateEditorField,
+    saveEditor: editor.saveEditor,
+    discardEditor: editor.discardEditor,
+    requestToggleSection: editor.requestToggleSection,
+    updateEditorField: editor.updateEditorField,
   };
 }

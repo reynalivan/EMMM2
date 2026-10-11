@@ -7,6 +7,7 @@ use crate::modules::reconciliation::application::disk_reconcile::change_summary:
 use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePathUpdate;
 
 pub(super) struct ProjectionWriteState<'a> {
+    pub(super) metadata_read_time: std::time::Duration,
     pub(super) path_updates: &'a mut Vec<DiskReconcilePathUpdate>,
     pub(super) collection_reference_impact: &'a mut CollectionReferenceImpact,
     pub(super) change_summary: &'a mut ChangeSummaryBuilder,

@@ -11,8 +11,9 @@
  */
 
 import { commands as gen } from './bindings.gen';
-import type { DiskReconcileReason, GameActivationPhase, Result } from './bindings.gen';
+import type { AppSettings, Result } from './bindings.gen';
 import { resolveDemoCommand } from '@/demo/commands';
+import { queryClient } from '@/shared/lib/queryClient';
 
 // Re-export the generated types that callers historically imported from this
 // module, so `import type { X } from './bindings'` keeps working.
@@ -34,6 +35,8 @@ export type {
   DiskReconcileResult,
   DiskReconcileStatus,
   FolderConflictRename,
+  FileLockReport,
+  FileLockProcess,
   FolderConflictSummary,
   FolderNameConflictCandidate,
   FolderNameConflictGroup,
@@ -101,55 +104,14 @@ export type {
   WorkspaceMoveTarget,
 } from './bindings.gen';
 
-// Disk reconcile progress is an event payload rather than an IPC command
-// signature, so tauri-specta does not place it in bindings.gen.ts.
-export type DiskReconcilePhase =
-  'DiscoveringRoots' | 'ScanningRoots' | 'Projecting' | 'Finalizing' | 'Completed' | 'Failed';
-
-export type DiskReconcileProgress = {
-  game_id: string;
-  run_id: string;
-  reason: DiskReconcileReason;
-  phase: DiskReconcilePhase;
-  completed_units: number;
-  total_units: number | null;
-  current_root: string | null;
-  elapsed_ms: number;
-  eta_ms: number | null;
-};
-
-export type RuntimeSyncPhase =
-  'queued' | 'running' | 'succeeded' | 'needs_manual_reload' | 'failed';
-
-export type RuntimeSyncStatus = {
-  game_id: string;
-  generation: number;
-  phase: RuntimeSyncPhase;
-  cause: string;
-  message: string | null;
-};
-
-export type GameActivationStatus = {
-  game_id: string | null;
-  generation: number;
-  phase: GameActivationPhase;
-  reconcile_revision: number | null;
-  runtime_sync_generation: number | null;
-  error: string | null;
-};
-
-export type OnboardingIndexingSnapshotProgress = {
-  session_id: string;
-  game_id: string;
-  phase: 'Metadata' | 'Classifying' | 'Ready' | 'Rechecking';
-  completed_games: number;
-  total_games: number;
-  completed_roots: number;
-  total_roots: number;
-  folders_classified: number;
-  current_root: string | null;
-  elapsed_ms: number;
-};
+export type {
+  DiskReconcilePhase,
+  DiskReconcileProgress,
+  RuntimeSyncPhase,
+  RuntimeSyncStatus,
+  GameActivationStatus,
+  OnboardingIndexingSnapshotProgress,
+} from './events';
 
 type OkOf<T> = Extract<T, { status: 'ok' }>;
 
@@ -299,10 +261,18 @@ function telemetryErrorCode(error: unknown): string {
   return codes[type] ?? 'unknown';
 }
 
-function recordNativeCommandFailure(commandName: string, error: unknown): void {
-  if (commandName === 'recordNativeErrorMetric') return;
+function recordNativeCommandFailure(
+  commandName: string,
+  error: unknown,
+  expectedRevision: number | null,
+): void {
+  if (commandName === 'recordNativeErrorMetric' || expectedRevision === null) return;
   void gen
-    .recordNativeErrorMetric(telemetryOperation(commandName), telemetryErrorCode(error))
+    .recordNativeErrorMetric(
+      telemetryOperation(commandName),
+      telemetryErrorCode(error),
+      expectedRevision,
+    )
     .catch(() => undefined);
 }
 
@@ -315,10 +285,18 @@ export const commands: Commands = new Proxy({} as Commands, {
         return Promise.resolve(demoResult.value);
       }
 
+      const settings = queryClient.getQueryData<AppSettings>(['settings']);
+      const revision = settings?.revision;
+      const expectedRevision =
+        settings?.diagnostics?.telemetry_enabled &&
+        typeof revision === 'number' &&
+        Number.isSafeInteger(revision)
+          ? revision
+          : null;
       return command(...args)
         .then(unwrap)
         .catch((error: unknown) => {
-          recordNativeCommandFailure(name, error);
+          recordNativeCommandFailure(name, error, expectedRevision);
           throw error;
         });
     };

@@ -23,15 +23,20 @@ export function createNewBrowserTab(): BrowserTab {
   };
 }
 
-interface BrowserStore {
+export interface BrowserSession {
+  gameId: string | null;
+  generation: number;
+}
+
+interface BrowserStore extends BrowserSession {
   /** The open browser tabs backing the MultiWebview */
   gameId: string | null;
   tabs: BrowserTab[];
   activeTabId: string | null;
   recentlyClosedTabs: BrowserTab[];
 
-  addTab: (tab: BrowserTab) => void;
-  replaceTab: (id: string, tab: BrowserTab) => void;
+  addTab: (tab: BrowserTab, owner?: BrowserSession) => boolean;
+  replaceTab: (id: string, tab: BrowserTab, owner?: BrowserSession) => boolean;
   removeTab: (id: string) => void;
   recordClosedTab: (tab: BrowserTab) => void;
   removeLastClosedTab: () => void;
@@ -50,23 +55,31 @@ interface BrowserStore {
   setDownloadConfirmationOpen: (open: boolean) => void;
 }
 
-export const useBrowserStore = create<BrowserStore>()((set) => ({
+export const useBrowserStore = create<BrowserStore>()((set, get) => ({
   gameId: null,
+  generation: 0,
   tabs: [],
   activeTabId: null,
   recentlyClosedTabs: [],
 
-  addTab: (tab) =>
+  addTab: (tab, owner) => {
+    if (owner && !ownsSession(get(), owner)) return false;
     set((s) => ({
       tabs: [...s.tabs, tab],
       activeTabId: tab.id,
-    })),
+    }));
+    return true;
+  },
 
-  replaceTab: (id, tab) =>
+  replaceTab: (id, tab, owner) => {
+    if (owner && !ownsSession(get(), owner)) return false;
+    if (!get().tabs.some((current) => current.id === id)) return false;
     set((s) => ({
       tabs: s.tabs.map((current) => (current.id === id ? tab : current)),
       activeTabId: s.activeTabId === id ? tab.id : s.activeTabId,
-    })),
+    }));
+    return true;
+  },
 
   removeTab: (id) =>
     set((s) => {
@@ -105,7 +118,13 @@ export const useBrowserStore = create<BrowserStore>()((set) => ({
     set((state) =>
       state.gameId === gameId
         ? state
-        : { gameId, tabs: [], activeTabId: null, recentlyClosedTabs: [] },
+        : {
+            gameId,
+            generation: state.generation + 1,
+            tabs: [],
+            activeTabId: null,
+            recentlyClosedTabs: [],
+          },
     ),
 
   isDownloadPanelOpen: false,
@@ -116,3 +135,7 @@ export const useBrowserStore = create<BrowserStore>()((set) => ({
   closeDownloadPanel: () => set({ isDownloadPanelOpen: false }),
   setDownloadConfirmationOpen: (open) => set({ isDownloadConfirmationOpen: open }),
 }));
+
+function ownsSession(current: BrowserSession, owner: BrowserSession): boolean {
+  return current.gameId === owner.gameId && current.generation === owner.generation;
+}

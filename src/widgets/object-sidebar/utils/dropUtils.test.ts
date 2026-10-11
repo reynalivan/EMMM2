@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { allUnsupported, classifyDroppedPaths } from '@/shared/lib/dropClassification';
+import { classifyDroppedPaths } from '@/shared/lib/dropClassification';
 import { validateDropForZone } from './dropUtils';
 
 describe('dropUtils', () => {
@@ -23,20 +23,12 @@ describe('dropUtils', () => {
     });
   });
 
-  describe('Utility functions', () => {
-    it('allUnsupported returns true if everything is unsupported', () => {
-      expect(allUnsupported(classifyDroppedPaths(['readme.txt']))).toBe(true);
-      expect(allUnsupported(classifyDroppedPaths(['readme.txt', 'mod']))).toBe(false);
-    });
-  });
-
   describe('validateDropForZone', () => {
-    it('blocks if any unsupported file exists and all are unsupported', () => {
+    it('defers extension-unknown paths to backend filesystem validation', () => {
       const paths = ['readme.txt'];
       const classified = classifyDroppedPaths(paths);
       const res = validateDropForZone('item', classified);
-      expect(res.valid).toBe(false);
-      expect(res.reason).toBe('Unsupported file type');
+      expect(res.valid).toBe(true);
     });
 
     it('blocks archives on new-object zone', () => {

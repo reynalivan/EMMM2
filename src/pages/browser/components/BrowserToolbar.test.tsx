@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useState, type ReactNode } from 'react';
 import { BrowserToolbar, BrowserToolbarMenu } from './BrowserToolbar';
@@ -43,7 +43,7 @@ describe('BrowserToolbar', () => {
     }
     render(<StatefulToolbar />);
     const input = screen.getByRole('textbox');
-    input.focus();
+    act(() => input.focus());
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: 'https://' } });
     fireEvent.change(input, { target: { value: 'https://g' } });

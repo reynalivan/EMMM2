@@ -65,8 +65,18 @@ export function useRenameMod() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (params: { folderPath: string; newName: string; gameId: string }) =>
-      commands.renameModFolder(params.folderPath, params.newName, params.gameId),
+    mutationFn: (params: {
+      folderPath: string;
+      newName: string;
+      gameId: string;
+      recoveryId?: string;
+    }) =>
+      commands.renameModFolder(
+        params.folderPath,
+        params.newName,
+        params.gameId,
+        params.recoveryId ?? null,
+      ),
     onSuccess: async (result, variables) => {
       applyRuntimeEffects(
         queryClient,
@@ -81,7 +91,7 @@ export function useRenameMod() {
       notifyCommittedMutationSyncWarning(result);
     },
     onError: (error, variables) => {
-      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
+      if (openFileInUseRetryDialog(error, variables, mutation.mutateAsync)) {
         return;
       }
 
@@ -104,8 +114,8 @@ export function useDeleteMod() {
   const mutation = useMutation({
     // `gameId` names the mods root the path must sit inside; the backend
     // refuses to trash anything outside it, so it is no longer optional.
-    mutationFn: (params: { path: string; gameId: string }) =>
-      commands.deleteMod(params.path, params.gameId),
+    mutationFn: (params: { path: string; gameId: string; recoveryId?: string }) =>
+      commands.deleteMod(params.path, params.gameId, params.recoveryId ?? null),
     onSuccess: async (result, variables) => {
       applyRuntimeEffects(
         queryClient,
@@ -117,7 +127,7 @@ export function useDeleteMod() {
       notifyCommittedMutationSyncWarning(result);
     },
     onError: (error, variables) => {
-      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
+      if (openFileInUseRetryDialog(error, variables, mutation.mutateAsync)) {
         return;
       }
 

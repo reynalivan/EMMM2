@@ -1,7 +1,10 @@
 //! Durable, privacy-preserving telemetry primitives.
 //!
-//! This module owns local aggregation only. Network transport, user consent,
+//! This module owns local aggregation and its consent fence. Network transport
 //! and Tauri commands deliberately live outside this module.
+
+mod consent;
+pub use consent::ConsentChange;
 
 use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,6 +12,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -183,10 +187,13 @@ impl TelemetryErrorCode {
                 crate::shared::errors::CollectionError::Db(_) => Self::Database,
                 crate::shared::errors::CollectionError::RuntimeState(_) => Self::Invariant,
                 crate::shared::errors::CollectionError::Io(_) => Self::Io,
-                crate::shared::errors::CollectionError::FileInUse { .. }
+                crate::shared::errors::CollectionError::FileLock { .. }
+                | crate::shared::errors::CollectionError::FileInUse { .. }
                 | crate::shared::errors::CollectionError::PathBusy { .. } => Self::External,
             },
             crate::shared::errors::AppError::Metadata(error) => match error {
+                crate::shared::errors::MetadataError::FileLock { .. }
+                | crate::shared::errors::MetadataError::PathBusy { .. } => Self::External,
                 crate::shared::errors::MetadataError::Security(_) => Self::Permission,
                 crate::shared::errors::MetadataError::NotFound(_) => Self::NotFound,
                 crate::shared::errors::MetadataError::Io(_) => Self::Io,
@@ -232,7 +239,8 @@ impl TelemetryErrorCode {
             crate::shared::errors::AppError::ArchiveUnsupported { .. } => Self::Unsupported,
             crate::shared::errors::AppError::Io(_) => Self::Io,
             crate::shared::errors::AppError::DuplicateConflict(_) => Self::Conflict,
-            crate::shared::errors::AppError::FileInUse { .. }
+            crate::shared::errors::AppError::FileLock { .. }
+            | crate::shared::errors::AppError::FileInUse { .. }
             | crate::shared::errors::AppError::PathBusy { .. } => Self::External,
             crate::shared::errors::AppError::ObjectHasMods(_)
             | crate::shared::errors::AppError::ExplorerSnapshotExpired => Self::Conflict,
@@ -294,32 +302,54 @@ impl TelemetryEvent {
 /// queue when the local database is busy.
 #[derive(Clone)]
 pub struct TelemetrySink {
-    sender: tokio::sync::mpsc::Sender<Vec<TelemetryEvent>>,
+    sender: tokio::sync::mpsc::Sender<TelemetryBatch>,
+    store: TelemetryStore,
+}
+
+struct TelemetryBatch {
+    epoch: Arc<()>,
+    events: Vec<TelemetryEvent>,
 }
 
 impl TelemetrySink {
     pub fn start(store: TelemetryStore) -> Self {
-        let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<TelemetryEvent>>(64);
+        let (sender, mut receiver) = tokio::sync::mpsc::channel::<TelemetryBatch>(64);
+        let worker_store = store.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(mut batch) = receiver.recv().await {
                 while let Ok(next) = receiver.try_recv() {
-                    batch.extend(next);
-                    if batch.len() >= 128 {
+                    if Arc::ptr_eq(&batch.epoch, &next.epoch) {
+                        batch.events.extend(next.events);
+                    } else if worker_store.consent.allows(&next.epoch, true) {
+                        batch = next;
+                    }
+                    if batch.events.len() >= 128 {
                         break;
                     }
                 }
-                let _ = store.record_rollup_batch(&batch, Utc::now()).await;
+                let _ = worker_store.persist_batch(batch).await;
             }
         });
-        Self { sender }
+        Self { sender, store }
+    }
+
+    pub fn capture(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+            store: self.store.capture(),
+        }
     }
 
     pub fn try_enqueue(&self, events: impl IntoIterator<Item = TelemetryEvent>) {
         let batch = events.into_iter().collect::<Vec<_>>();
-        if batch.is_empty() {
+        let epoch = self.store.captured_epoch();
+        if batch.is_empty() || !self.store.consent.allows(&epoch, true) {
             return;
         }
-        let _ = self.sender.try_send(batch);
+        let _ = self.sender.try_send(TelemetryBatch {
+            epoch,
+            events: batch,
+        });
     }
 }
 
@@ -387,6 +417,7 @@ pub enum FingerprintDisposition {
     New(FingerprintRecord),
     Existing(FingerprintRecord),
     SuppressedAtCapacity,
+    SuppressedWithoutConsent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -455,11 +486,25 @@ pub struct CleanupStats {
 #[derive(Clone)]
 pub struct TelemetryStore {
     pool: SqlitePool,
+    consent: Arc<consent::ConsentGate>,
+    epoch: Option<Arc<()>>,
 }
 
 impl TelemetryStore {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, enabled: bool) -> Self {
+        Self {
+            pool,
+            consent: Arc::new(consent::ConsentGate::new(enabled)),
+            epoch: None,
+        }
+    }
+
+    async fn persist_batch(&self, batch: TelemetryBatch) -> Result<(), TelemetryError> {
+        let mut producer = self.clone();
+        producer.epoch = Some(batch.epoch);
+        producer
+            .record_rollup_batch(&batch.events, Utc::now())
+            .await
     }
 
     pub async fn record_rollup(
@@ -468,6 +513,9 @@ impl TelemetryStore {
         event: TelemetryEvent,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), TelemetryError> {
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(());
+        };
         let duration_ms = event
             .duration
             .map(duration_to_i64_millis)
@@ -505,6 +553,9 @@ impl TelemetryStore {
         if events.is_empty() {
             return Ok(());
         }
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(());
+        };
         let mut transaction = self.pool.begin().await?;
         for event in events {
             let duration_ms = event
@@ -553,6 +604,9 @@ impl TelemetryStore {
     /// must pass these exact delta rows to [`Self::mark_rollups_exported`]
     /// after a successful response.
     pub async fn list_pending_rollups(&self) -> Result<Vec<TelemetryRollup>, TelemetryError> {
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(Vec::new());
+        };
         let rows = sqlx::query(
             "SELECT day_utc, release, operation, outcome, error_code,
                     count - exported_count AS count,
@@ -577,6 +631,9 @@ impl TelemetryStore {
         &self,
         rollups: &[TelemetryRollup],
     ) -> Result<(), TelemetryError> {
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(());
+        };
         let mut transaction = self.pool.begin().await?;
         for rollup in rollups {
             sqlx::query(
@@ -611,6 +668,9 @@ impl TelemetryStore {
         fingerprint: ErrorFingerprint,
         observed_at: DateTime<Utc>,
     ) -> Result<FingerprintDisposition, TelemetryError> {
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(FingerprintDisposition::SuppressedWithoutConsent);
+        };
         let timestamp = utc_timestamp(observed_at);
         let existing =
             load_fingerprint(&self.pool, &fingerprint.release, &fingerprint.digest).await?;
@@ -683,6 +743,9 @@ impl TelemetryStore {
         fingerprint: &ErrorFingerprint,
         reported_at: DateTime<Utc>,
     ) -> Result<(), TelemetryError> {
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(());
+        };
         sqlx::query(
             "UPDATE error_fingerprints
              SET reported_at_utc = ?
@@ -700,6 +763,11 @@ impl TelemetryStore {
         &self,
         report: PendingCrashReport,
     ) -> Result<(), TelemetryError> {
+        // The default-off local crash prompt is voluntary; revocation still
+        // fences a pending save from the previous consent epoch.
+        let Some(_writer) = self.write_guard(false).await else {
+            return Ok(());
+        };
         sqlx::query(
             "INSERT INTO pending_crash_report (
                 singleton, release, operation, error_code, fingerprint, source, created_at_utc
@@ -735,6 +803,9 @@ impl TelemetryStore {
     }
 
     pub async fn clear_pending_crash(&self) -> Result<(), TelemetryError> {
+        let Some(_writer) = self.write_guard(false).await else {
+            return Ok(());
+        };
         sqlx::query("DELETE FROM pending_crash_report WHERE singleton = 1")
             .execute(&self.pool)
             .await?;
@@ -768,6 +839,9 @@ impl TelemetryStore {
         &self,
         now: DateTime<Utc>,
     ) -> Result<bool, TelemetryError> {
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(false);
+        };
         let state = self.export_state().await?;
         let Some(last_attempt) = state.last_attempt_at_utc else {
             return Ok(true);
@@ -784,6 +858,9 @@ impl TelemetryStore {
         attempted_at: DateTime<Utc>,
         status: ExportStatus,
     ) -> Result<(), TelemetryError> {
+        let Some(_writer) = self.write_guard(true).await else {
+            return Ok(());
+        };
         let timestamp = utc_timestamp(attempted_at);
         sqlx::query(
             "INSERT INTO telemetry_export_state (
@@ -811,6 +888,7 @@ impl TelemetryStore {
         &self,
         now: DateTime<Utc>,
     ) -> Result<CleanupStats, TelemetryError> {
+        let _writer = self.consent.writer.lock().await;
         let oldest_day_to_keep = utc_day(now - ChronoDuration::days(RETENTION_DAYS - 1));
         let oldest_timestamp_to_keep = utc_timestamp(now - ChronoDuration::days(RETENTION_DAYS));
         let mut transaction = self.pool.begin().await?;
@@ -843,6 +921,11 @@ impl TelemetryStore {
     /// Removes every local telemetry artifact. Call this synchronously with a
     /// user's opt-out so no pre-consent data can be exported later.
     pub async fn purge_all(&self) -> Result<(), TelemetryError> {
+        let _writer = self.consent.writer.lock().await;
+        self.purge_unchecked().await
+    }
+
+    async fn purge_unchecked(&self) -> Result<(), TelemetryError> {
         let mut transaction = self.pool.begin().await?;
         sqlx::query("DELETE FROM telemetry_rollups")
             .execute(&mut *transaction)
@@ -861,24 +944,19 @@ impl TelemetryStore {
     }
 }
 
-/// Records a failure from work that has no IPC response to cross the shared
-/// frontend boundary. Only the bounded error code is persisted.
+/// Capture the original consent before scheduling work outside an IPC response.
+pub fn capture_background_telemetry(app: &tauri::AppHandle) -> Option<TelemetryStore> {
+    use tauri::Manager;
+    app.try_state::<TelemetryStore>()
+        .map(|state| state.inner().capture())
+}
+
+/// Only the bounded error code is persisted when the originating epoch is current.
 pub async fn record_background_failure(
-    app: &tauri::AppHandle,
+    telemetry: &Option<TelemetryStore>,
     error: &crate::shared::errors::AppError,
 ) {
-    use tauri::Manager;
-
-    let diagnostics_enabled = app
-        .try_state::<crate::modules::settings::application::config::ConfigService>()
-        .is_some_and(|config| config.get_settings().diagnostics.telemetry_enabled);
-    if !diagnostics_enabled {
-        return;
-    }
-    let Some(telemetry) = app
-        .try_state::<TelemetryStore>()
-        .map(|state| state.inner().clone())
-    else {
+    let Some(telemetry) = telemetry else {
         return;
     };
     let event = TelemetryEvent::new(
@@ -1118,6 +1196,9 @@ fn is_digest(value: &str) -> bool {
 }
 
 #[cfg(test)]
+mod consent_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use chrono::TimeZone;
@@ -1125,7 +1206,7 @@ mod tests {
 
     async fn store() -> TelemetryStore {
         let context = crate::test_utils::init_test_db().await;
-        TelemetryStore::new(context.pool)
+        TelemetryStore::new(context.pool, true)
     }
 
     fn at(year: i32, month: u32, day: u32, hour: u32) -> DateTime<Utc> {
@@ -1204,7 +1285,7 @@ mod tests {
     async fn persists_only_the_fingerprint_not_the_stack_frame() {
         let context = crate::test_utils::init_test_db().await;
         let pool = context.pool;
-        let store = TelemetryStore::new(pool.clone());
+        let store = TelemetryStore::new(pool.clone(), true);
         let raw_frame = "C:\\Users\\alice\\Games\\mods\\private-folder\\broken.rs:42";
         let fingerprint = ErrorFingerprint::from_stack_frame(
             "1.0.0",

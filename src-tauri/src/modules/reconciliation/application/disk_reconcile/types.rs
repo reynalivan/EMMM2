@@ -195,12 +195,24 @@ pub enum RuntimeSyncPhase {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeSyncReloadStatus {
+    NotRequired,
+    Sent,
+    Manual,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub struct RuntimeSyncStatus {
     pub game_id: String,
     pub generation: u64,
     pub phase: RuntimeSyncPhase,
     pub cause: String,
     pub message: Option<String>,
+    #[serde(default)]
+    pub reload_status: Option<RuntimeSyncReloadStatus>,
+    #[serde(default)]
+    pub reload_binding: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -266,7 +278,7 @@ pub struct OnboardingIndexingBackgroundStatus {
     pub games: Vec<OnboardingIndexingBackgroundGameStatus>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, PartialOrd, Ord)]
 pub enum OnboardingIndexingSnapshotPhase {
     Metadata,
     Classifying,

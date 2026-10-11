@@ -25,7 +25,7 @@ async fn setup_context() -> TestContext {
         &crate::test_utils::TestGameFixture {
             id: "game-1",
             name: "Game 1",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: mods_root.parent().unwrap().to_str().unwrap(),
             mods_path: Some(mods_root.to_str().unwrap()),
         },
@@ -70,10 +70,11 @@ async fn seed_dedup_group(
 ) {
     let job_id = format!("job-{group_id}");
     sqlx::query(
-        "INSERT OR IGNORE INTO dedup_jobs (id, game_id, status) VALUES (?, ?, 'completed')",
+        "INSERT OR IGNORE INTO dedup_jobs (id, game_id, root_path, status) VALUES (?, ?, ?, 'completed')",
     )
     .bind(&job_id)
     .bind(game_id)
+    .bind(context.mods_root.to_string_lossy().as_ref())
     .execute(&context.pool)
     .await
     .unwrap();
@@ -160,6 +161,57 @@ async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {
     .unwrap();
 
     (folder_a_path, folder_b_path)
+}
+
+#[tokio::test]
+async fn stale_root_rejects_every_resolution_action_before_preparing_mutations() {
+    let context = setup_context().await;
+    let (folder_a, folder_b) = seed_pair(&context, "game-1").await;
+    seed_dedup_group(&context, "game-1", "stale-group", &folder_a, &folder_b).await;
+    sqlx::query("UPDATE games SET mods_path = ? WHERE id = ?")
+        .bind(
+            context
+                .mods_root
+                .parent()
+                .unwrap()
+                .to_string_lossy()
+                .as_ref(),
+        )
+        .bind("game-1")
+        .execute(&context.pool)
+        .await
+        .unwrap();
+
+    for action in [
+        ResolutionAction::KeepA,
+        ResolutionAction::KeepB,
+        ResolutionAction::Hardlink,
+        ResolutionAction::Ignore,
+    ] {
+        let result = super::prepare_durable_batch(
+            vec![ResolutionRequest {
+                group_id: "stale-group".to_string(),
+                action,
+                folder_a: folder_a.clone(),
+                folder_b: folder_b.clone(),
+            }],
+            "game-1",
+            &context.pool,
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "a stale report cannot authorize a resolution"
+        );
+    }
+    assert_eq!(
+        fs::read(Path::new(&folder_a).join("mod.ini")).unwrap(),
+        b"same-content"
+    );
+    assert_eq!(
+        fs::read(Path::new(&folder_b).join("mod.ini")).unwrap(),
+        b"same-content"
+    );
 }
 
 // Covers: TC-9.2-01 (Trash Duplicate KeepA)

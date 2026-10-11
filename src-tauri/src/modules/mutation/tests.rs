@@ -313,6 +313,192 @@ fn recovery_runner(
     )
 }
 
+fn import_plan(
+    source: &Path,
+    target: &Path,
+    source_root_identity: Option<String>,
+) -> OperationPlan {
+    let identity = crate::platform::fs::file_utils::filesystem_identity(source).unwrap();
+    let mut step = PlannedStep::rename(0, source.to_path_buf(), target.to_path_buf())
+        .with_expected_identity(Some(identity));
+    if let Some(identity) = source_root_identity {
+        step = step.with_source_root_identity(identity);
+    }
+    OperationPlan::new("import-commit", GAME_ID, vec![step])
+}
+
+async fn arrange_applied_import(
+    journal: &Arc<OperationJournal>,
+    source: &Path,
+    target: &Path,
+    source_root_identity: Option<String>,
+) {
+    let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+    let guard = coordinator
+        .acquire_operation(import_plan(source, target, source_root_identity))
+        .await
+        .unwrap();
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::rename(source, target).unwrap();
+    guard.mark_step_applied(0).unwrap();
+}
+
+#[tokio::test]
+async fn applied_archive_import_recovers_to_identity_bound_staging_root() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("import-staging");
+    let source = staging_root.join("batch/item/Mod");
+    let target = game_root.join("Object/Mod");
+    std::fs::create_dir_all(&source).unwrap();
+    let source_root_identity =
+        crate::platform::fs::file_utils::filesystem_identity(&staging_root).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    arrange_applied_import(&journal, &source, &target, Some(source_root_identity)).await;
+
+    recovery_runner(journal.clone(), &game_root, &staging_root)
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(source.exists());
+    assert!(!target.exists());
+    assert_eq!(journal.entries()[0].status, OperationStatus::RolledBack);
+}
+
+#[tokio::test]
+async fn applied_ready_to_move_import_recovers_to_configured_inbox() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("import-staging");
+    let inbox_root = temp.path().join("Inbox");
+    let source = inbox_root.join("Mod");
+    let target = game_root.join("Object/Mod");
+    std::fs::create_dir_all(&source).unwrap();
+    let source_root_identity =
+        crate::platform::fs::file_utils::filesystem_identity(&inbox_root).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    arrange_applied_import(&journal, &source, &target, Some(source_root_identity)).await;
+    let roots = RecoveryRoots::new(
+        HashMap::from([(GAME_ID.to_string(), game_root)]),
+        staging_root,
+    )
+    .with_ready_to_move_roots(HashMap::from([(GAME_ID.to_string(), inbox_root)]));
+
+    RecoveryRunner::new(journal.clone(), roots)
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(source.exists());
+    assert!(!target.exists());
+    assert_eq!(journal.entries()[0].status, OperationStatus::RolledBack);
+}
+
+#[tokio::test]
+async fn import_recovery_rejects_replaced_source_root() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("import-staging");
+    let source = staging_root.join("batch/Mod");
+    let target = game_root.join("Object/Mod");
+    std::fs::create_dir_all(&source).unwrap();
+    let source_root_identity =
+        crate::platform::fs::file_utils::filesystem_identity(&staging_root).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    arrange_applied_import(&journal, &source, &target, Some(source_root_identity)).await;
+    std::fs::rename(&staging_root, temp.path().join("replaced-staging")).unwrap();
+    std::fs::create_dir_all(&staging_root).unwrap();
+
+    recovery_runner(journal.clone(), &game_root, &staging_root)
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(target.exists());
+    assert!(!source.exists());
+    assert_eq!(
+        journal.entries()[0].status,
+        OperationStatus::FailedNeedsRepair
+    );
+}
+
+#[tokio::test]
+async fn mmr_import_recovery_selects_the_proven_nested_trusted_root() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("import-staging");
+    let inbox_root = staging_root.join("Inbox");
+    let source = inbox_root.join("Mod");
+    let target = game_root.join("Object/Mod");
+    std::fs::create_dir_all(&source).unwrap();
+    let identity = crate::platform::fs::file_utils::filesystem_identity(&inbox_root).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    arrange_applied_import(&journal, &source, &target, Some(identity)).await;
+    let roots = RecoveryRoots::new(
+        HashMap::from([(GAME_ID.to_string(), game_root)]),
+        staging_root,
+    )
+    .with_ready_to_move_roots(HashMap::from([(GAME_ID.to_string(), inbox_root)]));
+    RecoveryRunner::new(journal.clone(), roots)
+        .run_recovery()
+        .await
+        .unwrap();
+    assert_eq!(journal.entries()[0].status, OperationStatus::RolledBack);
+    assert!(source.exists());
+    assert!(!target.exists());
+}
+
+#[tokio::test]
+async fn legacy_import_without_source_root_proof_requires_repair() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("import-staging");
+    let external_root = temp.path().join("LegacyExternal");
+    let source = external_root.join("Mod");
+    let target = game_root.join("Object/Mod");
+    std::fs::create_dir_all(&source).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    arrange_applied_import(&journal, &source, &target, None).await;
+
+    recovery_runner(journal.clone(), &game_root, &staging_root)
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(target.exists());
+    assert_eq!(
+        journal.entries()[0].status,
+        OperationStatus::FailedNeedsRepair
+    );
+}
+
+#[tokio::test]
+async fn import_recovery_rejects_unconfigured_external_source() {
+    let temp = tempdir().unwrap();
+    let game_root = temp.path().join("Mods");
+    let staging_root = temp.path().join("import-staging");
+    let external_root = temp.path().join("External");
+    let source = external_root.join("Mod");
+    let target = game_root.join("Object/Mod");
+    std::fs::create_dir_all(&source).unwrap();
+    let source_root_identity =
+        crate::platform::fs::file_utils::filesystem_identity(&external_root).unwrap();
+    let journal = open_journal(&temp.path().join("journal.json"));
+    arrange_applied_import(&journal, &source, &target, Some(source_root_identity)).await;
+
+    recovery_runner(journal.clone(), &game_root, &staging_root)
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(target.exists());
+    assert_eq!(
+        journal.entries()[0].status,
+        OperationStatus::FailedNeedsRepair
+    );
+}
+
 #[derive(Clone, Copy)]
 enum JournalReplaceCrashPoint {
     BeforeCanonicalMovesToRecovery,
@@ -748,7 +934,7 @@ fn unversioned_journal_migrates_to_a_versioned_snapshot() {
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
 
     assert_eq!(reopened.entries()[0].id, id);
-    assert_eq!(snapshot["format_version"].as_u64(), Some(3));
+    assert_eq!(snapshot["format_version"].as_u64(), Some(4));
     assert_eq!(snapshot["revision"].as_u64(), Some(1));
     assert_eq!(snapshot["operation_ids"][0].as_str(), Some(id.as_str()));
     assert!(snapshot["checksum"]
@@ -863,6 +1049,29 @@ async fn dropping_guard_without_terminal_action_leaves_operation_recoverable() {
 
     assert!(!coordinator.task_registry().contains(&operation_id).unwrap());
     assert_eq!(journal.entries()[0].status, OperationStatus::Applying);
+}
+
+#[tokio::test]
+async fn mmr_failed_applying_progress_does_not_leave_an_active_task() {
+    let root = tempdir().unwrap();
+    let journal_path = root.path().join("journal.json");
+    let journal = open_journal(&journal_path);
+    std::fs::write(
+        root.path().join("journal.json.active"),
+        "blocked sidecar directory",
+    )
+    .unwrap();
+    let coordinator = MutationCoordinator::with_lock(OperationLock::new(), journal.clone());
+    let result = coordinator
+        .acquire_operation(rename_plan(
+            &root.path().join("old"),
+            &root.path().join("new"),
+        ))
+        .await;
+    assert!(result.is_err());
+    let operation = &journal.entries()[0];
+    assert_eq!(operation.status, OperationStatus::Planned);
+    assert!(!coordinator.task_registry().contains(&operation.id).unwrap());
 }
 
 #[tokio::test]

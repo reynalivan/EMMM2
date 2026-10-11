@@ -20,6 +20,8 @@ export function waitForGameActivationReady(gameId: string): Promise<void> {
       const status = useAppStore.getState().gameActivationByGame[gameId];
       if (status?.phase === 'ready' && status.reconcile_revision !== null) {
         finish();
+      } else if (status?.phase === 'failed') {
+        finish(new Error(status.error ?? `Activation failed for game '${gameId}'`));
       }
     };
 

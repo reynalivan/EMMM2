@@ -608,6 +608,16 @@ export function useDiskReconcileCoordinator(
         )
       ) {
         recordReconcileOutcome(result);
+        if (
+          effectActive &&
+          isMountedRef.current &&
+          appliesToActiveContext &&
+          (result.status === 'Applied' || result.status === 'AppliedWithFolderConflicts') &&
+          requiresFullReconcileByGameRef.current[result.game_id] &&
+          !isSameRefreshContext(inFlightRef.current, currentContext)
+        ) {
+          void runRefresh('WatcherBatch', true);
+        }
       }
     };
     const unlistenPromise = listen<DiskReconcileResult>('disk_reconcile:result', (event) => {
@@ -653,7 +663,7 @@ export function useDiskReconcileCoordinator(
           console.error('Failed to remove disk reconcile listener', error);
         });
     };
-  }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome]);
+  }, [activeGame?.id, activeGame, queryClient, recordReconcileOutcome, runRefresh]);
 
   useEffect(() => {
     if (!activeGame?.id) {

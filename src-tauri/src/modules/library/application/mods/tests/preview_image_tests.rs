@@ -51,14 +51,27 @@ fn sanitize_object_name_fallbacks_to_mod() {
 }
 
 #[test]
-fn clear_preview_images_removes_discovered_files() {
+fn clear_preview_images_hides_discovered_files_without_deleting_assets() {
     let tmp = TempDir::new().unwrap();
     let mod_dir = tmp.path().join("ModA");
     fs::create_dir(&mod_dir).unwrap();
     fs::write(mod_dir.join("preview_custom.png"), "x").unwrap();
     fs::write(mod_dir.join("preview_custom_1.png"), "x").unwrap();
+    fs::write(mod_dir.join("texture.png"), "asset").unwrap();
 
     let removed = clear_preview_images(&mod_dir).unwrap();
     assert_eq!(removed.len(), 2);
-    assert!(!mod_dir.join("preview_custom.png").exists());
+    assert_eq!(fs::read(mod_dir.join("preview_custom.png")).unwrap(), b"x");
+    assert_eq!(fs::read(mod_dir.join("texture.png")).unwrap(), b"asset");
+    assert!(thumbnail::list_preview_images(&mod_dir).is_empty());
+}
+
+#[test]
+fn hiding_fallback_image_preserves_runtime_asset_bytes() {
+    let tmp = TempDir::new().unwrap();
+    let asset = tmp.path().join("texture.png");
+    fs::write(&asset, b"runtime texture bytes").unwrap();
+    remove_preview_image(tmp.path(), &asset).unwrap();
+    assert_eq!(fs::read(&asset).unwrap(), b"runtime texture bytes");
+    assert!(thumbnail::find_thumbnail(tmp.path()).is_none());
 }

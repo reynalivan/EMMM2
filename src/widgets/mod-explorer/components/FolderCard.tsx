@@ -159,12 +159,17 @@ function FolderCardInner({
   };
 
   const handleDoubleClick = () => {
+    if (hasFolderNameConflict && folder.conflict_group_id) {
+      onActivate?.(folder.path);
+      return;
+    }
     if (!hasFolderNameConflict && folder.is_directory && folder.can_navigate) {
       onNavigate(folder.folder_name);
     }
   };
 
   const hasNamingConflict = hasFolderNameConflict || !!folder.conflict_state;
+  const isConflictGroup = Boolean(hasFolderNameConflict && folder.conflict_group_id);
 
   return (
     <ContextMenu
@@ -200,10 +205,17 @@ function FolderCardInner({
         id={`grid-item-${folder.path}`}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
+        onKeyDown={(event) => {
+          if (isConflictGroup && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            event.stopPropagation();
+            onActivate?.(folder.path);
+          }
+        }}
         className={`
           group relative flex flex-col rounded-lg overflow-hidden cursor-pointer
           border transition-[background-color,border-color,transform] duration-150 motion-reduce:transition-none w-full
-          ${!folder.is_effectively_active || isLockedByParent ? 'opacity-[0.75] grayscale-[0.8]' : ''}
+          ${!isConflictGroup && (!folder.is_effectively_active || isLockedByParent) ? 'opacity-[0.75] grayscale-[0.8]' : ''}
           ${
             isActive
               ? 'border-primary/60 bg-primary/10 ring-1 ring-primary/60'
@@ -217,12 +229,18 @@ function FolderCardInner({
           }
         `}
         role="gridcell"
-        aria-label={t(
-          displayedSwitchPolicy.checked ? 'card.aria_label_enabled' : 'card.aria_label_disabled',
-          {
-            name: folder.name,
-          },
-        )}
+        aria-label={
+          isConflictGroup
+            ? t('card.conflict_group_label', { name: folder.name })
+            : t(
+                displayedSwitchPolicy.checked
+                  ? 'card.aria_label_enabled'
+                  : 'card.aria_label_disabled',
+                {
+                  name: folder.name,
+                },
+              )
+        }
         tabIndex={0}
       >
         <FolderCardThumbnail
@@ -255,7 +273,7 @@ function FolderCardInner({
           <h3
             className={`font-medium text-sm truncate leading-tight select-none transition-colors
               ${isActive || isSelected ? 'text-primary' : 'text-base-content/80 group-hover:text-base-content'}
-              ${!displayedSwitchPolicy.checked ? 'line-through text-base-content/70' : ''}`}
+              ${!isConflictGroup && !displayedSwitchPolicy.checked ? 'line-through text-base-content/70' : ''}`}
             title={folder.name}
           >
             {isRenaming ? (
@@ -275,29 +293,33 @@ function FolderCardInner({
           </h3>
 
           <div className="flex items-center justify-between mt-1.5">
-            <label
-              className="flex items-center gap-1.5 cursor-pointer"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <WorkspaceSwitchControl
-                node={folder}
-                policy={displayedSwitchPolicy}
-                isPending={switchDisabled}
-                isBusy={isSwitchBusy}
-                size="xs"
-                ariaLabel={t('common:actions.toggle')}
-                onToggle={() => {
-                  handleToggleClick();
-                }}
-              />
-              <div className="flex flex-col">
-                <WorkspaceSwitchLabel
-                  node={actionFolder}
+            {isConflictGroup ? (
+              <span className="text-xs font-medium text-warning">{t('card.open_conflict')}</span>
+            ) : (
+              <label
+                className="flex items-center gap-1.5 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <WorkspaceSwitchControl
+                  node={folder}
                   policy={displayedSwitchPolicy}
-                  className="text-[10px] font-semibold text-base-content/60 leading-none"
+                  isPending={switchDisabled}
+                  isBusy={isSwitchBusy}
+                  size="xs"
+                  ariaLabel={t('common:actions.toggle')}
+                  onToggle={() => {
+                    handleToggleClick();
+                  }}
                 />
-              </div>
-            </label>
+                <div className="flex flex-col">
+                  <WorkspaceSwitchLabel
+                    node={actionFolder}
+                    policy={displayedSwitchPolicy}
+                    className="text-[10px] font-semibold text-base-content/60 leading-none"
+                  />
+                </div>
+              </label>
+            )}
             {folder.can_navigate && (
               <span className="text-[9px] text-base-content/20 font-bold tracking-wider">
                 {t('card.dir_label')}

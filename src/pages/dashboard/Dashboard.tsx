@@ -17,14 +17,6 @@ import {
   DashboardLoadingState,
 } from './components/DashboardStatusStates';
 
-const EMPTY_STATS = {
-  total_games: 0,
-  total_mods: 0,
-  enabled_mods: 0,
-  disabled_mods: 0,
-  total_collections: 0,
-};
-
 export default function Dashboard() {
   const { t } = useTranslation(['dashboard', 'common']);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
@@ -32,7 +24,11 @@ export default function Dashboard() {
   const activeGameId = useAppStore((state) => state.activeGameId);
   const { data, isLoading, isError, refresh } = useDashboardStats();
   const { activeGame } = useActiveGame();
-  const { keybindings, isLoading: keybindingsLoading } = useActiveKeybindings();
+  const {
+    keybindings,
+    isLoading: keybindingsLoading,
+    isError: keybindingsError,
+  } = useActiveKeybindings();
 
   if (isLoading) {
     return <DashboardLoadingState />;
@@ -46,11 +42,11 @@ export default function Dashboard() {
     return <DashboardEmptyState />;
   }
 
-  const stats = data.stats || EMPTY_STATS;
-  const duplicateWasteBytes = data.duplicate_waste_bytes ?? 0;
-  const categoryDistribution = data.category_distribution ?? [];
-  const gameDistribution = data.game_distribution ?? [];
-  const recentMods: DashboardPayload['recent_mods'] = data.recent_mods ?? [];
+  const { stats } = data;
+  const duplicateWasteBytes = data.duplicate_waste_bytes;
+  const categoryDistribution = data.category_distribution;
+  const gameDistribution = data.game_distribution;
+  const recentMods: DashboardPayload['recent_mods'] = data.recent_mods;
   const dashboardContextKey = activeGameId ?? 'all-games';
 
   return (
@@ -115,6 +111,7 @@ export default function Dashboard() {
             activeGame={activeGame}
             keybindings={keybindings}
             keybindingsLoading={keybindingsLoading}
+            keybindingsError={keybindingsError}
             recentMods={recentMods}
           />
         </div>

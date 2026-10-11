@@ -4,14 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createWrapper } from '../../../tests/testing/test-utils';
-import { collectionRuntimeKeys } from '@/entities/collection';
+import { collectionKeys, collectionRuntimeKeys } from '@/entities/collection';
 import {
   useApplyCollection,
   useApplyCollectionPreview,
   useCollections,
   useRestoreLastChanges,
+  useSaveCollectionChanges,
 } from './useCollections';
-import type { CollectionRuntimeSnapshot } from '@/entities/collection';
+import type { CollectionRuntimeSnapshot, CollectionSummary } from '@/entities/collection';
 import { useAppStore } from '@/app/store';
 import { toast } from '@/shared/ui/toast';
 
@@ -129,6 +130,60 @@ describe('useCollections', () => {
     );
     expect(result.current.data).toBeUndefined();
     expect(result.current.isPlaceholderData).toBe(false);
+  });
+
+  it('refreshes after save instead of reusing an initial read started before the commit', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const oldRead = createDeferred<CollectionSummary[]>();
+    const savedCollection: CollectionSummary = {
+      id: 'c-1',
+      name: 'Saved collection',
+      is_safe: true,
+      is_safety_classified: true,
+      is_active: true,
+      signature: 'saved-signature',
+      updated_at: '2026-10-11T00:00:00Z',
+      mod_count: 2,
+    };
+    let listReads = 0;
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === 'list_collections') {
+        return ++listReads === 1 ? oldRead.promise : Promise.resolve([savedCollection]);
+      }
+      if (command === 'save_collection_changes') return Promise.resolve(savedCollection);
+      throw new Error(`Unexpected invoke command: ${command}`);
+    });
+    const { result } = renderHook(
+      () => ({ list: useCollections('g-1'), save: useSaveCollectionChanges() }),
+      { wrapper: createMutationWrapper(queryClient) },
+    );
+    await waitFor(() => expect(listReads).toBe(1));
+    expect(result.current.list.data).toBeUndefined();
+
+    let saving!: Promise<CollectionSummary>;
+    act(() => {
+      saving = result.current.save.mutateAsync({
+        gameId: 'g-1',
+        collectionId: 'c-1',
+        confirmRemoveMissing: false,
+      });
+    });
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('save_collection_changes', {
+        gameId: 'g-1',
+        collectionId: 'c-1',
+        confirmRemoveMissing: false,
+      }),
+    );
+    await waitFor(() => expect(listReads).toBe(2));
+    await act(async () => {
+      oldRead.resolve([]);
+      await saving;
+    });
+
+    await waitFor(() => expect(result.current.list.data).toEqual([savedCollection]));
+    expect(listReads).toBe(2);
+    expect(queryClient.getQueryData(collectionKeys.list('g-1'))).toEqual([savedCollection]);
   });
 
   it('apply invalidates runtime state and applies backend path rewrites', async () => {
@@ -315,6 +370,7 @@ describe('useCollections', () => {
   });
 
   it('opens file-in-use through workspace runtime dialog on apply error', async () => {
+    useAppStore.setState({ activeGameId: 'g-1' });
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },

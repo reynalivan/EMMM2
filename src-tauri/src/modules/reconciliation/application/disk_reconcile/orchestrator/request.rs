@@ -28,8 +28,8 @@ const WATCHER_FORCE_FULL_ROOT_COUNT: usize = 128;
 const PROGRESS_EMIT_INTERVAL_MS: u128 = 125;
 static NEXT_PROGRESS_RUN_ID: AtomicU64 = AtomicU64::new(1);
 
-/// A short-lived, per-pass event emitter. Progress is derived from completed
-/// top-level roots, never from a fabricated timer.
+/// A per-pass emitter: scan counts completed roots, projection counts processed
+/// mod rows. Finishing has no measured total; elapsed time never advances units.
 pub struct DiskReconcileProgressReporter {
     app: tauri::AppHandle,
     game_id: String,
@@ -71,6 +71,11 @@ impl DiskReconcileProgressReporter {
         self
     }
 
+    pub(crate) fn with_run_id(mut self, run_id: String) -> Self {
+        self.run_id = run_id;
+        self
+    }
+
     fn watcher_session_is_current(&self) -> bool {
         let Some(session) = &self.watcher_session else {
             return true;
@@ -92,7 +97,12 @@ impl DiskReconcileProgressReporter {
         }
         let elapsed_ms = self.started_at.elapsed().as_millis();
         let is_terminal_root = total_units.is_some_and(|total| total == completed_units);
-        if phase == DiskReconcilePhase::ScanningRoots && completed_units > 0 && !is_terminal_root {
+        if matches!(
+            phase,
+            DiskReconcilePhase::ScanningRoots | DiskReconcilePhase::Projecting
+        ) && completed_units > 0
+            && !is_terminal_root
+        {
             let Ok(mut last_emitted_at) = self.last_emitted_at.lock() else {
                 return;
             };
@@ -102,7 +112,9 @@ impl DiskReconcileProgressReporter {
             *last_emitted_at = elapsed_ms;
         }
 
-        let eta_ms = estimate_eta_ms(elapsed_ms, completed_units, total_units);
+        let eta_ms = (phase == DiskReconcilePhase::ScanningRoots)
+            .then(|| estimate_eta_ms(elapsed_ms, completed_units, total_units))
+            .flatten();
         let progress = DiskReconcileProgress {
             game_id: self.game_id.clone(),
             run_id: self.run_id.clone(),

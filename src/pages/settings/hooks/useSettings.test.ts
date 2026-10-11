@@ -5,7 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { useToastStore } from '@/shared/ui/toast';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-vi.mock('@tanstack/react-query', () => {
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-query')>();
   const mUseQueryClient = {
     getQueryData: vi.fn(),
     setQueryData: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('@tanstack/react-query', () => {
     cancelQueries: vi.fn().mockResolvedValue(undefined),
   };
   return {
+    ...actual,
     useQueryClient: vi.fn(() => mUseQueryClient),
     useQuery: vi.fn(),
     useMutation: vi.fn(),

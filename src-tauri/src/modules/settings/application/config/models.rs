@@ -92,7 +92,7 @@ pub struct AppSettings {
     #[serde(default)]
     #[specta(type = f64)]
     pub revision: u64,
-    pub theme: String, // "dark", "light", "system"
+    pub theme: String,
     pub language: String,
     pub games: Vec<GameConfig>,
     pub active_game_id: Option<String>,
@@ -122,7 +122,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             revision: 0,
-            theme: "dark".into(),
+            theme: "onyx".into(),
             language: "en".into(),
             games: Vec::new(),
             active_game_id: None,

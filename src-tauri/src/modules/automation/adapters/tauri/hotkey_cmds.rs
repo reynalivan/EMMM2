@@ -1,6 +1,8 @@
 //! Tauri commands for hotkey management — bindings, conflicts, and config updates.
 
-use crate::modules::automation::application::hotkeys::manager::HotkeyManager;
+use crate::modules::automation::application::hotkeys::manager::{
+    HotkeyManager, ShortcutRegistrationSink, TauriShortcutRegistrationSink,
+};
 use crate::modules::automation::application::hotkeys::{HotkeyConfig, KeyViewerConfig};
 use crate::modules::settings::application::config::ConfigService;
 use crate::shared::errors::AppError;
@@ -8,12 +10,10 @@ use tauri::State;
 
 /// Validate and commit runtime-control settings without persisting a partial
 /// shortcut while OS registration is still allowed to fail. Every configured
-/// action, including the KeyViewer toggle, is registered while enabled and is
-/// dispatched only when the shared game detector reports the active game in
-/// the foreground.
+/// action is registered while enabled. Workspace actions dispatch globally;
+/// only KeyViewer input replay requires the active game in the foreground.
 #[specta::specta]
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri supplies command dependencies as separate State parameters.
 pub async fn save_hotkey_configuration(
     app: tauri::AppHandle,
     expected_revision: u64,
@@ -22,50 +22,29 @@ pub async fn save_hotkey_configuration(
     config_state: State<'_, ConfigService>,
     hotkey_manager: State<'_, HotkeyManager>,
     pool: State<'_, sqlx::SqlitePool>,
-    disk_reconcile_state: State<
-        '_,
-        crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
-    >,
 ) -> Result<crate::modules::settings::adapters::tauri::settings_cmds::SaveSettingsResult, AppError>
 {
-    let previous = config_state.get_settings();
-    hotkey_manager.inner().update_bindings(&app, &hotkeys)?;
-
-    let saved = match config_state.set_hotkey_configuration(expected_revision, hotkeys, keyviewer) {
-        Ok(saved) => saved,
-        Err(error) => {
-            if let Err(restore_error) = hotkey_manager
-                .inner()
-                .update_bindings(&app, &previous.hotkeys)
-            {
-                log::error!(
-                    "Hotkey settings were not persisted and the prior OS registrations could not be restored: {restore_error}"
-                );
-            }
-            return Err(error);
-        }
-    };
+    let mut sink = TauriShortcutRegistrationSink::new(&app);
+    let saved = commit_hotkey_configuration_with_sink(
+        expected_revision,
+        hotkeys,
+        keyviewer,
+        config_state.inner(),
+        hotkey_manager.inner(),
+        &mut sink,
+    )?;
 
     let mut sync_warning = None;
     if let Some(game_id) = saved.active_game_id.clone() {
-        match crate::modules::system::application::app::post_apply::request_overlay_sync_with_retry_for_game(
+        match crate::modules::reconciliation::api::request_runtime_sync_and_wait(
+            &app,
             pool.inner(),
-            config_state.inner(),
             &game_id,
-            crate::modules::system::application::app::post_apply::OverlaySyncCause::SettingsChanged,
+            crate::modules::reconciliation::api::RuntimeSyncCause::SettingsChanged,
         )
         .await
         {
             Ok(result) => {
-                if result.requires_retry() {
-                    disk_reconcile_state.inner().stage_runtime_effects(
-                        &game_id,
-                        crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
-                            collections_dirty: false,
-                            overlay_refresh: true,
-                        },
-                    );
-                }
                 sync_warning = result.diagnostic_message().map(|message| {
                     crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning {
                         kind: if result.needs_manual_reload() {
@@ -78,13 +57,6 @@ pub async fn save_hotkey_configuration(
                 });
             }
             Err(error) => {
-                disk_reconcile_state.inner().stage_runtime_effects(
-                    &game_id,
-                    crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects {
-                        collections_dirty: false,
-                        overlay_refresh: true,
-                    },
-                );
                 log::warn!("Hotkey settings committed but overlay refresh is pending: {error}");
                 sync_warning = Some(
                     crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning {
@@ -104,14 +76,50 @@ pub async fn save_hotkey_configuration(
     )
 }
 
+pub(crate) fn commit_hotkey_configuration_with_sink(
+    expected_revision: u64,
+    hotkeys: HotkeyConfig,
+    keyviewer: KeyViewerConfig,
+    config_state: &ConfigService,
+    hotkey_manager: &HotkeyManager,
+    sink: &mut impl ShortcutRegistrationSink,
+) -> Result<crate::modules::settings::application::config::AppSettings, AppError> {
+    let lifecycle = hotkey_manager.registration_lifecycle();
+    if config_state.get_settings().revision != expected_revision {
+        return Err(AppError::Validation(
+            "Settings changed since this screen was loaded. Refresh and retry your edit."
+                .to_string(),
+        ));
+    }
+    hotkey_manager.update_bindings_with_sink(&lifecycle, sink, &hotkeys)?;
+
+    match config_state.set_hotkey_configuration(expected_revision, hotkeys, keyviewer) {
+        Ok(saved) => Ok(saved),
+        Err(error) => {
+            let latest = config_state.get_settings();
+            if let Err(restore_error) =
+                hotkey_manager.update_bindings_with_sink(&lifecycle, sink, &latest.hotkeys)
+            {
+                log::error!(
+                    "Hotkey settings were not persisted and the latest committed OS registrations could not be restored: {restore_error}"
+                );
+                return Err(AppError::Internal(format!(
+                    "Hotkey settings were not persisted ({error}); restoring committed OS registrations also failed ({restore_error}). Refresh settings and retry registration."
+                )));
+            }
+            Err(error)
+        }
+    }
+}
+
 /// The key 3DMigoto reloads its fixes on, read from the active game's
 /// `d3dx.ini` (falling back to the loader default).
 ///
 /// Toggling from the app moves folders on disk but cannot tell a running game
 /// to re-read them: the reload keystroke has to be pressed while the game has
 /// focus, so the UI names the key instead of replaying it into whatever window
-/// happens to be in front. The in-game hotkey path replays it directly because
-/// there the game IS focused (`services::hotkeys::reload`).
+/// happens to be in front. Global workspace hotkeys only replay reload input
+/// when the shared game detector confirms the selected game is focused.
 #[specta::specta]
 #[tauri::command]
 pub async fn get_reload_key(config_state: State<'_, ConfigService>) -> Result<String, AppError> {

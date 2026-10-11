@@ -163,34 +163,6 @@ pub async fn list_ignored_object_conflicts(
     Ok(list)
 }
 
-/// Checks if a specific combination of mod_ids is ignored for an object.
-pub async fn is_conflict_ignored(
-    pool: &SqlitePool,
-    game_id: &str,
-    object_id: &str,
-    mod_ids: &[String],
-) -> Result<bool, sqlx::Error> {
-    if mod_ids.is_empty() {
-        return Ok(false);
-    }
-
-    let mut sorted_ids = mod_ids.to_vec();
-    sorted_ids.sort();
-    let mod_ids_json = serde_json::to_string(&sorted_ids).unwrap_or_else(|_| "[]".to_string());
-
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM ignored_object_conflicts 
-         WHERE game_id = ? AND object_id = ? AND mod_ids = ?",
-    )
-    .bind(game_id)
-    .bind(object_id)
-    .bind(mod_ids_json)
-    .fetch_one(pool)
-    .await?;
-
-    Ok(count > 0)
-}
-
 /// Persists a new ignored conflict combination.
 pub async fn ignore_object_conflict(
     pool: &SqlitePool,
@@ -250,10 +222,11 @@ mod tests {
     #[test]
     fn canonical_group_key_rejects_single_or_blank_paths() {
         assert!(canonical_active_conflict_group_key(&["E:/Mods/ModA".to_string()]).is_err());
-        assert!(
-            canonical_active_conflict_group_key(&["E:/Mods/ModA".to_string(), " ".to_string(),])
-                .is_err()
-        );
+        assert!(canonical_active_conflict_group_key(&[
+            "E:/Mods/ModA".to_string(),
+            " ".to_string(),
+        ])
+        .is_err());
     }
 
     #[test]

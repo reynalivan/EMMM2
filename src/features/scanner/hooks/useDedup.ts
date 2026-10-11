@@ -13,6 +13,7 @@ import type { DupScanReport, ResolutionRequest, DupScanEvent } from '@/entities/
 import { publishRuntimeDescriptor } from '@/shared/lib/queryRefresh';
 import { buildRuntimeMutationDescriptor } from '@/features/workspace-runtime/@x/scanner';
 import { publishQueryScopes } from '@/shared/lib/queryRefresh';
+import { useDedupScanStore } from '../stores/useDedupScanStore';
 
 /**
  * Query key factory for dedup cache management.
@@ -85,20 +86,35 @@ export function useStartDedupScan() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (params: {
+    mutationFn: async (params: {
       gameId: string;
       modsRoot: string;
-      onEvent: (event: DupScanEvent) => void;
+      onEvent?: (event: DupScanEvent) => void;
     }) => {
+      const store = useDedupScanStore.getState();
+      const session = store.startScan(params.gameId);
+      if (!session) throw new Error('Duplicate scan already running');
       const channel = new Channel<DupScanEvent>();
       channel.onmessage = (message) => {
-        params.onEvent(message);
+        if (!store.applyEvent(session, message)) return;
+        params.onEvent?.(message);
         if (message.event === 'finished') {
           void publishQueryScopes(queryClient, ['dedupReport']);
+        } else if (message.event === 'cancelled') {
+          toast.info(i18next.t('scanner:dedup.toast.scan_cancelled'));
+        } else if (message.event === 'failed') {
+          toast.error(
+            i18next.t('scanner:dedup.toast.scan_failed', { error: message.data.message }),
+          );
         }
       };
 
-      return commands.dupScanStart(params.gameId, params.modsRoot, channel);
+      try {
+        return await commands.dupScanStart(params.gameId, params.modsRoot, channel);
+      } catch (error) {
+        store.stopScan(session);
+        throw error;
+      }
     },
 
     onError: (error) => {
@@ -114,15 +130,8 @@ export function useStartDedupScan() {
  * Covers: Epic 9 scan cancellation
  */
 export function useCancelDedupScan() {
-  const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: () => commands.dupScanCancel(),
-
-    onSuccess: async () => {
-      await publishQueryScopes(queryClient, ['dedupReport']);
-      toast.info(i18next.t('scanner:dedup.toast.scan_cancelled'));
-    },
 
     onError: (error) => {
       toast.error(i18next.t('scanner:dedup.toast.cancel_failed', { error: formatAppError(error) }));

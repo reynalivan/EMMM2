@@ -64,6 +64,9 @@ describe('Fase 2b — Navigation Edges', () => {
       gameId,
       paths: [path.join(objDir, 'ModDisabled')],
       enable: false,
+      operationId: 'phase2b-disable-mod',
+      intentRevision: null,
+      expectedIdentities: null,
     });
 
     const entries = await invokeInApp<FolderEntry[]>('list_folder_entries_cmd', {

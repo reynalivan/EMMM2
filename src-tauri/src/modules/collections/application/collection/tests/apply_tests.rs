@@ -133,7 +133,7 @@ async fn active_runtime_snapshot_scope_uses_game_path_when_mods_path_is_blank() 
         &TestGameFixture {
             id: "game-fallback",
             name: "game-fallback",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: &mods_path,
             mods_path: Some(""),
         },

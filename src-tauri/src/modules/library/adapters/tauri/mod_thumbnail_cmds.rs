@@ -2,7 +2,7 @@ use crate::modules::library::application::mods::metadata;
 use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
-use crate::platform::fs::guard::validate_path;
+use crate::platform::fs::guard::{validate_path, ModFolderIdentityProof};
 use crate::platform::images::thumbnail_cache::ThumbnailCache;
 use crate::shared::errors::AppError;
 
@@ -19,6 +19,7 @@ pub async fn update_mod_thumbnail(
     source_path: String,
 ) -> Result<String, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
+    let folder_proof = ModFolderIdentityProof::capture(&config, &folder)?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
         &game_id,
@@ -27,6 +28,7 @@ pub async fn update_mod_thumbnail(
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
+    folder_proof.validate(&config)?;
     let guard = watcher.suppressor.suppress_paths([folder.as_ref()]);
     let abs_path = metadata::update_mod_thumbnail(&folder, &source_path)?;
     drop(lock);
@@ -49,6 +51,7 @@ pub async fn paste_thumbnail(
     image_data: Vec<u8>,
 ) -> Result<String, AppError> {
     let folder = validate_path(&config, &game_id, &folder_path)?;
+    let folder_proof = ModFolderIdentityProof::capture(&config, &folder)?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(
         &app,
         &game_id,
@@ -57,6 +60,7 @@ pub async fn paste_thumbnail(
         .acquire_exempt(crate::modules::mutation::coordinator::MutationExemption::Thumbnail)
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_initial_recovery_allows_mutation(&app, &game_id)?;
+    folder_proof.validate(&config)?;
     let guard = watcher.suppressor.suppress_paths([folder.as_ref()]);
     let saved_path =
         paste_thumbnail_inner(&config, game_id.clone(), folder_path, image_data).await?;
@@ -82,6 +86,11 @@ pub async fn paste_thumbnail_inner(
     // so the next resolve() call re-generates the WebP from the new file.
     ThumbnailCache::invalidate(&target_path);
     ThumbnailCache::invalidate_folder(&path.to_string_lossy());
+    crate::platform::images::preview_visibility::set_hidden(
+        &path,
+        std::slice::from_ref(&target_path),
+        false,
+    )?;
 
     // Return the absolute path
     Ok(target_path.to_string_lossy().to_string())

@@ -5,6 +5,10 @@ import { useAppStore } from '@/app/store';
 import { commands } from '../../../shared/api/tauri/bindings';
 import FolderConflictManager from './FolderConflictManager';
 
+vi.mock('@tauri-apps/api/core', () => ({
+  convertFileSrc: (path: string) => `asset://${path}`,
+}));
+
 vi.mock('../../../shared/api/tauri/bindings', () => ({
   commands: {
     getFolderConflictDetails: vi.fn(),
@@ -77,6 +81,57 @@ describe('FolderConflictManager', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(getFolderConflictDetails).not.toHaveBeenCalled();
+  });
+
+  it('opens the requested group and shows separate physical candidate thumbnails', async () => {
+    const [blueGroup] = useAppStore.getState().folderConflictsByGame['game-1'];
+    const redGroup = {
+      ...blueGroup,
+      group_id: 'group-red',
+      display_name: 'Red',
+      candidates: blueGroup.candidates.slice(0, 2).map((candidate, index) => ({
+        ...candidate,
+        path: `C:/Mods/Alice/${index === 0 ? '' : 'DISABLED '}Red`,
+        folder_name: index === 0 ? 'Red' : 'DISABLED Red',
+        base_name: 'Red',
+      })),
+    };
+    useAppStore.setState({
+      workspaceDialogState: { kind: 'folderConflicts', groupId: 'group-red' },
+      folderConflictsByGame: { 'game-1': [blueGroup, redGroup] },
+    });
+    getFolderConflictDetails.mockResolvedValue(
+      redGroup.candidates.map((candidate, index) => ({
+        ...candidate,
+        total_size: 1,
+        file_count: 1,
+        created_at: null,
+        modified_at: null,
+        files: [],
+        thumbnail_path: `C:/cache/red-${index}.png`,
+        partial: false,
+        warnings: [],
+      })),
+    );
+    const { container } = render(<FolderConflictManager />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+      ),
+    });
+
+    await waitFor(() =>
+      expect(getFolderConflictDetails).toHaveBeenCalledWith(
+        'game-1',
+        redGroup.candidates.map((candidate) => candidate.path),
+      ),
+    );
+    expect(screen.getByRole('heading', { name: 'This conflict' })).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelectorAll('article img')).toHaveLength(2));
+    const imageSources = Array.from(container.querySelectorAll('article img')).map((image) =>
+      image.getAttribute('src'),
+    );
+    expect(new Set(imageSources).size).toBe(2);
+    expect(screen.getByText('DISABLED Red', { selector: 'h3' })).toBeInTheDocument();
   });
 
   it('shows one explicit keep action, renames the other folders, and submits the reviewed plan', async () => {
@@ -206,11 +261,16 @@ describe('FolderConflictManager', () => {
     fireEvent.click(screen.getByRole('button', { name: /Rename 2 folders.*Next/ }));
 
     await waitFor(() => {
-      expect(resolveFolderNameConflict).toHaveBeenCalledWith('game-1', 'group-1', [
-        { path: 'C:/Mods/Alice/Blue', base_name: 'Blue' },
-        { path: 'C:/Mods/Alice/DISABLED Blue', base_name: 'Blue Two' },
-        { path: 'C:/Mods/DISABLED Alice/Blue', base_name: 'Blue Three' },
-      ]);
+      expect(resolveFolderNameConflict).toHaveBeenCalledWith(
+        'game-1',
+        'group-1',
+        [
+          { path: 'C:/Mods/Alice/Blue', base_name: 'Blue' },
+          { path: 'C:/Mods/Alice/DISABLED Blue', base_name: 'Blue Two' },
+          { path: 'C:/Mods/DISABLED Alice/Blue', base_name: 'Blue Three' },
+        ],
+        null,
+      );
     });
     expect(await screen.findByRole('button', { name: 'Red2' })).toBeInTheDocument();
     expect(screen.queryByText('All conflicts resolved')).not.toBeInTheDocument();

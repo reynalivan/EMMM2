@@ -179,6 +179,7 @@ pub async fn handle_object_renamed_tx(
             &mut *conn,
             game_id,
             &old_ref_key,
+            &old_candidate,
             &new_ref_key,
             &crate::modules::workspace::domain::normalizer::normalize_display_name(
                 &new_logical_folder,

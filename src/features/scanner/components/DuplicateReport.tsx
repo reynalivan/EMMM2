@@ -43,6 +43,11 @@ const DuplicateReport = forwardRef<DuplicateReportHandle, Props>(function Duplic
   const [selections, setSelections] = useState<Map<string, DuplicateSelection>>(new Map());
   const [showModal, setShowModal] = useState(false);
 
+  useEffect(() => {
+    setSelections(new Map());
+    setShowModal(false);
+  }, [gameId, report?.scanId]);
+
   const filteredGroups =
     report?.groups.filter((g) => {
       if (activeFilter === 'all') return true;
@@ -80,6 +85,10 @@ const DuplicateReport = forwardRef<DuplicateReportHandle, Props>(function Duplic
     if (!report) return;
 
     const requests = convertSelectionsToRequests();
+    if (requests.length === 0 || isPending) {
+      if (!isPending) toast.warning(t('scanner:report.no_actions_selected'));
+      return;
+    }
     resolve(
       { requests, gameId: report.gameId },
       {

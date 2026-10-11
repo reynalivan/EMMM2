@@ -131,6 +131,27 @@ describe('hotkey conflict detection', () => {
     expect(screen.queryByText(/prev_variant/)).toBeNull();
   });
 
+  it('saves game notifications independently while global hotkeys are disabled', async () => {
+    render(createElement(HotkeyTab));
+    const globalHotkeys = screen.getByRole('region', { name: 'Global hotkeys' });
+    fireEvent.click(within(globalHotkeys).getByRole('checkbox', { name: 'Enabled' }));
+    const gameNotice = screen.getByRole('checkbox', { name: 'Notifications above the game' });
+    expect(gameNotice).not.toBeChecked();
+    expect(gameNotice).not.toBeDisabled();
+    fireEvent.click(gameNotice);
+    fireEvent.click(screen.getByRole('button', { name: 'Save controls' }));
+    await waitFor(() => expect(mockSaveSettingsAsync).toHaveBeenCalledOnce());
+    expect(mockSaveSettingsAsync).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({
+        enabled: false,
+        game_notification_overlay_enabled: true,
+        preset_status_overlay_enabled: false,
+      }),
+      { enabled: true },
+    );
+  });
+
   it('shows concise KeyViewer diagnostics and disables cleanup without a game executable', () => {
     activeGameId = 'gimi';
     vi.mocked(useQuery).mockReturnValue({

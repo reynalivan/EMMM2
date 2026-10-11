@@ -16,6 +16,7 @@ interface BrowserSurfacePresentationInput {
   activeSidePanel: BrowserSidePanel;
   availableWidth: number;
   hasBlockingOverlay: boolean;
+  hasHotkeyNotice?: boolean;
   isAppMenuOpen: boolean;
   isChromeTrayOpen: boolean;
 }
@@ -39,10 +40,15 @@ export function getBrowserSurfacePresentation({
   activeSidePanel,
   availableWidth,
   hasBlockingOverlay,
+  hasHotkeyNotice = false,
   isAppMenuOpen,
   isChromeTrayOpen,
 }: BrowserSurfacePresentationInput): BrowserSurfacePresentation {
-  if (hasBlockingOverlay || getBrowserSidePanelLayout(activeSidePanel, availableWidth) === 'full') {
+  if (
+    hasBlockingOverlay ||
+    hasHotkeyNotice ||
+    getBrowserSidePanelLayout(activeSidePanel, availableWidth) === 'full'
+  ) {
     return { visibility: 'hidden', focus: 'dom', leftInsetPx: 0 };
   }
 

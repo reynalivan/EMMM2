@@ -48,6 +48,7 @@ impl From<CollectionError> for AppError {
         // Keep the lock classification at the top level: wrapping it in
         // `Collection(..)` would hide the discriminant the frontend matches on.
         match error {
+            CollectionError::FileLock { path, recovery_id } => Self::FileLock { path, recovery_id },
             CollectionError::FileInUse { path, processes } => Self::FileInUse { path, processes },
             CollectionError::PathBusy { path } => Self::PathBusy { path },
             other => Self::Collection(other),
@@ -64,6 +65,8 @@ impl From<CollectionError> for RuntimeStateError {
 /// Errors specific to collection operations.
 #[derive(Debug, Clone, Error, Serialize, Deserialize, specta::Type)]
 pub enum CollectionError {
+    #[error("File is locked: {path}")]
+    FileLock { path: String, recovery_id: String },
     #[error("Collection '{id}' not found")]
     NotFound { id: String },
 
@@ -117,6 +120,10 @@ impl From<std::io::Error> for CollectionError {
 /// Errors specific to Metadata operations.
 #[derive(Debug, Clone, Error, Serialize, Deserialize, specta::Type)]
 pub enum MetadataError {
+    #[error("File is locked: {path}")]
+    FileLock { path: String, recovery_id: String },
+    #[error("Path is busy: {path}")]
+    PathBusy { path: String },
     #[error("Path violation: {0}")]
     Security(String),
 
@@ -283,6 +290,8 @@ impl From<reqwest::Error> for ScannerError {
 #[derive(Debug, Clone, Error, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppError {
+    #[error("File is locked: {path}")]
+    FileLock { path: String, recovery_id: String },
     #[error("{0}")]
     RuntimeState(#[from] RuntimeStateError),
 

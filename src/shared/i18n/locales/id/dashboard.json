@@ -83,6 +83,8 @@
     "no_game": "Tidak ada game terpilih"
   },
   "keys": {
+    "loading": "Memuat pemetaan tombol aktif",
+    "load_error": "Pemetaan tombol tidak tersedia. Coba indexing ulang atau kembali ke Home untuk mencoba lagi.",
     "title": "Pemetaan Tombol Aktif",
     "table_mod": "Mod",
     "table_section": "Bagian",

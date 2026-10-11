@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { DashboardQuickActions } from './DashboardQuickActions';
@@ -57,6 +57,6 @@ describe('DashboardQuickActions', () => {
     expect(launchConfiguredGame).toHaveBeenCalledWith('game-1', true);
     expect(quickPlay).toBeDisabled();
 
-    resolveLaunch();
+    await act(async () => resolveLaunch());
   });
 });

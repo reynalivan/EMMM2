@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useActiveConflicts } from './useFolderMutations';
+import { useActiveConflicts } from '@/features/mod-runtime';
 import { useAppStore } from '@/app/store';
 import type { WorkspaceExplorerNode } from '@/entities/workspace';
 import type { FolderNameConflictGroup } from '@/shared/api/tauri/bindings';

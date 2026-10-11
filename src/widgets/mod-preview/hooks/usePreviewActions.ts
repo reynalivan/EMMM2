@@ -20,6 +20,7 @@ interface UsePreviewActionsOptions {
   currentImagePath: string | null;
   setCurrentImageIndex: React.Dispatch<React.SetStateAction<number>>;
   savePreviewImage: PreviewMutationLike<{
+    gameId: string;
     folderPath: string;
     objectName: string;
     imageData: number[];
@@ -31,6 +32,16 @@ interface UsePreviewActionsOptions {
   clearPreviewImages: PreviewMutationLike<{
     folderPath: string;
   }>;
+  restorePreviewImage: PreviewMutationLike<{
+    folderPath: string;
+    imagePath: string;
+  }>;
+}
+
+interface PreviewImageTarget {
+  gameId: string;
+  folderPath: string;
+  objectName: string;
 }
 
 export function usePreviewActions({
@@ -43,27 +54,50 @@ export function usePreviewActions({
   savePreviewImage,
   removePreviewImage,
   clearPreviewImages,
+  restorePreviewImage,
 }: UsePreviewActionsOptions) {
   const { t } = useTranslation(['preview', 'common']);
-  const importInputRef = useRef<HTMLInputElement>(null);
+  const importInputElementRef = useRef<HTMLInputElement | null>(null);
+  const pendingImportTargetRef = useRef<PreviewImageTarget | null>(null);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
+  const handleImportInputCancel = useCallback(() => {
+    pendingImportTargetRef.current = null;
+  }, []);
+  const importInputRef = useCallback(
+    (input: HTMLInputElement | null) => {
+      const previousInput = importInputElementRef.current;
+      previousInput?.removeEventListener('cancel', handleImportInputCancel);
+      importInputElementRef.current = input;
+      input?.addEventListener('cancel', handleImportInputCancel);
+    },
+    [handleImportInputCancel],
+  );
+
   const saveImageBytes = useCallback(
-    async (bytes: number[]) => {
-      if (!activePath) {
+    async (bytes: number[], target?: PreviewImageTarget) => {
+      const saveTarget =
+        target ??
+        (activePath && activeGameId
+          ? {
+              gameId: activeGameId,
+              folderPath: activePath,
+              objectName: selectedFolder?.name ?? 'mod',
+            }
+          : null);
+      if (!saveTarget) {
         toast.warning(t('preview:empty.no_mod_selected'));
         return;
       }
 
       await savePreviewImage.mutateAsync({
-        folderPath: activePath,
-        objectName: selectedFolder?.name ?? 'mod',
+        ...saveTarget,
         imageData: bytes,
       });
       setCurrentImageIndex(0);
     },
-    [activePath, savePreviewImage, selectedFolder, setCurrentImageIndex, t],
+    [activeGameId, activePath, savePreviewImage, selectedFolder, setCurrentImageIndex, t],
   );
 
   const pasteThumbnailFromClipboard = useCallback(async () => {
@@ -103,26 +137,33 @@ export function usePreviewActions({
   }, [activePath, saveImageBytes, t]);
 
   const triggerThumbnailImport = useCallback(() => {
-    if (!activePath) {
+    if (!activePath || !activeGameId) {
       toast.warning(t('preview:empty.no_mod_selected'));
       return;
     }
 
-    importInputRef.current?.click();
-  }, [activePath, t]);
+    pendingImportTargetRef.current = {
+      gameId: activeGameId,
+      folderPath: activePath,
+      objectName: selectedFolder?.name ?? 'mod',
+    };
+    importInputElementRef.current?.click();
+  }, [activeGameId, activePath, selectedFolder, t]);
 
   const handleImportInputChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       event.currentTarget.value = '';
+      const target = pendingImportTargetRef.current;
+      pendingImportTargetRef.current = null;
 
-      if (!file) {
+      if (!file || !target) {
         return;
       }
 
       try {
         const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-        await saveImageBytes(bytes);
+        await saveImageBytes(bytes, target);
         toast.success(t('preview:gallery.menu.thumbnail_imported'));
       } catch (error) {
         toast.error(t('preview:gallery.import_error', { error: formatAppError(error) }));
@@ -182,6 +223,19 @@ export function usePreviewActions({
     }
   }, [activePath, clearPreviewImages, setCurrentImageIndex, t]);
 
+  const restoreCurrentImage = useCallback(async () => {
+    if (!activePath || !currentImagePath) return;
+    try {
+      await restorePreviewImage.mutateAsync({
+        folderPath: activePath,
+        imagePath: currentImagePath,
+      });
+      toast.success(t('preview:gallery.thumbnail_restored'));
+    } catch (error) {
+      toast.error(t('preview:gallery.restore_error', { error: formatAppError(error) }));
+    }
+  }, [activePath, currentImagePath, restorePreviewImage, t]);
+
   const requestImportArchives = useCallback(async () => {
     const selected = await openDialog({
       multiple: true,
@@ -240,6 +294,7 @@ export function usePreviewActions({
     confirmRemoveCurrentImage,
     requestClearAllImages,
     confirmClearAllImages,
+    restoreCurrentImage,
     requestImportArchives,
     requestImportFolders,
     openCurrentLocation,

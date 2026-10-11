@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
-describe('Onboarding & Welcome Screen (req-03)', () => {
+describe('Startup from a persisted isolated configuration (req-03)', () => {
   let mockGamePath: string;
 
   before(async () => {
@@ -24,7 +24,7 @@ describe('Onboarding & Welcome Screen (req-03)', () => {
     await fs.rm(mockGamePath, { recursive: true, force: true });
   });
 
-  it('TC-03-08: Finishing Setup transitions app (mounts dashboard)', async () => {
+  it('TC-03-08: Seeded configuration routes startup to the dashboard', async () => {
     await browser.url('http://tauri.localhost/');
     await browser.pause(2000);
 

@@ -18,7 +18,7 @@ async fn setup_object_mods_fixture() -> sqlx::SqlitePool {
         &TestGameFixture {
             id: "g_object_mods",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },
@@ -117,7 +117,7 @@ async fn test_mod_pin_flag_updates_db() {
         &TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },
@@ -207,7 +207,7 @@ async fn test_suggest_random_mods() {
         &TestGameFixture {
             id: "g1",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },
@@ -491,7 +491,7 @@ async fn test_suggest_random_mods_uses_effectively_disabled_paths() {
         &TestGameFixture {
             id: "g_effective_disabled",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/Mods",
             mods_path: Some("/Mods"),
         },

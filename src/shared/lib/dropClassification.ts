@@ -59,14 +59,3 @@ export function classifyDroppedPaths(paths: string[]): ClassifiedPaths {
   }
   return result;
 }
-
-/** Check if ALL paths are unsupported */
-export function allUnsupported(classified: ClassifiedPaths): boolean {
-  return (
-    classified.unsupported.length > 0 &&
-    classified.folders.length === 0 &&
-    classified.archives.length === 0 &&
-    classified.iniFiles.length === 0 &&
-    classified.images.length === 0
-  );
-}

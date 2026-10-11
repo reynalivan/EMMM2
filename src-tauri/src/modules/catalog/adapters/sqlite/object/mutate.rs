@@ -60,13 +60,17 @@ pub async fn delete_object_and_mods_by_folder(
         .fetch_optional(&mut *conn)
         .await?
         .flatten();
-    let child_prefix_key = format!("{}/%", folder_path_key(folder_path, mods_path.as_deref()));
-    let mods_deleted = sqlx::query("DELETE FROM mods WHERE game_id = ? AND folder_path_key LIKE ?")
-        .bind(game_id)
-        .bind(child_prefix_key)
-        .execute(&mut *conn)
-        .await?
-        .rows_affected();
+    let child_prefix_key = format!(
+        "{}/%",
+        escape_like(&folder_path_key(folder_path, mods_path.as_deref()))
+    );
+    let mods_deleted =
+        sqlx::query("DELETE FROM mods WHERE game_id = ? AND folder_path_key LIKE ? ESCAPE '\\'")
+            .bind(game_id)
+            .bind(child_prefix_key)
+            .execute(&mut *conn)
+            .await?
+            .rows_affected();
 
     // Delete the object itself
     sqlx::query("DELETE FROM objects WHERE game_id = ? AND folder_path_key = ?")
@@ -82,6 +86,13 @@ pub async fn delete_object_and_mods_by_folder(
         mods_deleted
     );
     Ok(mods_deleted)
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 pub async fn set_is_pinned(

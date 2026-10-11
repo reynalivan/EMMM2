@@ -11,11 +11,11 @@ import { useDownloads } from '../hooks/useDownloads';
 import { useTranslation } from 'react-i18next';
 import type { BrowserDownloadItem } from '../types';
 import { formatBytes } from '@/shared/lib/utils/formatters';
-import { ExternalLink, Pause, Play, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 import VirtualList from '@/shared/ui/components/ui/VirtualList';
 import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkeleton';
 import type { BrowserSidePanelLayout } from '../browserSurfacePresentation';
-import { DownloadItemActions } from './DownloadItemActions';
+import { DownloadTransferActions } from './DownloadTransferActions';
 
 const getDownloadItemKey = (item: BrowserDownloadItem) => item.id;
 
@@ -265,96 +265,20 @@ export function DownloadRow({
         )}
       </div>
 
-      <div className="flex gap-1">
-        {(item.status === 'requested' || item.status === 'in_progress') && (
-          <button
-            className="btn btn-ghost btn-xs text-warning"
-            onClick={onCancel}
-            title={t('downloads.cancel_title')}
-            aria-label={t('downloads.cancel_title')}
-          >
-            <X size={14} />
-          </button>
-        )}
-        {item.status === 'in_progress' && item.can_resume && (
-          <button
-            className="btn btn-ghost btn-xs"
-            onClick={onPause}
-            title={t('downloads.pause_title')}
-            aria-label={t('downloads.pause_title')}
-          >
-            <Pause size={14} />
-          </button>
-        )}
-        {item.status === 'paused' && item.can_resume && (
-          <button
-            className="btn btn-ghost btn-xs text-primary"
-            onClick={onResume}
-            title={t('downloads.resume_title')}
-            aria-label={t('downloads.resume_title')}
-          >
-            <Play size={14} />
-          </button>
-        )}
-        {item.status === 'paused' && (
-          <button
-            className="btn btn-ghost btn-xs text-warning"
-            onClick={onCancel}
-            title={t('downloads.cancel_title')}
-            aria-label={t('downloads.cancel_title')}
-          >
-            <X size={14} />
-          </button>
-        )}
-        {item.status === 'failed' && item.can_resume && (
-          <button
-            className="btn btn-ghost btn-xs text-primary"
-            onClick={onResume}
-            title={t('downloads.resume_title')}
-            aria-label={t('downloads.resume_title')}
-          >
-            <Play size={14} />
-          </button>
-        )}
-        {item.status === 'failed' && !item.can_resume && item.tab_label && (
-          <button
-            className="btn btn-ghost btn-xs"
-            onClick={onRefreshLink}
-            title={t('downloads.refresh_link_title')}
-            aria-label={t('downloads.refresh_link_title')}
-          >
-            <RefreshCw size={14} />
-          </button>
-        )}
-        {item.status === 'failed' && !item.can_resume && item.source_url && (
-          <button
-            className="btn btn-ghost btn-xs"
-            onClick={onOpenSource}
-            title={t('downloads.open_source_title')}
-            aria-label={t('downloads.open_source_title')}
-          >
-            <ExternalLink size={14} />
-          </button>
-        )}
-        {(item.status === 'failed' || item.status === 'canceled') && (
-          <button
-            className="btn btn-ghost btn-xs text-primary"
-            onClick={onRetry}
-            title={t('downloads.retry_title')}
-            aria-label={t('downloads.retry_title')}
-          >
-            <RotateCcw size={14} />
-          </button>
-        )}
-        <DownloadItemActions
-          item={item}
-          onRemoveFromList={onRemoveFromList}
-          onDeleteFile={onDeleteFile}
-          onRename={onRename}
-          onOpenFile={onOpenFile}
-          onOpenLocation={onOpenLocation}
-        />
-      </div>
+      <DownloadTransferActions
+        item={item}
+        onRemoveFromList={onRemoveFromList}
+        onDeleteFile={onDeleteFile}
+        onRename={onRename}
+        onOpenFile={onOpenFile}
+        onOpenLocation={onOpenLocation}
+        onCancel={onCancel}
+        onPause={onPause}
+        onResume={onResume}
+        onRefreshLink={onRefreshLink}
+        onOpenSource={onOpenSource}
+        onRetry={onRetry}
+      />
     </div>
   );
 }

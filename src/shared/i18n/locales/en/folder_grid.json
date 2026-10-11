@@ -15,6 +15,7 @@
   },
   "conflict_manager": {
     "title": "Folder name conflicts",
+    "this_conflict": "This conflict",
     "keep_name_instruction": "Select one folder to keep its current base name.",
     "remaining_instruction": "Choose Rename or Mark as Trash for each remaining folder.",
     "banner": "{{count}} folder name conflict(s) need resolution. Other mods remain in sync.",

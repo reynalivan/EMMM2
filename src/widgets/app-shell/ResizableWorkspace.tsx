@@ -41,18 +41,42 @@ export default function ResizableWorkspace({
   // Resize Handlers
   const handleMouseDown = (direction: 'left' | 'right') => {
     setIsResizing(direction);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
   };
 
   useEffect(() => {
-    const handleMouseUp = () => {
-      if (isResizing) {
-        setPanelWidths(widthsRef.current.left, widthsRef.current.right);
-        setIsResizing(null);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+    if (!isResizing) return;
+    if (isMobile) {
+      setIsResizing(null);
+      return;
+    }
+
+    const bodyStyle = document.body.style;
+    const previousCursor = bodyStyle.cursor;
+    const previousCursorPriority = bodyStyle.getPropertyPriority('cursor');
+    const previousUserSelect = bodyStyle.userSelect;
+    const previousUserSelectPriority = bodyStyle.getPropertyPriority('user-select');
+    bodyStyle.cursor = 'col-resize';
+    bodyStyle.userSelect = 'none';
+
+    let bodyStylesRestored = false;
+    const restoreBodyStyles = () => {
+      if (bodyStylesRestored) return;
+      bodyStylesRestored = true;
+      if (bodyStyle.cursor === 'col-resize') {
+        bodyStyle.setProperty('cursor', previousCursor, previousCursorPriority);
       }
+      if (bodyStyle.userSelect === 'none') {
+        bodyStyle.setProperty('user-select', previousUserSelect, previousUserSelectPriority);
+      }
+    };
+
+    let gestureEnded = false;
+    const handleMouseUp = () => {
+      if (gestureEnded) return;
+      gestureEnded = true;
+      setPanelWidths(widthsRef.current.left, widthsRef.current.right);
+      setIsResizing(null);
+      restoreBodyStyles();
     };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -86,15 +110,17 @@ export default function ResizableWorkspace({
       }
     };
 
-    if (isResizing) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('blur', handleMouseUp);
     return () => {
+      gestureEnded = true;
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('blur', handleMouseUp);
+      restoreBodyStyles();
     };
-  }, [isResizing, setPanelWidths, isPreviewOpen]);
+  }, [isResizing, setPanelWidths, isPreviewOpen, isMobile]);
 
   // Mobile View: Stack Navigation
   if (isMobile) {

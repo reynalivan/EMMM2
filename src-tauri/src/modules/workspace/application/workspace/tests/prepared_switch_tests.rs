@@ -41,7 +41,7 @@ async fn normal_leaf_toggle_can_prepare_after_database_pool_closes() {
         &TestGameFixture {
             id: "game",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_str().unwrap(),
             mods_path: root.to_str(),
         },
@@ -85,7 +85,7 @@ async fn normal_leaf_toggle_rejects_only_same_parent_physical_name_collision() {
         &TestGameFixture {
             id: "game",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_str().unwrap(),
             mods_path: root.to_str(),
         },
@@ -137,7 +137,7 @@ async fn enabled_sibling_does_not_block_normal_activation_or_exclusive_choice() 
         &TestGameFixture {
             id: "game",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_str().unwrap(),
             mods_path: root.to_str(),
         },
@@ -309,7 +309,7 @@ async fn mod_switch_describes_and_sequences_every_disabled_parent() {
         &TestGameFixture {
             id: "game",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_str().unwrap(),
             mods_path: root.to_str(),
         },
@@ -470,7 +470,7 @@ async fn object_bulk_switch_prepares_one_identity_checked_atomic_plan() {
         &TestGameFixture {
             id: "game",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_str().unwrap(),
             mods_path: root.to_str(),
         },

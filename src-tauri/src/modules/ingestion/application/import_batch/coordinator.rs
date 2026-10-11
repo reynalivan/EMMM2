@@ -1,3 +1,4 @@
+use super::placement::{append_target_subpath, resolve_existing_object_directory};
 use super::target_manifest_index::TargetManifestIndexState;
 use super::types::{
     ConfidenceTier, CreateImportBatchInput, ImportBatch, ImportBatchStatus, ImportDecision,
@@ -69,10 +70,19 @@ async fn prepare_import_batch(
             ))
         })?;
         reject_workspace_source(&canonical, &workspace_roots)?;
-        let source_kind = source
-            .source_kind
-            .unwrap_or_else(|| infer_source_kind(&canonical, input.flow));
-        validate_source_kind(&canonical, source_kind)?;
+        let source_kind = match source.source_kind {
+            Some(source_kind) => {
+                validate_source_kind(&canonical, source_kind)?;
+                source_kind
+            }
+            None => {
+                let Some(source_kind) = inferred_source_kind_if_supported(&canonical, input.flow)
+                else {
+                    continue;
+                };
+                source_kind
+            }
+        };
         let planned_name = planned_name_for_source(&canonical, source_kind)?;
         items.push(NewImportItemRecord {
             id: uuid::Uuid::new_v4().to_string(),
@@ -81,6 +91,11 @@ async fn prepare_import_batch(
             staging_path: None,
             planned_name,
         });
+    }
+    if items.is_empty() {
+        return Err(AppError::Validation(
+            "No supported import sources were provided".to_string(),
+        ));
     }
     Ok((
         CreateImportBatchRecord {
@@ -160,6 +175,9 @@ pub async fn set_import_item_decision_with_target_index(
         ));
     }
     let item = require_item(db, &input.item_id).await?;
+    let batch = import_batch::get_batch(db, &item.batch_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
     if input.decision != ImportDecision::Skip
         && matches!(
             item.content_kind,
@@ -197,18 +215,6 @@ pub async fn set_import_item_decision_with_target_index(
         let object_id = input.destination_object_id.as_deref().ok_or_else(|| {
             AppError::Validation("Manual target decisions require an existing object".to_string())
         })?;
-        let batch = import_batch::get_batch(db, &item.batch_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
-        let object =
-            crate::modules::catalog::adapters::sqlite::object::get_game_object_by_id(db, object_id)
-                .await?
-                .filter(|object| object.game_id == batch.game_id)
-                .ok_or_else(|| {
-                    AppError::Validation(
-                        "Selected manual target is not part of the import batch game".to_string(),
-                    )
-                })?;
         if input.decision == ImportDecision::KeepSpecificTarget
             && batch.target_object_id.as_deref() != Some(object_id)
         {
@@ -216,41 +222,71 @@ pub async fn set_import_item_decision_with_target_index(
                 "Keep-specific-target can only select the batch's original target".to_string(),
             ));
         }
-        let mods_root =
-            crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)
-                .await?
-                .ok_or_else(|| {
-                    AppError::Validation("Game has no configured mods path".to_string())
-                })?;
-        input.destination_path = Some(
-            Path::new(&mods_root)
-                .join(&object.folder_path)
-                .to_string_lossy()
-                .into_owned(),
-        );
         input.canonical_entry_key = None;
         input.matched_alias = None;
     } else {
-        let selected = item.destination_suggestions.iter().find(|suggestion| {
-            input
-                .destination_object_id
-                .as_ref()
-                .is_some_and(|id| suggestion.object_id.as_ref() == Some(id))
-                || input
-                    .canonical_entry_key
-                    .as_ref()
-                    .is_some_and(|key| suggestion.canonical_entry_key.as_ref() == Some(key))
-        });
+        let selected = if let Some(object_id) = input.destination_object_id.as_deref() {
+            if input.decision == ImportDecision::CreateCanonical {
+                return Err(AppError::Validation(
+                    "Create-canonical cannot select an existing object".to_string(),
+                ));
+            }
+            item.destination_suggestions
+                .iter()
+                .find(|suggestion| suggestion.object_id.as_deref() == Some(object_id))
+        } else {
+            if input.decision != ImportDecision::CreateCanonical {
+                return Err(AppError::Validation(
+                    "Existing destinations require an object id".to_string(),
+                ));
+            }
+            item.destination_suggestions.iter().find(|suggestion| {
+                suggestion.kind == super::types::DestinationKind::CreateCanonical
+                    && suggestion.object_id.is_none()
+                    && input
+                        .canonical_entry_key
+                        .as_ref()
+                        .is_some_and(|key| suggestion.canonical_entry_key.as_ref() == Some(key))
+            })
+        };
         let Some(selected) = selected else {
             return Err(AppError::Validation(
                 "Selected destination is not part of the latest backend suggestions".to_string(),
             ));
         };
+        if input
+            .canonical_entry_key
+            .as_ref()
+            .is_some_and(|key| selected.canonical_entry_key.as_ref() != Some(key))
+        {
+            return Err(AppError::Validation(
+                "Selected object and canonical entry disagree".to_string(),
+            ));
+        }
         input.destination_object_id = selected.object_id.clone();
         input.destination_path = Some(selected.target_path.clone());
         input.canonical_entry_key = selected.canonical_entry_key.clone();
     }
     if input.decision != ImportDecision::Skip {
+        if let Some(object_id) = input.destination_object_id.as_deref() {
+            let mods_root =
+                crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::Validation("Game has no configured mods path".to_string())
+                    })?;
+            input.destination_path = Some(
+                resolve_existing_object_directory(
+                    db,
+                    &batch.game_id,
+                    object_id,
+                    Path::new(&mods_root),
+                )
+                .await?
+                .to_string_lossy()
+                .into_owned(),
+            );
+        }
         if let Some(comparison) =
             inspect_existing_target(db, target_manifest_index, &item, &input, None).await?
         {
@@ -499,6 +535,7 @@ pub(crate) async fn build_match_suggestions_with_prepared_content(
                 object_id: object.id,
                 name: object.name,
                 folder_name,
+                folder_path: object.folder_path,
                 canonical_entry_key: object.matched_entry_key,
                 aliases,
                 category,
@@ -567,7 +604,11 @@ pub(crate) async fn inspect_existing_target(
     let Some(destination_path) = input.destination_path.as_deref() else {
         return Ok(None);
     };
-    let parent = PathBuf::from(destination_path);
+    let batch = import_batch::get_batch(db, &item.batch_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
+    let parent =
+        append_target_subpath(Path::new(destination_path), batch.target_subpath.as_deref())?;
     let physical_name = crate::modules::library::application::mods::core_ops::standardize_prefix(
         &item.planned_name,
         true,
@@ -597,9 +638,6 @@ pub(crate) async fn inspect_existing_target(
             manifest
         }
     };
-    let batch = import_batch::get_batch(db, &item.batch_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Import batch '{}'", item.batch_id)))?;
     let mods_root = crate::modules::games::adapters::sqlite::game::get_mod_path(db, &batch.game_id)
         .await?
         .ok_or_else(|| AppError::Validation("Game has no configured mods path".to_string()))?;
@@ -1174,19 +1212,28 @@ async fn validate_create_input(
             input.game_id
         )));
     }
-    match (
-        input.flow,
-        input.target_mode,
-        input.target_object_id.as_ref(),
-    ) {
-        (ImportFlow::SpecificImport, TargetMode::Specific, Some(_)) => Ok(()),
-        (ImportFlow::SpecificImport, _, _) => Err(AppError::Validation(
+    if input.flow == ImportFlow::SpecificImport && input.target_mode != TargetMode::Specific {
+        return Err(AppError::Validation(
             "Specific import requires target_mode specific and a target object".to_string(),
+        ));
+    }
+    match (input.target_mode, input.target_object_id.as_deref()) {
+        (TargetMode::Auto, None) => Ok(()),
+        (TargetMode::Auto, Some(_)) => Err(AppError::Validation(
+            "Automatic target mode cannot contain a target object".to_string(),
         )),
-        (_, TargetMode::Specific, None) => Err(AppError::Validation(
+        (TargetMode::Specific, Some(object_id)) if !object_id.trim().is_empty() => {
+            let mods_root =
+                crate::modules::games::adapters::sqlite::game::get_mod_path(db, &input.game_id)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound(format!("Game '{}'", input.game_id)))?;
+            resolve_existing_object_directory(db, &input.game_id, object_id, Path::new(&mods_root))
+                .await?;
+            Ok(())
+        }
+        (TargetMode::Specific, _) => Err(AppError::Validation(
             "Specific target mode requires a target object".to_string(),
         )),
-        _ => Ok(()),
     }
 }
 
@@ -1202,6 +1249,13 @@ fn infer_source_kind(path: &Path, flow: ImportFlow) -> ImportSourceKind {
     } else {
         ImportSourceKind::Folder
     }
+}
+
+fn inferred_source_kind_if_supported(path: &Path, flow: ImportFlow) -> Option<ImportSourceKind> {
+    let source_kind = infer_source_kind(path, flow);
+    validate_source_kind(path, source_kind)
+        .ok()
+        .map(|()| source_kind)
 }
 
 fn validate_source_kind(path: &Path, kind: ImportSourceKind) -> Result<(), AppError> {
@@ -1272,8 +1326,11 @@ async fn require_item(db: &SqlitePool, item_id: &str) -> Result<ImportItem, AppE
 
 #[cfg(test)]
 mod target_manifest_tests {
-    use super::find_existing_payload_match;
+    use super::{find_existing_payload_match, inferred_source_kind_if_supported};
     use crate::modules::ingestion::application::import_batch::payload_manifest::build_payload_manifest;
+    use crate::modules::ingestion::application::import_batch::types::{
+        ImportFlow, ImportSourceKind,
+    };
 
     #[test]
     fn finds_an_identical_installed_payload_with_a_different_folder_name() {
@@ -1297,5 +1354,23 @@ mod target_manifest_tests {
                 .unwrap();
 
         assert_eq!(match_path.as_deref(), Some(installed.as_path()));
+    }
+
+    #[test]
+    fn inferred_source_validation_keeps_dotted_folders_and_skips_unsupported_files() {
+        let workspace = tempfile::tempdir().unwrap();
+        let dotted_folder = workspace.path().join("Character.v1");
+        let unsupported_file = workspace.path().join("readme.txt");
+        std::fs::create_dir(&dotted_folder).unwrap();
+        std::fs::write(&unsupported_file, "notes").unwrap();
+
+        assert_eq!(
+            inferred_source_kind_if_supported(&dotted_folder, ImportFlow::AutoImport),
+            Some(ImportSourceKind::Folder)
+        );
+        assert_eq!(
+            inferred_source_kind_if_supported(&unsupported_file, ImportFlow::AutoImport),
+            None
+        );
     }
 }

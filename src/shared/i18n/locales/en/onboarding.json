@@ -69,6 +69,7 @@
     "phase_progress": "Current stage",
     "preparation_progress": "Preparation progress",
     "folders_complete": "{{completed}} of {{total}} folders",
+    "mods_complete": "{{completed}} / {{total}} mods processed",
     "folders_classified": "{{count}} folders classified",
     "current_root": "Current folder: {{root}}",
     "elapsed": "Elapsed {{duration}}",

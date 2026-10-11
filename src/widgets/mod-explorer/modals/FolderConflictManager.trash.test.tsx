@@ -4,6 +4,10 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '@/app/store';
 import { commands } from '../../../shared/api/tauri/bindings';
 import FolderConflictManager from './FolderConflictManager';
+import { FileInUseDialog } from '@/features/file-watcher';
+
+const toastError = vi.hoisted(() => vi.fn());
+vi.mock('@/shared/ui/toast', () => ({ toast: { error: toastError } }));
 
 const notifyCommittedMutationSyncWarning = vi.fn();
 
@@ -17,18 +21,26 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
     getFolderConflictDetails: vi.fn(),
     resolveFolderNameConflict: vi.fn(),
     trashFolderConflictCandidate: vi.fn(),
+    getFileLockInfo: vi.fn(),
+    dismissFileLockRecovery: vi.fn(),
   },
 }));
 
 const getFolderConflictDetails = vi.mocked(commands.getFolderConflictDetails);
 const trashFolderConflictCandidate = vi.mocked(commands.trashFolderConflictCandidate);
 
-const renderManager = () =>
-  render(<FolderConflictManager />, {
-    wrapper: ({ children }) => (
-      <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
-    ),
-  });
+const renderManager = (showFileLockDialog = false) =>
+  render(
+    <>
+      <FolderConflictManager />
+      {showFileLockDialog && <FileInUseDialog />}
+    </>,
+    {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+      ),
+    },
+  );
 
 describe('FolderConflictManager pending Trash actions', () => {
   beforeAll(() => {
@@ -42,9 +54,19 @@ describe('FolderConflictManager pending Trash actions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(commands.getFileLockInfo).mockImplementation(async (id) => ({
+      recovery_id: id,
+      path: 'C:/Mods/DISABLED Alice/Blue',
+      status: 'unknown',
+      message: null,
+      processes: [],
+      action_outcome: null,
+    }));
+    vi.mocked(commands.dismissFileLockRecovery).mockResolvedValue(undefined);
     useAppStore.setState({
       activeGameId: 'game-1',
       workspaceDialogState: { kind: 'folderConflicts' },
+      folderConflictReportsByGame: {},
       folderConflictsByGame: {
         'game-1': [
           {
@@ -98,11 +120,13 @@ describe('FolderConflictManager pending Trash actions', () => {
       1,
       'game-1',
       'C:/Mods/Alice/DISABLED Blue',
+      null,
     );
     expect(trashFolderConflictCandidate).toHaveBeenNthCalledWith(
       2,
       'game-1',
       'C:/Mods/DISABLED Alice/Blue',
+      null,
     );
     expect(notifyCommittedMutationSyncWarning).toHaveBeenCalledTimes(2);
   });
@@ -123,5 +147,47 @@ describe('FolderConflictManager pending Trash actions', () => {
 
     expect(screen.getAllByRole('textbox')).toHaveLength(2);
     expect(trashFolderConflictCandidate).not.toHaveBeenCalled();
+  });
+
+  it('keeps retrying the locked rename step without repeating a completed Trash action', async () => {
+    getFolderConflictDetails.mockResolvedValue([]);
+    trashFolderConflictCandidate.mockResolvedValue({ reconcile: null, sync_warning: null });
+    const lock = {
+      type: 'FileLock' as const,
+      payload: { path: 'C:/Mods/DISABLED Alice/Blue', recovery_id: 'rename-context' },
+    };
+    vi.mocked(commands.resolveFolderNameConflict).mockRejectedValue(lock);
+    renderManager(true);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Mark as Trash' }))[0]);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Blue Other' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 2 changes' }));
+    await screen.findByTestId('file-lock-dialog');
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await waitFor(() => expect(screen.getByTestId('file-lock-retry')).toBeEnabled());
+      fireEvent.click(screen.getByTestId('file-lock-retry'));
+      await waitFor(() =>
+        expect(commands.resolveFolderNameConflict).toHaveBeenCalledTimes(attempt + 1),
+      );
+      await waitFor(() => expect(screen.getByTestId('file-lock-retry')).toBeEnabled());
+      expect(screen.getByTestId('file-lock-dialog')).toBeInTheDocument();
+      expect(trashFolderConflictCandidate).toHaveBeenCalledTimes(1);
+    }
+    expect(commands.resolveFolderNameConflict).toHaveBeenLastCalledWith(
+      'game-1',
+      'group-1',
+      [
+        { path: 'C:/Mods/Alice/Blue', base_name: 'Blue' },
+        { path: 'C:/Mods/DISABLED Alice/Blue', base_name: 'Blue Other' },
+      ],
+      'rename-context',
+    );
+    fireEvent.click(screen.getByTestId('file-lock-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('file-lock-dialog')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(commands.dismissFileLockRecovery).toHaveBeenCalledWith('rename-context'),
+    );
+    expect(trashFolderConflictCandidate).toHaveBeenCalledTimes(1);
+    expect(commands.resolveFolderNameConflict).toHaveBeenCalledTimes(3);
+    expect(toastError).not.toHaveBeenCalled();
   });
 });

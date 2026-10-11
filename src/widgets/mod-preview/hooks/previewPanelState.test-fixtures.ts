@@ -50,6 +50,7 @@ const dataMocks = vi.hoisted(() => ({
   useModIniDocuments: vi.fn<(...args: unknown[]) => unknown>(),
   usePreviewImages: vi.fn<(...args: unknown[]) => unknown>(),
   useRemovePreviewImage: vi.fn<(...args: unknown[]) => unknown>(),
+  useRestorePreviewImage: vi.fn<(...args: unknown[]) => unknown>(),
   useSavePreviewImage: vi.fn<(...args: unknown[]) => unknown>(),
   useClearPreviewImages: vi.fn<(...args: unknown[]) => unknown>(),
   useUpdateModInfoDetails: vi.fn<(...args: unknown[]) => unknown>(),
@@ -194,6 +195,7 @@ export function setupDefaultMocks() {
   useUpdateModInfoDetailsMock.mockReturnValue(createMockMutation());
   useSavePreviewImageMock.mockReturnValue(createMockMutation());
   useRemovePreviewImageMock.mockReturnValue(createMockMutation());
+  dataMocks.useRestorePreviewImage.mockReturnValue(createMockMutation());
   useClearPreviewImagesMock.mockReturnValue(createMockMutation());
   useWriteModIniMock.mockReturnValue(createMockMutation());
   useWorkspaceViewModelMock.mockReturnValue({

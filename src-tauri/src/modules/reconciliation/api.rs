@@ -1,7 +1,8 @@
 pub(crate) use super::adapters::tauri::runtime_sync::enqueue_runtime_sync_with_authority;
 pub use super::adapters::tauri::runtime_sync::{
     enqueue_runtime_sync, enqueue_runtime_sync_for_rewrites, enqueue_runtime_sync_scoped,
-    runtime_sync_request_for_changed_paths, runtime_sync_request_for_roots, RuntimeSyncCause,
+    request_runtime_sync_and_wait, runtime_sync_request_for_changed_paths,
+    runtime_sync_request_for_roots, RuntimeSyncCause,
 };
 pub(crate) use super::adapters::tauri::toggle_projection::{
     complete_reconciled_toggle_projection, ensure_projection_epoch, projection_source_epoch,

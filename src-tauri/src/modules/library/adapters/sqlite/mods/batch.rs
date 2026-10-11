@@ -174,7 +174,7 @@ mod tests {
                 &crate::test_utils::TestGameFixture {
                     id: game_id,
                     name: game_id,
-                    game_type: crate::modules::games::domain::models::GameType::GIMI,
+                    game_type: crate::modules::games::domain::models::GameType::Gimi,
                     path: mods_path,
                     mods_path: Some(mods_path),
                 },

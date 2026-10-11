@@ -1,6 +1,6 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '@/app/store';
 import { useBulkDelete, useBulkToggle } from './useBulkModMutations';
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   bulkToggleMods: vi.fn(),
   bulkDeleteMods: vi.fn(),
   applyRuntimeEffects: vi.fn(),
+  buildWorkspacePathRewritesDescriptor: vi.fn(() => ({})),
   cancelRuntimeDescriptorQueries: vi.fn(),
   publishRuntimeDescriptor: vi.fn(),
   toastSuccess: vi.fn(),
@@ -30,10 +31,12 @@ vi.mock('@/features/workspace-runtime/@x/mod-runtime', () => ({
   applyRuntimeEffects: (...args: unknown[]) => mocks.applyRuntimeEffects(...args),
   buildQueryRemovalDescriptor: vi.fn(() => ({})),
   buildRuntimeMutationDescriptor: vi.fn(() => ({})),
-  buildWorkspacePathRewritesDescriptor: vi.fn(() => ({})),
+  buildWorkspacePathRewritesDescriptor: mocks.buildWorkspacePathRewritesDescriptor,
   collectionReferenceImpactRefreshEvents: vi.fn(() => []),
   notifyCollectionReferenceImpact: vi.fn(),
   openFileInUseRetryDialog: vi.fn(() => false),
+  openBulkFileLockErrorDialog: vi.fn(() => false),
+  openBulkFileInUseRetryDialog: vi.fn(() => false),
   nextWorkspaceIntentRevision: vi.fn(() => 123),
 }));
 
@@ -102,6 +105,7 @@ describe('bulk mod mutations', () => {
       expect.stringMatching(/^toggle-[0-9a-f-]+$/),
       123,
       null,
+      null,
     );
   });
 
@@ -132,6 +136,31 @@ describe('bulk mod mutations', () => {
     expect(mocks.publishRuntimeDescriptor).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { name: 'an unchanged batch', reported: [] },
+    {
+      name: 'a mixed changed/no-op batch',
+      reported: [{ old_path: 'E:/Mods/DISABLED Blue', new_path: 'E:/Mods/Blue' }],
+    },
+  ])('applies only backend-reported rewrites for $name', async ({ reported }) => {
+    mocks.bulkToggleMods.mockResolvedValue({
+      ...bulkResult,
+      success: ['E:/Mods/Blue', 'E:/Mods/Red'],
+      path_rewrites: reported,
+    });
+    const { result } = renderHook(() => useBulkToggle(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        gameId: 'game-1',
+        paths: ['E:/Mods/DISABLED Blue', 'E:/Mods/Red'],
+        enable: true,
+      });
+    });
+
+    expect(mocks.buildWorkspacePathRewritesDescriptor).toHaveBeenCalledWith(reported, []);
+  });
+
   it('settles the mutation without waiting for background cache revalidation', async () => {
     let finishRefresh!: () => void;
     mocks.bulkToggleMods.mockResolvedValue(bulkResult);
@@ -154,7 +183,7 @@ describe('bulk mod mutations', () => {
     expect(mocks.cancelRuntimeDescriptorQueries.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.applyRuntimeEffects.mock.invocationCallOrder[0],
     );
-    await vi.waitFor(() => expect(mocks.publishRuntimeDescriptor).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.publishRuntimeDescriptor).toHaveBeenCalled());
     finishRefresh();
   });
 
@@ -175,7 +204,7 @@ describe('bulk mod mutations', () => {
         paths: ['E:/Mods/Blue'],
       });
     });
-    await vi.waitFor(() => expect(mocks.publishRuntimeDescriptor).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.publishRuntimeDescriptor).toHaveBeenCalled());
     useAppStore.setState({ activeGameId: 'game-2' });
 
     await act(async () => {

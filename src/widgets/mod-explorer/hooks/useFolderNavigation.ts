@@ -121,7 +121,7 @@ export function useFolderNavigation<T>({
           return;
       }
 
-      if (nextIndex !== -1 && nextIndex !== currentIndex) {
+      if (nextIndex >= 0 && nextIndex < items.length && nextIndex !== currentIndex) {
         const nextItem = items[nextIndex];
         const nextId = getId(nextItem);
         setFocusedId(nextId);

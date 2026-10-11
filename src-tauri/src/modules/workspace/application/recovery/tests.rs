@@ -12,7 +12,7 @@ async fn setup() -> (sqlx::SqlitePool, ConfigService, WatcherState) {
         &TestGameFixture {
             id: "g1",
             name: "Game One",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/One",
             mods_path: Some("C:/Games/One/Mods"),
         },
@@ -39,7 +39,7 @@ async fn setup_apply_game(
         &TestGameFixture {
             id: game_id,
             name: "Recovery Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: &mods_path,
             mods_path: Some(&mods_path),
         },
@@ -213,7 +213,7 @@ async fn successful_retry_promotes_the_applied_collection_to_active_baseline() {
         &TestGameFixture {
             id: "g-retry",
             name: "Retry Game",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: &mods_path,
             mods_path: Some(&mods_path),
         },

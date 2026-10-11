@@ -31,13 +31,12 @@ export function mergeDownloadProgress(
   download: BrowserDownloadItem,
   progress: DownloadProgressEvent,
 ): BrowserDownloadItem {
-  if (isTerminalStatus(download.status)) {
+  if (download.status !== 'in_progress') {
     return download;
   }
 
   return {
     ...download,
-    status: 'in_progress',
     bytes_received: progress.bytes_received,
     bytes_total: progress.bytes_total,
   };
@@ -99,7 +98,7 @@ export function useDownloads(
         id,
         status,
       } = event.payload;
-      if (isTerminalStatus(status)) {
+      if (status !== 'in_progress') {
         progressByDownloadId.delete(id);
       }
 
@@ -127,7 +126,7 @@ export function useDownloads(
                 ...item,
                 status,
                 file_path: filePath ?? item.file_path,
-                error_msg: errorMessage ?? item.error_msg,
+                error_msg: status === 'in_progress' ? null : (errorMessage ?? item.error_msg),
                 can_resume: canResume ?? item.can_resume,
               }
             : item,

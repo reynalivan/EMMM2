@@ -9,8 +9,15 @@ use crate::shared::errors::AppError;
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
-async fn record_ingestion_operation(
+fn capture_ingestion_telemetry(
     app: &tauri::AppHandle,
+) -> Option<crate::modules::system::application::telemetry::TelemetryStore> {
+    app.try_state::<crate::modules::system::application::telemetry::TelemetryStore>()
+        .map(|store| store.inner().capture())
+}
+
+async fn record_ingestion_operation(
+    telemetry: &Option<crate::modules::system::application::telemetry::TelemetryStore>,
     operation: crate::modules::system::application::telemetry::TelemetryOperation,
     succeeded: bool,
     started_at: std::time::Instant,
@@ -18,18 +25,9 @@ async fn record_ingestion_operation(
     if !succeeded {
         return;
     }
-    let enabled = app
-        .state::<crate::modules::settings::application::config::ConfigService>()
-        .get_settings()
-        .diagnostics
-        .telemetry_enabled;
-    if !enabled {
+    let Some(telemetry) = telemetry else {
         return;
-    }
-    let telemetry = app
-        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
-        .inner()
-        .clone();
+    };
     let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
         operation,
         crate::modules::system::application::telemetry::TelemetryOutcome::Success,
@@ -42,22 +40,13 @@ async fn record_ingestion_operation(
 }
 
 async fn record_ingestion_outcome(
-    app: &tauri::AppHandle,
+    telemetry: &Option<crate::modules::system::application::telemetry::TelemetryStore>,
     operation: crate::modules::system::application::telemetry::TelemetryOperation,
     outcome: crate::modules::system::application::telemetry::TelemetryOutcome,
 ) {
-    let enabled = app
-        .state::<crate::modules::settings::application::config::ConfigService>()
-        .get_settings()
-        .diagnostics
-        .telemetry_enabled;
-    if !enabled {
+    let Some(telemetry) = telemetry else {
         return;
-    }
-    let telemetry = app
-        .state::<crate::modules::system::application::telemetry::TelemetryStore>()
-        .inner()
-        .clone();
+    };
     let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
         operation,
         outcome,
@@ -116,6 +105,7 @@ pub async fn analyze_import_batch(
     batch_id: String,
 ) -> Result<ImportBatch, AppError> {
     let started_at = std::time::Instant::now();
+    let telemetry = capture_ingestion_telemetry(&app);
     let lease = extraction_state.acquire(&batch_id)?;
     let result = crate::modules::ingestion::application::import_batch::analyze::analyze_import_batch_for_app_with_options(
         &app,
@@ -129,7 +119,7 @@ pub async fn analyze_import_batch(
     .await;
     drop(lease);
     record_ingestion_operation(
-        &app,
+        &telemetry,
         crate::modules::system::application::telemetry::TelemetryOperation::Extract,
         result.is_ok(),
         started_at,
@@ -148,6 +138,7 @@ pub async fn analyze_import_batch_with_options(
     on_progress: Channel<ExtractionEvent>,
 ) -> Result<ImportBatch, AppError> {
     let started_at = std::time::Instant::now();
+    let telemetry = capture_ingestion_telemetry(&app);
     let lease = extraction_state.acquire(&input.batch_id)?;
     let result = crate::modules::ingestion::application::import_batch::analyze::analyze_import_batch_for_app_with_options(
         &app,
@@ -163,7 +154,7 @@ pub async fn analyze_import_batch_with_options(
     .await;
     drop(lease);
     record_ingestion_operation(
-        &app,
+        &telemetry,
         crate::modules::system::application::telemetry::TelemetryOperation::Extract,
         result.is_ok(),
         started_at,
@@ -273,6 +264,7 @@ pub async fn refresh_import_batch_matches(
     batch_id: String,
 ) -> Result<ImportBatch, AppError> {
     let started_at = std::time::Instant::now();
+    let telemetry = capture_ingestion_telemetry(&app);
     let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
         pool.inner(),
         &batch_id,
@@ -313,7 +305,7 @@ pub async fn refresh_import_batch_matches(
                 }
             };
             record_ingestion_outcome(
-                &app,
+                &telemetry,
                 crate::modules::system::application::telemetry::TelemetryOperation::AutoMatch,
                 outcome,
             )
@@ -321,7 +313,7 @@ pub async fn refresh_import_batch_matches(
         }
     } else {
         record_ingestion_operation(
-            &app,
+            &telemetry,
             crate::modules::system::application::telemetry::TelemetryOperation::AutoMatch,
             false,
             started_at,
@@ -358,6 +350,7 @@ pub async fn set_import_item_decision(
     input: SetImportItemDecisionInput,
 ) -> Result<crate::modules::ingestion::application::import_batch::types::ImportItem, AppError> {
     let decision = input.decision;
+    let telemetry = capture_ingestion_telemetry(&app);
     let result = crate::modules::ingestion::application::import_batch::coordinator::set_import_item_decision_with_target_index(
         pool.inner(),
         target_manifest_index.inner(),
@@ -372,7 +365,7 @@ pub async fn set_import_item_decision(
             _ => crate::modules::system::application::telemetry::TelemetryOutcome::Accepted,
         };
         record_ingestion_outcome(
-            &app,
+            &telemetry,
             crate::modules::system::application::telemetry::TelemetryOperation::ClassificationReview,
             outcome,
         )
@@ -484,7 +477,7 @@ pub async fn commit_import_batch(
     let telemetry = app
         .state::<crate::modules::system::application::telemetry::TelemetryStore>()
         .inner()
-        .clone();
+        .capture();
     let started_at = std::time::Instant::now();
     let batch_id = input.batch_id.clone();
     let batch = crate::modules::ingestion::adapters::sqlite::import_batch::get_batch(
@@ -823,6 +816,7 @@ pub async fn apply_object_classification_batch(
     input: ApplyObjectClassificationBatchInput,
 ) -> Result<ApplyObjectClassificationBatchResult, AppError> {
     let started_at = std::time::Instant::now();
+    let telemetry = capture_ingestion_telemetry(&app);
     let classification_modes = input
         .items
         .iter()
@@ -893,7 +887,7 @@ pub async fn apply_object_classification_batch(
     }
     settle_classification_runtime_effects(&app, pool.inner(), &game_id).await;
     record_ingestion_operation(
-        &app,
+        &telemetry,
         crate::modules::system::application::telemetry::TelemetryOperation::Classification,
         true,
         started_at,
@@ -901,7 +895,7 @@ pub async fn apply_object_classification_batch(
     .await;
     for outcome in classification_modes {
         record_ingestion_outcome(
-            &app,
+            &telemetry,
             crate::modules::system::application::telemetry::TelemetryOperation::Classification,
             outcome,
         )

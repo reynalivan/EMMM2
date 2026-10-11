@@ -6,6 +6,10 @@ use crate::modules::system::domain::mod_path::ModFolderPath;
 use crate::shared::errors::AppError;
 use std::collections::HashMap;
 
+#[cfg(test)]
+#[path = "tests/dashboard_benchmark.rs"]
+mod benchmark;
+
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ActiveKeyControlKind {

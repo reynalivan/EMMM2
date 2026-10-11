@@ -1,6 +1,5 @@
 use crate::modules::workspace::domain::classifier::{
-    classify_folder, classify_folder_strict, classify_folder_strict_from_scan, scan_folder_strict,
-    NodeType,
+    classify_folder, classify_folder_strict_from_scan, scan_folder_strict, NodeType,
 };
 use std::fs;
 use tempfile::TempDir;
@@ -66,11 +65,11 @@ fn strict_classification_reuses_a_previously_scanned_directory() {
     .unwrap();
     fs::write(mod_root.join("mesh.buf"), b"asset").unwrap();
 
-    let expected = classify_folder_strict(&mod_root).expect("strict classification");
     let scan = scan_folder_strict(&mod_root).expect("strict folder scan");
     let reused =
         classify_folder_strict_from_scan(&scan).expect("classification from strict folder scan");
 
-    assert_eq!(reused, expected);
+    assert_eq!(reused.0, NodeType::ModPackRoot);
+    assert!(reused.2.is_empty());
     assert_eq!(scan.child_dirs, vec![mod_root.join("Assets")]);
 }

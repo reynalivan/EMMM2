@@ -9,7 +9,7 @@ fn game(mod_path: &str) -> GameConfig {
     GameConfig {
         id: "game-a".to_string(),
         name: "Game A".to_string(),
-        game_type: GameType::GIMI,
+        game_type: GameType::Gimi,
         instance_path: PathBuf::from(mod_path),
         mod_path: PathBuf::from(mod_path),
         ready_to_move_path: None,
@@ -20,6 +20,24 @@ fn game(mod_path: &str) -> GameConfig {
         launch_args: None,
         warnings: Vec::new(),
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fresh_settings_use_onyx_and_preserve_persisted_dark() {
+    let pool = crate::test_utils::init_test_db().await.pool;
+    assert_eq!(AppSettings::default().theme, "onyx");
+    assert_eq!(
+        ConfigService::new_for_test(pool.clone())
+            .get_settings()
+            .theme,
+        "onyx"
+    );
+
+    settings::set_setting(&pool, "theme", "dark")
+        .await
+        .expect("persist a legacy or custom dark selection");
+    let reloaded = ConfigService::new_for_test(pool);
+    assert_eq!(reloaded.get_settings().theme, "dark");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

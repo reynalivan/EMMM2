@@ -3,7 +3,10 @@ import { createMockGame, addMockMod, removeMockGame, type MockGame } from '../su
 import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
 import { createObject, reconcile } from '../support/data.js';
-import type { AppSettings } from '../../../src/shared/api/tauri/bindings.gen.js';
+import type {
+  AppSettings,
+  SaveSettingsResult,
+} from '../../../src/shared/api/tauri/bindings.gen.js';
 
 /**
  * Fase 8 — Runtime periferal. Dashboard analytics, randomizer, error-surfacing,
@@ -33,8 +36,15 @@ describe('Fase 8 — Runtime Peripheral', () => {
 
   it('TC-35-01: Randomizer suggests a list of mods', async () => {
     const proposals = await invokeInApp<unknown[]>('suggest_random_mods', {
-      gameId,
-      isSafe: false,
+      input: {
+        game_id: gameId,
+        safety_filter: 'all',
+        scope: {
+          categories: ['Character', 'Weapon', 'UI', 'Other'],
+          include_unclassified: true,
+        },
+        recent_mod_ids_by_object: {},
+      },
     });
     expect(Array.isArray(proposals)).toBe(true);
   });
@@ -61,10 +71,14 @@ describe('Fase 8 — Runtime Peripheral', () => {
 
     // Do not claim OS-global shortcut ownership in E2E: another EMMM instance
     // or a developer tool may already own the shipped default combinations.
-    await invokeInApp('save_settings', {
-      settings: { ...before, hotkeys: { ...before.hotkeys, enabled: false } },
+    if (!before.keyviewer) throw new Error('E2E settings did not include KeyViewer configuration');
+
+    const saved = await invokeInApp<SaveSettingsResult>('save_hotkey_configuration', {
+      expectedRevision: before.revision ?? 0,
+      hotkeys: { ...before.hotkeys, enabled: false },
+      keyviewer: before.keyviewer,
     });
-    await invokeInApp('update_hotkey_config');
+    expect(saved.settings.hotkeys?.enabled).toBe(false);
     const bindings = await invokeInApp<unknown[]>('get_active_keybindings', { gameId });
     expect(Array.isArray(bindings)).toBe(true);
   });

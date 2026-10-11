@@ -97,6 +97,7 @@ pub async fn apply_collection(
         ActiveCollectionFinalization::RequestDefault,
         None,
         false,
+        None,
     )
     .await
 }
@@ -110,6 +111,22 @@ pub async fn apply_collection_durable(
         ActiveCollectionFinalization::RequestDefault,
         Some(coordinator),
         false,
+        None,
+    )
+    .await
+}
+
+pub async fn apply_collection_durable_with_recovery(
+    request: ApplyCollectionRequest<'_>,
+    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
+    recovery_id: Option<String>,
+) -> Result<ApplyResult, CollectionError> {
+    apply_collection_with_finalization(
+        request,
+        ActiveCollectionFinalization::RequestDefault,
+        Some(coordinator),
+        false,
+        recovery_id,
     )
     .await
 }
@@ -125,6 +142,7 @@ pub async fn apply_collection_durable_for_safe_mode(
         ActiveCollectionFinalization::RequestDefault,
         Some(coordinator),
         true,
+        None,
     )
     .await
 }
@@ -141,6 +159,7 @@ pub async fn restore_collection_with_baseline(
         ActiveCollectionFinalization::Explicit(active_baseline_id),
         None,
         false,
+        None,
     )
     .await
 }
@@ -155,6 +174,7 @@ pub async fn restore_collection_with_baseline_durable(
         ActiveCollectionFinalization::Explicit(active_baseline_id),
         Some(coordinator),
         false,
+        None,
     )
     .await
 }
@@ -169,6 +189,7 @@ async fn apply_collection_with_finalization(
     finalization: ActiveCollectionFinalization,
     coordinator: Option<&crate::modules::mutation::coordinator::MutationCoordinator>,
     restrict_current_state_to_target_scope: bool,
+    recovery_id: Option<String>,
 ) -> Result<ApplyResult, CollectionError> {
     let pool = request.pool;
     let final_active_collection_id = match finalization {
@@ -213,6 +234,7 @@ async fn apply_collection_with_finalization(
     ctx.finalize_active_collection = true;
     ctx.final_active_collection_id = final_active_collection_id;
     ctx.restrict_current_state_to_target_scope = restrict_current_state_to_target_scope;
+    ctx.lock_recovery_id = recovery_id;
     #[cfg(test)]
     wait_for_apply_execution_barrier(&ctx.game_id).await;
     crate::modules::collections::application::apply::apply_pipeline::execute(

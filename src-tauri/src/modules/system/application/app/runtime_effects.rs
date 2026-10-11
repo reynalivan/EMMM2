@@ -49,6 +49,12 @@ pub(crate) struct RuntimeEffectsSettlement {
     pub effect_attempts: u8,
 }
 
+#[derive(Clone, Copy)]
+enum RuntimeEffectsCompletion {
+    Settled,
+    Superseded,
+}
+
 /// Stage runtime effects for a committed mutation and execute them with the
 /// same bounded retry used by reconcile. A failure preserves the intent in
 /// `DiskReconcileState`; the next reconcile pass retries it even when the
@@ -57,7 +63,7 @@ pub(crate) async fn settle_committed_runtime_effects(
     state: &DiskReconcileState,
     request: RuntimeSideEffects<'_>,
 ) -> RuntimeEffectsSettlement {
-    settle_committed_runtime_effects_with(
+    settle_runtime_completion_with(
         state,
         request.game_id,
         PendingRuntimeEffects {
@@ -72,6 +78,7 @@ pub(crate) async fn settle_committed_runtime_effects(
 /// Injection point shared by focused command tests. Production callers use
 /// [`settle_committed_runtime_effects`] so the effect implementation remains
 /// the normal collection/overlay finalizer.
+#[cfg(test)]
 pub(crate) async fn settle_committed_runtime_effects_with<F, Fut>(
     state: &DiskReconcileState,
     game_id: &str,
@@ -82,6 +89,23 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<bool, AppError>>,
 {
+    settle_runtime_completion_with(state, game_id, requested, || {
+        let future = finalize();
+        async move { future.await.map(|_| RuntimeEffectsCompletion::Settled) }
+    })
+    .await
+}
+
+async fn settle_runtime_completion_with<F, Fut>(
+    state: &DiskReconcileState,
+    game_id: &str,
+    requested: PendingRuntimeEffects,
+    mut finalize: F,
+) -> RuntimeEffectsSettlement
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<RuntimeEffectsCompletion, AppError>>,
+{
     let staged = state.stage_runtime_effects_for_settlement(game_id, requested);
     let mut effect_attempts = 0;
     match retry_once(|| {
@@ -90,7 +114,7 @@ where
     })
     .await
     {
-        Ok(_) => {
+        Ok(RuntimeEffectsCompletion::Settled) => {
             let pending_runtime_effects = state.acknowledge_runtime_effects(game_id, staged);
             RuntimeEffectsSettlement {
                 pending_runtime_effects,
@@ -98,6 +122,11 @@ where
                 effect_attempts,
             }
         }
+        Ok(RuntimeEffectsCompletion::Superseded) => RuntimeEffectsSettlement {
+            pending_runtime_effects: staged.pending,
+            warning: Some("Runtime synchronization was superseded; its pending effects await the winning request".to_string()),
+            effect_attempts,
+        },
         Err(error) => RuntimeEffectsSettlement {
             pending_runtime_effects: staged.pending,
             warning: Some(format!(
@@ -110,7 +139,7 @@ where
 
 async fn finalize_runtime_side_effects_once(
     request: RuntimeSideEffects<'_>,
-) -> Result<bool, AppError> {
+) -> Result<RuntimeEffectsCompletion, AppError> {
     let RuntimeSideEffects {
         pool,
         config,
@@ -122,7 +151,7 @@ async fn finalize_runtime_side_effects_once(
     } = request;
 
     if !overlay_refresh {
-        return Ok(false);
+        return Ok(RuntimeEffectsCompletion::Settled);
     }
 
     let result = if let Some(roots) = overlay_roots.filter(|roots| !roots.is_empty()) {
@@ -147,19 +176,104 @@ async fn finalize_runtime_side_effects_once(
         )
         .await?
     };
+    if result.is_superseded() {
+        return Ok(RuntimeEffectsCompletion::Superseded);
+    }
     result.ensure_success()?;
 
-    Ok(true)
+    Ok(RuntimeEffectsCompletion::Settled)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{retry_once, settle_committed_runtime_effects_with};
+    use super::{
+        retry_once, settle_committed_runtime_effects_with, settle_runtime_completion_with,
+        RuntimeEffectsCompletion,
+    };
     use crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState;
     use crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects;
     use crate::shared::errors::AppError;
     use std::sync::Arc;
     use tokio::sync::Barrier;
+
+    #[tokio::test]
+    async fn direct_superseded_settlement_preserves_merged_intent_and_warns_without_retry() {
+        let state = DiskReconcileState::new();
+        state.stage_runtime_effects(
+            "game",
+            PendingRuntimeEffects {
+                collections_dirty: true,
+                overlay_refresh: false,
+            },
+        );
+        let mut attempts = 0;
+        let settlement = settle_runtime_completion_with(
+            &state,
+            "game",
+            PendingRuntimeEffects {
+                collections_dirty: false,
+                overlay_refresh: true,
+            },
+            || {
+                attempts += 1;
+                async { Ok(RuntimeEffectsCompletion::Superseded) }
+            },
+        )
+        .await;
+
+        let merged = PendingRuntimeEffects {
+            collections_dirty: true,
+            overlay_refresh: true,
+        };
+        assert_eq!(attempts, 1);
+        assert_eq!(settlement.effect_attempts, 1);
+        assert_eq!(settlement.pending_runtime_effects, merged);
+        assert!(settlement
+            .warning
+            .as_deref()
+            .is_some_and(|warning| warning.contains("superseded") && warning.contains("pending")));
+        assert_eq!(
+            state.stage_runtime_effects("game", PendingRuntimeEffects::default()),
+            merged,
+            "a direct superseded publication must leave the merged work for its winner"
+        );
+    }
+
+    #[tokio::test]
+    async fn settled_false_compatibility_result_acknowledges_pending_effects() {
+        let state = DiskReconcileState::new();
+        state.stage_runtime_effects(
+            "game",
+            PendingRuntimeEffects {
+                collections_dirty: true,
+                overlay_refresh: true,
+            },
+        );
+        let mut attempts = 0;
+        let settlement = settle_committed_runtime_effects_with(
+            &state,
+            "game",
+            PendingRuntimeEffects::default(),
+            || {
+                attempts += 1;
+                async { Ok(false) }
+            },
+        )
+        .await;
+
+        assert_eq!(attempts, 1);
+        assert_eq!(settlement.effect_attempts, 1);
+        assert_eq!(settlement.warning, None);
+        assert_eq!(
+            settlement.pending_runtime_effects,
+            PendingRuntimeEffects::default()
+        );
+        assert_eq!(
+            state.stage_runtime_effects("game", PendingRuntimeEffects::default()),
+            PendingRuntimeEffects::default(),
+            "a settled false result must retain the legacy acknowledgement contract"
+        );
+    }
 
     #[tokio::test]
     async fn runtime_effect_retry_recovers_from_one_transient_failure() {

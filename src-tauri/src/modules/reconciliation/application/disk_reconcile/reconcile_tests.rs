@@ -156,7 +156,7 @@ async fn pending_toggle_burst_converges_after_a_scoped_sqlite_retry() {
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&root_text),
         },
@@ -379,7 +379,7 @@ async fn disabled_ancestors_agree_across_reconcile_capture_and_apply_preview() {
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&root_text),
         },
@@ -599,7 +599,7 @@ async fn full_reconcile_marks_every_scanned_root_for_thumbnail_refresh() {
         &TestGameFixture {
             id: "g_full_thumbnail_refresh",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -633,7 +633,7 @@ async fn projection_refresh_failure_rolls_back_core_reconcile_rows() {
         &TestGameFixture {
             id: "g_atomic_projection",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -707,7 +707,7 @@ async fn scoped_reconcile_refreshes_touched_projection_and_keeps_the_rest() {
         &TestGameFixture {
             id: "g_scoped",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -912,7 +912,7 @@ async fn watcher_single_root_reconcile_does_not_classify_an_unrelated_root() {
         &TestGameFixture {
             id: "g_watcher_scoped_scan",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -973,7 +973,7 @@ async fn internal_single_root_reconcile_does_not_classify_an_unrelated_root() {
         &TestGameFixture {
             id: "g_internal_scoped_scan",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1034,7 +1034,7 @@ async fn thumbnail_only_watcher_batch_skips_projection_and_unrelated_classificat
         &TestGameFixture {
             id: "g_thumbnail_fast_path",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1102,7 +1102,7 @@ async fn watcher_event_for_mods_root_forces_full_source_validation() {
         &TestGameFixture {
             id: "g_mods_root_event",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1158,7 +1158,7 @@ async fn brand_new_conflicted_identity_is_overlay_only_and_excluded_from_runtime
         &TestGameFixture {
             id: "g_conflict",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1242,7 +1242,7 @@ async fn existing_enabled_conflict_state_is_preserved_while_unrelated_roots_conv
         &TestGameFixture {
             id: "g_existing_conflict",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1331,7 +1331,7 @@ async fn folder_conflict_quarantines_only_its_paths_while_unrelated_mods_converg
         &TestGameFixture {
             id: "g_conflict_scope",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1385,7 +1385,7 @@ async fn scoped_conflict_preflight_ignores_duplicate_names_under_distinct_roots(
         &TestGameFixture {
             id: "g_conflict_queue",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1443,7 +1443,7 @@ async fn scoped_single_root_event_keeps_existing_conflict_scope_snapshot() {
         &TestGameFixture {
             id: "g_single_root_conflict",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1534,7 +1534,7 @@ async fn trusted_toggle_reconcile_preserves_verbatim_only_ancestor_name() {
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(root.to_string_lossy().as_ref()),
         },
@@ -1637,7 +1637,7 @@ async fn trusted_toggle_reconcile_never_borrows_a_distinct_normalized_sibling_ro
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -1733,6 +1733,7 @@ fn projection_fixture_operation(
             new_path: Some(plan.new_path().to_path_buf()),
             stage_path: None,
             expected_identity: Some(plan.expected_identity().to_string()),
+            source_root_identity: None,
             status: StepStatus::Applied,
         }],
         database_projection_status: DatabaseProjectionStatus::NotStarted,
@@ -1779,7 +1780,7 @@ async fn assert_parent_toggle_descendants(parent_has_ini: bool, invalidate_child
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&root_text),
         },
@@ -1941,7 +1942,7 @@ async fn repaired_projection_uses_a_completed_same_physical_successor_and_latest
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&root_text),
         },
@@ -2070,7 +2071,7 @@ async fn assert_trusted_toggle_projects_owned_row(
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -2263,7 +2264,7 @@ async fn conflicting_enabled_and_disabled_object_roots_block_even_when_mod_names
         &TestGameFixture {
             id: "g_object_conflict",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -2314,7 +2315,7 @@ async fn offline_semantic_rename_without_identity_requires_confirmation_and_keep
         &TestGameFixture {
             id: "g_missing_identity",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -2413,7 +2414,7 @@ async fn ambiguous_rename_protects_only_its_object_scope_while_unrelated_root_pr
         &TestGameFixture {
             id: "g_scoped_rename_confirmation",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -2499,7 +2500,7 @@ async fn confirmed_separate_change_prunes_old_runtime_row_and_adds_current_folde
         &TestGameFixture {
             id: "g_separate_change",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -2585,7 +2586,7 @@ async fn watcher_rename_event_is_sufficient_evidence_when_filesystem_identity_is
         &TestGameFixture {
             id: "g_watcher_evidence",
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: temp.path().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },

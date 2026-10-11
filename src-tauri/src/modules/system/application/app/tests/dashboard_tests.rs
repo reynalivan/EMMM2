@@ -36,7 +36,7 @@ async fn test_get_dashboard_payload_populated() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "Game 1",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/",
             mods_path: Some("/Mods"),
         },
@@ -123,7 +123,7 @@ async fn test_get_active_keybindings_service_with_ini() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "G1",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/g1",
             mods_path: Some("/g1/Mods"),
         },
@@ -204,7 +204,7 @@ async fn active_keybindings_include_cycle_toggle_summary() {
         &crate::test_utils::TestGameFixture {
             id: "g1",
             name: "G1",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/g1",
             mods_path: Some("/g1/Mods"),
         },

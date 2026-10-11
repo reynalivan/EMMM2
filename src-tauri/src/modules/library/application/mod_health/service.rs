@@ -19,8 +19,7 @@ use std::sync::LazyLock;
 static SECTION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\[([^\]]+)\]\s*$").expect("valid section regex"));
 static RESOURCE_REFERENCE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\bref\s+(Resource(?:\\)?[A-Za-z0-9_.-]+)")
-        .expect("valid resource reference regex")
+    Regex::new(r"(?i)\bref\s+(Resource[A-Za-z0-9_.\\/-]*)").expect("valid resource reference regex")
 });
 
 #[derive(Debug)]
@@ -50,9 +49,18 @@ struct ResourceFileReference {
 #[derive(Debug)]
 struct ResourceSymbolReference {
     resource_name: String,
+    namespace: String,
+    inactive: bool,
     source_file: String,
     section: String,
     line: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ResourceIdentity {
+    namespace: String,
+    name: String,
+    inactive: bool,
 }
 
 #[derive(Debug, Default)]
@@ -64,7 +72,7 @@ struct ReferencedAsset {
 #[derive(Debug, Default)]
 struct ParsedIni {
     issues: Vec<ModHealthIssue>,
-    declared_resources: HashSet<String>,
+    declared_resources: HashSet<ResourceIdentity>,
     resource_files: Vec<ResourceFileReference>,
     resource_symbols: Vec<ResourceSymbolReference>,
     controls: Vec<ModControl>,
@@ -154,14 +162,14 @@ fn canonical_mod_root(mod_root: &Path) -> Result<PathBuf, AppError> {
 
 fn support_level(game_type: GameType) -> ModHealthSupportLevel {
     match game_type {
-        GameType::GIMI | GameType::ZZMI | GameType::WWMI => ModHealthSupportLevel::Supported,
-        GameType::SRMI => ModHealthSupportLevel::Experimental,
-        GameType::EFMI => ModHealthSupportLevel::Basic,
+        GameType::Gimi | GameType::Zzmi | GameType::Wwmi => ModHealthSupportLevel::Supported,
+        GameType::Srmi => ModHealthSupportLevel::Experimental,
+        GameType::Efmi => ModHealthSupportLevel::Basic,
     }
 }
 
 fn supports_semantic_controls(game_type: GameType) -> bool {
-    !matches!(game_type, GameType::EFMI)
+    !matches!(game_type, GameType::Efmi)
 }
 
 fn scan_regular_files(mod_root: &Path) -> Result<Vec<ScannedFile>, AppError> {
@@ -316,16 +324,34 @@ fn parse_ini_file(
         ));
     }
 
+    let namespace = document
+        .raw_lines
+        .iter()
+        .map(|line| without_comment(line).trim())
+        .take_while(|line| !line.starts_with('['))
+        .filter_map(assignment)
+        .filter(|(key, _)| key.eq_ignore_ascii_case("namespace"))
+        .map(|(_, value)| value.replace('/', "\\").to_ascii_lowercase())
+        .last()
+        .unwrap_or_else(|| relative_file_path.replace('/', "\\").to_ascii_lowercase());
     let sections = collect_sections(&document.raw_lines, relative_file_path, &mut parsed.issues);
     for section in &sections {
         inspect_condition_structure(section, relative_file_path, &mut parsed.issues);
         if section.name.to_ascii_lowercase().starts_with("resource") {
-            parsed
-                .declared_resources
-                .insert(normalize_resource_name(&section.name));
+            parsed.declared_resources.insert(resource_identity(
+                &section.name,
+                &namespace,
+                inactive,
+            ));
             collect_resource_file_references(section, relative_file_path, inactive, &mut parsed);
         }
-        collect_resource_symbol_references(section, relative_file_path, &mut parsed);
+        collect_resource_symbol_references(
+            section,
+            relative_file_path,
+            &namespace,
+            inactive,
+            &mut parsed,
+        );
         if !inactive && supports_semantic_controls(game_type) {
             collect_controls(section, relative_file_path, &mut parsed.controls);
         }
@@ -515,6 +541,8 @@ fn collect_resource_file_references(
 fn collect_resource_symbol_references(
     section: &IniSection,
     relative_file_path: &str,
+    namespace: &str,
+    inactive: bool,
     parsed: &mut ParsedIni,
 ) {
     for field in &section.fields {
@@ -522,6 +550,8 @@ fn collect_resource_symbol_references(
         for captures in RESOURCE_REFERENCE_RE.captures_iter(&source) {
             parsed.resource_symbols.push(ResourceSymbolReference {
                 resource_name: normalize_resource_name(&captures[1]),
+                namespace: namespace.to_string(),
+                inactive,
                 source_file: relative_file_path.to_string(),
                 section: section.name.clone(),
                 line: field.line,
@@ -639,7 +669,9 @@ fn build_asset_manifest(
         .collect::<HashMap<_, _>>();
 
     for reference in &parsed.resource_files {
-        if resource_path_is_unsafe(&reference.resource_path) {
+        let Some(relative_resource) =
+            resource_relative_path(&reference.source_file, &reference.resource_path)
+        else {
             issues.push(issue(
                 ModHealthSeverity::Error,
                 "resource_path_unsafe",
@@ -653,9 +685,9 @@ fn build_asset_manifest(
                 .or_default()
                 .insert(reference.source_file.clone());
             continue;
-        }
+        };
 
-        let candidate = mod_root.join(resource_path_to_path(&reference.resource_path));
+        let candidate = mod_root.join(relative_resource);
         let Ok(metadata) = fs::symlink_metadata(&candidate) else {
             issues.push(issue(
                 ModHealthSeverity::Error,
@@ -711,7 +743,13 @@ fn build_asset_manifest(
     }
 
     for reference in &parsed.resource_symbols {
-        if parsed.declared_resources.contains(&reference.resource_name) {
+        let active = resource_identity(&reference.resource_name, &reference.namespace, false);
+        let global = resource_identity(&reference.resource_name, "", false);
+        let inactive = resource_identity(&reference.resource_name, &reference.namespace, true);
+        if parsed.declared_resources.contains(&active)
+            || parsed.declared_resources.contains(&global)
+            || (reference.inactive && parsed.declared_resources.contains(&inactive))
+        {
             continue;
         }
         if reference.resource_name.contains('\\') {
@@ -765,24 +803,28 @@ fn build_asset_manifest(
     Ok(manifest)
 }
 
-fn resource_path_is_unsafe(raw_path: &str) -> bool {
+fn resource_relative_path(source_file: &str, raw_path: &str) -> Option<PathBuf> {
     let path = raw_path.trim();
-    path.starts_with("\\\\")
+    if path.starts_with("\\\\")
         || path.starts_with('/')
         || path.starts_with('\\')
-        || path.get(1..2).is_some_and(|marker| marker == ":")
-        || path
-            .replace('\\', "/")
-            .split('/')
-            .any(|component| component == "..")
-}
-
-fn resource_path_to_path(raw_path: &str) -> PathBuf {
-    raw_path
-        .replace('\\', "/")
-        .split('/')
-        .filter(|component| !component.is_empty() && *component != ".")
-        .collect()
+        || path.contains(':')
+    {
+        return None;
+    }
+    let mut relative = Path::new(source_file).parent()?.to_path_buf();
+    for component in path.replace('\\', "/").split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                if !relative.pop() {
+                    return None;
+                }
+            }
+            name => relative.push(name),
+        }
+    }
+    Some(relative)
 }
 
 fn excluded_from_assets(relative_path: &str) -> bool {
@@ -813,6 +855,25 @@ fn asset_entry(file: &ScannedFile, source_files: BTreeSet<String>) -> ModAssetEn
 
 fn normalize_resource_name(value: &str) -> String {
     value.trim().to_ascii_lowercase()
+}
+
+fn resource_identity(name: &str, namespace: &str, inactive: bool) -> ResourceIdentity {
+    let name = normalize_resource_name(name);
+    if let Some((qualified_namespace, suffix)) = name
+        .strip_prefix("resource\\")
+        .and_then(|qualified| qualified.rsplit_once('\\'))
+    {
+        return ResourceIdentity {
+            namespace: qualified_namespace.to_string(),
+            name: format!("resource{suffix}"),
+            inactive,
+        };
+    }
+    ResourceIdentity {
+        namespace: namespace.to_string(),
+        name,
+        inactive,
+    }
 }
 
 fn without_comment(line: &str) -> &str {

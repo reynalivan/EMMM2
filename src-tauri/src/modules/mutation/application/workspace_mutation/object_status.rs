@@ -86,6 +86,13 @@ pub async fn disable_object_roots(
             crate::platform::fs::file_utils::FilesystemIdentityProof::capture(source)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let namespace_proof = crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+        &mods_root,
+        &plans
+            .iter()
+            .flat_map(|(_, source, target)| [source.clone(), target.clone()])
+            .collect::<Vec<_>>(),
+    )?;
 
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight(
         app, pool, game_id,
@@ -111,21 +118,38 @@ pub async fn disable_object_roots(
             .flat_map(|(_, source, target)| [source.as_path(), target.as_path()]),
     );
     let mut journal = Vec::new();
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
     for ((_, source, target), source_proof) in plans.iter().zip(&source_proofs) {
-        let outcome = source_proof.validate(source).and_then(|()| {
-            crate::platform::fs::file_utils::rename_cross_drive_fallback_tracked(source, target)
-                .map_err(|error| {
-                    if let Some(target_proof) = error.target_proof() {
-                        journal.push(MoveJournalEntry::from_owned_move(
-                            source.clone(),
-                            target.clone(),
-                            source_proof,
-                            target_proof,
-                        ));
-                    }
-                    AppError::from(error.into_io_error())
-                })
-        });
+        let outcome = retry_budget
+            .run(|| {
+                let source = source.clone();
+                let target = target.clone();
+                let source_proof = source_proof.clone();
+                let namespace_proof = namespace_proof.clone();
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        source_proof
+                            .validate(&source)
+                            .map_err(|error| std::io::Error::other(error.to_string()))?;
+                        namespace_proof
+                            .validate_paths(&[source.clone(), target.clone()])
+                            .map_err(|error| std::io::Error::other(error.to_string()))?;
+                        crate::platform::fs::rename::rename_no_replace(&source, &target)?;
+                        Ok(source_proof)
+                    })
+                    .await
+                    .map_err(crate::platform::fs::retry::blocking_error)?
+                }
+            })
+            .await
+            .map_err(|error| {
+                crate::platform::fs::retry::map_file_error_with_identity(
+                    source,
+                    source_proof.identity(),
+                    "disable object folder",
+                    error,
+                )
+            });
         let target_proof = match outcome {
             Ok(proof) => proof,
             Err(error) => {
@@ -137,6 +161,9 @@ pub async fn disable_object_roots(
                 )
                 .await;
                 drop(lease);
+                if rollback.is_ok() && recovery.is_ok() {
+                    return Err(error);
+                }
                 return Err(AppError::Io(format!(
                 "Could not disable object folder: {error}; rollback: {}; recovery reconcile: {}",
                 result_label(rollback),

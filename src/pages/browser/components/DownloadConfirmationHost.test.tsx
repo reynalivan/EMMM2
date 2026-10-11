@@ -60,6 +60,34 @@ describe('DownloadConfirmationHost', () => {
     expect(screen.queryByText('second.zip')).not.toBeInTheDocument();
   });
 
+  it('removes an expired confirmation instead of leaving a usable Download action', async () => {
+    render(<DownloadConfirmationHost />);
+    await waitFor(() => expect(listen).toHaveBeenCalledTimes(3));
+    const requested = vi
+      .mocked(listen)
+      .mock.calls.find(
+        ([name]) => name === 'browser:download-confirmation-requested',
+      )?.[1] as unknown as ConfirmationListener;
+    const failed = vi
+      .mocked(listen)
+      .mock.calls.find(
+        ([name]) => name === 'browser:download-information-failed',
+      )?.[1] as unknown as FailureListener;
+    act(() => requested({ payload: confirmation('expired', 'expired.zip') }));
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    act(() =>
+      failed({
+        payload: {
+          id: 'expired',
+          source_url: 'https://example.test/expired.zip',
+          reason: 'timeout',
+        },
+      }),
+    );
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
   it('shows preparation feedback until the matching confirmation arrives', async () => {
     render(<DownloadConfirmationHost />);
 

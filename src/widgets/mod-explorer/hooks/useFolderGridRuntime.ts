@@ -4,6 +4,43 @@ import { useWorkspaceExplorerPages, useWorkspaceViewModel } from '@/features/wor
 import { useFolderGridLayout } from './useFolderGridLayout';
 import type { WorkspaceExplorerQuery } from '@/entities/workspace';
 import { useAppStore } from '@/app/store';
+import { canonicalPathKey } from '@/shared/lib/pathKey';
+import type { FolderNameConflictGroup } from '@/shared/api/tauri/bindings';
+import type { WorkspaceExplorerNode } from '@/entities/workspace';
+import { maskWorkspaceNodeCapabilities } from '@/features/workspace-runtime';
+
+const EMPTY_FOLDER_CONFLICTS: FolderNameConflictGroup[] = [];
+
+export function groupExplorerConflictNodes(
+  folders: WorkspaceExplorerNode[],
+  conflicts: FolderNameConflictGroup[],
+): WorkspaceExplorerNode[] {
+  if (conflicts.length === 0) return folders;
+  const groupsByPath = new Map(
+    conflicts.flatMap((group) =>
+      group.candidates.map((candidate) => [canonicalPathKey(candidate.path), group] as const),
+    ),
+  );
+  const seenGroups = new Set<string>();
+  return folders.flatMap((folder) => {
+    const pathKey = canonicalPathKey(folder.path);
+    const group = groupsByPath.get(pathKey);
+    if (!group || !pathKey) return [folder];
+    const parentKey = pathKey.slice(0, Math.max(0, pathKey.lastIndexOf('/')));
+    const siblingGroupKey = `${group.group_id}\0${parentKey}`;
+    if (seenGroups.has(siblingGroupKey)) return [];
+    seenGroups.add(siblingGroupKey);
+    return [
+      {
+        ...maskWorkspaceNodeCapabilities(folder, true),
+        name: group.display_name,
+        display_name: group.display_name,
+        conflict_group_id: group.group_id,
+        can_navigate: false,
+      },
+    ];
+  });
+}
 
 interface UseFolderGridRuntimeOptions {
   activeGameId: string | undefined;
@@ -115,7 +152,15 @@ export function useFolderGridRuntime({
   const rawResponse = workspace?.explorer;
   const rawFolders = explorerPages.items;
   const previousFolders = previousExplorerPages.items;
-  const sortedFolders = rawFolders;
+  const folderConflicts = useAppStore((state) =>
+    activeGameId
+      ? (state.folderConflictsByGame[activeGameId] ?? EMPTY_FOLDER_CONFLICTS)
+      : EMPTY_FOLDER_CONFLICTS,
+  );
+  const sortedFolders = useMemo(
+    () => groupExplorerConflictNodes(rawFolders, folderConflicts),
+    [rawFolders, folderConflicts],
+  );
   const {
     fetchNextPage: fetchNextExplorerPage,
     hasNextPage: hasNextExplorerPage,
@@ -176,6 +221,7 @@ export function useFolderGridRuntime({
     explorerQuery,
     isExplorerSearchPending,
     totalMatching: explorerPages.totalMatching,
+    displayedMatching: explorerPages.totalMatching - (rawFolders.length - sortedFolders.length),
     listingRevision: explorerPages.listingRevision,
     isLoading: isWorkspaceLoading || explorerLoading,
     isRefreshing: (isWorkspaceFetching && !isWorkspaceLoading) || explorerPages.isFetchingNextPage,

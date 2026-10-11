@@ -11,7 +11,7 @@ async fn setup_root_only_workspace() -> (sqlx::SqlitePool, TempDir, String) {
         &TestGameFixture {
             id: "game_roots",
             name: "Root Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: mods_root.path().to_string_lossy().as_ref(),
             mods_path: Some(mods_path.to_string_lossy().as_ref()),
         },

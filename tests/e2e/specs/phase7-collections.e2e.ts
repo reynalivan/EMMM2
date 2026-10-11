@@ -38,6 +38,10 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
     gameId = await seedGameAndOpenDashboard(game);
   });
 
+  beforeEach(async () => {
+    await reconcile(gameId);
+  });
+
   after(async () => {
     await removeMockGame(game);
   });
@@ -56,7 +60,14 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
     const list = await invokeInApp<CollectionSummary[]>('list_collections', { gameId });
     expect(list.some((c) => c.id === created.id)).toBe(true);
 
-    await invokeInApp('bulk_toggle_mods', { gameId, paths: [modPath], enable: false });
+    await invokeInApp('bulk_toggle_mods', {
+      gameId,
+      paths: [modPath],
+      enable: false,
+      operationId: 'phase7-collection-disable',
+      intentRevision: 1,
+      expectedIdentities: null,
+    });
     expect(await listDir(path.join(game.modsPath, 'ColObj'))).toContain('DISABLED ColMod');
 
     await invokeInApp('preview_apply_collection', { collectionId: created.id, gameId });
@@ -89,7 +100,14 @@ describe('Fase 7 — Collections & Conflict (data-safety)', () => {
       saveMode: 'save_current_state',
     });
 
-    await invokeInApp('bulk_toggle_mods', { gameId, paths: [keepPath], enable: false });
+    await invokeInApp('bulk_toggle_mods', {
+      gameId,
+      paths: [keepPath],
+      enable: false,
+      operationId: 'phase7-partial-disable',
+      intentRevision: 1,
+      expectedIdentities: null,
+    });
 
     // Remove one member after the snapshot → available members still apply,
     // while the missing member remains explicit in the result.

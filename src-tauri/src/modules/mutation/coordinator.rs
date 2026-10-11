@@ -12,6 +12,7 @@ pub enum MutationExemption {
     CatalogProjection,
     CollectionMetadata,
     DuplicateIgnoreRules,
+    ExternalToolLaunch,
     LibraryMetadata,
     PreviewFile,
     Reconciliation,
@@ -244,6 +245,16 @@ impl MutationCoordinator {
         self.begin_operation(plan, Some(guard))
     }
 
+    /// Prepare owned staging and its identity-bound journal while holding the shared lock.
+    pub(crate) async fn acquire_prepared_operation(
+        &self,
+        prepare: impl FnOnce() -> Result<OperationPlan, AppError>,
+    ) -> Result<MutationGuard, AppError> {
+        let guard = self.lock.acquire().await?;
+        let plan = prepare()?;
+        self.begin_operation(plan, Some(guard))
+    }
+
     /// Start a durable plan while an outer recovery task already owns the
     /// coordinator's operation lock. Callers must retain that lock until this
     /// guard reaches a terminal state.
@@ -270,15 +281,16 @@ impl MutationCoordinator {
                 "Mutation operation {operation_id} is already active"
             )));
         }
-        journal.mark_applying(&operation_id)?;
-
-        Ok(MutationGuard {
+        let mutation = MutationGuard {
             _guard: guard,
             operation_id: Some(operation_id),
             journal: Some(journal.clone()),
             task_registry: self.task_registry.clone(),
             registered: true,
-        })
+        };
+        let (operation_id, journal) = mutation.durable_parts()?;
+        journal.mark_applying(operation_id)?;
+        Ok(mutation)
     }
 
     pub fn inner_lock(&self) -> &OperationLock {
@@ -538,6 +550,40 @@ impl MutationGuard {
     pub fn mark_db_committed(&self) -> Result<(), AppError> {
         let (operation_id, journal) = self.durable_parts()?;
         journal.mark_db_committed(operation_id)
+    }
+
+    pub fn collection_projection_receipt(
+        &self,
+    ) -> Result<crate::modules::mutation::api::ProjectionReceipt, AppError> {
+        let (operation_id, journal) = self.durable_parts()?;
+        let operation = journal
+            .entries()
+            .into_iter()
+            .find(|operation| operation.id == operation_id)
+            .ok_or_else(|| {
+                AppError::NotFound(format!("Mutation journal operation {operation_id}"))
+            })?;
+        if operation.kind != crate::modules::mutation::journal::COLLECTION_APPLY_OPERATION_KIND
+            || operation.status != crate::modules::mutation::journal::OperationStatus::Applied
+            || operation
+                .steps
+                .iter()
+                .any(|step| step.status == crate::modules::mutation::journal::StepStatus::Planned)
+        {
+            return Err(AppError::Validation(format!(
+                "Collection mutation operation {operation_id} cannot finalize its projection"
+            )));
+        }
+        let source_epoch = operation.source_epoch.ok_or_else(|| {
+            AppError::Validation(format!(
+                "Collection mutation operation {operation_id} has no original root identity"
+            ))
+        })?;
+        Ok(crate::modules::mutation::api::ProjectionReceipt {
+            operation_id: operation_id.to_string(),
+            game_id: operation.game_id,
+            source_epoch,
+        })
     }
 
     pub fn begin_rollback(&self) -> Result<(), AppError> {

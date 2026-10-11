@@ -34,6 +34,38 @@ describe('MoveToObjectDialog', () => {
     { id: '2', name: 'Alpha', object_type: 'Character' },
   ] as ObjectSummary[];
 
+  it('opens with the native dialog top layer', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+    const showModal = vi.fn(function showModal(this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: showModal,
+    });
+
+    try {
+      renderDialog(
+        <MoveToObjectDialog
+          isOpen={true}
+          onClose={vi.fn()}
+          objects={dummyObjects}
+          targetModPaths={['mod/path']}
+          onSubmit={vi.fn()}
+        />,
+      );
+
+      await waitFor(() => expect(showModal).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole('dialog')).toHaveProperty('open', true);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(HTMLDialogElement.prototype, 'showModal', descriptor);
+      } else {
+        Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+      }
+    }
+  });
+
   it('filters objects and submits root move with keep status', async () => {
     listMoveTargetsForObject.mockReset();
     listMoveTargetsForObject.mockResolvedValue([

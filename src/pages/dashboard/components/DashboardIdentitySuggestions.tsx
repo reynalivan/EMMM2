@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleHelp, FolderSearch2, LoaderCircle, ScanSearch } from 'lucide-react';
@@ -18,11 +18,25 @@ type Props = {
 };
 
 export function DashboardIdentitySuggestions({ gameId, onOpenSettings }: Props) {
+  if (!gameId) return null;
+  return <GameIdentitySuggestions key={gameId} gameId={gameId} onOpenSettings={onOpenSettings} />;
+}
+
+type GameProps = Props & { gameId: string };
+
+function GameIdentitySuggestions({ gameId, onOpenSettings }: GameProps) {
   const { t } = useTranslation('dashboard');
   const queryClient = useQueryClient();
   const [dismissedForSession, setDismissedForSession] = useState<string | null>(null);
+  const reviewGeneration = useRef(0);
   const [reviewing, setReviewing] = useState(false);
   const [isHowToOpen, setIsHowToOpen] = useState(false);
+  useLayoutEffect(
+    () => () => {
+      reviewGeneration.current += 1;
+    },
+    [],
+  );
   const query = useQuery<ObjectIdentitySuggestionStatus>({
     queryKey: identitySuggestionKeys.status(gameId ?? 'none'),
     queryFn: () => commands.getObjectIdentitySuggestionStatus(gameId ?? ''),
@@ -40,12 +54,15 @@ export function DashboardIdentitySuggestions({ gameId, onOpenSettings }: Props) 
     await invalidate();
   };
   const review = async () => {
+    const reviewId = ++reviewGeneration.current;
+    const reviewGameId = gameId;
     setReviewing(true);
     try {
       const objectIds: string[] = [];
       let offset: number | null = 0;
       while (offset !== null) {
-        const page = await commands.listObjectIdentitySuggestions(gameId, offset, 100);
+        const page = await commands.listObjectIdentitySuggestions(reviewGameId, offset, 100);
+        if (reviewGeneration.current !== reviewId) return;
         objectIds.push(...page.items.map((item) => item.objectId));
         if (page.nextOffset !== null && page.nextOffset <= offset) {
           throw new Error('Suggestion pagination did not advance');
@@ -53,20 +70,26 @@ export function DashboardIdentitySuggestions({ gameId, onOpenSettings }: Props) 
         offset = page.nextOffset;
       }
       if (objectIds.length === 0) {
-        await invalidate();
+        if (reviewGeneration.current === reviewId) {
+          await invalidate();
+        }
         return;
       }
+      if (reviewGeneration.current !== reviewId) return;
       openObjectClassificationWizard({
-        gameId,
+        gameId: reviewGameId,
         objectIds,
         onComplete: () => void invalidate(),
         onIgnore: async (objectId) => {
-          await commands.dismissObjectIdentitySuggestion(gameId, objectId);
+          await commands.dismissObjectIdentitySuggestion(reviewGameId, objectId);
           await invalidate();
         },
       });
+    } catch (error) {
+      if (reviewGeneration.current !== reviewId) return;
+      throw error;
     } finally {
-      setReviewing(false);
+      if (reviewGeneration.current === reviewId) setReviewing(false);
     }
   };
 
@@ -218,7 +241,11 @@ export function DashboardIdentitySuggestions({ gameId, onOpenSettings }: Props) 
                 <button
                   className="btn btn-sm btn-ghost"
                   type="button"
-                  onClick={() => setDismissedForSession(gameId)}
+                  onClick={() => {
+                    reviewGeneration.current += 1;
+                    setReviewing(false);
+                    setDismissedForSession(gameId);
+                  }}
                 >
                   {t('identity_suggestions.not_now')}
                 </button>

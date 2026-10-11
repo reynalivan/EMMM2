@@ -167,7 +167,7 @@ export default function FolderGridContent({
                           hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                           hasFolderNameConflict={protectedByConflict}
                           isLockedByParent={!!ancestorDisabledBy}
-                          switchDisabled={switchDisabled}
+                          switchDisabled={switchDisabled || protectedByConflict}
                           pendingDesiredEnabled={getFolderPendingDesiredEnabled(folder)}
                           isSwitchBusy={isFolderSwitchPending(folder)}
                           mutationsDisabled={folderMutationsDisabled}
@@ -222,7 +222,7 @@ export default function FolderGridContent({
                   onSyncWithDb={handleSyncWithDb}
                   hasConflict={conflictPathSet.has(normalizeWorkspacePath(folder.path))}
                   hasFolderNameConflict={protectedByConflict}
-                  switchDisabled={switchDisabled}
+                  switchDisabled={switchDisabled || protectedByConflict}
                   pendingDesiredEnabled={getFolderPendingDesiredEnabled(folder)}
                   isSwitchBusy={isFolderSwitchPending(folder)}
                   mutationsDisabled={folderMutationsDisabled}

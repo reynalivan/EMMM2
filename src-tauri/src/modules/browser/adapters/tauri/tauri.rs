@@ -261,15 +261,15 @@ pub async fn browser_cancel_download(
 /// Pause a live native WebView2 download when the server supports it.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_pause_download(id: String, app: AppHandle) -> Result<(), AppError> {
-    Ok(download_service::pause_download(&app, &id)?)
+pub async fn browser_pause_download(id: String, app: AppHandle) -> Result<(), AppError> {
+    Ok(download_service::pause_download(&app, &id).await?)
 }
 
 /// Resume a paused or interrupted native WebView2 download when available.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_resume_download(id: String, app: AppHandle) -> Result<(), AppError> {
-    Ok(download_service::resume_download(&app, &id)?)
+pub async fn browser_resume_download(id: String, app: AppHandle) -> Result<(), AppError> {
+    Ok(download_service::resume_download(&app, &id).await?)
 }
 
 /// Start a download only after the user accepts its short-lived confirmation.
@@ -286,8 +286,8 @@ pub async fn browser_confirm_download(
 /// Reject a pending download confirmation without creating a file or DB row.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_reject_download(request_id: String) -> Result<(), AppError> {
-    Ok(download_handler::reject_download(&request_id)?)
+pub fn browser_reject_download(request_id: String, app: AppHandle) -> Result<(), AppError> {
+    Ok(download_handler::reject_download(&app, &request_id)?)
 }
 
 /// Ask for confirmation before retrying a failed or canceled download.

@@ -5,11 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub const MOD_ROOT_MAX_DEPTH: usize = 12;
 pub const MOD_ROOT_MAX_ENTRIES: usize = 10_000;
 
-/// Extensions considered loose/non-mod files (readme, previews, etc).
-const LOOSE_EXTENSIONS: &[&str] = &[
-    "txt", "md", "png", "jpg", "jpeg", "gif", "webp", "bmp", "url", "html", "pdf",
-];
-
 /// Section families that give an INI file executable 3DMigoto behavior.
 const VALID_INI_SECTION_PREFIXES: &[&str] = &[
     "textureoverride",
@@ -213,80 +208,6 @@ fn is_runtime_section(line: &str) -> bool {
             .any(|prefix| section.starts_with(prefix))
 }
 
-/// Collect loose non-mod files from a folder (non-recursive).
-///
-/// Returns paths to files that are readme, images, etc (not .ini/.dds/.ib/.vb/.buf/.hlsl).
-pub fn collect_loose_files(folder: &Path) -> Vec<PathBuf> {
-    let entries = match fs::read_dir(folder) {
-        Ok(e) => e,
-        Err(_) => return Vec::new(),
-    };
-
-    entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file())
-        .filter(|e| {
-            let ext = e
-                .path()
-                .extension()
-                .and_then(|x| x.to_str())
-                .map(|x| x.to_lowercase())
-                .unwrap_or_default();
-            LOOSE_EXTENSIONS.contains(&ext.as_str())
-        })
-        .map(|e| e.path())
-        .collect()
-}
-
-/// Collect loose non-mod files recursively from all layers between `root` and the mod roots.
-///
-/// Walks from `root` downward, collecting loose files at each level, but stops
-/// at directories that are in `mod_roots` (doesn't collect from inside mods).
-pub fn collect_loose_files_recursive(root: &Path, mod_roots: &[PathBuf]) -> Vec<PathBuf> {
-    let mut result = collect_loose_files(root);
-
-    let entries = match fs::read_dir(root) {
-        Ok(e) => e,
-        Err(_) => return result,
-    };
-
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        if mod_roots.contains(&path) {
-            continue;
-        }
-        result.extend(collect_loose_files_recursive(&path, mod_roots));
-    }
-
-    result
-}
-
-/// Generate a unique destination path with counter suffix if needed.
-///
-/// If `mods_dir/name` already exists, tries `name (2)`, `name (3)`, etc.
-pub fn resolve_unique_dest(parent_dir: &Path, name: &str) -> PathBuf {
-    let dest = parent_dir.join(name);
-    if !dest.exists() {
-        return dest;
-    }
-
-    let mut counter = 2u32;
-    loop {
-        let new_name = format!("{} ({})", name, counter);
-        let check = parent_dir.join(&new_name);
-        if !check.exists() {
-            return check;
-        }
-        counter += 1;
-        if counter > 999 {
-            return parent_dir.join(format!("{} ({})", name, uuid::Uuid::new_v4()));
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,32 +394,5 @@ mod tests {
         assert!(!is_runtime_section("; [TextureOverrideBody]"));
         assert!(!is_runtime_section("[Constants]"));
         assert!(!is_runtime_section("[KeyWithoutClosingBracket"));
-    }
-
-    #[test]
-    fn collect_loose_files_works() {
-        let tmp = TempDir::new().unwrap();
-        create_file(tmp.path(), "README.txt", "hello");
-        create_file(tmp.path(), "preview.png", "");
-        create_file(tmp.path(), "merged.ini", VALID_INI); // Not loose
-        create_file(tmp.path(), "texture.dds", ""); // Not loose
-
-        let loose = collect_loose_files(tmp.path());
-        assert_eq!(loose.len(), 2);
-    }
-
-    #[test]
-    fn resolve_unique_dest_no_conflict() {
-        let tmp = TempDir::new().unwrap();
-        let dest = resolve_unique_dest(tmp.path(), "MyMod");
-        assert_eq!(dest, tmp.path().join("MyMod"));
-    }
-
-    #[test]
-    fn resolve_unique_dest_with_conflict() {
-        let tmp = TempDir::new().unwrap();
-        fs::create_dir_all(tmp.path().join("MyMod")).unwrap();
-        let dest = resolve_unique_dest(tmp.path(), "MyMod");
-        assert_eq!(dest, tmp.path().join("MyMod (2)"));
     }
 }

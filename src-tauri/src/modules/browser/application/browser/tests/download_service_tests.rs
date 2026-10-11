@@ -5,6 +5,134 @@ use super::*;
 use crate::modules::browser::adapters::sqlite::browser;
 use crate::test_utils::init_test_db;
 
+#[tokio::test]
+async fn uncommitted_native_staging_cannot_be_deleted_through_stale_history() {
+    let db = init_test_db().await.pool;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir
+        .path()
+        .join(format!("{NATIVE_DOWNLOAD_TEMP_PREFIX}raced.part"));
+    std::fs::write(&file, b"unrelated recreated staging").unwrap();
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "pack.zip",
+        "https://example.test/pack.zip",
+        &file.to_string_lossy(),
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE browser_downloads SET tab_label = 'native-test', status = 'failed' WHERE id = ?",
+    )
+    .bind(&id)
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(delete_download(&db, &id, true).await.is_err());
+    assert!(rename_download(&db, &id, "renamed.zip").await.is_err());
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        b"unrelated recreated staging"
+    );
+    delete_download(&db, &id, false).await.unwrap();
+}
+
+#[test]
+fn rollback_preserves_a_recreated_original_download() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = dir.path().join("original.zip");
+    let renamed = dir.path().join("renamed.zip");
+    std::fs::write(&original, b"intervening file").unwrap();
+    std::fs::write(&renamed, b"download payload").unwrap();
+
+    assert!(rollback_download_rename(&renamed, &original).is_err());
+    assert_eq!(std::fs::read(&original).unwrap(), b"intervening file");
+    assert_eq!(std::fs::read(&renamed).unwrap(), b"download payload");
+}
+
+#[tokio::test]
+async fn closed_native_download_rejects_delayed_resumable_status() {
+    let db = init_test_db().await.pool;
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "pack.zip",
+        "https://example.com/pack.zip",
+        "C:/dl/pack.zip",
+    )
+    .await
+    .unwrap();
+    assert!(update_native_status(
+        &db,
+        &id,
+        "in_progress",
+        Some(0),
+        Some(100),
+        None,
+        None,
+        true
+    )
+    .await
+    .unwrap());
+    assert!(update_native_status(
+        &db,
+        &id,
+        "failed",
+        None,
+        None,
+        Some("The source tab was closed"),
+        None,
+        false
+    )
+    .await
+    .unwrap());
+    assert!(!update_native_status(
+        &db,
+        &id,
+        "in_progress",
+        Some(10),
+        Some(100),
+        None,
+        None,
+        true
+    )
+    .await
+    .unwrap());
+    let row = list_downloads(&db, "game-1").await.unwrap().remove(0);
+    assert_eq!(row.status, "failed");
+    assert_eq!(row.can_resume, Some(false));
+    assert_eq!(row.bytes_received, 0);
+    assert!(row.finished_at.is_some());
+}
+
+#[tokio::test]
+async fn completion_persists_final_counters_without_a_progress_sample() {
+    let db = init_test_db().await.pool;
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "pack.zip",
+        "https://example.com/pack.zip",
+        "C:/dl/pack.zip",
+    )
+    .await
+    .unwrap();
+    update_status(&db, &id, "in_progress", Some(0), Some(0), None, None)
+        .await
+        .unwrap();
+    complete_download_record(&db, &id, "C:/dl/pack.zip", 123)
+        .await
+        .unwrap();
+    let row = list_downloads(&db, "game-1").await.unwrap().remove(0);
+    assert_eq!(row.status, "finished");
+    assert_eq!(row.bytes_received, 123);
+    assert_eq!(row.bytes_total, Some(123));
+}
+
 async fn status_of(db: &SqlitePool, id: &str) -> Option<String> {
     list_downloads(db, "game-1")
         .await
@@ -12,6 +140,126 @@ async fn status_of(db: &SqlitePool, id: &str) -> Option<String> {
         .into_iter()
         .find(|d| d.id == id)
         .map(|d| d.status)
+}
+
+#[tokio::test]
+async fn native_completion_cannot_be_overwritten_by_late_startup_status() {
+    let db = init_test_db().await.pool;
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "pack.zip",
+        "https://example.com/pack.zip",
+        "C:/dl/pack.zip",
+    )
+    .await
+    .unwrap();
+    update_native_status(
+        &db,
+        &id,
+        "finished",
+        Some(100),
+        Some(100),
+        None,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+    update_native_status(
+        &db,
+        &id,
+        "in_progress",
+        Some(0),
+        Some(100),
+        None,
+        None,
+        true,
+    )
+    .await
+    .unwrap();
+    let row = list_downloads(&db, "game-1").await.unwrap().remove(0);
+    assert_eq!(row.status, "finished");
+    assert_eq!(row.bytes_received, 100);
+    assert_eq!(row.can_resume, Some(false));
+}
+
+#[tokio::test]
+async fn native_resume_clears_the_previous_failure_timestamp() {
+    let db = init_test_db().await.pool;
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "pack.zip",
+        "https://example.com/pack.zip",
+        "C:/dl/pack.zip",
+    )
+    .await
+    .unwrap();
+    update_native_status(
+        &db,
+        &id,
+        "failed",
+        Some(10),
+        Some(100),
+        Some("interrupted"),
+        None,
+        true,
+    )
+    .await
+    .unwrap();
+    update_native_status(
+        &db,
+        &id,
+        "in_progress",
+        Some(10),
+        Some(100),
+        None,
+        None,
+        true,
+    )
+    .await
+    .unwrap();
+    let row = list_downloads(&db, "game-1").await.unwrap().remove(0);
+    assert_eq!(row.status, "in_progress");
+    assert!(row.finished_at.is_none());
+    assert!(row.error_msg.is_none());
+}
+
+#[tokio::test]
+async fn retention_does_not_remove_a_still_resumable_native_operation() {
+    let db = init_test_db().await.pool;
+    let id = create_download(
+        &db,
+        "game-1",
+        None,
+        "pack.zip",
+        "https://example.com/pack.zip",
+        "C:/dl/pack.zip",
+    )
+    .await
+    .unwrap();
+    update_native_status(
+        &db,
+        &id,
+        "failed",
+        Some(10),
+        Some(100),
+        Some("interrupted"),
+        None,
+        true,
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE browser_downloads SET finished_at = '2020-01-01T00:00:00' WHERE id = ?")
+        .bind(&id)
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(clear_old_downloads(&db).await.unwrap(), 0);
+    assert_eq!(status_of(&db, &id).await.as_deref(), Some("failed"));
 }
 
 #[tokio::test]

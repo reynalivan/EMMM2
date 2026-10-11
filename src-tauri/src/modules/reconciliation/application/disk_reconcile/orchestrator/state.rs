@@ -5,7 +5,7 @@ use crate::shared::path_key::physical_namespace_path;
 use crate::shared::sync::lock;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
@@ -14,7 +14,7 @@ use crate::modules::reconciliation::application::disk_reconcile::types::{
     DiskReconcileResult, DiskReconcileScanScope, PendingRuntimeEffects,
 };
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 struct GameSyncState {
     last_result: Option<DiskReconcileResult>,
     reconcile_revision: u64,
@@ -25,20 +25,33 @@ struct GameSyncState {
     runtime_sync_worker_running: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct QueuedRuntimeSync {
     generation: u64,
     cause: String,
     publication_revision: Option<u64>,
     activation_authority: Option<ActivationAuthority>,
+    reply: Option<tokio::sync::oneshot::Sender<RuntimeSyncReply>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct RuntimeSyncJob {
     pub(crate) generation: u64,
     pub(crate) cause: String,
     pub(crate) publication_revision: Option<u64>,
     pub(crate) activation_authority: Option<ActivationAuthority>,
+    pub(crate) reply: Option<tokio::sync::oneshot::Sender<RuntimeSyncReply>>,
+}
+
+#[derive(Debug)]
+pub(crate) enum RuntimeSyncReply {
+    Completed(
+        Result<
+            crate::modules::system::api::app::post_apply::RuntimeSyncResult,
+            crate::shared::errors::AppError,
+        >,
+    ),
+    Superseded,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +163,20 @@ struct GameAuthorityState {
     dirty_roots: BTreeSet<PathBuf>,
     dropped_events: bool,
     trusted: bool,
+    identity_cache_validity: Option<Arc<AtomicBool>>,
+    coverage_ended: bool,
+}
+
+impl GameAuthorityState {
+    fn coverage_is_valid(&self) -> bool {
+        !self.coverage_ended && self.identity_cache_is_valid()
+    }
+
+    fn identity_cache_is_valid(&self) -> bool {
+        self.identity_cache_validity
+            .as_ref()
+            .is_none_or(|validity| validity.load(Ordering::Acquire))
+    }
 }
 
 pub(super) const MAX_SCOPED_DIRTY_ROOTS: usize = 512;
@@ -422,6 +449,47 @@ struct InitialRecoveryState {
     generation: u64,
     status: InitialRecoveryStatus,
     core_root_identity: Option<String>,
+    binding: Option<InitialRecoveryBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InitialRecoveryBinding {
+    mods_root: PathBuf,
+    runtime_config_path: PathBuf,
+    root_key: String,
+    runtime_config_key: String,
+    root_identity: String,
+    runtime_parent_identity: String,
+}
+
+impl InitialRecoveryBinding {
+    fn capture(mods_root: &Path, runtime_config_path: &Path) -> Option<Self> {
+        Some(Self {
+            mods_root: mods_root.to_path_buf(),
+            runtime_config_path: runtime_config_path.to_path_buf(),
+            root_key: crate::shared::path_key::exact_location_key_for_path(mods_root),
+            runtime_config_key: crate::shared::path_key::exact_location_key_for_path(
+                runtime_config_path,
+            ),
+            root_identity: crate::platform::fs::file_utils::filesystem_identity(mods_root)?,
+            runtime_parent_identity: crate::platform::fs::file_utils::filesystem_identity(
+                runtime_config_path.parent()?,
+            )?,
+        })
+    }
+
+    fn matches(&self, mods_root: &Path, runtime_config_path: &Path) -> bool {
+        Self::capture(mods_root, runtime_config_path).is_some_and(|current| {
+            self.root_key == current.root_key
+                && self.runtime_config_key == current.runtime_config_key
+                && self.root_identity == current.root_identity
+                && self.runtime_parent_identity == current.runtime_parent_identity
+        })
+    }
+
+    fn still_current(&self) -> bool {
+        self.matches(&self.mods_root, &self.runtime_config_path)
+    }
 }
 
 impl Default for InitialRecoveryGate {
@@ -431,6 +499,7 @@ impl Default for InitialRecoveryGate {
                 generation: 0,
                 status: InitialRecoveryStatus::Unstarted,
                 core_root_identity: None,
+                binding: None,
             }),
             notify: Notify::new(),
         }
@@ -590,6 +659,7 @@ impl DiskReconcileState {
         state.pending_runtime_effects
     }
 
+    #[cfg(test)]
     pub(crate) fn enqueue_runtime_sync(
         &self,
         game_id: &str,
@@ -597,15 +667,38 @@ impl DiskReconcileState {
         publication_revision: Option<u64>,
         activation_authority: Option<ActivationAuthority>,
     ) -> RuntimeSyncEnqueue {
+        self.enqueue_runtime_sync_with_reply(
+            game_id,
+            cause,
+            publication_revision,
+            activation_authority,
+            None,
+        )
+    }
+
+    pub(crate) fn enqueue_runtime_sync_with_reply(
+        &self,
+        game_id: &str,
+        cause: impl Into<String>,
+        publication_revision: Option<u64>,
+        activation_authority: Option<ActivationAuthority>,
+        reply: Option<tokio::sync::oneshot::Sender<RuntimeSyncReply>>,
+    ) -> RuntimeSyncEnqueue {
         let mut games = lock(&self.games);
         let state = games.entry(game_id.to_string()).or_default();
         state.runtime_sync_generation = state.runtime_sync_generation.saturating_add(1);
         let generation = state.runtime_sync_generation;
+        if let Some(previous) = state.queued_runtime_sync.take() {
+            if let Some(reply) = previous.reply {
+                let _ = reply.send(RuntimeSyncReply::Superseded);
+            }
+        }
         state.queued_runtime_sync = Some(QueuedRuntimeSync {
             generation,
             cause: cause.into(),
             publication_revision,
             activation_authority,
+            reply,
         });
         let start_worker = !state.runtime_sync_worker_running;
         state.runtime_sync_worker_running = true;
@@ -626,6 +719,7 @@ impl DiskReconcileState {
                 cause: queued.cause,
                 publication_revision: queued.publication_revision,
                 activation_authority: queued.activation_authority,
+                reply: queued.reply,
             })
     }
 
@@ -734,6 +828,7 @@ impl DiskReconcileState {
                 && root_identity.is_some()
                 && state.root_identity == root_identity
                 && state.trusted
+                && state.coverage_is_valid()
                 && !state.dropped_events
                 && state.dirty_roots.is_empty()
         })
@@ -836,6 +931,7 @@ impl DiskReconcileState {
                 && state.root_identity.is_some()
                 && state.root_identity == current_identity
                 && state.trusted
+                && state.coverage_is_valid()
                 && !state.dropped_events
         })
     }
@@ -874,6 +970,7 @@ impl DiskReconcileState {
                 && identity.is_some()
                 && state.root_identity == identity
                 && state.trusted
+                && state.coverage_is_valid()
                 && !state.dropped_events
                 && !state.dirty_roots.iter().any(|dirty| {
                     paths
@@ -901,23 +998,51 @@ impl DiskReconcileState {
 
     /// Starts watcher coverage without continuity proof. A full catch-up is
     /// required before this session may become authoritative.
+    #[cfg(test)]
     pub(crate) fn begin_authority_session(
         &self,
         game_id: &str,
         mods_root: &Path,
         watcher_session: u64,
     ) {
+        self.begin_authority_session_with_validity(game_id, mods_root, watcher_session, None);
+    }
+
+    pub(crate) fn begin_authority_session_with_coverage(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        session: &crate::modules::workspace::api::scanner::watcher::WatcherSession,
+    ) {
+        self.begin_authority_session_with_validity(
+            game_id,
+            mods_root,
+            session.generation(),
+            Some(session.identity_cache_validity()),
+        );
+    }
+
+    fn begin_authority_session_with_validity(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        watcher_session: u64,
+        identity_cache_validity: Option<Arc<AtomicBool>>,
+    ) {
         let root_key = authority_root_key(mods_root);
         let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(mods_root);
         let mut authority = lock(&self.authority);
         let state = authority.entry(game_id.to_string()).or_default();
-        if watcher_session < state.watcher_session {
+        if watcher_session < state.watcher_session
+            || (watcher_session == state.watcher_session && state.coverage_ended)
+        {
             return;
         }
         *state = GameAuthorityState {
             root_key,
             root_identity,
             watcher_session,
+            identity_cache_validity,
             dropped_events: true,
             ..GameAuthorityState::default()
         };
@@ -926,12 +1051,46 @@ impl DiskReconcileState {
 
     /// Moves the existing observation to an overlapping watcher without
     /// acknowledging any events or changing its reconcile revision.
+    #[cfg(test)]
     pub(crate) fn handoff_authority_session(
         &self,
         game_id: &str,
         mods_root: &Path,
         covered_session: u64,
         watcher_session: u64,
+    ) -> bool {
+        self.handoff_authority_session_with_validity(
+            game_id,
+            mods_root,
+            covered_session,
+            watcher_session,
+            None,
+        )
+    }
+
+    pub(crate) fn handoff_authority_session_with_coverage(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        covered_session: u64,
+        session: &crate::modules::workspace::api::scanner::watcher::WatcherSession,
+    ) -> bool {
+        self.handoff_authority_session_with_validity(
+            game_id,
+            mods_root,
+            covered_session,
+            session.generation(),
+            Some(session.identity_cache_validity()),
+        )
+    }
+
+    fn handoff_authority_session_with_validity(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        covered_session: u64,
+        watcher_session: u64,
+        identity_cache_validity: Option<Arc<AtomicBool>>,
     ) -> bool {
         let root_key = authority_root_key(mods_root);
         let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(mods_root);
@@ -944,10 +1103,14 @@ impl DiskReconcileState {
             || state.root_key != root_key
             || root_identity.is_none()
             || state.root_identity != root_identity
+            || !state.coverage_is_valid()
         {
             return false;
         }
         state.watcher_session = watcher_session;
+        if let Some(validity) = identity_cache_validity {
+            state.identity_cache_validity = Some(validity);
+        }
         true
     }
 
@@ -984,6 +1147,7 @@ impl DiskReconcileState {
             && state.root_identity.as_deref() == Some(root_identity.as_str())
             && state.watcher_session == watcher_session
             && state.trusted
+            && state.coverage_is_valid()
             && !state.dropped_events
             && state.dirty_roots.is_empty())
         .then(|| TrustedAuthorityEvidence {
@@ -1034,6 +1198,14 @@ impl DiskReconcileState {
         let root_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(mods_root);
         let mut authority = lock(&self.authority);
         let state = authority.entry(game_id.to_string()).or_default();
+        if watcher_session == state.watcher_session
+            && state.coverage_ended
+            && state.root_key != root_key
+        {
+            state.event_generation = state.event_generation.saturating_add(1);
+            state.dropped_events = true;
+            return;
+        }
         if watcher_session < state.watcher_session {
             if state.root_key == root_key {
                 state.event_generation = state.event_generation.saturating_add(1);
@@ -1088,6 +1260,7 @@ impl DiskReconcileState {
             {
                 state.event_generation = state.event_generation.saturating_add(1);
                 state.dropped_events = true;
+                state.coverage_ended = true;
             }
         }
     }
@@ -1111,6 +1284,7 @@ impl DiskReconcileState {
             || root_identity.is_none()
             || state.root_identity != root_identity
             || !state.trusted
+            || !state.coverage_is_valid()
             || state.dropped_events
         {
             return AuthorityCatchUp::Full {
@@ -1175,6 +1349,7 @@ impl DiskReconcileState {
             || root_identity.is_none()
             || state.root_identity != root_identity
             || !result.status.applied()
+            || !state.coverage_is_valid()
             || result.reconcile_revision < state.reconcile_revision
         {
             return false;
@@ -1295,6 +1470,7 @@ impl DiskReconcileState {
                     .map(|result| result.reconcile_revision);
                 let clean = lock(&self.authority).get(game_id).is_some_and(|state| {
                     state.trusted
+                        && state.coverage_is_valid()
                         && !state.dropped_events
                         && state.dirty_roots.is_empty()
                         && Some(state.reconcile_revision) == revision
@@ -1380,11 +1556,32 @@ impl DiskReconcileState {
     }
 
     pub fn mark_initial_recovery_pending(&self, game_id: &str) -> u64 {
+        self.mark_initial_recovery_pending_with_binding(game_id, None)
+    }
+
+    pub(crate) fn mark_initial_recovery_pending_for_root(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        runtime_config_path: &Path,
+    ) -> u64 {
+        self.mark_initial_recovery_pending_with_binding(
+            game_id,
+            InitialRecoveryBinding::capture(mods_root, runtime_config_path),
+        )
+    }
+
+    fn mark_initial_recovery_pending_with_binding(
+        &self,
+        game_id: &str,
+        binding: Option<InitialRecoveryBinding>,
+    ) -> u64 {
         let gate = self.initial_recovery_gate(game_id);
         let generation = {
             let mut state = lock(&gate.state);
             state.generation += 1;
             state.status = InitialRecoveryStatus::Pending;
+            state.binding = binding;
             state.generation
         };
         gate.notify.notify_waiters();
@@ -1398,6 +1595,7 @@ impl DiskReconcileState {
             state.generation += 1;
             state.status = InitialRecoveryStatus::Unstarted;
             state.core_root_identity = None;
+            state.binding = None;
             Arc::clone(&gate)
         };
         gate.notify.notify_waiters();
@@ -1411,26 +1609,38 @@ impl DiskReconcileState {
     ) -> bool {
         let core_root_identity = lock(&self.authority)
             .get(game_id)
-            .filter(|authority| authority.trusted && !authority.dropped_events)
+            .filter(|authority| {
+                authority.trusted && authority.coverage_is_valid() && !authority.dropped_events
+            })
             .and_then(|authority| authority.root_identity.clone());
         let gate = lock(&self.initial_recovery).get(game_id).cloned();
         if let Some(gate) = gate {
-            let finished = {
+            let (accepted, finished) = {
                 let mut state = lock(&gate.state);
                 if state.generation != generation
                     || !matches!(state.status, InitialRecoveryStatus::Pending)
                 {
-                    false
+                    (false, false)
+                } else if state
+                    .binding
+                    .as_ref()
+                    .is_some_and(|binding| !binding.still_current())
+                {
+                    state.status = InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Failed(
+                        "Recovery root or runtime coverage changed; retry indexing".into(),
+                    ));
+                    state.core_root_identity = None;
+                    (false, true)
                 } else {
                     state.status = InitialRecoveryStatus::Finished(outcome);
                     state.core_root_identity = core_root_identity;
-                    true
+                    (true, true)
                 }
             };
             if finished {
                 gate.notify.notify_waiters();
             }
-            finished
+            accepted
         } else {
             false
         }
@@ -1445,6 +1655,150 @@ impl DiskReconcileState {
         let recovery = lock(&gate.state);
         recovery.generation == generation
             && matches!(recovery.status, InitialRecoveryStatus::Pending)
+            && recovery
+                .binding
+                .as_ref()
+                .is_none_or(InitialRecoveryBinding::still_current)
+    }
+
+    pub(crate) fn joinable_initial_recovery_binding(
+        &self,
+        game_id: &str,
+        mods_root: &Path,
+        runtime_config_path: &Path,
+    ) -> Option<(u64, InitialRecoveryBinding)> {
+        let root_identity = crate::platform::fs::file_utils::filesystem_identity(mods_root);
+        let (cache_valid, live_coverage) = {
+            let authority = lock(&self.authority);
+            let observed = authority.get(game_id);
+            (
+                observed.is_none_or(GameAuthorityState::identity_cache_is_valid),
+                observed.is_some_and(|state| {
+                    state.watcher_session > 0
+                        && state.coverage_is_valid()
+                        && state.root_key == authority_root_key(mods_root)
+                        && root_identity.is_some()
+                        && state.root_identity == root_identity
+                }),
+            )
+        };
+        if !cache_valid {
+            return None;
+        }
+        let gate = self.initial_recovery_gate(game_id);
+        let recovery = lock(&gate.state);
+        let joinable = matches!(recovery.status, InitialRecoveryStatus::Pending)
+            || matches!(&recovery.status, InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(result)) if result.status.applied() && live_coverage);
+        if !joinable {
+            return None;
+        }
+        let binding = recovery.binding.as_ref()?.clone();
+        binding
+            .matches(mods_root, runtime_config_path)
+            .then_some((recovery.generation, binding))
+    }
+
+    pub(crate) fn initial_recovery_owner_matches_configuration(
+        &self,
+        game_id: &str,
+        generation: u64,
+        mods_root: &Path,
+        runtime_config_path: &Path,
+    ) -> bool {
+        let gate = self.initial_recovery_gate(game_id);
+        let recovery = lock(&gate.state);
+        recovery.generation == generation
+            && matches!(recovery.status, InitialRecoveryStatus::Pending)
+            && recovery
+                .binding
+                .as_ref()
+                .is_none_or(|binding| binding.matches(mods_root, runtime_config_path))
+    }
+
+    pub(crate) fn initial_recovery_generation_is_current(
+        &self,
+        game_id: &str,
+        generation: u64,
+    ) -> bool {
+        let gate = self.initial_recovery_gate(game_id);
+        let recovery = lock(&gate.state);
+        recovery.generation == generation
+            && recovery
+                .binding
+                .as_ref()
+                .is_none_or(InitialRecoveryBinding::still_current)
+    }
+
+    pub(crate) fn initial_recovery_binding_is_current(
+        &self,
+        game_id: &str,
+        generation: u64,
+        binding: &InitialRecoveryBinding,
+        mods_root: &Path,
+        runtime_config_path: &Path,
+    ) -> bool {
+        let gate = self.initial_recovery_gate(game_id);
+        let recovery = lock(&gate.state);
+        recovery.generation == generation
+            && recovery.binding.as_ref() == Some(binding)
+            && binding.matches(mods_root, runtime_config_path)
+    }
+
+    pub(crate) fn with_initial_recovery_owner<T>(
+        &self,
+        game_id: &str,
+        generation: u64,
+        mods_root: &Path,
+        runtime_config_path: &Path,
+        publish: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let gate = self.initial_recovery_gate(game_id);
+        let recovery = lock(&gate.state);
+        if recovery.generation != generation
+            || !matches!(
+                recovery.status,
+                InitialRecoveryStatus::Finished(InitialRecoveryOutcome::Completed(_))
+            )
+            || recovery
+                .binding
+                .as_ref()
+                .is_some_and(|binding| !binding.matches(mods_root, runtime_config_path))
+        {
+            return None;
+        }
+        Some(publish())
+    }
+
+    pub(crate) async fn wait_initial_recovery_generation(
+        &self,
+        game_id: &str,
+        generation: u64,
+        binding: &InitialRecoveryBinding,
+    ) -> Option<InitialRecoveryOutcome> {
+        let gate = self.initial_recovery_gate(game_id);
+        loop {
+            let notified = gate.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            {
+                let recovery = lock(&gate.state);
+                if recovery.generation != generation
+                    || recovery.binding.as_ref() != Some(binding)
+                    || !binding.still_current()
+                {
+                    return None;
+                }
+                match &recovery.status {
+                    InitialRecoveryStatus::Finished(outcome) => return Some(outcome.clone()),
+                    InitialRecoveryStatus::Unstarted => return None,
+                    InitialRecoveryStatus::Pending => {}
+                }
+            }
+            tokio::select! {
+                () = &mut notified => {}
+                () = tokio::time::sleep(std::time::Duration::from_millis(250)) => {}
+            }
+        }
     }
 
     pub(crate) fn complete_verified_onboarding_recovery(
@@ -1469,6 +1823,7 @@ impl DiskReconcileState {
         let authority = lock(&self.authority);
         if authority.get(game_id).is_none_or(|state| {
             !state.trusted
+                || !state.coverage_is_valid()
                 || state.dropped_events
                 || !state.dirty_roots.is_empty()
                 || state.reconcile_revision != result.reconcile_revision
@@ -1478,6 +1833,13 @@ impl DiskReconcileState {
         let gate = self.initial_recovery_gate(game_id);
         let mut recovery = lock(&gate.state);
         if recovery.generation != generation {
+            return false;
+        }
+        if recovery
+            .binding
+            .as_ref()
+            .is_some_and(|binding| !binding.still_current())
+        {
             return false;
         }
         if matches!(
@@ -1567,6 +1929,7 @@ mod initial_recovery_tests {
     use crate::modules::reconciliation::application::disk_reconcile::types::{
         DiskReconcileReason, DiskReconcileResult, DiskReconcileScanScope, DiskReconcileStatus,
     };
+    use std::sync::atomic::Ordering;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -1607,6 +1970,356 @@ mod initial_recovery_tests {
             state.initial_recovery_readiness("game"),
             InitialRecoveryReadiness::Syncing { generation }
         );
+    }
+
+    #[tokio::test]
+    async fn bound_pending_owner_is_joined_without_claiming_another_run() {
+        let temp = tempfile::tempdir().expect("root");
+        let runtime = temp.path().join("d3dx.ini");
+        let state = DiskReconcileState::new();
+        let generation =
+            state.mark_initial_recovery_pending_for_root("game", temp.path(), &runtime);
+        assert!(state.initial_recovery_owner_matches_configuration(
+            "game",
+            generation,
+            temp.path(),
+            &runtime
+        ));
+        let (joined, binding) = state
+            .joinable_initial_recovery_binding("game", temp.path(), &runtime)
+            .expect("matching owner");
+        assert_eq!(joined, generation);
+        assert!(
+            matches!(state.start_initial_recovery("game"), super::InitialRecoveryStart::Syncing { generation: current } if current == generation)
+        );
+        let waiting = state.wait_initial_recovery_generation("game", generation, &binding);
+        tokio::pin!(waiting);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut waiting)
+                .await
+                .is_err()
+        );
+        assert!(state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Failed("source unavailable".into())
+        ));
+        assert!(
+            matches!(waiting.await, Some(InitialRecoveryOutcome::Failed(message)) if message == "source unavailable")
+        );
+    }
+
+    #[test]
+    fn completed_binding_requires_live_authority_after_receiver_ends() {
+        let temp = tempfile::tempdir().expect("mods");
+        let late_path = temp.path().join("Late");
+        std::fs::create_dir(&late_path).expect("scope");
+        let scope = vec![late_path.to_string_lossy().into_owned()];
+        let runtime = temp.path().join("d3dx.ini");
+        let state = DiskReconcileState::new();
+        state.begin_authority_session("game", temp.path(), 1);
+        let mut baseline = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut baseline);
+        assert!(state.mark_authority_reconciled("game", temp.path(), 1, 0, &baseline, &[]));
+        let generation =
+            state.mark_initial_recovery_pending_for_root("game", temp.path(), &runtime);
+        assert!(state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(baseline.clone()))
+        ));
+        assert!(state
+            .joinable_initial_recovery_binding("game", temp.path(), &runtime)
+            .is_some());
+        assert!(state.trusted_toggle_session_is_ready("game", temp.path(), &scope, 1));
+        state.end_authority_session("game", 1, temp.path());
+        assert!(!state.trusted_toggle_session_is_ready("game", temp.path(), &scope, 1));
+        assert!(
+            state
+                .joinable_initial_recovery_binding("game", temp.path(), &runtime)
+                .is_none(),
+            "completed recovery cannot wait on a receiver that has ended"
+        );
+        state.observe_authority_event("game", 1, temp.path(), &[late_path], false);
+        let observed = state
+            .authority_event_generation("game", 1)
+            .expect("session high-water mark retained");
+        let mut repaired = baseline;
+        state.record_result("game", &mut repaired);
+        assert!(
+            !state.mark_authority_reconciled("game", temp.path(), 1, observed, &repaired, &[]),
+            "a late observation and full DB result cannot resurrect ended coverage"
+        );
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
+        assert!(matches!(
+            state.authority_catch_up("game", temp.path(), 1),
+            AuthorityCatchUp::Full { .. }
+        ));
+        state.begin_authority_session("game", temp.path(), 2);
+        assert!(state.mark_authority_reconciled("game", temp.path(), 2, 0, &repaired, &[]));
+        assert!(state
+            .joinable_initial_recovery_binding("game", temp.path(), &runtime)
+            .is_some());
+    }
+
+    #[test]
+    fn completed_binding_without_registered_authority_cannot_join() {
+        let temp = tempfile::tempdir().expect("mods");
+        let runtime = temp.path().join("d3dx.ini");
+        let state = DiskReconcileState::new();
+        let generation =
+            state.mark_initial_recovery_pending_for_root("game", temp.path(), &runtime);
+        assert!(
+            state
+                .joinable_initial_recovery_binding("game", temp.path(), &runtime)
+                .is_some(),
+            "the pending owner may join before native registration"
+        );
+        assert!(state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(recovery_result(
+                DiskReconcileStatus::Applied
+            )))
+        ));
+        assert!(
+            state
+                .joinable_initial_recovery_binding("game", temp.path(), &runtime)
+                .is_none(),
+            "an applied result alone does not prove live watcher coverage"
+        );
+    }
+
+    #[tokio::test]
+    async fn exact_pending_waiter_exits_on_reset_without_taking_run() {
+        let temp = tempfile::tempdir().expect("root");
+        let runtime = temp.path().join("d3dx.ini");
+        let state = DiskReconcileState::new();
+        let generation =
+            state.mark_initial_recovery_pending_for_root("game", temp.path(), &runtime);
+        let (_, binding) = state
+            .joinable_initial_recovery_binding("game", temp.path(), &runtime)
+            .expect("owner");
+        let waiting = state.wait_initial_recovery_generation("game", generation, &binding);
+        tokio::pin!(waiting);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut waiting)
+                .await
+                .is_err()
+        );
+        state.reset_initial_recovery("game");
+        assert!(tokio::time::timeout(Duration::from_secs(1), &mut waiting)
+            .await
+            .expect("reset wake")
+            .is_none());
+        assert!(matches!(
+            state.initial_recovery_readiness("game"),
+            InitialRecoveryReadiness::Unstarted { .. }
+        ));
+        assert!(!state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(recovery_result(
+                DiskReconcileStatus::Applied
+            )))
+        ));
+    }
+
+    #[tokio::test]
+    async fn revisioned_settings_snapshot_reads_while_activation_and_recovery_are_pending() {
+        let db = crate::test_utils::init_test_db().await;
+        let config =
+            crate::modules::settings::api::config::ConfigService::new_for_test_async(db.pool).await;
+        let state = DiskReconcileState::new();
+        let _native_activation_guard = state.activation_guard().await;
+        let generation = state.mark_initial_recovery_pending("game");
+        let snapshot = config.get_settings();
+        assert_eq!(snapshot.revision, config.get_settings().revision);
+        assert_eq!(
+            state.initial_recovery_readiness("game"),
+            InitialRecoveryReadiness::Syncing { generation }
+        );
+    }
+
+    #[test]
+    fn pending_owner_rejects_replaced_root_runtime_change_and_unbound_gate() {
+        let temp = tempfile::tempdir().expect("temp");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods");
+        let runtime = temp.path().join("d3dx.ini");
+        let state = DiskReconcileState::new();
+        state.mark_initial_recovery_pending("game");
+        assert!(state
+            .joinable_initial_recovery_binding("game", &root, &runtime)
+            .is_none());
+        let generation = state.mark_initial_recovery_pending_for_root("game", &root, &runtime);
+        assert!(state
+            .joinable_initial_recovery_binding("game", &root, &temp.path().join("other.ini"))
+            .is_none());
+        std::fs::rename(&root, temp.path().join("RetiredMods")).expect("replace original");
+        std::fs::create_dir(&root).expect("replacement");
+        assert!(state
+            .joinable_initial_recovery_binding("game", &root, &runtime)
+            .is_none());
+        assert!(!state.initial_recovery_generation_is_current("game", generation));
+        assert!(
+            !state.finish_initial_recovery(
+                "game",
+                generation,
+                InitialRecoveryOutcome::Completed(Box::new(recovery_result(
+                    DiskReconcileStatus::Applied
+                )))
+            ),
+            "an old physical owner cannot complete a replacement root"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_bound_owner_wakes_legacy_read_waiter_with_failure() {
+        let temp = tempfile::tempdir().expect("temp");
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).expect("mods");
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending_for_root(
+            "game",
+            &root,
+            &temp.path().join("d3dx.ini"),
+        );
+        let waiting = state.claim_initial_recovery("game");
+        tokio::pin!(waiting);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut waiting)
+                .await
+                .is_err()
+        );
+        std::fs::rename(&root, temp.path().join("RetiredMods")).expect("move root");
+        std::fs::create_dir(&root).expect("replacement root");
+        assert!(!state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(recovery_result(
+                DiskReconcileStatus::Applied
+            )))
+        ));
+        let terminal = tokio::time::timeout(Duration::from_millis(100), &mut waiting)
+            .await
+            .expect("ownership loss must wake existing read waiters");
+        assert!(matches!(
+            terminal,
+            InitialRecoveryClaim::Finished(InitialRecoveryOutcome::Failed(_))
+        ));
+        assert_eq!(
+            state.initial_recovery_readiness("game"),
+            InitialRecoveryReadiness::Failed { generation }
+        );
+    }
+
+    #[test]
+    fn bound_owner_rejects_same_path_runtime_parent_replacement() {
+        let temp = tempfile::tempdir().expect("temp");
+        let mods_root = temp.path().join("Mods");
+        let importer = temp.path().join("Importer");
+        std::fs::create_dir(&mods_root).expect("mods");
+        std::fs::create_dir(&importer).expect("importer");
+        let runtime = importer.join("d3dx.ini");
+        let state = DiskReconcileState::new();
+        let generation = state.mark_initial_recovery_pending_for_root("game", &mods_root, &runtime);
+        assert!(state
+            .joinable_initial_recovery_binding("game", &mods_root, &runtime)
+            .is_some());
+        std::fs::rename(&importer, temp.path().join("RetiredImporter"))
+            .expect("replace runtime parent");
+        std::fs::create_dir(&importer).expect("replacement importer");
+        assert!(
+            state
+                .joinable_initial_recovery_binding("game", &mods_root, &runtime)
+                .is_none(),
+            "a lexical runtime path cannot prove replacement parent coverage"
+        );
+        assert!(!state.initial_recovery_generation_is_current("game", generation));
+    }
+
+    #[test]
+    fn invalid_identity_cache_cannot_be_healed_by_database_repair_alone() {
+        let temp = tempfile::tempdir().expect("mods");
+        let state = DiskReconcileState::new();
+        let watcher = crate::modules::workspace::api::scanner::watcher::WatcherState::new();
+        let session = watcher.begin_session(temp.path());
+        state.begin_authority_session_with_coverage("game", temp.path(), &session);
+        let validity = session.identity_cache_validity();
+        let mut baseline = recovery_result(DiskReconcileStatus::Applied);
+        state.record_result("game", &mut baseline);
+        assert!(state.mark_authority_reconciled("game", temp.path(), 1, 0, &baseline, &[]));
+        let generation = state.mark_initial_recovery_pending_for_root(
+            "game",
+            temp.path(),
+            &temp.path().join("d3dx.ini"),
+        );
+        assert!(state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(baseline.clone()))
+        ));
+        assert!(state.ensure_core_ready_for_mutation("game").is_ok());
+        assert!(state
+            .joinable_initial_recovery_binding("game", temp.path(), &temp.path().join("d3dx.ini"))
+            .is_some());
+        validity.store(false, Ordering::Release);
+        assert!(
+            state
+                .joinable_initial_recovery_binding(
+                    "game",
+                    temp.path(),
+                    &temp.path().join("d3dx.ini")
+                )
+                .is_none(),
+            "invalid cache forces explicit watcher replacement on the next activation"
+        );
+        let mut repaired = baseline;
+        state.record_result("game", &mut repaired);
+        assert!(
+            !state.mark_authority_reconciled("game", temp.path(), 1, 0, &repaired, &[]),
+            "an applied full database scan cannot acknowledge a watcher cache hole"
+        );
+        assert!(state.ensure_core_ready_for_mutation("game").is_err());
+        assert!(matches!(
+            state.authority_catch_up("game", temp.path(), 1),
+            AuthorityCatchUp::Full { .. }
+        ));
+        validity.store(true, Ordering::Release);
+        assert!(state.mark_authority_reconciled("game", temp.path(), 1, 0, &repaired, &[]));
+        assert!(state.ensure_core_ready_for_mutation("game").is_ok());
+    }
+
+    #[tokio::test]
+    async fn reset_during_optional_settlement_cannot_publish_old_owner() {
+        let temp = tempfile::tempdir().expect("mods");
+        let runtime = temp.path().join("d3dx.ini");
+        let state = DiskReconcileState::new();
+        let generation =
+            state.mark_initial_recovery_pending_for_root("game", temp.path(), &runtime);
+        assert!(state.finish_initial_recovery(
+            "game",
+            generation,
+            InitialRecoveryOutcome::Completed(Box::new(recovery_result(
+                DiskReconcileStatus::Applied
+            )))
+        ));
+        let mut published = 0;
+        assert!(state
+            .with_initial_recovery_owner("game", generation, temp.path(), &runtime, || published +=
+                1)
+            .is_some());
+        let optional_settlement = async {
+            tokio::task::yield_now().await;
+            state.reset_initial_recovery("game");
+        };
+        optional_settlement.await;
+        assert!(state
+            .with_initial_recovery_owner("game", generation, temp.path(), &runtime, || published +=
+                1)
+            .is_none());
+        assert_eq!(published, 1);
     }
 
     #[tokio::test]
@@ -2255,8 +2968,205 @@ mod initial_recovery_tests {
 
 #[cfg(test)]
 mod runtime_effect_retry_tests {
-    use super::DiskReconcileState;
+    use super::{DiskReconcileState, RuntimeSyncReply};
     use crate::modules::reconciliation::application::disk_reconcile::types::PendingRuntimeEffects;
+    use tokio::sync::oneshot::{self, error::TryRecvError};
+
+    #[test]
+    fn overwritten_pending_reply_receives_superseded() {
+        let state = DiskReconcileState::new();
+        let (first_reply, mut first_waiter) = oneshot::channel();
+        let first = state.enqueue_runtime_sync_with_reply(
+            "game",
+            "first",
+            Some(1),
+            None,
+            Some(first_reply),
+        );
+        let (second_reply, mut second_waiter) = oneshot::channel();
+        let second = state.enqueue_runtime_sync_with_reply(
+            "game",
+            "second",
+            Some(2),
+            None,
+            Some(second_reply),
+        );
+
+        assert!(matches!(
+            first_waiter.try_recv(),
+            Ok(RuntimeSyncReply::Superseded)
+        ));
+        assert!(matches!(second_waiter.try_recv(), Err(TryRecvError::Empty)));
+        assert!(first.start_worker);
+        assert!(!second.start_worker);
+        let mut job = state
+            .claim_latest_runtime_sync("game")
+            .expect("winning queued request");
+        assert_eq!(job.generation, second.generation);
+        assert_eq!(job.publication_revision, Some(2));
+        job.reply
+            .take()
+            .expect("winning request retains its reply")
+            .send(RuntimeSyncReply::Completed(Err(
+                crate::shared::errors::AppError::Io("fixture failure".to_string()),
+            )))
+            .expect("winning waiter remains available");
+        assert!(matches!(
+            second_waiter.try_recv(),
+            Ok(RuntimeSyncReply::Completed(Err(crate::shared::errors::AppError::Io(error)))) if error == "fixture failure"
+        ));
+        assert!(state.finish_runtime_sync("game", job.generation));
+    }
+
+    #[test]
+    fn claimed_reply_remains_owned_by_job_when_successor_is_enqueued() {
+        let state = DiskReconcileState::new();
+        let (first_reply, mut first_waiter) = oneshot::channel();
+        let first = state.enqueue_runtime_sync_with_reply(
+            "game",
+            "first",
+            Some(1),
+            None,
+            Some(first_reply),
+        );
+        let mut first_job = state
+            .claim_latest_runtime_sync("game")
+            .expect("first claimed job");
+        let (second_reply, mut second_waiter) = oneshot::channel();
+        let second = state.enqueue_runtime_sync_with_reply(
+            "game",
+            "second",
+            Some(2),
+            None,
+            Some(second_reply),
+        );
+
+        assert!(matches!(first_waiter.try_recv(), Err(TryRecvError::Empty)));
+        assert!(matches!(second_waiter.try_recv(), Err(TryRecvError::Empty)));
+        assert!(!state.finish_runtime_sync("game", first.generation));
+        assert!(!second.start_worker);
+        first_job
+            .reply
+            .take()
+            .expect("claimed reply stays with its job")
+            .send(RuntimeSyncReply::Superseded)
+            .expect("claimed job controls its waiter settlement");
+        assert!(matches!(
+            first_waiter.try_recv(),
+            Ok(RuntimeSyncReply::Superseded)
+        ));
+        assert!(matches!(second_waiter.try_recv(), Err(TryRecvError::Empty)));
+        let mut second_job = state
+            .claim_latest_runtime_sync("game")
+            .expect("successor queued job");
+        assert_eq!(second_job.generation, second.generation);
+        second_job
+            .reply
+            .take()
+            .expect("successor retains a distinct sender")
+            .send(RuntimeSyncReply::Completed(Err(
+                crate::shared::errors::AppError::Io("successor failure".to_string()),
+            )))
+            .expect("successor waiter remains available");
+        assert!(matches!(
+            second_waiter.try_recv(),
+            Ok(RuntimeSyncReply::Completed(Err(crate::shared::errors::AppError::Io(error)))) if error == "successor failure"
+        ));
+        assert!(state.finish_runtime_sync("game", second_job.generation));
+    }
+
+    #[test]
+    fn cancelled_reply_receiver_does_not_cancel_queued_runtime_sync() {
+        let state = DiskReconcileState::new();
+        let (reply, waiter) = oneshot::channel();
+        let queued = state.enqueue_runtime_sync_with_reply(
+            "game",
+            "cancelled waiter",
+            Some(1),
+            None,
+            Some(reply),
+        );
+        drop(waiter);
+
+        assert!(state.runtime_sync_is_current("game", queued.generation));
+        assert!(!state.finish_runtime_sync("game", queued.generation));
+        let mut job = state
+            .claim_latest_runtime_sync("game")
+            .expect("receiver cancellation keeps the job queued");
+        assert_eq!(job.generation, queued.generation);
+        assert_eq!(job.cause, "cancelled waiter");
+        assert!(job
+            .reply
+            .take()
+            .expect("queued sender remains owned")
+            .send(RuntimeSyncReply::Superseded)
+            .is_err());
+        assert!(state.finish_runtime_sync("game", job.generation));
+        assert!(
+            state
+                .enqueue_runtime_sync("game", "next", Some(2), None)
+                .start_worker
+        );
+    }
+
+    #[test]
+    fn superseded_waiter_preserves_merged_effects_until_winning_finish() {
+        let state = DiskReconcileState::new();
+        let first_effects = state.stage_runtime_effects_for_settlement(
+            "game",
+            PendingRuntimeEffects {
+                collections_dirty: true,
+                overlay_refresh: false,
+            },
+        );
+        let (first_reply, mut first_waiter) = oneshot::channel();
+        let first = state.enqueue_runtime_sync_with_reply(
+            "game",
+            "collections",
+            Some(1),
+            None,
+            Some(first_reply),
+        );
+        let merged_effects = state.stage_runtime_effects_for_settlement(
+            "game",
+            PendingRuntimeEffects {
+                collections_dirty: false,
+                overlay_refresh: true,
+            },
+        );
+        let winner = state.enqueue_runtime_sync("game", "overlay", Some(2), None);
+        let expected_pending = PendingRuntimeEffects {
+            collections_dirty: true,
+            overlay_refresh: true,
+        };
+
+        assert!(matches!(
+            first_waiter.try_recv(),
+            Ok(RuntimeSyncReply::Superseded)
+        ));
+        assert_eq!(merged_effects.pending, expected_pending);
+        assert_eq!(
+            state.acknowledge_runtime_effects("game", first_effects),
+            expected_pending
+        );
+        assert!(!state.finish_runtime_sync("game", first.generation));
+        assert!(!state.finish_runtime_sync("game", winner.generation));
+        let winning_job = state
+            .claim_latest_runtime_sync("game")
+            .expect("merged successor remains queued");
+        assert_eq!(winning_job.generation, winner.generation);
+        assert!(winning_job.reply.is_none());
+        assert!(state.finish_runtime_sync("game", winning_job.generation));
+        assert_eq!(
+            state.acknowledge_runtime_effects("game", merged_effects),
+            PendingRuntimeEffects::default()
+        );
+        assert!(
+            state
+                .enqueue_runtime_sync("game", "next", Some(3), None)
+                .start_worker
+        );
+    }
 
     #[test]
     fn runtime_effect_intent_persists_and_merges_until_acknowledged() {

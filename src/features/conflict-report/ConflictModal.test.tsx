@@ -97,6 +97,46 @@ describe('ConflictModal', () => {
     });
   });
 
+  it.each(['bulk', 'ignore'] as const)(
+    'prevents native cancellation while %s mutation is pending',
+    (operation) => {
+      mocks.isPending = operation === 'bulk';
+      mocks.ignoredGroupsPending = operation === 'ignore';
+      const onClose = vi.fn();
+      const { container } = render(
+        <ConflictModal open onClose={onClose} conflicts={[conflict]} gameId="game-1" />,
+      );
+      const dialog = container.querySelector('dialog');
+      expect(dialog).not.toBeNull();
+      const event = new Event('cancel', { cancelable: true });
+      fireEvent(dialog!, event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(onClose).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows native cancellation and controlled closing after the pending action settles', () => {
+    mocks.isPending = true;
+    const onClose = vi.fn();
+    const { container, rerender } = render(
+      <ConflictModal open onClose={onClose} conflicts={[conflict]} gameId="game-1" />,
+    );
+    const dialog = container.querySelector('dialog');
+    expect(dialog).not.toBeNull();
+    const pendingCancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog!, pendingCancel);
+    expect(pendingCancel.defaultPrevented).toBe(true);
+
+    mocks.isPending = false;
+    rerender(<ConflictModal open onClose={onClose} conflicts={[conflict]} gameId="game-1" />);
+    const idleCancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog!, idleCancel);
+    expect(idleCancel.defaultPrevented).toBe(false);
+    fireEvent(dialog!, new Event('close'));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('shows conflict kind and actionable evidence for enabled mods', () => {
     render(<ConflictModal open onClose={vi.fn()} conflicts={[conflict]} gameId="game-1" />);
 

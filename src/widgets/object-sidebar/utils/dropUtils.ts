@@ -6,7 +6,7 @@
  * below are object-list's own.
  */
 
-import { allUnsupported, type ClassifiedPaths } from '../../../shared/lib/dropClassification';
+import type { ClassifiedPaths } from '../../../shared/lib/dropClassification';
 
 /** Supported drop zone types in the ObjectList sidebar */
 export type DropZone = 'auto-organize' | 'item' | 'new-object';
@@ -15,7 +15,7 @@ export type DropZone = 'auto-organize' | 'item' | 'new-object';
  * Validate whether a set of classified paths can be dropped onto a given zone.
  *
  * Rules:
- * - Any unsupported files → always blocked
+ * - Source type is validated against the filesystem by the import backend.
  * - Archives → NOT allowed on 'new-object' zone
  * - Everything else → allowed on all zones
  */
@@ -23,10 +23,6 @@ export function validateDropForZone(
   zone: DropZone,
   classified: ClassifiedPaths,
 ): { valid: boolean; reason?: string } {
-  if (allUnsupported(classified)) {
-    return { valid: false, reason: 'Unsupported file type' };
-  }
-
   if (zone === 'new-object' && classified.archives.length > 0) {
     return {
       valid: false,

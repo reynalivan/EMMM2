@@ -17,3 +17,6 @@ pub(crate) use write::*;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod profile_tests;

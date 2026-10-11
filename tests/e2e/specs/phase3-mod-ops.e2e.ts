@@ -119,6 +119,9 @@ describe('Fase 3 — Core Mod Operations (data-safety)', () => {
       gameId,
       paths,
       enable: false,
+      operationId: 'phase3-bulk-toggle',
+      intentRevision: null,
+      expectedIdentities: null,
     });
     expect(toggled.failures.length).toBe(0);
     const disabled = await listDir(objDir);
@@ -128,6 +131,7 @@ describe('Fase 3 — Core Mod Operations (data-safety)', () => {
     const deleted = await invokeInApp<BulkResult>('bulk_delete_mods', {
       gameId,
       paths: disabledPaths,
+      operationId: 'phase3-bulk-delete',
     });
     expect(deleted.failures.length).toBe(0);
     expect((await listDir(objDir)).length).toBe(0);

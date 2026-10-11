@@ -144,13 +144,11 @@ fn validate_bulk_size(paths: &[String]) -> Result<(), AppError> {
     Ok(())
 }
 
-fn record_bulk_toggle_result(app: &AppHandle, enabled: bool, result: &bulk::BulkResult) {
-    if !enabled {
-        return;
-    }
-    let Some(telemetry) =
-        app.try_state::<crate::modules::system::application::telemetry::TelemetrySink>()
-    else {
+fn record_bulk_toggle_result(
+    telemetry: &Option<crate::modules::system::application::telemetry::TelemetrySink>,
+    result: &bulk::BulkResult,
+) {
+    let Some(telemetry) = telemetry else {
         return;
     };
     let success = crate::modules::system::application::telemetry::TelemetryEvent::new(
@@ -485,16 +483,23 @@ pub async fn bulk_toggle_mods(
     app: AppHandle,
     pool: tauri::State<'_, sqlx::SqlitePool>,
     state: tauri::State<'_, WatcherState>,
-    disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     game_id: String,
     paths: Vec<String>,
     enable: bool,
     operation_id: String,
     intent_revision: Option<u64>,
     expected_identities: Option<Vec<(String, String)>>,
+    recovery_ids: Option<Vec<String>>,
 ) -> Result<bulk::BulkResult, AppError> {
     let config = app.state::<ConfigService>();
     let op_lock = app.state::<MutationCoordinator>();
+    let disk_reconcile = app.state::<crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>();
+    let expected_identities = match recovery_ids {
+        Some(ids) => Some(crate::modules::system::api::file_lock_retry_identities(
+            &ids, &paths,
+        )?),
+        None => expected_identities,
+    };
     bulk_toggle_mods_impl(
         app.clone(),
         config,
@@ -560,6 +565,9 @@ async fn bulk_toggle_mods_impl(
     intent_revision: Option<u64>,
 ) -> Result<bulk::BulkResult, AppError> {
     let command_started_at = Instant::now();
+    let telemetry = app
+        .try_state::<crate::modules::system::application::telemetry::TelemetrySink>()
+        .map(|sink| sink.inner().capture());
     validate_bulk_size(&paths)?;
     let _foreground_intent = op_lock.inner_lock().foreground_intent();
     let source_epoch =
@@ -641,6 +649,7 @@ async fn bulk_toggle_mods_impl(
     emit_toggle_progress(&app, &operation_id, enable, 0, paths.len(), true, false);
 
     let chunk_count = valid_paths.len().div_ceil(BULK_TOGGLE_CHUNK_SIZE);
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
     'chunks: for (chunk_index, chunk) in valid_paths.chunks(BULK_TOGGLE_CHUNK_SIZE).enumerate() {
         if cancellation.flag().load(Ordering::Relaxed) {
             aggregate.cancelled = true;
@@ -677,6 +686,8 @@ async fn bulk_toggle_mods_impl(
                 &admission,
                 storage_proof.as_ref(),
                 cancellation.flag(),
+                &mut retry_budget,
+                &telemetry,
             )
             .await;
             match chunk_result {
@@ -766,6 +777,8 @@ async fn bulk_toggle_mods_chunk(
         &crate::modules::reconciliation::api::disk_reconcile::orchestrator::ToggleStorageProof,
     >,
     cancel: &AtomicBool,
+    retry_budget: &mut crate::platform::fs::retry::RetryBudget,
+    telemetry: &Option<crate::modules::system::application::telemetry::TelemetrySink>,
 ) -> Result<bulk::BulkResult, AppError> {
     let started_at = Instant::now();
     let diagnostics_enabled = config.get_settings().diagnostics.telemetry_enabled;
@@ -796,7 +809,7 @@ async fn bulk_toggle_mods_chunk(
             paths.len(),
             superseded_count,
         );
-        record_bulk_toggle_result(&app, diagnostics_enabled, &result);
+        record_bulk_toggle_result(telemetry, &result);
         return Ok(result);
     }
     let _foreground_intent = op_lock.inner_lock().foreground_intent();
@@ -834,7 +847,7 @@ async fn bulk_toggle_mods_chunk(
             processed,
             paths.len(),
         );
-        record_bulk_toggle_result(&app, diagnostics_enabled, &result);
+        record_bulk_toggle_result(telemetry, &result);
         return Ok(result);
     }
     let lock_wait_elapsed = lock_wait_started_at.elapsed();
@@ -873,11 +886,13 @@ async fn bulk_toggle_mods_chunk(
             &initial_prepared,
             cancel,
             operation_id,
+            retry_budget,
         )
+        .await
         .result;
         append_preflight_failures(&mut result, preflight_failures);
         let result = settle_superseded_bulk_items(result, paths.len(), superseded_count);
-        record_bulk_toggle_result(&app, diagnostics_enabled, &result);
+        record_bulk_toggle_result(telemetry, &result);
         return Ok(result);
     }
     let trusted_scope = trusted_bulk_toggle_scope(&initial_steps, &mods_root);
@@ -920,7 +935,7 @@ async fn bulk_toggle_mods_chunk(
             paths.len(),
             superseded_count,
         );
-        record_bulk_toggle_result(&app, diagnostics_enabled, &result);
+        record_bulk_toggle_result(telemetry, &result);
         return Ok(result);
     }
     let validated_paths = validated
@@ -948,11 +963,13 @@ async fn bulk_toggle_mods_chunk(
             &prepared,
             cancel,
             operation_id,
+            retry_budget,
         )
+        .await
         .result;
         append_preflight_failures(&mut result, preflight_failures);
         let result = settle_superseded_bulk_items(result, paths.len(), superseded_count);
-        record_bulk_toggle_result(&app, diagnostics_enabled, &result);
+        record_bulk_toggle_result(telemetry, &result);
         return Ok(result);
     }
 
@@ -1072,8 +1089,15 @@ async fn bulk_toggle_mods_chunk(
     });
     let storage_started_at = Instant::now();
     let rename_started_at = Instant::now();
-    let mut execution =
-        bulk::execute_prepared_bulk_toggle_silent(&app, &state, &prepared, cancel, operation_id);
+    let mut execution = bulk::execute_prepared_bulk_toggle_silent(
+        &app,
+        &state,
+        &prepared,
+        cancel,
+        operation_id,
+        retry_budget,
+    )
+    .await;
     let rename_elapsed = rename_started_at.elapsed();
     append_preflight_failures(&mut execution.result, preflight_failures);
 
@@ -1117,7 +1141,7 @@ async fn bulk_toggle_mods_chunk(
         mutation_lease.begin_rollback()?;
         mutation_lease.finish_rollback()?;
         let result = settle_superseded_bulk_items(execution.result, paths.len(), superseded_count);
-        record_bulk_toggle_result(&app, diagnostics_enabled, &result);
+        record_bulk_toggle_result(telemetry, &result);
         return Ok(result);
     }
 
@@ -1135,6 +1159,7 @@ async fn bulk_toggle_mods_chunk(
             let rollback_started = mutation_lease.begin_rollback();
             if let Err(rollback_error) =
                 bulk::rollback_prepared_bulk_toggle(&state, &prepared, &execution.applied_sequences)
+                    .await
             {
                 let message = format!(
                     "Bulk disk settlement failed: {error}; filesystem rollback failed: {rollback_error}"
@@ -1217,7 +1242,7 @@ async fn bulk_toggle_mods_chunk(
         );
     }
     let result = settle_superseded_bulk_items(execution.result, paths.len(), superseded_count);
-    record_bulk_toggle_result(&app, diagnostics_enabled, &result);
+    record_bulk_toggle_result(telemetry, &result);
     Ok(result)
 }
 
@@ -1231,13 +1256,18 @@ pub async fn bulk_delete_mods(
     state: tauri::State<'_, WatcherState>,
     disk_reconcile: State<'_, crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState>,
     op_lock: State<'_, MutationCoordinator>,
-    cancel_state: State<'_, BulkCancelState>,
     game_id: String,
     paths: Vec<String>,
     operation_id: String,
+    recovery_ids: Option<Vec<String>>,
 ) -> Result<bulk::BulkResult, AppError> {
+    let cancel_state = app.state::<BulkCancelState>();
+    let expected_identities = recovery_ids
+        .as_deref()
+        .map(|ids| crate::modules::system::api::file_lock_retry_identities(ids, &paths))
+        .transpose()?;
     bulk_delete_mods_impl(
-        app,
+        app.clone(),
         config,
         pool,
         state,
@@ -1247,7 +1277,7 @@ pub async fn bulk_delete_mods(
         game_id,
         paths,
         operation_id,
-        None,
+        expected_identities,
     )
     .await
 }
@@ -1408,7 +1438,8 @@ async fn bulk_delete_mods_impl(
         &prepared,
         cancellation.flag(),
         &operation_id,
-    );
+    )
+    .await;
     append_preflight_failures(&mut execution.result, preflight_failures);
     let applied_sequences = execution
         .applied_sequences
@@ -1459,6 +1490,7 @@ async fn bulk_delete_mods_impl(
             mutation_lease.begin_rollback()?;
             if let Err(rollback_error) =
                 bulk::rollback_prepared_bulk_delete(&state, &prepared, &execution.applied_sequences)
+                    .await
             {
                 let combined = format!("{error}; bulk delete rollback failed: {rollback_error}");
                 mutation_lease.fail(combined.clone())?;
@@ -1843,7 +1875,7 @@ async fn bulk_toggle_favorite_impl(
         .suppressor
         .suppress_paths(validated.iter().map(AsRef::<std::path::Path>::as_ref));
     let mut result =
-        bulk::bulk_toggle_favorite(&pool, game_id.clone(), folder_paths, favorite).await?;
+        bulk::bulk_toggle_favorite(&pool, game_id.clone(), &validated, favorite).await?;
     drop(suppression);
     drop(lock);
     drop(game_guard);
@@ -1953,7 +1985,7 @@ async fn bulk_pin_mods_impl(
     let suppression = watcher
         .suppressor
         .suppress_paths(validated.iter().map(AsRef::<std::path::Path>::as_ref));
-    let mut result = bulk::bulk_pin(&pool, game_id.clone(), folder_paths, pin).await?;
+    let mut result = bulk::bulk_pin(&pool, game_id.clone(), &validated, pin).await?;
     drop(suppression);
     drop(lock);
     drop(game_guard);
@@ -2023,7 +2055,7 @@ mod tests {
         let first_game = GameConfig {
             id: "game-1".into(),
             name: "Test Game".into(),
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             instance_path: first_root.clone(),
             mod_path: first_root.clone(),
             ready_to_move_path: None,
@@ -2197,7 +2229,7 @@ mod tests {
         settings.games.push(GameConfig {
             id: "game-1".to_string(),
             name: "Test Game".to_string(),
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             instance_path: mods_root.clone(),
             mod_path: mods_root.clone(),
             ready_to_move_path: None,
@@ -2348,7 +2380,7 @@ mod tests {
         settings.games.push(GameConfig {
             id: "game-1".to_string(),
             name: "Test Game".to_string(),
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             instance_path: mods_root.clone(),
             mod_path: mods_root.clone(),
             ready_to_move_path: None,

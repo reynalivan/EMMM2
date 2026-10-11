@@ -262,6 +262,51 @@ describe('Dashboard - TC-33', () => {
   });
 
   describe('TC-33-007: Active Keybindings Widget', () => {
+    it('shows only the keybinding skeleton while the rest of Home stays usable', () => {
+      vi.mocked(useDashboardStats).mockReturnValue({
+        data: mockFullStats,
+        isLoading: false,
+        isError: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+      vi.mocked(useActiveKeybindings).mockReturnValue({
+        keybindings: [],
+        isLoading: true,
+        isError: false,
+      });
+      render(<Dashboard />);
+      const skeleton = screen.getByRole('status', { name: 'Loading active key mappings' });
+      expect(skeleton).toHaveAttribute('aria-busy', 'true');
+      expect(skeleton.querySelectorAll('.skeleton')).toHaveLength(6);
+      expect(screen.getByText('Hu Tao Quantum Mod')).toBeInTheDocument();
+      expect(screen.getByText('Total Mods')).toBeInTheDocument();
+      expect(screen.getByText('Quick Play')).toBeInTheDocument();
+    });
+
+    it('shows keybinding failure without hiding other Home cards', () => {
+      vi.mocked(useDashboardStats).mockReturnValue({
+        data: mockFullStats,
+        isLoading: false,
+        isError: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+      vi.mocked(useActiveKeybindings).mockReturnValue({
+        keybindings: [],
+        isLoading: false,
+        isError: true,
+      });
+      render(<Dashboard />);
+      expect(
+        screen.getByText(
+          'Key mappings are unavailable. Retry indexing or return to Home to try again.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.getByText('Hu Tao Quantum Mod')).toBeInTheDocument();
+    });
+
     it('shows keybinding table when keybindings exist', () => {
       vi.mocked(useDashboardStats).mockReturnValue({
         data: mockFullStats,

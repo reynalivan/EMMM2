@@ -3,10 +3,13 @@
 //! converge via the scoped disk reconcile the caller runs after the batch.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::modules::library::application::mods::core_ops::standardize_prefix;
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
-use crate::platform::fs::file_utils::rename_cross_drive_fallback;
+use crate::platform::fs::file_utils::{FilesystemIdentityProof, FilesystemNamespaceProof};
+use crate::platform::fs::rename::rename_no_replace;
+use crate::platform::fs::retry::{blocking_error, RetryBudget};
 use crate::shared::errors::{AppError, CollectionError};
 
 #[derive(Debug)]
@@ -66,6 +69,8 @@ pub struct RuntimeRenamePlan {
     new_abs: PathBuf,
     target_enabled: bool,
     expected_identity: String,
+    expected_parent_identity: Option<String>,
+    namespace_proof: Option<Arc<FilesystemNamespaceProof>>,
 }
 
 impl RuntimeRenamePlan {
@@ -76,13 +81,22 @@ impl RuntimeRenamePlan {
         target_enabled: bool,
         expected_identity: String,
     ) -> Self {
+        let expected_parent_identity = old_abs
+            .parent()
+            .and_then(crate::platform::fs::file_utils::filesystem_identity);
         Self {
             old_abs,
             requested_abs,
             new_abs,
             target_enabled,
             expected_identity,
+            expected_parent_identity,
+            namespace_proof: None,
         }
+    }
+
+    pub(crate) fn set_namespace_proof(&mut self, proof: Arc<FilesystemNamespaceProof>) {
+        self.namespace_proof = Some(proof);
     }
 
     pub fn old_path(&self) -> &Path {
@@ -101,44 +115,121 @@ impl RuntimeRenamePlan {
         &self.expected_identity
     }
     pub fn apply(&self) -> std::io::Result<()> {
-        let actual_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(&self.old_abs);
+        self.rename_checked(false)
+    }
+
+    fn rename_checked(&self, reverse: bool) -> std::io::Result<()> {
+        let (source, destination) = if reverse {
+            (&self.new_abs, &self.old_abs)
+        } else {
+            (&self.old_abs, &self.new_abs)
+        };
+        let paths = [source.to_path_buf(), destination.to_path_buf()];
+        let namespace_pins = self
+            .namespace_proof
+            .as_ref()
+            .map(|proof| {
+                proof
+                    .pin_paths(&paths)
+                    .map_err(|error| std::io::Error::other(error.to_string()))
+            })
+            .transpose()?;
+        let parent_identity = source
+            .parent()
+            .and_then(crate::platform::fs::file_utils::filesystem_identity);
+        if self.expected_parent_identity.is_none()
+            || parent_identity != self.expected_parent_identity
+        {
+            return Err(std::io::Error::other(
+                "Runtime rename parent changed after planning",
+            ));
+        }
+        let actual_identity = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::filesystem_identity(source);
         if actual_identity.as_deref() != Some(self.expected_identity.as_str()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
                     "Folder changed while preparing the rename: {}",
-                    self.old_abs.display()
+                    source.display()
                 ),
             ));
         }
-        if self.new_abs == self.old_abs {
+        if source == destination {
             return Ok(());
         }
-        if self.new_abs != self.old_abs && self.new_abs.exists() {
+        if destination.exists() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
-                format!("Target folder already exists: {}", self.new_abs.display()),
+                format!("Target folder already exists: {}", destination.display()),
             ));
         }
-        rename_cross_drive_fallback(&self.old_abs, &self.new_abs)
+        if let Some(pins) = namespace_pins.as_ref() {
+            let parent = source
+                .parent()
+                .ok_or_else(|| std::io::Error::other("Runtime rename has no parent"))?;
+            let parent = crate::shared::path_key::physical_namespace_path(parent)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let parent_pin = pins
+                .iter()
+                .find(|pin| pin.path() == parent.as_path())
+                .ok_or_else(|| std::io::Error::other("Runtime rename parent is not pinned"))?;
+            let source_name = source
+                .file_name()
+                .ok_or_else(|| std::io::Error::other("Runtime rename has no source name"))?;
+            let destination_name = destination
+                .file_name()
+                .ok_or_else(|| std::io::Error::other("Runtime rename has no target name"))?;
+            let owned_source = crate::platform::fs::rename::PinnedDirectory::open_for_rename(
+                &parent_pin.stable_path().join(source_name),
+            )?;
+            if owned_source.identity() != self.expected_identity {
+                return Err(std::io::Error::other(
+                    "Runtime rename source changed after namespace pinning",
+                ));
+            }
+            owned_source.rename_into(parent_pin, destination_name)
+        } else {
+            rename_no_replace(source, destination)
+        }
     }
     pub fn rollback(&self) -> std::io::Result<()> {
-        rename_cross_drive_fallback(&self.new_abs, &self.old_abs)
+        self.rename_checked(true)
+    }
+
+    pub(crate) async fn apply_async(&self, budget: &mut RetryBudget) -> std::io::Result<()> {
+        self.rename_async(false, budget).await
+    }
+
+    async fn rename_async(&self, reverse: bool, budget: &mut RetryBudget) -> std::io::Result<()> {
+        budget
+            .run(|| {
+                let plan = self.clone();
+                async move {
+                    tokio::task::spawn_blocking(move || plan.rename_checked(reverse))
+                        .await
+                        .map_err(blocking_error)?
+                }
+            })
+            .await
+    }
+
+    pub(crate) async fn rollback_async(&self, budget: &mut RetryBudget) -> std::io::Result<()> {
+        self.rename_async(true, budget).await
     }
 }
 
-/// Map a failed folder rename to a structured error, so a locked folder keeps
-/// its `FileInUse` / `PathBusy` classification all the way to the UI.
-pub(crate) fn classify_rename_failure(
-    src: &std::path::Path,
+pub(crate) fn classify_rename_failure_with_identity(
+    src: &Path,
+    expected: &str,
     error: std::io::Error,
 ) -> CollectionError {
-    match crate::modules::library::application::mods::core_ops::map_toggle_error(
+    match crate::platform::fs::retry::map_file_error_with_identity(
         src,
-        "mod folder",
+        expected,
+        "rename mod folder",
         error,
     ) {
-        AppError::FileInUse { path, processes } => CollectionError::FileInUse { path, processes },
+        AppError::FileLock { path, recovery_id } => CollectionError::FileLock { path, recovery_id },
         AppError::PathBusy { path } => CollectionError::PathBusy { path },
         other => CollectionError::Io(other.to_string()),
     }
@@ -162,20 +253,25 @@ pub async fn toggle_mods_mixed(
     let mut warnings = Vec::new();
 
     let mut renamed = Vec::new();
+    let mut retry_budget = RetryBudget::default();
     for plan in &plans {
         if plan.old_abs == plan.new_abs {
             renamed.push(plan.clone());
             continue;
         }
 
-        match rename_cross_drive_fallback(&plan.old_abs, &plan.new_abs) {
+        match plan.apply_async(&mut retry_budget).await {
             Ok(()) => renamed.push(plan.clone()),
             Err(error) => {
-                rollback_successes(&renamed, &mut warnings);
+                rollback_successes(&renamed, &mut warnings).await;
                 // Classify before stringifying, so a folder held by the game
                 // reports the holding process rather than "Access is denied".
                 return Err(RuntimeToggleFailure {
-                    error: classify_rename_failure(&plan.old_abs, error),
+                    error: classify_rename_failure_with_identity(
+                        &plan.old_abs,
+                        &plan.expected_identity,
+                        error,
+                    ),
                     rollback_warnings: warnings,
                 });
             }
@@ -212,6 +308,8 @@ pub async fn toggle_mods_mixed(
 pub fn plan_runtime_toggles(
     request: &RuntimeToggleBatchRequest,
 ) -> Result<Vec<RuntimeRenamePlan>, RuntimeToggleFailure> {
+    let root_proof = FilesystemIdentityProof::capture(&request.mods_path)
+        .map_err(|error| failure(CollectionError::Validation(error.to_string())))?;
     let mut plans = Vec::new();
     for operation in &request.operations {
         match build_plan(&request.mods_path, operation) {
@@ -222,6 +320,25 @@ pub fn plan_runtime_toggles(
     }
     validate_plans(&plans)
         .map_err(|error| failure(CollectionError::Validation(error.to_string())))?;
+    if !plans.is_empty() {
+        root_proof
+            .validate(&request.mods_path)
+            .map_err(|error| failure(CollectionError::Validation(error.to_string())))?;
+        let paths = plans
+            .iter()
+            .flat_map(|plan| [plan.old_abs.clone(), plan.new_abs.clone()])
+            .collect::<Vec<_>>();
+        let namespace = Arc::new(
+            FilesystemNamespaceProof::capture(&request.mods_path, &paths)
+                .map_err(|error| failure(CollectionError::Validation(error.to_string())))?,
+        );
+        root_proof
+            .validate(&request.mods_path)
+            .map_err(|error| failure(CollectionError::Validation(error.to_string())))?;
+        for plan in &mut plans {
+            plan.set_namespace_proof(namespace.clone());
+        }
+    }
     Ok(plans)
 }
 
@@ -300,7 +417,8 @@ fn build_plan(
     )))
 }
 
-fn rollback_successes(plans: &[RuntimeRenamePlan], warnings: &mut Vec<String>) {
+async fn rollback_successes(plans: &[RuntimeRenamePlan], warnings: &mut Vec<String>) {
+    let mut retry_budget = RetryBudget::default();
     for plan in plans.iter().rev() {
         if plan.old_abs == plan.new_abs {
             continue;
@@ -322,7 +440,7 @@ fn rollback_successes(plans: &[RuntimeRenamePlan], warnings: &mut Vec<String>) {
             continue;
         }
 
-        if let Err(error) = rename_cross_drive_fallback(&plan.new_abs, &plan.old_abs) {
+        if let Err(error) = plan.rollback_async(&mut retry_budget).await {
             warnings.push(format!(
                 "Rollback failed for '{}' to '{}': {error}",
                 plan.new_abs.display(),

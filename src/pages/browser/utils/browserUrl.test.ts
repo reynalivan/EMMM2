@@ -12,6 +12,24 @@ describe('normalizeBrowserUrl', () => {
     expect(normalizeBrowserUrl('gamebanana.com')).toBe('https://gamebanana.com');
     expect(normalizeBrowserUrl(' www.google.com ')).toBe('https://www.google.com');
   });
+
+  it.each(['HTTP://', 'HTTPS://', 'hTtP://', 'HtTpS://'])(
+    'preserves an existing %s scheme and the intended host',
+    (scheme) => {
+      const url = `${scheme}Example.com/CaseSensitivePath?Key=Value#Section`;
+      const normalized = normalizeBrowserUrl(` ${url} `);
+      expect(normalized).toBe(url);
+      expect(new URL(normalized).hostname).toBe('example.com');
+    },
+  );
+
+  it('recognizes mixed-case about schemes', () => {
+    expect(normalizeBrowserUrl(' ABOUT:blank ')).toBe('ABOUT:blank');
+  });
+
+  it('prefixes hosts that merely begin with http', () => {
+    expect(normalizeBrowserUrl('http-example.com')).toBe('https://http-example.com');
+  });
 });
 
 describe('tabDisplayLabel', () => {

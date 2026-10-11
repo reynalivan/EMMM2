@@ -20,6 +20,7 @@ interface DashboardActivityProps {
   activeGame: GameConfig | null;
   keybindings: ActiveKeyBinding[];
   keybindingsLoading: boolean;
+  keybindingsError?: boolean;
   recentMods: DashboardPayload['recent_mods'];
 }
 
@@ -27,6 +28,7 @@ export function DashboardActivity({
   activeGame,
   keybindings,
   keybindingsLoading,
+  keybindingsError = false,
   recentMods,
 }: DashboardActivityProps) {
   return (
@@ -35,6 +37,7 @@ export function DashboardActivity({
       <ActiveKeybindingsCard
         keybindings={keybindings}
         isLoading={keybindingsLoading}
+        isError={keybindingsError}
         gameId={activeGame?.id ?? ''}
       />
     </>
@@ -90,10 +93,12 @@ function RecentModsCard({ recentMods }: { recentMods: DashboardPayload['recent_m
 function ActiveKeybindingsCard({
   keybindings,
   isLoading,
+  isError,
   gameId,
 }: {
   keybindings: ActiveKeyBinding[];
   isLoading: boolean;
+  isError: boolean;
   gameId: string;
 }) {
   const { t } = useTranslation(['dashboard']);
@@ -144,9 +149,24 @@ function ActiveKeybindingsCard({
           )}
         </h2>
         {isLoading ? (
-          <div className="flex justify-center py-4">
-            <span className="loading loading-dots loading-sm" />
+          <div
+            role="status"
+            aria-label={t('keys.loading')}
+            aria-busy="true"
+            className="space-y-3 py-4"
+          >
+            {[0, 1, 2].map((row) => (
+              <div key={row} aria-hidden="true" className="flex items-center gap-3">
+                <div className="skeleton size-9 shrink-0 motion-reduce:animate-none" />
+                <div className="skeleton h-5 flex-1 motion-reduce:animate-none" />
+              </div>
+            ))}
+            <span className="sr-only">{t('keys.loading')}</span>
           </div>
+        ) : isError ? (
+          <p role="alert" className="text-sm text-base-content/70 py-4">
+            {t('keys.load_error')}
+          </p>
         ) : keybindings.length > 0 ? (
           <>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

@@ -28,25 +28,6 @@ export const activeModConflictKeys = {
     [...activeModConflictKeys.all, 'ignored-groups', gameId] as const,
 };
 
-/**
- * Getter for the active game id that throws when there is none.
- *
- * Every mod mutation below is scoped to the active game on the Rust side, and
- * the check has to run when the mutation fires rather than at render time — so
- * this hands back a getter instead of the id itself.
- */
-function useRequireActiveGameId(): () => string {
-  const { activeGame } = useActiveGame();
-
-  return () => {
-    if (!activeGame?.id) {
-      throw new Error('No active game selected');
-    }
-
-    return activeGame.id;
-  };
-}
-
 // ── Trash ───────────────────────────────────────────────────────
 
 /** Query key for trash listing. */
@@ -72,14 +53,16 @@ export function useUpdateModCategory() {
 /** Hook to update a mod's thumbnail. */
 export function useUpdateModThumbnail() {
   const queryClient = useQueryClient();
-  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; sourcePath: string }) =>
-      commands.updateModThumbnail(requireGameId(), params.folderPath, params.sourcePath),
+    mutationFn: (params: { gameId: string; folderPath: string; sourcePath: string }) =>
+      commands.updateModThumbnail(params.gameId, params.folderPath, params.sourcePath),
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
-        [thumbnailKeys.folder(variables.folderPath)],
+        [
+          thumbnailKeys.folder(variables.folderPath),
+          detailsKeys.previewImages(variables.folderPath),
+        ],
         [],
       );
       applyRuntimeEffects(queryClient, descriptor);
@@ -115,15 +98,17 @@ export function useToggleModSafe() {
 /** Hook to delete a mod's thumbnail file. */
 export function useDeleteModThumbnail() {
   const queryClient = useQueryClient();
-  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
-    mutationFn: async (folderPath: string) => {
-      await commands.deleteModThumbnail(requireGameId(), folderPath);
+    mutationFn: async (params: { gameId: string; folderPath: string }) => {
+      await commands.deleteModThumbnail(params.gameId, params.folderPath);
     },
-    onSuccess: async (_data, folderPath) => {
+    onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
-        [thumbnailKeys.folder(folderPath), detailsKeys.previewImages(folderPath)],
+        [
+          thumbnailKeys.folder(variables.folderPath),
+          detailsKeys.previewImages(variables.folderPath),
+        ],
         [],
       );
       applyRuntimeEffects(queryClient, descriptor);
@@ -134,14 +119,16 @@ export function useDeleteModThumbnail() {
 /** Hook to paste a thumbnail from clipboard bytes. */
 export function usePasteThumbnail() {
   const queryClient = useQueryClient();
-  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; imageData: number[] }) =>
-      commands.pasteThumbnail(requireGameId(), params.folderPath, params.imageData),
+    mutationFn: (params: { gameId: string; folderPath: string; imageData: number[] }) =>
+      commands.pasteThumbnail(params.gameId, params.folderPath, params.imageData),
     onSuccess: async (_data, variables) => {
       const descriptor = buildQueryInvalidationDescriptor(
-        [thumbnailKeys.folder(variables.folderPath)],
+        [
+          thumbnailKeys.folder(variables.folderPath),
+          detailsKeys.previewImages(variables.folderPath),
+        ],
         [],
       );
       applyRuntimeEffects(queryClient, descriptor);
@@ -153,11 +140,10 @@ export function usePasteThumbnail() {
 
 export function useUpdateModInfo() {
   const queryClient = useQueryClient();
-  const requireGameId = useRequireActiveGameId();
 
   return useMutation({
-    mutationFn: (params: { folderPath: string; update: ModInfoUpdate }) =>
-      commands.updateModInfo(requireGameId(), params.folderPath, sparse(params.update)),
+    mutationFn: (params: { gameId: string; folderPath: string; update: ModInfoUpdate }) =>
+      commands.updateModInfo(params.gameId, params.folderPath, sparse(params.update)),
     onSuccess: async () => {
       await publishRuntimeDescriptor(
         queryClient,

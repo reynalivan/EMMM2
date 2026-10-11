@@ -249,16 +249,17 @@ impl PreparedWorkspaceSwitch {
         })
     }
 
-    pub fn execute(
+    pub async fn execute(
         &self,
         app: &tauri::AppHandle,
         watcher: &WatcherState,
     ) -> Result<WorkspaceSwitchResult, AppError> {
         self.execute_with_outcome(app, watcher)
+            .await
             .map_err(PreparedWorkspaceExecutionError::into_app_error)
     }
 
-    pub(crate) fn execute_with_outcome(
+    pub(crate) async fn execute_with_outcome(
         &self,
         app: &tauri::AppHandle,
         watcher: &WatcherState,
@@ -266,7 +267,7 @@ impl PreparedWorkspaceSwitch {
         match self {
             Self::Immediate(result) => Ok(result.as_ref().clone()),
             Self::Object(prepared) => {
-                let outcome = prepared.execute(watcher)?;
+                let outcome = prepared.execute_with_retry(watcher).await?;
                 let changed_folder_paths = if outcome.original_path == outcome.next_path {
                     vec![outcome.next_path.clone()]
                 } else {
@@ -299,15 +300,20 @@ impl PreparedWorkspaceSwitch {
             Self::Objects(prepared_objects) => {
                 let mut applied = Vec::new();
                 let mut outcomes = Vec::new();
+                let mut budget = crate::platform::fs::retry::RetryBudget::default();
+                let mut rollback_budget = crate::platform::fs::retry::RetryBudget::default();
                 for prepared in prepared_objects {
-                    match prepared.execute(watcher) {
+                    match prepared.execute_with_budget(watcher, &mut budget).await {
                         Ok(outcome) => {
                             applied.push(prepared);
                             outcomes.push(outcome);
                         }
                         Err(error) => {
                             for completed in applied.into_iter().rev() {
-                                if let Err(rollback_error) = completed.rollback(watcher) {
+                                if let Err(rollback_error) = completed
+                                    .rollback_with_budget(watcher, &mut rollback_budget)
+                                    .await
+                                {
                                     return Err(PreparedWorkspaceExecutionError::Compensation(
                                         rollback_error,
                                     ));
@@ -373,14 +379,14 @@ impl PreparedWorkspaceSwitch {
                         &cancel,
                         "workspace-switch",
                         false,
-                    );
+                    ).await;
                     if !execution.result.failures.is_empty() {
                         for (rollback_batch, rollback_sequences) in executions.iter().rev() {
                             if let Err(error) = crate::modules::library::application::mods::bulk::rollback_prepared_bulk_toggle(
                                 watcher,
                                 rollback_batch,
                                 rollback_sequences,
-                            ) {
+                            ).await {
                                 return Err(PreparedWorkspaceExecutionError::Compensation(error));
                             }
                         }
@@ -388,7 +394,7 @@ impl PreparedWorkspaceSwitch {
                             watcher,
                             batch,
                             &execution.applied_sequences,
-                        ) {
+                        ).await {
                             return Err(PreparedWorkspaceExecutionError::Compensation(error));
                         }
                         return Err(PreparedWorkspaceExecutionError::Apply(
@@ -438,13 +444,14 @@ impl PreparedWorkspaceSwitch {
         }
     }
 
-    pub fn rollback(&self, watcher: &WatcherState) -> Result<(), AppError> {
+    pub async fn rollback(&self, watcher: &WatcherState) -> Result<(), AppError> {
         match self {
             Self::Immediate(_) => Ok(()),
-            Self::Object(prepared) => prepared.rollback(watcher),
+            Self::Object(prepared) => prepared.rollback_with_retry(watcher).await,
             Self::Objects(prepared) => {
+                let mut budget = crate::platform::fs::retry::RetryBudget::default();
                 for object in prepared.iter().rev() {
-                    object.rollback(watcher)?;
+                    object.rollback_with_budget(watcher, &mut budget).await?;
                 }
                 Ok(())
             }
@@ -454,7 +461,7 @@ impl PreparedWorkspaceSwitch {
                         watcher,
                         batch,
                         &batch.planned_sequences(),
-                    )?;
+                    ).await?;
                 }
                 Ok(())
             }
@@ -1209,15 +1216,15 @@ async fn resolve_mod_target_path(
 
 fn default_switch_refresh_scopes() -> Vec<WorkspaceRefreshScope> {
     vec![
-        WorkspaceRefreshScope::WorkspaceChanged,
-        WorkspaceRefreshScope::FolderStructureChanged,
-        WorkspaceRefreshScope::ObjectRowsChanged,
-        WorkspaceRefreshScope::RuntimeStateChanged,
-        WorkspaceRefreshScope::CollectionsChanged,
-        WorkspaceRefreshScope::DashboardChanged,
-        WorkspaceRefreshScope::ActiveKeybindingsChanged,
-        WorkspaceRefreshScope::PreviewChanged,
-        WorkspaceRefreshScope::ConflictsChanged,
+        WorkspaceRefreshScope::Workspace,
+        WorkspaceRefreshScope::FolderStructure,
+        WorkspaceRefreshScope::ObjectRows,
+        WorkspaceRefreshScope::RuntimeState,
+        WorkspaceRefreshScope::Collections,
+        WorkspaceRefreshScope::Dashboard,
+        WorkspaceRefreshScope::ActiveKeybindings,
+        WorkspaceRefreshScope::Preview,
+        WorkspaceRefreshScope::Conflicts,
     ]
 }
 

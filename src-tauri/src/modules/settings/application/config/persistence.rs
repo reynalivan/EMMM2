@@ -41,7 +41,7 @@ impl ConfigService {
             .map(game_row_to_config)
             .collect();
 
-        let theme = kv.get("theme").cloned().unwrap_or_else(|| "dark".into());
+        let theme = kv.get("theme").cloned().unwrap_or_else(|| "onyx".into());
         let language = kv.get("language").cloned().unwrap_or_else(|| "en".into());
         let active_game_id = kv.get("active_game_id").cloned();
         let revision = kv

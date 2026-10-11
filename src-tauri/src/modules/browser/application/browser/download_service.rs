@@ -17,6 +17,7 @@ pub use crate::modules::browser::domain::browser::BrowserDownloadDto;
 pub use crate::modules::browser::domain::browser::BrowserGameBananaProvenance;
 
 const MAX_GAMEBANANA_PROVENANCE_HASH_BYTES: u64 = 128 * 1024 * 1024;
+pub(super) const NATIVE_DOWNLOAD_TEMP_PREFIX: &str = ".emmm-native-download-";
 const WINDOWS_RESERVED_FILENAMES: &[&str] = &[
     "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
@@ -203,9 +204,9 @@ pub async fn update_native_status(
     error_msg: Option<&str>,
     file_path: Option<&str>,
     can_resume: bool,
-) -> Result<(), BrowserError> {
+) -> Result<bool, BrowserError> {
     let finished_at = matches!(status, "finished" | "failed" | "canceled").then(now_stamp);
-    browser::update_native_status(
+    Ok(browser::update_native_status(
         db,
         download_id,
         status,
@@ -216,8 +217,7 @@ pub async fn update_native_status(
         can_resume,
         finished_at,
     )
-    .await?;
-    Ok(())
+    .await?)
 }
 
 /// List all downloads ordered by most recent first.
@@ -234,8 +234,9 @@ pub async fn delete_download(
     download_id: &str,
     delete_file: bool,
 ) -> Result<(), BrowserError> {
+    ensure_download_released(download_id)?;
     if delete_file {
-        let path = browser::get_file_path(db, download_id).await?;
+        let path = verified_download_file_path(db, download_id).await?;
 
         if let Some(p) = path {
             crate::platform::fs::recycle_bin::move_path_to_recycle_bin(std::path::Path::new(&p))
@@ -252,8 +253,9 @@ pub async fn rename_download(
     download_id: &str,
     requested_filename: &str,
 ) -> Result<(), BrowserError> {
+    ensure_download_released(download_id)?;
     let filename = validate_download_filename(requested_filename)?;
-    let old_path = browser::get_file_path(db, download_id)
+    let old_path = verified_download_file_path(db, download_id)
         .await?
         .map(PathBuf::from)
         .ok_or_else(|| BrowserError::Download("This download has no local file".into()))?;
@@ -278,7 +280,7 @@ pub async fn rename_download(
 
     let renamed = new_path != old_path;
     if renamed {
-        std::fs::rename(&old_path, &new_path)?;
+        crate::platform::fs::rename::rename_no_replace(&old_path, &new_path)?;
     }
 
     let new_path_string = new_path.to_string_lossy().into_owned();
@@ -323,6 +325,13 @@ pub async fn open_download_location(
         .map_err(|error| BrowserError::Io(error.to_string()))
 }
 
+fn ensure_download_released(id: &str) -> Result<(), BrowserError> {
+    if download_handler::has_active_download(id) {
+        return Err(BrowserError::Download("Cancel the live or resumable download before changing its file or removing its history".into()));
+    }
+    Ok(())
+}
+
 fn validate_download_filename(requested_filename: &str) -> Result<&str, BrowserError> {
     let filename = requested_filename.trim();
     if filename.is_empty() || filename == "." || filename == ".." {
@@ -356,7 +365,7 @@ async fn existing_download_path(
     db: &SqlitePool,
     download_id: &str,
 ) -> Result<PathBuf, BrowserError> {
-    let path = browser::get_file_path(db, download_id)
+    let path = verified_download_file_path(db, download_id)
         .await?
         .map(PathBuf::from)
         .ok_or_else(|| BrowserError::Download("This download has no local file".into()))?;
@@ -369,9 +378,31 @@ async fn existing_download_path(
     Ok(path)
 }
 
+async fn verified_download_file_path(
+    db: &SqlitePool,
+    id: &str,
+) -> Result<Option<String>, BrowserError> {
+    let Some(record) = browser::get_file_state(db, id).await? else {
+        return Ok(None);
+    };
+    let is_staging = record.file_path.as_deref().is_some_and(|path| {
+        Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(NATIVE_DOWNLOAD_TEMP_PREFIX))
+    });
+    if record.tab_label.is_some()
+        && is_staging
+        && !matches!(record.status.as_str(), "finished" | "imported")
+    {
+        return Err(BrowserError::Download("Native partial payload is not verified; retry or remove history without deleting its file".into()));
+    }
+    Ok(record.file_path)
+}
+
 fn rollback_download_rename(new_path: &Path, old_path: &Path) -> Result<(), std::io::Error> {
     if new_path.exists() {
-        std::fs::rename(new_path, old_path)?;
+        crate::platform::fs::rename::rename_no_replace(new_path, old_path)?;
     }
     Ok(())
 }
@@ -403,7 +434,7 @@ pub async fn cancel_download_with_feedback(
     download_id: &str,
     delete_file: Option<bool>,
 ) -> Result<(), BrowserError> {
-    if download_handler::cancel_native_download(app, download_id)? {
+    if download_handler::cancel_native_download(app, download_id).await? {
         return Ok(());
     }
     match download_handler::request_cancel(download_id) {
@@ -430,12 +461,12 @@ pub async fn cancel_download_with_feedback(
     }
 }
 
-pub fn pause_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
-    download_handler::pause_native_download(app, download_id)
+pub async fn pause_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
+    download_handler::pause_native_download(app, download_id).await
 }
 
-pub fn resume_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
-    download_handler::resume_native_download(app, download_id)
+pub async fn resume_download(app: &AppHandle, download_id: &str) -> Result<(), BrowserError> {
+    download_handler::resume_native_download(app, download_id).await
 }
 
 /// Reload the tab that issued a non-resumable native download. Many mod hosts
@@ -517,17 +548,9 @@ pub async fn mark_download_finished(
     app: &AppHandle,
     download_id: &str,
     file_path: &str,
+    bytes_received: u64,
 ) -> Result<(), BrowserError> {
-    update_status(
-        db,
-        download_id,
-        "finished",
-        None,
-        None,
-        None,
-        Some(file_path),
-    )
-    .await?;
+    complete_download_record(db, download_id, file_path, bytes_received).await?;
 
     let _ = app.emit(
         "browser:download-status",
@@ -535,10 +558,33 @@ pub async fn mark_download_finished(
             "id": download_id,
             "status": "finished",
             "file_path": file_path,
+            "bytes_received": bytes_received,
+            "bytes_total": bytes_received,
         }),
     );
 
     Ok(())
+}
+
+async fn complete_download_record(
+    db: &SqlitePool,
+    download_id: &str,
+    file_path: &str,
+    bytes_received: u64,
+) -> Result<(), BrowserError> {
+    let bytes_received = i64::try_from(bytes_received).map_err(|_| {
+        BrowserError::Download("Download byte count exceeds supported range".into())
+    })?;
+    update_status(
+        db,
+        download_id,
+        "finished",
+        Some(bytes_received),
+        Some(bytes_received),
+        None,
+        Some(file_path),
+    )
+    .await
 }
 
 #[cfg(test)]

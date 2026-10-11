@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import LaunchBar from './LaunchBar';
 import type { ConflictInfo } from '@/entities/workspace';
@@ -23,12 +23,30 @@ vi.mock('@/features/mod-runtime', () => ({
   })),
 }));
 vi.mock('@/app/store', () => ({
-  useAppStore: (
-    selector: (state: { autoCloseLauncher: boolean; workspaceView: string }) => unknown,
-  ) => selector({ autoCloseLauncher: true, workspaceView }),
+  useAppStore: <T,>(
+    selector: (state: {
+      autoCloseLauncher: boolean;
+      workspaceView: string;
+      isPreviewOpen: boolean;
+      togglePreview: () => void;
+      diskReconcileByGame: Record<string, never>;
+    }) => T,
+  ) =>
+    selector({
+      autoCloseLauncher: true,
+      workspaceView,
+      isPreviewOpen: false,
+      togglePreview: vi.fn(),
+      diskReconcileByGame: {},
+    }),
 }));
 vi.mock('@/shared/ui/toast', () => ({
   toast: { error: (...args: unknown[]) => toastError(...args) },
+  useToastStore: { getState: vi.fn() },
+}));
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: vi.fn(),
 }));
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
@@ -125,23 +143,6 @@ describe('LaunchBar', () => {
     render(<LaunchBar />);
 
     expect(screen.queryByRole('button', { name: /shared hashes/i })).not.toBeInTheDocument();
-  });
-
-  it('keeps randomize, conflicts, and play available in the compact top-bar menu', async () => {
-    const target = document.createElement('li');
-    target.id = 'topbar-more-launch-portal';
-    document.body.appendChild(target);
-    activeConflicts = [conflict('aaaaaaaa')];
-
-    const { unmount } = render(<LaunchBar />);
-    const menu = within(target);
-
-    await waitFor(() => expect(menu.getByRole('button', { name: 'Play' })).toBeInTheDocument());
-    expect(menu.getByRole('button', { name: 'Randomizer' })).toBeInTheDocument();
-    expect(menu.getByRole('button', { name: /Conflicts/ })).toHaveTextContent('1');
-
-    unmount();
-    target.remove();
   });
 
   it('hides the randomizer outside Mods Manager', () => {

@@ -6,6 +6,7 @@ pub mod operation_lock;
 pub mod path_utils;
 pub mod recycle_bin;
 pub(crate) mod rename;
+pub(crate) mod retry;
 
 #[cfg(test)]
 #[path = "tests/infra_tests.rs"]

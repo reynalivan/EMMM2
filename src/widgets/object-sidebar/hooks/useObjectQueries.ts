@@ -1,22 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { useActiveGame } from '@/entities/game';
-import { getCategoryCounts, type CategoryCount, type GameSchema } from '@/entities/game-object';
-import { objectKeys, useGameSwitch } from '@/features/workspace-runtime';
+import type { GameSchema } from '@/entities/game-object';
+import { objectKeys } from '@/features/workspace-runtime';
 import type { GameType } from '@/entities/game';
-
-export function useCategoryCounts() {
-  const { activeGame } = useActiveGame();
-  const gameId = activeGame?.id ?? '';
-
-  return useQuery<CategoryCount[]>({
-    queryKey: objectKeys.counts(gameId),
-    queryFn: () => getCategoryCounts(gameId),
-    enabled: !!gameId,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  });
-}
 
 export function useGameSchema() {
   const { activeGame } = useActiveGame();
@@ -30,7 +17,6 @@ export function useGameSchema() {
   });
 }
 
-export { useGameSwitch };
 import type { DbEntry } from '../../../shared/api/tauri/bindings.gen';
 
 export function useMasterDb() {
@@ -40,7 +26,7 @@ export function useMasterDb() {
   return useQuery<DbEntry[]>({
     queryKey: ['master-db', gameType],
     queryFn: () => commands.getMasterDb(gameType!),
-    enabled: !!gameType,
+    enabled: gameType !== undefined,
     staleTime: Infinity,
   });
 }

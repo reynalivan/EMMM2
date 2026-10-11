@@ -26,7 +26,7 @@ fn create_xxmi_launcher(root: &Path) {
 #[test]
 fn test_xxmi_launch_args_select_the_importer_without_a_direct_game_exe() {
     assert_eq!(
-        super::xxmi_launch_args(crate::modules::games::domain::models::GameType::WWMI),
+        super::xxmi_launch_args(crate::modules::games::domain::models::GameType::Wwmi),
         ["--nogui", "--xxmi", "WWMI"]
     );
 }
@@ -37,6 +37,41 @@ fn test_launch_rejects_directories_as_executables() {
     let error = super::ensure_executable_file(temp.path(), "Game").unwrap_err();
 
     assert!(error.to_string().contains("Game executable not found"));
+}
+
+#[cfg(windows)]
+#[test]
+fn agl_launch_keeps_the_users_quoted_windows_command_line() {
+    let mut command = std::process::Command::new("not-executed.exe");
+    let arguments = r#"--profile "My Profile" --empty "" --directory "C:\Mods Folder\\""#;
+    super::apply_launch_arguments(&mut command, arguments);
+    assert_eq!(
+        command.get_args().collect::<Vec<_>>(),
+        [std::ffi::OsStr::new(arguments)]
+    );
+}
+
+#[test]
+fn agl_loader_detection_requires_the_configured_executable_identity() {
+    let root = TempDir::new().unwrap();
+    fs::create_dir(root.path().join("a")).unwrap();
+    fs::create_dir(root.path().join("b")).unwrap();
+    let configured = root.path().join("a/Loader.exe");
+    let other = root.path().join("b/Loader.exe");
+    fs::write(&configured, "configured loader").unwrap();
+    fs::write(&other, "another loader").unwrap();
+    assert!(
+        !super::configured_loader_is_running(&configured, [other.as_path()].into_iter()).unwrap()
+    );
+    assert!(
+        super::configured_loader_is_running(&configured, [configured.as_path()].into_iter())
+            .unwrap()
+    );
+    let alias = root.path().join("alias.exe");
+    fs::hard_link(&configured, &alias).unwrap();
+    assert!(
+        super::configured_loader_is_running(&configured, [alias.as_path()].into_iter()).unwrap()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -58,7 +93,7 @@ async fn test_auto_detect_games() {
     assert_eq!(results.len(), 1);
     assert_eq!(
         results[0].game_type,
-        crate::modules::games::domain::models::GameType::GIMI
+        crate::modules::games::domain::models::GameType::Gimi
     );
     assert_eq!(
         results[0].launch_mode,

@@ -1,3 +1,4 @@
+use super::super::hashing::hash_snapshot;
 use super::super::snapshot::collect_snapshot;
 use super::{
     build_exact_cluster_compression, phase1_candidate_filtering_without_exact_cliques,
@@ -13,6 +14,58 @@ use tempfile::TempDir;
 
 const VALID_MOD_INI: &str = "[TextureOverrideBody]\nhash = 12345678\n";
 
+#[test]
+fn snapshot_fails_when_a_candidate_folder_cannot_be_walked() {
+    let temp = TempDir::new().unwrap();
+    let candidate = ModCandidate {
+        path: temp.path().join("missing-mod"),
+        raw_name: "Missing".to_string(),
+        display_name: "Missing".to_string(),
+        is_disabled: false,
+    };
+
+    assert!(collect_snapshot(&candidate).is_err());
+}
+
+#[test]
+fn pipeline_fails_instead_of_skipping_an_unreadable_candidate() {
+    let temp = TempDir::new().unwrap();
+    let candidate = ModCandidate {
+        path: temp.path().join("missing-mod"),
+        raw_name: "Missing".to_string(),
+        display_name: "Missing".to_string(),
+        is_disabled: false,
+    };
+
+    assert!(run_pipeline_blocking(
+        vec![candidate],
+        Arc::new(AtomicBool::new(false)),
+        1,
+        HashMap::new(),
+        HashSet::new(),
+    )
+    .is_err());
+}
+
+#[test]
+fn hashing_fails_when_a_snapshot_file_disappears() {
+    let temp = TempDir::new().unwrap();
+    let folder = temp.path().join("mod");
+    let file = folder.join("texture.dds");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(&file, b"content").unwrap();
+    let candidate = ModCandidate {
+        path: folder,
+        raw_name: "Transient".to_string(),
+        display_name: "Transient".to_string(),
+        is_disabled: false,
+    };
+    let snapshot = collect_snapshot(&candidate).unwrap();
+    fs::remove_file(file).unwrap();
+
+    assert!(hash_snapshot(&snapshot).is_err());
+}
+
 async fn setup_scan_db() -> sqlx::SqlitePool {
     let pool = crate::test_utils::init_test_db().await.pool;
     crate::test_utils::insert_test_game(
@@ -20,7 +73,7 @@ async fn setup_scan_db() -> sqlx::SqlitePool {
         &crate::test_utils::TestGameFixture {
             id: "game-1",
             name: "Genshin",
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "/game/path",
             mods_path: Some("/game/path/mods"),
         },
@@ -168,7 +221,8 @@ fn exact_clone_cluster_uses_a_linear_spanning_forest() {
         .map(collect_snapshot)
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    let compression = build_exact_cluster_compression(&snapshots, &HashMap::new(), &HashSet::new());
+    let compression =
+        build_exact_cluster_compression(&snapshots, &HashMap::new(), &HashSet::new()).unwrap();
 
     assert_eq!(compression.spanning_pairs.len(), EXACT_MODS - 1);
     assert!(phase1_candidate_filtering_without_exact_cliques(
@@ -275,8 +329,16 @@ async fn test_di_9_01_whitelist_pair_is_filtered_out() {
 
     fs::create_dir_all(&first).unwrap();
     fs::create_dir_all(&second).unwrap();
-    fs::write(first.join("mod.ini"), ";header\n$swapvar=2\n").unwrap();
-    fs::write(second.join("mod.ini"), ";header\n$swapvar=2\n").unwrap();
+    fs::write(
+        first.join("mod.ini"),
+        format!("{VALID_MOD_INI}$swapvar=2\n"),
+    )
+    .unwrap();
+    fs::write(
+        second.join("mod.ini"),
+        format!("{VALID_MOD_INI}$swapvar=2\n"),
+    )
+    .unwrap();
     fs::write(first.join("texture.dds"), b"same-content").unwrap();
     fs::write(second.join("texture.dds"), b"same-content").unwrap();
 
@@ -307,9 +369,241 @@ async fn test_di_9_01_whitelist_pair_is_filtered_out() {
         .unwrap();
 
     assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert_eq!(
+        outcome.total_folders, 2,
+        "whitelist fixture must be discovered"
+    );
     assert!(
         outcome.groups.is_empty(),
         "Whitelisted pair should be filtered from duplicate groups"
+    );
+}
+
+#[tokio::test]
+async fn whitelisted_exact_pair_is_not_reintroduced_through_a_third_duplicate() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("Kazuha_A");
+    let second = mods_root.join("Kazuha_B");
+    let third = mods_root.join("Kazuha_C");
+
+    for folder in [&first, &second, &third] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(
+            folder.join("mod.ini"),
+            format!("{VALID_MOD_INI}$swapvar=2\n"),
+        )
+        .unwrap();
+        fs::write(folder.join("texture.dds"), b"same-content").unwrap();
+    }
+
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "Kazuha_A", &first),
+            Registered::safe("mod-b", "Kazuha_B", &second),
+            Registered::safe("mod-c", "Kazuha_C", &third),
+        ],
+    )
+    .await;
+
+    sqlx::query(
+        "INSERT INTO duplicate_whitelist (id, game_id, folder_a_id, folder_b_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind("wl-1")
+    .bind(game_id)
+    .bind("mod-a")
+    .bind("mod-b")
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert_eq!(
+        outcome.total_folders, 3,
+        "all whitelist candidates must be discovered"
+    );
+    let reported_groups: HashSet<Vec<&str>> = outcome
+        .groups
+        .iter()
+        .map(|group| {
+            let mut members: Vec<_> = group
+                .members
+                .iter()
+                .map(|member| member.mod_id.as_deref().unwrap())
+                .collect();
+            members.sort_unstable();
+            members
+        })
+        .collect();
+
+    assert_eq!(
+        reported_groups,
+        HashSet::from([vec!["mod-a", "mod-c"], vec!["mod-b", "mod-c"],]),
+        "a whitelisted pair must not be reintroduced through an exact-match group"
+    );
+}
+
+#[tokio::test]
+async fn whitelisted_edge_keeps_every_other_pair_in_a_four_clone_cluster() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let folders = ["CloneA", "CloneB", "CloneC", "CloneD"].map(|name| mods_root.join(name));
+
+    for folder in &folders {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
+        fs::write(folder.join("texture.dds"), b"same-content").unwrap();
+    }
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("mod-a", "CloneA", &folders[0]),
+            Registered::safe("mod-b", "CloneB", &folders[1]),
+            Registered::safe("mod-c", "CloneC", &folders[2]),
+            Registered::safe("mod-d", "CloneD", &folders[3]),
+        ],
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO duplicate_whitelist (id, game_id, folder_a_id, folder_b_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind("wl-1")
+    .bind(game_id)
+    .bind("mod-a")
+    .bind("mod-b")
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert_eq!(outcome.total_folders, 4);
+    assert_eq!(outcome.groups.len(), 5);
+    assert!(outcome
+        .groups
+        .iter()
+        .all(|group| group.members.len() == 2 && group.confidence_score == 100));
+    let reported_pairs: HashSet<Vec<&str>> = outcome
+        .groups
+        .iter()
+        .map(|group| {
+            let mut members: Vec<_> = group
+                .members
+                .iter()
+                .map(|member| member.mod_id.as_deref().unwrap())
+                .collect();
+            members.sort_unstable();
+            members
+        })
+        .collect();
+    assert_eq!(
+        reported_pairs,
+        HashSet::from([
+            vec!["mod-a", "mod-c"],
+            vec!["mod-a", "mod-d"],
+            vec!["mod-b", "mod-c"],
+            vec!["mod-b", "mod-d"],
+            vec!["mod-c", "mod-d"],
+        ]),
+    );
+}
+
+#[tokio::test]
+async fn enabled_and_disabled_folders_keep_physical_identity_and_whitelist_pairs() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let enabled = mods_root.join("A");
+    let disabled = mods_root.join("DISABLED A");
+    let third = mods_root.join("C");
+
+    for folder in [&enabled, &disabled, &third] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
+        fs::write(folder.join("texture.dds"), b"same-content").unwrap();
+    }
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("enabled-a", "A", &enabled),
+            Registered::marked_unsafe("disabled-a", "DISABLED A", &disabled),
+            Registered::safe("mod-c", "C", &third),
+        ],
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO duplicate_whitelist (id, game_id, folder_a_id, folder_b_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind("wl-1")
+    .bind(game_id)
+    .bind("enabled-a")
+    .bind("mod-c")
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert_eq!(outcome.total_folders, 3);
+    assert_eq!(outcome.groups.len(), 2);
+    assert!(outcome.groups.iter().all(|group| {
+        group.members.len() == 2 && group.confidence_score == 100 && group.is_unsafe
+    }));
+    let reported_pairs: HashSet<Vec<&str>> = outcome
+        .groups
+        .iter()
+        .map(|group| {
+            let mut members: Vec<_> = group
+                .members
+                .iter()
+                .map(|member| {
+                    let expected = if member.folder_path.as_str()
+                        == enabled.to_string_lossy().as_ref()
+                    {
+                        ("enabled-a", true)
+                    } else if member.folder_path.as_str() == disabled.to_string_lossy().as_ref() {
+                        ("disabled-a", false)
+                    } else {
+                        assert_eq!(
+                            member.folder_path.as_str(),
+                            third.to_string_lossy().as_ref()
+                        );
+                        ("mod-c", true)
+                    };
+                    assert_eq!(member.mod_id.as_deref(), Some(expected.0));
+                    assert_eq!(member.is_safe, expected.1);
+                    member.mod_id.as_deref().unwrap()
+                })
+                .collect();
+            members.sort_unstable();
+            members
+        })
+        .collect();
+    assert_eq!(
+        reported_pairs,
+        HashSet::from([vec!["disabled-a", "enabled-a"], vec!["disabled-a", "mod-c"],]),
     );
 }
 
@@ -998,6 +1292,7 @@ fn pipeline_for_benchmark(candidates: Vec<ModCandidate>) -> super::DedupScanOutc
         HashMap::new(),
         HashSet::new(),
     )
+    .expect("benchmark fixtures must be readable")
 }
 
 #[test]
@@ -1124,6 +1419,53 @@ async fn different_non_asset_files_prevent_exact_folder_identity() {
             .iter()
             .all(|group| group.confidence_score < 100),
         "every regular file contributes to exact folder identity"
+    );
+}
+
+#[tokio::test]
+async fn differently_named_assets_prevent_exact_folder_identity() {
+    let pool = setup_scan_db().await;
+    let game_id = "game-1";
+    let temp = TempDir::new().unwrap();
+    let mods_root = temp.path();
+    let first = mods_root.join("RenamedAssetA");
+    let second = mods_root.join("RenamedAssetB");
+
+    for folder in [&first, &second] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("mod.ini"), VALID_MOD_INI).unwrap();
+    }
+    fs::write(first.join("body.dds"), b"same-asset-content").unwrap();
+    fs::write(second.join("face.dds"), b"same-asset-content").unwrap();
+    register_mods(
+        &pool,
+        game_id,
+        mods_root,
+        &[
+            Registered::safe("renamed-a", "RenamedAssetA", &first),
+            Registered::safe("renamed-b", "RenamedAssetB", &second),
+        ],
+    )
+    .await;
+
+    let outcome = scan_duplicates(mods_root, game_id, &pool, Arc::new(AtomicBool::new(false)))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.status, DedupScanStatus::Completed);
+    assert_eq!(outcome.total_folders, 2);
+    assert_eq!(outcome.groups.len(), 1);
+    let group = &outcome.groups[0];
+    assert!(group.confidence_score < 100);
+    assert_ne!(group.match_reason, "Exact hash match");
+    assert!(group
+        .signals
+        .iter()
+        .all(|signal| signal.key != "content_hash"));
+    assert!(group.members.iter().all(|member| member.file_count == 2));
+    assert_eq!(
+        group.members[0].total_size_bytes,
+        group.members[1].total_size_bytes
     );
 }
 

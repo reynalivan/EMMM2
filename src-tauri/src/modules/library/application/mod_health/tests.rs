@@ -35,7 +35,7 @@ fn analyzes_active_and_inactive_assets_without_marking_metadata_or_backups_as_or
         fs::write(folder.path().join(file), "fixture").expect("asset fixture");
     }
 
-    let report = analyze_mod_health(folder.path(), GameType::GIMI).expect("health report");
+    let report = analyze_mod_health(folder.path(), GameType::Gimi).expect("health report");
 
     assert_eq!(relative_paths(&report.manifest.referenced), ["body.dds"]);
     assert_eq!(relative_paths(&report.manifest.inactive_only), ["alt.dds"]);
@@ -63,7 +63,7 @@ fn reports_ini_structure_and_resource_problems_without_stopping_analysis() {
     )
     .expect("unsafe ini");
 
-    let report = analyze_mod_health(folder.path(), GameType::GIMI).expect("health report");
+    let report = analyze_mod_health(folder.path(), GameType::Gimi).expect("health report");
     let codes = report
         .issues
         .iter()
@@ -95,7 +95,7 @@ fn extracts_supported_cycle_controls_and_marks_srmi_experimental_without_parsing
     )
     .expect("controls ini");
 
-    let supported = analyze_mod_health(folder.path(), GameType::GIMI).expect("supported report");
+    let supported = analyze_mod_health(folder.path(), GameType::Gimi).expect("supported report");
     assert_eq!(supported.support_level, ModHealthSupportLevel::Supported);
     assert!(supported.controls.iter().any(|control| {
         control.kind == ModControlKind::MenuToggle
@@ -117,14 +117,14 @@ fn extracts_supported_cycle_controls_and_marks_srmi_experimental_without_parsing
             && control.variable.as_deref() == Some("$shape")
     }));
 
-    let experimental = analyze_mod_health(folder.path(), GameType::SRMI).expect("srmi report");
+    let experimental = analyze_mod_health(folder.path(), GameType::Srmi).expect("srmi report");
     assert_eq!(
         experimental.support_level,
         ModHealthSupportLevel::Experimental
     );
     assert!(!experimental.controls.is_empty());
 
-    let basic = analyze_mod_health(folder.path(), GameType::EFMI).expect("efmi report");
+    let basic = analyze_mod_health(folder.path(), GameType::Efmi).expect("efmi report");
     assert_eq!(basic.support_level, ModHealthSupportLevel::Basic);
     assert!(basic.controls.is_empty());
 }
@@ -141,7 +141,7 @@ fn treats_a_disabled_selected_mod_folder_as_inactive() {
     .expect("inactive ini");
     fs::write(folder.join("body.dds"), "fixture").expect("asset fixture");
 
-    let report = analyze_mod_health(&folder, GameType::GIMI).expect("health report");
+    let report = analyze_mod_health(&folder, GameType::Gimi).expect("health report");
 
     assert_eq!(
         relative_paths(&report.manifest.referenced),
@@ -160,7 +160,7 @@ fn reports_oversized_ini_without_reading_its_contents() {
     file.set_len(MAX_PARSEABLE_INI_BYTES + 1)
         .expect("make ini exceed analysis cap");
 
-    let report = analyze_mod_health(folder.path(), GameType::GIMI).expect("health report");
+    let report = analyze_mod_health(folder.path(), GameType::Gimi).expect("health report");
 
     assert!(
         report
@@ -195,4 +195,81 @@ fn launch_receipt_uses_only_regular_non_symlink_files_and_preserves_requested_fo
             .collect::<Vec<_>>(),
         ["asset with spaces.dds", "nested/mod.ini"]
     );
+}
+
+#[test]
+fn agl_nested_resources_resolve_from_the_declaring_ini() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("nested")).unwrap();
+    fs::write(
+        root.path().join("nested/mod.ini"),
+        "[ResourceBody]\nfilename = body.dds\n[ResourceShared]\nfilename = ../shared.dds\n",
+    )
+    .unwrap();
+    for name in ["nested/body.dds", "body.dds", "shared.dds"] {
+        fs::write(root.path().join(name), "fixture").unwrap();
+    }
+    let report = analyze_mod_health(root.path(), GameType::Gimi).unwrap();
+    assert!(!report
+        .issues
+        .iter()
+        .any(|issue| issue.code == "resource_missing" || issue.code == "resource_path_unsafe"));
+    assert_eq!(
+        relative_paths(&report.manifest.referenced),
+        ["nested/body.dds", "shared.dds"]
+    );
+    assert_eq!(relative_paths(&report.manifest.orphan), ["body.dds"]);
+}
+
+#[test]
+fn agl_other_namespaces_and_inactive_declarations_cannot_satisfy_active_refs() {
+    for filename in ["b.ini", "DISABLED_b.ini"] {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("a.ini"),
+            "[CommandListA]\nref ResourceBody\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join(filename),
+            "[ResourceBody]\nfilename = body.dds\n",
+        )
+        .unwrap();
+        fs::write(root.path().join("body.dds"), "fixture").unwrap();
+        let report = analyze_mod_health(root.path(), GameType::Gimi).unwrap();
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.code == "resource_undeclared"
+                    && issue.file_path.as_deref() == Some("a.ini")),
+            "{filename} cannot satisfy a.ini's active local reference"
+        );
+    }
+}
+
+#[test]
+fn agl_shared_explicit_namespaces_and_local_resources_remain_valid() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("a.ini"),
+        "namespace = shared\n[CommandListA]\nref ResourceBody\nref Resource\\shared\\Body\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("b.ini"),
+        "namespace = shared\n[ResourceBody]\nfilename = body.dds\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("local.ini"),
+        "[ResourceLocal]\n[CommandListLocal]\nref ResourceLocal\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("body.dds"), "fixture").unwrap();
+    let report = analyze_mod_health(root.path(), GameType::Gimi).unwrap();
+    assert!(!report
+        .issues
+        .iter()
+        .any(|issue| issue.code == "resource_undeclared"));
 }

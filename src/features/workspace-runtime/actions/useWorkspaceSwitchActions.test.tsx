@@ -387,6 +387,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
         parent_enable_confirmation: 'confirm-1',
       },
       expect.any(Number),
+      null,
     );
     expect(useAppStore.getState().workspaceDialogState).toMatchObject({
       kind: 'modDuplicateWarning',
@@ -623,10 +624,10 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
 
     await act(async () => {
       finishFirst(appliedSwitchResult('E:/Mods/A'));
-      await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2));
       await Promise.all([firstToggle, secondToggle]);
     });
 
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
     expect(executeWorkspaceSwitch.mock.calls.map(([input]) => input.desired_enabled)).toEqual([
       true,
       false,
@@ -1179,6 +1180,7 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     expect(executeWorkspaceSwitch).toHaveBeenLastCalledWith(
       expect.objectContaining({ desired_enabled: true }),
       expect.any(Number),
+      null,
     );
 
     await act(async () => {
@@ -1261,18 +1263,17 @@ describe('useWorkspaceSwitchActions parent confirmation', () => {
     await waitFor(() => expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(1));
     await act(async () => {
       completeFirst({ ...appliedSwitchResult('E:/Mods/A'), disk_revision: 0 });
-      await waitFor(() => {
-        expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
-      });
       await expect(Promise.all([first, second])).resolves.toEqual([
         'E:/Mods/DISABLED A',
         'E:/Mods/DISABLED A',
       ]);
     });
 
+    expect(executeWorkspaceSwitch).toHaveBeenCalledTimes(2);
     expect(executeWorkspaceSwitch).toHaveBeenLastCalledWith(
       expect.objectContaining({ desired_enabled: false }),
       expect.any(Number),
+      null,
     );
     await waitFor(() => expect(successToast).toHaveBeenCalledExactlyOnceWith('Disabled: A'));
   });

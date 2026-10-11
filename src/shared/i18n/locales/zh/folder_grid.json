@@ -15,6 +15,7 @@
   },
   "conflict_manager": {
     "title": "文件夹名称冲突",
+    "this_conflict": "此冲突",
     "keep_name_instruction": "选择一个文件夹以保留其当前基本名称。",
     "remaining_instruction": "请为其余文件夹选择重命名或标记为移至回收站。",
     "banner": "有 {{count}} 个文件夹名称冲突需要处理，其他模组仍会同步。",

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type RefObject } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/app/store';
 import { useActiveGame } from '@/entities/game';
@@ -15,7 +15,7 @@ import { useFolderGridSelection } from './useFolderGridSelection';
 import { DEFAULT_SOURCE_UNAVAILABLE_MESSAGE } from '@/features/workspace-runtime';
 import { useWorkspaceExplorerSelection } from './useWorkspaceExplorerSelection';
 
-export function useFolderGrid() {
+export function useFolderGrid(dropTargetRef: RefObject<HTMLDivElement | null>) {
   // Selector-scoped: a bare useAppStore() here re-runs the whole grid
   // computation on any write to any slice.
   const {
@@ -90,6 +90,7 @@ export function useFolderGrid() {
     isExplorerSearchPending,
     totalMatching,
     listingRevision,
+    displayedMatching,
   } = useFolderGridRuntime({
     activeGameId: activeGame?.id,
     viewMode,
@@ -207,6 +208,7 @@ export function useFolderGrid() {
 
   const { isDragging, handleImportFiles } = useFolderGridImport({
     parentRef,
+    dropTargetRef,
     activeGameId: activeGame?.id,
     activeModPath: activeGame?.mod_path,
     selectedObjectFolderPath,
@@ -244,6 +246,7 @@ export function useFolderGrid() {
     explorerQuery,
     isExplorerSearchPending,
     totalMatching,
+    displayedMatching,
     sortField,
     sortOrder,
     setSortField,
@@ -267,6 +270,10 @@ export function useFolderGrid() {
     gridSelection,
     explorerSelection: explorerSelection.selection,
     selectedCount: explorerSelection.selectedCount,
+    hasSelectedFolderConflict: sortedFolders.some(
+      (folder) =>
+        Boolean(folder.conflict_group_id) && explorerSelection.isPathSelected(folder.path),
+    ),
     isPathSelected: explorerSelection.isPathSelected,
     selectAllMatching: explorerSelection.selectAllMatching,
     toggleGridSelection: handleToggleSelection,

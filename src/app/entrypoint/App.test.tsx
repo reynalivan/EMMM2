@@ -3,6 +3,8 @@ import { StrictMode } from 'react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PipelineTask } from '@/entities/task';
+import { dismissSplash } from '@/shared/lib/dismissSplash';
 import App, { DashboardWorkspace } from './App';
 
 const { state, games, initStore } = vi.hoisted(() => ({
@@ -12,6 +14,7 @@ const { state, games, initStore } = vi.hoisted(() => ({
     selectedObjectFolderPath: null,
     activeGameId: 'game-b' as string | null,
     requestedGameId: null as string | null,
+    startupRecoveryGameId: 'game-b' as string | null,
     gameActivationByGame: {
       'game-b': { phase: 'syncing' },
     } as Record<string, { phase: string; error?: string | null }>,
@@ -125,13 +128,56 @@ describe('App startup', () => {
       vi.mocked(invoke).mock.calls.filter(([command]) => command === 'check_config_status'),
     ).toHaveLength(1);
   });
+
+  it('dismisses the splash for recovery and keeps it dismissed after the final task resolves', async () => {
+    const task: PipelineTask = {
+      id: 'recovery-task',
+      game_id: 'game-b',
+      task_type: 'apply_collection',
+      status: 'PENDING',
+      target_id: 'collection-b',
+      rollback_collection_id: null,
+      rollback_active_collection_id: null,
+      final_active_collection_id: null,
+      created_at: '2026-10-10 00:00:00',
+      updated_at: '2026-10-10 00:00:00',
+    };
+    let pending = true;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'app_startup_check') return pending ? [task] : [];
+      if (command === 'resolve_recovery_task') {
+        pending = false;
+        return null;
+      }
+      throw new Error(`Unexpected recovery command: ${command}`);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('dialog');
+    expect(dismissSplash).toHaveBeenCalledTimes(1);
+    expect(initStore).not.toHaveBeenCalled();
+
+    await act(async () => screen.getByRole('button', { name: 'Rollback' }).click());
+    await waitFor(() => expect(screen.getByTestId('workspace')).toBeInTheDocument());
+    expect(initStore).toHaveBeenCalledTimes(1);
+    expect(dismissSplash).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith('resolve_recovery_task', {
+      taskId: task.id,
+      action: 'ROLLBACK',
+    });
+  });
 });
 
 describe('DashboardWorkspace readiness', () => {
   beforeEach(() => {
-    state.workspaceView = 'dashboard';
+    state.workspaceView = 'mods';
     state.activeGameId = 'game-b';
     state.requestedGameId = null;
+    state.startupRecoveryGameId = 'game-b';
     state.gameActivationByGame = { 'game-b': { phase: 'syncing' } };
   });
 
@@ -158,5 +204,64 @@ describe('DashboardWorkspace readiness', () => {
     state.gameActivationByGame['game-b'] = { phase: 'ready' };
     render(<DashboardWorkspace />);
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('shows dashboard read models during provisional startup activation', () => {
+    state.workspaceView = 'dashboard';
+    state.activeGameId = null;
+    state.requestedGameId = 'game-b';
+    render(<DashboardWorkspace />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('shows dashboard read models after startup receipt while recovery remains pending', () => {
+    state.workspaceView = 'dashboard';
+    render(<DashboardWorkspace />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('keeps explicit game switches gated on dashboard', () => {
+    state.workspaceView = 'dashboard';
+    state.requestedGameId = 'game-b';
+    render(<DashboardWorkspace />);
+    expect(screen.getByRole('status')).toHaveTextContent('Selected game');
+  });
+
+  it('keeps explicit switches gated after their syncing receipt clears the requested game', () => {
+    state.workspaceView = 'dashboard';
+    state.activeGameId = 'game-b';
+    state.requestedGameId = null;
+    state.startupRecoveryGameId = null;
+    render(<DashboardWorkspace />);
+    expect(screen.getByRole('status')).toHaveTextContent('Selected game');
+  });
+
+  it('keeps mods gated when ready arrives before the provisional startup receipt', () => {
+    state.workspaceView = 'mods';
+    state.activeGameId = null;
+    state.requestedGameId = 'game-b';
+    state.gameActivationByGame['game-b'] = { phase: 'ready' };
+    render(<DashboardWorkspace />);
+    expect(screen.getByRole('status')).toHaveTextContent('Selected game');
+  });
+
+  it.each(['failed', 'source_unavailable'])(
+    'shows provisional startup %s instead of dashboard',
+    (phase) => {
+      state.workspaceView = 'dashboard';
+      state.activeGameId = null;
+      state.requestedGameId = 'game-b';
+      state.gameActivationByGame['game-b'] = { phase };
+      render(<DashboardWorkspace />);
+      expect(screen.getByRole('status')).toHaveTextContent('Selected game');
+    },
+  );
+
+  it.each(['mods', 'collections'])('keeps %s gated during provisional startup', (workspaceView) => {
+    state.workspaceView = workspaceView;
+    state.activeGameId = null;
+    state.requestedGameId = 'game-b';
+    render(<DashboardWorkspace />);
+    expect(screen.getByRole('status')).toHaveTextContent('Selected game');
   });
 });

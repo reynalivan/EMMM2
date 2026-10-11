@@ -1,11 +1,5 @@
 import { commands, sparse, type GameObject } from '@/shared/api/tauri/bindings';
-import type {
-  ObjectFilter,
-  ObjectSummary,
-  CategoryCount,
-  CreateObjectInput,
-  UpdateObjectInput,
-} from '../model/object';
+import type { CreateObjectInput, UpdateObjectInput } from '../model/object';
 import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
 
 /**
@@ -52,15 +46,6 @@ export function validateObjectName(name: string): string | null {
   return null;
 }
 
-export async function getObjects(filter: ObjectFilter): Promise<ObjectSummary[]> {
-  const res = await commands.getObjectsCmd(filter);
-  return res.objects;
-}
-
-export function getCategoryCounts(gameId: string): Promise<CategoryCount[]> {
-  return commands.getCategoryCountsCmd(gameId);
-}
-
 export async function createObject(input: CreateObjectInput): Promise<GameObject> {
   const nameError = validateObjectName(input.name);
   if (nameError) throw new Error(nameError);
@@ -81,7 +66,7 @@ export async function updateObject(id: string, updates: UpdateObjectInput): Prom
   return readBack(id);
 }
 
-export async function deleteObject(id: string, force: boolean): Promise<void> {
-  const result = await commands.deleteObjectCmd(id, force);
+export async function deleteObject(id: string, force: boolean, recoveryId?: string): Promise<void> {
+  const result = await commands.deleteObjectCmd(id, force, recoveryId ?? null);
   notifyCommittedMutationSyncWarning(result);
 }

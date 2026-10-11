@@ -7,6 +7,8 @@ use crate::shared::errors::AppError;
 
 use tauri::Manager;
 
+use super::manager::HotkeyGameContext;
+use super::notice::{HotkeyActionOutcome, HotkeyNoticeKind};
 use crate::modules::settings::application::config::ConfigService;
 
 use crate::shared::path_key::canonical_name_key;
@@ -59,7 +61,8 @@ fn require<'a, T: Send + Sync + 'static>(
 pub(super) async fn execute_cycle_preset(
     app: &tauri::AppHandle,
     direction: CycleDirection,
-) -> Result<String, AppError> {
+    context: &HotkeyGameContext,
+) -> Result<HotkeyActionOutcome, AppError> {
     let config_state = require::<ConfigService>(app, "ConfigService")?;
     let pool_state = require::<sqlx::SqlitePool>(app, "SqlitePool")?;
     let watcher_state = require::<
@@ -71,12 +74,9 @@ pub(super) async fn execute_cycle_preset(
     )?;
 
     let settings = config_state.get_settings();
-    let game = settings
-        .active_game()
-        .ok_or_else(|| AppError::Internal("No active game selected".to_string()))?;
-    let game_id = game.id.as_str();
-    let root_proof =
-        crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&game.mod_path)?;
+    context.validate(&settings)?;
+    let game_id = context.game_id();
+    let mods_path = context.mods_path();
     let _admission = crate::modules::mutation::api::admit_immutable_mutation(
         game_id,
         crate::modules::mutation::api::ImmutableMutationKind::PresetApply,
@@ -88,6 +88,17 @@ pub(super) async fn execute_cycle_preset(
     )
     .await?;
 
+    let runtime_before_preflight =
+        crate::modules::collections::adapters::sqlite::runtime::get(pool_state.inner(), game_id)
+            .await?
+            .and_then(|runtime| runtime.active_collection_id);
+    let previous_before_preflight = runtime_before_preflight.as_deref().and_then(|id| {
+        collections
+            .iter()
+            .find(|collection| collection.id == id)
+            .map(|collection| collection.name.clone())
+    });
+
     if collections.is_empty() {
         let generation = crate::modules::reconciliation::api::enqueue_runtime_sync(
             app,
@@ -95,21 +106,24 @@ pub(super) async fn execute_cycle_preset(
             game_id,
             crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
         );
-        return Ok(format!(
-            "No presets available (overlay queued as generation {generation})"
-        ));
+        return Ok(HotkeyActionOutcome {
+            kind: HotkeyNoticeKind::NoPresets,
+            previous_collection: previous_before_preflight.clone(),
+            collection: previous_before_preflight,
+            safe_mode: settings.safety.runtime_safe_mode_for(game_id),
+            message: Some("No presets are available for this game".to_string()),
+            runtime_generation: Some(generation),
+            log_summary: format!(
+                "No presets available (overlay queued as generation {generation})"
+            ),
+        });
     }
 
     let preset_names: Vec<String> = collections
         .iter()
         .map(|collection| collection.name.clone())
         .collect();
-    let current_collection_id =
-        crate::modules::collections::adapters::sqlite::runtime::get(pool_state.inner(), game_id)
-            .await?
-            .and_then(|runtime| runtime.active_collection_id);
-
-    let current_name = current_collection_id.and_then(|id| {
+    let current_name = runtime_before_preflight.as_deref().and_then(|id| {
         collections
             .iter()
             .find(|c| c.id == id)
@@ -128,7 +142,7 @@ pub(super) async fn execute_cycle_preset(
             pool_state.inner(),
             game_id,
             &target.id,
-            &game.mod_path,
+            mods_path,
         )
         .await?;
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
@@ -144,12 +158,34 @@ pub(super) async fn execute_cycle_preset(
     let mutation_lease = disk_reconcile
         .acquire_ready_mutation_lease(game_id, op_lock.inner_lock())
         .await?;
-    root_proof.validate(&game.mod_path)?;
+    context.validate(&config_state.get_settings())?;
     crate::modules::reconciliation::api::ensure_projection_epoch(
         config_state.inner(),
         game_id,
-        root_proof.identity(),
+        context.root_identity(),
     )?;
+
+    let settings = config_state.get_settings();
+    context.validate(&settings)?;
+
+    // The preflight target was chosen before waiting for mutation authority.
+    // Reject rather than applying a target derived from a stale active preset.
+    let authoritative_collection_id =
+        crate::modules::collections::adapters::sqlite::runtime::get(pool_state.inner(), game_id)
+            .await?
+            .and_then(|runtime| runtime.active_collection_id);
+    if authoritative_collection_id != runtime_before_preflight {
+        return Err(AppError::Validation(
+            "Collection state changed while the hotkey was waiting; retry the hotkey".to_string(),
+        ));
+    }
+    let previous_collection = authoritative_collection_id.as_deref().and_then(|id| {
+        collections
+            .iter()
+            .find(|collection| collection.id == id)
+            .map(|collection| collection.name.clone())
+    });
+    let safe_mode = settings.safety.runtime_safe_mode_for(game_id);
 
     let apply_result =
         crate::modules::collections::application::collection::apply_collection_durable(
@@ -158,7 +194,7 @@ pub(super) async fn execute_cycle_preset(
                 game_id,
                 collection_id: &target.id,
                 capture_last_changes: true,
-                mods_path: game.mod_path.clone(),
+                mods_path: mods_path.to_path_buf(),
                 suppressor: watcher_state.suppressor.clone(),
                 ignore_missing: true,
                 settings: settings.clone(),
@@ -171,14 +207,22 @@ pub(super) async fn execute_cycle_preset(
         app,
         pool_state.inner(),
         game_id,
-        &game.mod_path,
+        mods_path,
         crate::modules::reconciliation::api::RuntimeSyncCause::CollectionApplied,
         &apply_result.runtime_path_rewrites,
     );
     drop(mutation_lease);
 
-    Ok(format!(
-        "Preset: {} (changed components: {}; overlay queued as generation {generation})",
-        target.name, apply_result.mods_enabled,
-    ))
+    Ok(HotkeyActionOutcome {
+        kind: HotkeyNoticeKind::CollectionApplied,
+        previous_collection,
+        collection: Some(target.name.clone()),
+        safe_mode,
+        message: None,
+        runtime_generation: Some(generation),
+        log_summary: format!(
+            "Preset: {} (changed components: {}; overlay queued as generation {generation})",
+            target.name, apply_result.mods_enabled,
+        ),
+    })
 }

@@ -5,6 +5,7 @@
 //! state falls back to the normal full reconcile path.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -15,9 +16,9 @@ use tokio::sync::{oneshot, Notify};
 use uuid::Uuid;
 
 use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::{
-    collect_onboarding_disk_discovery_with_progress_and_gate,
-    collect_scoped_onboarding_disk_discovery, DiskProjectionError, DiskScopedDiscovery,
-    OnboardingDiscoveryPhase, OnboardingDiscoveryProgress,
+    collect_onboarding_disk_discovery_with_parallelism, collect_scoped_onboarding_disk_discovery,
+    DiskProjectionError, DiskScopedDiscovery, OnboardingDiscoveryPhase,
+    OnboardingDiscoveryProgress, ONBOARDING_ROOT_PARALLELISM,
 };
 use crate::modules::reconciliation::application::disk_reconcile::types::{
     OnboardingIndexingBackgroundGameStatus, OnboardingIndexingBackgroundPhase,
@@ -57,6 +58,7 @@ struct OnboardingSession {
     background_game_ids: BTreeSet<String>,
     cancelled: Arc<AtomicBool>,
     background_started: bool,
+    active_work: usize,
     journal_revision: Option<u64>,
     scan_priority: Arc<ScanPriority>,
 }
@@ -168,8 +170,16 @@ struct OnboardingSnapshotProgressReporter {
     prepared_games: Arc<AtomicU64>,
     total_games: u64,
     started_at: Instant,
-    last_emitted_at: Mutex<Option<Duration>>,
+    emission: Mutex<SnapshotProgressEmission>,
     on_progress: Arc<dyn Fn(OnboardingIndexingSnapshotProgress) + Send + Sync>,
+}
+
+#[derive(Default)]
+struct SnapshotProgressEmission {
+    last_emitted_at: Option<Duration>,
+    phase: Option<OnboardingIndexingSnapshotPhase>,
+    completed_roots: usize,
+    folders_classified: usize,
 }
 
 impl OnboardingSnapshotProgressReporter {
@@ -186,7 +196,7 @@ impl OnboardingSnapshotProgressReporter {
             prepared_games,
             total_games,
             started_at: Instant::now(),
-            last_emitted_at: Mutex::new(None),
+            emission: Mutex::new(SnapshotProgressEmission::default()),
             on_progress,
         }
     }
@@ -201,22 +211,38 @@ impl OnboardingSnapshotProgressReporter {
         current_root: Option<String>,
         force: bool,
     ) {
+        let mut emission = crate::shared::sync::lock(&self.emission);
+        if emission.phase.as_ref().is_some_and(|last| {
+            &phase < last
+                || (&phase == last
+                    && (phase == OnboardingIndexingSnapshotPhase::Ready
+                        || completed_roots < emission.completed_roots))
+        }) {
+            return;
+        }
+        let phase_changed = emission.phase.as_ref() != Some(&phase);
+        if phase_changed {
+            emission.completed_roots = 0;
+            emission.folders_classified = 0;
+        }
+        emission.phase = Some(phase.clone());
+        emission.completed_roots = completed_roots;
+        emission.folders_classified = emission.folders_classified.max(folders_classified);
         let elapsed = self.started_at.elapsed();
         let completed_games = if matches!(phase, OnboardingIndexingSnapshotPhase::Ready) {
             self.prepared_games.fetch_add(1, Ordering::Relaxed) + 1
         } else {
             self.prepared_games.load(Ordering::Relaxed)
         };
-        let Ok(mut last_emitted_at) = self.last_emitted_at.lock() else {
-            return;
-        };
         if !force
-            && last_emitted_at
+            && !phase_changed
+            && emission
+                .last_emitted_at
                 .is_some_and(|last| elapsed.saturating_sub(last) < PROGRESS_EMIT_INTERVAL)
         {
             return;
         }
-        *last_emitted_at = Some(elapsed);
+        emission.last_emitted_at = Some(elapsed);
 
         (self.on_progress)(OnboardingIndexingSnapshotProgress {
             session_id: self.session_id.clone(),
@@ -226,7 +252,7 @@ impl OnboardingSnapshotProgressReporter {
             total_games: self.total_games,
             completed_roots: u64::try_from(completed_roots).unwrap_or(u64::MAX),
             total_roots: u64::try_from(total_roots).unwrap_or(u64::MAX),
-            folders_classified: u64::try_from(folders_classified).unwrap_or(u64::MAX),
+            folders_classified: u64::try_from(emission.folders_classified).unwrap_or(u64::MAX),
             current_root,
             elapsed_ms: elapsed.as_millis().min(u64::MAX as u128) as u64,
         });
@@ -337,11 +363,58 @@ pub enum ConsumedOnboardingSnapshot {
 pub struct OnboardingSnapshotLease {
     prepared: PreparedGame,
     journal_revision: Option<u64>,
+    _work: OnboardingWorkGuard,
 }
 
 pub struct ClaimedOnboardingSnapshot {
     pending: PendingGame,
     journal_revision: Option<u64>,
+    work: OnboardingWorkGuard,
+}
+
+pub struct OnboardingWorkGuard {
+    store: OnboardingIndexingSessionStore,
+    session_id: String,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl OnboardingWorkGuard {
+    pub fn ensure_not_cancelled(&self) -> Result<(), AppError> {
+        if self.cancelled.load(Ordering::Acquire) {
+            Err(AppError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for OnboardingWorkGuard {
+    fn drop(&mut self) {
+        let expiry = {
+            let mut sessions = crate::shared::sync::lock(&self.store.sessions);
+            let Some(session) = sessions.get_mut(&self.session_id) else {
+                return;
+            };
+            session.active_work -= 1;
+            if session.active_work != 0 {
+                return;
+            }
+            if session.background_started && session.games.is_empty() {
+                sessions.remove(&self.session_id);
+                None
+            } else if !session.background_started {
+                // The inactivity TTL starts after the last application owner finishes.
+                session.created_at = Instant::now();
+                Some(Arc::clone(&session.cancelled))
+            } else {
+                None
+            }
+        };
+        if let Some(cancelled) = expiry {
+            self.store
+                .schedule_expiration(self.session_id.clone(), SESSION_TTL, cancelled);
+        }
+    }
 }
 
 pub struct ActivationClaimGuard {
@@ -349,6 +422,7 @@ pub struct ActivationClaimGuard {
     game_id: String,
     claims: Arc<Mutex<HashSet<(String, String)>>>,
     released: Arc<Notify>,
+    _work: Option<OnboardingWorkGuard>,
 }
 
 impl Drop for ActivationClaimGuard {
@@ -366,6 +440,7 @@ impl ClaimedOnboardingSnapshot {
             .prepared
             .await
             .map_err(|_| AppError::Cancelled)??;
+        self.work.ensure_not_cancelled()?;
         let changed_paths = match prepared.watcher.take_changes() {
             Ok(paths) => paths,
             Err(()) => return Ok(ConsumedOnboardingSnapshot::FullFallback),
@@ -382,10 +457,12 @@ impl ClaimedOnboardingSnapshot {
         if !changed_paths.is_empty() {
             refresh_changed_roots(&mut prepared, &changed_paths).await?;
         }
+        self.work.ensure_not_cancelled()?;
         Ok(ConsumedOnboardingSnapshot::Snapshot(Box::new(
             OnboardingSnapshotLease {
                 prepared,
                 journal_revision: self.journal_revision,
+                _work: self.work,
             },
         )))
     }
@@ -441,6 +518,23 @@ impl OnboardingSnapshotLease {
 impl OnboardingIndexingSessionStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn hold_for_application(&self, session_id: &str) -> Option<OnboardingWorkGuard> {
+        let mut sessions = crate::shared::sync::lock(&self.sessions);
+        let session = sessions.get_mut(session_id)?;
+        if !session.background_started
+            && session.active_work == 0
+            && session.created_at.elapsed() >= SESSION_TTL
+        {
+            return None;
+        }
+        session.active_work += 1;
+        Some(OnboardingWorkGuard {
+            store: self.clone(),
+            session_id: session_id.to_string(),
+            cancelled: Arc::clone(&session.cancelled),
+        })
     }
 
     pub fn background_statuses(&self) -> Vec<OnboardingIndexingBackgroundStatus> {
@@ -628,7 +722,7 @@ impl OnboardingIndexingSessionStore {
                 let _ = start.send(());
             }
         }
-        if session.games.is_empty() {
+        if session.games.is_empty() && session.active_work == 0 {
             sessions.remove(session_id);
         }
         Ok(())
@@ -658,6 +752,25 @@ impl OnboardingIndexingSessionStore {
         games: Vec<GameConfig>,
         journal_revision: Option<u64>,
         on_progress: F,
+    ) -> Result<OnboardingIndexingSession, AppError>
+    where
+        F: Fn(OnboardingIndexingSnapshotProgress) + Send + Sync + 'static,
+    {
+        self.begin_with_parallelism(
+            games,
+            journal_revision,
+            on_progress,
+            ONBOARDING_ROOT_PARALLELISM,
+        )
+        .await
+    }
+
+    async fn begin_with_parallelism<F>(
+        &self,
+        games: Vec<GameConfig>,
+        journal_revision: Option<u64>,
+        on_progress: F,
+        parallelism: NonZeroUsize,
     ) -> Result<OnboardingIndexingSession, AppError>
     where
         F: Fn(OnboardingIndexingSnapshotProgress) + Send + Sync + 'static,
@@ -726,6 +839,7 @@ impl OnboardingIndexingSessionStore {
                 background_game_ids,
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
+                active_work: 0,
                 journal_revision,
                 scan_priority: Arc::clone(&scan_priority),
             },
@@ -762,6 +876,8 @@ impl OnboardingIndexingSessionStore {
                         game,
                         Arc::clone(&progress_reporter),
                         Arc::clone(&scan_priority),
+                        Arc::clone(&cancelled),
+                        parallelism,
                     )
                     .await
                 };
@@ -809,6 +925,7 @@ impl OnboardingIndexingSessionStore {
             .map(|(session_id, _)| session_id.clone())?;
         let claimed = self.claim(&session_id, game_id, true).ok()?;
         let guard = ActivationClaimGuard {
+            _work: self.hold_for_application(&session_id),
             session_id,
             game_id: game_id.to_string(),
             claims: Arc::clone(&self.activation_claims),
@@ -879,10 +996,12 @@ impl OnboardingIndexingSessionStore {
         game_id: &str,
         activation: bool,
     ) -> Result<ClaimedOnboardingSnapshot, AppError> {
-        let (pending, journal_revision) = {
+        let (pending, journal_revision, cancelled) = {
             let mut sessions = crate::shared::sync::lock(&self.sessions);
             let expired = sessions.get(session_id).is_some_and(|session| {
-                !session.background_started && session.created_at.elapsed() >= SESSION_TTL
+                !session.background_started
+                    && session.active_work == 0
+                    && session.created_at.elapsed() >= SESSION_TTL
             });
             if expired {
                 if let Some(session) = sessions.remove(session_id) {
@@ -916,14 +1035,17 @@ impl OnboardingIndexingSessionStore {
                 let _ = start.send(());
             }
             let journal_revision = session.journal_revision;
-            if session.games.is_empty() && session.background_started {
-                sessions.remove(session_id);
-            }
-            (pending, journal_revision)
+            session.active_work += 1;
+            (pending, journal_revision, Arc::clone(&session.cancelled))
         };
         Ok(ClaimedOnboardingSnapshot {
             pending,
             journal_revision,
+            work: OnboardingWorkGuard {
+                store: self.clone(),
+                session_id: session_id.to_string(),
+                cancelled,
+            },
         })
     }
 
@@ -940,8 +1062,9 @@ impl OnboardingIndexingSessionStore {
     fn purge_expired(&self) {
         let mut expired_session_ids = Vec::new();
         crate::shared::sync::lock(&self.sessions).retain(|session_id, session| {
-            let expired =
-                !session.background_started && session.created_at.elapsed() >= SESSION_TTL;
+            let expired = !session.background_started
+                && session.active_work == 0
+                && session.created_at.elapsed() >= SESSION_TTL;
             if expired {
                 session.cancelled.store(true, Ordering::Release);
                 session.scan_priority.cancel();
@@ -965,7 +1088,9 @@ impl OnboardingIndexingSessionStore {
             let expired = {
                 let mut sessions = crate::shared::sync::lock(&sessions);
                 let expired = sessions.get(&session_id).is_some_and(|session| {
-                    !session.background_started && session.created_at.elapsed() >= delay
+                    !session.background_started
+                        && session.active_work == 0
+                        && session.created_at.elapsed() >= delay
                 });
                 if expired {
                     if let Some(session) = sessions.remove(&session_id) {
@@ -986,31 +1111,40 @@ async fn prepare_game(
     game: GameConfig,
     progress_reporter: Arc<OnboardingSnapshotProgressReporter>,
     scan_priority: Arc<ScanPriority>,
+    cancelled: Arc<AtomicBool>,
+    parallelism: NonZeroUsize,
 ) -> Result<PreparedGame, AppError> {
-    let watcher = RawOnboardingWatcher::start(&game.mod_path)?;
-    let snapshot_game = game.clone();
-    let discovery = tokio::task::spawn_blocking(move || {
+    let preparation_started = Instant::now();
+    tokio::task::spawn_blocking(move || {
+        progress_reporter.emit(OnboardingIndexingSnapshotPhase::Metadata, 0, 0, 0, None, true);
+        if cancelled.load(Ordering::Acquire) { return Err(AppError::Cancelled); }
+        let registration_started = Instant::now();
+        let watcher = RawOnboardingWatcher::start(&game.mod_path)?;
+        let registration_wall = registration_started.elapsed();
+        let discovery_started = Instant::now();
         let on_progress = |progress| progress_reporter.report_discovery(progress);
         let gate = || {
             scan_priority
-                .acquire(&snapshot_game.id)
+                .acquire(&game.id)
                 .map(|permit| Box::new(permit) as Box<dyn Send>)
         };
-        let onboarding = collect_onboarding_disk_discovery_with_progress_and_gate(
-            &snapshot_game.mod_path,
+        let onboarding = collect_onboarding_disk_discovery_with_parallelism(
+            &game.mod_path,
             Some(&on_progress),
             Some(&gate),
+            Some(cancelled.as_ref()),
+            parallelism,
         )
-        .map_err(snapshot_error)?;
-        Ok::<_, AppError>(onboarding.discovery)
+        .map_err(|error| if cancelled.load(Ordering::Acquire) {
+            AppError::Cancelled
+        } else { snapshot_error(error) })?;
+        log::info!("onboarding preparation timing game_id={} registration_wall_ms={} discovery_wall_ms={} preparation_wall_ms={} census_work_ms={} classification_work_ms={}",
+            game.id, registration_wall.as_millis(), discovery_started.elapsed().as_millis(),
+            preparation_started.elapsed().as_millis(), onboarding.discovery.timings.census_ms,
+            onboarding.discovery.timings.classification_ms);
+        Ok::<_, AppError>(PreparedGame { game, discovery: onboarding.discovery, watcher })
     })
-    .await??;
-
-    Ok(PreparedGame {
-        game,
-        discovery,
-        watcher,
-    })
+    .await?
 }
 
 async fn refresh_changed_roots(
@@ -1113,6 +1247,10 @@ fn snapshot_error(error: DiskProjectionError) -> AppError {
 }
 
 #[cfg(test)]
+#[path = "onboarding_performance_tests.rs"]
+mod performance_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1120,7 +1258,7 @@ mod tests {
         GameConfig {
             id: id.to_string(),
             name: id.to_string(),
-            game_type: crate::modules::games::domain::models::GameType::GIMI,
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
             instance_path: mod_path.clone(),
             mod_path,
             ready_to_move_path: None,
@@ -1131,6 +1269,164 @@ mod tests {
             launch_args: None,
             warnings: Vec::new(),
         }
+    }
+
+    #[test]
+    fn preparation_progress_rejects_late_ordinals_and_phases() {
+        let reports = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&reports);
+        let reporter = OnboardingSnapshotProgressReporter::new(
+            "session".to_string(),
+            "game".to_string(),
+            Arc::new(AtomicU64::new(0)),
+            1,
+            Arc::new(move |progress| crate::shared::sync::lock(&captured).push(progress)),
+        );
+        reporter.emit(
+            OnboardingIndexingSnapshotPhase::Classifying,
+            2,
+            3,
+            8,
+            None,
+            true,
+        );
+        reporter.emit(
+            OnboardingIndexingSnapshotPhase::Classifying,
+            1,
+            3,
+            4,
+            None,
+            true,
+        );
+        reporter.emit(
+            OnboardingIndexingSnapshotPhase::Metadata,
+            0,
+            3,
+            0,
+            None,
+            true,
+        );
+        reporter.emit(OnboardingIndexingSnapshotPhase::Ready, 3, 3, 12, None, true);
+        reporter.emit(
+            OnboardingIndexingSnapshotPhase::Classifying,
+            3,
+            3,
+            12,
+            None,
+            true,
+        );
+        reporter.emit(OnboardingIndexingSnapshotPhase::Ready, 3, 3, 12, None, true);
+        let reports = crate::shared::sync::lock(&reports);
+        assert_eq!(reports.len(), 2);
+        assert_eq!(reports[0].completed_roots, 2);
+        assert_eq!(reports[1].completed_games, 1);
+    }
+
+    #[tokio::test]
+    async fn scheduled_expiration_keeps_a_foreground_snapshot_alive() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![game_config("game", temp.path().to_path_buf())])
+            .await
+            .expect("session");
+        let snapshot = store
+            .consume(&session.session_id, "game")
+            .await
+            .expect("snapshot");
+        let cancelled = Arc::clone(
+            &crate::shared::sync::lock(&store.sessions)
+                .get(&session.session_id)
+                .expect("session retained")
+                .cancelled,
+        );
+        store.schedule_expiration(
+            session.session_id.clone(),
+            Duration::from_millis(1),
+            Arc::clone(&cancelled),
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(crate::shared::sync::lock(&store.sessions).contains_key(&session.session_id));
+        assert!(!cancelled.load(Ordering::Acquire));
+        drop(snapshot);
+        store.cancel(&session.session_id).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn expired_idle_session_cannot_be_resurrected_by_an_application_owner() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![game_config("game", temp.path().to_path_buf())])
+            .await
+            .expect("session");
+        crate::shared::sync::lock(&store.sessions)
+            .get_mut(&session.session_id)
+            .expect("session")
+            .created_at = Instant::now() - SESSION_TTL;
+        assert!(store.hold_for_application(&session.session_id).is_none());
+        assert!(matches!(
+            store.consume(&session.session_id, "game").await,
+            Err(AppError::Cancelled)
+        ));
+    }
+
+    #[tokio::test]
+    async fn explicit_cancel_still_invalidates_a_foreground_owner() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![game_config("game", temp.path().to_path_buf())])
+            .await
+            .expect("session");
+        let owner = store
+            .hold_for_application(&session.session_id)
+            .expect("owner");
+        let snapshot = store
+            .consume(&session.session_id, "game")
+            .await
+            .expect("snapshot");
+        store.cancel(&session.session_id).expect("cancel");
+        assert!(matches!(
+            owner.ensure_not_cancelled(),
+            Err(AppError::Cancelled)
+        ));
+        drop(snapshot);
+        drop(owner);
+        assert!(!crate::shared::sync::lock(&store.sessions).contains_key(&session.session_id));
+    }
+
+    #[tokio::test]
+    async fn last_foreground_owner_starts_a_new_idle_ttl() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let store = OnboardingIndexingSessionStore::new();
+        let session = store
+            .begin(vec![game_config("game", temp.path().to_path_buf())])
+            .await
+            .expect("session");
+        let owner = store
+            .hold_for_application(&session.session_id)
+            .expect("owner");
+        let snapshot = store
+            .consume(&session.session_id, "game")
+            .await
+            .expect("snapshot");
+        crate::shared::sync::lock(&store.sessions)
+            .get_mut(&session.session_id)
+            .expect("session")
+            .created_at = Instant::now() - SESSION_TTL;
+        drop(snapshot);
+        store.purge_expired();
+        assert!(crate::shared::sync::lock(&store.sessions).contains_key(&session.session_id));
+        drop(owner);
+        store.purge_expired();
+        assert!(crate::shared::sync::lock(&store.sessions).contains_key(&session.session_id));
+        crate::shared::sync::lock(&store.sessions)
+            .get_mut(&session.session_id)
+            .expect("idle session")
+            .created_at = Instant::now() - SESSION_TTL;
+        store.purge_expired();
+        assert!(!crate::shared::sync::lock(&store.sessions).contains_key(&session.session_id));
     }
 
     #[test]
@@ -1598,6 +1894,7 @@ mod tests {
                 background_game_ids: BTreeSet::new(),
                 cancelled: Arc::clone(&cancelled),
                 background_started: false,
+                active_work: 0,
                 journal_revision: None,
                 scan_priority: ScanPriority::new(Vec::new()),
             },
@@ -1612,6 +1909,168 @@ mod tests {
         assert!(cancelled.load(Ordering::Acquire));
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[ignore = "manual isolated first-index session/fused-discovery/apply benchmark"]
+    async fn benchmark_onboarding_session_parallelism() {
+        use crate::modules::games::domain::models::GameType;
+        use crate::modules::reconciliation::application::disk_reconcile::orchestrator::{
+            reconcile_disk_state, DiskReconcileContext, DiskReconcileRequest, DiskReconcileState,
+        };
+        use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason;
+        use crate::modules::settings::application::config::ConfigService;
+        use crate::modules::workspace::application::scanner::watcher::WatcherSuppressor;
+        use crate::platform::fs::operation_lock::OperationLock;
+        use crate::test_utils::{init_test_db, insert_test_game, TestGameFixture};
+
+        const TOTAL_MODS: usize = 1_024;
+        const REPEATS: usize = 5;
+        for skewed in [false, true] {
+            let fixture = tempfile::tempdir().expect("owned fixture");
+            let root = fixture.path().join("Mods");
+            for index in 0..TOTAL_MODS {
+                let object = if !skewed {
+                    index / 64
+                } else if index < 896 {
+                    0
+                } else {
+                    1 + (index - 896) / 9
+                };
+                let path = root
+                    .join(format!("Object{object:02}"))
+                    .join(format!("Mod{index:04}"));
+                std::fs::create_dir_all(path.join("Assets")).expect("directory");
+                std::fs::write(
+                    path.join("mod.ini"),
+                    "[TextureOverrideFixture]\nhash = abc\n",
+                )
+                .expect("INI");
+            }
+            let reference = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::
+                collect_onboarding_disk_discovery(&root).expect("reference").discovery;
+            let reference_mods = reference
+                .projection
+                .mods
+                .iter()
+                .map(|entry| entry.folder_path.clone())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(reference_mods.len(), TOTAL_MODS);
+            for repeat in 0..REPEATS {
+                let widths = if repeat % 2 == 0 {
+                    [1, 2, 4, 8]
+                } else {
+                    [8, 4, 2, 1]
+                };
+                for width in widths {
+                    let db = init_test_db().await;
+                    insert_test_game(
+                        &db.pool,
+                        &TestGameFixture {
+                            id: "benchmark",
+                            name: "Benchmark",
+                            game_type: GameType::Gimi,
+                            path: fixture.path().to_string_lossy().as_ref(),
+                            mods_path: Some(root.to_string_lossy().as_ref()),
+                        },
+                    )
+                    .await
+                    .expect("seed game");
+                    let config = ConfigService::new_for_test(db.pool.clone());
+                    let state = DiskReconcileState::new();
+                    let operation_lock = OperationLock::new();
+                    let sessions = OnboardingIndexingSessionStore::new();
+                    let started = Instant::now();
+                    let session = sessions
+                        .begin_with_parallelism(
+                            vec![game_config("benchmark", root.clone())],
+                            None,
+                            |_| {},
+                            NonZeroUsize::new(width).expect("width"),
+                        )
+                        .await
+                        .expect("session");
+                    let prepared = sessions
+                        .consume(&session.session_id, "benchmark")
+                        .await
+                        .expect("prepare");
+                    let preparation = started.elapsed();
+                    let ConsumedOnboardingSnapshot::Snapshot(lease) = prepared else {
+                        panic!("unchanged owned fixture must retain its prepared discovery");
+                    };
+                    let discovery = lease.discovery();
+                    assert_eq!(
+                        discovery
+                            .census
+                            .entries
+                            .iter()
+                            .map(|entry| (
+                                &entry.folder_path,
+                                &entry.folder_path_key,
+                                &entry.raw_name,
+                                &entry.absolute_path
+                            ))
+                            .collect::<Vec<_>>(),
+                        reference
+                            .census
+                            .entries
+                            .iter()
+                            .map(|entry| (
+                                &entry.folder_path,
+                                &entry.folder_path_key,
+                                &entry.raw_name,
+                                &entry.absolute_path
+                            ))
+                            .collect::<Vec<_>>()
+                    );
+                    assert_eq!(
+                        discovery
+                            .projection
+                            .mods
+                            .iter()
+                            .map(|entry| entry.folder_path.clone())
+                            .collect::<BTreeSet<_>>(),
+                        reference_mods
+                    );
+                    let apply_started = Instant::now();
+                    let result = reconcile_disk_state(
+                        DiskReconcileContext {
+                            pool: &db.pool,
+                            config: &config,
+                            state: &state,
+                            watcher_suppressor: Arc::new(WatcherSuppressor::new(false)),
+                            operation_lock: &operation_lock,
+                            progress_reporter: None,
+                        },
+                        DiskReconcileRequest::manual(
+                            "benchmark".to_string(),
+                            DiskReconcileReason::OnboardingCompleted,
+                            Vec::new(),
+                            true,
+                        )
+                        .defer_overlay_sync()
+                        .with_precomputed_discovery(discovery),
+                    )
+                    .await
+                    .expect("apply");
+                    let apply = apply_started.elapsed();
+                    assert!(result.status.applied());
+                    let count: i64 =
+                        sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
+                            .bind("benchmark")
+                            .fetch_one(&db.pool)
+                            .await
+                            .expect("mod count");
+                    assert_eq!(count, TOTAL_MODS as i64);
+                    eprintln!("onboarding_session_fused_apply skewed={skewed} repeat={repeat} width={width} preparation_wall_ms={} apply_wall_ms={} measured_total_wall_ms={} mods={count}",
+                        preparation.as_millis(), apply.as_millis(), (preparation + apply).as_millis());
+                    drop(lease);
+                    sessions
+                        .cancel(&session.session_id)
+                        .expect("owned session cleanup");
+                }
+            }
+        }
+    }
+
     #[tokio::test]
     async fn scheduled_expiration_keeps_a_started_background_session_alive() {
         let store = OnboardingIndexingSessionStore::new();
@@ -1624,6 +2083,7 @@ mod tests {
                 background_game_ids: BTreeSet::new(),
                 cancelled: Arc::clone(&cancelled),
                 background_started: true,
+                active_work: 0,
                 journal_revision: None,
                 scan_priority: ScanPriority::new(Vec::new()),
             },

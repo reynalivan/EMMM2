@@ -15,7 +15,65 @@ use crate::test_utils::{
 
 use super::{reconcile_projection_in_tx, ProjectionWriteRequest};
 
+#[tokio::test]
+async fn metadata_batch_preserves_order_and_serial_parsing_policy() {
+    use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskModEntry;
+    use crate::modules::reconciliation::application::disk_reconcile::helpers::{
+        derive_runtime_mod_metadata, load_runtime_mod_metadata,
+    };
+
+    let temp = tempfile::tempdir().expect("metadata batch fixture");
+    let entries: Vec<_> = (0..64)
+        .map(|position| {
+            let raw_name = format!("DISABLED Mod {position}");
+            let absolute_path = temp.path().join(&raw_name);
+            std::fs::create_dir(&absolute_path).expect("mod directory");
+            match position % 4 {
+                0 => std::fs::write(
+                    absolute_path.join("info.json"),
+                    format!(r#"{{"actual_name":"  Disk {position}  ","is_safe":false}}"#),
+                )
+                .expect("valid metadata"),
+                1 => std::fs::write(absolute_path.join("info.json"), "invalid")
+                    .expect("invalid metadata"),
+                2 => std::fs::create_dir(absolute_path.join("info.json"))
+                    .expect("unreadable metadata"),
+                _ => {}
+            }
+            DiskModEntry {
+                folder_path: raw_name.clone(),
+                folder_path_key: raw_name.to_ascii_lowercase(),
+                object_folder_path_key: "object".to_string(),
+                raw_name,
+                absolute_path,
+                filesystem_identity: None,
+            }
+        })
+        .collect();
+    let observations = super::mods::observe_metadata_batch(&entries)
+        .await
+        .expect("bounded metadata batch");
+    assert_eq!(observations.len(), entries.len());
+    for (entry, observation) in entries.iter().zip(&observations) {
+        for current_manual in [None, Some(true), Some(false)] {
+            let serial = load_runtime_mod_metadata(
+                &entry.absolute_path,
+                &entry.raw_name,
+                &[],
+                current_manual,
+            );
+            let batched =
+                derive_runtime_mod_metadata(observation, &entry.raw_name, &[], current_manual);
+            assert_eq!(batched.actual_name, serial.actual_name);
+            assert_eq!(batched.is_safe, serial.is_safe);
+            assert_eq!(batched.safety_source, serial.safety_source);
+            assert_eq!(batched.status, serial.status);
+        }
+    }
+}
+
 struct WriterRun {
+    progress: Vec<(crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePhase, u64, Option<u64>)>,
     objects_changed: bool,
     folders_changed: bool,
     db_object_rows_loaded: usize,
@@ -32,17 +90,11 @@ async fn run_writer(
     changed_roots: &[String],
     force_full: bool,
 ) -> WriterRun {
-    let size_scan = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskSizeScan::incremental(
-        mods_path,
-        std::collections::HashSet::new(),
-        &[],
-    );
     let scoped = !force_full && !changed_roots.is_empty();
     let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_scoped_disk_discovery_with_progress(
         mods_path,
         changed_roots,
         scoped,
-        Some(&size_scan),
         None,
     )
     .expect("disk projection should be collected")
@@ -51,6 +103,9 @@ async fn run_writer(
     let mut impact = CollectionReferenceImpact::default();
     let mut change_summary = ChangeSummaryBuilder::default();
 
+    let events = std::sync::Mutex::new(Vec::new());
+    let on_progress =
+        |phase, completed, total| events.lock().unwrap().push((phase, completed, total));
     let mut tx = pool.begin().await.expect("tx should begin");
     let write_outcome = reconcile_projection_in_tx(
         &mut tx,
@@ -67,6 +122,7 @@ async fn run_writer(
             change_summary: &mut change_summary,
             protected_object_keys: &std::collections::HashSet::new(),
             protected_mod_keys: &std::collections::HashSet::new(),
+            on_progress: Some(&on_progress),
         },
     )
     .await
@@ -74,6 +130,7 @@ async fn run_writer(
     tx.commit().await.expect("tx should commit");
 
     WriterRun {
+        progress: events.into_inner().unwrap(),
         objects_changed: write_outcome.objects_changed,
         folders_changed: write_outcome.folders_changed,
         db_object_rows_loaded: write_outcome.db_object_rows_loaded,
@@ -82,6 +139,57 @@ async fn run_writer(
         collection_reference_impact: impact,
         change_summary: change_summary.build(),
     }
+}
+
+#[tokio::test]
+async fn mmr_replacement_does_not_inherit_manual_safety_but_owned_rename_does() {
+    let db = init_test_db().await;
+    let root = tempfile::tempdir().unwrap();
+    let mods_path = root.path().join("Mods");
+    let original = create_terminal_mod(&mods_path, "Alice", "Blue");
+    seed_game(&db.pool, "game-1", &mods_path).await;
+    run_writer(&db.pool, "game-1", &mods_path, &[], true).await;
+    sqlx::query("UPDATE mods SET is_safe=1, safety_source='manual' WHERE game_id='game-1'")
+        .execute(&db.pool)
+        .await
+        .unwrap();
+    std::fs::write(
+        original.join("info.json"),
+        r#"{"actual_name":"Blue","is_safe":false}"#,
+    )
+    .unwrap();
+    let renamed = original.with_file_name("Renamed");
+    std::fs::rename(&original, &renamed).unwrap();
+    run_writer(&db.pool, "game-1", &mods_path, &[], true).await;
+    let (safe, previous_identity): (bool, String) =
+        sqlx::query_as("SELECT is_safe,filesystem_identity FROM mods WHERE game_id='game-1'")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    assert!(
+        safe,
+        "same physical mod retains the explicit choice across rename"
+    );
+    std::fs::rename(&renamed, root.path().join("retained-original")).unwrap();
+    let replacement = create_terminal_mod(&mods_path, "Alice", "Renamed");
+    std::fs::write(
+        replacement.join("info.json"),
+        r#"{"actual_name":"Unsafe replacement","is_safe":false}"#,
+    )
+    .unwrap();
+    run_writer(&db.pool, "game-1", &mods_path, &[], true).await;
+    let (name, safe, identity): (String, bool, String) = sqlx::query_as(
+        "SELECT actual_name,is_safe,filesystem_identity FROM mods WHERE game_id='game-1'",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .unwrap();
+    assert_ne!(identity, previous_identity);
+    assert_eq!(name, "Unsafe replacement");
+    assert!(
+        !safe,
+        "replacement cannot inherit the old physical mod's manual safety"
+    );
 }
 
 fn create_terminal_mod(mods_path: &Path, object: &str, mod_folder: &str) -> PathBuf {
@@ -103,7 +211,7 @@ async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str, mods_path: &Path) -> 
         &TestGameFixture {
             id: game_id,
             name: "Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: mods_path.parent().unwrap().to_string_lossy().as_ref(),
             mods_path: Some(&mods_path_string),
         },
@@ -111,6 +219,429 @@ async fn seed_game(pool: &sqlx::SqlitePool, game_id: &str, mods_path: &Path) -> 
     .await
     .expect("game should be inserted");
     mods_path_string
+}
+
+#[tokio::test]
+async fn first_index_inserts_physical_identity_without_a_second_write() {
+    let db = init_test_db().await;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("Mods");
+    for index in 0..130 {
+        let name = format!("DISABLED 衣装{index:03}");
+        let folder = create_terminal_mod(&root, "Alice", &name);
+        std::fs::write(
+            folder.join("info.json"),
+            format!(r#"{{"actual_name":"Metadata {index}","is_safe":true}}"#),
+        )
+        .unwrap();
+    }
+    seed_game(&db.pool, "game-1", &root).await;
+    sqlx::query("CREATE TRIGGER reject_identity_rewrite BEFORE UPDATE OF filesystem_identity ON mods BEGIN SELECT RAISE(ABORT, 'new mod must include its physical identity on insert'); END")
+        .execute(&db.pool).await.unwrap();
+    let outcome = run_writer(&db.pool, "game-1", &root, &[], true).await;
+    assert!(outcome.folders_changed);
+    use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePhase;
+    assert_eq!(
+        outcome.progress,
+        vec![
+            (DiskReconcilePhase::Projecting, 0, Some(130)),
+            (DiskReconcilePhase::Projecting, 64, Some(130)),
+            (DiskReconcilePhase::Projecting, 128, Some(130)),
+            (DiskReconcilePhase::Projecting, 130, Some(130)),
+            (DiskReconcilePhase::Finalizing, 0, None),
+        ]
+    );
+    let rows: Vec<(String, i64, bool, String, Option<String>)> = sqlx::query_as(
+        "SELECT actual_name,status,is_safe,safety_source,filesystem_identity FROM mods ORDER BY actual_name"
+    ).fetch_all(&db.pool).await.unwrap();
+    assert_eq!(rows.len(), 130);
+    assert!(rows.iter().all(|(name, status, safe, source, identity)| {
+        name.starts_with("Metadata ")
+            && *status == ItemStatus::Disabled as i64
+            && *safe
+            && source == "manual"
+            && identity.is_some()
+    }));
+    let unchanged = run_writer(&db.pool, "game-1", &root, &[], false).await;
+    assert!(!unchanged.folders_changed);
+}
+
+#[tokio::test]
+#[ignore = "manual synthetic fresh-index / unchanged-sync timing, no real library"]
+async fn benchmark_fresh_projection_and_unchanged_sync() {
+    use std::collections::HashSet;
+    use std::time::Instant;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("Mods");
+    const MODS: usize = 2_048;
+    for index in 0..MODS {
+        let folder = create_terminal_mod(
+            &root,
+            &format!("Object{:02}", index / 128),
+            &format!("Mod{index:04}"),
+        );
+        if index % 3 == 0 {
+            std::fs::write(
+                folder.join("info.json"),
+                format!(r#"{{"actual_name":"Custom {index}","is_safe":true}}"#),
+            )
+            .unwrap();
+        }
+    }
+    let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_scoped_disk_discovery_with_progress(&root, &[], false, None).unwrap().projection;
+    assert_eq!(projection.mods.len(), MODS);
+    for repeat in 0..6 {
+        let db = init_test_db().await;
+        seed_game(&db.pool, "game-1", &root).await;
+        for warm in [false, true] {
+            let mut updates = Vec::new();
+            let mut impact = CollectionReferenceImpact::default();
+            let mut summary = ChangeSummaryBuilder::default();
+            let start = Instant::now();
+            let mut tx = db.pool.begin().await.unwrap();
+            let outcome = reconcile_projection_in_tx(
+                &mut tx,
+                ProjectionWriteRequest {
+                    game_id: "game-1",
+                    mods_path: &root,
+                    safe_mode_keywords: &[],
+                    projection: &projection,
+                    changed_roots: &[],
+                    scoped: false,
+                    force_full: false,
+                    path_updates: &mut updates,
+                    collection_reference_impact: &mut impact,
+                    change_summary: &mut summary,
+                    protected_object_keys: &HashSet::new(),
+                    protected_mod_keys: &HashSet::new(),
+                    on_progress: None,
+                },
+            )
+            .await
+            .unwrap();
+            let read_start = Instant::now();
+            crate::modules::workspace::adapters::sqlite::runtime_projection::rebuild_game_projection_tx(&mut tx, "game-1").await.unwrap();
+            let read_us = read_start.elapsed().as_micros();
+            tx.commit().await.unwrap();
+            let total_us = start.elapsed().as_micros();
+            let (count, identified, manual): (i64, i64, i64) = sqlx::query_as(
+                "SELECT COUNT(*),COUNT(filesystem_identity),SUM(safety_source='manual') FROM mods",
+            )
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+            assert_eq!(count, MODS as i64);
+            assert_eq!(identified, count);
+            assert_eq!(manual, 683);
+            if warm {
+                assert!(!outcome.folders_changed && !outcome.objects_changed);
+            }
+            eprintln!("fresh_projection repeat={repeat} warm={warm} mods={MODS} initial_index_us={} identity_us={} objects_us={} mods_us={} metadata_within_mods_us={} finalization_us={} read_model_us={read_us} total_us={total_us}",outcome.timings.initial_index.as_micros(),outcome.timings.identity.as_micros(),outcome.timings.objects.as_micros(),outcome.timings.mods.as_micros(),outcome.timings.metadata_within_mods.as_micros(),outcome.timings.finalization.as_micros());
+        }
+    }
+}
+
+#[tokio::test]
+async fn failed_later_insert_batch_rolls_back_and_never_reports_finishing() {
+    let db = init_test_db().await;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("Mods");
+    for index in 0..130 {
+        create_terminal_mod(&root, "Alice", &format!("Mod{index:03}"));
+    }
+    seed_game(&db.pool, "game-1", &root).await;
+    sqlx::query("CREATE TRIGGER reject_later_mod BEFORE INSERT ON mods WHEN NEW.actual_name='Mod064' BEGIN SELECT RAISE(ABORT,'owned fixture failure'); END").execute(&db.pool).await.unwrap();
+    let projection = crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::collect_scoped_disk_discovery_with_progress(&root,&[],false,None).unwrap().projection;
+    let mut updates = Vec::new();
+    let mut impact = CollectionReferenceImpact::default();
+    let mut summary = ChangeSummaryBuilder::default();
+    let events = std::sync::Mutex::new(Vec::new());
+    let report = |phase, completed, total| events.lock().unwrap().push((phase, completed, total));
+    let mut tx = db.pool.begin().await.unwrap();
+    let result = reconcile_projection_in_tx(
+        &mut tx,
+        ProjectionWriteRequest {
+            game_id: "game-1",
+            mods_path: &root,
+            safe_mode_keywords: &[],
+            projection: &projection,
+            changed_roots: &[],
+            scoped: false,
+            force_full: false,
+            path_updates: &mut updates,
+            collection_reference_impact: &mut impact,
+            change_summary: &mut summary,
+            protected_object_keys: &std::collections::HashSet::new(),
+            protected_mod_keys: &std::collections::HashSet::new(),
+            on_progress: Some(&report),
+        },
+    )
+    .await;
+    assert!(result.is_err());
+    tx.rollback().await.unwrap();
+    use crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcilePhase;
+    assert_eq!(
+        events.into_inner().unwrap(),
+        vec![
+            (DiskReconcilePhase::Projecting, 0, Some(130)),
+            (DiskReconcilePhase::Projecting, 64, Some(130))
+        ]
+    );
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT (SELECT COUNT(*) FROM mods),(SELECT COUNT(*) FROM objects)")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    assert_eq!(counts, (0, 0));
+}
+
+#[tokio::test]
+#[ignore = "manual paired bound INSERT comparison, owned database only"]
+async fn benchmark_paired_mod_inserts() {
+    #[derive(Debug, PartialEq, sqlx::FromRow)]
+    struct InsertedModParity {
+        id: String,
+        folder_path_key: String,
+        actual_name: String,
+        status: i64,
+        is_safe: bool,
+        safety_source: String,
+        filesystem_identity: Option<String>,
+    }
+    use crate::modules::library::adapters::sqlite::mods::{
+        insert_reconcile_mods_tx, set_filesystem_identity_tx, ReconcileModInsert,
+    };
+    async fn insert_reference_mod_tx(
+        conn: &mut sqlx::SqliteConnection,
+        game_id: &str,
+        mods_path: &str,
+        row: &ReconcileModInsert<'_>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO mods (id, game_id, object_id, actual_name, folder_path, folder_path_key, status, object_type, is_favorite, is_safe, safety_source, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&row.id)
+        .bind(game_id)
+        .bind(row.object_id)
+        .bind(&row.actual_name)
+        .bind(row.folder_path)
+        .bind(crate::shared::path_key::folder_path_key(row.folder_path, Some(mods_path)))
+        .bind(row.status as i64)
+        .bind(row.object_type)
+        .bind(false)
+        .bind(row.is_safe)
+        .bind(row.safety_source)
+        .bind(0_i64)
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+    use std::time::Instant;
+    let db = init_test_db().await;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("Mods");
+    create_terminal_mod(&root, "Alice", "Seed");
+    seed_game(&db.pool, "game-1", &root).await;
+    run_writer(&db.pool, "game-1", &root, &[], false).await;
+    let object: String = sqlx::query_scalar("SELECT id FROM objects LIMIT 1")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    let paths = (0..2048)
+        .map(|i| format!("Alice/Mod{i:04}"))
+        .collect::<Vec<_>>();
+    let identities = (0..2048)
+        .map(|i| format!("owned-fixture-{i}"))
+        .collect::<Vec<_>>();
+    let rows = paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| ReconcileModInsert {
+            id: generate_stable_id("game-1", p),
+            object_id: &object,
+            actual_name: format!("Name {i}"),
+            folder_path: p,
+            folder_path_key: crate::shared::path_key::folder_path_key(
+                p,
+                Some(root.to_string_lossy().as_ref()),
+            ),
+            status: ItemStatus::Disabled,
+            object_type: "Other",
+            is_safe: true,
+            safety_source: "manual",
+            filesystem_identity: Some(&identities[i]),
+        })
+        .collect::<Vec<_>>();
+    let mut reference = None;
+    for pair in 0..5 {
+        for batched in if pair % 2 == 0 {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            sqlx::query("DELETE FROM mods WHERE game_id='game-1'")
+                .execute(&db.pool)
+                .await
+                .unwrap();
+            let started = Instant::now();
+            let mut tx = db.pool.begin().await.unwrap();
+            if batched {
+                insert_reconcile_mods_tx(&mut tx, "game-1", &rows)
+                    .await
+                    .unwrap();
+            } else {
+                for row in &rows {
+                    insert_reference_mod_tx(
+                        &mut tx,
+                        "game-1",
+                        root.to_string_lossy().as_ref(),
+                        row,
+                    )
+                    .await
+                    .unwrap();
+                    set_filesystem_identity_tx(&mut tx, &row.id, row.filesystem_identity)
+                        .await
+                        .unwrap();
+                }
+            }
+            tx.commit().await.unwrap();
+            let elapsed_us = started.elapsed().as_micros();
+            let persisted:Vec<InsertedModParity>=sqlx::query_as("SELECT id,folder_path_key,actual_name,status,is_safe,safety_source,filesystem_identity FROM mods ORDER BY id").fetch_all(&db.pool).await.unwrap();
+            assert_eq!(persisted.len(), rows.len());
+            if let Some(expected) = &reference {
+                assert_eq!(&persisted, expected);
+            } else {
+                reference = Some(persisted);
+            }
+            eprintln!(
+                "paired_inserts pair={pair} batched={batched} mods=2048 elapsed_us={elapsed_us}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "manual serial/bounded metadata profiling on generated fixtures only"]
+async fn benchmark_bounded_metadata_observations() {
+    use crate::modules::reconciliation::application::disk_reconcile::disk_snapshot::DiskModEntry;
+    use crate::modules::reconciliation::application::disk_reconcile::helpers::{
+        derive_runtime_mod_metadata, load_runtime_mod_metadata,
+    };
+    use std::time::Instant;
+
+    const MODS: usize = 2_048;
+    const ROUNDS: usize = 6;
+    let fixture = tempfile::tempdir().expect("owned metadata profiler fixture");
+    for one_root in [false, true] {
+        let root = fixture
+            .path()
+            .join(if one_root { "one-root" } else { "many-roots" });
+        let entries: Vec<_> = (0..MODS)
+            .map(|position| {
+                let folder_path = format!(
+                    "Object{:02}/Mod{position:04}",
+                    if one_root { 0 } else { position / 128 },
+                );
+                let absolute_path = root.join(&folder_path);
+                std::fs::create_dir_all(&absolute_path).expect("metadata directory");
+                if position % 3 == 0 {
+                    let json = serde_json::json!({
+                        "actual_name": format!("Custom {position}"),
+                        "is_safe": position % 2 == 0,
+                        "description": "Owned synthetic description. ".repeat(128),
+                        "tags": ["outfit", "variant", "generated-fixture"],
+                        "metadata": { "notes": "Synthetic metadata payload. ".repeat(32) },
+                    });
+                    std::fs::write(absolute_path.join("info.json"), json.to_string())
+                        .expect("realistic metadata payload");
+                }
+                DiskModEntry {
+                    folder_path_key: folder_path.to_ascii_lowercase(),
+                    object_folder_path_key: format!(
+                        "object{:02}",
+                        if one_root { 0 } else { position / 128 }
+                    ),
+                    folder_path,
+                    raw_name: format!("Mod{position:04}"),
+                    absolute_path,
+                    filesystem_identity: None,
+                }
+            })
+            .collect();
+        let mut reference = None;
+        for round in 0..ROUNDS {
+            for batched in if round % 2 == 0 {
+                [false, true]
+            } else {
+                [true, false]
+            } {
+                let started = Instant::now();
+                let metadata_pass = async {
+                    let mut fields = Vec::with_capacity(MODS);
+                    let mut peak_observation_bytes = 0;
+                    if batched {
+                        for batch in entries.chunks(crate::modules::library::adapters::sqlite::mods::RECONCILE_INSERT_BATCH_SIZE) {
+                        let observations = super::mods::observe_metadata_batch(batch)
+                            .await
+                            .expect("bounded metadata observation");
+                        peak_observation_bytes = peak_observation_bytes.max(
+                            observations.capacity() * std::mem::size_of_val(&observations[0])
+                                + observations
+                                    .iter()
+                                    .map(|observation| {
+                                        observation.actual_name.as_ref().map_or(0, String::capacity)
+                                    })
+                                    .sum::<usize>(),
+                        );
+                        for (entry, observation) in batch.iter().zip(&observations) {
+                            let metadata = derive_runtime_mod_metadata(
+                                observation,
+                                &entry.raw_name,
+                                &[],
+                                None,
+                            );
+                            fields.push((
+                                metadata.actual_name,
+                                metadata.is_safe,
+                                metadata.safety_source,
+                                metadata.status,
+                            ));
+                        }
+                    }
+                    } else {
+                        for entry in &entries {
+                            let metadata = load_runtime_mod_metadata(
+                                &entry.absolute_path,
+                                &entry.raw_name,
+                                &[],
+                                None,
+                            );
+                            fields.push((
+                                metadata.actual_name,
+                                metadata.is_safe,
+                                metadata.safety_source,
+                                metadata.status,
+                            ));
+                        }
+                    }
+                    (fields, peak_observation_bytes)
+                };
+                let foreground_probe = async {
+                    tokio::task::yield_now().await;
+                    started.elapsed().as_micros()
+                };
+                let ((fields, peak_observation_bytes), foreground_probe_us) =
+                    tokio::join!(biased; metadata_pass, foreground_probe);
+                let elapsed_us = started.elapsed().as_micros();
+                if let Some(expected) = &reference {
+                    assert_eq!(&fields, expected);
+                } else {
+                    reference = Some(fields);
+                }
+                eprintln!("metadata_profile one_root={one_root} round={round} batched={batched} mods={MODS} info_json=683 elapsed_us={elapsed_us} foreground_probe_us={foreground_probe_us} peak_retained_observation_bytes={peak_observation_bytes} os_cache=uncontrolled");
+            }
+        }
+    }
 }
 
 async fn seed_collection_with_members(pool: &sqlx::SqlitePool, mod_paths: &[&str]) {
@@ -204,13 +735,8 @@ async fn inserts_new_objects_and_mods_discovered_on_disk() {
     assert_eq!(mod_row.2, ItemStatus::Enabled as i64);
     assert_eq!(mod_row.3, SAFETY_SOURCE_UNKNOWN);
     assert_eq!(
-        mod_row.4,
-        std::fs::metadata(mods_path.join("Alice").join("Blue Dress").join("mod.ini"))
-            .expect("mod ini metadata")
-            .len() as i64
-            + std::fs::metadata(mods_path.join("Alice").join("Blue Dress").join("mesh.buf"))
-                .expect("mesh metadata")
-                .len() as i64
+        mod_row.4, 0,
+        "routine indexing leaves storage sizing to the optimizer"
     );
 
     assert_eq!(run.change_summary.object_changes.added, 1);
@@ -219,28 +745,28 @@ async fn inserts_new_objects_and_mods_discovered_on_disk() {
 }
 
 #[tokio::test]
-async fn full_reconcile_updates_an_existing_mod_storage_size() {
+async fn full_and_scoped_reconcile_preserve_existing_storage_size() {
     let ctx = init_test_db().await;
     let temp = tempfile::tempdir().expect("tempdir");
     let mods_path = temp.path().join("Mods");
     let terminal = create_terminal_mod(&mods_path, "Alice", "Blue Dress");
     seed_game(&ctx.pool, "game-1", &mods_path).await;
     run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
-    let initial_size: i64 =
-        sqlx::query_scalar("SELECT size_bytes FROM mods WHERE game_id = 'game-1'")
-            .fetch_one(&ctx.pool)
-            .await
-            .expect("initial size");
+    sqlx::query("UPDATE mods SET size_bytes = 777 WHERE game_id = 'game-1'")
+        .execute(&ctx.pool)
+        .await
+        .expect("legacy size");
 
     std::fs::write(terminal.join("mesh.buf"), [3_u8; 64]).expect("updated mesh");
     run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
+    run_writer(&ctx.pool, "game-1", &mods_path, &["Alice".into()], false).await;
 
     let refreshed_size: i64 =
         sqlx::query_scalar("SELECT size_bytes FROM mods WHERE game_id = 'game-1'")
             .fetch_one(&ctx.pool)
             .await
             .expect("refreshed size");
-    assert_eq!(refreshed_size, initial_size + 60);
+    assert_eq!(refreshed_size, 777);
 }
 
 #[tokio::test]
@@ -258,7 +784,15 @@ async fn full_reconcile_restores_object_name_after_staging_a_stale_path_key() {
         .await
         .expect("stale object path key should be seeded");
 
-    run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
+    let repaired = run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
+    assert_eq!(
+        repaired.db_object_rows_loaded, 2,
+        "reuse the post-object-stage index"
+    );
+    assert_eq!(
+        repaired.db_mod_rows_loaded, 2,
+        "unchanged mod identities need no third load"
+    );
 
     let row: (String, String, String, String) = sqlx::query_as(
         "SELECT name, name_key, folder_path, folder_path_key FROM objects WHERE game_id = ?",
@@ -274,6 +808,49 @@ async fn full_reconcile_restores_object_name_after_staging_a_stale_path_key() {
         row.3,
         crate::shared::path_key::folder_path_key("Alice", None)
     );
+}
+
+#[tokio::test]
+async fn unchanged_full_reconcile_after_backfill_has_one_index_pass_and_no_identity_key_writes() {
+    let ctx = init_test_db().await;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mods_path = temp.path().join("Mods");
+    create_terminal_mod(&mods_path, "Alice", "Blue Dress");
+    seed_game(&ctx.pool, "game-1", &mods_path).await;
+    run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
+
+    crate::modules::system::adapters::sqlite::settings::delete_setting(
+        &ctx.pool,
+        "unicode_key_version",
+    )
+    .await
+    .expect("legacy backfill marker");
+    crate::modules::system::adapters::sqlite::utils::unicode_keys::ensure_unicode_keys(&ctx.pool)
+        .await
+        .expect("startup backfill");
+    sqlx::query("CREATE TABLE observed_identity_writes (kind TEXT NOT NULL)")
+        .execute(&ctx.pool)
+        .await
+        .expect("write counter");
+    sqlx::query("CREATE TRIGGER count_object_identity_writes AFTER UPDATE OF name_key, folder_path_key ON objects WHEN NEW.name_key IS NOT OLD.name_key OR NEW.folder_path_key IS NOT OLD.folder_path_key BEGIN INSERT INTO observed_identity_writes VALUES ('object'); END")
+        .execute(&ctx.pool).await.expect("object key-change counter");
+    sqlx::query("CREATE TRIGGER count_mod_identity_writes AFTER UPDATE OF id, folder_path_key ON mods WHEN NEW.id IS NOT OLD.id OR NEW.folder_path_key IS NOT OLD.folder_path_key BEGIN INSERT INTO observed_identity_writes VALUES ('mod'); END")
+        .execute(&ctx.pool).await.expect("mod key-change counter");
+
+    let run = run_writer(&ctx.pool, "game-1", &mods_path, &[], true).await;
+    let identity_writes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM observed_identity_writes")
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("identity write count");
+    assert_eq!(
+        identity_writes, 0,
+        "unchanged keys must never enter the staging namespace"
+    );
+    assert_eq!(run.db_object_rows_loaded, 1);
+    assert_eq!(run.db_mod_rows_loaded, 1);
+    assert!(!run.objects_changed);
+    assert!(!run.folders_changed);
+    assert!(run.path_updates.is_empty());
 }
 
 #[tokio::test]

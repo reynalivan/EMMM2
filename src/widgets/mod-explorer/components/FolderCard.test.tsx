@@ -382,6 +382,33 @@ describe('FolderCard', () => {
     expect(onRenameCancel).not.toHaveBeenCalled();
   });
 
+  it('opens a grouped conflict with the keyboard and exposes no candidate switch or selection', () => {
+    const onActivate = vi.fn();
+    render(
+      <FolderCard
+        folder={{
+          ...mockFolder,
+          conflict_group_id: 'conflict-1',
+          is_enabled: false,
+          is_effectively_active: false,
+        }}
+        isSelected={false}
+        hasFolderNameConflict
+        mutationsDisabled
+        onNavigate={vi.fn()}
+        toggleSelection={vi.fn()}
+        onActivate={onActivate}
+      />,
+    );
+
+    const card = screen.getByRole('gridcell', { name: 'Test Mod, folder name conflict' });
+    expect(screen.getByText('Review conflict')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(card).not.toHaveClass('grayscale-[0.8]');
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(onActivate).toHaveBeenCalledWith(mockFolder.path);
+  });
+
   it('TC-21: cancels rename on Escape or Blur', () => {
     const onRenameSubmit = vi.fn();
     const onRenameCancel = vi.fn();

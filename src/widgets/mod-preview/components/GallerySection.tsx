@@ -15,11 +15,12 @@ import {
   ChevronRight,
   ClipboardPaste,
   Ellipsis,
+  Eye,
+  EyeOff,
   ImageIcon,
   ImagePlus,
   Loader2,
   Maximize2,
-  Trash2,
   X,
 } from 'lucide-react';
 import { getFileUrl } from '../../../shared/lib/utils';
@@ -31,7 +32,16 @@ import {
 import { shouldLoadGalleryImage } from '../utils/previewPanelUtils';
 import { LiquidSurface } from '@/shared/ui/liquid';
 
-interface GallerySectionProps {
+interface GalleryVisibilityProps {
+  showHiddenImages: boolean;
+  hasHiddenImages: boolean;
+  currentImageHidden: boolean;
+  hasVisibleImages: boolean;
+  onToggleShowHidden: () => void;
+  onRestoreCurrent: () => void;
+}
+
+interface GallerySectionProps extends GalleryVisibilityProps {
   images: string[];
   imageRefreshKey: number;
   currentImageIndex: number;
@@ -56,6 +66,12 @@ const GalleryMenuContent = ({
   onImport,
   onRequestRemoveCurrent,
   onRequestClearAll,
+  showHiddenImages,
+  hasHiddenImages,
+  currentImageHidden,
+  hasVisibleImages,
+  onToggleShowHidden,
+  onRestoreCurrent,
 }: {
   canEdit: boolean;
   isMutating: boolean;
@@ -65,7 +81,7 @@ const GalleryMenuContent = ({
   onImport: () => void;
   onRequestRemoveCurrent: () => void;
   onRequestClearAll: () => void;
-}) => {
+} & GalleryVisibilityProps) => {
   const { t } = useTranslation(['preview']);
   return (
     <>
@@ -77,18 +93,31 @@ const GalleryMenuContent = ({
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem
-        icon={Trash2}
-        danger
-        onClick={onRequestRemoveCurrent}
-        disabled={!activePath || isMutating}
+        icon={showHiddenImages ? EyeOff : Eye}
+        onClick={onToggleShowHidden}
+        disabled={!hasHiddenImages && !showHiddenImages}
       >
-        {t('preview:gallery.menu.remove_current')}
+        {t(
+          showHiddenImages
+            ? 'preview:gallery.menu.hide_hidden'
+            : 'preview:gallery.menu.show_hidden',
+        )}
       </ContextMenuItem>
       <ContextMenuItem
-        icon={Trash2}
-        danger
+        icon={currentImageHidden ? Eye : EyeOff}
+        onClick={currentImageHidden ? onRestoreCurrent : onRequestRemoveCurrent}
+        disabled={!canEdit || !activePath || isMutating}
+      >
+        {t(
+          currentImageHidden
+            ? 'preview:gallery.menu.restore_current'
+            : 'preview:gallery.menu.remove_current',
+        )}
+      </ContextMenuItem>
+      <ContextMenuItem
+        icon={EyeOff}
         onClick={onRequestClearAll}
-        disabled={!hasImages || isMutating}
+        disabled={!canEdit || !hasImages || !hasVisibleImages || isMutating}
       >
         {t('preview:gallery.menu.clear_all')}
       </ContextMenuItem>
@@ -96,7 +125,7 @@ const GalleryMenuContent = ({
   );
 };
 
-interface GalleryActionMenuProps {
+interface GalleryActionMenuProps extends GalleryVisibilityProps {
   canEdit: boolean;
   isMutating: boolean;
   hasImages: boolean;
@@ -120,6 +149,12 @@ function GalleryActionMenu({
   onImport,
   onRequestRemoveCurrent,
   onRequestClearAll,
+  showHiddenImages,
+  hasHiddenImages,
+  currentImageHidden,
+  hasVisibleImages,
+  onToggleShowHidden,
+  onRestoreCurrent,
 }: GalleryActionMenuProps) {
   const { t } = useTranslation(['preview']);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -236,23 +271,45 @@ function GalleryActionMenu({
                   <button
                     type="button"
                     role="menuitem"
-                    className={`${actionClassName} text-error hover:bg-error/10 focus-visible:bg-error/10`}
-                    disabled={!activePath || isMutating}
-                    onClick={() => runAction(onRequestRemoveCurrent)}
+                    className={actionClassName}
+                    disabled={!hasHiddenImages && !showHiddenImages}
+                    onClick={() => runAction(onToggleShowHidden)}
                   >
-                    <Trash2 size={16} />
-                    {t('preview:gallery.menu.remove_current')}
+                    {showHiddenImages ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {t(
+                      showHiddenImages
+                        ? 'preview:gallery.menu.hide_hidden'
+                        : 'preview:gallery.menu.show_hidden',
+                    )}
                   </button>
                 </li>
                 <li>
                   <button
                     type="button"
                     role="menuitem"
-                    className={`${actionClassName} text-error hover:bg-error/10 focus-visible:bg-error/10`}
-                    disabled={!hasImages || isMutating}
+                    className={actionClassName}
+                    disabled={!canEdit || !activePath || isMutating}
+                    onClick={() =>
+                      runAction(currentImageHidden ? onRestoreCurrent : onRequestRemoveCurrent)
+                    }
+                  >
+                    {currentImageHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+                    {t(
+                      currentImageHidden
+                        ? 'preview:gallery.menu.restore_current'
+                        : 'preview:gallery.menu.remove_current',
+                    )}
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={actionClassName}
+                    disabled={!canEdit || !hasImages || !hasVisibleImages || isMutating}
                     onClick={() => runAction(onRequestClearAll)}
                   >
-                    <Trash2 size={16} />
+                    <EyeOff size={16} />
                     {t('preview:gallery.menu.clear_all')}
                   </button>
                 </li>
@@ -512,6 +569,12 @@ export default function GallerySection({
   onImport,
   onRequestRemoveCurrent,
   onRequestClearAll,
+  showHiddenImages,
+  hasHiddenImages,
+  currentImageHidden,
+  hasVisibleImages,
+  onToggleShowHidden,
+  onRestoreCurrent,
 }: GallerySectionProps) {
   const { t } = useTranslation(['preview']);
   const hasImages = images.length > 0;
@@ -554,6 +617,12 @@ export default function GallerySection({
               onImport={onImport}
               onRequestRemoveCurrent={onRequestRemoveCurrent}
               onRequestClearAll={onRequestClearAll}
+              showHiddenImages={showHiddenImages}
+              hasHiddenImages={hasHiddenImages}
+              currentImageHidden={currentImageHidden}
+              hasVisibleImages={hasVisibleImages}
+              onToggleShowHidden={onToggleShowHidden}
+              onRestoreCurrent={onRestoreCurrent}
             />
           }
         >
@@ -608,7 +677,18 @@ export default function GallerySection({
           onImport={onImport}
           onRequestRemoveCurrent={onRequestRemoveCurrent}
           onRequestClearAll={onRequestClearAll}
+          showHiddenImages={showHiddenImages}
+          hasHiddenImages={hasHiddenImages}
+          currentImageHidden={currentImageHidden}
+          hasVisibleImages={hasVisibleImages}
+          onToggleShowHidden={onToggleShowHidden}
+          onRestoreCurrent={onRestoreCurrent}
         />
+        {currentImageHidden && (
+          <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-base-100/90 px-2 py-1 text-xs text-base-content">
+            {t('preview:gallery.hidden_image')}
+          </span>
+        )}
       </div>
 
       {images.length > 1 && (

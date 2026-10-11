@@ -28,7 +28,7 @@ async fn runtime_descriptor_returns_only_compact_global_status_data() {
         &TestGameFixture {
             id: "game-descriptor",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame",
             mods_path: Some(&mods_path),
         },
@@ -118,7 +118,7 @@ async fn runtime_descriptor_excludes_terminal_rows_hidden_by_a_disabled_parent()
         &TestGameFixture {
             id: "game-hidden-parent",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame",
             mods_path: Some("E:/Mods"),
         },
@@ -187,7 +187,7 @@ async fn current_runtime_preview_and_saved_state_exclude_disabled_ancestors() {
         &TestGameFixture {
             id: "game-active-preview",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame",
             mods_path: Some(&mods_path),
         },
@@ -304,7 +304,7 @@ async fn runtime_state_reads_the_full_runtime() {
         &TestGameFixture {
             id: "game-runtime",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame",
             mods_path: Some("E:/Mods"),
         },
@@ -386,7 +386,7 @@ async fn runtime_state_never_treats_last_changes_as_an_active_baseline() {
         &TestGameFixture {
             id: "game-1",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame",
             mods_path: Some("E:/Mods"),
         },
@@ -418,7 +418,7 @@ async fn runtime_descriptor_surfaces_draft_last_changes_without_a_preview_tree()
         &TestGameFixture {
             id: "game-draft",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame",
             mods_path: Some("E:/Mods"),
         },
@@ -488,7 +488,7 @@ async fn runtime_state_counts_members_deleted_from_disk() {
         &TestGameFixture {
             id: "game-missing",
             name: "Test Game",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "E:/Games/TestGame",
             mods_path: Some(&mods_path),
         },

@@ -334,6 +334,7 @@ describe('workspace switch ops', () => {
       expect(openWorkspaceFileInUseDialog).toHaveBeenCalledWith({
         path: 'E:/Mods/A/mod.ini',
         processes: ['3dmigoto.exe'],
+        onRetry: expect.any(Function),
       });
       expect(toastError).not.toHaveBeenCalled();
     });

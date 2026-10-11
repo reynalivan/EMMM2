@@ -14,21 +14,41 @@ pub struct PendingCrashReportSummary {
 pub async fn record_native_error_metric(
     operation: String,
     error_code: String,
+    expected_revision: Option<u64>,
     config: tauri::State<'_, crate::modules::settings::application::config::ConfigService>,
     telemetry: tauri::State<'_, crate::modules::system::application::telemetry::TelemetryStore>,
 ) -> Result<(), AppError> {
-    if !config.get_settings().diagnostics.telemetry_enabled {
-        return Ok(());
+    record_native_error_metric_inner(
+        &operation,
+        &error_code,
+        expected_revision,
+        config.inner(),
+        telemetry.inner(),
+    )
+    .await;
+    Ok(())
+}
+
+async fn record_native_error_metric_inner(
+    operation: &str,
+    error_code: &str,
+    expected_revision: Option<u64>,
+    config: &crate::modules::settings::application::config::ConfigService,
+    telemetry: &crate::modules::system::application::telemetry::TelemetryStore,
+) {
+    let telemetry = telemetry.capture();
+    let settings = config.get_settings();
+    if expected_revision != Some(settings.revision) || !settings.diagnostics.telemetry_enabled {
+        return;
     }
     let event = crate::modules::system::application::telemetry::TelemetryEvent::new(
-        crate::modules::system::application::telemetry::TelemetryOperation::from_label(&operation),
+        crate::modules::system::application::telemetry::TelemetryOperation::from_label(operation),
         crate::modules::system::application::telemetry::TelemetryOutcome::Failed,
-        crate::modules::system::application::telemetry::TelemetryErrorCode::from_label(&error_code),
+        crate::modules::system::application::telemetry::TelemetryErrorCode::from_label(error_code),
     );
     let _ = telemetry
         .record_rollup(env!("CARGO_PKG_VERSION"), event, chrono::Utc::now())
         .await;
-    Ok(())
 }
 
 /// Returns a single privacy-safe indication that the last session did not
@@ -118,11 +138,13 @@ pub async fn reset_database(
     use tauri::Manager;
     let app_data_dir = app.path().app_data_dir()?;
 
-    telemetry
-        .purge_all()
+    let change = telemetry.begin_consent_change(false).await;
+    change
+        .purge()
         .await
         .map_err(|_| AppError::Db("Could not clear queued diagnostics during reset".to_string()))?;
     config.reset_database(&app_data_dir)?;
+    change.commit(false);
     credentials.delete_ai_api_key()?;
     config.set_ai_key_status(false);
     Ok(())

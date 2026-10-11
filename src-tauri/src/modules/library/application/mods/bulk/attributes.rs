@@ -2,10 +2,34 @@
 
 use super::types::{BulkActionError, BulkResult};
 use crate::modules::library::application::mods::info_json;
+use crate::platform::fs::guard::ValidatedPath;
 use crate::shared::errors::AppError;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+struct InfoWriteTarget {
+    disk_path: PathBuf,
+    reported_path: String,
+}
+
+impl From<&ValidatedPath> for InfoWriteTarget {
+    fn from(path: &ValidatedPath) -> Self {
+        Self {
+            disk_path: path.to_path_buf(),
+            reported_path: path.original().to_string(),
+        }
+    }
+}
+
+impl InfoWriteTarget {
+    fn absolute(path: String) -> Self {
+        Self {
+            disk_path: PathBuf::from(&path),
+            reported_path: path,
+        }
+    }
+}
 
 struct InfoWriteBackup {
     folder_path: String,
@@ -40,42 +64,42 @@ fn restore_info_writes(backups: &[InfoWriteBackup]) -> Vec<String> {
 }
 
 fn write_info_batch(
-    folder_paths: Vec<String>,
+    targets: Vec<InfoWriteTarget>,
     update: &info_json::ModInfoUpdate,
     backup_retention: BackupRetention,
 ) -> InfoWriteBatch {
     let mut success = Vec::new();
     let mut failures = Vec::new();
     let mut backups = Vec::new();
-    for folder_path in folder_paths {
-        let info_path = Path::new(&folder_path).join("info.json");
+    for target in targets {
+        let info_path = target.disk_path.join("info.json");
         let previous = match std::fs::read(&info_path) {
             Ok(bytes) => Some(bytes),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => {
                 failures.push(BulkActionError {
-                    path: folder_path,
+                    path: target.reported_path,
                     error: AppError::Io(error.to_string()),
                 });
                 continue;
             }
         };
         match info_json::update_info_json_from_snapshot(
-            Path::new(&folder_path),
+            &target.disk_path,
             previous.as_deref(),
             update,
         ) {
             Ok(_) => {
-                success.push(folder_path.clone());
+                success.push(target.reported_path);
                 if matches!(backup_retention, BackupRetention::Required) {
                     backups.push(InfoWriteBackup {
-                        folder_path,
+                        folder_path: target.disk_path.to_string_lossy().to_string(),
                         previous,
                     });
                 }
             }
             Err(error) => failures.push(BulkActionError {
-                path: folder_path,
+                path: target.reported_path,
                 error: AppError::Metadata(error),
             }),
         }
@@ -87,11 +111,11 @@ fn write_info_batch(
 }
 
 async fn write_info_batch_in_worker(
-    folder_paths: Vec<String>,
+    targets: Vec<InfoWriteTarget>,
     update: info_json::ModInfoUpdate,
     backup_retention: BackupRetention,
 ) -> Result<InfoWriteBatch, AppError> {
-    tokio::task::spawn_blocking(move || write_info_batch(folder_paths, &update, backup_retention))
+    tokio::task::spawn_blocking(move || write_info_batch(targets, &update, backup_retention))
         .await
         .map_err(AppError::from)
 }
@@ -108,10 +132,7 @@ pub async fn bulk_update_info(
     paths: &[crate::platform::fs::guard::ValidatedPath],
     update: info_json::ModInfoUpdate,
 ) -> Result<BulkResult, AppError> {
-    let folder_paths = paths
-        .iter()
-        .map(|path| path.original().to_string())
-        .collect();
+    let folder_paths = paths.iter().map(InfoWriteTarget::from).collect();
     Ok(
         write_info_batch_in_worker(folder_paths, update, BackupRetention::Discard)
             .await?
@@ -209,7 +230,7 @@ pub async fn bulk_set_safety(
     let disk_paths = resolved
         .targets
         .iter()
-        .map(|target| target.disk_path.clone())
+        .map(|target| InfoWriteTarget::absolute(target.disk_path.clone()))
         .collect::<Vec<_>>();
     let InfoWriteBatch {
         mut result,
@@ -249,16 +270,20 @@ pub async fn bulk_set_safety(
 pub async fn bulk_toggle_favorite(
     pool: &SqlitePool,
     game_id: String,
-    folder_paths: Vec<String>,
+    paths: &[ValidatedPath],
     favorite: bool,
 ) -> Result<BulkResult, AppError> {
     let update = info_json::ModInfoUpdate {
         is_favorite: Some(favorite),
         ..Default::default()
     };
-    let InfoWriteBatch { result, backups } =
-        write_info_batch_in_worker(folder_paths, update, BackupRetention::Required).await?;
-    let relatives = relative_to_mods_root(pool, &game_id, &result.success).await?;
+    let InfoWriteBatch { result, backups } = write_info_batch_in_worker(
+        paths.iter().map(InfoWriteTarget::from).collect(),
+        update,
+        BackupRetention::Required,
+    )
+    .await?;
+    let relatives = relative_to_mods_root(pool, &game_id, paths, &result.success).await?;
     if let Err(error) = crate::modules::library::adapters::sqlite::mods::batch_set_favorite(
         pool, &game_id, &relatives, favorite,
     )
@@ -280,16 +305,20 @@ pub async fn bulk_toggle_favorite(
 pub async fn bulk_pin(
     pool: &SqlitePool,
     game_id: String,
-    folder_paths: Vec<String>,
+    paths: &[ValidatedPath],
     pin: bool,
 ) -> Result<BulkResult, AppError> {
     let update = info_json::ModInfoUpdate {
         is_pinned: Some(pin),
         ..Default::default()
     };
-    let InfoWriteBatch { result, backups } =
-        write_info_batch_in_worker(folder_paths, update, BackupRetention::Required).await?;
-    let relatives = relative_to_mods_root(pool, &game_id, &result.success).await?;
+    let InfoWriteBatch { result, backups } = write_info_batch_in_worker(
+        paths.iter().map(InfoWriteTarget::from).collect(),
+        update,
+        BackupRetention::Required,
+    )
+    .await?;
+    let relatives = relative_to_mods_root(pool, &game_id, paths, &result.success).await?;
     if let Err(error) = crate::modules::library::adapters::sqlite::mods::batch_set_pinned(
         pool, &game_id, &relatives, pin,
     )
@@ -312,23 +341,29 @@ pub async fn bulk_pin(
 async fn relative_to_mods_root(
     pool: &SqlitePool,
     game_id: &str,
-    folder_paths: &[String],
+    paths: &[ValidatedPath],
+    successful_paths: &[String],
 ) -> Result<Vec<String>, AppError> {
     let game_mod_path = crate::modules::games::adapters::sqlite::game::get_mod_path(pool, game_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Game not found or has no mods_path".to_string()))?;
 
-    let base = Path::new(&game_mod_path);
-    Ok(folder_paths
+    let base = Path::new(&game_mod_path).canonicalize()?;
+    let successes: HashSet<&str> = successful_paths.iter().map(String::as_str).collect();
+    paths
         .iter()
-        .map(|folder_path| {
-            let path = Path::new(folder_path);
-            path.strip_prefix(base)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .to_string()
+        .filter(|path| successes.contains(path.original()))
+        .map(|path| {
+            path.strip_prefix(&base)
+                .map(|relative| relative.to_string_lossy().to_string())
+                .map_err(|_| {
+                    AppError::Security(
+                        "Validated metadata path does not belong to the game's Mods root"
+                            .to_string(),
+                    )
+                })
         })
-        .collect())
+        .collect()
 }
 
 /// Mirror a flag into every mod's info.json in parallel, splitting the batch into
@@ -340,7 +375,15 @@ fn partition_info_json_writes(
     folder_paths: Vec<String>,
     update: &info_json::ModInfoUpdate,
 ) -> BulkResult {
-    write_info_batch(folder_paths, update, BackupRetention::Discard).result
+    write_info_batch(
+        folder_paths
+            .into_iter()
+            .map(InfoWriteTarget::absolute)
+            .collect(),
+        update,
+        BackupRetention::Discard,
+    )
+    .result
 }
 
 #[cfg(test)]

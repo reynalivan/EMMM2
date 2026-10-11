@@ -10,22 +10,32 @@ import {
 import { mergeRuntimeEffectDescriptors } from '@/features/workspace-runtime/@x/mod-runtime';
 import { thumbnailKeys } from '@/entities/mod';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
+import {
+  openBulkFileInUseRetryDialog,
+  openBulkFileLockErrorDialog,
+} from '@/features/workspace-runtime/@x/mod-runtime';
 
-export async function moveModsToObjectAndRefresh(params: {
+interface MoveAndRefreshParams {
   queryClient: QueryClient;
   gameId: string;
   folderPaths: string[];
   targetObjectId: string;
   targetSubpath: string | null;
   status: MoveStatus;
-}): Promise<void> {
-  const result = await commands.moveModsToObject({
-    game_id: params.gameId,
-    folder_paths: params.folderPaths,
-    target_object_id: params.targetObjectId,
-    target_subpath: params.targetSubpath,
-    status: params.status,
-  });
+  recoveryIds?: string[];
+}
+
+async function performMoveAndRefresh(params: MoveAndRefreshParams) {
+  const result = await commands.moveModsToObject(
+    {
+      game_id: params.gameId,
+      folder_paths: params.folderPaths,
+      target_object_id: params.targetObjectId,
+      target_subpath: params.targetSubpath,
+      status: params.status,
+    },
+    params.recoveryIds ?? null,
+  );
 
   applyRuntimeEffects(
     params.queryClient,
@@ -39,8 +49,22 @@ export async function moveModsToObjectAndRefresh(params: {
   );
   await applyRuntimeMutationResult(params.queryClient, 'workspaceStructure');
   notifyCommittedMutationSyncWarning(result);
+  return result;
+}
 
+export async function moveModsToObjectAndRefresh(params: MoveAndRefreshParams): Promise<void> {
+  const variables = { ...params, paths: params.folderPaths };
+  const retry = (retryVariables: typeof variables & { recoveryIds: string[] }) =>
+    performMoveAndRefresh({ ...retryVariables, folderPaths: retryVariables.paths });
+  let result;
+  try {
+    result = await performMoveAndRefresh(params);
+  } catch (error) {
+    openBulkFileLockErrorDialog(error, variables, retry);
+    throw error;
+  }
   if (result.failures.length > 0) {
+    openBulkFileInUseRetryDialog(result, variables, retry);
     throw result.failures[0].error;
   }
 }

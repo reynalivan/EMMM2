@@ -1,11 +1,11 @@
 /**
  * useBulkModMutations — Multi-selection mutation hooks for mod folders.
  *
- * Owner surface for the bulk grid actions (toggle, delete, info, favorite, pin).
+ * Bulk toggle, delete and favorite actions for explicit folder paths.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { commands, sparse } from '../../../shared/api/tauri/bindings';
+import { commands } from '../../../shared/api/tauri/bindings';
 import { toast } from '@/shared/ui/toast';
 import { thumbnailKeys } from '@/entities/mod';
 import {
@@ -18,9 +18,11 @@ import {
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '@/features/workspace-runtime/@x/mod-runtime';
-import type { ModInfoUpdate } from '@/entities/game-object';
 import { formatAppError } from '../../../shared/lib/appError';
-import { openFileInUseRetryDialog } from '@/features/workspace-runtime/@x/mod-runtime';
+import {
+  openBulkFileLockErrorDialog,
+  openBulkFileInUseRetryDialog,
+} from '@/features/workspace-runtime/@x/mod-runtime';
 import { nextWorkspaceIntentRevision } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
   collectionReferenceImpactRefreshEvents,
@@ -31,7 +33,6 @@ import {
   formatBulkFailureMessage,
   formatBulkSuccessMessage,
 } from '../../../shared/lib/hooks/bulkToastMessages';
-import { resolveTogglePathRewrites } from '../utils/folderMutationPayloads';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 import { useAppStore } from '@/app/store';
 
@@ -50,7 +51,12 @@ export function useBulkToggle() {
   const mutation = useMutation({
     // Bulk toggle is an explicit runtime switch path.
     // Global runtime refresh comes from one final publish, not per-item ad-hoc invalidation.
-    mutationFn: (params: { gameId: string; paths: string[]; enable: boolean }) =>
+    mutationFn: (params: {
+      gameId: string;
+      paths: string[];
+      enable: boolean;
+      recoveryIds?: string[];
+    }) =>
       commands.bulkToggleMods(
         params.gameId,
         params.paths,
@@ -58,16 +64,12 @@ export function useBulkToggle() {
         createBulkOperationId('toggle'),
         nextWorkspaceIntentRevision(),
         null,
+        params.recoveryIds ?? null,
       ),
 
     onSuccess: (result, variables) => {
       const currentGame = isActiveGame(variables.gameId);
       if (currentGame) {
-        const pathRewrites = resolveTogglePathRewrites(
-          result.success,
-          result.path_rewrites,
-          variables.enable,
-        );
         const descriptor = buildRuntimeMutationDescriptor(
           'folderSwitch',
           collectionReferenceImpactRefreshEvents(result.collection_impact),
@@ -76,7 +78,10 @@ export function useBulkToggle() {
         // No thumbnail drop: a toggle keeps the folder's identity, and the
         // cache is identity-keyed — dropping here would evict the entry the
         // new path is about to reuse and force a regeneration per mod.
-        applyRuntimeEffects(queryClient, buildWorkspacePathRewritesDescriptor(pathRewrites, []));
+        applyRuntimeEffects(
+          queryClient,
+          buildWorkspacePathRewritesDescriptor(result.path_rewrites, []),
+        );
         void cancellation
           .then(() => {
             if (!isActiveGame(variables.gameId)) {
@@ -99,6 +104,7 @@ export function useBulkToggle() {
       if (result.collection_impact) notifyCollectionReferenceImpact(result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'toggle'));
+        openBulkFileInUseRetryDialog(result, variables, mutation.mutateAsync);
       }
       if (result.cancelled) {
         toast.info(formatBulkCancelledMessage(result));
@@ -109,7 +115,7 @@ export function useBulkToggle() {
       if (!isActiveGame(variables.gameId)) {
         return;
       }
-      if (openFileInUseRetryDialog(error, variables, mutation.mutate)) {
+      if (openBulkFileLockErrorDialog(error, variables, mutation.mutateAsync)) {
         return;
       }
       toast.error(formatAppError(error));
@@ -123,11 +129,16 @@ export function useBulkToggle() {
 export function useBulkDelete() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  const mutation = useMutation({
     // `gameId` names both the mods root the paths must sit inside and the
     // game whose index rows get pruned; the backend refuses without it.
-    mutationFn: (params: { paths: string[]; gameId: string }) =>
-      commands.bulkDeleteMods(params.gameId, params.paths, createBulkOperationId('delete')),
+    mutationFn: (params: { paths: string[]; gameId: string; recoveryIds?: string[] }) =>
+      commands.bulkDeleteMods(
+        params.gameId,
+        params.paths,
+        createBulkOperationId('delete'),
+        params.recoveryIds ?? null,
+      ),
     onSuccess: async (result, variables) => {
       if (!isActiveGame(variables.gameId)) {
         return;
@@ -156,78 +167,20 @@ export function useBulkDelete() {
       if (result.collection_impact) notifyCollectionReferenceImpact(result.collection_impact);
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'delete'));
+        openBulkFileInUseRetryDialog(result, variables, mutation.mutateAsync);
       }
       if (result.cancelled) {
         toast.info(formatBulkCancelledMessage(result));
       }
       notifyCommittedMutationSyncWarning(result);
     },
-  });
-}
-
-/** Hook to bulk update info.json. */
-export function useBulkUpdateInfo() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { gameId: string; paths: string[]; update: ModInfoUpdate }) =>
-      commands.bulkUpdateInfo(params.gameId, params.paths, sparse(params.update)),
-    onSuccess: async (result, variables) => {
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('folderMetadataPreview'),
-        'active',
-      );
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      if (result.success.length > 0) {
-        toast.success(formatBulkSuccessMessage(result.success, 'updated'));
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'update'));
-      }
-      notifyCommittedMutationSyncWarning(result);
+    onError: (error, variables) => {
+      if (!isActiveGame(variables.gameId)) return;
+      if (openBulkFileLockErrorDialog(error, variables, mutation.mutateAsync)) return;
+      toast.error(formatAppError(error));
     },
   });
-}
-
-/** Classify terminal mods selected directly or through parent object folders. */
-export function useBulkSafety() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { gameId: string; paths: string[]; safe: boolean }) =>
-      commands.bulkSetModSafety(params.gameId, params.paths, params.safe),
-    onSuccess: async (result, variables) => {
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('safetyClassification'),
-        'active',
-      );
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      if (result.success.length > 0) {
-        toast.success(
-          formatBulkSuccessMessage(
-            result.success,
-            variables.safe ? 'marked_safe' : 'marked_unsafe',
-          ),
-        );
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'safety'));
-      }
-      notifyCommittedMutationSyncWarning(result);
-    },
-  });
+  return mutation;
 }
 
 /** Hook to bulk toggle favorite with targeted cache update. */
@@ -255,37 +208,6 @@ export function useBulkFavorite() {
       }
       if (result.failures.length > 0) {
         toast.error(formatBulkFailureMessage(result.failures, 'favorite'));
-      }
-      notifyCommittedMutationSyncWarning(result);
-    },
-  });
-}
-
-/** Hook to bulk pin/unpin mods with targeted cache update. */
-export function useBulkPin() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (params: { gameId: string; folderPaths: string[]; pin: boolean }) =>
-      commands.bulkPinMods(params.gameId, params.folderPaths, params.pin),
-    onSuccess: async (result, variables) => {
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor('folderMetadataPreview'),
-        'active',
-      );
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      if (result.success.length > 0) {
-        const action = variables.pin ? 'pinned' : 'unpinned';
-        toast.success(formatBulkSuccessMessage(result.success, action));
-      }
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'pin'));
       }
       notifyCommittedMutationSyncWarning(result);
     },

@@ -69,6 +69,7 @@
     "phase_progress": "Tahap saat ini",
     "preparation_progress": "Progres persiapan",
     "folders_complete": "{{completed}} dari {{total}} folder",
+    "mods_complete": "{{completed}} / {{total}} mod diproses",
     "folders_classified": "{{count}} folder diklasifikasikan",
     "current_root": "Folder saat ini: {{root}}",
     "elapsed": "Berlalu {{duration}}",

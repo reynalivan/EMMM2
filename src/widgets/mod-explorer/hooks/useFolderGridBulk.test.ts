@@ -302,6 +302,7 @@ describe('useFolderGridBulk', () => {
       expect.any(String),
       expect.any(Number),
       [['C:/Mods/Alice/Blue', 'identity-blue']],
+      null,
     );
   });
 
@@ -351,6 +352,7 @@ describe('useFolderGridBulk', () => {
         expect.any(String),
         expect.any(Number),
         [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
+        null,
       ),
     );
   });
@@ -400,6 +402,7 @@ describe('useFolderGridBulk', () => {
       expect.any(String),
       expect.any(Number),
       [['C:/Mods/Alice/DISABLED Blue', 'identity-blue']],
+      null,
     );
     expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1);
   });
@@ -449,6 +452,7 @@ describe('useFolderGridBulk', () => {
       expect.any(String),
       expect.any(Number),
       [[rewrittenPath, 'identity-blue']],
+      null,
     );
     expect(executeWorkspaceExplorerBulk).toHaveBeenCalledTimes(1);
   });
@@ -653,6 +657,7 @@ describe('useFolderGridBulk', () => {
           ['C:/Mods/Alice/DISABLED Blue', 'identity-blue'],
           ['C:/Mods/Alice/DISABLED Green', 'identity-green'],
         ],
+        null,
       );
     },
   );
@@ -749,6 +754,7 @@ describe('useFolderGridBulk', () => {
       expect.any(String),
       expect.any(Number),
       identities,
+      null,
     );
   });
 
@@ -795,6 +801,7 @@ describe('useFolderGridBulk', () => {
         expect.any(String),
         expect.any(Number),
         [['C:/Mods/Alice/Blue', 'identity-blue']],
+        null,
       ),
     );
   });

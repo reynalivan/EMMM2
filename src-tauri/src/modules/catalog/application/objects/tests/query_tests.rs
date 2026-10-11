@@ -57,7 +57,7 @@ async fn test_get_object_by_id_service() {
         &TestGameFixture {
             id: "g_get_obj",
             name: "Genshin",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_get_obj",
             mods_path: Some("C:\\Mods"),
         },
@@ -98,7 +98,7 @@ async fn test_get_category_counts_service() {
         &TestGameFixture {
             id: "g_cat_counts",
             name: "StarRail",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_cat_counts",
             mods_path: Some("C:\\Mods"),
         },
@@ -153,7 +153,7 @@ async fn test_disk_reconcile_removes_missing_object_rows() {
         &TestGameFixture {
             id: "g_gc_lost",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_gc_lost",
             mods_path: Some(mod_path.to_str().unwrap()),
         },
@@ -214,7 +214,7 @@ async fn test_disk_reconcile_keeps_unicode_folder_with_ascii_case_variants() {
         &TestGameFixture {
             id: "g_gc_unicode",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_gc_unicode",
             mods_path: Some(mod_path.to_str().unwrap()),
         },
@@ -256,7 +256,7 @@ async fn test_disk_reconcile_missing_mods_path_is_no_write_result() {
         &TestGameFixture {
             id: "g_missing_path",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_missing_path",
             mods_path: Some(missing_mod_path.to_str().unwrap()),
         },
@@ -317,7 +317,7 @@ async fn test_disk_reconcile_repairs_disabled_db_mod_when_disk_is_enabled() {
         &TestGameFixture {
             id: "g_repair_enabled",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_repair_enabled",
             mods_path: Some(mod_path.to_str().unwrap()),
         },
@@ -389,7 +389,7 @@ async fn test_disk_reconcile_repairs_enabled_db_mod_when_disk_is_disabled() {
         &TestGameFixture {
             id: "g_repair_disabled",
             name: "ZZZ",
-            game_type: GameType::GIMI,
+            game_type: GameType::Gimi,
             path: "/game_repair_disabled",
             mods_path: Some(mod_path.to_str().unwrap()),
         },

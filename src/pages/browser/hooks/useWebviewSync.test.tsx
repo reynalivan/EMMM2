@@ -80,6 +80,7 @@ describe('useWebviewSync', () => {
       Promise.resolve(label === tab.id ? webview : inactiveWebview),
     );
     setContainerRect({ left: 12, top: 96, width: 800, height: 600 });
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -116,6 +117,39 @@ describe('useWebviewSync', () => {
     expect(inactiveWebview.hide).toHaveBeenCalledOnce();
     expect(inactiveWebview.show).not.toHaveBeenCalled();
     expect(inactiveWebview.setFocus).not.toHaveBeenCalled();
+  });
+
+  it('restores native content without taking focus when EMMM is in the background', async () => {
+    vi.mocked(document.hasFocus).mockReturnValue(false);
+    render(
+      <SurfaceHarness presentation={{ visibility: 'visible', focus: 'browser', leftInsetPx: 0 }} />,
+    );
+    await waitFor(() => expect(webview.show).toHaveBeenCalledOnce());
+    expect(webview.setFocus).not.toHaveBeenCalled();
+  });
+
+  it('does not take keyboard focus from an existing DOM control after a notice', async () => {
+    const { rerender } = render(
+      <>
+        <input aria-label="Browser address" />
+        <SurfaceHarness presentation={{ visibility: 'hidden', focus: 'dom', leftInsetPx: 0 }} />
+      </>,
+    );
+    await waitFor(() => expect(webview.hide).toHaveBeenCalled());
+    const input = document.querySelector('input');
+    if (!input) throw new Error('Address control missing');
+    input.focus();
+    rerender(
+      <>
+        <input aria-label="Browser address" />
+        <SurfaceHarness
+          presentation={{ visibility: 'visible', focus: 'browser', leftInsetPx: 0 }}
+        />
+      </>,
+    );
+    await waitFor(() => expect(webview.show).toHaveBeenCalled());
+    expect(webview.setFocus).not.toHaveBeenCalled();
+    expect(input).toHaveFocus();
   });
 
   it('keeps a live webview mounted when browser chrome takes DOM focus', async () => {

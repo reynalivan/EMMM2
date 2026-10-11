@@ -41,33 +41,6 @@ where
     Ok(())
 }
 
-pub async fn update_object_runtime_state_by_path<'c, E>(
-    executor: E,
-    game_id: &str,
-    old_path: &str,
-    new_path: &str,
-    status: ItemStatus,
-) -> Result<(), sqlx::Error>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-{
-    sqlx::query(
-        "UPDATE objects
-         SET folder_path = ?,
-             folder_path_key = ?,
-             status = ?
-         WHERE game_id = ? AND folder_path_key = ?",
-    )
-    .bind(new_path)
-    .bind(folder_path_key(new_path, None))
-    .bind(status as i64)
-    .bind(game_id)
-    .bind(folder_path_key(old_path, None))
-    .execute(executor)
-    .await?;
-    Ok(())
-}
-
 pub async fn update_object_runtime_state_by_id<'c, E>(
     executor: E,
     object_id: &str,

@@ -180,6 +180,11 @@ pub struct BulkToggleExecution {
     pub applied_sequences: Vec<u32>,
 }
 
+enum BulkToggleProgress {
+    Emit { cancellable: bool },
+    Silent,
+}
+
 pub fn prepare_bulk_toggle(paths: &[PathBuf], enable: bool) -> PreparedBulkToggle {
     let sibling_indexes = sibling_indexes_for_paths(paths);
     let mut sequence = 0_u32;
@@ -237,10 +242,14 @@ pub async fn bulk_toggle(
 ) -> Result<BulkResult, crate::shared::errors::AppError> {
     let prepared_paths = paths.iter().map(PathBuf::from).collect::<Vec<_>>();
     let prepared = prepare_bulk_toggle(&prepared_paths, enable);
-    Ok(execute_prepared_bulk_toggle(app, state, &prepared, cancel, operation_id, true).result)
+    Ok(
+        execute_prepared_bulk_toggle(app, state, &prepared, cancel, operation_id, true)
+            .await
+            .result,
+    )
 }
 
-pub fn execute_prepared_bulk_toggle(
+pub async fn execute_prepared_bulk_toggle(
     app: &AppHandle,
     state: &WatcherState,
     prepared: &PreparedBulkToggle,
@@ -248,23 +257,26 @@ pub fn execute_prepared_bulk_toggle(
     operation_id: &str,
     cancellable: bool,
 ) -> BulkToggleExecution {
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
     execute_prepared_bulk_toggle_with_progress(
         app,
         state,
         prepared,
         cancel,
         operation_id,
-        cancellable,
-        true,
+        BulkToggleProgress::Emit { cancellable },
+        &mut retry_budget,
     )
+    .await
 }
 
-pub fn execute_prepared_bulk_toggle_silent(
+pub(crate) async fn execute_prepared_bulk_toggle_silent(
     app: &AppHandle,
     state: &WatcherState,
     prepared: &PreparedBulkToggle,
     cancel: &AtomicBool,
     operation_id: &str,
+    retry_budget: &mut crate::platform::fs::retry::RetryBudget,
 ) -> BulkToggleExecution {
     execute_prepared_bulk_toggle_with_progress(
         app,
@@ -272,19 +284,20 @@ pub fn execute_prepared_bulk_toggle_silent(
         prepared,
         cancel,
         operation_id,
-        true,
-        false,
+        BulkToggleProgress::Silent,
+        retry_budget,
     )
+    .await
 }
 
-fn execute_prepared_bulk_toggle_with_progress(
+async fn execute_prepared_bulk_toggle_with_progress(
     app: &AppHandle,
     state: &WatcherState,
     prepared: &PreparedBulkToggle,
     cancel: &AtomicBool,
     operation_id: &str,
-    cancellable: bool,
-    emit_progress: bool,
+    progress: BulkToggleProgress,
+    retry_budget: &mut crate::platform::fs::retry::RetryBudget,
 ) -> BulkToggleExecution {
     // One path-scoped guard across the whole batch covers both the original
     // and destination spelling for every planned rename.
@@ -298,7 +311,7 @@ fn execute_prepared_bulk_toggle_with_progress(
         "common:bulk_progress.disabling"
     };
 
-    if emit_progress {
+    if let BulkToggleProgress::Emit { cancellable } = progress {
         let _ = app.emit(
             "bulk-progress",
             BulkProgressPayload {
@@ -329,36 +342,40 @@ fn execute_prepared_bulk_toggle_with_progress(
             break;
         }
 
-        if emit_progress && (i % progress_interval == 0 || i == total - 1) {
-            let _ = app.emit(
-                "bulk-progress",
-                BulkProgressPayload {
-                    operation_id: operation_id.to_string(),
-                    cancellable,
-                    label: action_label.to_string(),
-                    current: i + 1,
-                    total,
-                    active: true,
-                },
-            );
+        if let BulkToggleProgress::Emit { cancellable } = progress {
+            if i % progress_interval == 0 || i == total - 1 {
+                let _ = app.emit(
+                    "bulk-progress",
+                    BulkProgressPayload {
+                        operation_id: operation_id.to_string(),
+                        cancellable,
+                        label: action_label.to_string(),
+                        current: i + 1,
+                        total,
+                        active: true,
+                    },
+                );
+            }
         }
 
         match &item.state {
-            PreparedToggleState::Ready { sequence, plan } => match plan.apply("mod folder") {
-                Ok(()) => {
-                    let new_abs_path = plan.new_path().to_string_lossy().into_owned();
-                    success.push(new_abs_path.clone());
-                    applied_sequences.push(*sequence);
-                    path_rewrites.push(WorkspacePathRewrite {
-                        old_path: item.input_path.clone(),
-                        new_path: new_abs_path,
-                    });
+            PreparedToggleState::Ready { sequence, plan } => {
+                match plan.apply_async("mod folder", retry_budget).await {
+                    Ok(()) => {
+                        let new_abs_path = plan.new_path().to_string_lossy().into_owned();
+                        success.push(new_abs_path.clone());
+                        applied_sequences.push(*sequence);
+                        path_rewrites.push(WorkspacePathRewrite {
+                            old_path: item.input_path.clone(),
+                            new_path: new_abs_path,
+                        });
+                    }
+                    Err(error) => failures.push(BulkActionError {
+                        path: item.input_path.clone(),
+                        error,
+                    }),
                 }
-                Err(error) => failures.push(BulkActionError {
-                    path: item.input_path.clone(),
-                    error,
-                }),
-            },
+            }
             PreparedToggleState::Noop => success.push(item.input_path.clone()),
             PreparedToggleState::Invalid(error) => failures.push(BulkActionError {
                 path: item.input_path.clone(),
@@ -368,7 +385,7 @@ fn execute_prepared_bulk_toggle_with_progress(
         processed_count += 1;
     }
 
-    if emit_progress {
+    if let BulkToggleProgress::Emit { cancellable } = progress {
         let _ = app.emit(
             "bulk-progress",
             BulkProgressPayload {
@@ -399,7 +416,7 @@ fn execute_prepared_bulk_toggle_with_progress(
     }
 }
 
-pub fn rollback_prepared_bulk_toggle(
+pub async fn rollback_prepared_bulk_toggle(
     state: &WatcherState,
     prepared: &PreparedBulkToggle,
     applied_sequences: &[u32],
@@ -408,13 +425,14 @@ pub fn rollback_prepared_bulk_toggle(
     let suppression_paths = prepared.suppression_paths();
     let _suppression = state.suppressor.suppress_paths(suppression_paths.iter());
     let mut failures = Vec::new();
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
 
     for item in prepared.items.iter().rev() {
         let PreparedToggleState::Ready { sequence, plan } = &item.state else {
             continue;
         };
         if applied.contains(sequence) {
-            if let Err(error) = plan.rollback("mod folder") {
+            if let Err(error) = plan.rollback_async("mod folder", &mut retry_budget).await {
                 failures.push(format!("{}: {error}", item.input_path));
             }
         }
@@ -433,6 +451,61 @@ pub fn rollback_prepared_bulk_toggle(
 #[cfg(test)]
 mod tests {
     use super::prepare_bulk_toggle;
+
+    #[test]
+    fn silent_chunk_executor_accepts_the_operation_retry_budget() {
+        let _check_contract = |app: &tauri::AppHandle,
+                               state: &crate::modules::workspace::application::scanner::watcher::WatcherState| {
+            let prepared = prepare_bulk_toggle(&[], true);
+            let cancel = std::sync::atomic::AtomicBool::new(true);
+            let mut budget = crate::platform::fs::retry::RetryBudget::default();
+            let execution = super::execute_prepared_bulk_toggle_silent(
+                app,
+                state,
+                &prepared,
+                &cancel,
+                "budget-contract",
+                &mut budget,
+            );
+            drop(execution);
+        };
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn locked_toggle_chunks_share_only_two_operation_retries() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let mut budget = crate::platform::fs::retry::RetryBudget::default();
+        let mut holders = Vec::new();
+        for name in ["DISABLED Alpha", "DISABLED Beta"] {
+            let source = temp.path().join(name);
+            std::fs::create_dir(&source).unwrap();
+            holders.push(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+                    .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                    .open(&source)
+                    .unwrap(),
+            );
+            let chunk = prepare_bulk_toggle(&[source], true);
+            let super::PreparedToggleState::Ready { plan, .. } = &chunk.items[0].state else {
+                panic!("expected a planned rename");
+            };
+            assert!(plan.apply_async("mod folder", &mut budget).await.is_err());
+            assert_eq!(
+                budget.next_delay(&std::io::Error::from_raw_os_error(32)),
+                None,
+                "a later chunk must not receive a new retry budget"
+            );
+        }
+        drop(holders);
+    }
 
     #[test]
     fn sibling_index_keeps_per_item_collisions_and_safe_siblings() {

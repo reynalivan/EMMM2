@@ -25,8 +25,8 @@ pub async fn update_native_status(
     file_path: Option<&str>,
     can_resume: bool,
     finished_at: Option<String>,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
         r#"UPDATE browser_downloads SET
             status         = ?,
             bytes_received = COALESCE(?, bytes_received),
@@ -34,8 +34,9 @@ pub async fn update_native_status(
             error_msg      = ?,
             can_resume     = ?,
             file_path      = COALESCE(?, file_path),
-            finished_at    = COALESCE(?, finished_at)
-          WHERE id = ?"#,
+            finished_at    = ?
+          WHERE id = ? AND status NOT IN ('finished', 'canceled', 'imported')
+            AND (status != 'failed' OR can_resume = 1)"#,
     )
     .bind(status)
     .bind(bytes_received)
@@ -47,7 +48,7 @@ pub async fn update_native_status(
     .bind(download_id)
     .execute(db)
     .await?;
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }
 
 /// Insert a new `requested` download record.
@@ -250,18 +251,23 @@ pub async fn list_downloads(
         .collect()
 }
 
-/// Read the stored file path of a download.
-pub async fn get_file_path(
+#[derive(sqlx::FromRow)]
+pub struct DownloadFileState {
+    pub file_path: Option<String>,
+    pub status: String,
+    pub tab_label: Option<String>,
+}
+
+pub async fn get_file_state(
     db: &SqlitePool,
     download_id: &str,
-) -> Result<Option<String>, sqlx::Error> {
-    let path = sqlx::query_scalar!(
-        "SELECT file_path FROM browser_downloads WHERE id = ?",
-        download_id
+) -> Result<Option<DownloadFileState>, sqlx::Error> {
+    sqlx::query_as::<_, DownloadFileState>(
+        "SELECT file_path, status, tab_label FROM browser_downloads WHERE id = ?",
     )
+    .bind(download_id)
     .fetch_optional(db)
-    .await?;
-    Ok(path.flatten())
+    .await
 }
 
 /// Update the display name and path after a successful filesystem rename.
@@ -295,12 +301,13 @@ pub async fn delete_download(db: &SqlitePool, download_id: &str) -> Result<(), s
 /// Delete terminal downloads finished more than `retention_days` ago.
 pub async fn delete_older_than(db: &SqlitePool, retention_days: i64) -> Result<u64, sqlx::Error> {
     let interval = format!("-{retention_days}");
-    let result = sqlx::query!(
+    let result = sqlx::query(
         r#"DELETE FROM browser_downloads
            WHERE status IN ('finished', 'imported', 'failed', 'canceled')
+             AND can_resume = 0
              AND finished_at < datetime('now', ? || ' days')"#,
-        interval
     )
+    .bind(interval)
     .execute(db)
     .await?;
     Ok(result.rows_affected())

@@ -192,8 +192,8 @@ fn prepared_runtime_rename_rejects_a_replaced_source_identity() {
     assert!(!temp.path().join("Mods/DISABLED Variant").exists());
 }
 
-#[test]
-fn incomplete_rollback_is_reported_for_reconciliation() {
+#[tokio::test]
+async fn incomplete_rollback_is_reported_for_reconciliation() {
     let temp = tempfile::tempdir().expect("tempdir");
     let old_abs = temp.path().join("Variant");
     let new_abs = temp.path().join("DISABLED Variant");
@@ -204,7 +204,7 @@ fn incomplete_rollback_is_reported_for_reconciliation() {
     let plan = RuntimeRenamePlan::new(old_abs.clone(), old_abs, new_abs, false, expected_identity);
     let mut warnings = Vec::new();
 
-    rollback_successes(&[plan], &mut warnings);
+    rollback_successes(&[plan], &mut warnings).await;
 
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("target already exists"));

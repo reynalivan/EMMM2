@@ -169,6 +169,7 @@ pub async fn save_onboarding_games(
     games: Vec<GameConfig>,
 ) -> Result<(), AppError> {
     let diagnostics_enabled = state.get_settings().diagnostics.telemetry_enabled;
+    let telemetry = telemetry.capture();
     let started_at = Instant::now();
     if diagnostics_enabled {
         let _ = telemetry
@@ -244,6 +245,7 @@ pub async fn launch_game(
     game_id: String,
 ) -> Result<(), AppError> {
     let diagnostics_enabled = state.get_settings().diagnostics.telemetry_enabled;
+    let telemetry = telemetry.capture();
     let started_at = Instant::now();
     let games = get_games(state).await?;
     let game = games
@@ -311,17 +313,10 @@ async fn launch_standalone_game(game: &GameConfig) -> Result<(), AppError> {
         let mut sys = System::new_all();
         sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
-        let launcher_name = launcher_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
-
-        let is_loader_running = sys.processes().values().any(|process| {
-            process
-                .name()
-                .to_string_lossy()
-                .eq_ignore_ascii_case(&launcher_name)
-        });
+        let is_loader_running = configured_loader_is_running(
+            launcher_path,
+            sys.processes().values().filter_map(|process| process.exe()),
+        )?;
 
         if !is_loader_running {
             log::info!("Starting Loader: {}", launcher_path.display());
@@ -354,9 +349,7 @@ async fn launch_standalone_game(game: &GameConfig) -> Result<(), AppError> {
     // Apply args
     if let Some(args_str) = &game.launch_args {
         if !args_str.trim().is_empty() {
-            for arg in args_str.split_whitespace() {
-                cmd.arg(arg);
-            }
+            apply_launch_arguments(&mut cmd, args_str);
         }
     }
 
@@ -364,6 +357,27 @@ async fn launch_standalone_game(game: &GameConfig) -> Result<(), AppError> {
         .map_err(|e| AppError::Io(format!("Failed to start game: {e}")))?;
 
     Ok(())
+}
+
+fn configured_loader_is_running<'a>(
+    configured: &Path,
+    mut executables: impl Iterator<Item = &'a Path>,
+) -> Result<bool, AppError> {
+    let proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(configured)?;
+    Ok(executables.any(|path| {
+        crate::platform::fs::file_utils::filesystem_identity(path).as_deref()
+            == Some(proof.identity())
+    }))
+}
+
+fn apply_launch_arguments(command: &mut std::process::Command, arguments: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.raw_arg(arguments);
+    }
+    #[cfg(not(windows))]
+    command.args(arguments.split_whitespace());
 }
 
 fn ensure_executable_file(path: &Path, label: &str) -> Result<(), AppError> {

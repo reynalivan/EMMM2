@@ -6,6 +6,7 @@ import { useActiveGame } from '@/entities/game';
 import { runObjectBatchMutation } from './objectMutationCache';
 import { useDeleteObject, useUpdateObject } from './useObjectMutations';
 import { toast } from '@/shared/ui/toast';
+import { extractFileInUsePayload } from '@/shared/lib/appError';
 import type { GameSchema } from '@/entities/game-object';
 import type { WorkspaceObjectNode } from '@/entities/workspace';
 import { applyObjectCategoryAndRefresh, revealObjectInExplorer } from './sharedObjectActionOps';
@@ -135,6 +136,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
       toast.success(t('create_modal.success_message', { name }));
     } catch (error) {
       dispatch({ type: 'closeDelete' });
+      if (extractFileInUsePayload(error)) return;
       const count = parseObjectHasModsError(error);
       if (count !== null) {
         dispatch({ type: 'openForceDelete', id, name, count });
@@ -159,6 +161,7 @@ export function useSharedObjectActions(options: SharedObjectActionsOptions) {
       );
       toast.success(t('create_modal.success_message', { name }));
     } catch (error) {
+      if (extractFileInUsePayload(error)) return;
       console.error('Failed to force delete object:', error);
       toast.error(t('create_modal.error_message', { error: describeObjectMutationError(error) }));
     }

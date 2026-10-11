@@ -74,11 +74,22 @@ export async function createMockGame(label = 'E2E', atRoot?: string): Promise<Mo
 
   const root = atRoot ? path.resolve(atRoot) : fixtureRoot;
   const modsPath = path.join(root, 'Mods');
+  const runtimeCorePath = path.join(root, 'Core', 'GIMI');
   const exePath = path.join(root, 'Fake_Game_Loader.exe');
 
-  await fs.mkdir(modsPath, { recursive: true });
+  await Promise.all([
+    fs.mkdir(modsPath, { recursive: true }),
+    fs.mkdir(runtimeCorePath, { recursive: true }),
+  ]);
   await fs.writeFile(exePath, 'mock exe binary content');
-  await fs.writeFile(path.join(root, 'd3dx.ini'), '[Main]\n');
+  await fs.writeFile(
+    path.join(root, 'd3dx.ini'),
+    '[Include]\ninclude_recursive = Mods\ninclude = Core/GIMI/main.ini\n',
+  );
+  await fs.writeFile(
+    path.join(runtimeCorePath, 'main.ini'),
+    'namespace = GIMIv8\nResourceText = null\nResourceTextParams = null\n[CommandListPrintText]\nchecktextureoverride = vb0\n',
+  );
   await fs.writeFile(path.join(root, 'd3d11.dll'), 'mock dll content');
 
   return { root, modsPath, exePath, fixtureRoot, cleanupToken: ownership.cleanupToken };

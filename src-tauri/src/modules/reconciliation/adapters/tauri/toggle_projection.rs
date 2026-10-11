@@ -134,7 +134,7 @@ mod tests {
             &crate::test_utils::TestGameFixture {
                 id: "capture-root",
                 name: "Game",
-                game_type: crate::modules::games::domain::models::GameType::GIMI,
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
                 path: temp.path().to_str().unwrap(),
                 mods_path: Some(root.to_str().unwrap()),
             },
@@ -178,6 +178,7 @@ mod tests {
             new_path: Some(new.into()),
             stage_path: None,
             expected_identity: Some("physical-folder".to_string()),
+            source_root_identity: None,
             status: StepStatus::Applied,
         }
     }
@@ -385,7 +386,7 @@ mod tests {
             &TestGameFixture {
                 id: "game-1",
                 name: "Game",
-                game_type: GameType::GIMI,
+                game_type: GameType::Gimi,
                 path: temp.path().to_str().unwrap(),
                 mods_path: root.to_str(),
             },

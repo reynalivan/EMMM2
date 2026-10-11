@@ -10,7 +10,7 @@ export interface BrowserAddressParts {
 /** Trim user input and prefix a scheme when the user typed a bare host. */
 export function normalizeBrowserUrl(input: string): string {
   const trimmed = input.trim();
-  if (trimmed.startsWith('http') || trimmed.startsWith('about:')) {
+  if (/^(https?:\/\/|about:)/i.test(trimmed)) {
     return trimmed;
   }
   return `https://${trimmed}`;

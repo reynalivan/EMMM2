@@ -2,7 +2,7 @@ use crate::modules::library::application::mods::core_ops::standardize_prefix;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
 use crate::platform::fs::file_utils::FilesystemIdentityProof;
 use crate::platform::fs::guard::ValidatedPath;
-use crate::platform::fs::rename::rename_no_replace;
+use crate::platform::fs::rename::PinnedDirectory;
 use crate::shared::errors::AppError;
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -41,6 +41,9 @@ struct PreparedOrganizerRename {
 
 #[derive(Debug, Clone)]
 pub struct PreparedOrganizerMove {
+    namespace_proof: crate::platform::fs::file_utils::FilesystemNamespaceProof,
+    target_namespace_proof: crate::platform::fs::file_utils::FilesystemNamespaceProof,
+    target_scope_path: PathBuf,
     target_anchor: PathBuf,
     target_proof: FilesystemIdentityProof,
     renames: Vec<PreparedOrganizerRename>,
@@ -121,6 +124,13 @@ pub async fn prepare_move_mods_to_object(
     let target_obj_path = base_path.join(&target_obj.folder_path);
     let (target_base_path, target_base_requires_creation) =
         resolve_target_base_path(&target_obj_path, params.target_subpath)?;
+    let (target_namespace_proof, target_scope_path) =
+        capture_move_destination_scope(base_path, &target_base_path)?;
+    let target_anchor = target_scope_path
+        .parent()
+        .ok_or_else(|| AppError::Validation("Organizer destination has no anchor".into()))?
+        .to_path_buf();
+    let target_proof = FilesystemIdentityProof::capture(&target_anchor)?;
     let mut renames = Vec::new();
     let mut primary_results = Vec::new();
     let mut seen_sources = HashSet::new();
@@ -207,13 +217,19 @@ pub async fn prepare_move_mods_to_object(
         }
     }
 
-    let target_anchor = target_base_path
-        .ancestors()
-        .find(|path| path.is_dir())
-        .ok_or_else(|| AppError::NotFound("Organizer destination root is unavailable".into()))?
-        .to_path_buf();
+    target_namespace_proof.validate_paths(std::slice::from_ref(&target_scope_path))?;
+    target_proof.validate(&target_anchor)?;
     Ok(PreparedOrganizerMove {
-        target_proof: FilesystemIdentityProof::capture(&target_anchor)?,
+        namespace_proof: crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+            base_path,
+            &renames
+                .iter()
+                .map(|rename| rename.old_path.clone())
+                .collect::<Vec<_>>(),
+        )?,
+        target_namespace_proof,
+        target_scope_path,
+        target_proof,
         target_anchor,
         renames,
         primary_results,
@@ -222,10 +238,13 @@ pub async fn prepare_move_mods_to_object(
     })
 }
 
-pub fn execute_prepared_move(
+pub async fn execute_prepared_move(
     watcher: &WatcherState,
     prepared: &PreparedOrganizerMove,
 ) -> Result<OrganizerMoveOutcome, AppError> {
+    prepared
+        .target_namespace_proof
+        .validate_paths(std::slice::from_ref(&prepared.target_scope_path))?;
     prepared.target_proof.validate(&prepared.target_anchor)?;
     let suppression_paths = prepared
         .renames
@@ -233,34 +252,39 @@ pub fn execute_prepared_move(
         .flat_map(|rename| [rename.old_path.as_path(), rename.new_path.as_path()])
         .chain(std::iter::once(prepared.target_base_path.as_path()));
     let _suppression = watcher.suppressor.suppress_paths(suppression_paths);
-    if prepared.target_base_requires_creation && !prepared.target_base_path.exists() {
-        std::fs::create_dir_all(&prepared.target_base_path)
-            .map_err(|error| AppError::Io(error.to_string()))?;
-    }
+    let destination_pins = std::sync::Arc::new(pin_organizer_destination(prepared)?);
+    let target_parent_proof = FilesystemIdentityProof::capture(&prepared.target_base_path)?;
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
     let mut applied: Vec<&PreparedOrganizerRename> = Vec::new();
     for rename in &prepared.renames {
-        let outcome = rename
-            .source_proof
-            .validate(&rename.old_path)
-            .and_then(|()| {
-                rename_no_replace(&rename.old_path, &rename.new_path).map_err(AppError::from)
-            });
+        let outcome = rename_organizer_step(
+            prepared,
+            rename,
+            &target_parent_proof,
+            Some(std::sync::Arc::clone(&destination_pins)),
+            false,
+            &mut retry_budget,
+        )
+        .await;
         if let Err(error) = outcome {
+            let mut rollback_budget = crate::platform::fs::retry::RetryBudget::default();
             for applied_rename in applied.iter().rev() {
-                if let Err(rollback_error) = applied_rename
-                    .source_proof
-                    .validate(&applied_rename.new_path)
-                    .and_then(|()| {
-                        rename_no_replace(&applied_rename.new_path, &applied_rename.old_path)
-                            .map_err(AppError::from)
-                    })
+                if let Err(rollback_error) = rename_organizer_step(
+                    prepared,
+                    applied_rename,
+                    &target_parent_proof,
+                    Some(std::sync::Arc::clone(&destination_pins)),
+                    true,
+                    &mut rollback_budget,
+                )
+                .await
                 {
                     return Err(AppError::Io(format!(
                         "Organizer move failed: {error}; rollback failed: {rollback_error}"
                     )));
                 }
             }
-            return Err(AppError::Io(error.to_string()));
+            return Err(error);
         }
         applied.push(rename);
     }
@@ -297,7 +321,63 @@ pub fn execute_prepared_move(
     })
 }
 
-pub fn rollback_prepared_move(
+fn pin_organizer_destination(
+    prepared: &PreparedOrganizerMove,
+) -> Result<Vec<PinnedDirectory>, AppError> {
+    let mut pins = prepared
+        .target_namespace_proof
+        .pin_paths(std::slice::from_ref(&prepared.target_scope_path))?;
+    let anchor = PinnedDirectory::open(&prepared.target_anchor)?;
+    if anchor.identity() != prepared.target_proof.identity() {
+        return Err(AppError::Io(
+            "Organizer destination ownership changed".into(),
+        ));
+    }
+    pins.push(anchor);
+    let missing = prepared
+        .target_base_path
+        .strip_prefix(&prepared.target_anchor)
+        .map_err(|_| {
+            AppError::Security("Organizer destination escaped its captured anchor".into())
+        })?;
+    if !missing.as_os_str().is_empty() && !prepared.target_base_requires_creation {
+        return Err(AppError::Validation(
+            "Organizer destination was not prepared for creation".into(),
+        ));
+    }
+    for component in missing.components() {
+        let Component::Normal(name) = component else {
+            return Err(AppError::Security(
+                "Invalid organizer destination component".into(),
+            ));
+        };
+        prepared
+            .target_namespace_proof
+            .validate_paths(std::slice::from_ref(&prepared.target_scope_path))?;
+        // Publish a new owned directory through its pinned parent. A directory
+        // or junction that appeared after preparation is never adopted.
+        let child = pins
+            .last()
+            .ok_or_else(|| AppError::Io("Organizer destination anchor is unavailable".into()))?
+            .create_child(name)?;
+        pins.push(child);
+    }
+    prepared
+        .target_namespace_proof
+        .validate_paths(std::slice::from_ref(&prepared.target_scope_path))?;
+    let destination = pins
+        .last()
+        .ok_or_else(|| AppError::Io("Organizer destination is unavailable".into()))?;
+    let identity = FilesystemIdentityProof::capture(&prepared.target_base_path)?;
+    if destination.identity() != identity.identity() {
+        return Err(AppError::Io(
+            "Organizer destination changed during creation".into(),
+        ));
+    }
+    Ok(pins)
+}
+
+pub async fn rollback_prepared_move(
     watcher: &WatcherState,
     prepared: &PreparedOrganizerMove,
 ) -> Result<(), AppError> {
@@ -307,14 +387,19 @@ pub fn rollback_prepared_move(
         .flat_map(|rename| [rename.old_path.as_path(), rename.new_path.as_path()]);
     let _suppression = watcher.suppressor.suppress_paths(suppression_paths);
     let mut failures = Vec::new();
+    let target_parent_proof = FilesystemIdentityProof::capture(&prepared.target_base_path)?;
+    let mut retry_budget = crate::platform::fs::retry::RetryBudget::default();
     for rename in prepared.renames.iter().rev() {
         if rename.new_path.exists() {
-            if let Err(error) = rename
-                .source_proof
-                .validate(&rename.new_path)
-                .and_then(|()| {
-                    rename_no_replace(&rename.new_path, &rename.old_path).map_err(AppError::from)
-                })
+            if let Err(error) = rename_organizer_step(
+                prepared,
+                rename,
+                &target_parent_proof,
+                None,
+                true,
+                &mut retry_budget,
+            )
+            .await
             {
                 failures.push(format!(
                     "{} -> {}: {error}",
@@ -351,7 +436,173 @@ pub async fn move_mods_to_object_service(
     }
 
     let prepared = prepare_move_mods_to_object(pool, params).await?;
-    execute_prepared_move(watcher, &prepared)
+    execute_prepared_move(watcher, &prepared).await
+}
+
+async fn rename_organizer_step(
+    prepared: &PreparedOrganizerMove,
+    rename: &PreparedOrganizerRename,
+    target_parent_proof: &FilesystemIdentityProof,
+    destination_pins: Option<std::sync::Arc<Vec<PinnedDirectory>>>,
+    reverse: bool,
+    budget: &mut crate::platform::fs::retry::RetryBudget,
+) -> Result<(), AppError> {
+    budget
+        .run(|| {
+            let namespace = prepared.namespace_proof.clone();
+            let target_namespace = prepared.target_namespace_proof.clone();
+            let target_scope = prepared.target_scope_path.clone();
+            let target_parent = prepared.target_base_path.clone();
+            let target_proof = target_parent_proof.clone();
+            let target_anchor = prepared.target_anchor.clone();
+            let anchor_proof = prepared.target_proof.clone();
+            let rename = rename.clone();
+            let destination_pins = destination_pins.clone();
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    let (source, destination) = if reverse {
+                        (&rename.new_path, &rename.old_path)
+                    } else {
+                        (&rename.old_path, &rename.new_path)
+                    };
+                    if let Some(pins) = &destination_pins {
+                        validate_retained_organizer_destination(pins)?;
+                    }
+                    let _source_pins = namespace
+                        .pin_paths(std::slice::from_ref(&rename.old_path))
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    let _target_pins = target_namespace
+                        .pin_paths(std::slice::from_ref(&target_scope))
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    anchor_proof
+                        .validate(&target_anchor)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    target_proof
+                        .validate(&target_parent)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    rename
+                        .source_proof
+                        .validate(source)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    let parent_path = destination.parent().ok_or_else(|| {
+                        std::io::Error::other("Organizer destination has no parent")
+                    })?;
+                    let parent_proof = FilesystemIdentityProof::capture(parent_path)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    let opened_parent;
+                    let parent = if !reverse {
+                        match destination_pins
+                            .as_ref()
+                            .and_then(|pins| pins.last())
+                            .filter(|parent| parent.identity() == parent_proof.identity())
+                        {
+                            Some(parent) => parent,
+                            None => {
+                                opened_parent = PinnedDirectory::open(parent_path)?;
+                                &opened_parent
+                            }
+                        }
+                    } else {
+                        opened_parent = PinnedDirectory::open(parent_path)?;
+                        &opened_parent
+                    };
+                    if parent.identity() != parent_proof.identity() {
+                        return Err(std::io::Error::other(
+                            "Organizer destination ownership changed",
+                        ));
+                    }
+                    let owned = PinnedDirectory::open_for_rename(source)?;
+                    if owned.identity() != rename.source_proof.identity() {
+                        return Err(std::io::Error::other("Organizer source ownership changed"));
+                    }
+                    namespace
+                        .validate_paths(std::slice::from_ref(&rename.old_path))
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    target_namespace
+                        .validate_paths(std::slice::from_ref(&target_scope))
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    target_proof
+                        .validate(&target_parent)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    parent_proof
+                        .validate(parent_path)
+                        .map_err(|error| std::io::Error::other(error.to_string()))?;
+                    if let Some(pins) = &destination_pins {
+                        validate_retained_organizer_destination(pins)?;
+                    }
+                    owned.rename_into(
+                        parent,
+                        destination.file_name().ok_or_else(|| {
+                            std::io::Error::other("Organizer destination has no name")
+                        })?,
+                    )
+                })
+                .await
+                .map_err(crate::platform::fs::retry::blocking_error)?
+            }
+        })
+        .await
+        .map_err(|error| {
+            crate::platform::fs::retry::map_file_error_with_identity(
+                if reverse {
+                    &rename.new_path
+                } else {
+                    &rename.old_path
+                },
+                rename.source_proof.identity(),
+                "move folder",
+                error,
+            )
+        })
+}
+
+fn validate_retained_organizer_destination(pins: &[PinnedDirectory]) -> std::io::Result<()> {
+    for pin in pins {
+        let original = crate::shared::path_key::physical_namespace_path(pin.path())
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let current = crate::shared::path_key::physical_namespace_path(&pin.current_path()?)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let canonical =
+            crate::shared::path_key::physical_namespace_path(&pin.path().canonicalize()?)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+        if original != current
+            || original != canonical
+            || crate::platform::fs::file_utils::filesystem_identity(pin.path()).as_deref()
+                != Some(pin.identity())
+        {
+            return Err(std::io::Error::other(
+                "Organizer destination ancestry changed after creation",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn capture_move_destination_scope(
+    mods_root: &Path,
+    destination: &Path,
+) -> Result<
+    (
+        crate::platform::fs::file_utils::FilesystemNamespaceProof,
+        PathBuf,
+    ),
+    AppError,
+> {
+    let anchor = destination
+        .ancestors()
+        .find(|path| path.is_dir())
+        .ok_or_else(|| AppError::NotFound("Organizer destination root is unavailable".into()))?;
+    let name = destination
+        .file_name()
+        .ok_or_else(|| AppError::Validation("Organizer destination has no name".into()))?;
+    // Namespace proofs inspect the parent chain, not the leaf. Bind the
+    // existing anchor even when the final destination directory is not created yet.
+    let scope_path = anchor.join(name);
+    let proof = crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+        mods_root,
+        std::slice::from_ref(&scope_path),
+    )?;
+    Ok((proof, scope_path))
 }
 
 fn resolve_target_base_path(

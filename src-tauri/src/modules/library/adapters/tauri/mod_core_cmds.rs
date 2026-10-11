@@ -1,7 +1,8 @@
+use crate::modules::mutation::api::{FOLDER_CREATE_OPERATION_KIND, FOLDER_CREATE_STAGE_PREFIX};
 use crate::modules::mutation::coordinator::MutationCoordinator;
 use crate::modules::settings::application::config::ConfigService;
 use crate::modules::workspace::application::scanner::watcher::WatcherState;
-use crate::platform::fs::guard::validate_path;
+use crate::platform::fs::guard::{validate_mod_target_path, validate_path};
 use crate::shared::errors::AppError;
 use std::path::{Component, Path, PathBuf};
 use tauri::State;
@@ -13,31 +14,127 @@ pub use crate::modules::library::application::mods::core_ops::{standardize_prefi
 struct PreparedFolderCreate {
     stage: PathBuf,
     target: PathBuf,
+    parent_proof: crate::platform::fs::file_utils::FilesystemIdentityProof,
+    namespace_proof: Option<crate::platform::fs::file_utils::FilesystemNamespaceProof>,
+    stage_proof: std::sync::OnceLock<crate::platform::fs::file_utils::FilesystemIdentityProof>,
 }
 
 impl PreparedFolderCreate {
     fn prepare(&self) -> Result<(), AppError> {
-        std::fs::create_dir(&self.stage).map_err(AppError::from)
+        let parent = crate::platform::fs::rename::PinnedDirectory::open(
+            self.stage.parent().expect("prepared parent"),
+        )?;
+        if parent.identity() != self.parent_proof.identity() {
+            return Err(AppError::Security(
+                "Folder creation parent was replaced before staging".to_string(),
+            ));
+        }
+        self.validate_parent()?;
+        std::fs::create_dir(&self.stage)?;
+        let proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&self.stage)?;
+        self.stage_proof.set(proof).map_err(|_| {
+            AppError::Internal("Folder creation staging was already prepared".to_string())
+        })
     }
 
-    fn journal_step(&self) -> crate::modules::mutation::api::PlannedStep {
-        crate::modules::mutation::api::PlannedStep::rename(
+    fn journal_step(&self) -> Result<crate::modules::mutation::api::PlannedStep, AppError> {
+        let proof = self.owned_stage()?;
+        Ok(crate::modules::mutation::api::PlannedStep::rename(
             0,
             self.stage.clone(),
             self.target.clone(),
         )
+        .with_expected_identity(Some(proof.identity().to_string())))
     }
 
     fn promote(&self) -> Result<(), AppError> {
-        std::fs::rename(&self.stage, &self.target).map_err(AppError::from)
+        let parent = crate::platform::fs::rename::PinnedDirectory::open(
+            self.stage.parent().expect("prepared parent"),
+        )?;
+        if parent.identity() != self.parent_proof.identity() {
+            return Err(AppError::Security(
+                "Folder creation parent was replaced".to_string(),
+            ));
+        }
+        self.validate_parent()?;
+        #[cfg(not(windows))]
+        {
+            self.owned_stage()?.validate(&self.stage)?;
+            return crate::platform::fs::rename::rename_no_replace(&self.stage, &self.target)
+                .map_err(AppError::from);
+        }
+        #[cfg(windows)]
+        {
+            let source =
+                crate::platform::fs::rename::PinnedDirectory::open_for_mutation(&self.stage)?;
+            if source.identity() != self.owned_stage()?.identity() {
+                return Err(AppError::Security(
+                    "Folder creation staging was replaced".to_string(),
+                ));
+            }
+            source.rename_to(
+                &parent,
+                self.target.file_name().expect("prepared target name"),
+            )?;
+            Ok(())
+        }
     }
 
     fn rollback(&self) -> Result<(), AppError> {
-        if self.target.exists() && !self.stage.exists() {
-            std::fs::rename(&self.target, &self.stage)?;
+        let parent = crate::platform::fs::rename::PinnedDirectory::open(
+            self.stage.parent().expect("prepared parent"),
+        )?;
+        if parent.identity() != self.parent_proof.identity() {
+            return Err(AppError::Security(
+                "Folder creation rollback parent was replaced".to_string(),
+            ));
         }
-        if self.stage.exists() {
-            std::fs::remove_dir(&self.stage)?;
+        self.validate_parent()?;
+        if !self.stage.exists() && !self.target.exists() {
+            return Ok(());
+        }
+        let proof = self.owned_stage()?;
+        let path = if self.stage.exists() {
+            &self.stage
+        } else {
+            &self.target
+        };
+        #[cfg(not(windows))]
+        {
+            proof.validate(path)?;
+            return std::fs::remove_dir(path).map_err(AppError::from);
+        }
+        #[cfg(windows)]
+        {
+            let owned = crate::platform::fs::rename::PinnedDirectory::open_for_mutation(path)?;
+            if owned.identity() != proof.identity() {
+                return Err(AppError::Security(
+                    "Folder creation rollback directory was replaced".to_string(),
+                ));
+            }
+            owned.remove_empty(&parent).map_err(AppError::from)
+        }
+    }
+
+    fn owned_stage(
+        &self,
+    ) -> Result<&crate::platform::fs::file_utils::FilesystemIdentityProof, AppError> {
+        self.stage_proof.get().ok_or_else(|| {
+            AppError::Io(
+                "Folder creation has no owned staging identity; retained paths require review"
+                    .to_string(),
+            )
+        })
+    }
+
+    fn validate_parent(&self) -> Result<(), AppError> {
+        let parent = self
+            .stage
+            .parent()
+            .ok_or_else(|| AppError::Validation("Folder creation parent is missing".to_string()))?;
+        self.parent_proof.validate(parent)?;
+        if let Some(proof) = &self.namespace_proof {
+            proof.validate_paths(&[self.stage.clone(), self.target.clone()])?;
         }
         Ok(())
     }
@@ -75,8 +172,17 @@ fn prepare_folder_create(
     }
 
     let target = parent.join(folder_name);
-    let stage = parent.join(format!(".emmm-folder-create-{}", Uuid::new_v4().simple()));
-    Ok(PreparedFolderCreate { stage, target })
+    let stage = parent.join(format!(
+        "{FOLDER_CREATE_STAGE_PREFIX}{}",
+        Uuid::new_v4().simple()
+    ));
+    Ok(PreparedFolderCreate {
+        stage,
+        target,
+        parent_proof: crate::platform::fs::file_utils::FilesystemIdentityProof::capture(parent)?,
+        namespace_proof: None,
+        stage_proof: std::sync::OnceLock::new(),
+    })
 }
 
 #[specta::specta]
@@ -96,12 +202,28 @@ pub async fn create_mod_folder(
     folder_name: String,
     game_id: String,
 ) -> Result<String, AppError> {
+    let _admission = crate::modules::mutation::api::admit_immutable_mutation(
+        &game_id,
+        crate::modules::mutation::api::ImmutableMutationKind::StructuralMutation,
+    )?;
     let parent = validate_path(&config, &game_id, &parent_path)?;
     if !parent.is_dir() {
         return Err(AppError::Validation(
             "Folder parent is not a directory".to_string(),
         ));
     }
+    let root = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game Mods root not configured".to_string()))?;
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
+    let canonical_root = root.canonicalize()?;
+    let mut prepared = prepare_folder_create(&parent, &folder_name)?;
+    prepared.namespace_proof = Some(
+        crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+            &canonical_root,
+            &[prepared.stage.clone(), prepared.target.clone()],
+        )?,
+    );
     let preflight_paths = [parent.to_string_lossy().to_string()];
     crate::modules::reconciliation::application::disk_reconcile::emit::ensure_mutation_preflight_for_paths(
         &app,
@@ -113,14 +235,24 @@ pub async fn create_mod_folder(
 
     let game_guard = disk_reconcile_state.game_lock(&game_id).lock_owned().await;
     disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
-    let prepared = prepare_folder_create(&parent, &folder_name)?;
-    prepared.prepare()?;
+    let watcher_guard = watcher
+        .suppressor
+        .suppress_paths([&prepared.stage, &prepared.target]);
     let operation_guard = match op_lock
-        .acquire_operation(crate::modules::mutation::api::OperationPlan::new(
-            "folder-create",
-            &game_id,
-            vec![prepared.journal_step()],
-        ))
+        .acquire_prepared_operation(|| {
+            root_proof.validate(&root)?;
+            root_proof.validate(&config.mods_root_for(&game_id).ok_or_else(|| {
+                AppError::NotFound("Game Mods root not configured".to_string())
+            })?)?;
+            disk_reconcile_state.ensure_core_ready_for_mutation(&game_id)?;
+            prepared.prepare()?;
+            Ok(crate::modules::mutation::api::OperationPlan::new(
+                FOLDER_CREATE_OPERATION_KIND,
+                &game_id,
+                vec![prepared.journal_step()?],
+            )
+            .with_source_epoch(root_proof.identity().to_string()))
+        })
         .await
     {
         Ok(guard) => guard,
@@ -141,11 +273,13 @@ pub async fn create_mod_folder(
             return Err(error);
         }
     };
-    let watcher_guard =
-        crate::modules::workspace::application::scanner::watcher::SuppressionGuard::new(
-            &watcher.suppressor,
-        );
-    if let Err(error) = prepared.promote() {
+    let promotion = config
+        .mods_root_for(&game_id)
+        .ok_or_else(|| AppError::NotFound("Game Mods root not configured".to_string()))
+        .and_then(|current_root| root_proof.validate(&current_root))
+        .and_then(|()| root_proof.validate(&root))
+        .and_then(|()| prepared.promote());
+    if let Err(error) = promotion {
         mutation_lease.begin_rollback()?;
         prepared.rollback()?;
         mutation_lease.mark_step_rolled_back(0)?;
@@ -292,10 +426,7 @@ fn resolve_ini_editor_path(folder: &Path, file_name: &str) -> Result<PathBuf, Ap
         )));
     }
 
-    let folder_key = crate::shared::path_key::canonical_path_key_for_path(&canonical_folder);
-    let ini_key = crate::shared::path_key::canonical_path_key_for_path(&canonical_ini);
-    let child_prefix = format!("{folder_key}/");
-    if !ini_key.starts_with(&child_prefix) {
+    if !canonical_ini.starts_with(&canonical_folder) {
         return Err(AppError::Security(
             "INI editor target escaped the selected mod folder".to_string(),
         ));
@@ -408,12 +539,16 @@ pub async fn rename_mod_folder(
     folder_path: String,
     new_name: String,
     game_id: String,
+    recovery_id: Option<String>,
 ) -> Result<RenameResult, AppError> {
     let _admission = crate::modules::mutation::api::admit_immutable_mutation(
         &game_id,
         crate::modules::mutation::api::ImmutableMutationKind::StructuralMutation,
     )?;
-    let folder = validate_path(&config, &game_id, &folder_path)?;
+    let folder = validate_mod_target_path(&config, &game_id, &folder_path)?;
+    if let Some(recovery_id) = &recovery_id {
+        crate::modules::system::api::validate_file_lock_recovery(recovery_id, &folder)?;
+    }
     let source_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&folder)?;
     let root = config
         .mods_root_for(&game_id)
@@ -472,12 +607,16 @@ pub async fn rename_mod_folder(
         )
         .and_then(|()| root_proof.validate(&root))
         .and_then(|()| source_proof.validate(&folder))
+        .and_then(|()| match &recovery_id {
+            Some(id) => crate::modules::system::api::validate_file_lock_recovery(id, &folder),
+            None => Ok(()),
+        })
     {
         mutation_lease.abort_unapplied()?;
         return Err(error);
     }
     let mut result =
-        crate::modules::library::application::mods::core_ops::rename_mod_folder_inner_service(
+        match crate::modules::library::application::mods::core_ops::rename_mod_folder_inner_service(
             &config,
             pool.inner(),
             &state,
@@ -486,7 +625,14 @@ pub async fn rename_mod_folder(
             new_name.clone(),
             &game_id,
         )
-        .await?;
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                mutation_lease.abort_unapplied()?;
+                return Err(error);
+            }
+        };
     mutation_lease.mark_step_applied(0)?;
 
     let reconcile =
@@ -518,3 +664,7 @@ pub async fn rename_mod_folder(
 #[cfg(test)]
 #[path = "tests/mod_core_cmds_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "tests/mod_folder_create_recovery_tests.rs"]
+mod folder_create_recovery_tests;

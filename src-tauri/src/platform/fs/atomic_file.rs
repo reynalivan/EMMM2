@@ -17,9 +17,11 @@ fn unique_sibling(path: &Path, label: &str) -> Result<PathBuf, AppError> {
 
 fn restore_file(target: &Path, recovery: &Path, commit_error: std::io::Error) -> AppError {
     match fs::rename(recovery, target) {
-        Ok(()) => AppError::Io(format!(
-            "Artifact replace failed and the previous file was restored: {commit_error}"
-        )),
+        Ok(()) => crate::platform::fs::retry::map_file_error(
+            target,
+            "replace metadata file (previous file restored)",
+            commit_error,
+        ),
         Err(restore_error) => AppError::Io(format!(
             "Artifact replace failed ({commit_error}); restore failed ({restore_error}). Recovery: {}",
             recovery.display()
@@ -49,7 +51,11 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<(), AppError> {
             Ok(()) => Ok(()),
             Err(error) => {
                 let _ = fs::remove_file(&temp);
-                Err(error.into())
+                Err(crate::platform::fs::retry::map_file_error(
+                    path,
+                    "publish metadata file",
+                    error,
+                ))
             }
         };
     }
@@ -57,7 +63,11 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<(), AppError> {
     let recovery = unique_sibling(path, "recover")?;
     if let Err(error) = fs::rename(path, &recovery) {
         let _ = fs::remove_file(&temp);
-        return Err(error.into());
+        return Err(crate::platform::fs::retry::map_file_error(
+            path,
+            "retain metadata backup",
+            error,
+        ));
     }
     if let Err(error) = fs::rename(&temp, path) {
         return Err(restore_file(path, &recovery, error));
@@ -178,6 +188,31 @@ pub fn replace_directory(staging: &Path, active: &Path) -> Result<(), AppError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn restored_metadata_publication_retains_lock_diagnostics() {
+        let fixture = tempfile::tempdir().unwrap();
+        let target = fixture.path().join("info.json");
+        let recovery = fixture.path().join("info.json.recover");
+        fs::write(&recovery, "original").unwrap();
+        let error = restore_file(&target, &recovery, std::io::Error::from_raw_os_error(32));
+        assert!(matches!(error, AppError::PathBusy { path } if path == target.to_string_lossy()));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original");
+        assert!(!recovery.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_metadata_restore_does_not_offer_generic_lock_replay() {
+        let fixture = tempfile::tempdir().unwrap();
+        let target = fixture.path().join("info.json");
+        let recovery = fixture.path().join("missing.recover");
+        let error = restore_file(&target, &recovery, std::io::Error::from_raw_os_error(32));
+        assert!(
+            matches!(&error, AppError::Io(message) if message.contains("restore failed") && message.contains("Recovery:"))
+        );
+    }
 
     #[test]
     fn recovers_pointer_after_crash_between_replace_phases() {
