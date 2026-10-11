@@ -1,0 +1,38 @@
+{
+  "native_session": "cd033ef8c5eee128db9e14b74287aea5",
+  "captured_at": "2026-10-10 13:22:08 UTC",
+  "files": [
+    {
+      "path": "src-tauri/Cargo.toml",
+      "sha256": "08a67b13439e95e4a3225d7295fb69b6b30af2ac6e3085c693ee88e082c9daf9"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/adapters/tauri/mod.rs",
+      "sha256": "bd255325b2a82bac1eb16fa9fe4419523641f8303048b3e8eba5e0b509d92ac9"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/adapters/tauri/watcher_runtime.rs",
+      "sha256": "fe371b4e4b1e0921212d13eaafcf497b43474165da1be94d212e457662ddcff6"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/adapters/tauri/watcher_verification.rs",
+      "sha256": "3772b7709d9e5243f64ed3eeb5dbf7162548b6724fff28f0f3b810faf73dcf97"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/application/scanner/watcher/suppressor.rs",
+      "sha256": "f1d44011d9c90d00d0eb6df7ffc88ca35ad5946083cad6c309e05045fb40f3ff"
+    },
+    {
+      "path": "wdio.conf.ts",
+      "sha256": "96e175d9bd6f5e8d3f069fe72bc7fd065f721bf81f99f7fbf25fb738addb9189"
+    },
+    {
+      "path": "wdio.watcher-verification.conf.ts",
+      "sha256": "97e3e8eaec47c98e36fe6fef6a8db687b39daff1b027206d5031a0dc9b5db006"
+    },
+    {
+      "path": "tests/e2e/specs/watcher-suppression-native.e2e.ts",
+      "sha256": "70dcb3f68a1f4455f462ec51ded51a900ca93fa80d6d94e947c55239825bc3fa"
+    }
+  ]
+}

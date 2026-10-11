@@ -1,0 +1,76 @@
+{
+  "baseline": "dirty source copies taken before this execution",
+  "captured_at": "2026-10-10 12:01:03 UTC",
+  "files": [
+    {
+      "path": "src-tauri/src/modules/workspace/application/scanner/watcher/mod.rs",
+      "baseline_sha256": "6bbb76c85c57e1d7f245afc0d81645f34161f9423a6c37aaeb3241e92a3e195d",
+      "execution_sha256": "1ab2195767f5b4dfc412b8c683bd4cf683904858a439b81ce73eef1a063266e5"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/application/scanner/watcher/suppressor.rs",
+      "baseline_sha256": "9e3fe92c80c966890a3f30c4bde92369703aa231a4e6ad16bbe70aa002c5ded3",
+      "execution_sha256": "0b8eb83d318be9b83dc72782c8fcceb166229e21f662f4a4e3a6357899fc4931"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/application/scanner/watcher/event_filter.rs",
+      "baseline_sha256": "112c1c2b54495fbfebc6c205df630e471e2db412dd6079c6f9f72aa66bb516a5",
+      "execution_sha256": "8aa8fee19055ebc082a89e4c90e0536228c56ef255dedc3ffda1df1350fd93fd"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/application/scanner/watcher/registration.rs",
+      "baseline_sha256": "d638bdca05d9b681705400e1f875cf18324c31b656323ccbe61ced2b5ec09947",
+      "execution_sha256": "1744bbe65af084128b1381cbc1a2f986ef85ba0ec784f579c9f71e6e2819bafc"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/application/scanner/watcher/lifecycle.rs",
+      "baseline_sha256": "38cf8ae38284de0ae9c35ae09518ef598c43055ad2c971cdf65bd8bc44de90ca",
+      "execution_sha256": "a11b943197b754ed31eae68e475753f9d9102181bcf7b8112a54a85f7996b7fe"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/application/scanner/tests/watcher_tests.rs",
+      "baseline_sha256": "0295a2b678d313449b419f7abedf08046cf3739249d21c27a6b35da98738c7d7",
+      "execution_sha256": "9acf2702d0b1ef44de02c92972a97095781fbe4a2d37cbc4f99260bd4f29854f"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/adapters/tauri/watcher_activation.rs",
+      "baseline_sha256": "038364e8354c0e5fca4f8548dc1fa04b8ce6eab2e3bce5e3879f5583dcfbde7b",
+      "execution_sha256": "0c42adb88aa370f10fc880574171556810da48cd0012f4078151ec15cdfa91e2"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/adapters/tauri/watcher_runtime.rs",
+      "baseline_sha256": null,
+      "execution_sha256": "b39029778d3aec163b0883ebaa374a0fc5d5426838f27342ff38f6084e6204c4"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/adapters/tauri/mod.rs",
+      "baseline_sha256": "0132da01d6e32fd3bb771d59981bc5fc98f29b50cac0ae822263b88483799c3c",
+      "execution_sha256": "15d25cae87e35d02078d5a2a7d550a3dad1140b018cf2908b93d95f90781c6c0"
+    },
+    {
+      "path": "src-tauri/src/modules/workspace/api.rs",
+      "baseline_sha256": "5a85bd2c531d317d2076430f5966989e7b1d593865d54149e1d75fceb961d327",
+      "execution_sha256": "8fd0b3faa19ec447356e164793944be25a90dac49517d7c1eac48f715649e106"
+    },
+    {
+      "path": "src-tauri/src/modules/settings/adapters/tauri/settings_cmds.rs",
+      "baseline_sha256": "e734aa16bea87943053c188877c7579fe92a0268afab03f89a8745ce36bae4f6",
+      "execution_sha256": "f4385259b8556bff475c869488074e4e4f8a7f41ca132ed76607515a1045bc65"
+    },
+    {
+      "path": "src-tauri/src/modules/reconciliation/adapters/tauri/disk_reconcile_cmds.rs",
+      "baseline_sha256": "e42fc0e927539ec00b6ff8a0cd74b277c6dde372cc12d81b8ad43f90fade9b78",
+      "execution_sha256": "e51bd26dd22baa7d7b6c5536963fc08b746698507966169b3af25831c5f14f90"
+    },
+    {
+      "path": "src-tauri/src/modules/system/application/app/bootstrap.rs",
+      "baseline_sha256": "9770a875c80752068b77e215363ba335bd0f3c4c4986df6cbfca41443415ece7",
+      "execution_sha256": "2e65b88c1c6204f28f97b49ded4103a42787826c576d54e95a8e27041804beb8"
+    },
+    {
+      "path": "src-tauri/AGENT.md",
+      "baseline_sha256": "8441d07932b01d17a41bf9ca99bf799903f5beb4e254343b14cafab0f4c7e53c",
+      "execution_sha256": "47f50c41969eab53b6efe01933707f404e8220f9554da9da5566682939796c16"
+    }
+  ]
+}

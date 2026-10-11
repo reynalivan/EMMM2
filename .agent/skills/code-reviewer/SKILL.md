@@ -5,6 +5,15 @@ description: Comprehensive code review skill for TypeScript, JavaScript, Python,
 
 # Code Reviewer
 
+## EMMM Windows verification routing
+
+For desktop UI/behavior, startup, IPC, watcher, filesystem or recovery changes,
+review focused native E2E evidence using
+[`e2e-automation`](../e2e-automation/SKILL.md). Browser/demo evidence is fixture-only
+and requires an explicit user request; it cannot replace the Windows app run.
+Document blocked native scenarios as unverified. Documentation-only changes need
+link/format checks; do not require a native build for prose edits.
+
 Complete toolkit for code reviewer with modern tools and best practices.
 
 ## Quick Start

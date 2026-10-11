@@ -158,14 +158,14 @@ The EMMM Overlay System is a **hybrid architecture** where EMMM handles the comp
 
 ### 🚀 End-to-End Pipeline
 
-| Step  | Component             | Action                                                                                                       | Result                                        |
-| :---- | :-------------------- | :----------------------------------------------------------------------------------------------------------- | :-------------------------------------------- |
-| **1** | **EMMM Backend**      | **Scan & Map**: Scans enabled mods for character hashes and extracts `[Key*]` sections.                      | `HashMap<Hash, Keybinds>`                     |
-| **2** | **EMMM Generator**    | **Artifact Write**: Generates the entrypoint and one stable resource tree into `Mods/.emmm_data/`.            | `KeyViewer.ini`, `generations/keybinds/active/*.txt`, `generations/status/runtime_status.txt` |
-| **3** | **EMMM App**          | **Reload Sync**: Sends the `reload_fixes` key to 3DMigoto.                                                   | Game reloads all `.ini` files.                |
-| **4** | **3DMigoto Engine**   | **Hash Hit**: Game renders a character; `TextureOverride` triggers in `KeyViewer.ini`.                       | `$kv_has_active = 1`, `$kv_last_seen = time`. |
-| **5** | **3DMigoto Present**  | **Arbitration**: `[Present]` block checks the 1.5s threshold and `$kv_active` toggle.                        | Correct `CommandList` is selected.            |
-| **6** | **help.ini Pipeline** | **Render**: `FormatText` prints to a single `Notification` slot in `help.ini` for both KeyViewer and Status. | **Overlay Visible!**                          |
+| Step  | Component             | Action                                                                                                       | Result                                                                                        |
+| :---- | :-------------------- | :----------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- |
+| **1** | **EMMM Backend**      | **Scan & Map**: Scans enabled mods for character hashes and extracts `[Key*]` sections.                      | `HashMap<Hash, Keybinds>`                                                                     |
+| **2** | **EMMM Generator**    | **Artifact Write**: Generates the entrypoint and one stable resource tree into `Mods/.emmm_data/`.           | `KeyViewer.ini`, `generations/keybinds/active/*.txt`, `generations/status/runtime_status.txt` |
+| **3** | **EMMM App**          | **Reload Sync**: Sends the `reload_fixes` key to 3DMigoto.                                                   | Game reloads all `.ini` files.                                                                |
+| **4** | **3DMigoto Engine**   | **Hash Hit**: Game renders a character; `TextureOverride` triggers in `KeyViewer.ini`.                       | `$kv_has_active = 1`, `$kv_last_seen = time`.                                                 |
+| **5** | **3DMigoto Present**  | **Arbitration**: `[Present]` block checks the 1.5s threshold and `$kv_active` toggle.                        | Correct `CommandList` is selected.                                                            |
+| **6** | **help.ini Pipeline** | **Render**: `FormatText` prints to a single `Notification` slot in `help.ini` for both KeyViewer and Status. | **Overlay Visible!**                                                                          |
 
 ---
 

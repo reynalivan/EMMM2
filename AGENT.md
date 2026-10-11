@@ -31,13 +31,14 @@ EMMM: Premium Mod Orchestrator (3DMigoto: Genshin, HSR, ZZZ, WuWa, Endfield).
 - **Tools**: Use `context7`, `fetch`, `deepwiki`, `exa` for research, `narsil-mcp`, `sequential-thinking` before coding.
 - **i18n**: Namespace modularity + descriptive keys Include tooltips/aria.
 
-## 6. Frontend Demo Mode
+## 6. Windows App Verification and Demo Mode
 
-- Read `docs/frontend-demo.md` before demo work.
-- Run only `pnpm dev:demo`. Demo is fixture-only, in-memory, and must never reach user data or native services.
+- Default application verification on Windows is native E2E: WebdriverIO + `tauri-driver` + WebView2 against the freshly built isolated EMMM executable. Read `.agent/skills/e2e-automation/SKILL.md` and `.agent/workflows/e2e-testing.md` before app E2E work.
+- Do not start a browser demo or Playwright browser session for ordinary app fixes, startup/performance checks, IPC, watcher, storage, import, or recovery verification. If native E2E is blocked, report the blocker; do not substitute browser results.
+- Browser demo work requires an explicit user request for demo/fixture/browser review. Read `docs/frontend-demo.md`, then use only `pnpm dev:demo`; its in-memory fixtures must never reach user data or native services.
 - Reuse the existing app, shell, routes, pages, modals, and controls. Never add alternate demo UI.
 - Use typed bindings. Missing demo handlers reject rather than calling Tauri.
-- Verify the existing UI in a browser, including states, interactions, responsive layout, keyboard access, and console errors.
+- Verify application behavior in the native Windows app, including loading/error states, keyboard interaction and real IPC/disk effects. Browser fixture results cannot certify native behavior. Documentation-only edits need link/format checks, not an app rebuild.
 
 ## 3. Workflow
 

@@ -1,0 +1,73 @@
+{
+  "version": "3.1.0",
+  "fix_branch": "main",
+  "base_commit": "2079d4ab944a7b51914973c1135f83003be03873",
+  "dry_run": false,
+  "circuit_breaker_tripped": false,
+  "phase2_timeout_hit": false,
+  "fixes": [
+    {
+      "bugId": "MM-5",
+      "severity": "Medium",
+      "status": "fixed",
+      "files": [
+        "src-tauri/src/modules/workspace/adapters/notify/identity_cache.rs",
+        "src-tauri/src/modules/workspace/application/scanner/watcher/event_filter.rs",
+        "src-tauri/src/shared/path_key.rs",
+        "tests/e2e/specs/client-workspace-smoke.e2e.ts"
+      ],
+      "lines": "identity_cache.rs:add_path_with_reader,child_directories,observes_path",
+      "description": "Completes the previously implemented reversible preview visibility flow. Identity caching excludes root-relative hidden runtime staging and preserves historical IDs for delayed events at moved paths, without weakening real coverage failures or mutation guards. Native hide/restore, right-click/show-hidden, clear-gallery, actual restart persistence and texture fallback toggles preserve exact image bytes."
+    },
+    {
+      "bugId": "MM-6",
+      "severity": "Medium",
+      "status": "fixed",
+      "files": [
+        "src-tauri/src/modules/library/adapters/tauri/mod_core_cmds.rs",
+        "src-tauri/src/modules/library/adapters/tauri/tests/mod_folder_create_recovery_tests.rs",
+        "src-tauri/src/modules/mutation/api.rs",
+        "src-tauri/src/modules/mutation/journal.rs",
+        "src-tauri/src/modules/mutation/recovery.rs",
+        "src-tauri/src/platform/fs/rename.rs"
+      ],
+      "lines": "mod_core_cmds.rs:PreparedFolderCreate; recovery.rs:recover_operation,rollback_folder_create; rename.rs:PinnedDirectory",
+      "description": "Windows creation and recovery pin original directory ownership during promotion/removal. Creation-specific recovery removes only the matching empty source/target, retains added or replacement assets for manual repair, validates original root and UUID stage names, and settles interrupted cleanup idempotently. Native configured-junction creation and abrupt subprocess exit at six journal boundaries pass. Non-Windows ownership-bound recovery removal fails closed pending platform-specific support."
+    },
+    {
+      "bugId": "MM-RELOAD",
+      "severity": "Medium",
+      "status": "fixed",
+      "files": [
+        "src-tauri/src/modules/system/application/app/post_apply.rs",
+        "src-tauri/src/modules/automation/application/hotkeys/reload.rs",
+        "tests/e2e/specs/client-workspace-smoke.e2e.ts"
+      ],
+      "lines": "post_apply.rs:synchronize_overlay_context; reload.rs:trigger_reload_config",
+      "description": "Confirmed-stopped games publish successfully without requiring a reload binding or emitting a false manual-reload notice. Running/unknown state retains legitimate manual outcomes. Automatic input rechecks active-game focus. Rust covers stopped/unknown outcomes and unfocused rejection; native publication and absence of the notice pass without launching a game or synthesizing game input."
+    }
+  ],
+  "verification": {
+    "baseline_pass": 0,
+    "baseline_fail": 5,
+    "flaky_tests": 0,
+    "final_pass": 900,
+    "final_fail": 0,
+    "new_failures": 0,
+    "resolved_failures": 5,
+    "typecheck_pass": true,
+    "build_pass": true,
+    "fixer_bugs_found": 0
+  },
+  "summary": {
+    "total_confirmed": 3,
+    "eligible": 3,
+    "manual_review": 0,
+    "fixed": 3,
+    "fix_reverted": 0,
+    "fix_failed": 0,
+    "skipped": 0,
+    "fixer_bug": 0,
+    "partial": 0
+  }
+}

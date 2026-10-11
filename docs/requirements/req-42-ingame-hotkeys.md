@@ -72,12 +72,12 @@ As a streamer, I want a panic-button hotkey that instantly filters NSFW mods and
 
 As a user, I want to switch between my preset Collections in-game without Alt-Tabbing.
 
-| ID        | Type        | Criteria                                                                                                                                                                                                                                                             |
-| --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID        | Type        | Criteria                                                                                                                                                                                                                                                                  |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-42.3.1 | ✅ Positive | Given "Next Preset" (`Ctrl+F5`), when pressed: (1) next preset resolved, (2) `current_preset_id` persists, (3) `enabled_mod_set` recomputed, (4) artifacts regenerated, (5) workspace updated atomically, (6) `reload_fixes` triggered, (7) banner shows `Preset: {name}` |
-| AC-42.3.2 | ✅ Positive | Given "Previous Preset" (`Shift+F5`), then the previous collection is selected with the same pipeline as Next                                                                                                                                                        |
-| AC-42.3.3 | ✅ Positive | Given I'm on the last Collection, pressing "Next Preset" wraps to the first                                                                                                                                                                                          |
-| AC-42.3.4 | ❌ Negative | Given the workspace update or artifact generation fails, then `current_preset_id` is NOT advanced, reload is NOT triggered, `switch_lock` released, toast shows error                                                                                                |
+| AC-42.3.2 | ✅ Positive | Given "Previous Preset" (`Shift+F5`), then the previous collection is selected with the same pipeline as Next                                                                                                                                                             |
+| AC-42.3.3 | ✅ Positive | Given I'm on the last Collection, pressing "Next Preset" wraps to the first                                                                                                                                                                                               |
+| AC-42.3.4 | ❌ Negative | Given the workspace update or artifact generation fails, then `current_preset_id` is NOT advanced, reload is NOT triggered, `switch_lock` released, toast shows error                                                                                                     |
 
 ---
 

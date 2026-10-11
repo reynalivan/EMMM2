@@ -7,6 +7,7 @@ description: EMMM Core Architecture & Domain - High-level system design, domain 
 - Tauri v2: Strict bridge hygiene. No direct DB/FS access from Frontend. ALL IPC via typed `commands` from Specta `bindings.ts`; raw `invoke()` PROHIBITED.
 - Atomic: Ops MUST be all-or-nothing. Virtualized lists for 10k+ items.
 - Core Stack: Rust (Backend) + React 19/TS 5+/Vite (Frontend). pnpm ONLY.
+- Verification routing: Windows app flows use native E2E through `wdio.conf.ts`, `tauri-driver` and WebView2. Read `.agent/skills/e2e-automation/SKILL.md`; browser/demo verification requires an explicit user request and cannot replace native evidence.
 - DB Stack: sqlx (SQLite), notify (Watcher), tokio (Async), rayon (Parallel).
 - UI Stack: daisyUI 5/Tailwind v4, zustand, react-query, react-virtual.
 - Prohibited: lodash, moment, axios. Use native or date-fns/fetch.

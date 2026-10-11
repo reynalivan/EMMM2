@@ -8,6 +8,9 @@ target/
 docs/history/
 .claude/
 .gitattributes
+# Generator-owned files keep their native output format.
+pnpm-lock.yaml
+src/shared/api/tauri/bindings.gen.ts
 *.db
 *.sqlite
 *.sqlite3

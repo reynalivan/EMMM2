@@ -15,9 +15,10 @@ description: UI/UX Rules - DaisyUI, layout, and motion.
 
 ## Frontend Demo Fixtures
 
+- Verification default: inspect and test product loading/error states, controls and keyboard behavior in the native Windows app through `.agent/skills/e2e-automation/SKILL.md`. Browser demo/fixture review requires an explicit user request.
 - Scope: Demo mode changes content and adapter behavior only. Reuse the existing `App`, shell, top bar, sidebar, pages, modals, wizards, and controls.
 - Forbidden: Do not add a `DemoApp`, demo shell, alternate navigation, mock page, custom modal, or duplicate component to make the demo look complete.
 - Data: Put browser-safe fixture data in `src/demo/` behind existing typed gateways or typed IPC bindings. Match generated binding types. Do not use `any`, casts that hide type drift, or fake client-side domain models.
 - Safety: Demo interactions may alter module-local fixture state only. They must not invoke a native side effect or touch real settings, files, databases, credentials, game processes, or system services.
-- Design QA: Inspect the existing interface with realistic short and long fixture content. Verify hierarchy, overflow, keyboard focus, responsive reflow, empty/loading/error states, and visual parity with the existing product. A desired layout change belongs to a normal product UI task, not a fixture task.
+- Design QA: In the explicitly requested review surface, inspect hierarchy, overflow, keyboard focus, empty/loading/error states and parity with the existing product. Responsive browser fixture checks do not replace native app verification. A desired layout change belongs to a normal product UI task, not a fixture task.
 - Reference: Read `docs/frontend-demo.md` before implementing or reviewing demo UI work.

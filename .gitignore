@@ -95,3 +95,6 @@ src-tauri/gen/schemasmsedgedriver.exe
 /revert_any.py
 /test-results.json
 /tsconfig*.tsbuildinfo
+/.audit-output/
+/.bug-hunter/
+/.playwright-mcp/

@@ -39,3 +39,13 @@ Standard boilerplate for secure, async, and error-safe Tauri Commands.
 - **Rule**: Use `tauri::State<'_, AppState>` to access DB pools or Config.
 - **Pattern**: Inner mutability (`Mutex` / `RwLock`) is required for mutable state.
 - **Example**: [state_command.rs](examples/state_command.rs)
+
+### 5. Native integration verification
+
+- Verify affected command flows in the Windows app through
+  [`e2e-automation`](../e2e-automation/SKILL.md) and `wdio.conf.ts`.
+- Use the freshly built isolated E2E executable and owned fixtures; verify real
+  IPC permissions, state and relevant disk/persistence effects.
+- Browser demo gateways do not call native commands and cannot validate their
+  registration, permissions or runtime behavior. If native testing is blocked,
+  report the blocker instead of switching to browser verification.

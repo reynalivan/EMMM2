@@ -2,9 +2,28 @@
 
 Frontend demo mode lets the team review the real EMMM frontend in a browser without connecting to game files, native services, or user data. It is a fixture layer, not a second interface.
 
+## Choose the verification surface
+
+The default for EMMM Windows application testing is **native E2E**, using
+WebdriverIO, `tauri-driver`, WebView2 and the isolated executable built by
+`wdio.conf.ts`. Follow [the native E2E skill](../.agent/skills/e2e-automation/SKILL.md)
+and [workflow](../.agent/workflows/e2e-testing.md).
+
+Use native E2E for application UI, startup/reopen, loading states, performance,
+IPC, filesystem, watcher, storage, import, persistence and recovery checks.
+Do not open a browser or start this demo merely because the app contains React.
+If native testing is blocked, report the build/driver/runtime blocker and the
+unverified scenario; do not silently fall back to browser QA.
+
+This document's browser instructions apply only when the user explicitly requests
+demo, fixture or browser review. Demo results describe in-memory frontend
+behavior and cannot certify native app behavior. Unit tests may still protect
+fixture compatibility without launching the demo. Documentation-only changes
+require documentation validation, not native E2E.
+
 ## Start the demo
 
-Run:
+For an explicitly requested browser demo review, run:
 
 ```sh
 pnpm dev:demo
@@ -64,7 +83,7 @@ Fixture data should cover real review states. Use varied names and lengths, mult
 
 Demo mode is for reviewing the product interface, not for designing an alternate interface.
 
-Check each affected existing screen in the browser:
+For explicitly requested browser demo review, check the affected existing screens:
 
 - Global shell, sidebar, top bar, and game switcher
 - Dashboard, Mods Manager, Collections, Mod Inbox, and Storage Optimizer
@@ -88,4 +107,7 @@ pnpm exec vite build --mode demo
 
 The last command is a negative test. It passes only when the command exits with the development-only error.
 
-Then inspect the browser. Navigate through the affected existing screens, interact with the relevant controls, test game switching and fixture mutations, verify desktop and mobile layouts, and check the console for errors. Record the pages and interactions that were checked in the implementation history entry.
+If browser demo review was explicitly requested, inspect the affected screens,
+controls, fixture game switches, keyboard behavior and relevant layouts. Record
+the fixture-only coverage and console findings in the history entry. For normal
+application changes, run focused native Windows E2E instead.
