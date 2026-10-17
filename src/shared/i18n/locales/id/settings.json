@@ -107,7 +107,7 @@
       "reset_suggestions_desc": "Tampilkan kembali identitas katalog game aktif yang sebelumnya diabaikan untuk direview.",
       "reset_suggestions_action": "Reset yang diabaikan",
       "updates_title": "Pembaruan katalog",
-      "updates_desc": "Periksa dan pasang pembaruan secara manual.",
+      "updates_desc": "Pasang pack katalog lebih dulu. EMMM memakai sumber GitHub dari pack tersebut untuk memeriksa pembaruan bertanda tangan saat Anda meminta.",
       "check_update": "Periksa sekarang",
       "install_update": "Instal {{version}}",
       "update_available": "Versi {{version}} siap diinstal.",

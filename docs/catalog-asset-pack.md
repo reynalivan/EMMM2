@@ -34,8 +34,14 @@ Topics make packs discoverable, not verified or endorsed. A broader search uses
 `topic:emmm-catalog`.
 
 The Catalog updates section is manual: **Check now** and **Install** only run
-when selected by the user. A URL declared in a locally selected manifest is
-never used as an update source.
+when selected by the user after a pack is installed. EMMM reads the installed
+pack's `manifest.json` `source` to find its GitHub repository; it does not
+store a built-in catalog endpoint. The source must be a public HTTPS GitHub
+repository or release URL. Invalid or missing sources cannot be used for
+updates, but the installed pack remains available for local use. Downloaded
+updates must match the installed pack ID and repository and pass EMMM's pinned
+signature check before replacing the active pack. To change repositories,
+review and install a new pack manually.
 
 ## Pack archive
 
@@ -56,7 +62,7 @@ are always supported by the current pack contract:
   "id": "community-catalog",
   "version": "1.0.0",
   "author": "Pack author",
-  "source": "publisher-declared source",
+  "source": "https://github.com/owner/repository",
   "catalogs": {
     "gimi": {
       "path": "catalog/gimi.json",

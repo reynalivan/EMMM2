@@ -190,8 +190,8 @@ async fn refresh_catalog_metadata(
     )
 }
 
-/// Check the fixed public catalog release channel. This is read-only and uses
-/// no GitHub credentials from the user or the application.
+/// Check the installed pack's declared public GitHub release channel. This is
+/// read-only and uses no GitHub credentials from the user or the application.
 #[tauri::command]
 #[specta::specta]
 pub async fn check_catalog_update(

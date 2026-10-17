@@ -314,14 +314,14 @@ fn validate_local_archive_path(path: &Path) -> Result<(), ScannerError> {
     Ok(())
 }
 
-struct GithubReleaseSource {
-    repository: String,
+pub(super) struct GithubReleaseSource {
+    pub(super) repository: String,
     release_api: String,
     original: String,
 }
 
 impl GithubReleaseSource {
-    fn parse(value: &str) -> Result<Self, ScannerError> {
+    pub(super) fn parse(value: &str) -> Result<Self, ScannerError> {
         let url = reqwest::Url::parse(value.trim()).map_err(|_| {
             ScannerError::Validation("Enter a public GitHub repository or release URL".to_string())
         })?;

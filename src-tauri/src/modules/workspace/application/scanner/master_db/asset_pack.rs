@@ -125,6 +125,10 @@ impl CatalogPack {
         &self.manifest.version
     }
 
+    pub(crate) fn source(&self) -> &str {
+        &self.manifest.source
+    }
+
     pub(crate) fn manifest_checksum(&self) -> &str {
         &self.manifest_checksum
     }

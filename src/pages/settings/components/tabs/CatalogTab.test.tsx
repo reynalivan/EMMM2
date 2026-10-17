@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     message: null,
     entries: 0,
   }),
+  checkCatalogUpdate: vi.fn(),
   previewCatalogLocalImport: vi.fn(),
   installCatalogImport: vi.fn(),
   discardCatalogImport: vi.fn().mockResolvedValue(null),
@@ -64,13 +65,47 @@ describe('CatalogTab', () => {
     mocks.previewCatalogLocalImport.mockResolvedValue(preview);
     mocks.installCatalogImport.mockResolvedValue({ state: 'ready', entries: 1 });
     mocks.discardCatalogImport.mockResolvedValue(null);
+    mocks.checkCatalogUpdate.mockReset();
   });
 
   it('offers local ZIP review without an automatic-install preference', () => {
     renderCatalog();
 
     expect(screen.getByRole('button', { name: /Choose ZIP/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Check now/i })).toBeDisabled();
     expect(screen.queryByRole('checkbox', { name: /Auto-install/i })).not.toBeInTheDocument();
+  });
+
+  it('enables update checks after a catalog pack is installed', async () => {
+    mocks.getCatalogPackStatus.mockResolvedValueOnce({
+      state: 'ready',
+      pack_id: 'catalog-pack',
+      version: '1.4.0',
+      message: null,
+      entries: 1,
+    });
+    renderCatalog();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Check now/i })).toBeEnabled());
+  });
+
+  it('shows why an installed pack cannot provide an update source', async () => {
+    mocks.getCatalogPackStatus.mockResolvedValueOnce({
+      state: 'ready',
+      pack_id: 'catalog-pack',
+      version: '1.4.0',
+      message: null,
+      entries: 1,
+    });
+    mocks.checkCatalogUpdate.mockRejectedValueOnce(
+      new Error('Enter a public HTTPS GitHub repository or release URL'),
+    );
+    renderCatalog();
+    const checkButton = screen.getByRole('button', { name: /Check now/i });
+    await waitFor(() => expect(checkButton).toBeEnabled());
+    fireEvent.click(checkButton);
+
+    expect(await screen.findByText(/public HTTPS GitHub repository or release URL/i)).toBeVisible();
   });
 
   it('discards staged storage when review is cancelled', async () => {

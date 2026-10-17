@@ -73,7 +73,10 @@ export default function CatalogTab() {
     networkMode: 'always',
     onMutate: () => setCatalogError(null),
     onSuccess: setCatalogUpdate,
-    onError: () => setCatalogError(t('general.catalog_assets.update_check_failed')),
+    onError: (error) =>
+      setCatalogError(
+        `${t('general.catalog_assets.update_check_failed')} ${formatAppError(error)}`,
+      ),
   });
   const installCatalogUpdateMutation = useMutation<CatalogUpdateInstallResult, unknown>({
     mutationFn: () => commands.installCatalogUpdate(),
@@ -291,7 +294,7 @@ export default function CatalogTab() {
             <button
               type="button"
               className="btn btn-sm btn-ghost gap-2"
-              disabled={isCatalogPending || !!catalogPreview}
+              disabled={catalogPack?.state !== 'ready' || isCatalogPending || !!catalogPreview}
               onClick={() => checkCatalogUpdateMutation.mutate()}
             >
               <RefreshCw

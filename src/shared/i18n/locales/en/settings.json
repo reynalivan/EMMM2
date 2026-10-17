@@ -107,7 +107,7 @@
       "reset_suggestions_desc": "Let the active game's previously ignored catalog identities appear for review again.",
       "reset_suggestions_action": "Reset ignored",
       "updates_title": "Catalog updates",
-      "updates_desc": "Check and install updates manually.",
+      "updates_desc": "Install a catalog pack first. EMMM uses its declared GitHub source to check for signed updates when you ask.",
       "check_update": "Check now",
       "install_update": "Install {{version}}",
       "update_available": "Version {{version}} is ready to install.",

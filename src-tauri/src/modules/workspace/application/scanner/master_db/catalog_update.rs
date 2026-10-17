@@ -1,9 +1,9 @@
 //! Signed, read-only catalog-release updates.
 //!
 //! End-user installations never authenticate to GitHub and never ingest
-//! upstream importer repositories. They accept only a signed ZIP published by
-//! the fixed catalog release channel, validate it in a sibling staging folder,
-//! and atomically replace the active data-only pack.
+//! upstream importer repositories. The installed pack supplies the release
+//! repository; updates still require the pinned signature, a matching pack
+//! identity, and a matching source before an atomic replacement.
 
 use std::{
     collections::HashSet,
@@ -18,15 +18,11 @@ use semver::Version;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::asset_pack::CatalogPack;
+use super::{asset_pack::CatalogPack, catalog_import::GithubReleaseSource};
 use crate::shared::errors::ScannerError;
 
-pub(crate) const CATALOG_REPOSITORY: &str = "reynalivan/3dm-catalog-asset";
-pub(crate) const RELEASE_API: &str =
-    "https://api.github.com/repos/reynalivan/3dm-catalog-asset/releases/latest";
 const ZIP_ASSET_NAME: &str = "catalog-pack.zip";
 const SIGNATURE_ASSET_NAME: &str = "catalog-pack.sig";
-const EXPECTED_PACK_ID: &str = "3dm-catalog-asset";
 pub(crate) const MAX_RELEASE_METADATA_BYTES: usize = 1_024 * 1_024;
 pub(crate) const MAX_SIGNATURE_BYTES: usize = 1_024;
 pub(crate) const MAX_ARCHIVE_BYTES: usize = 75 * 1024 * 1024;
@@ -80,35 +76,46 @@ struct ReleaseAssets {
 }
 
 pub async fn check(app_data_dir: &Path) -> Result<CatalogUpdateCheck, ScannerError> {
-    let release = fetch_release().await?;
-    let current_version = installed_version(app_data_dir)?;
-    let state = match current_version.as_deref().map(parse_version).transpose()? {
-        Some(current) if current >= release.version => "up_to_date",
-        _ => "update_available",
+    let (pack, source) = installed_pack_and_source(app_data_dir)?;
+    let current_version = parse_version(pack.version())?;
+    let release = fetch_release(&source).await?;
+    let state = if current_version >= release.version {
+        "up_to_date"
+    } else {
+        "update_available"
     };
     Ok(CatalogUpdateCheck {
         state: state.to_string(),
-        current_version,
+        current_version: Some(current_version.to_string()),
         available_version: Some(release.version.to_string()),
         release_notes: release.notes,
     })
 }
 
 pub async fn install(app_data_dir: &Path) -> Result<CatalogUpdateInstallResult, ScannerError> {
-    let release = fetch_release().await?;
-    if let Some(current) = installed_version(app_data_dir)? {
-        let current = parse_version(&current)?;
-        if current >= release.version {
-            return Err(ScannerError::Validation(
-                "The published catalog release is not newer than the installed pack".to_string(),
-            ));
-        }
+    let (current_pack, source) = installed_pack_and_source(app_data_dir)?;
+    let release = fetch_release(&source).await?;
+    if parse_version(current_pack.version())? >= release.version {
+        return Err(ScannerError::Validation(
+            "The published catalog release is not newer than the installed pack".to_string(),
+        ));
     }
 
     let client = update_client()?;
-    let archive = download_asset(&client, release.zip_asset_id, MAX_ARCHIVE_BYTES).await?;
-    let signature =
-        download_asset(&client, release.signature_asset_id, MAX_SIGNATURE_BYTES).await?;
+    let archive = download_asset(
+        &client,
+        &source.repository,
+        release.zip_asset_id,
+        MAX_ARCHIVE_BYTES,
+    )
+    .await?;
+    let signature = download_asset(
+        &client,
+        &source.repository,
+        release.signature_asset_id,
+        MAX_SIGNATURE_BYTES,
+    )
+    .await?;
     verify_archive_signature(&archive, &signature)?;
 
     let staging = staging_root(app_data_dir);
@@ -116,11 +123,7 @@ pub async fn install(app_data_dir: &Path) -> Result<CatalogUpdateInstallResult, 
         std::fs::create_dir_all(&staging)?;
         extract_archive(&archive, &staging)?;
         let pack = CatalogPack::load_from_root(staging.clone())?;
-        if pack.id() != EXPECTED_PACK_ID {
-            return Err(ScannerError::Validation(
-                "Catalog release uses an unexpected pack identifier".to_string(),
-            ));
-        }
+        validate_update_identity(&current_pack, &pack, &source)?;
         let version = parse_version(pack.version())?;
         if version != release.version {
             return Err(ScannerError::Validation(
@@ -140,10 +143,14 @@ pub async fn install(app_data_dir: &Path) -> Result<CatalogUpdateInstallResult, 
     result
 }
 
-async fn fetch_release() -> Result<ReleaseAssets, ScannerError> {
+async fn fetch_release(source: &GithubReleaseSource) -> Result<ReleaseAssets, ScannerError> {
     let client = update_client()?;
+    let release_api = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        source.repository
+    );
     let response = client
-        .get(RELEASE_API)
+        .get(release_api)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await
@@ -204,11 +211,11 @@ pub(crate) fn update_client() -> Result<reqwest::Client, ScannerError> {
 
 async fn download_asset(
     client: &reqwest::Client,
+    repository: &str,
     asset_id: u64,
     limit: usize,
 ) -> Result<Vec<u8>, ScannerError> {
-    let url =
-        format!("https://api.github.com/repos/{CATALOG_REPOSITORY}/releases/assets/{asset_id}");
+    let url = format!("https://api.github.com/repos/{repository}/releases/assets/{asset_id}");
     let response = client
         .get(url)
         .header(reqwest::header::ACCEPT, "application/octet-stream")
@@ -258,12 +265,35 @@ fn network_error(error: reqwest::Error) -> ScannerError {
     }
 }
 
-fn installed_version(app_data_dir: &Path) -> Result<Option<String>, ScannerError> {
-    match CatalogPack::load(app_data_dir) {
-        Ok(pack) => Ok(Some(pack.version().to_string())),
-        Err(error) if error.to_string().contains("not installed") => Ok(None),
-        Err(error) => Err(error),
+fn installed_pack_and_source(
+    app_data_dir: &Path,
+) -> Result<(CatalogPack, GithubReleaseSource), ScannerError> {
+    if !CatalogPack::root(app_data_dir).exists() {
+        return Err(ScannerError::Validation(
+            "Install a catalog pack before checking for updates".to_string(),
+        ));
     }
+    let pack = CatalogPack::load(app_data_dir)?;
+    let source = GithubReleaseSource::parse(pack.source())?;
+    Ok((pack, source))
+}
+
+fn validate_update_identity(
+    current: &CatalogPack,
+    candidate: &CatalogPack,
+    source: &GithubReleaseSource,
+) -> Result<(), ScannerError> {
+    if candidate.id() != current.id() {
+        return Err(ScannerError::Validation(
+            "Catalog release uses an unexpected pack identifier".to_string(),
+        ));
+    }
+    if GithubReleaseSource::parse(candidate.source())?.repository != source.repository {
+        return Err(ScannerError::Validation(
+            "Catalog release changes the update repository; import it manually to review the new source".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_version(value: &str) -> Result<Version, ScannerError> {
@@ -420,9 +450,85 @@ pub(crate) fn replace_active_pack(app_data_dir: &Path, staging: &Path) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, is_allowed_file, verify_signature_with_public_key};
+    use super::super::catalog_import::GithubReleaseSource;
+    use super::{
+        decode_hex, installed_pack_and_source, is_allowed_file, validate_update_identity,
+        verify_signature_with_public_key,
+    };
+    use crate::modules::workspace::application::scanner::master_db::asset_pack::CatalogPack;
     use ed25519_dalek::{Signer, SigningKey};
+    use serde_json::json;
     use std::path::Path;
+
+    fn write_pack(root: &Path, id: &str, source: &str) -> CatalogPack {
+        std::fs::create_dir_all(root).unwrap();
+        std::fs::write(
+            root.join("manifest.json"),
+            serde_json::to_vec(&json!({
+                "id": id,
+                "version": "1.4.0",
+                "author": "Test",
+                "source": source,
+                "catalogs": {}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        CatalogPack::load_from_root(root.to_path_buf()).unwrap()
+    }
+
+    #[test]
+    fn installed_pack_supplies_validated_update_repository() {
+        let app_data = tempfile::tempdir().unwrap();
+        write_pack(
+            &CatalogPack::root(app_data.path()),
+            "catalog-pack",
+            "https://github.com/example/catalog-pack",
+        );
+        let (_, source) = installed_pack_and_source(app_data.path()).unwrap();
+        assert_eq!(source.repository, "example/catalog-pack");
+    }
+
+    #[test]
+    fn updater_rejects_missing_pack_and_unsafe_manifest_source() {
+        let app_data = tempfile::tempdir().unwrap();
+        assert!(installed_pack_and_source(app_data.path()).is_err());
+        write_pack(
+            &CatalogPack::root(app_data.path()),
+            "catalog-pack",
+            "http://localhost/catalog-pack",
+        );
+        assert!(installed_pack_and_source(app_data.path()).is_err());
+    }
+
+    #[test]
+    fn signed_update_cannot_switch_pack_or_repository() {
+        let root = tempfile::tempdir().unwrap();
+        let current = write_pack(
+            &root.path().join("current"),
+            "catalog-pack",
+            "https://github.com/example/catalog-pack",
+        );
+        let source = GithubReleaseSource::parse(current.source()).unwrap();
+        let matching = write_pack(
+            &root.path().join("matching"),
+            "catalog-pack",
+            "https://github.com/example/catalog-pack/releases/latest",
+        );
+        assert!(validate_update_identity(&current, &matching, &source).is_ok());
+        let other_repo = write_pack(
+            &root.path().join("other-repo"),
+            "catalog-pack",
+            "https://github.com/other/catalog-pack",
+        );
+        assert!(validate_update_identity(&current, &other_repo, &source).is_err());
+        let other_pack = write_pack(
+            &root.path().join("other-pack"),
+            "another-pack",
+            current.source(),
+        );
+        assert!(validate_update_identity(&current, &other_pack, &source).is_err());
+    }
 
     #[test]
     fn archive_file_allowlist_rejects_executables_and_nested_catalogs() {

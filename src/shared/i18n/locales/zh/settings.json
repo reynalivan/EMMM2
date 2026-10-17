@@ -107,7 +107,7 @@
       "reset_suggestions_desc": "让当前游戏此前忽略的目录身份再次出现在审核列表中。",
       "reset_suggestions_action": "重置已忽略项",
       "updates_title": "目录更新",
-      "updates_desc": "手动检查并安装更新。",
+      "updates_desc": "请先安装目录包。EMMM 会在您主动检查时使用包中声明的 GitHub 来源查找已签名的更新。",
       "check_update": "立即检查",
       "install_update": "安装 {{version}}",
       "update_available": "版本 {{version}} 已可安装。",
