@@ -1,6 +1,12 @@
 # EMMM — 3DMigoto Mod Manager
 
-EMMM is an open-source Windows desktop manager for GIMI, SRMI, ZZMI, WWMI, and EFMI mod libraries. Point it at the folders you already use, including libraries spread across multiple locations. EMMM follows your layout instead of requiring you to rebuild it around the manager.
+EMMM is an open-source Windows desktop manager for GIMI, SRMI, ZZMI, WWMI, and EFMI mod libraries. Point it at the folders you already use, even when they span multiple locations. Keep your layout; EMMM works with it.
+
+[Features](#what-you-can-do) · [Build from source](#setup) · [Support development](https://ko-fi.com/reynalivan)
+
+![EMMM mod library showing costume cards, search filters, enable switches, and a selected mod preview](docs/images/readme/mod-library.webp)
+
+_The screenshots use a sample library created for the landing page. EMMM does not include the pictured mods or game content._
 
 EMMM is an independent third-party project. It is not affiliated with, endorsed by, or sponsored by any game, game developer, publisher, or platform mentioned in this repository.
 
@@ -8,11 +14,13 @@ EMMM is an independent third-party project. It is not affiliated with, endorsed 
 
 ### Import and classify mods
 
-Drop a mod folder or a `.zip`, `.7z`, or `.rar` archive into Mod Inbox. EMMM detects mod roots inside nested downloads, then suggests an identity and destination using available INI hashes, installed catalog records, aliases, and folder names. You review ambiguous matches and placement before applying them. Catalog data can also add available metadata and thumbnails to matched objects.
+Drop a mod folder or a `.zip`, `.7z`, or `.rar` archive into Mod Inbox. EMMM finds mod roots inside nested downloads and suggests where each one belongs. It checks available INI hashes, installed catalog records, aliases, and folder names. Review uncertain matches and destinations before import; catalog data can also add available metadata and thumbnails.
+
+![Smart Classification review showing suggested destinations, match confidence, and mods that need a decision](docs/images/readme/smart-classification.webp)
 
 ### Work with your own folders
 
-Browse by game and object in grid or list view, open nested folders, and use breadcrumbs to go back. Search and filter by available names, categories, and metadata; pin the mods you return to often. Enable or disable a mod, use **Enable Only This** to compare alternatives in a group, or apply bulk actions. A `DISABLED ` folder prefix records the enabled state on disk, while SQLite indexes the library for browsing.
+Browse by game and object in grid or list view, open nested folders, and use breadcrumbs to go back. Search and filter by name, category, and available metadata. Pin or star favorites, enable or disable individual mods, use **Enable Only This** to compare alternatives in a group, or act on several mods at once. A `DISABLED ` folder prefix records the enabled state on disk, while SQLite indexes the library for browsing.
 
 EMMM watches relevant folder, INI, metadata, and image changes, so edits made in File Explorer can be reconciled with the app's view.
 
@@ -20,19 +28,27 @@ EMMM watches relevant folder, INI, metadata, and image changes, so edits made in
 
 EMMM detects images in mod folders. Choose a preview or paste a thumbnail from the clipboard; edit metadata and inspect INI files in the app. Detected keybinds from active mods appear in a searchable view. For supported runtime matches, the optional in-game KeyViewer shows bindings and status; **F7** toggles the overlay.
 
-### Save setups and maintain the library
+### Save setups with Collections
 
-Save collections and switch between them while the game is in the foreground with **Shift+F5** and **Ctrl+F5**. **F5** toggles Safe Mode, which limits the active setup to mods you have classified as Safe. Storage Optimizer helps you inspect duplicate files before deciding what to clean up.
+Save collections and switch between them while the game is in the foreground with **Shift+F5** and **Ctrl+F5**. Preview what will change before applying a collection. **F5** toggles Safe Mode, which limits the active setup to mods you have classified as Safe.
+
+![Collections showing an active safe setup, another saved setup, and the mods in the selected collection](docs/images/readme/collections-safe-mode.webp)
+
+### Review duplicate files
+
+Storage Optimizer groups duplicate files for review. Choose what to keep, ignore, move to trash, or hardlink after checking the results.
+
+![Storage Optimizer showing duplicate file groups and available actions](docs/images/readme/storage-optimizer.webp)
 
 The normal **Remove Mod** action sends the folder to the OS Recycle Bin. Keep a separate backup before large imports or reorganizations.
 
 ## Catalog data
 
-EMMM can use an optional catalog pack for known identities, aliases, hashes, available metadata and images, and reviewed KeyViewer runtime targets. In the app, open **Settings > Catalog Assets** to check for updates or review and install a local `catalog-pack.zip`. Catalog coverage differs by game and entry; matching suggestions still need your review.
+EMMM can use an optional catalog pack for known identities, aliases, hashes, available metadata and images, and reviewed KeyViewer runtime targets. In the app, open **Settings > Catalog Assets** to review and install a local `catalog-pack.zip`. Once installed, you can check for signed updates from the source declared by that pack. Catalog coverage differs by game and entry; matching suggestions still need your review.
 
 ## Getting started
 
-EMMM is currently developed for Windows. This repository contains the application source and development instructions below.
+EMMM is currently developed for Windows. The source and build instructions are below. Check [Releases](https://github.com/reynalivan/EMMM2/releases) for published builds.
 
 ## Architecture
 
