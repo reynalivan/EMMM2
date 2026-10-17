@@ -1,0 +1,373 @@
+---
+import '../styles/global.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const github = 'https://github.com/reynalivan/EMMM2';
+const releases = `${github}/releases`;
+const support = 'https://ko-fi.com/reynalivan';
+const description = 'EMMM is a Windows desktop mod manager for 3DMigoto libraries. Sort new mods with Smart Classification, keep your own folder structure, and switch Collections with Safe Mode.';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0d0e12" />
+    <meta name="description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="EMMM — Mods in your folders, on your terms" />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content="https://reynalivan.github.io/EMMM2/" />
+    <link rel="canonical" href="https://reynalivan.github.io/EMMM2/" />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <title>EMMM — Mods in your folders, on your terms</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="nav-wrap" data-liquid-nav>
+        <nav class="nav content-width" aria-label="Main navigation">
+          <a class="brand" href={`${base}/`} aria-label="EMMM home">
+            <img src={`${base}/favicon.svg`} alt="" width="32" height="32" />
+            <span>EMMM<span class="brand-dot">.</span></span>
+          </a>
+          <div class="nav-links">
+            <a href="#inbox">How it works</a>
+            <a href="#catalog">Catalog</a>
+            <a href="#collections">Collections</a>
+            <a href="#keybinds">Keybinds</a>
+            <a href="#library">Features</a>
+          </div>
+          <details class="mobile-nav">
+            <summary>Menu <span aria-hidden="true">⌄</span></summary>
+            <div class="mobile-nav-links">
+              <a href="#inbox">How it works</a>
+              <a href="#catalog">Catalog</a>
+              <a href="#collections">Collections</a>
+              <a href="#keybinds">Keybinds</a>
+              <a href="#library">Features</a>
+            </div>
+          </details>
+          <a class="nav-cta" href={releases}>Download <span aria-hidden="true">↗</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero content-width" aria-labelledby="hero-title">
+        <p class="eyebrow hero-enter" style="--delay: .06s">A desktop home for 3DMigoto mods</p>
+        <h1 id="hero-title" class="hero-enter" style="--delay: .13s">Your mods.<br /><em>Your folders.</em></h1>
+        <p class="hero-lead hero-enter" style="--delay: .2s">Keep 3DMigoto mods in your own folders. Sort downloads with Smart Classification and save favorite setups as Collections.</p>
+        <div class="hero-actions hero-enter" style="--delay: .27s">
+          <a class="button button-primary" href={releases} data-liquid-control><span>Download for Windows</span><span aria-hidden="true">↗</span></a>
+          <a class="text-link" href="#inbox">See how it works <span aria-hidden="true">↓</span></a>
+        </div>
+        <p class="hero-note hero-enter" style="--delay: .34s">For GIMI, ZZMI, SRMI, WWMI, EFMI, and other 3DMigoto setups.</p>
+        <p class="platform-note hero-enter" style="--delay: .38s"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M2 4.5 10.5 3v8H2zm9.5-1.7L22 1v10H11.5zM2 12h8.5v8L2 18.5zm9.5 0H22v10l-10.5-1.8z" /></svg>For Windows</p>
+        <div class="hero-stage hero-enter" style="--delay: .4s" aria-label="Views from the EMMM desktop app">
+          <figure class="stage-panel stage-home">
+            <a href={`${base}/screenshots/dashboard-play.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size EMMM Dashboard screenshot"><img src={`${base}/screenshots/dashboard-play.webp`} alt="EMMM Dashboard with library statistics and quick actions" width="2000" height="1250" fetchpriority="high" decoding="async" /></a>
+            <figcaption>HOME / DASHBOARD</figcaption>
+          </figure>
+          <figure class="stage-panel stage-grid">
+            <a href={`${base}/screenshots/aster-costume-grid.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size mod grid screenshot"><img src={`${base}/screenshots/hero-mod-grid.webp`} alt="Aster's mod grid showing one character in many different costumes" width="1250" height="445" decoding="async" /></a>
+            <figcaption>MOD GRID</figcaption>
+          </figure>
+          <figure class="stage-panel stage-collection">
+            <a href={`${base}/screenshots/collections-safe-mode.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Collections screenshot"><img src={`${base}/screenshots/hero-collections.webp`} alt="Saved Collections with safety labels and mod contents" width="1555" height="665" decoding="async" /></a>
+            <figcaption>COLLECTIONS</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="map-section" id="inbox" aria-labelledby="inbox-title">
+        <div class="content-width">
+          <div class="section-intro reveal">
+            <div>
+              <p class="kicker">01 / MOD INBOX</p>
+              <h2 id="inbox-title">From download to the right folder.</h2>
+            </div>
+            <p>Smart Classification compares INI hashes, catalog identities and aliases, and clues in folder names and files. It proposes an object and destination before anything moves.</p>
+          </div>
+          <figure class="route-map reveal">
+            <div class="route-flow">
+              <div class="route-node input-node">
+                <span class="node-index">01 / ARRIVES</span>
+                <span class="node-symbol" aria-hidden="true">↓</span>
+                <h3>Mod Inbox</h3>
+                <p>ZIP, 7z, RAR, and folders enter one review queue.</p>
+                <span class="node-footer">New files stay visible</span>
+              </div>
+              <div class="route-connector" aria-hidden="true"><span></span></div>
+              <div class="route-node analysis-node">
+                <span class="node-index">02 / UNDERSTANDS</span>
+                <div class="analysis-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+                <h3>Smart Classification</h3>
+                <p>INI hashes, catalog entries, and names in the folder inform the suggested match.</p>
+                <span class="node-footer">Ambiguous matches need review</span>
+              </div>
+              <div class="route-connector" aria-hidden="true"><span></span></div>
+              <div class="route-node output-node">
+                <span class="node-index">03 / LANDS</span>
+                <div class="folder-mark" aria-hidden="true"><span></span></div>
+                <h3>Your library</h3>
+                <p>Preview the destination, resolve conflicts, then commit the import.</p>
+                <span class="node-footer">Your structure stays yours</span>
+              </div>
+            </div>
+          </figure>
+          <div class="archive-callout reveal"><span>ARCHIVE TO LIBRARY</span><p>EMMM extracts supported archives, finds mod roots inside wrapper or nested folders, and proposes where each mod belongs. Ambiguous matches and folder conflicts stay in the review flow.</p></div>
+          <div class="screen-pair reveal">
+            <figure class="screen-figure"><a class="screen-link" href={`${base}/screenshots/mod-inbox.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Mod Inbox screenshot"><img src={`${base}/screenshots/mod-inbox.webp`} alt="Mod Inbox showing four new folders ready to review" width="2000" height="1250" loading="lazy" decoding="async" /></a><figcaption>Review new downloads in one place.</figcaption></figure>
+            <figure class="screen-figure"><a class="screen-link" href={`${base}/screenshots/smart-classification.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Smart Classification screenshot"><img src={`${base}/screenshots/smart-classification.webp`} alt="Review matches dialog with high-confidence object suggestions and ambiguous matches requiring a decision" width="2000" height="1250" loading="lazy" decoding="async" /></a><figcaption>Check each suggested match before import.</figcaption></figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="catalog-section section-space" id="catalog" aria-labelledby="catalog-title">
+        <div class="content-width">
+          <div class="section-intro reveal">
+            <div><p class="kicker">02 / CATALOG ASSETS</p><h2 id="catalog-title">Give the matcher more to work with.</h2></div>
+            <p>The separate 3DM Catalog Asset pack adds known names, aliases, hashes, and available object metadata and images. EMMM uses that data for match suggestions, object thumbnails, and metadata filters where entries have coverage.</p>
+          </div>
+          <div class="catalog-layout">
+            <figure class="catalog-screen reveal">
+              <a class="screen-link" href={`${base}/screenshots/settings-catalog.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Catalog Assets settings screenshot"><img src={`${base}/screenshots/settings-catalog-focus.webp`} alt="EMMM Catalog Assets settings with the GitHub and local ZIP import controls" width="930" height="485" loading="lazy" decoding="async" /></a>
+            </figure>
+            <div class="catalog-guide reveal">
+              <div class="catalog-guide-heading"><span>INSTALL THE DATA PACK</span></div>
+              <ol>
+                <li><span>01</span><p>Get <code>catalog-pack.zip</code>. If you have the GameBanana bundle, extract its outer ZIP first.</p></li>
+                <li><span>02</span><p>In EMMM, open <strong>Settings → Catalog Assets</strong>. Under <strong>Install from ZIP</strong>, select <strong>Choose ZIP</strong> and pick <code>catalog-pack.zip</code>.</p></li>
+                <li><span>03</span><p>Review the version, publisher, supported games, and entry count. Select <strong>Install pack</strong> to confirm.</p></li>
+              </ol>
+              <p class="catalog-alt">For a GitHub install, paste the catalog URL under <strong>Install from GitHub</strong>, select <strong>Check pack</strong>, then review and install it.</p>
+              <p class="catalog-guide-note">The catalog is data only. <a href={releases}>Download EMMM separately</a>; keep the catalog ZIP out of your Mods folder. Coverage varies by entry, so matching suggestions still need review.</p>
+            </div>
+          </div>
+          <div class="catalog-filter-example reveal">
+            <figure><a class="screen-link" href={`${base}/screenshots/search-filters.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size object filters screenshot"><img src={`${base}/screenshots/metadata-filters-focus.webp`} alt="Object sidebar with search, status, category, Element, Weapon Type, Rarity, and Gender filters" width="330" height="470" loading="lazy" decoding="async" /></a></figure>
+            <div><span>OBJECT LIST</span><h3>Browse by what the catalog knows.</h3><p>Available object images and metadata help identify entries. Filter the Object List by status, category, and fields such as element, weapon type, or rarity when that metadata exists. Reviewed runtime targets can also support KeyViewer on compatible setups.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="collections-section section-space" id="collections" aria-labelledby="collections-title">
+        <div class="content-width collections-layout">
+          <div class="collections-copy reveal">
+            <p class="kicker">03 / COLLECTIONS</p>
+            <h2 id="collections-title">One library.<br /><em>Many Collections.</em></h2>
+            <p>Save a Collection for each combination of mods you use. Pick one whenever you want to switch.</p>
+            <div class="safe-copy">
+              <span class="safe-icon" aria-hidden="true">✳</span>
+              <div><h3>Choose which mods are Safe.</h3><p>Mark mods Safe or Unsafe. Each Collection shows its safety status, and Safe Mode leaves unsafe mods out when you turn it on.</p></div>
+            </div>
+          </div>
+          <div class="collection-visual reveal" role="img" aria-label="Two saved Collections: After Dark Set is Safe, and Blue Hour Set is Unsafe">
+            <div class="collection-visual-heading"><span>SAVED COLLECTIONS</span><strong>02</strong></div>
+            <div class="preset-row"><div><strong>After Dark Set</strong><small>46 mods</small></div><span class="preset-status is-safe">SAFE</span></div>
+            <div class="preset-row"><div><strong>Blue Hour Set</strong><small>48 mods</small></div><span class="preset-status is-unsafe">UNSAFE</span></div>
+          </div>
+        </div>
+        <div class="content-width hotkey-strip reveal"><span>FAST SWITCHING</span><p><kbd>F5</kbd> Safe Mode <i></i> <kbd>Shift + F5</kbd> Previous preset <i></i> <kbd>Ctrl + F5</kbd> Next preset</p></div>
+        <div class="content-width screen-pair collection-screens reveal">
+          <figure class="screen-figure"><a class="screen-link" href={`${base}/screenshots/collections-safe-mode.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Collections screenshot"><img src={`${base}/screenshots/collections-safe-mode.webp`} alt="Collections view with two saved sets, Safe badges, and the mods in the active set" width="2000" height="1250" loading="lazy" decoding="async" /></a><figcaption>Keep your saved setups together.</figcaption></figure>
+          <figure class="screen-figure"><a class="screen-link" href={`${base}/screenshots/collection-switch-preview.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size collection switch preview screenshot"><img src={`${base}/screenshots/collection-switch-preview.webp`} alt="Apply Collection dialog comparing the current setup with the target setup before switching" width="2000" height="1250" loading="lazy" decoding="async" /></a><figcaption>Preview a switch before applying it.</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="keybind-section section-space" id="keybinds" aria-labelledby="keybinds-title">
+        <div class="content-width">
+          <div class="section-intro reveal">
+            <div>
+              <p class="kicker">04 / KEYBINDS & FEEDBACK</p>
+              <h2 id="keybinds-title">Know your keys.<br />See your switch.</h2>
+            </div>
+            <p>Home lists keybinds detected in enabled mods, with search and filters. During play, the optional KeyViewer overlay can show mod controls; a separate notification can confirm a Collection switch.</p>
+          </div>
+          <figure class="key-home-card reveal">
+            <div class="key-card-heading"><span>HOME / ACTIVE KEY MAPPING</span><p>Find a mod's controls before you launch.</p></div>
+            <a class="screen-link" href={`${base}/screenshots/home-key-mapping.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Home key mapping screenshot"><img src={`${base}/screenshots/home-key-mapping-focus.webp`} alt="Home showing four detected mod keybinds with a search field, classification filter, and key values" width="1480" height="365" loading="lazy" decoding="async" /></a>
+          </figure>
+          <div class="key-settings-row reveal">
+            <div class="key-settings-copy"><span>SETTINGS / HOTKEYS</span><h3>Set up the keys you use.</h3><p>Choose Collection shortcuts and turn on KeyViewer or switch notifications when you want them. The default KeyViewer toggle is <kbd>F7</kbd>.</p></div>
+            <a class="screen-link" href={`${base}/screenshots/settings-hotkeys.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Hotkeys settings screenshot"><img src={`${base}/screenshots/hotkey-settings-focus.webp`} alt="Hotkeys settings with Collection shortcuts, preset status and game notification toggles, and the KeyViewer toggle" width="935" height="715" loading="lazy" decoding="async" /></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="folders-section section-space" id="folders" aria-labelledby="folders-title">
+        <div class="content-width folders-layout">
+          <div class="folder-statement reveal">
+            <p class="kicker">05 / YOUR FOLDERS</p>
+            <h2 id="folders-title">Your library does not need a new rulebook.</h2>
+          </div>
+          <div class="folder-explain reveal">
+            <p>Some managers ask you to rearrange every mod first. EMMM works with the nested folders, modpacks, and variants already in your configured game library. Add more game profiles as your setup grows.</p>
+            <div class="folder-tree" aria-label="Example of nested mod folders">
+              <span>Mods/</span>
+              <span class="tree-child">Characters/</span>
+              <span class="tree-grandchild">Your existing folders/</span>
+              <span class="tree-grandchild">Variants/</span>
+              <span class="tree-child">Modpacks/</span>
+            </div>
+          </div>
+        </div>
+        <div class="content-width folder-screen reveal"><figure class="screen-figure"><a class="screen-link" href={`${base}/screenshots/nested-subfolders.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size nested folders screenshot"><img src={`${base}/screenshots/nested-subfolders.webp`} alt="EMMM browsing four variant mods inside a nested Capsule Wardrobe folder" width="2000" height="1250" loading="lazy" decoding="async" /></a><figcaption>Browse variants in your existing folders.</figcaption></figure></div>
+      </section>
+
+      <section class="library-section section-space" id="library" aria-labelledby="library-title">
+        <div class="content-width">
+          <div class="section-intro reveal">
+            <div><p class="kicker">06 / EVERYDAY TOOLS</p><h2 id="library-title">Less time sorting.<br />More time using your mods.</h2></div>
+            <p>Find the right mod, choose what is active, and keep the library readable even as it grows.</p>
+          </div>
+          <div class="tool-list">
+            <article class="tool-card reveal">
+              <div class="feature-mosaic switch-mosaic" aria-label="Mod switches and bulk actions">
+                <a class="mosaic-frame switch-control-frame" href={`${base}/screenshots/switch-controls.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open mod switch screenshot"><img src={`${base}/screenshots/switch-toggle-detail.webp?v=2`} alt="Enabled and disabled switches beneath Aster costume cards" width="530" height="240" loading="lazy" decoding="async" /><span>ONE CLICK</span></a>
+                <a class="mosaic-frame switch-bulk-frame" href={`${base}/screenshots/switch-bulk-actions.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open bulk action screenshot"><img src={`${base}/screenshots/switch-bulk-detail.webp?v=2`} alt="Two selected mods and the bulk action toolbar with Enable and Disable" width="505" height="110" loading="lazy" decoding="async" /><span>BULK ACTIONS</span></a>
+              </div>
+              <div class="tool-copy"><span class="tool-num">01 / SWITCH</span><h3>Switch with one click</h3><p>Enable or disable a mod, enable only one for an object, or make changes in bulk.</p></div>
+            </article>
+            <article class="tool-card reveal">
+              <div class="feature-mosaic keeper-mosaic" aria-label="Search, filters, pins, and favorites">
+                <a class="mosaic-frame keeper-search-frame" href={`${base}/screenshots/search-filters.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open search and filters screenshot"><img src={`${base}/screenshots/search-filters.webp`} alt="Object search narrowed to Aster with filter controls visible" width="2000" height="1250" loading="lazy" decoding="async" /><span>SEARCH + FILTER</span></a>
+                <a class="mosaic-frame keeper-pin-frame" href={`${base}/screenshots/pin-mod-menu.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open Pin mods menu screenshot"><img src={`${base}/screenshots/pin-mod-menu.webp?v=1`} alt="Context menu over selected mod cards showing the Pin selected action" width="2000" height="1250" loading="lazy" decoding="async" /><span>PIN MODS</span></a>
+                <a class="mosaic-frame keeper-favorite-frame" href={`${base}/screenshots/favorites-filters.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open favorite mod screenshot"><img src={`${base}/screenshots/favorites-filters.webp`} alt="Starred After Dark mod in the costume grid" width="2000" height="1250" loading="lazy" decoding="async" /><span>STAR MODS</span></a>
+              </div>
+              <div class="tool-copy"><span class="tool-num">02 / ORGANIZE</span><h3>Find your keepers</h3><p>Pin mods, star favorites, then search, sort, filter, and browse in grid or list view.</p></div>
+            </article>
+            <article class="tool-card reveal">
+              <a class="feature-media paste-media" href={`${base}/screenshots/paste-thumbnail.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Paste Thumbnail screenshot"><img src={`${base}/screenshots/paste-thumbnail.webp`} alt="Preview panel with Paste image from clipboard visible in the image actions menu" width="2000" height="1250" loading="lazy" decoding="async" /></a>
+              <div class="tool-copy"><span class="tool-num">03 / PREVIEW IMAGES</span><h3>Paste a thumbnail into Preview</h3><p>EMMM detects images in mod folders. You can also choose from the gallery, import an image, or paste one directly from the clipboard.</p></div>
+            </article>
+            <article class="tool-card reveal">
+              <div class="feature-mosaic inspect-mosaic" aria-label="Preview panel and mod details">
+                <a class="mosaic-frame inspect-preview-frame" href={`${base}/screenshots/workspace-library.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open mod preview panel screenshot"><img src={`${base}/screenshots/workspace-library.webp`} alt="Mod preview panel with image, metadata, INI controls, and Mod Health" width="2000" height="1250" loading="lazy" decoding="async" /><span>PREVIEW PANEL</span></a>
+                <a class="mosaic-frame inspect-details-frame" href={`${base}/screenshots/mod-health-details.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open Mod Health details screenshot"><img src={`${base}/screenshots/mod-health-details.webp`} alt="Mod Health details showing a detected outfit hotkey" width="2000" height="1250" loading="lazy" decoding="async" /><span>MOD DETAILS</span></a>
+              </div>
+              <div class="tool-copy"><span class="tool-num">04 / INSPECT</span><h3>Inspect before you change</h3><p>Preview mod details, edit INI files, spot active conflicts and resource hash issues, and recover items from Trash.</p></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="extras-section section-space" aria-labelledby="extras-title">
+        <div class="content-width extras-layout">
+          <div class="reveal"><p class="kicker">07 / MORE ROOM TO WORK</p><h2 id="extras-title">A complete workspace for a growing library.</h2></div>
+          <div class="extra-grid reveal">
+            <article class="extra-card"><a class="feature-media storage-media" href={`${base}/screenshots/storage-optimizer.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Storage Optimizer screenshot"><img src={`${base}/screenshots/storage-optimizer.webp`} alt="Storage Optimizer duplicate scan results and resolution controls" width="2000" height="1250" loading="lazy" decoding="async" /></a><div class="extra-copy"><span>STORAGE</span><h3>Find duplicate files</h3><p>Storage Optimizer helps you review duplicates and choose what to keep, ignore, trash, or hardlink.</p></div></article>
+            <article class="extra-card"><a class="feature-media" href={`${base}/screenshots/mod-inbox.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size Mod Inbox screenshot"><img src={`${base}/screenshots/mod-inbox.webp`} alt="New mod folders queued in Mod Inbox for review" width="2000" height="1250" loading="lazy" decoding="async" /></a><div class="extra-copy"><span>DISCOVER</span><h3>Bring downloads into the Inbox</h3><p>Collect new mods in one place before classification and import.</p></div></article>
+            <article class="extra-card"><div class="feature-mosaic play-mosaic" aria-label="Quick Play and game settings"><a class="mosaic-frame play-quick-frame" href={`${base}/screenshots/dashboard-play.webp`} target="_blank" rel="noopener noreferrer" aria-label="Open Quick Play screenshot"><img src={`${base}/screenshots/quick-play-focus.webp?v=2`} alt="Quick Play shortcut on the EMMM dashboard" width="185" height="170" loading="lazy" decoding="async" /><span>QUICK PLAY</span></a><a class="mosaic-frame play-settings-frame" href={`${base}/screenshots/setup-games.webp?v=2`} target="_blank" rel="noopener noreferrer" aria-label="Open game settings screenshot"><img src={`${base}/screenshots/game-settings-focus.webp?v=4`} alt="Game settings dialog showing launch mode, mod path, and executable" width="660" height="670" loading="lazy" decoding="async" /><span>GAME SETTINGS</span></a></div><div class="extra-copy"><span>PLAY</span><h3>Get into the game</h3><p>Launch a configured game, or preview a fresh combination with Smart Randomizer.</p></div></article>
+            <article class="extra-card"><a class="feature-media setup-media" href={`${base}/screenshots/setup-xxmi-welcome.webp?v=1`} target="_blank" rel="noopener noreferrer" aria-label="Open full-size XXMI onboarding screenshot"><img src={`${base}/screenshots/setup-xxmi-actions.webp?v=1`} alt="EMMM onboarding choices for XXMI Auto-Detect and manual game setup" width="920" height="330" loading="lazy" decoding="async" /></a><div class="extra-copy"><span>SETUP</span><h3>Meet your existing tools</h3><p>Detect XXMI installations automatically or add a setup manually.</p></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing-section" aria-labelledby="closing-title">
+        <img class="closing-background" src={`${base}/screenshots/aster-costume-grid.webp`} alt="" width="2000" height="1250" loading="lazy" decoding="async" aria-hidden="true" />
+        <div class="content-width closing-inner reveal">
+          <p class="kicker">BUILT IN THE OPEN</p>
+          <h2 id="closing-title">Bring your mods<br />together.</h2>
+          <p>Open source and built for Windows. Download EMMM or explore the project on GitHub.</p>
+          <div class="closing-actions"><a class="button button-light" href={releases}>Get EMMM <span aria-hidden="true">↗</span></a><a class="button button-support" href={support} target="_blank" rel="noopener noreferrer">Buy me a coffee <span aria-hidden="true">↗</span></a></div>
+          <a class="text-link closing-github" href={github}>View on GitHub <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="content-width footer-inner"><a class="footer-brand" href={`${base}/`}><img src={`${base}/favicon.svg`} alt="" width="32" height="32" />EMMM<span>.</span></a><p>A desktop workspace for 3DMigoto mods.</p><div><a href={releases}>Releases</a><a href={github}>GitHub</a><a href="#main">Back to top ↑</a></div></div>
+      <p class="content-width footer-note">Independent community project. Not affiliated with the games or tools it supports.</p>
+    </footer>
+
+    <script>
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const reveals = document.querySelectorAll<HTMLElement>('.reveal');
+      if ('IntersectionObserver' in window && !reducedMotion.matches) {
+        document.documentElement.classList.add('can-reveal');
+        const observer = new IntersectionObserver((entries, current) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-visible');
+              current.unobserve(entry.target);
+            }
+          }
+        }, { rootMargin: '0px 0px -7% 0px', threshold: 0.06 });
+        reveals.forEach((element) => observer.observe(element));
+      }
+
+      const hero = document.querySelector<HTMLElement>('.hero');
+      const navWrap = document.querySelector<HTMLElement>('.nav-wrap');
+      const folders = document.querySelector<HTMLElement>('.folders-section');
+      const blend = (from: number[], to: number[], progress: number) =>
+        `rgb(${from.map((channel, index) => Math.round(channel + (to[index] - channel) * progress)).join(' ')})`;
+      let scrollFrame = 0;
+      const updateScrollState = () => {
+        scrollFrame = 0;
+        if (hero && navWrap) navWrap.classList.toggle('is-past-hero', hero.getBoundingClientRect().bottom <= 90);
+        if (!folders) return;
+        const bounds = folders.getBoundingClientRect();
+        const progress = Math.min(1, Math.max(0, -bounds.top / (bounds.height * .72)));
+        folders.style.setProperty('--folder-bg', blend([19, 23, 32], [226, 232, 240], progress));
+        folders.style.setProperty('--folder-tree-bg', blend([32, 39, 53], [241, 245, 249], progress));
+        folders.classList.toggle('is-light', progress >= .5);
+      };
+      const requestScrollState = () => {
+        if (!scrollFrame) scrollFrame = requestAnimationFrame(updateScrollState);
+      };
+      window.addEventListener('scroll', requestScrollState, { passive: true });
+      window.addEventListener('resize', requestScrollState);
+      requestScrollState();
+
+      const glassMedia = window.matchMedia('(min-width: 800px) and (hover: hover) and (pointer: fine)');
+      const engines: import('quick-liquid').LiquidGlassEngine[] = [];
+      let queued = false;
+      const eligible = () => glassMedia.matches && !reducedMotion.matches && CSS.supports('backdrop-filter', 'blur(1px)');
+      const syncGlass = () => {
+        if (!eligible()) {
+          engines.splice(0).forEach((engine) => engine.destroy());
+          return;
+        }
+        if (engines.length || queued) return;
+        queued = true;
+        const start = async () => {
+          queued = false;
+          if (!eligible()) return;
+          try {
+            const { LiquidGlassEngine } = await import('quick-liquid');
+            if (!eligible() || engines.length) return;
+            const nav = document.querySelector<HTMLElement>('[data-liquid-nav]');
+            const control = document.querySelector<HTMLElement>('[data-liquid-control]');
+            if (nav) engines.push(new LiquidGlassEngine(nav, {
+              material: 'regular', appearance: 'dark', tint: 'transparent', tintOpacity: 0,
+              blur: 26, saturation: 1.08, refractionStrength: 12, bezelWidth: 18,
+              borderRadius: 10, chromaticAberration: 0, edgeHighlight: 0.12,
+              specularStrength: 0.04, dynamicLighting: false, hoverLighting: false,
+              cursorTracking: false, parallax: false, quality: 'high',
+            }));
+            if (control) engines.push(new LiquidGlassEngine(control, {
+              material: 'thin', appearance: 'dark', tint: 'transparent', tintOpacity: 0,
+              blur: 10, refractionStrength: 14, bezelWidth: 22,
+              chromaticAberration: 0.1, edgeHighlight: 0.55, specularStrength: 0.16,
+              dynamicLighting: false, hoverLighting: false, cursorTracking: false,
+              parallax: false, quality: 'high',
+            }));
+          } catch (error) {
+            console.warn('Glass enhancement unavailable; CSS fallback remains active.', error);
+          }
+        };
+        if ('requestIdleCallback' in window) window.requestIdleCallback(start, { timeout: 1500 });
+        else setTimeout(start, 300);
+      };
+      glassMedia.addEventListener('change', syncGlass);
+      document.querySelectorAll('.mobile-nav a').forEach((link) => {
+        link.addEventListener('click', () => link.closest('details')?.removeAttribute('open'));
+      });
+      reducedMotion.addEventListener('change', syncGlass);
+      syncGlass();
+    </script>
+  </body>
+</html>
