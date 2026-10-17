@@ -8,7 +8,7 @@ EMMM is an independent third-party project. It is not affiliated with, endorsed 
 
 ### Import and classify mods
 
-Drop a mod folder or a `.zip`, `.7z`, or `.rar` archive into Mod Inbox. EMMM detects mod roots inside nested downloads, then suggests an identity and destination using available INI hashes, [catalog](https://github.com/reynalivan/3dm-catalog-asset) records, aliases, and folder names. You review ambiguous matches and placement before applying them. The catalog can also add available metadata and thumbnails to matched objects.
+Drop a mod folder or a `.zip`, `.7z`, or `.rar` archive into Mod Inbox. EMMM detects mod roots inside nested downloads, then suggests an identity and destination using available INI hashes, installed catalog records, aliases, and folder names. You review ambiguous matches and placement before applying them. Catalog data can also add available metadata and thumbnails to matched objects.
 
 ### Work with your own folders
 
@@ -28,11 +28,11 @@ The normal **Remove Mod** action sends the folder to the OS Recycle Bin. Keep a 
 
 ## Catalog data
 
-The separate [3DM Catalog Asset](https://github.com/reynalivan/3dm-catalog-asset) supplies known identities, aliases, hashes, available metadata and images, and reviewed KeyViewer runtime targets. It contains no game mods or manager executable. In EMMM, open **Settings > Catalog Assets** to check the official catalog release channel, or use **Install from ZIP** to review and install a downloaded `catalog-pack.zip`. Catalog coverage differs by game and entry; matching suggestions still need your review.
+EMMM can use an optional catalog pack for known identities, aliases, hashes, available metadata and images, and reviewed KeyViewer runtime targets. In the app, open **Settings > Catalog Assets** to check for updates or review and install a local `catalog-pack.zip`. Catalog coverage differs by game and entry; matching suggestions still need your review.
 
 ## Getting started
 
-EMMM is currently developed for Windows. This repository contains the application source and development instructions below. The [catalog release](https://github.com/reynalivan/3dm-catalog-asset/releases/latest) is data for EMMM, not an application installer.
+EMMM is currently developed for Windows. This repository contains the application source and development instructions below.
 
 ## Architecture
 
@@ -76,7 +76,7 @@ Start the desktop application:
 pnpm tauri dev
 ```
 
-`pnpm tauri dev` prepares an isolated development catalog pack. By default it expects a sibling checkout at `../3dm-catalog-asset`; set `EMMM_DEV_CATALOG_SOURCE` to use another local catalog source. The command stops if the pack or its manifest is invalid so the development profile cannot silently run with incomplete catalog data.
+`pnpm tauri dev` prepares an isolated development catalog pack from a sibling checkout. Set `EMMM_DEV_CATALOG_SOURCE` to use another local catalog source. The command stops if the pack or its manifest is invalid so the development profile cannot silently run with incomplete catalog data.
 
 ## Common commands
 
