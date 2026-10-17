@@ -2,7 +2,7 @@
 
 EMMM is an open-source Windows desktop manager for GIMI, SRMI, ZZMI, WWMI, and EFMI mod libraries. Point it at the folders you already use, including libraries spread across multiple locations. EMMM follows your layout instead of requiring you to rebuild it around the manager.
 
-It is an independent third-party project and is not affiliated with any game developer, publisher, or platform.
+EMMM is an independent third-party project. It is not affiliated with, endorsed by, or sponsored by any game, game developer, publisher, or platform mentioned in this repository.
 
 ## What you can do
 
