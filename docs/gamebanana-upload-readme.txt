@@ -1,13 +1,21 @@
++==========================================================================+
+| READ THIS FIRST                                                          |
+| THIS ZIP CONTAINS DOWNLOAD LINKS AND INFORMATION ONLY.                   |
+| IT DOES NOT CONTAIN THE EMMM APPLICATION OR WINDOWS INSTALLER.           |
++==========================================================================+
+
 EMMM — 3DMigoto Mod Manager for Windows
 =======================================
 
 EMMM is an open-source desktop mod manager for GIMI, SRMI, ZZMI, WWMI, EFMI, and other supported 3DMigoto setups. It works with the mod folders you already have, including libraries spread across multiple locations. You do not need to reorganize everything into a manager-specific folder layout.
 
-Project and screenshots: https://github.com/reynalivan/EMMM2
-Windows releases: https://github.com/reynalivan/EMMM2/releases
-Support development: https://ko-fi.com/reynalivan
++-- OFFICIAL LINKS --------------------------------------------------------+
+🏠  HOMEPAGE / PROJECT & SCREENSHOTS: https://github.com/reynalivan/EMMM2
+⬇️   WINDOWS DOWNLOAD PAGE: https://github.com/reynalivan/EMMM2/releases
+☕  SUPPORT DEVELOPMENT: https://ko-fi.com/reynalivan
++--------------------------------------------------------------------------+
 
-This GameBanana ZIP contains this README only. It does not contain the EMMM application, an installer, game files, or mods. Check the Releases page for a published Windows build. If no release is listed yet, the repository README has instructions for building EMMM from source.
+This GameBanana ZIP contains this README only. It has no installer, game files, or mods. Check the Releases page for a published Windows build. If no release is listed yet, the repository README has instructions for building EMMM from source.
 
 What EMMM does
 --------------
