@@ -4,9 +4,13 @@ import { GameType } from '@/entities/game';
 import type { GameConfig } from '@/entities/game';
 import { open } from '@tauri-apps/plugin-dialog';
 import GameFormModal from './GameFormModal';
+import { commands } from '@/shared/api/tauri/bindings';
 
 vi.mock('../../../shared/lib/hooks/useDialogSync', () => ({ useDialogSync: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
+vi.mock('@/shared/api/tauri/bindings', () => ({
+  commands: { discoverGameExecutables: vi.fn(), validateGameExecutable: vi.fn() },
+}));
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
   useTranslation: () => ({ t: (key: string) => key }),
@@ -42,6 +46,97 @@ function deferred<T>() {
 describe('GameFormModal', () => {
   beforeEach(() => {
     vi.mocked(open).mockReset();
+    vi.mocked(commands.discoverGameExecutables).mockReset();
+    vi.mocked(commands.validateGameExecutable).mockReset();
+  });
+
+  it('revalidates a detected executable before persisting and keeps a stale draft open', async () => {
+    const candidate = {
+      game_type: 0,
+      executable_path: 'E:/Games/GenshinImpact.exe',
+      install_root: 'E:/Games',
+      process_executable_path: 'E:/Games/GenshinImpact.exe',
+      sources: ['xxmi_config' as const],
+      region: null,
+      channel: null,
+    };
+    vi.mocked(commands.discoverGameExecutables).mockResolvedValue({
+      candidates: [candidate],
+      issues: [],
+      complete: true,
+    });
+    vi.mocked(commands.validateGameExecutable)
+      .mockResolvedValueOnce(candidate)
+      .mockRejectedValueOnce(new Error('Game location moved'));
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onClose = vi.fn();
+    render(
+      <GameFormModal
+        isOpen
+        onClose={onClose}
+        onSave={onSave}
+        initialData={gameA}
+        existingModPaths={[]}
+      />,
+    );
+    fireEvent.click(screen.getByText('games.executable_detection.detect'));
+    fireEvent.click(await screen.findByText('games.executable_detection.use'));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('games.form.exe_placeholder')).toHaveValue(
+        candidate.executable_path,
+      ),
+    );
+    await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('game-form-submit'));
+    expect(await screen.findByText('Game location moved')).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText('games.form.exe_placeholder')).toHaveValue(
+      candidate.executable_path,
+    );
+  });
+
+  it.each([null, '', '   '])(
+    'allows optional executable %s for a standalone game',
+    async (gameExe) => {
+      const onSave = vi.fn().mockResolvedValue(true);
+      render(
+        <GameFormModal
+          isOpen
+          onClose={vi.fn()}
+          onSave={onSave}
+          initialData={{ ...gameA, launch_mode: 'standalone', game_exe: gameExe }}
+          existingModPaths={[]}
+        />,
+      );
+      const submit = screen.getByTestId('game-form-submit');
+      await waitFor(() => expect(submit).toBeEnabled());
+      fireEvent.click(submit);
+      await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ game_exe: null }));
+    },
+  );
+
+  it('preserves the optional process executable in XXMI launch mode', async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    render(
+      <GameFormModal
+        isOpen
+        onClose={vi.fn()}
+        onSave={onSave}
+        initialData={{
+          ...gameA,
+          launch_mode: 'xxmi_managed',
+          xxmi_launcher_exe: 'E:/XXMI/Launcher.exe',
+        }}
+        existingModPaths={[]}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId('game-form-submit')).toBeEnabled());
+    expect(screen.getByPlaceholderText('games.form.exe_placeholder')).toHaveValue(gameA.game_exe);
+    fireEvent.click(screen.getByTestId('game-form-submit'));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ game_exe: gameA.game_exe }));
   });
 
   it.each(['E:/GIMI/Mods', 'e:/gimi/mods', 'E:\\GIMI\\Mods\\'])(

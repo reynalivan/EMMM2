@@ -5,11 +5,11 @@ import { invokeInApp } from '../support/ipc.js';
 import type { AppSettings, GameConfig } from '../../../src/shared/api/tauri/bindings.gen.js';
 
 /**
- * Fase 1 — Gerbang masuk (Settings + Game Management).
+ * Phase 1 — Entry gates (Settings + Game Management).
  * Onboarding (tc-03) and manual-add-via-form (tc-02) already have dedicated
  * specs; this covers settings persistence and the multi-game IPC surface.
  */
-describe('Fase 1 — Gates (Settings & Game Management)', () => {
+describe('Phase 1 — Gates (Settings & Game Management)', () => {
   let game: MockGame;
   let gameId: string;
 

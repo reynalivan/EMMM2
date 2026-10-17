@@ -39,7 +39,7 @@ async function rejects(command: string, args: Record<string, unknown>): Promise<
   expect(threw).toBe(true);
 }
 
-describe('Fase 3c — Folder identity conflict recovery', () => {
+describe('Phase 3c — Folder identity conflict recovery', () => {
   let game: MockGame;
   let gameId: string;
 

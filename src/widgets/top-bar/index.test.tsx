@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TopBar } from './index';
 
 const mockSetWorkspaceView = vi.fn();
+const mockSetSettingsTab = vi.fn();
 const mockSetAppMenuOpen = vi.fn();
 let workspaceView = 'dashboard';
-let activeGame: { id: string } | null = null;
+let activeGame: { id: string; game_exe?: string | null; launch_mode?: string } | null = null;
 let runtimeSyncByGame: Record<string, Record<string, unknown>> = {};
 const { mockRetryRuntimeSync } = vi.hoisted(() => ({ mockRetryRuntimeSync: vi.fn() }));
 
@@ -15,6 +16,7 @@ vi.mock('@/app/store', () => ({
     selector({
       workspaceView,
       setWorkspaceView: mockSetWorkspaceView,
+      setSettingsTab: mockSetSettingsTab,
       isAppMenuOpen: false,
       setAppMenuOpen: mockSetAppMenuOpen,
       safetyFilter: 'all',
@@ -26,6 +28,8 @@ vi.mock('@/app/store', () => ({
 
 vi.mock('@/entities/game', () => ({
   useActiveGame: () => ({ activeGame }),
+  requiresGameExecutable: (game: { game_exe?: string | null; launch_mode?: string }) =>
+    game.launch_mode !== 'xxmi_managed' && !game.game_exe?.trim(),
 }));
 
 vi.mock('@/shared/api/tauri/bindings', () => ({
@@ -66,6 +70,7 @@ describe('TopBar app menu', () => {
     workspaceView = 'dashboard';
     activeGame = null;
     runtimeSyncByGame = {};
+    mockSetSettingsTab.mockReset();
   });
 
   it('navigates to Mod Inbox from the app menu', async () => {
@@ -195,6 +200,58 @@ describe('TopBar app menu', () => {
 
     await renderTopBar();
 
-    expect(screen.getByRole('status')).toHaveAttribute('title', 'Manual reload required');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/NeedsManualReload/)).not.toBeInTheDocument();
+  });
+
+  it('does not display a manual reload hint when the executable is omitted', async () => {
+    activeGame = { id: 'game-1', game_exe: null };
+    runtimeSyncByGame = {
+      'game-1': {
+        game_id: 'game-1',
+        generation: 4,
+        phase: 'needs_manual_reload',
+        cause: 'effective_mods_changed',
+        reload_binding: 'Ctrl+F11',
+      },
+    };
+    await renderTopBar();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(mockRetryRuntimeSync).not.toHaveBeenCalled();
+  });
+
+  it('does not display reload hints for a configured executable or a sent reload', async () => {
+    activeGame = { id: 'game-1', game_exe: 'C:/Fixture/Game.exe' };
+    runtimeSyncByGame = {
+      'game-1': {
+        game_id: 'game-1',
+        generation: 4,
+        phase: 'needs_manual_reload',
+        cause: 'effective_mods_changed',
+        reload_binding: 'F10',
+      },
+    };
+    const { rerender } = await renderTopBar();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    runtimeSyncByGame['game-1'] = {
+      game_id: 'game-1',
+      generation: 5,
+      phase: 'succeeded',
+      reload_status: 'sent',
+    };
+    rerender(<TopBar />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('opens game setup from Quick Play when standalone launch lacks an executable', async () => {
+    activeGame = { id: 'game-1', game_exe: null, launch_mode: 'standalone' };
+    await renderTopBar();
+
+    fireEvent.click(screen.getByTitle('App Menu'));
+    fireEvent.click(screen.getByRole('button', { name: 'Quick Play' }));
+
+    expect(mockSetSettingsTab).toHaveBeenCalledWith('games');
+    expect(mockSetWorkspaceView).toHaveBeenCalledWith('settings');
   });
 });

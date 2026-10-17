@@ -1136,6 +1136,131 @@ async fn ready_to_move_nested_folder_pack_stages_one_item_per_detected_root() {
     assert!(pack.exists(), "staging must not mutate the inbox source");
 }
 
+async fn assert_staging_preserves_shared_assets(archive: bool, multiple_roots: bool) {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "gimi",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let package = root.path().join("Package");
+    let roots = if multiple_roots {
+        vec!["Variants/A", "Variants/B"]
+    } else {
+        vec!["Body"]
+    };
+    let relative_asset = if multiple_roots {
+        "../../Shared/texture.dds"
+    } else {
+        "../Shared/texture.dds"
+    };
+    let mut payload = vec![("Shared/texture.dds".to_string(), "texture".to_string())];
+    for mod_root in &roots {
+        payload.push((
+            format!("{mod_root}/merged.ini"),
+            format!("[TextureOverrideBody]\nhash = abc\n[ResourceTexture]\nfilename = {relative_asset}\n"),
+        ));
+    }
+    let source = if archive {
+        let source = root.path().join("Package.zip");
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&source).unwrap());
+        for (name, contents) in &payload {
+            writer
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(contents.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+        source
+    } else {
+        for (name, contents) in &payload {
+            let path = package.join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+        package.clone()
+    };
+    let batch = create_import_batch(
+        &context.pool,
+        CreateImportBatchInput {
+            game_id: "gimi".to_string(),
+            flow: if archive {
+                ImportFlow::AutoImport
+            } else {
+                ImportFlow::ReadyToMove
+            },
+            target_mode: TargetMode::Auto,
+            target_object_id: None,
+            target_subpath: None,
+            sources: vec![ImportSourceInput {
+                path: source.to_string_lossy().into_owned(),
+                source_kind: Some(if archive {
+                    ImportSourceKind::ArchiveRoot
+                } else {
+                    ImportSourceKind::ReadyToMove
+                }),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let staged = super::staging::stage_import_batch_sources(
+        &context.pool,
+        &batch.id,
+        &root.path().join("app-staging"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        staged.items.len(),
+        1,
+        "dependent roots must remain together"
+    );
+    let item = &staged.items[0];
+    assert_eq!(item.status, ImportItemStatus::Staged);
+    let installed = root.path().join("installed");
+    std::fs::rename(item.staging_path.as_deref().unwrap(), &installed).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(installed.join("Shared/texture.dds")).unwrap(),
+        "texture"
+    );
+    for mod_root in roots {
+        let ini = installed.join(mod_root).join("merged.ini");
+        assert!(ini.is_file());
+        let asset = ini.parent().unwrap().join(relative_asset);
+        assert_eq!(std::fs::read_to_string(asset).unwrap(), "texture");
+    }
+    assert!(source.exists(), "staging must preserve the selected source");
+}
+
+#[tokio::test]
+async fn staging_preserves_shared_assets_outside_single_folder_root() {
+    assert_staging_preserves_shared_assets(false, false).await;
+}
+
+#[tokio::test]
+async fn staging_preserves_shared_assets_outside_multiple_folder_roots() {
+    assert_staging_preserves_shared_assets(false, true).await;
+}
+
+#[tokio::test]
+async fn staging_preserves_shared_assets_outside_single_archive_root() {
+    assert_staging_preserves_shared_assets(true, false).await;
+}
+
+#[tokio::test]
+async fn staging_preserves_shared_assets_outside_multiple_archive_roots() {
+    assert_staging_preserves_shared_assets(true, true).await;
+}
+
 #[tokio::test]
 async fn mod_inbox_snapshot_reports_missing_root_without_creating_it() {
     let context = init_test_db().await;

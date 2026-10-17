@@ -168,6 +168,45 @@
     "lang_failed": "Gagal memperbarui bahasa: {{error}}"
   },
   "games": {
+    "executable_detection": {
+      "previous": "Sebelumnya",
+      "next": "Berikutnya",
+      "page": "{{current}} dari {{total}}",
+      "detect": "Deteksi",
+      "detect_all": "Deteksi lokasi executable",
+      "scanning": "Mencari executable game yang terpasang…",
+      "cancel": "Batalkan deteksi",
+      "dismiss": "Tutup hasil",
+      "use": "Gunakan lokasi ini",
+      "results": "Pilih lokasi game yang terpasang",
+      "empty": "Executable tidak ditemukan. Pilih file atau coba lagi.",
+      "partial": "Sebagian lokasi tidak dapat diperiksa. Hasil yang tersedia ditampilkan di bawah.",
+      "issue": "{{source}}: {{reason}}",
+      "file_filter": "File executable",
+      "setup_later": "Lokasi executable opsional. Anda dapat melanjutkan dan mengaturnya nanti di Settings.",
+      "games": {
+        "0": "Genshin Impact",
+        "1": "Honkai: Star Rail",
+        "2": "Wuthering Waves",
+        "3": "Zenless Zone Zero",
+        "4": "Arknights: Endfield"
+      },
+      "sources": {
+        "hoyoplay_registry": "Registry HoYoPlay",
+        "hoyoplay_config": "Konfigurasi HoYoPlay",
+        "kuro_config": "Konfigurasi launcher Kuro",
+        "xxmi_config": "Konfigurasi XXMI",
+        "manual": "File pilihan"
+      },
+      "issues": {
+        "access_denied": "Akses ditolak",
+        "malformed_config": "Format konfigurasi tidak dapat dibaca",
+        "read_failed": "Konfigurasi tidak dapat dibaca",
+        "resource_limit": "Batas deteksi tercapai; coba pilih file",
+        "deadline_exceeded": "Waktu deteksi habis; coba lagi",
+        "invalid_location": "Lokasi game hilang atau tidak valid"
+      }
+    },
     "title": "Game",
     "desc": "Path instalasi dan pengaturan launch.",
     "add": "Tambah Game",
@@ -206,7 +245,8 @@
       "launch_mode_label": "Mode Peluncuran",
       "launch_mode_standalone": "3DMigoto Mandiri",
       "launch_mode_xxmi": "Dikelola oleh XXMI",
-      "exe_label": "Executable Game (.exe)",
+      "exe_label": "Executable Game (.exe, opsional)",
+      "exe_help": "Opsional untuk pengelolaan mod. Play standalone memakai file ini; Play XXMI memakai launchernya. File ini juga mengenali game untuk kontrol yang bergantung pada fokus.",
       "exe_placeholder": "C:/Games/GIMI/Game.exe",
       "advanced_title": "Opsi Lanjutan",
       "loader_label": "Loader 3DMigoto (Opsional)",
@@ -228,7 +268,6 @@
         "path_required": "Path mod wajib diisi",
         "path_invalid": "Path mengandung karakter tidak valid",
         "path_duplicate": "Sudah terdaftar",
-        "exe_required": "Executable game wajib diisi",
         "pick_folder_error": "Gagal memilih folder",
         "pick_file_error": "Gagal memilih file",
         "pick_folder_title": "Pilih Folder Mod",

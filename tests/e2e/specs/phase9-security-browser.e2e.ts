@@ -6,12 +6,12 @@ import { createObject } from '../support/data.js';
 import type { GameObject } from '../../../src/shared/api/tauri/bindings.gen.js';
 
 /**
- * Fase 9 — Keamanan, tema, browser (beyond Fase 8).
+ * Phase 9 — Security, theme, and browser (beyond Phase 8).
  * PIN authentication remains a manual smoke flow because a stale PIN can lock
  * the app on the next boot. Object pinning is safe to round-trip in the
  * isolated E2E database and is covered below instead.
  */
-describe('Fase 9 — Security, Themes & Browser', () => {
+describe('Phase 9 — Security, Themes & Browser', () => {
   let game: MockGame;
   let gameId: string;
   let objectId: string;

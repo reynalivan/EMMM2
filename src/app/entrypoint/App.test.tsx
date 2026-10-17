@@ -54,7 +54,8 @@ vi.mock('@/features/file-watcher', () => ({
   ExternalChangeHandler: () => null,
   FileInUseDialog: () => null,
 }));
-vi.mock('@/entities/game', () => ({
+vi.mock('@/entities/game', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/entities/game')>()),
   useActiveGame: () => ({ activeGame: games[0], games }),
 }));
 vi.mock('@/features/workspace-runtime', () => ({

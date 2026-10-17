@@ -28,12 +28,12 @@ async function rejects(cmd: string, args: Record<string, unknown>): Promise<void
 }
 
 /**
- * Fase 3b — Failure & validation paths (tc-13 / tc-10 / tc-14 / tc-22 edges).
- * Complements the happy-path Fase 3: invalid input must be rejected, bad paths
+ * Phase 3b — Failure & validation paths (tc-13 / tc-10 / tc-14 / tc-22 edges).
+ * Complements the happy-path Phase 3: invalid input must be rejected, bad paths
  * must surface as per-item failures, and trash must empty cleanly. All IPC-level
  * and fully grounded in the backend's validation contracts.
  */
-describe('Fase 3b — Failure & Validation Paths (data-safety)', () => {
+describe('Phase 3b — Failure & Validation Paths (data-safety)', () => {
   let game: MockGame;
   let gameId: string;
 

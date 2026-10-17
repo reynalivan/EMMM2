@@ -38,6 +38,8 @@ macro_rules! emmm_collect_commands {
             crate::modules::system::adapters::tauri::app_cmds::reset_database,
             crate::modules::system::adapters::tauri::app_cmds::check_path_exists_cmd,
             crate::modules::games::adapters::tauri::game_cmds::auto_detect_games,
+            crate::modules::games::adapters::tauri::executable_cmds::discover_game_executables,
+            crate::modules::games::adapters::tauri::executable_cmds::validate_game_executable,
             crate::modules::games::adapters::tauri::game_cmds::resolve_game_folder,
             crate::modules::games::adapters::tauri::game_cmds::add_game_manual,
             crate::modules::games::adapters::tauri::game_cmds::save_onboarding_games,

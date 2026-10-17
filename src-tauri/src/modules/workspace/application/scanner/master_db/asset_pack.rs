@@ -139,7 +139,12 @@ impl CatalogPack {
                 continue;
             }
             entries += game_entries.len();
-            has_keyviewer_targets |= !self.keyviewer_entries_for(game_type as i32)?.is_empty();
+            has_keyviewer_targets |= game_entries.iter().any(|entry| {
+                entry
+                    .runtime_targets
+                    .iter()
+                    .any(RuntimeTarget::is_resource_target)
+            });
             supported_games.push(game_type.resource_code().to_string());
         }
         Ok(CatalogPackReview {
@@ -453,6 +458,60 @@ mod tests {
             serde_json::to_vec(&manifest).expect("serialize manifest"),
         )
         .expect("write manifest");
+    }
+
+    #[test]
+    fn review_derives_resource_eligibility_without_including_shaders() {
+        for (kind, hash, eligible) in [
+            ("shader", "0123456789abcdef", false),
+            ("position_vb", "01234567", true),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let catalog = serde_json::json!({ "entries": [{
+                "name": "Owned entry",
+                "object_type": "Character",
+                "runtime_targets": [{
+                    "variant": "default", "resource_kind": kind, "hash": hash,
+                    "provenance": {
+                        "source_repo": "github.com/example/catalog",
+                        "commit": "owned-fixture", "path": "gimi/owned.json"
+                    }
+                }]
+            }] });
+            write_catalog_fixture(root.path(), &serde_json::to_vec(&catalog).unwrap());
+
+            let review = CatalogPack::load_from_root(root.path().to_path_buf())
+                .unwrap()
+                .review()
+                .unwrap();
+
+            assert_eq!(review.entries, 1);
+            assert_eq!(review.supported_games, vec!["gimi"]);
+            assert_eq!(review.has_keyviewer_targets, eligible);
+        }
+    }
+
+    #[test]
+    fn review_rejects_invalid_shader_targets_even_when_they_are_not_eligible() {
+        let root = tempfile::tempdir().unwrap();
+        let catalog = serde_json::json!({ "entries": [{
+            "name": "Owned entry", "object_type": "Character",
+            "runtime_targets": [{
+                "variant": "default", "resource_kind": "shader", "hash": "01234567",
+                "provenance": {
+                    "source_repo": "github.com/example/catalog",
+                    "commit": "owned-fixture", "path": "gimi/owned.json"
+                }
+            }]
+        }] });
+        write_catalog_fixture(root.path(), &serde_json::to_vec(&catalog).unwrap());
+        let pack = CatalogPack::load_from_root(root.path().to_path_buf()).unwrap();
+
+        assert!(pack
+            .review()
+            .unwrap_err()
+            .to_string()
+            .contains("shader hash"));
     }
 
     fn assert_reader_error_parity(pack: &CatalogPack) {

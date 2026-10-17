@@ -257,7 +257,11 @@ pub(crate) fn validate_overlay_replay_settings(
     let same_game = original
         .active_game()
         .zip(current.active_game())
-        .is_some_and(|(before, after)| before.id == after.id && before.game_exe == after.game_exe);
+        .is_some_and(|(before, after)| {
+            before.id == after.id
+                && before.game_type == after.game_type
+                && before.game_exe == after.game_exe
+        });
     if !current.hotkeys.enabled
         || !same_game
         || parse_os_shortcut(&original.hotkeys.toggle_overlay)?

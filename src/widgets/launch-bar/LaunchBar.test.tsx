@@ -2,16 +2,27 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import LaunchBar from './LaunchBar';
 import type { ConflictInfo } from '@/entities/workspace';
+import type { GameConfig } from '@/entities/game';
+import { LaunchMenuTargetContext } from '@/shared/ui/components/layout/LaunchMenuTargetContext';
 
 const launchConfiguredGame = vi.fn();
 const toastError = vi.fn();
 let activeConflicts: ConflictInfo[] = [];
 let ignoredConflictGroupKeys: string[] = [];
 let workspaceView = 'mods';
+const setWorkspaceView = vi.fn();
+const setSettingsTab = vi.fn();
+let activeGame: Pick<GameConfig, 'id' | 'game_exe' | 'launch_mode'> | null = {
+  id: 'game-1',
+  game_exe: 'E:/GIMI/GenshinImpact.exe',
+  launch_mode: 'standalone',
+};
 
 vi.mock('@/entities/game', () => ({
-  useActiveGame: vi.fn(() => ({ activeGame: { id: 'game-1' } })),
+  useActiveGame: vi.fn(() => ({ activeGame })),
   launchConfiguredGame: (...args: unknown[]) => launchConfiguredGame(...args),
+  requiresGameExecutable: (game: Pick<GameConfig, 'game_exe' | 'launch_mode'>) =>
+    game.launch_mode !== 'xxmi_managed' && !game.game_exe?.trim(),
 }));
 vi.mock('@/features/mod-runtime', () => ({
   useActiveConflicts: vi.fn(() => ({ data: activeConflicts })),
@@ -27,6 +38,8 @@ vi.mock('@/app/store', () => ({
     selector: (state: {
       autoCloseLauncher: boolean;
       workspaceView: string;
+      setWorkspaceView: (view: string) => void;
+      setSettingsTab: (tab: string) => void;
       isPreviewOpen: boolean;
       togglePreview: () => void;
       diskReconcileByGame: Record<string, never>;
@@ -35,6 +48,8 @@ vi.mock('@/app/store', () => ({
     selector({
       autoCloseLauncher: true,
       workspaceView,
+      setWorkspaceView,
+      setSettingsTab,
       isPreviewOpen: false,
       togglePreview: vi.fn(),
       diskReconcileByGame: {},
@@ -69,7 +84,8 @@ vi.mock('@/features/randomizer', () => ({
   RandomizerModal: () => <div data-testid="randomizer-modal"></div>,
 }));
 vi.mock('@/features/conflict-report', () => ({
-  ConflictModal: () => <div data-testid="conflict-modal"></div>,
+  ConflictModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="conflict-modal"></div> : null,
   buildConflictModSetKey: (modPaths: string[]) => JSON.stringify([...modPaths].sort()),
 }));
 function conflict(hash: string): ConflictInfo {
@@ -90,8 +106,15 @@ describe('LaunchBar', () => {
     activeConflicts = [];
     ignoredConflictGroupKeys = [];
     workspaceView = 'mods';
+    activeGame = {
+      id: 'game-1',
+      game_exe: 'E:/GIMI/GenshinImpact.exe',
+      launch_mode: 'standalone',
+    };
     launchConfiguredGame.mockReset();
     toastError.mockReset();
+    setWorkspaceView.mockReset();
+    setSettingsTab.mockReset();
   });
 
   it('launches through the shared action with auto-close enabled', async () => {
@@ -117,6 +140,28 @@ describe('LaunchBar', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('opens game setup instead of launching an unconfigured standalone game', () => {
+    activeGame = { id: 'game-1', game_exe: null, launch_mode: 'standalone' };
+    render(<LaunchBar />);
+
+    fireEvent.click(screen.getByText('Play'));
+
+    expect(setSettingsTab).toHaveBeenCalledWith('games');
+    expect(setWorkspaceView).toHaveBeenCalledWith('settings');
+    expect(launchConfiguredGame).not.toHaveBeenCalled();
+  });
+
+  it('launches XXMI without the optional process executable', async () => {
+    activeGame = { id: 'game-1', game_exe: null, launch_mode: 'xxmi_managed' };
+    render(<LaunchBar />);
+
+    fireEvent.click(screen.getByText('Play'));
+
+    await waitFor(() => {
+      expect(launchConfiguredGame).toHaveBeenCalledWith('game-1', true);
+    });
+  });
+
   it('shows a warning trigger without an automatic conflict overlay', () => {
     activeConflicts = [conflict('aaaaaaaa')];
     render(<LaunchBar />);
@@ -137,8 +182,50 @@ describe('LaunchBar', () => {
     expect(trigger).toHaveTextContent('1');
   });
 
-  it('hides ignored conflict groups from the warning count', () => {
+  it('keeps ignored conflicts reachable with a zero unresolved count after remount', () => {
     activeConflicts = [conflict('aaaaaaaa')];
+    ignoredConflictGroupKeys = ['["ModA","ModB"]'];
+    const firstMount = render(<LaunchBar />);
+
+    expect(screen.getByRole('button', { name: 'Shared hashes: 0' })).toHaveTextContent('0');
+    firstMount.unmount();
+    render(<LaunchBar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared hashes: 0' }));
+
+    expect(screen.getByTestId('conflict-modal')).toBeInTheDocument();
+  });
+
+  it('keeps ignored conflicts reachable from the compact menu', () => {
+    activeConflicts = [conflict('aaaaaaaa')];
+    ignoredConflictGroupKeys = ['["ModA","ModB"]'];
+    const menuTarget = document.createElement('div');
+    document.body.appendChild(menuTarget);
+    const view = render(
+      <LaunchMenuTargetContext.Provider value={menuTarget}>
+        <LaunchBar />
+      </LaunchMenuTargetContext.Provider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Conflicts\s*0$/ }));
+
+    expect(screen.getByTestId('conflict-modal')).toBeInTheDocument();
+    view.unmount();
+    menuTarget.remove();
+  });
+
+  it('counts only unresolved conflicts when ignored and unresolved groups coexist', () => {
+    activeConflicts = [
+      conflict('aaaaaaaa'),
+      { ...conflict('bbbbbbbb'), mod_paths: ['ModC', 'ModD'] },
+    ];
+    ignoredConflictGroupKeys = ['["ModA","ModB"]'];
+    render(<LaunchBar />);
+
+    expect(screen.getByRole('button', { name: 'Shared hashes: 1' })).toHaveTextContent('1');
+  });
+
+  it('hides the review entry when no active conflicts remain even with stored ignored groups', () => {
     ignoredConflictGroupKeys = ['["ModA","ModB"]'];
     render(<LaunchBar />);
 

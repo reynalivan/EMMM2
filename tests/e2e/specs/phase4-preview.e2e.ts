@@ -23,11 +23,11 @@ interface ModInfo {
 }
 
 /**
- * Fase 4 — Preview & editor. Metadata (info.json), INI editor, image gallery,
+ * Phase 4 — Preview & editor. Metadata (info.json), INI editor, image gallery,
  * thumbnail cache, keyviewer. Editors that write to disk are asserted by
  * re-reading the file from the filesystem.
  */
-describe('Fase 4 — Preview & Editors', () => {
+describe('Phase 4 — Preview & Editors', () => {
   let game: MockGame;
   let gameId: string;
   let modDir: string;

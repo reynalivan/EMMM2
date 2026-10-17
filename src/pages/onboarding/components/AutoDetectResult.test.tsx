@@ -1,13 +1,52 @@
-import { render, screen, fireEvent } from '../../../tests/testing/test-utils';
-import { describe, it, expect, vi } from 'vitest';
+import { act, render, screen, fireEvent, waitFor } from '../../../tests/testing/test-utils';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { AutoDetectResult } from './AutoDetectResult';
 import type { GameConfig } from '@/entities/game';
+
+const discovery = vi.hoisted(() => ({
+  scan: vi.fn().mockResolvedValue(undefined),
+  cancel: vi.fn(),
+  validate: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/features/game-executable-detection', () => ({
+  useGameExecutableDiscovery: () => ({ ...discovery, pendingTypes: [] }),
+  validateSelectedGameExecutables: discovery.validate,
+  GameExecutableField: ({
+    value,
+    onChange,
+    inputId,
+    disabled,
+  }: {
+    value: string;
+    onChange: (value: string, detected: boolean) => void;
+    inputId: string;
+    disabled: boolean;
+  }) => (
+    <div>
+      <input
+        aria-label={inputId}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value, false)}
+      />
+      <button disabled={disabled} onClick={() => onChange('C:/Detected/Game.exe', true)}>
+        Select {inputId}
+      </button>
+    </div>
+  ),
+}));
 
 describe('AutoDetectResult (TC-03)', () => {
   const mockOnContinue = vi.fn();
   const mockOnAddMore = vi.fn();
   const mockOnRemoveGame = vi.fn();
   const mockOnGoBack = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    discovery.validate.mockResolvedValue(undefined);
+  });
 
   it('renders games correctly', () => {
     const games = [
@@ -78,7 +117,7 @@ describe('AutoDetectResult (TC-03)', () => {
     expect(screen.queryByText('Setup Warnings — you can still proceed')).not.toBeInTheDocument();
   });
 
-  it('triggers callbacks', () => {
+  it('triggers callbacks', async () => {
     const games = [
       { id: 'g1', name: 'Game 1', game_type: 'GIMI', mod_path: 'C:/Mods', game_exe: 'C:/G.exe' },
     ] as unknown as GameConfig[];
@@ -99,10 +138,93 @@ describe('AutoDetectResult (TC-03)', () => {
     expect(mockOnAddMore).toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('Confirm'));
-    expect(mockOnContinue).toHaveBeenCalled();
+    await waitFor(() => expect(mockOnContinue).toHaveBeenCalled());
 
     const removeBtn = screen.getByTitle('Remove from detection');
     fireEvent.click(removeBtn);
     expect(mockOnRemoveGame).toHaveBeenCalledWith('g1');
+  });
+
+  const game = (id: string): GameConfig => ({
+    id,
+    name: id,
+    game_type: 0,
+    instance_path: `C:/XXMI/${id}`,
+    mod_path: `C:/XXMI/${id}/Mods`,
+    game_exe: null,
+    loader_exe: null,
+    xxmi_launcher_exe: null,
+    launch_mode: 'xxmi_managed',
+    launch_args: null,
+  });
+
+  const renderDraft = (games: GameConfig[]) =>
+    render(
+      <AutoDetectResult
+        games={games}
+        onConfirm={mockOnContinue}
+        onAddMore={mockOnAddMore}
+        onRemoveGame={mockOnRemoveGame}
+        onBack={mockOnGoBack}
+      />,
+    );
+
+  it('scans duplicate game types once and applies a selection to only its importer draft', async () => {
+    renderDraft([game('first'), game('second')]);
+    fireEvent.click(screen.getByText('Detect executable locations'));
+    expect(discovery.scan).toHaveBeenCalledWith([0]);
+    fireEvent.click(screen.getByText('Select onboarding-executable-second'));
+    fireEvent.click(screen.getByText('Confirm'));
+    await waitFor(() => expect(mockOnContinue).toHaveBeenCalled());
+    expect(mockOnContinue.mock.calls[0][0]).toEqual([
+      game('first'),
+      { ...game('second'), game_exe: 'C:/Detected/Game.exe' },
+    ]);
+    expect(discovery.validate.mock.calls[0][1]).toEqual(
+      new Map([['second', 'C:/Detected/Game.exe']]),
+    );
+  });
+
+  it('keeps empty executable paths optional and cancels discovery before continuing', async () => {
+    renderDraft([game('first')]);
+    fireEvent.click(screen.getByText('Confirm'));
+    await waitFor(() => expect(mockOnContinue).toHaveBeenCalledWith([game('first')]));
+    expect(discovery.cancel).toHaveBeenCalled();
+    expect(discovery.validate).toHaveBeenCalledWith([game('first')], new Map());
+  });
+
+  it('keeps the draft open if a selected executable disappeared', async () => {
+    discovery.validate.mockRejectedValueOnce(new Error('Executable was moved'));
+    renderDraft([game('first')]);
+    fireEvent.click(screen.getByText('Select onboarding-executable-first'));
+    fireEvent.click(screen.getByText('Confirm'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Executable was moved');
+    expect(mockOnContinue).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('onboarding-executable-first')).toHaveValue(
+      'C:/Detected/Game.exe',
+    );
+    fireEvent.change(screen.getByLabelText('onboarding-executable-first'), {
+      target: { value: 'C:/Custom.exe' },
+    });
+    fireEvent.click(screen.getByText('Confirm'));
+    await waitFor(() => expect(mockOnContinue).toHaveBeenCalled());
+    expect(discovery.validate.mock.calls[1][1]).toEqual(new Map());
+  });
+
+  it('ignores pending confirmation when leaving the result screen', async () => {
+    let resolve: () => void = () => undefined;
+    discovery.validate.mockReturnValueOnce(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    renderDraft([game('first')]);
+    fireEvent.click(screen.getByText('Confirm'));
+    fireEvent.click(screen.getByText('Back to Welcome'));
+    await act(async () => {
+      resolve();
+    });
+    expect(mockOnGoBack).toHaveBeenCalledOnce();
+    expect(mockOnContinue).not.toHaveBeenCalled();
   });
 });

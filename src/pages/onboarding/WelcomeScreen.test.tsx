@@ -83,16 +83,32 @@ vi.mock('./components/AutoDetectResult', () => ({
     onAddMore,
     onBack,
     onRemoveGame,
+    onDraftChange,
+    selectedExecutables,
   }: {
-    games: { id: string; name: string }[];
-    onConfirm: () => void;
+    games: GameConfig[];
+    onConfirm: (games: GameConfig[]) => void;
     onAddMore: () => void;
     onBack: () => void;
     onRemoveGame: (id: string) => void;
+    onDraftChange: (games: GameConfig[], selected: ReadonlyMap<string, string>) => void;
+    selectedExecutables: ReadonlyMap<string, string>;
   }) => (
     <div data-testid="result-screen">
       Result Screen: {games.length} games
-      <button onClick={onConfirm}>Result Continue</button>
+      <button onClick={() => onConfirm(games)}>Result Continue</button>
+      <button
+        onClick={() =>
+          onDraftChange(
+            games.map((game) => ({ ...game, game_exe: 'C:/Detected/Game.exe' })),
+            new Map(games.map((game) => [game.id, 'C:/Detected/Game.exe'])),
+          )
+        }
+      >
+        Configure executable
+      </button>
+      <span data-testid="draft-executable">{games[0]?.game_exe}</span>
+      <span data-testid="selected-executable">{selectedExecutables.get(games[0]?.id)}</span>
       <button onClick={onAddMore}>Result Add More</button>
       <button onClick={onBack}>Result Back</button>
       <button onClick={() => onRemoveGame('new-game')}>Remove</button>
@@ -206,6 +222,30 @@ describe('WelcomeScreen (TC-03)', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Welcome to EMMM')).toBeInTheDocument();
+    });
+  });
+
+  it('preserves executable drafts across adding another importer and passes them to saving', async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === 'begin_onboarding_indexing')
+        return Promise.resolve({ session_id: 'session-executable' });
+      if (command === 'reconcile_onboarding_indexing_game')
+        return Promise.resolve({ status: 'Applied' });
+      return Promise.resolve(undefined);
+    });
+    render(<WelcomeScreen onComplete={mockOnComplete} />);
+    fireEvent.click(screen.getByText('Add Game Manually'));
+    fireEvent.click(screen.getByText('Finish'));
+    await screen.findByTestId('result-screen');
+    fireEvent.click(screen.getByText('Configure executable'));
+    fireEvent.click(screen.getByText('Result Add More'));
+    fireEvent.click(screen.getByText('Go Back'));
+    expect(screen.getByTestId('draft-executable')).toHaveTextContent('C:/Detected/Game.exe');
+    expect(screen.getByTestId('selected-executable')).toHaveTextContent('C:/Detected/Game.exe');
+    fireEvent.click(screen.getByText('Result Continue'));
+    await waitFor(() => expect(mockOnComplete).toHaveBeenCalledOnce());
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('save_onboarding_games', {
+      games: [expect.objectContaining({ id: 'new-game', game_exe: 'C:/Detected/Game.exe' })],
     });
   });
 

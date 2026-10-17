@@ -20,7 +20,8 @@
     "collections": "Collections",
     "settings": "Settings",
     "discover": "Discover",
-    "downloads": "Downloads"
+    "downloads": "Downloads",
+    "setup_executable": "Set up executable"
   },
   "stats": {
     "total_mods": "Total Mods",

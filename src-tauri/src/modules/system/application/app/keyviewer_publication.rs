@@ -142,7 +142,7 @@ pub(super) fn published_artifact_matches(
             .join(KEYVIEWER_RESOURCE_ROOT)
             .join(&manifest.generation_id),
         resources,
-    ) && entrypoint_uses_generation(&content, &manifest.generation_id)
+    )
 }
 
 pub(super) fn is_content_generation_id(name: &str) -> bool {
@@ -170,4 +170,68 @@ pub(super) fn is_legacy_generation_id(name: &str) -> bool {
 pub(super) fn is_current_emmm_entrypoint(content: &[u8]) -> bool {
     let content = String::from_utf8_lossy(content).to_ascii_lowercase();
     content.contains("namespace = emmmv1") && content.contains("emmm-artifact: keyviewer v1")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_keyviewer_publication_is_reusable_without_resource_references() {
+        let root = tempfile::tempdir().unwrap();
+        let resources = ExpectedKeyViewerResources {
+            panels: &[],
+            toggle_key: "F7",
+            keyviewer_enabled: true,
+            status_text: None,
+            game_type: GameType::Gimi,
+        };
+        let fingerprint = "a".repeat(64);
+        let generation_id = format!("g{fingerprint}");
+        let generation = root
+            .path()
+            .join(KEYVIEWER_RESOURCE_ROOT)
+            .join(&generation_id);
+        std::fs::create_dir_all(&generation).unwrap();
+        let manifest = KeyViewerManifest {
+            version: KEYVIEWER_MANIFEST_VERSION,
+            fingerprint: fingerprint.clone(),
+            generation_id: generation_id.clone(),
+        };
+        std::fs::write(
+            manifest_path(root.path()),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        let content = resources.entrypoint_text(&generation_id).unwrap();
+        assert!(!entrypoint_uses_generation(
+            content.as_bytes(),
+            &generation_id
+        ));
+        let entrypoint = root.path().join("KeyViewer.ini");
+        std::fs::write(&entrypoint, &content).unwrap();
+
+        assert!(published_artifact_matches(
+            root.path(),
+            &entrypoint,
+            &fingerprint,
+            &resources,
+        ));
+
+        std::fs::write(&entrypoint, format!("{content}\n; modified")).unwrap();
+        assert!(!published_artifact_matches(
+            root.path(),
+            &entrypoint,
+            &fingerprint,
+            &resources,
+        ));
+        std::fs::write(&entrypoint, &content).unwrap();
+        std::fs::remove_dir(&generation).unwrap();
+        assert!(!published_artifact_matches(
+            root.path(),
+            &entrypoint,
+            &fingerprint,
+            &resources,
+        ));
+    }
 }

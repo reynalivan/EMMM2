@@ -15,11 +15,11 @@ interface FolderEntry {
 }
 
 /**
- * Fase 2 — Navigasi & permukaan baca. Read-only projection surface: object
+ * Phase 2 — Navigation & read surfaces. Read-only projection surface: object
  * list, category counts, folder listing, schema/master DB. No disk mutation
  * beyond seeding the fixture library.
  */
-describe('Fase 2 — Navigation & Read Surface', () => {
+describe('Phase 2 — Navigation & Read Surface', () => {
   let game: MockGame;
   let gameId: string;
   let gameType: number;

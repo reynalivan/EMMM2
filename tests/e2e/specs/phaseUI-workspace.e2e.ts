@@ -3,12 +3,12 @@ import { createMockGame, removeMockGame, type MockGame } from '../support/fixtur
 import { seedGameAndOpenDashboard, gotoWorkspaceView } from '../support/app.js';
 
 /**
- * Fase UI — Workspace layout & navigation (tc-05 / tc-06 / tc-16 presence).
+ * UI phase — Workspace layout & navigation (tc-05 / tc-06 / tc-16 presence).
  * Robust UI-level checks only: navigate via the App Menu and assert the 3-pane
  * workspace landmarks mount. Pixel-drag resize, drag-rect select, and mobile
  * viewport gestures stay [manual-smoke] — inherently flaky in E2E.
  */
-describe('Fase UI — Workspace Layout & Navigation', () => {
+describe('UI Phase — Workspace Layout & Navigation', () => {
   let game: MockGame;
 
   before(async () => {

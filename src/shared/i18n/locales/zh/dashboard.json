@@ -20,7 +20,8 @@
     "collections": "收藏集",
     "settings": "设置",
     "discover": "发现",
-    "downloads": "下载"
+    "downloads": "下载",
+    "setup_executable": "配置可执行文件"
   },
   "stats": {
     "total_mods": "模组总数",

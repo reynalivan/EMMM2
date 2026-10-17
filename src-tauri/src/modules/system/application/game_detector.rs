@@ -6,6 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "windows")]
+const MAX_PROCESS_IMAGE_PATH_UNITS: usize = 32_768;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForegroundProcess {
     pub executable_path: PathBuf,
@@ -56,6 +59,26 @@ pub fn is_game_running(game_exe: Option<&Path>) -> bool {
 }
 
 fn same_executable_path(actual: &Path, expected: &Path) -> bool {
+    if let (Some(actual_identity), Some(expected_identity)) = (
+        crate::platform::fs::file_utils::filesystem_identity(actual),
+        crate::platform::fs::file_utils::filesystem_identity(expected),
+    ) {
+        if actual_identity != expected_identity {
+            return false;
+        }
+        let Some((actual, expected)) = actual.canonicalize().ok().zip(expected.canonicalize().ok())
+        else {
+            return false;
+        };
+        return actual
+            .parent()
+            .zip(expected.parent())
+            .is_some_and(|(actual, expected)| canonical_paths_equal(actual, expected));
+    }
+    canonical_paths_equal(actual, expected)
+}
+
+fn canonical_paths_equal(actual: &Path, expected: &Path) -> bool {
     let actual = actual
         .canonicalize()
         .unwrap_or_else(|_| actual.to_path_buf());
@@ -111,7 +134,7 @@ fn foreground_window() -> Option<(ForegroundProcess, GameWindowGeometry)> {
             return None;
         }
 
-        let mut buffer = vec![0_u16; 1024];
+        let mut buffer = vec![0_u16; MAX_PROCESS_IMAGE_PATH_UNITS];
         let mut length = buffer.len() as u32;
         let read = QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length);
         CloseHandle(process);
@@ -215,5 +238,26 @@ mod tests {
             Path::new("C:/Tools/Game.exe"),
             Path::new("C:/Games/Game.exe")
         ));
+    }
+
+    #[test]
+    fn process_matching_uses_native_identity_for_existing_file_aliases() {
+        let temp = tempfile::tempdir().unwrap();
+        let executable = temp.path().join("game.exe");
+        let alias = temp.path().join("alias.exe");
+        std::fs::write(&executable, []).unwrap();
+        std::fs::hard_link(&executable, &alias).unwrap();
+        assert!(same_executable_path(&executable, &alias));
+        let other_install = temp.path().join("other-installation");
+        std::fs::create_dir(&other_install).unwrap();
+        let other_install_executable = other_install.join("game.exe");
+        std::fs::hard_link(&executable, &other_install_executable).unwrap();
+        assert!(!same_executable_path(
+            &executable,
+            &other_install_executable
+        ));
+        let other = temp.path().join("other.exe");
+        std::fs::write(&other, []).unwrap();
+        assert!(!same_executable_path(&executable, &other));
     }
 }

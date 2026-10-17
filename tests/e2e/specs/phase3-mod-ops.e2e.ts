@@ -25,12 +25,12 @@ interface BulkResult {
 }
 
 /**
- * Fase 3 — Operasi mod inti ⚠️ DATA-SAFETY. Every destructive mutation is
+ * Phase 3 — Core mod operations ⚠️ DATA-SAFETY. Every destructive mutation is
  * asserted on BOTH sides: disk (rename prefix / trash location / file
  * integrity) AND DB projection (getObjects mod_count / enabled_count).
  * Reconcile runs before explicit ops so the mod exists as a DB row to update.
  */
-describe('Fase 3 — Core Mod Operations (data-safety)', () => {
+describe('Phase 3 — Core Mod Operations (data-safety)', () => {
   let game: MockGame;
   let gameId: string;
 

@@ -3,7 +3,81 @@
 
 use sqlx::SqliteConnection;
 
+use crate::modules::collections::domain::collection::CollectionPathRewrite;
 use crate::shared::errors::CollectionError;
+
+async fn rewrite_member_preview_path(
+    conn: &mut SqliteConnection,
+    collection_id: &str,
+    member_path: &str,
+    rewrites: &[CollectionPathRewrite],
+) -> Result<(), CollectionError> {
+    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        r#"SELECT cm.preview_path, g.mods_path
+           FROM collection_mods cm
+           JOIN collections c ON c.id = cm.collection_id
+           LEFT JOIN games g ON g.id = c.game_id
+           WHERE cm.collection_id = ? AND cm.mod_path = ?"#,
+    )
+    .bind(collection_id)
+    .bind(member_path)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((Some(preview_path), mods_path)) = row else {
+        return Ok(());
+    };
+    if std::path::Path::new(&preview_path).is_absolute() {
+        let Some(mods_root) = mods_path.as_deref().filter(|root| !root.trim().is_empty()) else {
+            return Ok(());
+        };
+        // Enabled/DISABLED aliases apply inside the configured root only.
+        // They must not turn a different physical root into this game's root.
+        let root_key =
+            crate::shared::path_key::exact_location_key_for_path(std::path::Path::new(mods_root));
+        let preview_key = crate::shared::path_key::exact_location_key_for_path(
+            std::path::Path::new(&preview_path),
+        );
+        if preview_key != root_key && !preview_key.starts_with(&format!("{root_key}/")) {
+            return Ok(());
+        }
+    }
+    let mapped = rewrites.iter().find_map(|rewrite| {
+        let suffix = crate::shared::path_key::strip_path_prefix_preserve_display(
+            &preview_path,
+            &rewrite.from,
+            mods_path.as_deref(),
+        )?;
+        let replacement = if std::path::Path::new(&preview_path).is_absolute() {
+            crate::shared::path_key::resolve_collection_path(&rewrite.to, mods_path.as_deref())?
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            rewrite.to.clone()
+        };
+        let separator = if preview_path.contains('/') || !preview_path.contains('\\') {
+            "/"
+        } else {
+            "\\"
+        };
+        let replacement = replacement.replace(['/', '\\'], separator);
+        Some(if suffix.is_empty() {
+            replacement
+        } else {
+            format!("{replacement}{separator}{}", suffix.replace('/', separator))
+        })
+    });
+    if let Some(mapped) = mapped.filter(|mapped| mapped != &preview_path) {
+        sqlx::query(
+            "UPDATE collection_mods SET preview_path = ? WHERE collection_id = ? AND mod_path = ?",
+        )
+        .bind(mapped)
+        .bind(collection_id)
+        .bind(member_path)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone)]
 pub struct CollectionMemberPathRow {
@@ -41,27 +115,19 @@ pub async fn stage_member_path(
     collection_id: &str,
     old_path: &str,
     staged_path: &str,
+    preview_rewrites: &[CollectionPathRewrite],
 ) -> Result<(), CollectionError> {
+    // Preview metadata follows the original identity directly to its final
+    // namespace; staging it through member paths would lose ancestor pack roots.
+    rewrite_member_preview_path(conn, collection_id, old_path, preview_rewrites).await?;
     sqlx::query(
         r#"UPDATE collection_mods
            SET mod_path = ?,
-               mod_path_key = ?,
-               preview_path = CASE
-                   WHEN preview_path = ? THEN ?
-                   WHEN preview_path LIKE ? ESCAPE '\' OR preview_path LIKE ? ESCAPE '\'
-                       THEN ? || substr(preview_path, ?)
-                   ELSE preview_path
-               END
+               mod_path_key = ?
            WHERE collection_id = ? AND mod_path = ?"#,
     )
     .bind(staged_path)
     .bind(crate::shared::path_key::folder_path_key(staged_path, None))
-    .bind(old_path)
-    .bind(staged_path)
-    .bind(format!("{}%", escape_like(&format!("{old_path}/"))))
-    .bind(format!("{}%", escape_like(&format!("{old_path}\\"))))
-    .bind(staged_path)
-    .bind(old_path.chars().count() as i64 + 1)
     .bind(collection_id)
     .bind(old_path)
     .execute(&mut *conn)
@@ -102,24 +168,12 @@ pub async fn finalize_staged_member_path(
         r#"UPDATE collection_mods
            SET mod_path = ?,
                mod_path_key = ?,
-               object_ref_key = ?,
-               preview_path = CASE
-                   WHEN preview_path = ? THEN ?
-                   WHEN preview_path LIKE ? ESCAPE '\' OR preview_path LIKE ? ESCAPE '\'
-                       THEN ? || substr(preview_path, ?)
-                   ELSE preview_path
-               END
+               object_ref_key = ?
            WHERE collection_id = ? AND mod_path = ?"#,
     )
     .bind(final_path)
     .bind(&final_key)
     .bind(final_key.split('/').next().unwrap_or_default())
-    .bind(staged_path)
-    .bind(final_path)
-    .bind(format!("{}%", escape_like(&format!("{staged_path}/"))))
-    .bind(format!("{}%", escape_like(&format!("{staged_path}\\"))))
-    .bind(final_path)
-    .bind(staged_path.chars().count() as i64 + 1)
     .bind(collection_id)
     .bind(staged_path)
     .execute(&mut *conn)
@@ -301,6 +355,10 @@ pub async fn update_member_paths(
     .fetch_all(&mut *conn)
     .await?;
     let mut merged = 0;
+    let preview_rewrites = [CollectionPathRewrite {
+        from: old_mod_path.to_string(),
+        to: new_mod_path.to_string(),
+    }];
     for collection_id in source_collections {
         let sibling_paths: Vec<String> = sqlx::query_scalar(
             "SELECT mod_path FROM collection_mods WHERE collection_id = ? AND mod_path <> ?",
@@ -321,17 +379,14 @@ pub async fn update_member_paths(
                     .await?
                     .rows_affected();
         }
+        rewrite_member_preview_path(conn, &collection_id, old_mod_path, &preview_rewrites).await?;
     }
     let result = sqlx::query(
         r#"UPDATE collection_mods
         SET mod_path = ?,
             mod_path_key = ?,
             object_ref_key = ?,
-            object_id = COALESCE(?, object_id),
-            preview_path = CASE
-                WHEN preview_path = ? THEN ?
-                ELSE preview_path
-            END
+            object_id = COALESCE(?, object_id)
         WHERE mod_path = ?
           AND EXISTS (
               SELECT 1 FROM collections c
@@ -347,8 +402,6 @@ pub async fn update_member_paths(
             .unwrap_or_default(),
     )
     .bind(new_object_id)
-    .bind(old_mod_path)
-    .bind(new_mod_path)
     .bind(old_mod_path)
     .bind(game_id)
     .execute(&mut *conn)
@@ -409,18 +462,23 @@ pub async fn rewrite_member_path(
     old_sep: &str,
     new_sep: &str,
 ) -> Result<(), CollectionError> {
+    rewrite_member_preview_path(
+        conn,
+        collection_id,
+        old_path,
+        &[CollectionPathRewrite {
+            from: old_sep.to_string(),
+            to: new_sep.trim_end_matches(['/', '\\']).to_string(),
+        }],
+    )
+    .await?;
     sqlx::query(
         r#"
         UPDATE collection_mods
         SET
             mod_path = ?,
             mod_path_key = ?,
-            object_ref_key = ?,
-            preview_path = CASE
-                WHEN preview_path = ? THEN ?
-                WHEN preview_path LIKE ? THEN REPLACE(preview_path, ?, ?)
-                ELSE preview_path
-            END
+            object_ref_key = ?
         WHERE collection_id = ? AND mod_path = ?
         "#,
     )
@@ -432,11 +490,6 @@ pub async fn rewrite_member_path(
             .next()
             .unwrap_or_default(),
     )
-    .bind(old_path)
-    .bind(new_path)
-    .bind(format!("{}%", old_sep))
-    .bind(old_sep)
-    .bind(new_sep)
     .bind(collection_id)
     .bind(old_path)
     .execute(&mut *conn)
@@ -510,14 +563,14 @@ fn escape_like(value: &str) -> String {
         .replace('_', "\\_")
 }
 
-/// `(is_safe, mods_path)` context for signature recomputation.
+/// Mods root for signature recomputation, retaining a missing collection error.
 pub async fn get_projection_context(
     conn: &mut SqliteConnection,
     collection_id: &str,
-) -> Result<(i32, Option<String>), CollectionError> {
-    Ok(sqlx::query_as(
+) -> Result<Option<String>, CollectionError> {
+    Ok(sqlx::query_scalar(
         r#"
-        SELECT c.is_safe, g.mods_path
+        SELECT g.mods_path
         FROM collections c
         LEFT JOIN games g ON g.id = c.game_id
         WHERE c.id = ?

@@ -32,7 +32,7 @@ async function makeLooseFolder(root: string, name: string, hash: string): Promis
   return dir;
 }
 
-describe('Fase 5 — Shared import batches (data-safety)', () => {
+describe('Phase 5 — Shared import batches (data-safety)', () => {
   let game: MockGame;
   let gameId: string;
 

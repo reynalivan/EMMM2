@@ -10,6 +10,8 @@ commands.allow = [
     "apply_collection",
     "apply_game_mods_directory",
     "auto_detect_games",
+    "discover_game_executables",
+    "validate_game_executable",
     "browser_cancel_download",
     "browser_pause_download",
     "browser_resume_download",

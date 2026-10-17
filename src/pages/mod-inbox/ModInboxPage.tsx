@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Archive, PackageOpen, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatAppError } from '../../shared/lib/appError';
@@ -36,6 +36,9 @@ import WorkspacePanelSkeleton from '@/shared/ui/components/ui/WorkspacePanelSkel
 const WATCHER_REFRESH_DEBOUNCE_MS = 600;
 const VIRTUAL_LIST_THRESHOLD = 80;
 
+// The native watcher is shared, so startup and cleanup must stay ordered across page mounts.
+let watcherTransition = Promise.resolve();
+
 interface InboxRefreshSlot {
   pending: boolean;
   promise: Promise<void>;
@@ -61,8 +64,15 @@ export default function ModInboxPage() {
   const readyScrollOffset = useRef(0);
   const processedScrollOffset = useRef(0);
   const readySelectionScope = useRef<string | null>(null);
-  const watcherTransition = useRef(Promise.resolve());
+  const viewGeneration = useRef(0);
   const watcherErrorPrefix = t('watcher_failed', { error: '' });
+
+  useLayoutEffect(() => {
+    setBusyAction(null);
+    return () => {
+      viewGeneration.current += 1;
+    };
+  }, [activeGameId]);
 
   const syncReadySelection = useCallback((next: ModInboxSnapshot) => {
     if (next.rootState !== 'ready') {
@@ -173,7 +183,7 @@ export default function ModInboxPage() {
       return;
     }
 
-    watcherTransition.current = watcherTransition.current.then(async () => {
+    watcherTransition = watcherTransition.then(async () => {
       try {
         await modInboxCommands.startModInboxWatcher(activeGameId);
       } catch (cause) {
@@ -181,7 +191,7 @@ export default function ModInboxPage() {
       }
     });
     return () => {
-      watcherTransition.current = watcherTransition.current.then(async () => {
+      watcherTransition = watcherTransition.then(async () => {
         try {
           await modInboxCommands.stopModInboxWatcher(activeGameId, inboxWatcherRoot);
         } catch (cause) {
@@ -254,19 +264,28 @@ export default function ModInboxPage() {
       .map((entry) => entry.entryKey);
     if (entryKeys.length === 0) return;
 
+    const requestedGeneration = viewGeneration.current;
+    const isCurrentView = () =>
+      viewGeneration.current === requestedGeneration &&
+      useAppStore.getState().activeGameId === activeGameId;
+
     setBusyAction('create-batch');
     try {
       const batch = await modInboxCommands.createModInboxBatch({
         gameId: activeGameId,
         entryKeys,
       });
+      if (!isCurrentView()) return;
       await refresh();
+      if (!isCurrentView()) return;
       setReadySelection(new Set());
       openImportBatchWizard({ kind: 'existing', batchId: batch.id });
     } catch (cause) {
-      toast.error(t('errors.create_batch', { error: formatAppError(cause) }));
+      if (isCurrentView()) {
+        toast.error(t('errors.create_batch', { error: formatAppError(cause) }));
+      }
     } finally {
-      setBusyAction(null);
+      if (isCurrentView()) setBusyAction(null);
     }
   };
 

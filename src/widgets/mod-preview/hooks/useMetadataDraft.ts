@@ -220,7 +220,7 @@ export function useMetadataDraft({
       return;
     }
 
-    // validasi kalau isinya nol > akan diabaikan
+    // Ignore it when the value is zero.
     if (draft.actual_name.trim() === '') {
       return;
     }

@@ -8,10 +8,10 @@ import type {
 } from '../../../src/shared/api/tauri/bindings.gen.js';
 
 /**
- * Fase 1c — Settings depth (tc-04 edges). Maintenance, thumbnail cleanup,
+ * Phase 1c — Settings depth (tc-04 edges). Maintenance, thumbnail cleanup,
  * hotkey config, and per-field persistence beyond theme/language.
  */
-describe('Fase 1c — Settings Depth', () => {
+describe('Phase 1c — Settings Depth', () => {
   let game: MockGame;
 
   before(async () => {

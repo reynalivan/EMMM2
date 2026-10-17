@@ -338,15 +338,6 @@ impl DiskMutationLease {
         }
     }
 
-    pub(crate) fn mark_step_skipped(&self, sequence: u32) -> Result<(), AppError> {
-        match &self.operation_guard {
-            DiskMutationOperationGuard::Durable(guard) => guard.mark_step_skipped(sequence),
-            DiskMutationOperationGuard::LockOnly { .. } => Err(AppError::Internal(
-                "Mutation lease has no durable operation plan".to_string(),
-            )),
-        }
-    }
-
     pub(crate) fn settle_steps(
         &self,
         settlements: &[(u32, crate::modules::mutation::api::StepSettlement)],

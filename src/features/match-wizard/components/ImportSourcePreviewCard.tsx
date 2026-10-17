@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { File, Folder, Image } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -11,6 +11,8 @@ type Props = {
   children: ReactNode;
 };
 
+const PREVIEW_ENTRY_LIMIT = 12;
+
 export function ImportSourcePreviewCard({ children, item, loadPreview }: Props) {
   const { t } = useTranslation('match_wizard');
   const timer = useRef<number | null>(null);
@@ -19,7 +21,18 @@ export function ImportSourcePreviewCard({ children, item, loadPreview }: Props) 
   const [preview, setPreview] = useState<ImportSourcePreview | null>(null);
   const [position, setPosition] = useState({ left: 24, top: 24 });
 
+  useEffect(
+    () => () => {
+      if (timer.current !== null) {
+        window.clearTimeout(timer.current);
+        timer.current = null;
+      }
+    },
+    [],
+  );
+
   const show = (element: HTMLElement) => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
     const rect = element.getBoundingClientRect();
     const cardWidth = 384;
     const cardHeight = 420;
@@ -30,6 +43,7 @@ export function ImportSourcePreviewCard({ children, item, loadPreview }: Props) 
       top: Math.max(12, Math.min(rect.top, window.innerHeight - cardHeight - 12)),
     });
     timer.current = window.setTimeout(() => {
+      timer.current = null;
       setOpen(true);
       if (!preview && loadPreview) {
         setLoading(true);
@@ -43,6 +57,7 @@ export function ImportSourcePreviewCard({ children, item, loadPreview }: Props) 
 
   const hide = () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
     setOpen(false);
   };
 
@@ -95,8 +110,8 @@ export function ImportSourcePreviewCard({ children, item, loadPreview }: Props) 
 
             {preview && (
               <>
-                <div className="mt-3 max-h-40 overflow-hidden rounded-lg bg-base-200/70 p-2">
-                  {preview.entries.slice(0, 12).map((entry) => (
+                <div className="mt-3 max-h-40 overflow-y-auto rounded-lg bg-base-200/70 p-2">
+                  {preview.entries.slice(0, PREVIEW_ENTRY_LIMIT).map((entry) => (
                     <div
                       key={`${entry.kind}:${entry.relativePath}`}
                       className="flex items-center gap-1.5 truncate py-0.5 text-xs text-base-content/65"
@@ -106,12 +121,12 @@ export function ImportSourcePreviewCard({ children, item, loadPreview }: Props) 
                       <span className="truncate">{entry.relativePath}</span>
                     </div>
                   ))}
-                  {preview.truncated && (
-                    <p className="pt-1 text-[11px] text-base-content/40">
-                      {t('source_preview.more')}
-                    </p>
-                  )}
                 </div>
+                {(preview.truncated || preview.entries.length > PREVIEW_ENTRY_LIMIT) && (
+                  <p className="pt-1 text-[11px] text-base-content/40">
+                    {t('source_preview.more')}
+                  </p>
+                )}
                 {preview.imageThumbnails.length > 0 && (
                   <div className="mt-3 flex gap-2 overflow-hidden">
                     {preview.imageThumbnails.map((path) => (

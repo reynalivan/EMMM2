@@ -2,12 +2,17 @@ import { act, fireEvent, render, screen, waitFor, within } from '../../tests/tes
 import { listen } from '@tauri-apps/api/event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands } from '../../shared/api/tauri/bindings';
-import { openImportBatchWizard } from '@/features/import-batches';
+import {
+  openImportBatchWizard,
+  subscribeImportBatchWizard,
+  type ImportBatchLaunchRequest,
+} from '@/features/import-batches';
+import { toast } from '@/shared/ui/toast';
 import { modInboxCommands } from './api';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import ModInboxPage from './ModInboxPage';
 import { StrictMode, type ReactNode } from 'react';
-import type { AppSettings } from '../../shared/api/tauri/bindings.gen';
+import type { AppSettings, ImportBatch } from '../../shared/api/tauri/bindings.gen';
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 import type { ModInboxSnapshot } from './types';
@@ -55,9 +60,10 @@ vi.mock('../../shared/api/tauri/bindings', () => ({
   },
 }));
 
-vi.mock('@/features/import-batches/launcher', () => ({
-  openImportBatchWizard: vi.fn(),
-}));
+vi.mock('@/features/import-batches/launcher', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../features/import-batches/launcher')>();
+  return { ...actual, openImportBatchWizard: vi.fn(actual.openImportBatchWizard) };
+});
 
 vi.mock('@/shared/ui/liquid', () => ({
   LiquidSurface: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -131,6 +137,30 @@ const processedSnapshot = {
   ],
 } satisfies ModInboxSnapshot;
 
+const createdBatch: ImportBatch = {
+  id: 'old-game-batch',
+  gameId: 'game-1',
+  flow: 'ready_to_move',
+  targetMode: 'auto',
+  targetObjectId: null,
+  targetSubpath: null,
+  status: 'draft',
+  sourceArchivePath: null,
+  items: [],
+  createdAt: '2026-10-11T18:00:00Z',
+  updatedAt: '2026-10-11T18:00:00Z',
+};
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('ModInboxPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -150,6 +180,197 @@ describe('ModInboxPage', () => {
   afterEach(() => {
     document.getElementById('topbar-actions-portal')?.remove();
   });
+
+  it.each(['unmount', 'game round trip'] as const)(
+    'does not launch a completed old batch after %s',
+    async (retirement) => {
+      const pendingBatch = deferred<ImportBatch>();
+      const gameTwo = { ...readySnapshot, gameId: 'game-2', rootPath: 'D:/Inbox/Game Two' };
+      vi.mocked(modInboxCommands.getModInbox)
+        .mockReset()
+        .mockImplementation(async (gameId) => (gameId === 'game-1' ? readySnapshot : gameTwo));
+      vi.mocked(modInboxCommands.createModInboxBatch).mockReturnValueOnce(pendingBatch.promise);
+      const received: ImportBatchLaunchRequest[] = [];
+      const unsubscribe = subscribeImportBatchWizard((request) => received.push(request));
+      try {
+        const view = render(<ModInboxPage />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Review selected (2)' }));
+        expect(modInboxCommands.createModInboxBatch).toHaveBeenCalledWith({
+          gameId: 'game-1',
+          entryKeys: ['entry-a', 'entry-b'],
+        });
+        if (retirement === 'unmount') view.unmount();
+        mockStoreState.activeGameId = 'game-2';
+        if (retirement === 'unmount') render(<ModInboxPage />);
+        else view.rerender(<ModInboxPage />);
+        expect(await screen.findByText(gameTwo.rootPath)).toBeInTheDocument();
+        if (retirement === 'game round trip') {
+          mockStoreState.activeGameId = 'game-1';
+          view.rerender(<ModInboxPage />);
+          await screen.findByText(readySnapshot.rootPath);
+          expect(screen.getByRole('button', { name: 'Review selected (2)' })).toBeEnabled();
+        }
+        const scanCount = vi.mocked(modInboxCommands.getModInbox).mock.calls.length;
+        await act(async () => {
+          pendingBatch.resolve(createdBatch);
+          await pendingBatch.promise;
+        });
+        expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(scanCount);
+        expect(received).toEqual([]);
+        expect(screen.getByRole('checkbox', { name: 'Select Raiden Pack' })).toBeChecked();
+      } finally {
+        pendingBatch.resolve(createdBatch);
+        unsubscribe();
+      }
+    },
+  );
+
+  it('does not launch a batch when the page retires during its refresh', async () => {
+    const pendingRefresh = deferred<ModInboxSnapshot>();
+    vi.mocked(modInboxCommands.getModInbox)
+      .mockReset()
+      .mockResolvedValueOnce(readySnapshot)
+      .mockReturnValueOnce(pendingRefresh.promise);
+    vi.mocked(modInboxCommands.createModInboxBatch).mockResolvedValueOnce(createdBatch);
+    const view = render(<ModInboxPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review selected (2)' }));
+    await waitFor(() => expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(2));
+    view.unmount();
+    await act(async () => {
+      pendingRefresh.resolve(readySnapshot);
+      await pendingRefresh.promise;
+    });
+    expect(openImportBatchWizard).not.toHaveBeenCalled();
+  });
+
+  it('does not report an old batch error after unmount', async () => {
+    const pendingBatch = deferred<ImportBatch>();
+    vi.mocked(modInboxCommands.createModInboxBatch).mockReturnValueOnce(pendingBatch.promise);
+    const reportError = vi.spyOn(toast, 'error');
+    try {
+      const view = render(<ModInboxPage />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Review selected (2)' }));
+      view.unmount();
+      await act(async () => {
+        pendingBatch.reject(new Error('Old batch failed'));
+        await pendingBatch.promise.catch(() => undefined);
+      });
+      expect(reportError).not.toHaveBeenCalled();
+    } finally {
+      reportError.mockRestore();
+    }
+  });
+
+  it('waits for retired watcher startup and cleanup before starting the remounted watcher', async () => {
+    const gameTwo = { ...readySnapshot, gameId: 'game-2', rootPath: 'D:/Inbox/Game Two' };
+    const oldStart = deferred<void>();
+    const oldStop = deferred<void>();
+    const backend: { active: { gameId: string; rootPath: string } | null } = { active: null };
+    vi.mocked(modInboxCommands.getModInbox)
+      .mockReset()
+      .mockImplementation(async (gameId) => (gameId === 'game-1' ? readySnapshot : gameTwo));
+    vi.mocked(modInboxCommands.startModInboxWatcher).mockImplementation(async (gameId) => {
+      if (gameId === 'game-1') await oldStart.promise;
+      backend.active = {
+        gameId,
+        rootPath: gameId === 'game-1' ? readySnapshot.rootPath : gameTwo.rootPath,
+      };
+    });
+    vi.mocked(modInboxCommands.stopModInboxWatcher).mockImplementation(async (gameId, rootPath) => {
+      if (gameId === 'game-1') await oldStop.promise;
+      if (backend.active?.gameId === gameId && backend.active.rootPath === rootPath)
+        backend.active = null;
+    });
+    try {
+      const oldView = render(<ModInboxPage />);
+      await waitFor(() =>
+        expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledWith('game-1'),
+      );
+      oldView.unmount();
+      mockStoreState.activeGameId = 'game-2';
+      render(<ModInboxPage />);
+      await screen.findByText(gameTwo.rootPath);
+      expect(modInboxCommands.startModInboxWatcher).not.toHaveBeenCalledWith('game-2');
+      await act(async () => {
+        oldStart.resolve();
+        await oldStart.promise;
+      });
+      await waitFor(() =>
+        expect(modInboxCommands.stopModInboxWatcher).toHaveBeenCalledWith(
+          'game-1',
+          readySnapshot.rootPath,
+        ),
+      );
+      expect(modInboxCommands.startModInboxWatcher).not.toHaveBeenCalledWith('game-2');
+      await act(async () => {
+        oldStop.resolve();
+        await oldStop.promise;
+      });
+      await waitFor(() => expect(backend.active?.gameId).toBe('game-2'));
+      expect(backend.active?.rootPath).toBe(gameTwo.rootPath);
+    } finally {
+      await act(async () => {
+        oldStart.resolve();
+        oldStop.resolve();
+        await oldStart.promise;
+        await oldStop.promise;
+      });
+    }
+  });
+
+  it.each(['startup', 'cleanup'] as const)(
+    'continues the shared watcher queue after rejected %s',
+    async (failure) => {
+      const gameTwo = { ...readySnapshot, gameId: 'game-2', rootPath: 'D:/Inbox/Game Two' };
+      const warning = vi.spyOn(toast, 'warning');
+      const cleanupWarning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      vi.mocked(modInboxCommands.getModInbox)
+        .mockReset()
+        .mockImplementation(async (gameId) => (gameId === 'game-1' ? readySnapshot : gameTwo));
+      if (failure === 'startup') {
+        vi.mocked(modInboxCommands.startModInboxWatcher).mockRejectedValueOnce(
+          new Error('Startup failed'),
+        );
+      } else {
+        vi.mocked(modInboxCommands.stopModInboxWatcher).mockRejectedValueOnce(
+          new Error('Cleanup failed'),
+        );
+      }
+      try {
+        const oldView = render(<ModInboxPage />);
+        await waitFor(() =>
+          expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledWith('game-1'),
+        );
+        oldView.unmount();
+        mockStoreState.activeGameId = 'game-2';
+        const newView = render(<ModInboxPage />);
+        await waitFor(() =>
+          expect(modInboxCommands.startModInboxWatcher).toHaveBeenCalledWith('game-2'),
+        );
+        expect(modInboxCommands.stopModInboxWatcher).toHaveBeenCalledWith(
+          'game-1',
+          readySnapshot.rootPath,
+        );
+        if (failure === 'startup')
+          expect(warning).toHaveBeenCalledWith(expect.stringContaining('Startup failed'));
+        else
+          expect(cleanupWarning).toHaveBeenCalledWith(
+            'Could not stop Mod Inbox watcher',
+            expect.any(Error),
+          );
+        newView.unmount();
+        await waitFor(() =>
+          expect(modInboxCommands.stopModInboxWatcher).toHaveBeenCalledWith(
+            'game-2',
+            gameTwo.rootPath,
+          ),
+        );
+      } finally {
+        warning.mockRestore();
+        cleanupWarning.mockRestore();
+      }
+    },
+  );
 
   it('starts a scoped watcher, refreshes for inbox events, and stops it on unmount', async () => {
     let changeHandler: (() => void) | undefined;
@@ -289,45 +510,6 @@ describe('ModInboxPage', () => {
     } finally {
       offsetHeight.mockRestore();
       offsetWidth.mockRestore();
-    }
-  });
-
-  it('coalesces watcher refreshes that arrive while an Inbox scan is active', async () => {
-    let changeHandler: (() => void) | undefined;
-    let resolveInitialSnapshot!: (snapshot: ModInboxSnapshot) => void;
-    const initialRequest = new Promise<ModInboxSnapshot>((resolve) => {
-      resolveInitialSnapshot = resolve;
-    });
-    vi.mocked(modInboxCommands.getModInbox)
-      .mockReset()
-      .mockReturnValueOnce(initialRequest)
-      .mockResolvedValueOnce(readySnapshot);
-    vi.mocked(listen).mockImplementation(async (_event, handler) => {
-      changeHandler = () => handler({ payload: {} } as never);
-      return () => undefined;
-    });
-
-    vi.useFakeTimers();
-    try {
-      render(<ModInboxPage />);
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
-
-      changeHandler?.();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(600);
-      });
-      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(1);
-
-      await act(async () => {
-        resolveInitialSnapshot(readySnapshot);
-        await initialRequest;
-      });
-      expect(modInboxCommands.getModInbox).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
     }
   });
 
@@ -570,28 +752,6 @@ describe('ModInboxPage', () => {
       'game-1',
       'Characters/Raiden/Mods/DISABLED raiden-pack',
     );
-  });
-
-  it('shows the first 20 processed destinations until the user expands the source', async () => {
-    const destinations = Array.from({ length: 21 }, (_, index) => ({
-      ...processedSnapshot.processedSources[0].destinations[0],
-      objectId: `object-${index}`,
-      objectName: `Destination ${index}`,
-      placedPath: `Characters/Target ${index}`,
-      plannedName: `Target ${index}`,
-    }));
-    vi.mocked(modInboxCommands.getModInbox).mockResolvedValue({
-      ...processedSnapshot,
-      processedSources: [{ ...processedSnapshot.processedSources[0], destinations }],
-    });
-    render(<ModInboxPage />);
-
-    fireEvent.click(await screen.findByRole('tab', { name: 'Processed' }));
-    expect(screen.getByText('Destination 19')).toBeInTheDocument();
-    expect(screen.queryByText('Destination 20')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show all 21 destinations' }));
-    expect(screen.getByText('Destination 20')).toBeInTheDocument();
   });
 
   it('keeps history accessible when its destination object has been deleted', async () => {

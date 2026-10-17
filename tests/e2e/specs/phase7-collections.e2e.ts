@@ -25,11 +25,11 @@ interface ApplyResult {
 }
 
 /**
- * Fase 7 — Collections & konflik ⚠️ DATA-SAFETY. Transactional apply (all-or-
+ * Phase 7 — Collections & conflicts ⚠️ DATA-SAFETY. Transactional apply (all-or-
  * nothing with partial-missing reporting), conflict ignore/revoke round-trip,
  * and safe-mode marking.
  */
-describe('Fase 7 — Collections & Conflict (data-safety)', () => {
+describe('Phase 7 — Collections & Conflict (data-safety)', () => {
   let game: MockGame;
   let gameId: string;
 

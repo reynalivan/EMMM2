@@ -1,5 +1,292 @@
 use super::*;
 
+async fn save_live_preview_member(
+    pool: &sqlx::SqlitePool,
+    mods_path: &str,
+    member_path: &str,
+    preview_path: &str,
+) {
+    seed_game(pool, "game-1", Some(mods_path)).await;
+    seed_ainoz_object(pool, "object-1", "game-1").await;
+    collection::create(pool, "saved", "game-1", "Saved", true, false)
+        .await
+        .expect("collection");
+    let mut member = test_collection_mod("saved", member_path, "Saved mod");
+    member.preview_path = Some(preview_path.to_string());
+    let object = test_collection_object("saved");
+    let state = projected_state::build_projected_state(
+        std::slice::from_ref(&member),
+        std::slice::from_ref(&object),
+        Some(mods_path),
+    );
+    persist_projected_state(pool, "saved", &[member], &[object], &state)
+        .await
+        .expect("save live-like absolute preview metadata");
+}
+
+#[tokio::test]
+async fn absolute_preview_follows_mod_rename_through_apply_path_validation() {
+    let db = init_test_db().await;
+    let root = tempfile::tempdir().expect("Mods root");
+    let mods_path = root.path().to_string_lossy().to_string();
+    create_flat_mod_folder(root.path(), "AINOZ/旧名");
+    let old_path = root.path().join("AINOZ/旧名");
+    save_live_preview_member(
+        &db.pool,
+        &mods_path,
+        "AINOZ/旧名",
+        &old_path.to_string_lossy(),
+    )
+    .await;
+    let new_path = root.path().join("AINOZ/新名");
+    std::fs::rename(&old_path, &new_path).expect("rename physical mod");
+    handle_mod_moved_or_renamed(&db.pool, "game-1", "AINOZ/旧名", "AINOZ/新名", None)
+        .await
+        .expect("reconcile rename");
+    let preview = get_collection_preview(&db.pool, "game-1", "saved", Some(&mods_path))
+        .await
+        .expect("preview");
+    let mut apply =
+        crate::modules::collections::application::apply::apply_pipeline::ApplyContext::new(
+            ApplyCollectionRequest {
+                pool: &db.pool,
+                game_id: "game-1",
+                collection_id: "saved",
+                mods_path: root.path().to_path_buf(),
+                suppressor: Arc::new(WatcherSuppressor::new(false)),
+                ignore_missing: false,
+                settings: AppSettings::default(),
+                capture_last_changes: false,
+            },
+        );
+    apply.target_mods =
+        projected_state::mods_from_projected_state("saved", &preview.projected_state);
+    crate::modules::collections::application::apply::steps::validate_paths::validate(&mut apply)
+        .await
+        .expect("renamed saved preview remains applicable");
+    assert_eq!(apply.target_mods[0].mod_path, "AINOZ/新名");
+    let members = collection::get_mods(&db.pool, "saved")
+        .await
+        .expect("members");
+    assert_eq!(
+        std::path::Path::new(
+            members[0]
+                .preview_path
+                .as_deref()
+                .expect("absolute preview")
+        ),
+        new_path
+    );
+}
+
+#[tokio::test]
+#[cfg(windows)]
+async fn absolute_ancestor_preview_follows_object_rename_without_collapsing_pack() {
+    let db = init_test_db().await;
+    save_live_preview_member(
+        &db.pool,
+        "E:/Mods",
+        "AINOZ/Pack/Variant",
+        r"E:\Mods\AINOZ\Pack",
+    )
+    .await;
+    let mut tx = db.pool.begin().await.expect("transaction");
+    handle_object_renamed_tx(&mut tx, "game-1", "AINOZ", "日本語")
+        .await
+        .expect("object rename");
+    tx.commit().await.expect("commit");
+    let members = collection::get_mods(&db.pool, "saved")
+        .await
+        .expect("members");
+    assert_eq!(members[0].mod_path, "日本語/Pack/Variant");
+    assert_eq!(
+        members[0].preview_path.as_deref(),
+        Some(r"E:\Mods\日本語\Pack")
+    );
+}
+
+#[tokio::test]
+#[cfg(windows)]
+async fn staged_identity_swap_preserves_absolute_ancestor_previews() {
+    use crate::modules::collections::domain::collection::CollectionPathRewrite;
+    let db = init_test_db().await;
+    save_live_preview_member(
+        &db.pool,
+        "E:/Mods",
+        "AINOZ/Pack/Variant",
+        "E:/Mods/AINOZ/Pack",
+    )
+    .await;
+    sqlx::query("INSERT INTO collection_mods (collection_id, mod_path, object_ref_key, object_id, preview_path, node_type) VALUES ('saved', 'Alice/Other', 'alice', 'object-1', 'E:/Mods/Alice/Other', 'FlatModRoot')")
+        .execute(&db.pool).await.expect("second swap member");
+    let mut tx = db.pool.begin().await.expect("transaction");
+    let staged = super::super::references::stage_identity_path_transitions_tx(
+        &mut tx,
+        "game-1",
+        &[
+            CollectionPathRewrite {
+                from: "AINOZ".to_string(),
+                to: "Alice".to_string(),
+            },
+            CollectionPathRewrite {
+                from: "Alice".to_string(),
+                to: "AINOZ".to_string(),
+            },
+        ],
+        &[CollectionPathRewrite {
+            from: "AINOZ/Pack/Variant".to_string(),
+            to: "Alice/Pack/Renamed".to_string(),
+        }],
+    )
+    .await
+    .expect("identity swap");
+    super::super::references::refresh_collection_signatures_tx(
+        &mut tx,
+        &staged.affected_collection_ids,
+    )
+    .await
+    .expect("refresh signatures");
+    tx.commit().await.expect("commit");
+    let members = collection::get_mods(&db.pool, "saved")
+        .await
+        .expect("members");
+    let previews = members
+        .iter()
+        .map(|m| (m.mod_path.as_str(), m.preview_path.as_deref()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        previews.get("Alice/Pack/Renamed"),
+        Some(&Some("E:/Mods/Alice/Pack"))
+    );
+    assert_eq!(
+        previews.get("AINOZ/Other"),
+        Some(&Some("E:/Mods/AINOZ/Other"))
+    );
+}
+
+#[tokio::test]
+async fn preview_rewrite_preserves_ancestors_boundaries_and_other_game_ownership() {
+    let db = init_test_db().await;
+    seed_game(&db.pool, "game-1", Some("E:/Mods")).await;
+    seed_game(&db.pool, "game-2", Some("E:/OtherMods")).await;
+    let fixtures = [
+        ("outside", "game-1", "AINOZ/Blue", "E:/Else/Mods/AINOZ/Blue"),
+        (
+            "outside-disabled-root",
+            "game-1",
+            "AINOZ/Blue",
+            "E:/DISABLED Mods/AINOZ/Blue",
+        ),
+        (
+            "outside-sibling-root",
+            "game-1",
+            "AINOZ/Blue",
+            "E:/Mods2/AINOZ/Blue",
+        ),
+        ("sibling", "game-1", "AINOZ/Blue", "E:/Mods/AINOZX/Blue"),
+        (
+            "ancestor",
+            "game-1",
+            "AINOZ/Pack/Variant",
+            "E:/Mods/AINOZ/Pack",
+        ),
+        (
+            "other-game",
+            "game-2",
+            "AINOZ/Blue",
+            "E:/OtherMods/AINOZ/Blue",
+        ),
+    ];
+    for (id, game, member, preview) in fixtures {
+        collection::create(&db.pool, id, game, id, true, false)
+            .await
+            .expect("collection");
+        sqlx::query("INSERT INTO collection_mods (collection_id, mod_path, object_ref_key, preview_path, node_type) VALUES (?, ?, 'ainoz', ?, 'FlatModRoot')")
+            .bind(id).bind(member).bind(preview).execute(&db.pool).await.expect("member");
+    }
+    handle_mod_moved_or_renamed(&db.pool, "game-1", "AINOZ/Blue", "AINOZ/Green", None)
+        .await
+        .expect("mod rename");
+    handle_mod_moved_or_renamed(
+        &db.pool,
+        "game-1",
+        "AINOZ/Pack/Variant",
+        "AINOZ/Pack/New",
+        None,
+    )
+    .await
+    .expect("child rename");
+    for (id, _, _, preview) in fixtures {
+        let members = collection::get_mods(&db.pool, id).await.expect("members");
+        assert_eq!(members[0].preview_path.as_deref(), Some(preview));
+    }
+    assert_eq!(
+        collection::get_mods(&db.pool, "other-game")
+            .await
+            .expect("other game")[0]
+            .mod_path,
+        "AINOZ/Blue"
+    );
+}
+
+#[tokio::test]
+#[cfg(windows)]
+async fn absolute_disabled_alias_preview_follows_semantic_mod_rename() {
+    let db = init_test_db().await;
+    save_live_preview_member(
+        &db.pool,
+        "E:/Mods",
+        "AINOZ/Blue",
+        "E:/Mods/DISABLED AINOZ/DISABLED Blue/Child",
+    )
+    .await;
+    handle_mod_moved_or_renamed(
+        &db.pool,
+        "game-1",
+        "AINOZ/DISABLED Blue",
+        "AINOZ/Green",
+        None,
+    )
+    .await
+    .expect("semantic rename from runtime spelling");
+    let members = collection::get_mods(&db.pool, "saved")
+        .await
+        .expect("members");
+    assert_eq!(
+        members[0].preview_path.as_deref(),
+        Some("E:/Mods/AINOZ/Green/Child")
+    );
+}
+
+#[tokio::test]
+#[cfg(windows)]
+async fn staged_preview_prefers_deeper_mod_transition_over_long_disabled_object_alias() {
+    use crate::modules::collections::domain::collection::CollectionPathRewrite;
+    let db = init_test_db().await;
+    save_live_preview_member(&db.pool, "E:/Mods", "AINOZ/X", "E:/Mods/AINOZ/X").await;
+    let mut tx = db.pool.begin().await.expect("transaction");
+    super::super::references::stage_identity_path_transitions_tx(
+        &mut tx,
+        "game-1",
+        &[CollectionPathRewrite {
+            from: "DISABLED AINOZ".to_string(),
+            to: "Alice".to_string(),
+        }],
+        &[CollectionPathRewrite {
+            from: "AINOZ/X".to_string(),
+            to: "Alice/Y".to_string(),
+        }],
+    )
+    .await
+    .expect("combined transition");
+    tx.commit().await.expect("commit");
+    let members = collection::get_mods(&db.pool, "saved")
+        .await
+        .expect("members");
+    assert_eq!(members[0].mod_path, "Alice/Y");
+    assert_eq!(members[0].preview_path.as_deref(), Some("E:/Mods/Alice/Y"));
+}
+
 #[tokio::test]
 async fn auto_heal_rebuilds_snapshot_roots_signature_and_path_keys() {
     let ctx = init_test_db().await;

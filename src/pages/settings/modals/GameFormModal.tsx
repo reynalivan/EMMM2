@@ -1,6 +1,6 @@
 import { useDialogSync } from '../../../shared/lib/hooks/useDialogSync';
 import { useEffect, useRef, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useController, useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -10,6 +10,10 @@ import type { TFunction } from 'i18next';
 import { GameType, type GameConfig } from '@/entities/game';
 import { pathsEqual } from '../../../shared/lib/pathKey';
 import { formatAppError } from '../../../shared/lib/appError';
+import {
+  GameExecutableField,
+  validateSelectedGameExecutables,
+} from '@/features/game-executable-detection';
 
 function getGameSchema(t: TFunction, existingModPaths: string[]) {
   return z
@@ -34,13 +38,6 @@ function getGameSchema(t: TFunction, existingModPaths: string[]) {
       launch_args: z.string().nullable().optional(),
     })
     .superRefine((data, context) => {
-      if (data.launch_mode === 'standalone' && !data.game_exe?.trim()) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['game_exe'],
-          message: t('games.form.validation.exe_required'),
-        });
-      }
       if (data.launch_mode === 'xxmi_managed' && !data.xxmi_launcher_exe?.trim()) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -102,6 +99,14 @@ function GameFormSession({
   const sessionActive = useRef(isOpen);
   const isBusy = isSubmitting || isSourceMigrationPending;
   const launchMode = useWatch({ control, name: 'launch_mode' });
+  const gameType = useWatch({ control, name: 'game_type' });
+  const { field: executableField } = useController({ control, name: 'game_exe' });
+  const xxmiLauncher = useWatch({ control, name: 'xxmi_launcher_exe' });
+  const detectedExecutable = useRef<string | null>(null);
+
+  useEffect(() => {
+    detectedExecutable.current = null;
+  }, [gameType]);
 
   useDialogSync(dialogRef, isOpen);
 
@@ -156,7 +161,7 @@ function GameFormSession({
       mod_path: data.mod_path,
       ready_to_move_path: data.ready_to_move_path || null,
       launch_mode: data.launch_mode,
-      game_exe: data.launch_mode === 'standalone' ? data.game_exe || null : null,
+      game_exe: data.game_exe?.trim() || null,
       loader_exe: data.launch_mode === 'standalone' ? data.loader_exe || null : null,
       xxmi_launcher_exe:
         data.launch_mode === 'xxmi_managed' ? data.xxmi_launcher_exe || null : null,
@@ -164,6 +169,11 @@ function GameFormSession({
     };
     setSubmitError(null);
     try {
+      await validateSelectedGameExecutables(
+        [gameConfig],
+        new Map(detectedExecutable.current ? [[gameConfig.id, detectedExecutable.current]] : []),
+      );
+      if (!sessionActive.current) return;
       const saved = await onSave(gameConfig);
       if (saved && sessionActive.current) onClose();
     } catch (error) {
@@ -190,17 +200,15 @@ function GameFormSession({
     }
   };
 
-  const pickExe = async (field: 'game_exe' | 'loader_exe' | 'xxmi_launcher_exe') => {
+  const pickExe = async (field: 'loader_exe' | 'xxmi_launcher_exe') => {
     try {
       const selected = await open({
         directory: false,
         multiple: false,
         title: t(
-          field === 'game_exe'
-            ? 'games.form.validation.pick_exe_title'
-            : field === 'loader_exe'
-              ? 'games.form.validation.pick_loader_title'
-              : 'games.form.validation.pick_xxmi_title',
+          field === 'loader_exe'
+            ? 'games.form.validation.pick_loader_title'
+            : 'games.form.validation.pick_xxmi_title',
         ),
         filters: [{ name: 'Executables', extensions: ['exe'] }],
       });
@@ -333,31 +341,17 @@ function GameFormSession({
             </div>
           </div>
 
-          {launchMode === 'standalone' ? (
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text font-medium">{t('games.form.exe_label')}</span>
-              </label>
-              <div className="join w-full">
-                <input
-                  type="text"
-                  className={`input input-bordered join-item w-full ${errors.game_exe ? 'input-error' : ''}`}
-                  placeholder={t('games.form.exe_placeholder')}
-                  {...register('game_exe')}
-                />
-                <button
-                  type="button"
-                  onClick={() => pickExe('game_exe')}
-                  className="btn btn-neutral join-item"
-                >
-                  {t('games.form.browse')}
-                </button>
-              </div>
-              {errors.game_exe && (
-                <span className="text-error text-xs mt-1">{errors.game_exe.message}</span>
-              )}
-            </div>
-          ) : (
+          <GameExecutableField
+            gameType={gameType}
+            value={executableField.value ?? ''}
+            xxmiRoots={[initialData?.instance_path ?? '', xxmiLauncher ?? '']}
+            disabled={isBusy}
+            onChange={(path, detected) => {
+              detectedExecutable.current = detected ? path : null;
+              executableField.onChange(path);
+            }}
+          />
+          {launchMode === 'xxmi_managed' && (
             <div className="form-control">
               <label className="label">
                 <span className="label-text font-medium">{t('games.form.xxmi_label')}</span>

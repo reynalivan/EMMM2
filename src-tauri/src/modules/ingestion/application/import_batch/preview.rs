@@ -11,6 +11,7 @@ use walkdir::WalkDir;
 const MAX_VISIBLE_ENTRIES: usize = 24;
 const MAX_SCANNED_ENTRIES: usize = 2_048;
 const MAX_PREVIEW_IMAGES: usize = 4;
+const MAX_PREVIEW_DEPTH: usize = 4;
 
 pub async fn get_import_source_preview(
     db: &SqlitePool,
@@ -113,23 +114,42 @@ fn build_preview(item_id: String, source: PathBuf) -> Result<ImportSourcePreview
     let mut truncated = false;
 
     for (index, entry) in WalkDir::new(&canonical)
-        .max_depth(4)
+        .max_depth(MAX_PREVIEW_DEPTH)
         .follow_links(false)
         .into_iter()
-        .filter_map(Result::ok)
-        .skip(1)
         .enumerate()
     {
-        if index >= MAX_SCANNED_ENTRIES {
+        if index > MAX_SCANNED_ENTRIES {
             truncated = true;
             break;
         }
+        let entry = entry.map_err(|error| {
+            AppError::Io(format!(
+                "Could not read import preview '{}': {error}",
+                canonical.display()
+            ))
+        })?;
+        if entry.depth() == 0 {
+            continue;
+        }
         if entry.file_type().is_dir() {
             folder_count = folder_count.saturating_add(1);
+            if entry.depth() == MAX_PREVIEW_DEPTH {
+                let mut children = std::fs::read_dir(entry.path())?;
+                if let Some(child) = children.next() {
+                    child?;
+                    truncated = true;
+                }
+            }
         } else if entry.file_type().is_file() {
             file_count = file_count.saturating_add(1);
-            total_size_bytes = total_size_bytes
-                .saturating_add(entry.metadata().map(|metadata| metadata.len()).unwrap_or(0));
+            let metadata = entry.metadata().map_err(|error| {
+                AppError::Io(format!(
+                    "Could not read import preview metadata '{}': {error}",
+                    entry.path().display()
+                ))
+            })?;
+            total_size_bytes = total_size_bytes.saturating_add(metadata.len());
         }
         if entries.len() < MAX_VISIBLE_ENTRIES {
             entries.push(ImportSourcePreviewEntry {
@@ -224,5 +244,58 @@ mod tests {
         let selected = first_existing_path(vec![staging, placed.clone(), source]).unwrap();
 
         assert_eq!(selected, placed);
+    }
+
+    #[test]
+    fn preview_marks_descendants_beyond_its_depth_bound_as_partial() {
+        let root = tempfile::tempdir().unwrap();
+        let hidden = root.path().join("A/B/C/D/E");
+        std::fs::create_dir_all(&hidden).unwrap();
+        std::fs::write(hidden.join("payload.dat"), b"payload").unwrap();
+
+        let preview = build_preview("item".to_string(), root.path().to_path_buf()).unwrap();
+
+        assert!(preview.truncated);
+        assert_eq!(preview.file_count, 0);
+        assert_eq!(preview.total_size_bytes, 0);
+    }
+
+    #[test]
+    fn preview_with_an_empty_directory_at_the_depth_bound_is_complete() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("A/B/C/D")).unwrap();
+
+        let preview = build_preview("item".to_string(), root.path().to_path_buf()).unwrap();
+
+        assert!(!preview.truncated);
+        assert_eq!(preview.folder_count, 4);
+        assert_eq!(preview.file_count, 0);
+    }
+
+    #[test]
+    fn shallow_preview_retains_complete_file_counts_and_size() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("payload.dat"), b"payload").unwrap();
+
+        let preview = build_preview("item".to_string(), root.path().to_path_buf()).unwrap();
+
+        assert!(!preview.truncated);
+        assert_eq!(preview.file_count, 1);
+        assert_eq!(preview.total_size_bytes, 7);
+    }
+
+    #[test]
+    fn preview_preserves_its_scan_and_visible_entry_limits() {
+        let root = tempfile::tempdir().unwrap();
+        for index in 0..MAX_SCANNED_ENTRIES + 2 {
+            std::fs::write(root.path().join(format!("payload-{index}.dat")), b"x").unwrap();
+        }
+
+        let preview = build_preview("item".to_string(), root.path().to_path_buf()).unwrap();
+
+        assert!(preview.truncated);
+        assert_eq!(preview.entries.len(), MAX_VISIBLE_ENTRIES);
+        assert_eq!(preview.file_count as usize, MAX_SCANNED_ENTRIES);
+        assert_eq!(preview.total_size_bytes as usize, MAX_SCANNED_ENTRIES);
     }
 }

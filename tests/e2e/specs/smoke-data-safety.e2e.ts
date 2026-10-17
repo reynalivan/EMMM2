@@ -19,11 +19,11 @@ interface BulkResult {
 
 /**
  * TC-00 — Production smoke for the data-safety paths (see
- * `docs/test-cases/tc-00-production-smoke.md` and `e2e-scope.md` Fase 0).
+ * `docs/test-cases/tc-00-production-smoke.md` and `e2e-scope.md` Phase 0).
  *
  * Runs at the IPC layer with two-sided asserts: verify the DISK (rename prefix,
  * trash location, file integrity) AND the command return / read-back. Deep
- * per-mod DB status assertions live in Fase 3 (tc-20 / tc-22).
+ * per-mod DB status assertions live in Phase 3 (tc-20 / tc-22).
  */
 describe('TC-00 Smoke — Data-Safety Paths', () => {
   let game: MockGame;

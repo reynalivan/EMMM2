@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { launchConfiguredGame } from './launchConfiguredGame';
+import { launchConfiguredGame, requiresGameExecutable } from './launchConfiguredGame';
 import { commands } from '@/shared/api/tauri/bindings';
 
 vi.mock('@/shared/api/tauri/bindings', () => ({
@@ -8,6 +8,23 @@ vi.mock('@/shared/api/tauri/bindings', () => ({
     exitApp: vi.fn(),
   },
 }));
+
+describe('requiresGameExecutable', () => {
+  it.each([null, '', '   '])('requires an executable for standalone launch: %s', (game_exe) => {
+    expect(requiresGameExecutable({ launch_mode: 'standalone', game_exe })).toBe(true);
+    expect(requiresGameExecutable({ game_exe })).toBe(true);
+  });
+
+  it('accepts a configured standalone executable', () => {
+    expect(
+      requiresGameExecutable({ launch_mode: 'standalone', game_exe: 'C:/Games/Game.exe' }),
+    ).toBe(false);
+  });
+
+  it('allows XXMI-managed launch without a game executable', () => {
+    expect(requiresGameExecutable({ launch_mode: 'xxmi_managed', game_exe: null })).toBe(false);
+  });
+});
 
 describe('launchConfiguredGame', () => {
   beforeEach(() => {

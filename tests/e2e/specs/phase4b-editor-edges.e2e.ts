@@ -12,10 +12,10 @@ interface ModInfo {
 }
 
 /**
- * Fase 4b — Editor edges (tc-17 tags, tc-18 multi/malformed INI). Tag
+ * Phase 4b — Editor edges (tc-17 tags, tc-18 multi/malformed INI). Tag
  * add/remove round-trip and multi-INI listing/selection.
  */
-describe('Fase 4b — Editor Edges', () => {
+describe('Phase 4b — Editor Edges', () => {
   let game: MockGame;
   let gameId: string;
   let modDir: string;

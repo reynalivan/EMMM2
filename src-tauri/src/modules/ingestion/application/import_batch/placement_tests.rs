@@ -145,6 +145,49 @@ async fn exact_object_id_wins_over_a_shared_canonical_key() {
 }
 
 #[tokio::test]
+async fn utility_can_be_skipped_without_selecting_a_destination() {
+    let fixture = fixture(None).await;
+    sqlx::query("UPDATE import_jobs SET content_kind = 'utility' WHERE id = ?")
+        .bind(&fixture.item_id)
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+    let mut input = fixture.decision("b");
+    input.decision = ImportDecision::Skip;
+    input.destination_object_id = None;
+    input.canonical_entry_key = None;
+    let index = super::target_manifest_index::TargetManifestIndexState::new();
+    let skipped =
+        coordinator::set_import_item_decision_with_target_index(&fixture.pool, &index, input)
+            .await
+            .expect("Skipping Utility content does not publish it");
+    assert_eq!(skipped.status, ImportItemStatus::Skipped);
+    assert_eq!(skipped.decision, ImportDecision::Skip);
+    assert!(skipped.destination_object_id.is_none());
+    assert!(skipped.destination_path.is_none());
+    assert!(fixture.source.join("merged.ini").is_file());
+}
+
+#[tokio::test]
+async fn utility_confirm_still_requires_an_explicit_existing_destination() {
+    let fixture = fixture(None).await;
+    sqlx::query("UPDATE import_jobs SET content_kind = 'utility' WHERE id = ?")
+        .bind(&fixture.item_id)
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+    let index = super::target_manifest_index::TargetManifestIndexState::new();
+    let error = coordinator::set_import_item_decision_with_target_index(
+        &fixture.pool,
+        &index,
+        fixture.decision("b"),
+    )
+    .await
+    .expect_err("Confirm cannot bypass the Utility destination rule");
+    assert!(error.to_string().contains("explicit existing destination"));
+}
+
+#[tokio::test]
 async fn existing_object_selection_rejects_a_conflicting_canonical_key() {
     let fixture = fixture(None).await;
     let mut input = fixture.decision("b");

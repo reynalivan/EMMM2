@@ -105,6 +105,9 @@ export default function WelcomeScreen({
   const lastSnapshotRef = useRef<OnboardingIndexingSnapshotProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detectedGames, setDetectedGames] = useState<GameConfig[]>([]);
+  const [selectedExecutables, setSelectedExecutables] = useState<ReadonlyMap<string, string>>(
+    new Map(),
+  );
   const [isDemoPaused, setIsDemoPaused] = useState(false);
   const [shareDiagnostics, setShareDiagnostics] = useState(true);
   const prefersReduced = usePrefersReducedMotion();
@@ -226,7 +229,7 @@ export default function WelcomeScreen({
     }
   };
 
-  const handleManualComplete = (game: GameConfig) => {
+  const handleManualComplete = (game: GameConfig, selectedExecutable?: string) => {
     const duplicate = detectedGames.find((g) =>
       pathsEqual(g.instance_path || g.mod_path, game.instance_path || game.mod_path),
     );
@@ -237,11 +240,19 @@ export default function WelcomeScreen({
     }
 
     setError(null);
+    if (selectedExecutable) {
+      setSelectedExecutables((current) => new Map(current).set(game.id, selectedExecutable));
+    }
     setDetectedGames((prev) => [...prev, game]);
     setView('result');
   };
 
   const handleRemoveGame = (gameId: string) => {
+    setSelectedExecutables((current) => {
+      const selected = new Map(current);
+      selected.delete(gameId);
+      return selected;
+    });
     setDetectedGames((prev) => {
       const remaining = prev.filter((g) => g.id !== gameId);
       if (remaining.length === 0) {
@@ -732,9 +743,15 @@ export default function WelcomeScreen({
         )}
         <AutoDetectResult
           games={detectedGames}
-          onConfirm={() => handleFinalize(detectedGames)}
+          selectedExecutables={selectedExecutables}
+          onDraftChange={(games, selected) => {
+            setDetectedGames(games);
+            setSelectedExecutables(selected);
+          }}
+          onConfirm={handleFinalize}
           onBack={() => {
             setDetectedGames([]);
+            setSelectedExecutables(new Map());
             setError(null);
             setView('welcome');
           }}

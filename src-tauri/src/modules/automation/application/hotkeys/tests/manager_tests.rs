@@ -279,7 +279,9 @@ fn overlay_rejects_changed_binding_game_executable_and_disabled_hotkeys() {
     executable.games[0].game_exe = Some(PathBuf::from("other.exe"));
     let mut selected = original.clone();
     selected.active_game_id = None;
-    for changed in [disabled, rebound, executable, selected] {
+    let mut game_type = original.clone();
+    game_type.games[0].game_type = GameType::Wwmi;
+    for changed in [disabled, rebound, executable, selected, game_type] {
         assert!(validate_overlay_replay_settings(&original, &changed).is_err());
     }
 }

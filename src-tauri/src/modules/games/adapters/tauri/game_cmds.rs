@@ -111,10 +111,7 @@ pub async fn add_game_manual_inner(
     let folder = Path::new(path);
 
     // Validate folder structure (returns warnings, not hard errors, for missing files)
-    let (info, mut warnings) = validator::validate_instance(folder)?;
-    warnings.push(
-        "Game executable is not configured. Select the game's .exe before using Play.".to_string(),
-    );
+    let (info, warnings) = validator::validate_instance(folder)?;
 
     let settings = service.get_settings();
 

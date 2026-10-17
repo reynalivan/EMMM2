@@ -13,28 +13,36 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceView } from '@/app/store';
 import { useAppStore } from '@/app/store';
-import { launchConfiguredGame } from '@/entities/game';
+import { launchConfiguredGame, requiresGameExecutable, type GameConfig } from '@/entities/game';
 import { formatAppError } from '@/shared/lib/appError';
 import { toast } from '@/shared/ui/toast';
 
 interface DashboardQuickActionsProps {
-  activeGameId: string | null;
+  activeGame: GameConfig | null;
   setWorkspaceView: (view: WorkspaceView) => void;
+  onSetupExecutable: () => void;
 }
 
 export function DashboardQuickActions({
-  activeGameId,
+  activeGame,
   setWorkspaceView,
+  onSetupExecutable,
 }: DashboardQuickActionsProps) {
   const { t } = useTranslation(['dashboard']);
   const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const [isLaunching, setIsLaunching] = useState(false);
+  const needsExecutableForLaunch = activeGame ? requiresGameExecutable(activeGame) : false;
+  const hasNoExecutable = !activeGame?.game_exe?.trim();
 
   const handleQuickPlay = async () => {
-    if (!activeGameId) return;
+    if (!activeGame) return;
+    if (needsExecutableForLaunch) {
+      onSetupExecutable();
+      return;
+    }
     setIsLaunching(true);
     try {
-      await launchConfiguredGame(activeGameId, autoCloseLauncher);
+      await launchConfiguredGame(activeGame.id, autoCloseLauncher);
     } catch (cause) {
       toast.error(formatAppError(cause));
     } finally {
@@ -57,7 +65,7 @@ export function DashboardQuickActions({
           )
         }
         onClick={() => void handleQuickPlay()}
-        disabled={!activeGameId || isLaunching}
+        disabled={!activeGame || isLaunching}
         emphasis
       />
       <ActionTile
@@ -97,6 +105,13 @@ export function DashboardQuickActions({
         icon={<Settings size={26} />}
         onClick={() => setWorkspaceView('settings')}
       />
+      {activeGame && hasNoExecutable && (
+        <ActionTile
+          label={t('actions.setup_executable')}
+          icon={<Settings size={26} />}
+          onClick={onSetupExecutable}
+        />
+      )}
     </div>
   );
 }

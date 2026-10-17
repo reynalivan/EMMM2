@@ -339,6 +339,30 @@ mod tests {
     }
 
     #[test]
+    fn finds_an_identical_installed_payload_with_a_different_folder_name() {
+        let workspace = tempfile::tempdir().unwrap();
+        let source = workspace.path().join("downloads/Spring Skin");
+        let mods_root = workspace.path().join("Mods/character");
+        let installed = mods_root.join("Ayaka/DISABLED Blue Variant");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::write(source.join("merged.ini"), "[TextureOverride]\nhash = abc\n").unwrap();
+        std::fs::write(
+            installed.join("merged.ini"),
+            "[TextureOverride]\nhash = abc\n",
+        )
+        .unwrap();
+
+        let source_manifest = build_payload_manifest(&source, None).unwrap();
+        let index = TargetManifestIndexState::new();
+        let match_path = index
+            .find_existing_payload_match("batch", "gimi", &mods_root, &source_manifest)
+            .unwrap();
+
+        assert_eq!(match_path.as_deref(), Some(installed.as_path()));
+    }
+
+    #[test]
     fn refreshes_only_changed_target_manifest_entries() {
         let workspace = tempfile::tempdir().unwrap();
         let mods_root = workspace.path().join("Mods/character");

@@ -20,7 +20,8 @@
     "collections": "Koleksi",
     "settings": "Pengaturan",
     "discover": "Temukan",
-    "downloads": "Unduhan"
+    "downloads": "Unduhan",
+    "setup_executable": "Atur executable"
   },
   "stats": {
     "total_mods": "Total Mod",

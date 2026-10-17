@@ -675,7 +675,6 @@ pub async fn commit_import_batch(
         .suppress_paths(import_mutation_suppression_paths(&plans, &[]));
     let mut journal = Vec::new();
     let mut created_directories = Vec::new();
-    let mut collision_ids = BTreeSet::new();
     for plan in &plans {
         crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
@@ -687,14 +686,7 @@ pub async fn commit_import_batch(
         )
         .await?;
     }
-    let mutation_result = execute_moves(
-        pool,
-        &plans,
-        &mut journal,
-        &mut created_directories,
-        &mut collision_ids,
-    )
-    .await;
+    let mutation_result = execute_moves(&plans, &mut journal, &mut created_directories).await;
 
     if let Err(move_error) = mutation_result {
         let rollback = rollback_move_journal(&journal);
@@ -756,18 +748,11 @@ pub async fn commit_import_batch(
         };
     }
 
-    for (sequence, plan) in plans.iter().enumerate() {
-        if collision_ids.contains(&plan.item.id) {
-            mutation_lease.mark_step_skipped(sequence as u32)?;
-        } else {
-            mutation_lease.mark_step_applied(sequence as u32)?;
-        }
+    for sequence in 0..plans.len() {
+        mutation_lease.mark_step_applied(sequence as u32)?;
     }
 
     for plan in &plans {
-        if collision_ids.contains(&plan.item.id) {
-            continue;
-        }
         crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
             &plan.item.id,
@@ -791,7 +776,6 @@ pub async fn commit_import_batch(
         .collect::<Vec<_>>();
     let path_hints = plans
         .iter()
-        .filter(|plan| !collision_ids.contains(&plan.item.id))
         .filter_map(|plan| {
             plan.item.destination_object_id.as_ref().map(|object_id| {
                 crate::modules::library::application::mods::organizer_move::OrganizerMovePathHint {
@@ -812,12 +796,11 @@ pub async fn commit_import_batch(
             &mutation_lease,
         )
         .await;
-    let reconcile = match reconcile {
+    match reconcile {
         Ok(result) if result.status.applied() => {
             mutation_lease.mark_db_committed()?;
             mutation_lease.commit()?;
             let _ = app.emit("disk_reconcile:result", &result);
-            result
         }
         Ok(result) => {
             let error = AppError::Io(format!(
@@ -829,7 +812,6 @@ pub async fn commit_import_batch(
                 pool,
                 &batch,
                 &plans,
-                &collision_ids,
                 &journal,
                 &created_directories,
                 watcher.inner(),
@@ -850,7 +832,6 @@ pub async fn commit_import_batch(
                 pool,
                 &batch,
                 &plans,
-                &collision_ids,
                 &journal,
                 &created_directories,
                 watcher.inner(),
@@ -866,14 +847,10 @@ pub async fn commit_import_batch(
             return Err(error);
         }
     };
-    let _ = reconcile;
 
     let mut aliases_changed = false;
     let mut metadata_pending = 0_u32;
     for plan in &plans {
-        if collision_ids.contains(&plan.item.id) {
-            continue;
-        }
         crate::modules::ingestion::adapters::sqlite::import_batch::set_commit_item_state(
             pool,
             &plan.item.id,
@@ -948,7 +925,7 @@ pub async fn commit_import_batch(
     }
     settle_runtime_effects(app, pool, &batch.game_id).await;
     let archive_failed = finalize_batch_after_metadata(app, pool, &batch).await?;
-    let mut report = report_for(&batch.id, &plans, &collision_ids, false);
+    let mut report = report_for(&batch.id, &plans, &created_directories);
     report.skipped += recovered_collisions;
     report.collisions += recovered_collisions;
     report.failed += recovered_failures;
@@ -963,7 +940,6 @@ async fn rollback_import_after_reconcile_failure(
     pool: &sqlx::SqlitePool,
     batch: &crate::modules::ingestion::application::import_batch::types::ImportBatch,
     plans: &[PlannedMove],
-    collision_ids: &BTreeSet<String>,
     journal: &[MoveJournalEntry],
     created_directories: &[PathBuf],
     watcher: &WatcherState,
@@ -983,9 +959,7 @@ async fn rollback_import_after_reconcile_failure(
     }
     cleanup_created_directories(created_directories);
     for (sequence, plan) in plans.iter().enumerate() {
-        if !collision_ids.contains(&plan.item.id) {
-            mutation_lease.mark_step_rolled_back(sequence as u32)?;
-        }
+        mutation_lease.mark_step_rolled_back(sequence as u32)?;
         crate::modules::ingestion::adapters::sqlite::import_batch::restore_item_after_rollback(
             pool,
             &plan.item.id,
@@ -1810,11 +1784,9 @@ fn validate_no_new_installed_duplicate(
 }
 
 async fn execute_moves(
-    _pool: &sqlx::SqlitePool,
     plans: &[PlannedMove],
     journal: &mut Vec<MoveJournalEntry>,
     created_directories: &mut Vec<PathBuf>,
-    _collision_ids: &mut BTreeSet<String>,
 ) -> Result<(), AppError> {
     let mut destination_pins = DestinationDirectoryPins::default();
     let mut source_root_pins = Vec::with_capacity(plans.len());
@@ -2282,24 +2254,25 @@ fn collision_safe_file(parent: &Path, file_name: &str) -> PathBuf {
 fn report_for(
     batch_id: &str,
     plans: &[PlannedMove],
-    collisions: &BTreeSet<String>,
-    partial: bool,
+    created_directories: &[PathBuf],
 ) -> ImportBatchReport {
     ImportBatchReport {
         batch_id: batch_id.to_string(),
-        moved: plans.len().saturating_sub(collisions.len()) as u32,
+        moved: plans.len() as u32,
         reallocated: plans
             .iter()
             .filter(|plan| plan.item.decision == ImportDecision::Reallocate)
             .count() as u32,
         created_canonical_folders: plans
             .iter()
-            .filter(|plan| plan.creates_object && !collisions.contains(&plan.item.id))
-            .count() as u32,
-        skipped: collisions.len() as u32,
-        collisions: collisions.len() as u32,
+            .filter(|plan| plan.creates_object && created_directories.contains(&plan.object_dir))
+            .map(|plan| &plan.object_dir)
+            .collect::<BTreeSet<_>>()
+            .len() as u32,
+        skipped: 0,
+        collisions: 0,
         metadata_pending: 0,
-        failed: u32::from(partial),
+        failed: 0,
     }
 }
 

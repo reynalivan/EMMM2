@@ -294,6 +294,61 @@ fn planned_import_fixture() -> (tempfile::TempDir, super::PlannedMove) {
     (temp, plan)
 }
 
+#[tokio::test]
+async fn import_report_counts_actual_canonical_directories_once() {
+    for (shared_object, existing_object, expected_created) in
+        [(true, false, 1), (true, true, 0), (false, false, 2)]
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Mods");
+        std::fs::create_dir(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let mut plans = Vec::new();
+        for index in 0..2 {
+            let source = temp.path().join(format!("source-{index}"));
+            std::fs::create_dir(&source).unwrap();
+            std::fs::write(source.join("asset.bin"), [index]).unwrap();
+            let object = root.join(if shared_object || index == 0 {
+                "CanonicalA"
+            } else {
+                "CanonicalB"
+            });
+            if existing_object {
+                std::fs::create_dir_all(&object).unwrap();
+            }
+            let target = object.join(format!("Costume{index}"));
+            let mut item = import_item(ImportDecision::CreateCanonical, None);
+            item.id = format!("item-{index}");
+            plans.push(super::PlannedMove {
+                source_proof: crate::platform::fs::file_utils::FilesystemIdentityProof::capture(
+                    &source,
+                )
+                .unwrap(),
+                source_root_proof: None,
+                destination_proof: DestinationAncestryProof::capture(&root, &target).unwrap(),
+                item,
+                source,
+                object_dir: object,
+                target,
+                creates_object: true,
+            });
+        }
+        let mut journal = Vec::new();
+        let mut created = Vec::new();
+        super::execute_moves(&plans, &mut journal, &mut created)
+            .await
+            .unwrap();
+        let report = super::report_for("batch", &plans, &created);
+        assert_eq!(created.len(), expected_created);
+        assert_eq!(report.created_canonical_folders as usize, expected_created);
+        assert_eq!(report.moved, 2);
+        for plan in &plans {
+            assert!(plan.target.join("asset.bin").is_file());
+            assert!(!plan.source.exists());
+        }
+    }
+}
+
 #[cfg(windows)]
 #[test]
 fn import_source_cannot_be_replaced_after_final_validation() {
@@ -360,7 +415,6 @@ fn import_rejects_source_replaced_between_validation_and_binding() {
 
 #[tokio::test]
 async fn import_rejects_source_replaced_after_planning() {
-    let pool = crate::test_utils::init_test_db().await.pool;
     let (temp, plan) = planned_import_fixture();
     let source = plan.source.clone();
     let target = plan.target.clone();
@@ -370,15 +424,9 @@ async fn import_rejects_source_replaced_after_planning() {
     std::fs::write(source.join("asset.bin"), b"replacement payload").unwrap();
     let mut journal = Vec::new();
 
-    let error = super::execute_moves(
-        &pool,
-        &[plan],
-        &mut journal,
-        &mut Vec::new(),
-        &mut std::collections::BTreeSet::new(),
-    )
-    .await
-    .unwrap_err();
+    let error = super::execute_moves(&[plan], &mut journal, &mut Vec::new())
+        .await
+        .unwrap_err();
 
     assert!(error.to_string().contains("changed"));
     assert!(journal.is_empty());
@@ -395,7 +443,6 @@ async fn import_rejects_source_replaced_after_planning() {
 
 #[tokio::test]
 async fn import_move_records_owned_source_and_preserves_occupied_destination() {
-    let pool = crate::test_utils::init_test_db().await.pool;
     for occupied in [false, true] {
         let (_temp, plan) = planned_import_fixture();
         if occupied {
@@ -403,14 +450,8 @@ async fn import_move_records_owned_source_and_preserves_occupied_destination() {
             std::fs::write(plan.target.join("asset.bin"), b"existing payload").unwrap();
         }
         let mut journal = Vec::new();
-        let result = super::execute_moves(
-            &pool,
-            std::slice::from_ref(&plan),
-            &mut journal,
-            &mut Vec::new(),
-            &mut std::collections::BTreeSet::new(),
-        )
-        .await;
+        let result =
+            super::execute_moves(std::slice::from_ref(&plan), &mut journal, &mut Vec::new()).await;
 
         if occupied {
             assert!(result.unwrap_err().to_string().contains("target_changed"));

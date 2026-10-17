@@ -67,6 +67,20 @@ pub(crate) async fn stage_identity_path_transitions_tx(
         .collect::<std::collections::HashMap<_, _>>();
     let mut object_rewrites_by_depth = object_rewrites.iter().collect::<Vec<_>>();
     object_rewrites_by_depth.sort_by_key(|rewrite| std::cmp::Reverse(rewrite.from.len()));
+    let mut preview_rewrites = mod_rewrites
+        .iter()
+        .chain(object_rewrites)
+        .cloned()
+        .collect::<Vec<_>>();
+    preview_rewrites.sort_by_key(|rewrite| {
+        std::cmp::Reverse(
+            rewrite
+                .from
+                .split(['/', '\\'])
+                .filter(|component| !component.is_empty())
+                .count(),
+        )
+    });
 
     let mut staged_members = Vec::new();
     for member in collection::list_member_paths_for_game(&mut *conn, game_id).await? {
@@ -101,6 +115,7 @@ pub(crate) async fn stage_identity_path_transitions_tx(
             &member.collection_id,
             &member.mod_path,
             &staged_path,
+            &preview_rewrites,
         )
         .await?;
         affected.insert(member.collection_id.clone(), member.collection_name);

@@ -22,7 +22,7 @@ pub use current_state::*;
 pub(crate) use live_state::*;
 pub(crate) use path_transition::*;
 pub use preview::*;
-pub use projection::*;
+pub(crate) use projection::*;
 pub use references::*;
 pub use runtime::*;
 pub(crate) use safe_mode::*;

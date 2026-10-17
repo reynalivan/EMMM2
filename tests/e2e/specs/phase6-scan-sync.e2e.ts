@@ -14,11 +14,11 @@ async function seedRawMod(modsPath: string, object: string, mod: string): Promis
 }
 
 /**
- * Fase 6 — Mesin scan / sync / match. Command-level: disk reconcile discovery,
+ * Phase 6 — Scan / sync / match engine. Command-level: disk reconcile discovery,
  * read-only classification preview, watcher-driven reconciliation, duplicate scanner. Asserts the disk →
  * DB projection and that long-running channel commands complete.
  */
-describe('Fase 6 — Scan / Sync / Match', () => {
+describe('Phase 6 — Scan / Sync / Match', () => {
   let game: MockGame;
   let gameId: string;
 

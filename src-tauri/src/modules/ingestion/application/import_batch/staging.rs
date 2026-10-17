@@ -231,6 +231,7 @@ fn cleanup_item_staging(
     Ok(true)
 }
 
+#[cfg(test)]
 pub async fn stage_import_batch_sources(
     db: &SqlitePool,
     batch_id: &str,
@@ -431,7 +432,7 @@ async fn stage_ready_to_move_folder(
             return Ok(Vec::new());
         }
 
-        let groups = group_mod_roots(&roots, cancellation)?;
+        let groups = group_mod_roots(&source_for_worker, &roots, cancellation)?;
         std::fs::create_dir_all(&item_staging)?;
         groups
             .into_iter()
@@ -507,7 +508,7 @@ async fn stage_archive_item(
     let unreadable_ini_files = staged.unreadable_ini_files;
     let mut roots = staged.mod_roots;
     roots.sort();
-    let records = group_mod_roots(&roots, cancellation.as_deref())?
+    let records = group_mod_roots(&extract_dir, &roots, cancellation.as_deref())?
         .into_iter()
         .map(|group| {
             let planned_name = if group.is_bundle || group.root == extract_dir {
@@ -645,19 +646,19 @@ fn check_staging_cancelled(cancellation: Option<&AtomicBool>) -> Result<(), AppE
 }
 
 fn group_mod_roots(
+    package_root: &Path,
     roots: &[PathBuf],
     cancellation: Option<&AtomicBool>,
 ) -> Result<Vec<RootPackageGroup>, AppError> {
     check_staging_cancelled(cancellation)?;
-    if roots.len() < 2 {
-        return Ok(roots
-            .iter()
-            .cloned()
-            .map(|root| RootPackageGroup {
-                root,
-                is_bundle: false,
-            })
-            .collect());
+    let canonical_package = package_root.canonicalize()?;
+    for root in roots {
+        check_staging_cancelled(cancellation)?;
+        if !root.canonicalize()?.starts_with(&canonical_package) {
+            return Err(AppError::Security(
+                "Discovered mod root escaped its source package".to_string(),
+            ));
+        }
     }
     let requires_grouping = roots
         .iter()
@@ -666,11 +667,10 @@ fn group_mod_roots(
         .into_iter()
         .any(|requires_grouping| requires_grouping);
     if requires_grouping {
-        let package_root = common_parent(roots).ok_or_else(|| {
-            AppError::Validation("Could not determine a common root for a mod package".to_string())
-        })?;
+        // Shared assets can sit above the discovered roots' common parent.
+        // Keep the selected package boundary without resolving arbitrary references.
         return Ok(vec![RootPackageGroup {
-            root: package_root,
+            root: package_root.to_path_buf(),
             is_bundle: true,
         }]);
     }
@@ -753,15 +753,6 @@ fn ini_has_external_or_dynamic_reference(contents: &str) -> bool {
                 || value.contains("..\\")
                 || value.contains('$')
                 || value.contains('%'))
-    })
-}
-
-fn common_parent(roots: &[PathBuf]) -> Option<PathBuf> {
-    roots.first().and_then(|first| {
-        first
-            .ancestors()
-            .find(|candidate| roots.iter().all(|root| root.starts_with(candidate)))
-            .map(Path::to_path_buf)
     })
 }
 
@@ -999,10 +990,45 @@ mod cleanup_tests {
         .unwrap();
         std::fs::write(right.join("merged.ini"), "[TextureOverride]\nhash = def\n").unwrap();
 
-        let groups = group_mod_roots(&[left, right], None).unwrap();
+        let groups = group_mod_roots(root.path(), &[left, right], None).unwrap();
 
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].root, root.path());
         assert!(groups[0].is_bundle);
+    }
+
+    #[test]
+    fn grouping_rejects_roots_outside_the_selected_package() {
+        let package = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let error =
+            group_mod_roots(package.path(), &[outside.path().to_path_buf()], None).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::shared::errors::AppError::Security(_)
+        ));
+    }
+
+    #[test]
+    fn dynamic_single_root_preserves_package_without_following_external_references() {
+        let root = tempfile::tempdir().unwrap();
+        let package = root.path().join("package");
+        let body = package.join("Body");
+        let outside = root.path().join("outside.dds");
+        std::fs::create_dir_all(&body).unwrap();
+        std::fs::write(&outside, "outside").unwrap();
+        std::fs::write(
+            body.join("merged.ini"),
+            "filename = $texture\ninclude = ../../outside.dds\n",
+        )
+        .unwrap();
+
+        let groups = group_mod_roots(&package, &[body], None).unwrap();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].root, package);
+        assert!(groups[0].is_bundle);
+        assert!(!groups[0].root.join("outside.dds").exists());
+        assert!(outside.exists());
     }
 }

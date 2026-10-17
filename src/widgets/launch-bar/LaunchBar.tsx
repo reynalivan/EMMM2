@@ -2,7 +2,7 @@ import { formatAppError } from '../../shared/lib/appError';
 import { AlertTriangle, Play, Shuffle } from 'lucide-react';
 import { useContext, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { launchConfiguredGame, useActiveGame } from '@/entities/game';
+import { launchConfiguredGame, requiresGameExecutable, useActiveGame } from '@/entities/game';
 import { useActiveConflicts, useIgnoredActiveModConflictGroupKeys } from '@/features/mod-runtime';
 import { useAppStore } from '@/app/store';
 import { RandomizerModal } from '@/features/randomizer';
@@ -16,6 +16,8 @@ export default function LaunchBar() {
   const { activeGame } = useActiveGame();
   const autoCloseLauncher = useAppStore((state) => state.autoCloseLauncher);
   const workspaceView = useAppStore((state) => state.workspaceView);
+  const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
+  const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const [isLaunching, setIsLaunching] = useState(false);
   const [randomizerOpen, setRandomizerOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
@@ -34,10 +36,15 @@ export default function LaunchBar() {
       ),
     [conflicts, ignoredGroupKeys],
   );
-  const hasConflicts = unresolvedConflicts.length > 0;
+  const hasConflicts = (conflicts?.length ?? 0) > 0;
 
   const handleLaunch = async () => {
     if (!activeGame) return;
+    if (requiresGameExecutable(activeGame)) {
+      setSettingsTab('games');
+      setWorkspaceView('settings');
+      return;
+    }
     setIsLaunching(true);
 
     try {

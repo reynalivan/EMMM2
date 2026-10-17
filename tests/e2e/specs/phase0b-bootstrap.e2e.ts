@@ -4,11 +4,11 @@ import { seedGameAndOpenDashboard } from '../support/app.js';
 import { invokeInApp } from '../support/ipc.js';
 
 /**
- * Fase 0b — Bootstrap & startup checks (tc-01 edges). Config-status branching
+ * Phase 0b — Bootstrap & startup checks (tc-01 edges). Config-status branching
  * and the recovery-task check. Crash-injected recovery resume stays
  * [manual-smoke]; here we assert the clean-boot contracts.
  */
-describe('Fase 0b — Bootstrap & Startup', () => {
+describe('Phase 0b — Bootstrap & Startup', () => {
   let game: MockGame;
 
   before(async () => {

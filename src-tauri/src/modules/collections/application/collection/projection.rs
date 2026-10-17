@@ -147,11 +147,6 @@ pub(crate) fn collection_members_from_projected_state(
     (mods, objects)
 }
 
-pub fn compute_signature(mods: &[CollectionMod], objects: &[CollectionObject]) -> String {
-    let projected_state = projected_state::build_projected_state(mods, objects, None);
-    projected_state::signature_for_projected_state(&projected_state)
-}
-
 /// Load a collection or report it missing. The `get_by_id` → `NotFound`
 /// pairing was previously written out at nine call sites.
 pub(crate) async fn require_collection(

@@ -19,10 +19,10 @@ async function rejects(cmd: string, args: Record<string, unknown>): Promise<void
 }
 
 /**
- * Fase 1b — Game management depth (tc-02 edges). Edit/remove happen through
+ * Phase 1b — Game management depth (tc-02 edges). Edit/remove happen through
  * save_settings' games array (GamesTab pattern), plus auto-detect. All IPC.
  */
-describe('Fase 1b — Game Edit / Remove / Auto-detect', () => {
+describe('Phase 1b — Game Edit / Remove / Auto-detect', () => {
   let game: MockGame;
   let gameId: string;
 

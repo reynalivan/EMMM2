@@ -18,7 +18,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { useAppStore } from '@/app/store';
-import { launchConfiguredGame, useActiveGame } from '@/entities/game';
+import { launchConfiguredGame, requiresGameExecutable, useActiveGame } from '@/entities/game';
 import { commands } from '@/shared/api/tauri/bindings';
 import { formatAppError } from '@/shared/lib/appError';
 import { toast } from '@/shared/ui/toast';
@@ -86,6 +86,7 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
   const { t } = useTranslation(['layout', 'common']);
   const workspaceView = useAppStore((state) => state.workspaceView);
   const setWorkspaceView = useAppStore((state) => state.setWorkspaceView);
+  const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const isAppMenuOpen = useAppStore((state) => state.isAppMenuOpen);
   const setAppMenuOpen = useAppStore((state) => state.setAppMenuOpen);
   const safetyFilter = useAppStore((state) => state.safetyFilter);
@@ -143,6 +144,12 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
 
   const handleQuickPlay = async () => {
     if (!activeGame) return;
+    if (requiresGameExecutable(activeGame)) {
+      setSettingsTab('games');
+      setWorkspaceView('settings');
+      closeAppMenu();
+      return;
+    }
     setIsLaunching(true);
     try {
       await launchConfiguredGame(activeGame.id, autoCloseLauncher);
@@ -408,21 +415,19 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
             {runtimeSync &&
               (runtimeSync.phase === 'queued' ||
                 runtimeSync.phase === 'running' ||
-                runtimeSync.phase === 'needs_manual_reload' ||
                 runtimeSync.phase === 'failed') && (
                 <div
+                  data-testid="runtime-sync-status"
                   role="status"
                   aria-live="polite"
                   title={
-                    runtimeSync.phase === 'needs_manual_reload'
-                      ? t('common:reconcile.manual_reload_short')
-                      : (runtimeSync.message ??
-                        (runtimeSync.phase === 'failed'
-                          ? t('common:reconcile.runtime_sync_failed')
-                          : t('common:reconcile.runtime_syncing')))
+                    runtimeSync.message ??
+                    (runtimeSync.phase === 'failed'
+                      ? t('common:reconcile.runtime_sync_failed')
+                      : t('common:reconcile.runtime_syncing'))
                   }
                   className={`hidden items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium md:flex ${
-                    runtimeSync.phase === 'failed' || runtimeSync.phase === 'needs_manual_reload'
+                    runtimeSync.phase === 'failed'
                       ? 'border-warning/30 bg-warning/10 text-warning'
                       : 'border-base-content/15 bg-base-content/5 text-base-content/65'
                   }`}
@@ -437,9 +442,7 @@ export default function TopBar({ launchBar, contextControls }: TopBarProps) {
                   >
                     {runtimeSync.phase === 'failed'
                       ? (runtimeSync.message ?? t('common:reconcile.runtime_sync_failed'))
-                      : runtimeSync.phase === 'needs_manual_reload'
-                        ? t('common:reconcile.manual_reload_short')
-                        : t('common:reconcile.runtime_syncing')}
+                      : t('common:reconcile.runtime_syncing')}
                   </span>
                   {runtimeSync.phase === 'failed' &&
                     (!gameActivation || gameActivation.phase === 'ready') && (

@@ -285,7 +285,11 @@ fn native_notice_geometry(
         return None;
     }
     let game = settings.active_game()?;
-    focused_game_window(game.game_exe.as_deref())
+    let process = crate::modules::games::api::executable_profiles::resolve_process_executable(
+        game.game_type,
+        game.game_exe.as_deref(),
+    );
+    focused_game_window(process.as_deref())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,15 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { ArrowLeft, Trash2, AlertTriangle, Plus, Check } from 'lucide-react';
 import { getGameTypeKey as getGameKey, type GameConfig } from '@/entities/game';
+import {
+  GameExecutableField,
+  useGameExecutableDiscovery,
+  validateSelectedGameExecutables,
+} from '@/features/game-executable-detection';
+import { formatAppError } from '@/shared/lib/appError';
 
 interface AutoDetectResultProps {
   games: GameConfig[];
   onBack: () => void;
   onAddMore: () => void;
-  onConfirm: (games: GameConfig[]) => void;
+  onConfirm: (games: GameConfig[]) => void | Promise<void>;
   onRemoveGame: (gameId: string) => void;
+  selectedExecutables?: ReadonlyMap<string, string>;
+  onDraftChange?: (games: GameConfig[], selected: ReadonlyMap<string, string>) => void;
 }
 
 export function AutoDetectResult({
@@ -18,12 +26,77 @@ export function AutoDetectResult({
   onAddMore,
   onConfirm,
   onRemoveGame,
+  selectedExecutables,
+  onDraftChange,
 }: AutoDetectResultProps) {
   const { t } = useTranslation('onboarding');
   const [confirmedGames, setConfirmedGames] = useState<GameConfig[]>(games);
+  const [selectedPaths, setSelectedPaths] = useState(() => new Map(selectedExecutables));
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const confirmationRef = useRef(0);
+  const confirmingRef = useRef(false);
+  const roots = useMemo(
+    () => [
+      ...new Set(
+        games
+          .flatMap((game) => [
+            game.instance_path,
+            game.xxmi_launcher_exe?.replace(/[\\/][^\\/]+$/, ''),
+          ])
+          .filter((root): root is string => Boolean(root)),
+      ),
+    ],
+    [games],
+  );
+  const discovery = useGameExecutableDiscovery(roots);
+
+  useEffect(
+    () => () => {
+      confirmationRef.current += 1;
+    },
+    [],
+  );
+
+  const updateDraft = (next: GameConfig[], selected: Map<string, string>) => {
+    setConfirmedGames(next);
+    setSelectedPaths(selected);
+    setConfirmError(null);
+    onDraftChange?.(next, selected);
+  };
+
+  const leave = (callback: () => void) => {
+    confirmationRef.current += 1;
+    discovery.cancel();
+    callback();
+  };
+
+  const handleConfirm = async () => {
+    if (confirmingRef.current) return;
+    confirmingRef.current = true;
+    setIsConfirming(true);
+    setConfirmError(null);
+    discovery.cancel();
+    const revision = ++confirmationRef.current;
+    try {
+      await validateSelectedGameExecutables(confirmedGames, selectedPaths);
+      if (revision !== confirmationRef.current) return;
+      await onConfirm(confirmedGames);
+    } catch (error) {
+      if (revision === confirmationRef.current) setConfirmError(formatAppError(error));
+    } finally {
+      confirmingRef.current = false;
+      if (revision === confirmationRef.current) setIsConfirming(false);
+    }
+  };
 
   const handleRemove = (gameId: string) => {
-    setConfirmedGames((prev) => prev.filter((g) => g.id !== gameId));
+    const selected = new Map(selectedPaths);
+    selected.delete(gameId);
+    updateDraft(
+      confirmedGames.filter((g) => g.id !== gameId),
+      selected,
+    );
     onRemoveGame(gameId);
   };
 
@@ -39,7 +112,7 @@ export function AutoDetectResult({
     <div className="min-h-screen bg-base-100 flex flex-col p-6 items-center justify-center relative">
       <div className="flex items-center gap-4 mb-4 w-full max-w-2xl">
         <button
-          onClick={onBack}
+          onClick={() => leave(onBack)}
           className="btn btn-ghost btn-sm gap-2"
           aria-label={t('result.back')}
         >
@@ -69,6 +142,29 @@ export function AutoDetectResult({
         <p className="text-base-content/60">{t('result.subtitle')}</p>
       </div>
 
+      <div className="mb-4 flex w-full max-w-2xl items-center justify-between gap-3">
+        <p className="text-sm text-base-content/60">
+          {t('settings:games.executable_detection.setup_later')}
+        </p>
+        <button
+          type="button"
+          className="btn btn-outline btn-sm"
+          disabled={
+            isConfirming || discovery.pendingTypes.length > 0 || confirmedGames.length === 0
+          }
+          onClick={() => {
+            void discovery.scan([...new Set(confirmedGames.map((game) => game.game_type))]);
+          }}
+        >
+          {t('settings:games.executable_detection.detect_all')}
+        </button>
+      </div>
+      {confirmError && (
+        <div role="alert" className="alert alert-error mb-4 max-w-2xl">
+          {confirmError}
+        </div>
+      )}
+
       <div className="w-full max-w-2xl bg-base-200/50 rounded-2xl border border-base-content/5 p-6 backdrop-blur-sm overflow-y-auto max-h-[50vh]">
         <div className="space-y-4">
           {confirmedGames.map((game) => (
@@ -97,6 +193,7 @@ export function AutoDetectResult({
                     className="btn btn-ghost btn-xs text-error hover:bg-error/10"
                     onClick={() => handleRemove(game.id)}
                     title={t('result.remove_tip')}
+                    disabled={isConfirming}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -108,6 +205,26 @@ export function AutoDetectResult({
                   {t('result.managed_by_xxmi')}
                 </div>
               )}
+
+              <GameExecutableField
+                gameType={game.game_type}
+                value={game.game_exe ?? ''}
+                inputId={`onboarding-executable-${game.id}`}
+                discovery={discovery}
+                xxmiRoots={roots}
+                disabled={isConfirming}
+                onChange={(value, detected) => {
+                  const selected = new Map(selectedPaths);
+                  if (detected) selected.set(game.id, value);
+                  else selected.delete(game.id);
+                  updateDraft(
+                    confirmedGames.map((entry) =>
+                      entry.id === game.id ? { ...entry, game_exe: value.trim() || null } : entry,
+                    ),
+                    selected,
+                  );
+                }}
+              />
 
               {game.warnings && game.warnings.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-base-content/5">
@@ -134,13 +251,16 @@ export function AutoDetectResult({
       </div>
 
       <div className="flex justify-center gap-4 mt-10 w-full max-w-2xl">
-        <button className="btn btn-outline gap-2 flex-1" onClick={onAddMore}>
+        <button className="btn btn-outline gap-2 flex-1" onClick={() => leave(onAddMore)}>
           <Plus className="w-4 h-4" />
           {t('result.add_another')}
         </button>
         <button
           className="btn btn-primary flex-1 gap-2 px-8 shadow-lg shadow-primary/20 transition-[background-color,border-color,color,opacity,transform] duration-150 hover:brightness-110"
-          onClick={() => onConfirm(confirmedGames)}
+          disabled={isConfirming || confirmedGames.length === 0}
+          onClick={() => {
+            void handleConfirm();
+          }}
         >
           {t('result.confirm')}
           <Check className="w-4 h-4 text-primary-content" />

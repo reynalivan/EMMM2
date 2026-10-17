@@ -67,7 +67,14 @@ export default function Dashboard() {
         </div>
 
         <div className="dashboard-entrance__actions">
-          <DashboardQuickActions activeGameId={activeGameId} setWorkspaceView={setWorkspaceView} />
+          <DashboardQuickActions
+            activeGame={activeGame ?? null}
+            setWorkspaceView={setWorkspaceView}
+            onSetupExecutable={() => {
+              setSettingsTab('games');
+              setWorkspaceView('settings');
+            }}
+          />
         </div>
 
         <div className="dashboard-entrance__content space-y-6">

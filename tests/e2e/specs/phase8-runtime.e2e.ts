@@ -9,11 +9,11 @@ import type {
 } from '../../../src/shared/api/tauri/bindings.gen.js';
 
 /**
- * Fase 8 — Runtime periferal. Dashboard analytics, randomizer, error-surfacing,
+ * Phase 8 — Peripheral runtime. Dashboard analytics, randomizer, error-surfacing,
  * hotkeys. Real update download and in-game hotkey capture are [manual-smoke];
  * here we exercise the command surface only.
  */
-describe('Fase 8 — Runtime Peripheral', () => {
+describe('Phase 8 — Runtime Peripheral', () => {
   let game: MockGame;
   let gameId: string;
 

@@ -231,6 +231,22 @@ async autoDetectGames(rootPath: string) : Promise<Result<GameConfig[], AppError>
     else return { status: "error", error: e  as any };
 }
 },
+async discoverGameExecutables(request: DiscoverGameExecutablesRequest) : Promise<Result<GameExecutableDiscoveryResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discover_game_executables", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async validateGameExecutable(request: ValidateGameExecutableRequest) : Promise<Result<GameExecutableCandidate, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("validate_game_executable", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async resolveGameFolder(path: string) : Promise<Result<GameInfo, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("resolve_game_folder", { path }) };
@@ -2334,6 +2350,7 @@ export type DestinationSuggestion = { kind: DestinationKind; objectId: string | 
  * endpoint, token, or user identity, all delivery configuration is build-time.
  */
 export type DiagnosticsSettings = { telemetry_enabled?: boolean }
+export type DiscoverGameExecutablesRequest = { game_types: number[]; xxmi_roots?: string[] }
 export type DiskReconcileChangeCounts = { added: number; removed: number; renamed: number; modified: number }
 export type DiskReconcileChangeSummary = { object_changes: DiskReconcileChangeCounts; mod_changes: DiskReconcileChangeCounts; object_sample_names: string[]; mod_sample_names: string[]; has_user_visible_changes: boolean }
 export type DiskReconcilePathKind = "Object" | "Mod"
@@ -2450,6 +2467,11 @@ ready_to_move_path?: string | null; launch_mode?: LaunchMode; game_exe: string |
  * Transient warnings from path validation. NOT persisted to DB.
  */
 warnings?: string[] }
+export type GameExecutableCandidate = { game_type: number; executable_path: string; install_root: string; process_executable_path: string; sources: GameExecutableSource[]; region: string | null; channel: string | null }
+export type GameExecutableDiscoveryIssue = { source: GameExecutableSource; code: GameExecutableIssueCode }
+export type GameExecutableDiscoveryResult = { candidates: GameExecutableCandidate[]; issues: GameExecutableDiscoveryIssue[]; complete: boolean }
+export type GameExecutableIssueCode = "access_denied" | "malformed_config" | "read_failed" | "resource_limit" | "deadline_exceeded" | "invalid_location"
+export type GameExecutableSource = "hoyoplay_registry" | "hoyoplay_config" | "kuro_config" | "xxmi_config" | "manual"
 /**
  * Result of a successful folder validation
  */
@@ -2777,6 +2799,7 @@ export type UpdateObjectInput = { name: string | null; object_type: string | nul
  * `Default` clears the nullable database override.
  */
 randomizer_mode: RandomizerMode | null; sub_category: string | null; metadata: JsonValue | null; hash_db: HashDbPayload | null; custom_skins: CustomSkinsPayload | null; thumbnail_path: string | null; is_auto_sync: boolean | null; is_pinned: boolean | null; tags: string[] | null }
+export type ValidateGameExecutableRequest = { game_type: number; executable_path: string }
 export type WhitelistEntry = { id: string; folderAId: string; folderBId: string; folderAName: string; folderBName: string; reason: string; ignoredAt: string }
 export type WorkspaceCapabilities = { can_toggle: boolean; can_rename: boolean; can_delete: boolean; can_move: boolean; can_toggle_safe: boolean; can_sync: boolean; can_enable_only_this: boolean; can_pin: boolean; can_edit_metadata: boolean; can_reveal_in_explorer: boolean; can_move_category: boolean; can_open_in_explorer: boolean }
 export type WorkspaceDisplayMode = "container_folder" | "mod_pack" | "variant" | "flat_mod" | "internal_assets" | "unknown"

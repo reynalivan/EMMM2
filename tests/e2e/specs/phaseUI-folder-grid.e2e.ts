@@ -4,12 +4,12 @@ import { seedGameAndOpenDashboard, gotoWorkspaceView } from '../support/app.js';
 import { createObject, reconcile } from '../support/data.js';
 
 /**
- * Fase UI — Folder grid interaction (tc-06 / tc-12 click-driven).
+ * UI phase — Folder grid interaction (tc-06 / tc-12 click-driven).
  * Object selection opens the FolderGrid (single-click → focusObject →
  * selectedObjectFolderPath), and the grid/list view toggle switches without
  * error. Robust click interactions only; pixel-drag stays [manual-smoke].
  */
-describe('Fase UI — Folder Grid Interaction', () => {
+describe('UI Phase — Folder Grid Interaction', () => {
   let game: MockGame;
   let gameId: string;
 

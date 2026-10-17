@@ -82,6 +82,19 @@ impl OverlaySyncCause {
             Self::FirstIndex | Self::ModsRootChanged | Self::ImporterRootChanged | Self::Recovery
         )
     }
+
+    fn requires_game_reload(self) -> bool {
+        matches!(
+            self,
+            Self::EffectiveModsChanged
+                | Self::EffectiveIniChanged
+                | Self::CollectionApplied
+                | Self::SafeModeChanged
+                | Self::ModsRootChanged
+                | Self::ImporterRootChanged
+                | Self::Recovery
+        )
+    }
 }
 
 /// Resulting runtime state for one changed mod. The stable database ID lets a
@@ -150,6 +163,7 @@ impl RuntimeSyncRequest {
 struct RuntimeSyncRevisionState {
     revision: u64,
     pending: Option<RuntimeSyncRequest>,
+    reload_required: bool,
 }
 
 /// Publication is deliberately separate from input replay. A published
@@ -1499,6 +1513,7 @@ fn sync_lock_for_game(game_id: &str) -> Result<Arc<tokio::sync::Mutex<()>>, AppE
 fn request_sync_revision_with_request(
     game_id: &str,
     request: RuntimeSyncRequest,
+    reload_required: bool,
 ) -> Result<u64, AppError> {
     if let RuntimeSyncRequest::Scoped { changes } = &request {
         validate_scoped_changes(changes)?;
@@ -1514,8 +1529,10 @@ fn request_sync_revision_with_request(
         .or_insert_with(|| RuntimeSyncRevisionState {
             revision: 0,
             pending: None,
+            reload_required: false,
         });
     state.revision = state.revision.saturating_add(1);
+    state.reload_required |= reload_required;
     state.pending = Some(match state.pending.take() {
         Some(pending) => {
             if matches!(
@@ -1538,7 +1555,7 @@ fn request_sync_revision_with_request(
 }
 
 fn request_sync_revision(game_id: &str) -> Result<u64, AppError> {
-    request_sync_revision_with_request(game_id, RuntimeSyncRequest::Full)
+    request_sync_revision_with_request(game_id, RuntimeSyncRequest::Full, true)
 }
 
 /// Reserve an explicit full-recovery generation for backward-compatible
@@ -1554,7 +1571,15 @@ pub fn reserve_overlay_sync_revision_for_request(
     game_id: &str,
     request: RuntimeSyncRequest,
 ) -> Result<u64, AppError> {
-    request_sync_revision_with_request(game_id, request)
+    request_sync_revision_with_request(game_id, request, true)
+}
+
+pub(crate) fn reserve_overlay_sync_revision_for_cause(
+    game_id: &str,
+    request: RuntimeSyncRequest,
+    cause: OverlaySyncCause,
+) -> Result<u64, AppError> {
+    request_sync_revision_with_request(game_id, request, cause.requires_game_reload())
 }
 
 fn is_current_sync_revision(game_id: &str, revision: u64) -> Result<bool, AppError> {
@@ -1587,6 +1612,14 @@ fn sync_request_for_revision(
 }
 
 fn settle_sync_request(game_id: &str, revision: u64) -> Result<(), AppError> {
+    settle_sync_request_with_reload(game_id, revision, false)
+}
+
+fn settle_sync_request_with_reload(
+    game_id: &str,
+    revision: u64,
+    reload_recorded: bool,
+) -> Result<(), AppError> {
     let revisions = KEYVIEWER_SYNC_REVISIONS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut revisions = revisions.lock().map_err(|_| {
         AppError::Internal(
@@ -1596,6 +1629,9 @@ fn settle_sync_request(game_id: &str, revision: u64) -> Result<(), AppError> {
     if let Some(state) = revisions.get_mut(game_id) {
         if state.revision == revision {
             state.pending = None;
+            if reload_recorded {
+                state.reload_required = false;
+            }
         }
     }
     Ok(())
@@ -1676,7 +1712,16 @@ fn record_runtime_sync_result(game_id: &str, result: &RuntimeSyncResult) {
         log::warn!("KeyViewer runtime diagnostics could not record a sync result");
         return;
     };
-    let (reload, reload_binding) = reload_status_and_binding(result);
+    let (mut reload, mut reload_binding) = reload_status_and_binding(result);
+    if result.failure.is_some() {
+        if let Some(previous) = snapshots
+            .get(game_id)
+            .filter(|previous| matches!(previous.reload, RuntimeReloadStatus::Manual))
+        {
+            reload = RuntimeReloadStatus::Manual;
+            reload_binding = previous.reload_binding.clone();
+        }
+    }
     snapshots.insert(
         game_id.to_string(),
         RuntimeSyncSnapshot {
@@ -1686,6 +1731,27 @@ fn record_runtime_sync_result(game_id: &str, result: &RuntimeSyncResult) {
             reload_binding,
         },
     );
+}
+
+fn runtime_reload_pending(game_id: &str) -> Result<bool, AppError> {
+    let snapshots = KEYVIEWER_RUNTIME_SYNC_SNAPSHOTS.get_or_init(|| Mutex::new(HashMap::new()));
+    let snapshots = snapshots.lock().map_err(|_| {
+        AppError::Internal("Runtime reload state was poisoned; restart the application".to_string())
+    })?;
+    let manual = snapshots
+        .get(game_id)
+        .is_some_and(|snapshot| matches!(snapshot.reload, RuntimeReloadStatus::Manual));
+    drop(snapshots);
+    let revisions = KEYVIEWER_SYNC_REVISIONS.get_or_init(|| Mutex::new(HashMap::new()));
+    let revisions = revisions.lock().map_err(|_| {
+        AppError::Internal(
+            "Runtime reload intent was poisoned; restart the application".to_string(),
+        )
+    })?;
+    Ok(manual
+        || revisions
+            .get(game_id)
+            .is_some_and(|state| state.reload_required))
 }
 
 fn record_runtime_sync_result_if_current(
@@ -1856,9 +1922,14 @@ fn game_is_confirmed_stopped(
         .games
         .iter()
         .find(|game| game.id == game_id)
-        .and_then(|game| game.game_exe.as_deref());
+        .and_then(|game| {
+            crate::modules::games::api::executable_profiles::resolve_process_executable(
+                game.game_type,
+                game.game_exe.as_deref(),
+            )
+        });
     game_exe.is_some()
-        && !crate::modules::system::application::game_detector::is_game_running(game_exe)
+        && !crate::modules::system::application::game_detector::is_game_running(game_exe.as_deref())
 }
 
 fn cleanup_generation_siblings(emmm_data_dir: &Path) -> Result<(), AppError> {
@@ -1984,10 +2055,10 @@ fn preserve_legacy_entrypoint(entrypoint: &Path, expected_content: &str) -> Resu
     }
 }
 
-fn disable_owned_entrypoint(emmm_data_dir: &std::path::Path) -> Result<(), AppError> {
+fn disable_owned_entrypoint(emmm_data_dir: &std::path::Path) -> Result<bool, AppError> {
     let entrypoint = emmm_data_dir.join("KeyViewer.ini");
     if !entrypoint.exists() {
-        return Ok(());
+        return Ok(false);
     }
     let content = std::fs::read(&entrypoint)?;
     if !is_current_emmm_entrypoint(&content) {
@@ -2004,7 +2075,7 @@ fn disable_owned_entrypoint(emmm_data_dir: &std::path::Path) -> Result<(), AppEr
         )));
     }
     std::fs::rename(entrypoint, disabled)?;
-    Ok(())
+    Ok(true)
 }
 
 fn normalized_windows_path(path: &std::path::Path) -> String {
@@ -2542,15 +2613,19 @@ async fn run_post_apply_tasks_with_options(
             )?,
             None => Some(disable_owned_entrypoint(&emmm_data_dir)?),
         };
-        if disabled.is_none() {
+        let Some(changed) = disabled else {
             return Ok(PostApplyPublication::Skipped);
-        }
+        };
         remove_mod_composition(game_id)?;
         log::info!(
             "[post_apply] KeyViewer entrypoint disabled game={game_id} preflight_ms={preflight_ms} harvest_ms=0 publish_ms=0 total_ms={}",
             total_started.elapsed().as_millis()
         );
-        return Ok(PostApplyPublication::Skipped);
+        return Ok(if changed {
+            PostApplyPublication::Published
+        } else {
+            PostApplyPublication::Unchanged
+        });
     }
 
     // Harvest: one pass per mod for both hashes and keybinds.
@@ -3161,7 +3236,7 @@ async fn request_overlay_sync_for_game_with_request(
     cause: OverlaySyncCause,
     request: RuntimeSyncRequest,
 ) -> Result<RuntimeSyncResult, AppError> {
-    let revision = request_sync_revision_with_request(game_id, request)?;
+    let revision = reserve_overlay_sync_revision_for_cause(game_id, request, cause)?;
     let lock = sync_lock_for_game(game_id)?;
     let lock_wait_started = std::time::Instant::now();
     let _guard = lock.lock().await;
@@ -3447,10 +3522,9 @@ async fn synchronize_overlay_context(
         .is_some_and(|settings| game_is_confirmed_stopped(settings, &game_id));
     let reload_started = std::time::Instant::now();
     let reload = if !game_stopped
-        && matches!(
-            publication,
-            RuntimeSyncPublication::Published | RuntimeSyncPublication::Skipped
-        )
+        && (publication == RuntimeSyncPublication::Published
+            || cause.requires_game_reload()
+            || runtime_reload_pending(&game_id)?)
         && reload_settings
             .as_ref()
             .is_some_and(|settings| settings.active_game_id.as_deref() == Some(game_id.as_str()))
@@ -3517,7 +3591,7 @@ async fn synchronize_overlay_context(
         activation_authority.as_ref(),
     )?;
     if let Some(revision) = expected_sync_revision {
-        settle_sync_request(&game_id, revision)?;
+        settle_sync_request_with_reload(&game_id, revision, authoritative)?;
     }
     if !authoritative {
         return Ok(superseded_sync_result(cause));
@@ -4912,6 +4986,234 @@ mod tests {
                 "Manual reload required: press F10 in the active game to reload its configuration. active game is not focused"
             )
         );
+    }
+
+    #[tokio::test]
+    async fn runtime_reload_distinguishes_noop_disabled_overlay_from_mod_changes() {
+        let fixture = overlay_fixture("reload-disabled-overlay-noop").await;
+        let settings = unknown_process_settings(&fixture);
+        for cause in [OverlaySyncCause::Startup, OverlaySyncCause::SettingsChanged] {
+            let mut context = overlay_context(&fixture);
+            context.keyviewer_enabled = false;
+            context.hotkeys.preset_status_overlay_enabled = false;
+            let result = synchronize_overlay_context(
+                context,
+                cause,
+                Some(settings.clone()),
+                None,
+                None,
+                RuntimeSyncRequest::Full,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.publication, RuntimeSyncPublication::Unchanged);
+            assert_eq!(result.reload, RuntimeReloadOutcome::NotRequired);
+        }
+        let mut context = overlay_context(&fixture);
+        context.keyviewer_enabled = false;
+        context.hotkeys.preset_status_overlay_enabled = false;
+        let changed = synchronize_overlay_context(
+            context,
+            OverlaySyncCause::EffectiveModsChanged,
+            Some(settings),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(changed.publication, RuntimeSyncPublication::Unchanged);
+        assert!(changed.needs_manual_reload());
+        fixture.pool.close().await;
+    }
+
+    fn unknown_process_settings(
+        fixture: &CompositionFixture,
+    ) -> crate::modules::settings::application::config::AppSettings {
+        crate::modules::settings::application::config::AppSettings {
+            active_game_id: Some(fixture.game_id.clone()),
+            games: vec![crate::modules::settings::application::config::GameConfig {
+                id: fixture.game_id.clone(),
+                name: "GIMI".into(),
+                game_type: crate::modules::games::domain::models::GameType::Gimi,
+                instance_path: fixture.mods_root.parent().unwrap().to_path_buf(),
+                mod_path: fixture.mods_root.clone(),
+                ready_to_move_path: None,
+                launch_mode: Default::default(),
+                game_exe: None,
+                loader_exe: None,
+                xxmi_launcher_exe: None,
+                launch_args: None,
+                warnings: Vec::new(),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_reload_unchanged_publication_preserves_pending_manual_reload() {
+        let fixture = overlay_fixture("reload-unchanged-pending-manual").await;
+        let settings = unknown_process_settings(&fixture);
+        let first = synchronize_overlay_context(
+            overlay_context(&fixture),
+            OverlaySyncCause::Startup,
+            Some(settings.clone()),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.publication, RuntimeSyncPublication::Published);
+        assert!(first.needs_manual_reload());
+        record_runtime_sync_result(
+            &fixture.game_id,
+            &RuntimeSyncResult {
+                cause: OverlaySyncCause::SettingsChanged,
+                publication: RuntimeSyncPublication::FailedBeforePublish,
+                reload: RuntimeReloadOutcome::NotRequired,
+                failure: Some("owned publication failure".into()),
+            },
+        );
+        assert!(runtime_reload_pending(&fixture.game_id).unwrap());
+        let unchanged = synchronize_overlay_context(
+            overlay_context(&fixture),
+            OverlaySyncCause::GameActivated,
+            Some(settings.clone()),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(unchanged.publication, RuntimeSyncPublication::Unchanged);
+        assert!(unchanged.needs_manual_reload());
+        record_runtime_sync_result(
+            &fixture.game_id,
+            &RuntimeSyncResult {
+                cause: OverlaySyncCause::Recovery,
+                publication: RuntimeSyncPublication::Unchanged,
+                reload: RuntimeReloadOutcome::ReloadSent {
+                    binding: "F10".into(),
+                },
+                failure: None,
+            },
+        );
+        let settled = synchronize_overlay_context(
+            overlay_context(&fixture),
+            OverlaySyncCause::SettingsChanged,
+            Some(settings),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(settled.publication, RuntimeSyncPublication::Unchanged);
+        assert_eq!(settled.reload, RuntimeReloadOutcome::NotRequired);
+        fixture.pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn runtime_reload_unchanged_artifacts_still_reload_effective_ini_changes() {
+        let fixture = overlay_fixture("reload-unchanged-ini-changes").await;
+        run_post_apply_tasks(overlay_context(&fixture))
+            .await
+            .unwrap();
+        let changed = synchronize_overlay_context(
+            overlay_context(&fixture),
+            OverlaySyncCause::EffectiveIniChanged,
+            Some(unknown_process_settings(&fixture)),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(changed.publication, RuntimeSyncPublication::Unchanged);
+        assert!(changed.needs_manual_reload());
+        fixture.pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn runtime_reload_disabling_owned_overlay_is_a_publication() {
+        let fixture = overlay_fixture("reload-disable-owned-overlay").await;
+        run_post_apply_tasks(overlay_context(&fixture))
+            .await
+            .unwrap();
+        let mut context = overlay_context(&fixture);
+        context.keyviewer_enabled = false;
+        context.hotkeys.preset_status_overlay_enabled = false;
+        let disabled = synchronize_overlay_context(
+            context,
+            OverlaySyncCause::SettingsChanged,
+            Some(unknown_process_settings(&fixture)),
+            None,
+            None,
+            RuntimeSyncRequest::Full,
+        )
+        .await
+        .unwrap();
+        assert_eq!(disabled.publication, RuntimeSyncPublication::Published);
+        assert!(disabled.needs_manual_reload());
+        assert!(!fixture.mods_root.join(".emmm_data/KeyViewer.ini").exists());
+        assert!(fixture
+            .mods_root
+            .join(".emmm_data/KeyViewer.ini.emmm-disabled")
+            .exists());
+        fixture.pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn runtime_reload_superseded_mod_intent_survives_noop_settings_sync() {
+        for enabled in [false, true] {
+            for (index, initial_request) in [
+                RuntimeSyncRequest::Full,
+                RuntimeSyncRequest::ScopedRoots {
+                    roots: vec![ModFolderPath::from_stored("Object")],
+                },
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let fixture =
+                    overlay_fixture(&format!("reload-merged-mod-intent-{enabled}-{index}")).await;
+                let mut context = overlay_context(&fixture);
+                context.keyviewer_enabled = enabled;
+                context.hotkeys.preset_status_overlay_enabled = enabled;
+                run_post_apply_tasks(context.clone()).await.unwrap();
+                let older = reserve_overlay_sync_revision_for_cause(
+                    &fixture.game_id,
+                    initial_request,
+                    OverlaySyncCause::EffectiveModsChanged,
+                )
+                .unwrap();
+                let latest = reserve_overlay_sync_revision_for_cause(
+                    &fixture.game_id,
+                    RuntimeSyncRequest::Full,
+                    OverlaySyncCause::SettingsChanged,
+                )
+                .unwrap();
+                assert!(!is_current_sync_revision(&fixture.game_id, older).unwrap());
+                let request = sync_request_for_revision(&fixture.game_id, latest)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(request, RuntimeSyncRequest::Full);
+                let result = synchronize_overlay_context(
+                    context,
+                    OverlaySyncCause::SettingsChanged,
+                    Some(unknown_process_settings(&fixture)),
+                    Some(latest),
+                    None,
+                    request,
+                )
+                .await
+                .unwrap();
+                assert_eq!(result.publication, RuntimeSyncPublication::Unchanged);
+                assert!(result.needs_manual_reload());
+                fixture.pool.close().await;
+            }
+        }
     }
 
     #[tokio::test]

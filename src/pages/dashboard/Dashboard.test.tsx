@@ -42,7 +42,10 @@ vi.mock('./hooks/useActiveKeybindings', () => ({
   useActiveKeybindings: vi.fn(),
 }));
 
-vi.mock('@/entities/game', () => ({
+vi.mock('@/entities/game', async () => ({
+  requiresGameExecutable: (await import('@/entities/game/api/launchConfiguredGame'))
+    .requiresGameExecutable,
+  launchConfiguredGame: vi.fn(),
   useActiveGame: () => ({
     activeGame: {
       id: 'g-1',

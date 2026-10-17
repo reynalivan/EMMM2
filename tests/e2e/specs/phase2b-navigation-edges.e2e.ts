@@ -22,10 +22,10 @@ interface FolderEntry {
 }
 
 /**
- * Fase 2b — Navigation edges (tc-08 search, tc-11 classification). Master-DB
+ * Phase 2b — Navigation edges (tc-08 search, tc-11 classification). Master-DB
  * search filtering and disabled-mod classification on the folder listing.
  */
-describe('Fase 2b — Navigation Edges', () => {
+describe('Phase 2b — Navigation Edges', () => {
   let game: MockGame;
   let gameId: string;
   let gameType: number;

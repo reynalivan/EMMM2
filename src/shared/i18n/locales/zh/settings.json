@@ -168,6 +168,45 @@
     "lang_failed": "更新语言失败：{{error}}"
   },
   "games": {
+    "executable_detection": {
+      "previous": "上一页",
+      "next": "下一页",
+      "page": "{{current}} / {{total}}",
+      "detect": "检测",
+      "detect_all": "检测可执行文件位置",
+      "scanning": "正在查找已安装游戏的可执行文件…",
+      "cancel": "取消检测",
+      "dismiss": "关闭结果",
+      "use": "使用此位置",
+      "results": "选择已安装游戏的位置",
+      "empty": "未找到可执行文件。请选择文件或重试。",
+      "partial": "部分位置无法检查。下方显示可用结果。",
+      "issue": "{{source}}：{{reason}}",
+      "file_filter": "可执行文件",
+      "setup_later": "可执行文件设置为可选项。您可以继续，稍后在设置中配置。",
+      "games": {
+        "0": "原神",
+        "1": "崩坏：星穹铁道",
+        "2": "鸣潮",
+        "3": "绝区零",
+        "4": "明日方舟：终末地"
+      },
+      "sources": {
+        "hoyoplay_registry": "HoYoPlay 注册表",
+        "hoyoplay_config": "HoYoPlay 配置",
+        "kuro_config": "库洛启动器配置",
+        "xxmi_config": "XXMI 配置",
+        "manual": "所选文件"
+      },
+      "issues": {
+        "access_denied": "访问被拒绝",
+        "malformed_config": "无法解析配置格式",
+        "read_failed": "无法读取配置",
+        "resource_limit": "已达到检测限制，请尝试选择文件",
+        "deadline_exceeded": "检测超时，请重试",
+        "invalid_location": "游戏位置不存在或无效"
+      }
+    },
     "title": "游戏",
     "desc": "安装路径和启动设置。",
     "add": "添加游戏",
@@ -206,7 +245,8 @@
       "ready_to_move_label": "模组收件箱（可选）",
       "ready_to_move_placeholder": "默认：Downloads/mods/<游戏名称>",
       "ready_to_move_help": "放在此处的文件夹和压缩包会显示在模组收件箱页面中。",
-      "exe_label": "游戏可执行文件 (.exe)",
+      "exe_label": "游戏可执行文件（.exe，可选）",
+      "exe_help": "模组管理不需要此项。独立 Play 使用此文件；XXMI Play 使用启动器。它也用于识别需要游戏焦点的控制。",
       "exe_placeholder": "C:/Games/GIMI/Game.exe",
       "advanced_title": "高级选项",
       "loader_label": "3DMigoto 加载器 (可选)",
@@ -228,7 +268,6 @@
         "path_required": "Mod 路径是必填项",
         "path_invalid": "路径包含无效字符",
         "path_duplicate": "已注册",
-        "exe_required": "游戏可执行文件是必填项",
         "pick_folder_error": "选择文件夹失败",
         "pick_file_error": "选择文件失败",
         "pick_folder_title": "选择 Mod 文件夹",

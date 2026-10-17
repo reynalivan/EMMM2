@@ -156,6 +156,7 @@ pub async fn rename_import_item_plan(
     require_item(db, &input.item_id).await
 }
 
+#[cfg(test)]
 pub async fn set_import_item_decision(
     db: &SqlitePool,
     input: SetImportItemDecisionInput,
@@ -192,7 +193,8 @@ pub async fn set_import_item_decision_with_target_index(
     if item.content_kind == super::types::ImportContentKind::Utility
         && !matches!(
             input.decision,
-            ImportDecision::Reallocate
+            ImportDecision::Skip
+                | ImportDecision::Reallocate
                 | ImportDecision::KeepSpecificTarget
                 | ImportDecision::KeepSeparate
         )
@@ -341,23 +343,6 @@ pub async fn set_import_item_decision_with_target_index(
         )));
     }
     require_item(db, &input.item_id).await
-}
-
-pub async fn refresh_import_item_suggestions(
-    db: &SqlitePool,
-    item_id: &str,
-    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
-    ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
-) -> Result<ImportItem, AppError> {
-    let target_manifest_index = TargetManifestIndexState::new();
-    refresh_import_item_suggestions_with_target_index(
-        db,
-        &target_manifest_index,
-        item_id,
-        master_db,
-        ini_filters,
-    )
-    .await
 }
 
 pub async fn refresh_import_item_suggestions_with_target_index(
@@ -843,42 +828,6 @@ fn without_target_comparison_reasons(review_gate: &ReviewGate) -> ReviewGate {
     next
 }
 
-#[cfg(test)]
-pub(crate) fn find_existing_payload_match(
-    mods_root: &Path,
-    source: &super::payload_manifest::PayloadManifest,
-) -> Result<Option<PathBuf>, AppError> {
-    if !mods_root.is_dir() {
-        return Err(AppError::Validation(format!(
-            "Configured mods path is not a folder: {}",
-            mods_root.display()
-        )));
-    }
-    let roots =
-        crate::modules::library::application::mods::archive::classify::find_mod_roots_with_limits(
-            mods_root,
-            crate::modules::library::application::mods::archive::classify::MOD_ROOT_MAX_DEPTH,
-            crate::modules::library::application::mods::archive::classify::MOD_ROOT_MAX_ENTRIES,
-            None,
-        )?
-        .roots;
-    for root in roots {
-        let metadata = super::payload_manifest::payload_manifest_metadata(&root, None)?;
-        if metadata.file_count != source.file_count
-            || metadata.total_size_bytes != source.total_size_bytes
-        {
-            continue;
-        }
-        let target = super::payload_manifest::build_payload_manifest(&root, None)?;
-        if super::payload_manifest::compare_payload_manifests(source, &target).kind
-            == super::payload_manifest::ManifestComparisonKind::Exact
-        {
-            return Ok(Some(root));
-        }
-    }
-    Ok(None)
-}
-
 fn find_target_with_same_identity(parent: &Path, name: &str) -> Result<Option<PathBuf>, AppError> {
     if !parent.exists() {
         return Ok(None);
@@ -1053,23 +1002,6 @@ pub async fn preview_import_library_readiness(
         medium_count,
         review_started: false,
     })
-}
-
-pub async fn refresh_import_batch_matches(
-    db: &SqlitePool,
-    batch_id: &str,
-    master_db: &crate::modules::matching::application::deep_matcher::MasterDb,
-    ini_filters: &crate::modules::matching::application::deep_matcher::analysis::content::PreparedTokenFilters,
-) -> Result<ImportBatch, AppError> {
-    let target_manifest_index = TargetManifestIndexState::new();
-    refresh_import_batch_matches_with_target_index(
-        db,
-        &target_manifest_index,
-        batch_id,
-        master_db,
-        ini_filters,
-    )
-    .await
 }
 
 pub async fn refresh_import_batch_matches_with_target_index(
@@ -1326,35 +1258,10 @@ async fn require_item(db: &SqlitePool, item_id: &str) -> Result<ImportItem, AppE
 
 #[cfg(test)]
 mod target_manifest_tests {
-    use super::{find_existing_payload_match, inferred_source_kind_if_supported};
-    use crate::modules::ingestion::application::import_batch::payload_manifest::build_payload_manifest;
+    use super::inferred_source_kind_if_supported;
     use crate::modules::ingestion::application::import_batch::types::{
         ImportFlow, ImportSourceKind,
     };
-
-    #[test]
-    fn finds_an_identical_installed_payload_with_a_different_folder_name() {
-        let workspace = tempfile::tempdir().unwrap();
-        let source = workspace.path().join("downloads/Spring Skin");
-        let installed = workspace
-            .path()
-            .join("Mods/character/Ayaka/DISABLED Blue Variant");
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::create_dir_all(&installed).unwrap();
-        std::fs::write(source.join("merged.ini"), "[TextureOverride]\nhash = abc\n").unwrap();
-        std::fs::write(
-            installed.join("merged.ini"),
-            "[TextureOverride]\nhash = abc\n",
-        )
-        .unwrap();
-
-        let source_manifest = build_payload_manifest(&source, None).unwrap();
-        let match_path =
-            find_existing_payload_match(&workspace.path().join("Mods/character"), &source_manifest)
-                .unwrap();
-
-        assert_eq!(match_path.as_deref(), Some(installed.as_path()));
-    }
 
     #[test]
     fn inferred_source_validation_keeps_dotted_folders_and_skips_unsupported_files() {

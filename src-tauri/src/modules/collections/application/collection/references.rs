@@ -267,7 +267,7 @@ async fn recompute_signature_tx(
     conn: &mut sqlx::SqliteConnection,
     collection_id: &str,
 ) -> Result<(), CollectionError> {
-    let (_, mods_path) = collection::get_projection_context(&mut *conn, collection_id).await?;
+    let mods_path = collection::get_projection_context(&mut *conn, collection_id).await?;
     let mods = collection::get_mods_tx(&mut *conn, collection_id).await?;
     let objects = collection::get_objects_tx(&mut *conn, collection_id).await?;
     let projected_state =
@@ -279,7 +279,7 @@ async fn refresh_missing_projection_tx(
     conn: &mut sqlx::SqliteConnection,
     collection_id: &str,
 ) -> Result<(), CollectionError> {
-    let (_, mods_path) = collection::get_projection_context(&mut *conn, collection_id).await?;
+    let mods_path = collection::get_projection_context(&mut *conn, collection_id).await?;
     let mods = collection::get_mods_tx(&mut *conn, collection_id).await?;
     let objects = collection::get_objects_tx(&mut *conn, collection_id).await?;
     let projected_state =

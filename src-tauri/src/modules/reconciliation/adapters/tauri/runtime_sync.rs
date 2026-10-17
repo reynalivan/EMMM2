@@ -338,9 +338,10 @@ fn enqueue_runtime_sync_inner_with_reply(
             overlay_refresh: true,
         },
     );
-    let publication_revision = crate::modules::system::application::app::post_apply::reserve_overlay_sync_revision_for_request(
+    let publication_revision = crate::modules::system::application::app::post_apply::reserve_overlay_sync_revision_for_cause(
             game_id,
             request,
+            cause.overlay_cause(),
         )
         .map_err(|error| {
             log::error!("Could not reserve runtime publication for '{game_id}': {error}");
